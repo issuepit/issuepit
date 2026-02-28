@@ -60,7 +60,7 @@ frontend/                      # Vue 3 + Nuxt 3 + Pinia frontend
 | Layer | Technology |
 |---|---|
 | Backend | ASP.NET Core 10, C# |
-| Orchestration | .NET Aspire 9 |
+| Orchestration | .NET Aspire 13 |
 | Database | PostgreSQL 17 + EF Core 9 (Npgsql) |
 | Messaging | Apache Kafka (Confluent .NET client) |
 | Frontend | Vue 3, Nuxt 3, Pinia, TailwindCSS |

@@ -46,25 +46,25 @@
           "dependencies": {
             "Aspire.Dashboard.Sdk.linux-x64": {
               "target": "Package",
-              "version": "[9.1.0, )",
+              "version": "[13.1.2, )",
               "autoReferenced": true
             },
             "Aspire.Hosting.AppHost": {
               "target": "Package",
-              "version": "[9.1.0, )"
+              "version": "[13.1.2, )"
             },
             "Aspire.Hosting.Kafka": {
               "target": "Package",
-              "version": "[9.1.0, )"
+              "version": "[13.1.2, )"
             },
             "Aspire.Hosting.Orchestration.linux-x64": {
               "target": "Package",
-              "version": "[9.1.0, )",
+              "version": "[13.1.2, )",
               "autoReferenced": true
             },
             "Aspire.Hosting.PostgreSQL": {
               "target": "Package",
-              "version": "[9.1.0, )"
+              "version": "[13.1.2, )"
             }
           },
           "imports": [

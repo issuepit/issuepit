@@ -35,7 +35,6 @@
 /home/runner/work/issuepit/issuepit/src/IssuePit.Api/bin/Debug/net10.0/Microsoft.Extensions.ServiceDiscovery.Abstractions.dll
 /home/runner/work/issuepit/issuepit/src/IssuePit.Api/bin/Debug/net10.0/Microsoft.Extensions.Telemetry.dll
 /home/runner/work/issuepit/issuepit/src/IssuePit.Api/bin/Debug/net10.0/Microsoft.Extensions.Telemetry.Abstractions.dll
-/home/runner/work/issuepit/issuepit/src/IssuePit.Api/bin/Debug/net10.0/Microsoft.IO.RecyclableMemoryStream.dll
 /home/runner/work/issuepit/issuepit/src/IssuePit.Api/bin/Debug/net10.0/Microsoft.OpenApi.dll
 /home/runner/work/issuepit/issuepit/src/IssuePit.Api/bin/Debug/net10.0/Mono.TextTemplating.dll
 /home/runner/work/issuepit/issuepit/src/IssuePit.Api/bin/Debug/net10.0/Npgsql.dll

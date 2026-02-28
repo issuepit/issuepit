@@ -10,21 +10,21 @@
 using System;
 using System.Reflection;
 
-[assembly: System.Reflection.AssemblyMetadata("dcpclipath", ("/home/runner/.nuget/packages/aspire.hosting.orchestration.linux-x64/9.1.0/tools/d" +
-    "cp"))]
-[assembly: System.Reflection.AssemblyMetadata("dcpextensionpaths", ("/home/runner/.nuget/packages/aspire.hosting.orchestration.linux-x64/9.1.0/tools/e" +
-    "xt/"))]
-[assembly: System.Reflection.AssemblyMetadata("dcpbinpath", ("/home/runner/.nuget/packages/aspire.hosting.orchestration.linux-x64/9.1.0/tools/e" +
-    "xt/bin/"))]
+[assembly: System.Reflection.AssemblyMetadata("dcpclipath", ("/home/runner/.nuget/packages/aspire.hosting.orchestration.linux-x64/13.1.2/tools/" +
+    "dcp"))]
+[assembly: System.Reflection.AssemblyMetadata("dcpextensionpaths", ("/home/runner/.nuget/packages/aspire.hosting.orchestration.linux-x64/13.1.2/tools/" +
+    "ext/"))]
+[assembly: System.Reflection.AssemblyMetadata("dcpbinpath", ("/home/runner/.nuget/packages/aspire.hosting.orchestration.linux-x64/13.1.2/tools/" +
+    "ext/bin/"))]
 [assembly: System.Reflection.AssemblyMetadata("apphostprojectpath", "/home/runner/work/issuepit/issuepit/src/IssuePit.AppHost")]
 [assembly: System.Reflection.AssemblyMetadata("apphostprojectname", "IssuePit.AppHost.csproj")]
-[assembly: System.Reflection.AssemblyMetadata("aspiredashboardpath", ("/home/runner/.nuget/packages/aspire.dashboard.sdk.linux-x64/9.1.0/tools/Aspire.Da" +
-    "shboard"))]
+[assembly: System.Reflection.AssemblyMetadata("aspiredashboardpath", ("/home/runner/.nuget/packages/aspire.dashboard.sdk.linux-x64/13.1.2/tools/Aspire.D" +
+    "ashboard"))]
 [assembly: System.Reflection.AssemblyMetadataAttribute("apphostprojectbaseintermediateoutputpath", "/home/runner/work/issuepit/issuepit/src/IssuePit.AppHost/obj/")]
 [assembly: System.Reflection.AssemblyCompanyAttribute("IssuePit.AppHost")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+8a60a4b6d8907665a34fba892d0ae1add114aed1")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+1c4910160546ab57880e63d55624d7c648b4a2d8")]
 [assembly: System.Reflection.AssemblyProductAttribute("IssuePit.AppHost")]
 [assembly: System.Reflection.AssemblyTitleAttribute("IssuePit.AppHost")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
