@@ -1,0 +1,25 @@
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+COPY src/IssuePit.Core/IssuePit.Core.csproj IssuePit.Core/
+COPY src/IssuePit.ServiceDefaults/IssuePit.ServiceDefaults.csproj IssuePit.ServiceDefaults/
+COPY src/IssuePit.ExecutionClient/IssuePit.ExecutionClient.csproj IssuePit.ExecutionClient/
+
+RUN dotnet restore IssuePit.ExecutionClient/IssuePit.ExecutionClient.csproj
+
+COPY src/IssuePit.Core/ IssuePit.Core/
+COPY src/IssuePit.ServiceDefaults/ IssuePit.ServiceDefaults/
+COPY src/IssuePit.ExecutionClient/ IssuePit.ExecutionClient/
+
+RUN dotnet publish IssuePit.ExecutionClient/IssuePit.ExecutionClient.csproj -c Release -o /app/publish --no-restore
+
+FROM mcr.microsoft.com/dotnet/runtime:10.0 AS runtime
+WORKDIR /app
+
+# Docker socket access is required for DinD agent execution
+RUN addgroup --system app && adduser --system --ingroup app app
+USER app
+
+COPY --from=build /app/publish .
+
+ENTRYPOINT ["dotnet", "IssuePit.ExecutionClient.dll"]
