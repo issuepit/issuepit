@@ -35,6 +35,11 @@ builder.Services.AddSingleton<IProducer<string, string>>(_ =>
 builder.Services.AddSignalR()
     .AddStackExchangeRedis(builder.Configuration.GetConnectionString("redis") ?? "localhost:6379");
 
+builder.Services.AddHttpClient("github").ConfigureHttpClient(c =>
+{
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("IssuePit/1.0");
+});
+
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -55,6 +60,7 @@ app.MapKanbanEndpoints();
 app.MapAgentEndpoints();
 app.MapConfigurationEndpoints();
 app.MapCiCdEndpoints();
+app.MapReviewEndpoints();
 
 app.MapHub<AgentOutputHub>("/hubs/agent-output");
 app.MapHub<KanbanHub>("/hubs/kanban");

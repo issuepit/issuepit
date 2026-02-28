@@ -57,6 +57,25 @@
             <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Sub-Issues</h2>
             <p class="text-sm text-gray-600">No sub-issues</p>
           </div>
+
+          <!-- Code Review link -->
+          <NuxtLink v-if="store.currentIssue.gitBranch"
+            :to="`/projects/${id}/issues/${issueId}/review`"
+            class="flex items-center gap-3 bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 mb-6 transition-colors group">
+            <div class="w-8 h-8 bg-brand-900/40 rounded-lg flex items-center justify-center shrink-0">
+              <svg class="w-4 h-4 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+              </svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium text-white group-hover:text-brand-300 transition-colors">Code Review</p>
+              <p class="text-xs text-gray-500 truncate">Branch: <span class="font-mono text-gray-400">{{ store.currentIssue.gitBranch }}</span></p>
+            </div>
+            <svg class="w-4 h-4 text-gray-600 group-hover:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+            </svg>
+          </NuxtLink>
         </div>
 
         <!-- Sidebar metadata -->
@@ -103,6 +122,12 @@
                 <span v-for="lid in store.currentIssue.labelIds" :key="lid"
                   class="text-xs bg-blue-900/40 text-blue-300 px-1.5 py-0.5 rounded">{{ lid }}</span>
               </div>
+            </div>
+
+            <!-- Git Branch -->
+            <div v-if="store.currentIssue.gitBranch">
+              <p class="text-xs text-gray-500 uppercase tracking-wide mb-1.5">Branch</p>
+              <p class="text-xs text-gray-400 font-mono truncate">{{ store.currentIssue.gitBranch }}</p>
             </div>
 
             <!-- Dates -->

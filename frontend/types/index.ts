@@ -71,6 +71,7 @@ export interface Project {
   icon?: string
   color?: string
   isPrivate: boolean
+  gitHubRepo?: string
   issueCount: number
   memberCount: number
   createdAt: string
@@ -92,6 +93,7 @@ export interface Issue {
   parentIssueId?: string
   dueDate?: string
   estimate?: number
+  gitBranch?: string
   createdAt: string
   updatedAt: string
 }
@@ -208,4 +210,58 @@ export interface RuntimeConfiguration {
   configuration: string
   isDefault: boolean
   createdAt: string
+}
+
+export interface DiffLine {
+  type: 'context' | 'addition' | 'deletion'
+  oldLineNo?: number
+  newLineNo?: number
+  content: string
+}
+
+export interface DiffHunk {
+  header: string
+  oldStart: number
+  oldCount: number
+  newStart: number
+  newCount: number
+  lines: DiffLine[]
+}
+
+export interface DiffFile {
+  filename: string
+  status: string
+  additions: number
+  deletions: number
+  changes: number
+  isBig: boolean
+  hunks: DiffHunk[]
+}
+
+export interface PrDiff {
+  baseBranch: string
+  headBranch: string
+  totalAdditions: number
+  totalDeletions: number
+  files: DiffFile[]
+}
+
+export interface IssueComment {
+  id: string
+  issueId: string
+  filePath?: string
+  lineNumber?: number
+  endLineNumber?: number
+  body: string
+  commentType: 'comment' | 'review'
+  authorName?: string
+  createdAt: string
+}
+
+export interface PendingLineComment {
+  filePath: string
+  lineNumber: number
+  endLineNumber?: number
+  body: string
+  lineContent: string
 }

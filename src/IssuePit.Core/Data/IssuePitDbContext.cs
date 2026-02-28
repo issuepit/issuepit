@@ -24,6 +24,7 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<AgentSession> AgentSessions => Set<AgentSession>();
     public DbSet<CiCdRun> CiCdRuns => Set<CiCdRun>();
     public DbSet<CiCdRunLog> CiCdRunLogs => Set<CiCdRunLog>();
+    public DbSet<IssueComment> IssueComments => Set<IssueComment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -6,6 +6,7 @@
 - AI agents must execute tests before ending a task/session
 - E2E tests for Vue use the Aspire backend
 - All PRs run all actions for frontend and backend
+- **PRs that include UI changes must include screenshots of the UI in the PR description**
 - Keep changes minimal; create commits after each task/work piece; don't do refactors
 - Check that helpers and other methods were not created twice
 - Do not remove comments
