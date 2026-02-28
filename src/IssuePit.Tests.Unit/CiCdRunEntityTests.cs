@@ -33,4 +33,12 @@ public class CiCdRunEntityTests
         var log = new CiCdRunLog();
         Assert.Equal(LogStream.Stdout, log.Stream);
     }
+
+    [Fact]
+    public void CiCdRun_ExternalFields_NullableByDefault()
+    {
+        var run = new CiCdRun();
+        Assert.Null(run.ExternalSource);
+        Assert.Null(run.ExternalRunId);
+    }
 }
