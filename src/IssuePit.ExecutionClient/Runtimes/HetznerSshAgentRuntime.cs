@@ -10,6 +10,7 @@ public class HetznerSshAgentRuntime(ILogger<HetznerSshAgentRuntime> logger) : IA
         Agent agent,
         Issue issue,
         IReadOnlyDictionary<string, string> credentials,
+        RuntimeConfiguration? runtimeConfig,
         CancellationToken cancellationToken)
     {
         logger.LogWarning(

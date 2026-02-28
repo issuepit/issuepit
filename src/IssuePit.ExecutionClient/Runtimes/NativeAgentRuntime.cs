@@ -10,6 +10,7 @@ public class NativeAgentRuntime(ILogger<NativeAgentRuntime> logger) : IAgentRunt
         Agent agent,
         Issue issue,
         IReadOnlyDictionary<string, string> credentials,
+        RuntimeConfiguration? runtimeConfig,
         CancellationToken cancellationToken)
     {
         logger.LogWarning(

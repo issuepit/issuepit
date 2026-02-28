@@ -147,7 +147,7 @@ public class IssueWorker(
         {
             var credentials = await LoadCredentialsAsync(agent.OrgId, db, cancellationToken);
             var runtime = runtimeFactory.Create(runtimeType);
-            var runtimeId = await runtime.LaunchAsync(session, agent, issue, credentials, cancellationToken);
+            var runtimeId = await runtime.LaunchAsync(session, agent, issue, credentials, runtimeConfig, cancellationToken);
 
             logger.LogInformation(
                 "Agent {AgentId} launched via {RuntimeType} with id '{RuntimeId}' for session {SessionId}",

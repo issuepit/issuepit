@@ -11,6 +11,9 @@ builder.AddNpgsqlDbContext<IssuePitDbContext>("issuepit-db");
 // Register Docker client (used by DockerAgentRuntime)
 builder.Services.AddSingleton(_ => new DockerClientConfiguration().CreateClient());
 
+// HttpClient factory (used by OpenSandboxAgentRuntime)
+builder.Services.AddHttpClient();
+
 // Register runtime implementations
 builder.Services.AddSingleton<DockerAgentRuntime>();
 builder.Services.AddSingleton<NativeAgentRuntime>();

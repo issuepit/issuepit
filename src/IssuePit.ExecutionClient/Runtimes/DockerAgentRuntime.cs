@@ -12,6 +12,7 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         Agent agent,
         Issue issue,
         IReadOnlyDictionary<string, string> credentials,
+        RuntimeConfiguration? runtimeConfig,
         CancellationToken cancellationToken)
     {
         var env = BuildEnvironment(session, agent, issue, credentials);
