@@ -133,7 +133,8 @@
 </template>
 
 <script setup lang="ts">
-import { IssueStatus, IssuePriority } from '~/types'
+import { IssueStatus } from '~/types'
+import type { IssuePriority } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
 
 const route = useRoute()

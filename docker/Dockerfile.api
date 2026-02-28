@@ -1,0 +1,27 @@
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+COPY src/IssuePit.Core/IssuePit.Core.csproj IssuePit.Core/
+COPY src/IssuePit.ServiceDefaults/IssuePit.ServiceDefaults.csproj IssuePit.ServiceDefaults/
+COPY src/IssuePit.Api/IssuePit.Api.csproj IssuePit.Api/
+
+RUN dotnet restore IssuePit.Api/IssuePit.Api.csproj
+
+COPY src/IssuePit.Core/ IssuePit.Core/
+COPY src/IssuePit.ServiceDefaults/ IssuePit.ServiceDefaults/
+COPY src/IssuePit.Api/ IssuePit.Api/
+
+RUN dotnet publish IssuePit.Api/IssuePit.Api.csproj -c Release -o /app/publish --no-restore
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+WORKDIR /app
+
+RUN addgroup --system app && adduser --system --ingroup app app
+USER app
+
+COPY --from=build /app/publish .
+
+EXPOSE 8080
+ENV ASPNETCORE_URLS=http://+:8080
+
+ENTRYPOINT ["dotnet", "IssuePit.Api.dll"]

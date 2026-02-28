@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
-import type { Issue } from '~/types'
-import { IssueStatus, IssuePriority, IssueType } from '~/types'
+import type { Issue, IssuePriority, IssueType } from '~/types'
+import { IssueStatus } from '~/types'
 
 interface IssueFilters {
   status?: IssueStatus

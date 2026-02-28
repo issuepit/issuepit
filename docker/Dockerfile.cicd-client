@@ -1,0 +1,24 @@
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+COPY src/IssuePit.Core/IssuePit.Core.csproj IssuePit.Core/
+COPY src/IssuePit.ServiceDefaults/IssuePit.ServiceDefaults.csproj IssuePit.ServiceDefaults/
+COPY src/IssuePit.CiCdClient/IssuePit.CiCdClient.csproj IssuePit.CiCdClient/
+
+RUN dotnet restore IssuePit.CiCdClient/IssuePit.CiCdClient.csproj
+
+COPY src/IssuePit.Core/ IssuePit.Core/
+COPY src/IssuePit.ServiceDefaults/ IssuePit.ServiceDefaults/
+COPY src/IssuePit.CiCdClient/ IssuePit.CiCdClient/
+
+RUN dotnet publish IssuePit.CiCdClient/IssuePit.CiCdClient.csproj -c Release -o /app/publish --no-restore
+
+FROM mcr.microsoft.com/dotnet/runtime:10.0 AS runtime
+WORKDIR /app
+
+RUN addgroup --system app && adduser --system --ingroup app app
+USER app
+
+COPY --from=build /app/publish .
+
+ENTRYPOINT ["dotnet", "IssuePit.CiCdClient.dll"]
