@@ -136,6 +136,9 @@
                 <div v-for="n in 8" :key="n" class="h-4 bg-gray-700 rounded"
                   :style="{ width: `${30 + (n * 13) % 55}%`, marginLeft: `${(n * 7) % 20}%` }"></div>
               </div>
+              <p v-if="bigFileErrors.get(file.filename)" class="text-sm text-red-400 mb-3">
+                {{ bigFileErrors.get(file.filename) }}
+              </p>
               <button @click="loadBigFile(file)"
                 class="bg-brand-600 hover:bg-brand-700 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
                 Load file diff
@@ -156,9 +159,7 @@
               <!-- Diff lines -->
               <div v-for="(line, li) in hunk.lines" :key="li">
                 <div class="group relative"
-                  :class="lineRowClass(line.type)"
-                  @mouseenter="hoveredLine = { file: file.filename, line: lineKey(line) }"
-                  @mouseleave="hoveredLine = null">
+                  :class="lineRowClass(line.type)">
                   <!-- Gutter: old line no -->
                   <span class="inline-block w-12 text-right pr-3 text-gray-600 select-none border-r border-gray-800">
                     {{ line.oldLineNo ?? '' }}
@@ -259,11 +260,12 @@
             class="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
             Submit Review
           </button>
-          <button @click="showSubmitModal = false"
+          <button @click="showSubmitModal = false; submitError = null"
             class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 rounded-lg transition-colors">
             Cancel
           </button>
         </div>
+        <p v-if="submitError" class="mt-3 text-sm text-red-400">{{ submitError }}</p>
       </div>
     </div>
   </div>
@@ -289,14 +291,12 @@ const baseBranch = ref('main')
 const expandedFiles = ref<Set<string>>(new Set())
 // Big files explicitly loaded by user
 const loadedBigFiles = ref<Set<string>>(new Set())
-// Hovered line state
-const hoveredLine = ref<{ file: string; line: string } | null>(null)
 
 // Inline comment form state
 const commentForm = ref<{ file: string; lineKey: string; body: string } | null>(null)
 
 // Pending (draft) comments not yet submitted
-const pendingComments = ref<(PendingLineComment & { fileIndex: number; lineKeyStr: string })[]>([])
+const pendingComments = ref<(PendingLineComment & { lineKeyStr: string })[]>([])
 
 // Submitted comments fetched from API
 const submittedComments = ref<IssueComment[]>([])
@@ -304,6 +304,8 @@ const submittedComments = ref<IssueComment[]>([])
 // Review submission
 const showSubmitModal = ref(false)
 const overallComment = ref('')
+const submitError = ref<string | null>(null)
+const bigFileErrors = ref<Map<string, string>>(new Map())
 
 onMounted(async () => {
   await issueStore.fetchIssue(id, issueId)
@@ -339,14 +341,15 @@ async function loadDiff() {
 }
 
 async function loadBigFile(file: DiffFile) {
+  bigFileErrors.value.delete(file.filename)
   try {
     const hunks = await api.get<DiffHunk[]>(`/api/issues/${issueId}/pr-diff/file`, {
       params: { base: baseBranch.value, filename: file.filename }
     })
     file.hunks = hunks
     loadedBigFiles.value.add(file.filename)
-  } catch {
-    // show error inline if needed
+  } catch (e: unknown) {
+    bigFileErrors.value.set(file.filename, e instanceof Error ? e.message : 'Failed to load file diff')
   }
 }
 
@@ -378,7 +381,6 @@ function addPendingComment(file: string, line: DiffLine) {
     lineNumber: line.newLineNo ?? line.oldLineNo ?? 0,
     body: commentForm.value.body,
     lineContent: line.content,
-    fileIndex: 0,
     lineKeyStr: lineKey(line)
   })
   commentForm.value = null
@@ -428,10 +430,11 @@ async function submitReview() {
     })
     pendingComments.value = []
     overallComment.value = ''
+    submitError.value = null
     showSubmitModal.value = false
     await fetchComments()
-  } catch {
-    // handle error
+  } catch (e: unknown) {
+    submitError.value = e instanceof Error ? e.message : 'Failed to submit review'
   }
 }
 

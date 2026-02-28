@@ -59,13 +59,7 @@ public static partial class DiffParser
     }
 }
 
-public record DiffLineDto(string Type = "", string Content = "", int? OldLineNo = null, int? NewLineNo = null)
-{
-    public string Type { get; init; } = Type;
-    public string Content { get; init; } = Content;
-    public int? OldLineNo { get; init; } = OldLineNo;
-    public int? NewLineNo { get; init; } = NewLineNo;
-}
+public record DiffLineDto(string Type = "", string Content = "", int? OldLineNo = null, int? NewLineNo = null);
 
 public class DiffHunkDto
 {

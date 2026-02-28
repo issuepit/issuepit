@@ -45,7 +45,7 @@ public static class ReviewEndpoints
                 .Select(k => k.EncryptedValue)
                 .FirstOrDefaultAsync();
 
-            var token = githubKey?.StartsWith("plain:") == true ? githubKey[6..] : githubKey;
+            var token = DecryptApiKeyValue(githubKey);
             var baseBranch = @base ?? "main";
             var repo = issue.Project.GitHubRepo; // expected: "owner/repo"
             var head = issue.GitBranch;
@@ -131,7 +131,7 @@ public static class ReviewEndpoints
                 .Select(k => k.EncryptedValue)
                 .FirstOrDefaultAsync();
 
-            var token = githubKey?.StartsWith("plain:") == true ? githubKey[6..] : githubKey;
+            var token = DecryptApiKeyValue(githubKey);
             var baseBranch = @base ?? "main";
             var repo = issue.Project.GitHubRepo;
             var head = issue.GitBranch;
@@ -258,6 +258,9 @@ public static class ReviewEndpoints
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
     };
+
+    private static string? DecryptApiKeyValue(string? encryptedValue) =>
+        encryptedValue?.StartsWith("plain:") == true ? encryptedValue[6..] : encryptedValue;
 
     // --- Request / Response DTOs ---
 
