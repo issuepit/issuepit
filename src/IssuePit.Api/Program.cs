@@ -4,13 +4,22 @@ using IssuePit.Api.Hubs;
 using IssuePit.Api.Middleware;
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
+using Microsoft.EntityFrameworkCore;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 
-builder.AddNpgsqlDbContext<IssuePitDbContext>("issuepit-db");
+if (builder.Environment.IsEnvironment("Testing"))
+{
+    builder.Services.AddDbContext<IssuePitDbContext>(opts =>
+        opts.UseInMemoryDatabase("issuepit-testing"));
+}
+else
+{
+    builder.AddNpgsqlDbContext<IssuePitDbContext>("issuepit-db");
+}
 
 builder.AddRedisClient("redis");
 

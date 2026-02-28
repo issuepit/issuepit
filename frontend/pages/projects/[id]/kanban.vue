@@ -8,32 +8,56 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
           </svg>
         </NuxtLink>
-        <h1 class="text-xl font-bold text-white">Kanban Board</h1>
+        <h1 class="text-xl font-bold text-white">Kanban</h1>
       </div>
-      <div class="flex items-center gap-2 text-xs text-gray-500">
-        <span>{{ totalIssues }} issues</span>
+      <div class="flex items-center gap-2">
+        <!-- Board selector -->
+        <select v-if="kanban.boards.length" v-model="activeBoardId"
+          class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500">
+          <option v-for="b in kanban.boards" :key="b.id" :value="b.id">{{ b.name }}</option>
+        </select>
+
+        <!-- Create board -->
+        <button @click="showNewBoard = true"
+          class="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">
+          + Board
+        </button>
+
+        <!-- Manage lanes -->
+        <button v-if="activeBoard" @click="showLanes = true"
+          class="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">
+          Lanes
+        </button>
+
+        <!-- Manage transitions -->
+        <button v-if="activeBoard" @click="openTransitions"
+          class="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">
+          Transitions
+        </button>
+
+        <span class="text-xs text-gray-500">{{ totalIssues }} issues</span>
       </div>
     </div>
 
     <!-- Loading -->
-    <div v-if="store.loading" class="flex items-center justify-center flex-1">
+    <div v-if="issueStore.loading || kanban.loading" class="flex items-center justify-center flex-1">
       <div class="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
     </div>
 
     <!-- Board -->
     <div v-else class="flex gap-4 overflow-x-auto flex-1 pb-4">
-      <div v-for="col in columns" :key="col.status"
+      <div v-for="col in boardColumns" :key="col.id"
         class="flex flex-col w-72 shrink-0">
         <!-- Column Header -->
         <div class="flex items-center justify-between mb-3">
           <div class="flex items-center gap-2">
-            <span :class="col.dotColor" class="w-2.5 h-2.5 rounded-full"></span>
-            <h3 class="text-sm font-semibold text-gray-300">{{ col.title }}</h3>
+            <span :class="statusDotColor(col.issueStatus)" class="w-2.5 h-2.5 rounded-full"></span>
+            <h3 class="text-sm font-semibold text-gray-300">{{ col.name }}</h3>
             <span class="text-xs text-gray-600 bg-gray-800 px-1.5 py-0.5 rounded-full">
-              {{ issuesByStatus[col.status]?.length ?? 0 }}
+              {{ issuesByStatus[col.issueStatus]?.length ?? 0 }}
             </span>
           </div>
-          <button @click="openCreateForStatus(col.status)"
+          <button @click="openCreateForStatus(col.issueStatus)"
             class="text-gray-600 hover:text-gray-400 transition-colors p-0.5 rounded">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -43,8 +67,8 @@
 
         <!-- Cards -->
         <div class="flex-1 space-y-2 bg-gray-900/40 rounded-xl p-2 min-h-32 border border-gray-800/60"
-          @dragover.prevent @drop="onDrop($event, col.status)">
-          <div v-for="issue in issuesByStatus[col.status]" :key="issue.id"
+          @dragover.prevent @drop="onDrop($event, col.issueStatus)">
+          <div v-for="issue in issuesByStatus[col.issueStatus]" :key="issue.id"
             draggable="true"
             @dragstart="onDragStart($event, issue.id)"
             class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-lg p-3 cursor-pointer group transition-all hover:shadow-lg hover:-translate-y-0.5"
@@ -68,11 +92,19 @@
           </div>
 
           <!-- Empty placeholder -->
-          <div v-if="!issuesByStatus[col.status]?.length"
+          <div v-if="!issuesByStatus[col.issueStatus]?.length"
             class="flex items-center justify-center h-16 text-gray-700 text-xs">
             Drop issues here
           </div>
         </div>
+      </div>
+
+      <!-- No board / no columns -->
+      <div v-if="!activeBoard" class="flex items-center justify-center flex-1 text-gray-600 text-sm">
+        No boards yet. Create one with the <strong class="text-gray-400 mx-1">+ Board</strong> button.
+      </div>
+      <div v-else-if="!boardColumns.length" class="flex items-center justify-center flex-1 text-gray-600 text-sm">
+        No lanes yet. Click <strong class="text-gray-400 mx-1">Lanes</strong> to add columns.
       </div>
     </div>
 
@@ -80,7 +112,7 @@
     <div v-if="showCreate" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
       <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md p-6 shadow-xl">
         <h2 class="text-lg font-bold text-white mb-5">
-          Add to {{ columns.find(c => c.status === createStatus)?.title }}
+          Add to {{ boardColumns.find(c => c.issueStatus === createStatus)?.name }}
         </h2>
         <div class="space-y-4">
           <div>
@@ -111,36 +143,199 @@
         </div>
       </div>
     </div>
+
+    <!-- New Board Modal -->
+    <div v-if="showNewBoard" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md p-6 shadow-xl">
+        <h2 class="text-lg font-bold text-white mb-5">New Board</h2>
+        <input v-model="newBoardName" type="text" placeholder="Board name..."
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          @keyup.enter="submitNewBoard" />
+        <div class="flex gap-3 mt-6">
+          <button @click="submitNewBoard"
+            class="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
+            Create
+          </button>
+          <button @click="showNewBoard = false"
+            class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 rounded-lg transition-colors">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Lane Management Modal -->
+    <div v-if="showLanes && activeBoard" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-lg p-6 shadow-xl">
+        <h2 class="text-lg font-bold text-white mb-5">Manage Lanes — {{ activeBoard.name }}</h2>
+
+        <!-- Existing columns -->
+        <div class="space-y-2 mb-4 max-h-64 overflow-y-auto">
+          <div v-for="col in boardColumns" :key="col.id"
+            class="flex items-center gap-3 bg-gray-800 rounded-lg px-3 py-2">
+            <span :class="statusDotColor(col.issueStatus)" class="w-2 h-2 rounded-full shrink-0"></span>
+            <span class="text-sm text-gray-300 flex-1">{{ col.name }}</span>
+            <span class="text-xs text-gray-600">pos {{ col.position }}</span>
+            <button @click="deleteColumn(col.id)"
+              class="text-gray-600 hover:text-red-400 transition-colors">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div v-if="!boardColumns.length" class="text-xs text-gray-600 text-center py-4">No lanes yet</div>
+        </div>
+
+        <!-- Add new column -->
+        <div class="border-t border-gray-800 pt-4">
+          <p class="text-xs text-gray-500 mb-3">Add lane</p>
+          <div class="flex gap-2">
+            <input v-model="newColName" type="text" placeholder="Lane name"
+              class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            <select v-model="newColStatus"
+              class="bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500">
+              <option v-for="s in statusOptions" :key="s.value" :value="s.value">{{ s.label }}</option>
+            </select>
+          </div>
+          <button @click="submitAddColumn"
+            class="mt-3 w-full bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
+            Add Lane
+          </button>
+        </div>
+
+        <button @click="showLanes = false"
+          class="mt-3 w-full bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 rounded-lg transition-colors">
+          Done
+        </button>
+      </div>
+    </div>
+
+    <!-- Transitions Modal -->
+    <div v-if="showTransitions && activeBoard" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-lg p-6 shadow-xl">
+        <h2 class="text-lg font-bold text-white mb-5">Transitions — {{ activeBoard.name }}</h2>
+
+        <!-- Existing transitions -->
+        <div class="space-y-2 mb-4 max-h-64 overflow-y-auto">
+          <div v-for="t in kanban.transitions" :key="t.id"
+            class="flex items-center gap-3 bg-gray-800 rounded-lg px-3 py-2">
+            <span class="text-sm text-gray-300 flex-1">{{ t.name }}</span>
+            <span class="text-xs text-gray-600">
+              {{ columnName(t.fromColumnId) }} → {{ columnName(t.toColumnId) }}
+            </span>
+            <span v-if="t.isAuto" class="text-xs bg-blue-900/40 text-blue-300 px-1.5 py-0.5 rounded">auto</span>
+            <button @click="deleteTransition(t.id)"
+              class="text-gray-600 hover:text-red-400 transition-colors">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div v-if="!kanban.transitions.length" class="text-xs text-gray-600 text-center py-4">No transitions yet</div>
+        </div>
+
+        <!-- Add new transition -->
+        <div class="border-t border-gray-800 pt-4">
+          <p class="text-xs text-gray-500 mb-3">Add transition</p>
+          <div class="space-y-2">
+            <input v-model="newTransName" type="text" placeholder="Transition name"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            <div class="flex gap-2">
+              <select v-model="newTransFrom"
+                class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option value="">From column</option>
+                <option v-for="c in boardColumns" :key="c.id" :value="c.id">{{ c.name }}</option>
+              </select>
+              <select v-model="newTransTo"
+                class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option value="">To column</option>
+                <option v-for="c in boardColumns" :key="c.id" :value="c.id">{{ c.name }}</option>
+              </select>
+            </div>
+            <label class="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+              <input v-model="newTransIsAuto" type="checkbox" class="accent-brand-500" />
+              Auto-trigger (by agent)
+            </label>
+          </div>
+          <button @click="submitAddTransition"
+            class="mt-3 w-full bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
+            Add Transition
+          </button>
+        </div>
+
+        <button @click="showTransitions = false"
+          class="mt-3 w-full bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 rounded-lg transition-colors">
+          Done
+        </button>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { IssueStatus, IssuePriority, IssueType } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
+import { useKanbanStore } from '~/stores/kanban'
 
 const route = useRoute()
 const id = route.params.id as string
-const store = useIssuesStore()
+const issueStore = useIssuesStore()
+const kanban = useKanbanStore()
 
+// ── Issue create state ────────────────────────────────────────────────────
 const showCreate = ref(false)
 const createTitle = ref('')
 const createPriority = ref<IssuePriority>(IssuePriority.NoPriority)
 const createStatus = ref<IssueStatus>(IssueStatus.Backlog)
 const draggedId = ref<string | null>(null)
 
-const columns = [
-  { status: IssueStatus.Backlog, title: 'Backlog', dotColor: 'bg-gray-500' },
-  { status: IssueStatus.Todo, title: 'Todo', dotColor: 'bg-blue-400' },
-  { status: IssueStatus.InProgress, title: 'In Progress', dotColor: 'bg-yellow-400' },
-  { status: IssueStatus.InReview, title: 'In Review', dotColor: 'bg-purple-400' },
-  { status: IssueStatus.Done, title: 'Done', dotColor: 'bg-green-400' }
+// ── Board state ───────────────────────────────────────────────────────────
+const showNewBoard = ref(false)
+const newBoardName = ref('')
+const activeBoardId = ref<string>('')
+
+const activeBoard = computed(() => kanban.boards.find(b => b.id === activeBoardId.value) ?? null)
+const boardColumns = computed(() =>
+  (activeBoard.value?.columns ?? []).slice().sort((a, b) => a.position - b.position)
+)
+
+// ── Lane state ────────────────────────────────────────────────────────────
+const showLanes = ref(false)
+const newColName = ref('')
+const newColStatus = ref<IssueStatus>(IssueStatus.Todo)
+
+// ── Transition state ──────────────────────────────────────────────────────
+const showTransitions = ref(false)
+const newTransName = ref('')
+const newTransFrom = ref('')
+const newTransTo = ref('')
+const newTransIsAuto = ref(false)
+
+const issuesByStatus = computed(() => issueStore.issuesByStatus)
+const totalIssues = computed(() => issueStore.issues.length)
+
+const statusOptions = [
+  { value: IssueStatus.Backlog, label: 'Backlog' },
+  { value: IssueStatus.Todo, label: 'Todo' },
+  { value: IssueStatus.InProgress, label: 'In Progress' },
+  { value: IssueStatus.InReview, label: 'In Review' },
+  { value: IssueStatus.Done, label: 'Done' },
+  { value: IssueStatus.Cancelled, label: 'Cancelled' },
 ]
 
-const issuesByStatus = computed(() => store.issuesByStatus)
-const totalIssues = computed(() => store.issues.length)
+onMounted(async () => {
+  await Promise.all([
+    issueStore.fetchIssues(id),
+    kanban.fetchBoards(id),
+  ])
+  if (kanban.boards.length) activeBoardId.value = kanban.boards[0].id
+})
 
-onMounted(() => store.fetchIssues(id))
+watch(activeBoardId, (bid) => {
+  if (bid) kanban.selectBoard(kanban.boards.find(b => b.id === bid)!)
+})
 
+// ── Drag & drop ───────────────────────────────────────────────────────────
 function onDragStart(e: DragEvent, issueId: string) {
   draggedId.value = issueId
   e.dataTransfer!.effectAllowed = 'move'
@@ -149,10 +344,11 @@ function onDragStart(e: DragEvent, issueId: string) {
 async function onDrop(e: DragEvent, status: IssueStatus) {
   e.preventDefault()
   if (!draggedId.value) return
-  await store.updateIssueStatus(id, draggedId.value, status)
+  await issueStore.updateIssueStatus(id, draggedId.value, status)
   draggedId.value = null
 }
 
+// ── Quick create ──────────────────────────────────────────────────────────
 function openCreateForStatus(status: IssueStatus) {
   createStatus.value = status
   createTitle.value = ''
@@ -162,13 +358,78 @@ function openCreateForStatus(status: IssueStatus) {
 
 async function submitCreate() {
   if (!createTitle.value) return
-  await store.createIssue(id, {
+  await issueStore.createIssue(id, {
     title: createTitle.value,
     status: createStatus.value,
     priority: createPriority.value,
     type: IssueType.Issue
   })
   showCreate.value = false
+}
+
+// ── Board actions ─────────────────────────────────────────────────────────
+async function submitNewBoard() {
+  if (!newBoardName.value.trim()) return
+  const board = await kanban.createBoard(id, newBoardName.value.trim())
+  if (board) activeBoardId.value = board.id
+  newBoardName.value = ''
+  showNewBoard.value = false
+}
+
+// ── Lane actions ──────────────────────────────────────────────────────────
+async function submitAddColumn() {
+  if (!newColName.value.trim() || !activeBoardId.value) return
+  const pos = boardColumns.value.length
+  await kanban.addColumn(activeBoardId.value, newColName.value.trim(), pos, newColStatus.value)
+  newColName.value = ''
+}
+
+async function deleteColumn(columnId: string) {
+  if (!activeBoardId.value) return
+  await kanban.deleteColumn(activeBoardId.value, columnId)
+}
+
+// ── Transition actions ────────────────────────────────────────────────────
+async function openTransitions() {
+  if (!activeBoardId.value) return
+  await kanban.fetchTransitions(activeBoardId.value)
+  showTransitions.value = true
+}
+
+async function submitAddTransition() {
+  if (!newTransName.value.trim() || !newTransFrom.value || !newTransTo.value || !activeBoardId.value) return
+  await kanban.createTransition(activeBoardId.value, {
+    name: newTransName.value.trim(),
+    fromColumnId: newTransFrom.value,
+    toColumnId: newTransTo.value,
+    isAuto: newTransIsAuto.value,
+  })
+  newTransName.value = ''
+  newTransFrom.value = ''
+  newTransTo.value = ''
+  newTransIsAuto.value = false
+}
+
+async function deleteTransition(transitionId: string) {
+  if (!activeBoardId.value) return
+  await kanban.deleteTransition(activeBoardId.value, transitionId)
+}
+
+function columnName(columnId: string) {
+  return boardColumns.value.find(c => c.id === columnId)?.name ?? columnId
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function statusDotColor(status: IssueStatus) {
+  const map: Record<IssueStatus, string> = {
+    [IssueStatus.Backlog]: 'bg-gray-500',
+    [IssueStatus.Todo]: 'bg-blue-400',
+    [IssueStatus.InProgress]: 'bg-yellow-400',
+    [IssueStatus.InReview]: 'bg-purple-400',
+    [IssueStatus.Done]: 'bg-green-400',
+    [IssueStatus.Cancelled]: 'bg-red-500',
+  }
+  return map[status] ?? 'bg-gray-500'
 }
 
 function priorityIcon(p: IssuePriority) {

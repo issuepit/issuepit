@@ -126,22 +126,31 @@ export interface Agent {
   updatedAt: string
 }
 
+export interface KanbanTransition {
+  id: string
+  boardId: string
+  fromColumnId: string
+  toColumnId: string
+  name: string
+  isAuto: boolean
+  agentId?: string
+  createdAt: string
+}
+
 export interface KanbanColumn {
   id: string
   boardId: string
-  title: string
-  status: IssueStatus
-  order: number
-  issueIds: string[]
+  name: string
+  issueStatus: IssueStatus
+  position: number
 }
 
 export interface KanbanBoard {
   id: string
   projectId: string
-  title: string
+  name: string
   columns: KanbanColumn[]
   createdAt: string
-  updatedAt: string
 }
 
 export interface PaginatedResponse<T> {
