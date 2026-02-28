@@ -1,0 +1,13 @@
+/home/runner/work/issuepit/issuepit/src/IssuePit.ServiceDefaults/bin/Debug/net10.0/IssuePit.ServiceDefaults.deps.json
+/home/runner/work/issuepit/issuepit/src/IssuePit.ServiceDefaults/bin/Debug/net10.0/IssuePit.ServiceDefaults.dll
+/home/runner/work/issuepit/issuepit/src/IssuePit.ServiceDefaults/bin/Debug/net10.0/IssuePit.ServiceDefaults.pdb
+/home/runner/work/issuepit/issuepit/src/IssuePit.ServiceDefaults/obj/Debug/net10.0/IssuePit.ServiceDefaults.csproj.AssemblyReference.cache
+/home/runner/work/issuepit/issuepit/src/IssuePit.ServiceDefaults/obj/Debug/net10.0/IssuePit.ServiceDefaults.GeneratedMSBuildEditorConfig.editorconfig
+/home/runner/work/issuepit/issuepit/src/IssuePit.ServiceDefaults/obj/Debug/net10.0/IssuePit.ServiceDefaults.AssemblyInfoInputs.cache
+/home/runner/work/issuepit/issuepit/src/IssuePit.ServiceDefaults/obj/Debug/net10.0/IssuePit.ServiceDefaults.AssemblyInfo.cs
+/home/runner/work/issuepit/issuepit/src/IssuePit.ServiceDefaults/obj/Debug/net10.0/IssuePit.ServiceDefaults.csproj.CoreCompileInputs.cache
+/home/runner/work/issuepit/issuepit/src/IssuePit.ServiceDefaults/obj/Debug/net10.0/IssuePit.ServiceDefaults.sourcelink.json
+/home/runner/work/issuepit/issuepit/src/IssuePit.ServiceDefaults/obj/Debug/net10.0/IssuePit.ServiceDefaults.dll
+/home/runner/work/issuepit/issuepit/src/IssuePit.ServiceDefaults/obj/Debug/net10.0/refint/IssuePit.ServiceDefaults.dll
+/home/runner/work/issuepit/issuepit/src/IssuePit.ServiceDefaults/obj/Debug/net10.0/IssuePit.ServiceDefaults.pdb
+/home/runner/work/issuepit/issuepit/src/IssuePit.ServiceDefaults/obj/Debug/net10.0/ref/IssuePit.ServiceDefaults.dll

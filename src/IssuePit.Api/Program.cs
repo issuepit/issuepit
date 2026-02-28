@@ -1,0 +1,41 @@
+using Confluent.Kafka;
+using IssuePit.Api.Endpoints;
+using IssuePit.Api.Middleware;
+using IssuePit.Api.Services;
+using IssuePit.Core.Data;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.AddServiceDefaults();
+
+builder.AddNpgsqlDbContext<IssuePitDbContext>("issuepit-db");
+
+builder.Services.AddScoped<TenantContext>();
+
+var kafkaBootstrapServers = builder.Configuration["Kafka__BootstrapServers"] ?? "localhost:9092";
+builder.Services.AddSingleton<IProducer<string, string>>(_ =>
+    new ProducerBuilder<string, string>(new ProducerConfig
+    {
+        BootstrapServers = kafkaBootstrapServers
+    }).Build());
+
+builder.Services.AddOpenApi();
+
+var app = builder.Build();
+
+app.MapDefaultEndpoints();
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+}
+
+app.UseMiddleware<TenantMiddleware>();
+
+app.MapOrganizationEndpoints();
+app.MapProjectEndpoints();
+app.MapIssueEndpoints();
+app.MapKanbanEndpoints();
+app.MapAgentEndpoints();
+
+app.Run();
