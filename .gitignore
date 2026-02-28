@@ -1,0 +1,40 @@
+# Build outputs
+bin/
+obj/
+out/
+dist/
+
+# .NET
+*.user
+*.suo
+.vs/
+_ReSharper*/
+*.DotSettings.user
+TestResults/
+*.nupkg
+*.snupkg
+
+# Aspire
+.aspire/
+
+# Node / Nuxt / frontend
+node_modules/
+.nuxt/
+.output/
+.cache/
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Rider / VS Code
+.idea/
+*.iml
+.vscode/

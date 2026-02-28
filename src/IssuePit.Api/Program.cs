@@ -1,5 +1,6 @@
 using Confluent.Kafka;
 using IssuePit.Api.Endpoints;
+using IssuePit.Api.Hubs;
 using IssuePit.Api.Middleware;
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
@@ -10,6 +11,8 @@ builder.AddServiceDefaults();
 
 builder.AddNpgsqlDbContext<IssuePitDbContext>("issuepit-db");
 
+builder.AddRedisClient("redis");
+
 builder.Services.AddScoped<TenantContext>();
 
 var kafkaBootstrapServers = builder.Configuration["Kafka__BootstrapServers"] ?? "localhost:9092";
@@ -18,6 +21,9 @@ builder.Services.AddSingleton<IProducer<string, string>>(_ =>
     {
         BootstrapServers = kafkaBootstrapServers
     }).Build());
+
+builder.Services.AddSignalR()
+    .AddStackExchangeRedis(builder.Configuration.GetConnectionString("redis") ?? "localhost:6379");
 
 builder.Services.AddOpenApi();
 
@@ -37,5 +43,9 @@ app.MapProjectEndpoints();
 app.MapIssueEndpoints();
 app.MapKanbanEndpoints();
 app.MapAgentEndpoints();
+app.MapConfigurationEndpoints();
+
+app.MapHub<AgentOutputHub>("/hubs/agent-output");
+app.MapHub<KanbanHub>("/hubs/kanban");
 
 app.Run();

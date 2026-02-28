@@ -11,6 +11,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@microsoft/signalr": "^8.0.7",
     "@nuxtjs/tailwindcss": "^6.12.2",
     "@pinia/nuxt": "^0.10.1",
     "nuxt": "^3.16.0",
