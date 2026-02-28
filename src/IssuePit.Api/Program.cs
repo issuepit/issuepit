@@ -33,6 +33,7 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 builder.Services.AddHostedService<RedisLogRelayService>();
 
 builder.Services.AddScoped<TenantContext>();
+builder.Services.AddScoped<TenantDatabaseService>();
 
 var kafkaBootstrapServers = builder.Configuration["Kafka__BootstrapServers"] ?? "localhost:9092";
 builder.Services.AddSingleton<IProducer<string, string>>(_ =>
@@ -77,6 +78,7 @@ app.MapKanbanEndpoints();
 app.MapAgentEndpoints();
 app.MapConfigurationEndpoints();
 app.MapCiCdEndpoints();
+app.MapTenantEndpoints();
 
 app.MapHub<AgentOutputHub>("/hubs/agent-output");
 app.MapHub<KanbanHub>("/hubs/kanban");
