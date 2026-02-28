@@ -37,6 +37,17 @@ builder.Services.AddSignalR()
 
 builder.Services.AddOpenApi();
 
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.WithOrigins(builder.Configuration["AllowedOrigins"]?.Split(',') ?? ["http://localhost:3000"])
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    });
+});
+
 var app = builder.Build();
 
 app.MapDefaultEndpoints();
@@ -47,6 +58,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseMiddleware<TenantMiddleware>();
+
+app.UseCors();
 
 app.MapOrganizationEndpoints();
 app.MapProjectEndpoints();
