@@ -21,6 +21,9 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<User> Users => Set<User>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
     public DbSet<RuntimeConfiguration> RuntimeConfigurations => Set<RuntimeConfiguration>();
+    public DbSet<AgentSession> AgentSessions => Set<AgentSession>();
+    public DbSet<CiCdRun> CiCdRuns => Set<CiCdRun>();
+    public DbSet<CiCdRunLog> CiCdRunLogs => Set<CiCdRunLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

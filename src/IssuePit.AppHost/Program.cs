@@ -22,7 +22,9 @@ var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("exe
 
 var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     .WithReference(kafka)
+    .WithReference(redis)
     .WaitFor(kafka)
+    .WaitFor(redis)
     .WithEnvironment("Kafka__BootstrapServers", kafka.Resource.ConnectionStringExpression);
 
 builder.Build().Run();

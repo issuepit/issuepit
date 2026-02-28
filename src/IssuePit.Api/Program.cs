@@ -4,6 +4,7 @@ using IssuePit.Api.Hubs;
 using IssuePit.Api.Middleware;
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,6 +13,15 @@ builder.AddServiceDefaults();
 builder.AddNpgsqlDbContext<IssuePitDbContext>("issuepit-db");
 
 builder.AddRedisClient("redis");
+
+// Register the Redis IConnectionMultiplexer for the relay service
+builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+{
+    var connStr = builder.Configuration.GetConnectionString("redis") ?? "localhost:6379";
+    return ConnectionMultiplexer.Connect(connStr);
+});
+
+builder.Services.AddHostedService<RedisLogRelayService>();
 
 builder.Services.AddScoped<TenantContext>();
 
@@ -44,8 +54,10 @@ app.MapIssueEndpoints();
 app.MapKanbanEndpoints();
 app.MapAgentEndpoints();
 app.MapConfigurationEndpoints();
+app.MapCiCdEndpoints();
 
 app.MapHub<AgentOutputHub>("/hubs/agent-output");
 app.MapHub<KanbanHub>("/hubs/kanban");
+app.MapHub<CiCdOutputHub>("/hubs/cicd-output");
 
 app.Run();
