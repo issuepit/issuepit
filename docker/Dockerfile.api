@@ -16,7 +16,7 @@ RUN dotnet publish IssuePit.Api/IssuePit.Api.csproj -c Release -o /app/publish -
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
-RUN addgroup --system app && adduser --system --ingroup app app
+RUN groupadd --system app && useradd --system --gid app app
 USER app
 
 COPY --from=build /app/publish .
