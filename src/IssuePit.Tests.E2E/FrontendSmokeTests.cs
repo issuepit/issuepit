@@ -23,6 +23,7 @@ public class FrontendSmokeTests : IAsyncLifetime
         _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
         {
             Headless = true,
+            Channel = "chrome",
         });
         _context = await _browser.NewContextAsync();
     }
