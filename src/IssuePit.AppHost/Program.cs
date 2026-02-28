@@ -16,7 +16,9 @@ var api = builder.AddProject<Projects.IssuePit_Api>("api")
     .WaitFor(redis);
 
 var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("execution-client")
+    .WithReference(postgres)
     .WithReference(kafka)
+    .WaitFor(postgres)
     .WaitFor(kafka)
     .WithEnvironment("Kafka__BootstrapServers", kafka.Resource.ConnectionStringExpression);
 
