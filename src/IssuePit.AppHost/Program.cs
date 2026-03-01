@@ -7,6 +7,10 @@ var kafka = builder.AddKafka("kafka");
 
 var redis = builder.AddValkey("redis");
 
+var migrator = builder.AddProject<Projects.IssuePit_Migrator>("migrator")
+    .WithReference(postgresDb)
+    .WaitFor(postgresServer);
+
 var frontend = builder.AddNpmApp("frontend", "../../frontend", "dev")
     .WithHttpEndpoint(env: "NUXT_PORT")
     .WithExternalHttpEndpoints();
@@ -16,7 +20,7 @@ var api = builder.AddProject<Projects.IssuePit_Api>("api")
     .WithReference(postgresServer)
     .WithReference(kafka)
     .WithReference(redis)
-    .WaitFor(postgresServer)
+    .WaitForCompletion(migrator)
     .WaitFor(kafka)
     .WaitFor(redis)
     .WithEnvironment("AllowedOrigins", frontend.GetEndpoint("http"));

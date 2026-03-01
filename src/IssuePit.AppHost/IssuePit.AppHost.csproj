@@ -15,6 +15,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\IssuePit.Api\IssuePit.Api.csproj" />
+    <ProjectReference Include="..\IssuePit.Migrator\IssuePit.Migrator.csproj" />
     <ProjectReference Include="..\IssuePit.McpServer\IssuePit.McpServer.csproj" />
     <ProjectReference Include="..\IssuePit.ExecutionClient\IssuePit.ExecutionClient.csproj" />
     <ProjectReference Include="..\IssuePit.CiCdClient\IssuePit.CiCdClient.csproj" />
