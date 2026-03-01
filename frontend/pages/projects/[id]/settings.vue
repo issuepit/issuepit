@@ -319,7 +319,8 @@ async function fetchProjectAgents() {
   }
 }
 
-async function saveGeneral() {  savingGeneral.value = true
+async function saveGeneral() {
+  savingGeneral.value = true
   saveGeneralError.value = null
   try {
     await projectsStore.updateProject(id, {
@@ -354,7 +355,8 @@ async function saveRunnerOptions() {
   }
 }
 
-async function saveRepo() {  if (!repoForm.remoteUrl) return
+async function saveRepo() {
+  if (!repoForm.remoteUrl) return
   const payload = {
     remoteUrl: repoForm.remoteUrl,
     defaultBranch: repoForm.defaultBranch || 'main',
