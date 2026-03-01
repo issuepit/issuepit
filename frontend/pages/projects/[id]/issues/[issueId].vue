@@ -34,7 +34,7 @@
           <!-- Description -->
           <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
             <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Description</h2>
-            <div v-if="!editingBody" @click="editingBody = true; descTab = 'write'; bodyEdit = store.currentIssue.body ?? ''"
+            <div v-if="!editingBody" @click="startEditingBody"
               class="text-sm text-gray-300 cursor-text min-h-12">
               <div v-if="store.currentIssue.body"
                 class="prose prose-invert prose-sm max-w-none"
@@ -328,7 +328,13 @@ const creatingSubIssue = ref(false)
 const newSubIssueTitle = ref('')
 
 function parseMarkdown(text: string): string {
-  return DOMPurify.sanitize(marked.parse(text) as string)
+  return DOMPurify.sanitize(marked(text, { async: false }))
+}
+
+function startEditingBody() {
+  bodyEdit.value = store.currentIssue?.body ?? ''
+  descTab.value = 'write'
+  editingBody.value = true
 }
 
 const renderedBody = computed(() => {

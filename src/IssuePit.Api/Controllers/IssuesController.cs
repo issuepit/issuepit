@@ -80,7 +80,7 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         var issue = await db.Issues.FindAsync(id);
         if (issue is null) return NotFound();
         if (req.Title is not null) issue.Title = req.Title;
-        if (req.Body is not null) issue.Body = string.IsNullOrEmpty(req.Body) ? null : req.Body;
+        if (req.Body is not null) issue.Body = req.Body;
         if (req.Status.HasValue) issue.Status = req.Status.Value;
         if (req.Priority.HasValue) issue.Priority = req.Priority.Value;
         if (req.Type.HasValue) issue.Type = req.Type.Value;
