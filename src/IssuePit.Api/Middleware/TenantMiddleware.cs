@@ -1,24 +1,35 @@
+using System.Data.Common;
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 
 namespace IssuePit.Api.Middleware;
 
-public class TenantMiddleware(RequestDelegate next)
+public class TenantMiddleware(RequestDelegate next, ILogger<TenantMiddleware> logger)
 {
     public async Task InvokeAsync(HttpContext context, IssuePitDbContext db, TenantContext tenantContext)
     {
-        string? tenantId = context.Request.Headers["X-Tenant-Id"].FirstOrDefault();
+        try
+        {
+            string? tenantId = context.Request.Headers["X-Tenant-Id"].FirstOrDefault();
 
-        if (!string.IsNullOrEmpty(tenantId) && Guid.TryParse(tenantId, out var tid))
-        {
-            tenantContext.CurrentTenant = await db.Tenants.FindAsync(tid);
+            if (!string.IsNullOrEmpty(tenantId) && Guid.TryParse(tenantId, out var tid))
+            {
+                tenantContext.CurrentTenant = await db.Tenants.FindAsync(tid);
+            }
+            else
+            {
+                var hostname = context.Request.Host.Host;
+                tenantContext.CurrentTenant = await db.Tenants
+                    .FirstOrDefaultAsync(t => t.Hostname == hostname);
+            }
         }
-        else
+        catch (Exception ex) when (ex is DbException or InvalidOperationException)
         {
-            var hostname = context.Request.Host.Host;
-            tenantContext.CurrentTenant = await db.Tenants
-                .FirstOrDefaultAsync(t => t.Hostname == hostname);
+            // Default tenant: uses the default DB and leaves CurrentTenant as null.
+            // This occurs locally and in tests where the tenants table may not exist yet.
+            logger.LogWarning(ex, "Tenant lookup failed; using default tenant (null).");
+            tenantContext.CurrentTenant = null;
         }
 
         await next(context);
