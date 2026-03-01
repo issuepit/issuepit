@@ -3,10 +3,16 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Microsoft.Extensions.Hosting;
 
-public sealed class KafkaHealthCheck(string bootstrapServers) : IHealthCheck, IDisposable
+public sealed class KafkaHealthCheck : IHealthCheck, IDisposable
 {
-    private readonly IAdminClient _adminClient = new AdminClientBuilder(
-        new AdminClientConfig { BootstrapServers = bootstrapServers }).Build();
+    private readonly IAdminClient _adminClient;
+
+    public KafkaHealthCheck(string bootstrapServers)
+    {
+        var config = new AdminClientConfig { BootstrapServers = bootstrapServers };
+        config.Set("log_level", "0");
+        _adminClient = new AdminClientBuilder(config).Build();
+    }
 
     public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
