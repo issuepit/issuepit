@@ -1,16 +1,20 @@
 using System.ComponentModel;
+using Microsoft.Extensions.Options;
 using ModelContextProtocol.Server;
 
 namespace IssuePit.McpServer.Tools;
 
 [McpServerToolType]
-public class IssueTools(IssuePitApiClient api)
+public class IssueTools(IssuePitApiClient api, IOptions<McpServerOptions> options)
 {
+    private McpServerOptions Opts => options.Value;
+
     [McpServerTool, Description("List all issues for a given project.")]
     public async Task<string> ListIssues(
         [Description("The project ID (GUID).")] Guid projectId,
         CancellationToken ct = default)
     {
+        EnforceProjectScope(projectId);
         var result = await api.GetAsync<object>($"/api/issues?projectId={projectId}", ct);
         return Serialize(result);
     }
@@ -24,6 +28,15 @@ public class IssueTools(IssuePitApiClient api)
         return Serialize(result);
     }
 
+    [McpServerTool, Description("List sub-issues of a given parent issue.")]
+    public async Task<string> ListSubIssues(
+        [Description("The parent issue ID (GUID).")] Guid parentIssueId,
+        CancellationToken ct = default)
+    {
+        var result = await api.GetAsync<object>($"/api/issues/{parentIssueId}/sub-issues", ct);
+        return Serialize(result);
+    }
+
     [McpServerTool, Description("Create a new issue in a project.")]
     public async Task<string> CreateIssue(
         [Description("The project ID (GUID).")] Guid projectId,
@@ -32,9 +45,11 @@ public class IssueTools(IssuePitApiClient api)
         [Description("Status: backlog, todo, in_progress, in_review, done, cancelled.")] string status = "backlog",
         [Description("Priority: no_priority, urgent, high, medium, low.")] string priority = "no_priority",
         [Description("Type: issue, bug, feature, task, epic.")] string type = "issue",
+        [Description("Optional parent issue ID (GUID) to create a sub-issue.")] Guid? parentIssueId = null,
         CancellationToken ct = default)
     {
-        var payload = new { projectId, title, body, status, priority, type };
+        EnforceProjectScope(projectId);
+        var payload = new { projectId, title, body, status, priority, type, parentIssueId };
         var result = await api.PostAsync<object>("/api/issues", payload, ct);
         return Serialize(result);
     }
@@ -59,9 +74,13 @@ public class IssueTools(IssuePitApiClient api)
         [Description("The issue ID (GUID).")] Guid id,
         CancellationToken ct = default)
     {
+        ToolGuard.EnforceDestructive(Opts, "DeleteIssue");
         await api.DeleteAsync($"/api/issues/{id}", ct);
         return "Issue deleted successfully.";
     }
+
+    private void EnforceProjectScope(Guid projectId) =>
+        ToolGuard.EnforceProjectScope(Opts, projectId);
 
     private static string Serialize(object? value) => ToolSerializer.Serialize(value);
 }

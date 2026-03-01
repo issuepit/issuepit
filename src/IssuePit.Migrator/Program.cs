@@ -24,48 +24,6 @@ logger.LogInformation("Ensuring database schema is up to date...");
 // Create schema for fresh databases; no-op for existing ones.
 await db.Database.EnsureCreatedAsync();
 
-// Apply incremental schema changes for existing databases (idempotent).
-await db.Database.ExecuteSqlRawAsync("""
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash text NULL;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin boolean NOT NULL DEFAULT false;
-    CREATE TABLE IF NOT EXISTS telegram_bots (
-        id uuid PRIMARY KEY,
-        org_id uuid NULL REFERENCES organizations(id) ON DELETE CASCADE,
-        project_id uuid NULL REFERENCES projects(id) ON DELETE CASCADE,
-        name character varying(200) NOT NULL,
-        encrypted_bot_token text NOT NULL,
-        chat_id character varying(100) NOT NULL,
-        events integer NOT NULL DEFAULT 0,
-        is_silent boolean NOT NULL DEFAULT false,
-        created_at timestamp with time zone NOT NULL DEFAULT now()
-    );
-    ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS description text NULL;
-    ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS allowed_tools text NOT NULL DEFAULT '[]';
-    CREATE TABLE IF NOT EXISTS issue_comments (
-        id uuid PRIMARY KEY,
-        issue_id uuid NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
-        user_id uuid NULL REFERENCES users(id) ON DELETE SET NULL,
-        body text NOT NULL,
-        created_at timestamptz NOT NULL DEFAULT now(),
-        updated_at timestamptz NOT NULL DEFAULT now()
-    );
-    ALTER TABLE agents ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT false;
-    CREATE TABLE IF NOT EXISTS mcp_server_secrets (
-        id uuid PRIMARY KEY,
-        mcp_server_id uuid NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
-        key varchar(200) NOT NULL,
-        encrypted_value text NOT NULL,
-        created_at timestamptz NOT NULL DEFAULT now()
-    );
-    CREATE TABLE IF NOT EXISTS mcp_server_projects (
-        mcp_server_id uuid NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
-        project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-        PRIMARY KEY (mcp_server_id, project_id)
-    );
-    """);
-
-logger.LogInformation("Schema applied successfully.");
-
 logger.LogInformation("Running database seed...");
 await SeedAsync(db, logger);
 logger.LogInformation("Seed completed.");

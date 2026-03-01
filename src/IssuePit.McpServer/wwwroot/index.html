@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IssuePit MCP Playground</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+    header { background: #1e293b; border-bottom: 1px solid #334155; padding: 1rem 2rem; display: flex; align-items: center; gap: 1rem; }
+    header h1 { font-size: 1.25rem; font-weight: 600; color: #f1f5f9; }
+    header span { font-size: 0.75rem; background: #0ea5e9; color: #fff; padding: 2px 8px; border-radius: 9999px; }
+    main { max-width: 960px; margin: 2rem auto; padding: 0 1rem; display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    section { background: #1e293b; border: 1px solid #334155; border-radius: 0.75rem; padding: 1.25rem; }
+    section h2 { font-size: 0.875rem; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 1rem; }
+    .tool-list { list-style: none; display: flex; flex-direction: column; gap: 0.375rem; max-height: 420px; overflow-y: auto; }
+    .tool-list li { cursor: pointer; padding: 0.5rem 0.75rem; border-radius: 0.5rem; font-size: 0.875rem; border: 1px solid transparent; transition: background 0.15s; }
+    .tool-list li:hover { background: #334155; }
+    .tool-list li.active { background: #0ea5e9; color: #fff; border-color: #0284c7; }
+    label { display: block; font-size: 0.8rem; color: #94a3b8; margin-bottom: 0.25rem; margin-top: 0.75rem; }
+    input, textarea, select { width: 100%; background: #0f172a; border: 1px solid #334155; color: #e2e8f0; border-radius: 0.5rem; padding: 0.5rem 0.75rem; font-size: 0.875rem; font-family: inherit; }
+    input:focus, textarea:focus, select:focus { outline: 2px solid #0ea5e9; outline-offset: 1px; }
+    textarea { min-height: 5rem; resize: vertical; }
+    button { margin-top: 1rem; padding: 0.5rem 1.25rem; background: #0ea5e9; color: #fff; border: none; border-radius: 0.5rem; font-size: 0.875rem; cursor: pointer; font-weight: 600; transition: background 0.15s; }
+    button:hover { background: #0284c7; }
+    button:disabled { background: #475569; cursor: not-allowed; }
+    #result-box { grid-column: 1 / -1; }
+    #result-box pre { background: #0f172a; border: 1px solid #334155; border-radius: 0.5rem; padding: 1rem; overflow-x: auto; font-size: 0.8rem; white-space: pre-wrap; word-break: break-all; color: #86efac; min-height: 120px; }
+    .desc { font-size: 0.8rem; color: #64748b; margin-bottom: 0.75rem; font-style: italic; }
+    #status-bar { font-size: 0.75rem; color: #64748b; margin-top: 0.5rem; }
+    #status-bar.error { color: #f87171; }
+    #status-bar.ok { color: #86efac; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>IssuePit MCP Playground</h1>
+    <span>Tools Tester</span>
+  </header>
+
+  <main>
+    <section>
+      <h2>Available Tools</h2>
+      <ul class="tool-list" id="tool-list"><li style="color:#64748b">Loading…</li></ul>
+    </section>
+
+    <section>
+      <h2>Call Tool</h2>
+      <div id="tool-form">
+        <p class="desc" id="tool-desc">Select a tool from the list to get started.</p>
+        <div id="tool-params"></div>
+        <button id="call-btn" disabled>Call Tool</button>
+        <p id="status-bar"></p>
+      </div>
+    </section>
+
+    <section id="result-box">
+      <h2>Result</h2>
+      <pre id="result">// result will appear here</pre>
+    </section>
+  </main>
+
+  <script>
+    // Use the MCP Streamable HTTP transport endpoint
+    const MCP_URL = '/mcp';
+    let tools = [];
+    let selectedTool = null;
+    let reqId = 1;
+
+    async function mcpRequest(method, params) {
+      const body = JSON.stringify({ jsonrpc: '2.0', id: reqId++, method, params });
+      const res = await fetch(MCP_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' },
+        body,
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+      const ct = res.headers.get('content-type') ?? '';
+      if (ct.includes('text/event-stream')) {
+        const text = await res.text();
+        const dataLine = text.split('\n').find(l => l.startsWith('data:'));
+        if (!dataLine) throw new Error('No data in SSE response');
+        return JSON.parse(dataLine.slice(5).trim());
+      }
+      return res.json();
+    }
+
+    async function loadTools() {
+      try {
+        const rpc = await mcpRequest('tools/list', {});
+        tools = rpc.result?.tools ?? [];
+        renderToolList();
+      } catch (e) {
+        document.getElementById('tool-list').innerHTML =
+          `<li style="color:#f87171">Failed to load tools: ${e.message}</li>`;
+      }
+    }
+
+    function renderToolList() {
+      const ul = document.getElementById('tool-list');
+      if (!tools.length) { ul.innerHTML = '<li style="color:#64748b">No tools found.</li>'; return; }
+      ul.innerHTML = tools.map((t, i) =>
+        `<li data-idx="${i}">${t.name}</li>`).join('');
+      ul.querySelectorAll('li').forEach(li => li.addEventListener('click', () => selectTool(+li.dataset.idx)));
+    }
+
+    function selectTool(idx) {
+      selectedTool = tools[idx];
+      document.querySelectorAll('#tool-list li').forEach((li, i) =>
+        li.classList.toggle('active', i === idx));
+      document.getElementById('tool-desc').textContent = selectedTool.description ?? '';
+      renderParams();
+      document.getElementById('call-btn').disabled = false;
+    }
+
+    function renderParams() {
+      const container = document.getElementById('tool-params');
+      const props = selectedTool.inputSchema?.properties ?? {};
+      const required = selectedTool.inputSchema?.required ?? [];
+      container.innerHTML = Object.entries(props).map(([name, schema]) => {
+        const req = required.includes(name) ? ' *' : '';
+        const desc = schema.description ? ` — ${schema.description}` : '';
+        const label = `<label for="param-${name}">${name}${req}${desc}</label>`;
+        const tag = schema.type === 'boolean'
+          ? `<select id="param-${name}" name="${name}"><option value="">—</option><option value="true">true</option><option value="false">false</option></select>`
+          : `<input type="text" id="param-${name}" name="${name}" placeholder="${schema.type ?? 'string'}" />`;
+        return label + tag;
+      }).join('');
+    }
+
+    document.getElementById('call-btn').addEventListener('click', async () => {
+      if (!selectedTool) return;
+      const btn = document.getElementById('call-btn');
+      const status = document.getElementById('status-bar');
+      const result = document.getElementById('result');
+      btn.disabled = true;
+      status.className = '';
+      status.textContent = 'Calling…';
+
+      const props = selectedTool.inputSchema?.properties ?? {};
+      const args = {};
+      for (const name of Object.keys(props)) {
+        const el = document.getElementById(`param-${name}`);
+        if (el && el.value !== '') args[name] = el.value;
+      }
+
+      try {
+        const rpc = await mcpRequest('tools/call', { name: selectedTool.name, arguments: args });
+        const content = rpc.result?.content ?? rpc.error ?? rpc;
+        result.textContent = JSON.stringify(content, null, 2);
+        status.className = 'ok';
+        status.textContent = `✓ Success (id=${rpc.id})`;
+      } catch (e) {
+        result.textContent = e.message;
+        status.className = 'error';
+        status.textContent = `✗ Error: ${e.message}`;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    loadTools();
+  </script>
+</body>
+</html>

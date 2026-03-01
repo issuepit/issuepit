@@ -1,16 +1,19 @@
 <template>
   <div class="p-8">
     <div class="flex items-center justify-between mb-6">
-      <h1 class="text-2xl font-bold text-white">
-        Issues
-        <span class="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full ml-2 font-normal">
-          {{ filteredIssues.length }}
-        </span>
-      </h1>
+      <div>
+        <h1 class="text-2xl font-bold text-white">
+          {{ feedFilter ? filterTitle : 'Issues' }}
+          <span v-if="!feedFilter" class="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full ml-2 font-normal">
+            {{ filteredIssues.length }}
+          </span>
+        </h1>
+        <p v-if="feedFilter" class="text-gray-400 mt-1 text-sm">{{ filterDescription }}</p>
+      </div>
     </div>
 
-    <!-- Filters -->
-    <div class="flex flex-wrap items-center gap-2 mb-5">
+    <!-- Filters (only for non-feed mode) -->
+    <div v-if="!feedFilter" class="flex flex-wrap items-center gap-2 mb-5">
       <input v-model="search" type="text" placeholder="Search issues..."
         class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-brand-500 w-56" />
 
@@ -35,7 +38,7 @@
 
     <!-- Issues Table -->
     <div v-else class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-      <div v-if="filteredIssues.length === 0" class="py-16 text-center">
+      <div v-if="displayedIssues.length === 0" class="py-16 text-center">
         <p class="text-gray-400">No issues found</p>
         <NuxtLink to="/projects" class="mt-3 inline-block text-brand-400 hover:text-brand-300 text-sm">
           Browse Projects →
@@ -53,7 +56,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="issue in filteredIssues" :key="issue.id"
+          <tr v-for="issue in displayedIssues" :key="issue.id"
             class="border-b border-gray-800/50 hover:bg-gray-800/40 cursor-pointer transition-colors"
             @click="$router.push(`/projects/${issue.projectId}/issues/${issue.id}`)">
             <td class="px-4 py-3">
@@ -95,7 +98,36 @@ const projectsStore = useProjectsStore()
 const route = useRoute()
 const router = useRouter()
 
-// Initialise filters from query params
+type FeedFilter = 'my' | 'open' | 'unassigned' | 'waiting'
+
+// Feed filter from sidebar navigation (?filter=)
+const feedFilter = computed<FeedFilter | null>(() => {
+  const f = route.query.filter as string
+  if (f === 'my' || f === 'open' || f === 'unassigned' || f === 'waiting') return f
+  return null
+})
+
+const filterTitle = computed(() => {
+  switch (feedFilter.value) {
+    case 'open': return 'Open Issues'
+    case 'unassigned': return 'Unassigned Issues'
+    case 'waiting': return 'Waiting for Human'
+    case 'my': return 'My Issues'
+    default: return 'Issues'
+  }
+})
+
+const filterDescription = computed(() => {
+  switch (feedFilter.value) {
+    case 'open': return 'All open issues across your projects'
+    case 'unassigned': return 'Issues with no assignees'
+    case 'waiting': return 'Issues assigned to an agent waiting for human input'
+    case 'my': return 'Issues assigned to you across all projects'
+    default: return ''
+  }
+})
+
+// Search/status filters for non-feed mode
 const OPEN_FILTER = 'open'
 const search = ref('')
 const filterStatus = ref<IssueStatus | 'open' | ''>('')
@@ -111,10 +143,8 @@ const statuses = [
 
 const hasFilters = computed(() => search.value || filterStatus.value)
 
-// Apply filters to the store whenever they change
 watch([search, filterStatus], () => {
   if (filterStatus.value === OPEN_FILTER) {
-    // "Open" means everything except Done and Cancelled — we filter client-side below
     store.setFilters({ search: search.value || undefined })
   } else {
     store.setFilters({
@@ -124,8 +154,9 @@ watch([search, filterStatus], () => {
   }
 })
 
-// Override filteredIssues for the "open" pseudo-filter
-const filteredIssues = computed(() => {
+// Issues to display — feed issues (server-side) or filtered store issues (client-side)
+const displayedIssues = computed(() => {
+  if (feedFilter.value) return store.issues
   if (filterStatus.value === OPEN_FILTER) {
     return store.filteredIssues.filter(
       i => i.status !== IssueStatus.Done && i.status !== IssueStatus.Cancelled
@@ -134,15 +165,26 @@ const filteredIssues = computed(() => {
   return store.filteredIssues
 })
 
+const filteredIssues = computed(() => store.filteredIssues)
+
+// When sidebar feed filter changes, reload from server
+watch(feedFilter, async (val) => {
+  if (val) await store.fetchFeed(val)
+}, { immediate: true })
+
 onMounted(async () => {
   const statusParam = route.query.status as string | undefined
   if (statusParam) {
     filterStatus.value = statusParam as IssueStatus | 'open'
   }
-  await Promise.allSettled([
-    store.fetchIssues(),
-    projectsStore.fetchProjects()
-  ])
+  if (!feedFilter.value) {
+    await Promise.allSettled([
+      store.fetchIssues(),
+      projectsStore.fetchProjects()
+    ])
+  } else {
+    await projectsStore.fetchProjects()
+  }
 })
 
 function clearFilters() {

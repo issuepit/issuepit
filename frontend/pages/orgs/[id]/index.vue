@@ -70,7 +70,7 @@
                 v-for="team in teamsStore.teams"
                 :key="team.id"
                 class="hover:bg-gray-900/50 transition-colors cursor-pointer"
-                @click="openTeamMembers(team)"
+                @click="navigateTo(`/orgs/${orgId}/teams/${team.id}`)"
               >
                 <td class="px-4 py-3 text-white font-medium">{{ team.name }}</td>
                 <td class="px-4 py-3 text-gray-400 font-mono text-xs">{{ team.slug }}</td>
@@ -167,6 +167,55 @@
           <p class="text-gray-400 font-medium">No members yet</p>
         </div>
       </div>
+
+      <!-- Projects Tab -->
+      <div v-if="activeTab === 'projects'">
+        <div class="flex items-center justify-between mb-4">
+          <p class="text-gray-400 text-sm">{{ orgsStore.orgProjects.length }} project{{ orgsStore.orgProjects.length === 1 ? '' : 's' }}</p>
+        </div>
+
+        <div v-if="orgsStore.loading" class="flex items-center justify-center py-12">
+          <div class="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+
+        <div v-else-if="orgsStore.orgProjects.length" class="rounded-xl border border-gray-800 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-900">
+              <tr>
+                <th class="text-left px-4 py-3 text-gray-400 font-medium">Name</th>
+                <th class="text-left px-4 py-3 text-gray-400 font-medium">Slug</th>
+                <th class="text-left px-4 py-3 text-gray-400 font-medium">Created</th>
+                <th class="px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-800">
+              <tr
+                v-for="project in orgsStore.orgProjects"
+                :key="project.id"
+                class="hover:bg-gray-900/50 transition-colors cursor-pointer"
+                @click="navigateTo(`/projects/${project.id}`)"
+              >
+                <td class="px-4 py-3 text-white font-medium">{{ project.name }}</td>
+                <td class="px-4 py-3 text-gray-400 font-mono text-xs">{{ project.slug }}</td>
+                <td class="px-4 py-3 text-gray-400">{{ formatDate(project.createdAt) }}</td>
+                <td class="px-4 py-3 text-right">
+                  <NuxtLink
+                    :to="`/projects/${project.id}`"
+                    class="text-xs text-brand-400 hover:text-brand-300 px-3 py-1.5 rounded-md border border-brand-900/30 hover:bg-brand-900/20 transition-colors"
+                    @click.stop
+                  >
+                    View
+                  </NuxtLink>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div v-else class="flex flex-col items-center justify-center py-16 text-center">
+          <p class="text-gray-400 font-medium">No projects yet</p>
+        </div>
+      </div>
     </template>
 
     <!-- Not found / Error -->
@@ -220,84 +269,40 @@
       </div>
     </div>
 
-    <!-- Team Members Modal -->
-    <div v-if="showTeamMembersModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-lg p-6 shadow-xl">
-        <div class="flex items-center justify-between mb-5">
-          <h2 class="text-lg font-bold text-white">{{ selectedTeam?.name }} — Members</h2>
-          <button class="text-gray-500 hover:text-gray-300 transition-colors" @click="showTeamMembersModal = false">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        <div v-if="teamsStore.loading" class="flex items-center justify-center py-8">
-          <div class="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
-        </div>
-
-        <div v-else>
-          <div v-if="teamsStore.members.length" class="mb-4 rounded-lg border border-gray-800 overflow-hidden">
-            <table class="w-full text-sm">
-              <thead class="bg-gray-900">
-                <tr>
-                  <th class="text-left px-4 py-2.5 text-gray-400 font-medium">User</th>
-                  <th class="text-left px-4 py-2.5 text-gray-400 font-medium">Email</th>
-                  <th class="px-4 py-2.5" />
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-gray-800">
-                <tr v-for="m in teamsStore.members" :key="m.userId" class="hover:bg-gray-900/50">
-                  <td class="px-4 py-2.5 text-white">{{ m.user?.username }}</td>
-                  <td class="px-4 py-2.5 text-gray-400 text-xs">{{ m.user?.email }}</td>
-                  <td class="px-4 py-2.5 text-right">
-                    <button
-                      class="text-xs text-red-400 hover:text-red-300 transition-colors"
-                      @click="removeTeamMember(m.userId)"
-                    >
-                      Remove
-                    </button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p v-else class="text-gray-500 text-sm mb-4">No members yet.</p>
-
-          <!-- Add member to team -->
-          <div class="flex gap-2">
-            <input
-              v-model="newTeamMemberUserId"
-              type="text"
-              placeholder="User ID"
-              class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
-            />
-            <button
-              class="bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-              @click="addTeamMember"
-            >
-              Add
-            </button>
-          </div>
-          <p class="text-xs text-gray-500 mt-1.5">Enter the user's UUID to add them to the team.</p>
-        </div>
-      </div>
-    </div>
-
     <!-- Add Org Member Modal -->
     <div v-if="showAddMember" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
       <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md p-6 shadow-xl">
         <h2 class="text-lg font-bold text-white mb-5">Add Member</h2>
         <form class="space-y-4" @submit.prevent="handleAddMember">
           <div>
-            <label class="block text-sm font-medium text-gray-300 mb-1.5">User ID</label>
-            <input
-              v-model="addMemberForm.userId"
-              type="text"
-              required
-              placeholder="User UUID"
-              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
-            />
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Search User</label>
+            <div class="relative">
+              <input
+                v-model="memberSearchQuery"
+                type="text"
+                placeholder="Search by username…"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                @input="onMemberSearch"
+              />
+              <div
+                v-if="memberSearchResults.length"
+                class="absolute z-10 mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden"
+              >
+                <button
+                  v-for="user in memberSearchResults"
+                  :key="user.id"
+                  type="button"
+                  class="w-full text-left px-3 py-2 hover:bg-gray-700 transition-colors"
+                  @click="selectMemberUser(user)"
+                >
+                  <span class="text-white text-sm font-medium">{{ user.username }}</span>
+                  <span class="text-gray-400 text-xs ml-2">{{ user.email }}</span>
+                </button>
+              </div>
+            </div>
+            <p v-if="addMemberForm.userId" class="text-xs text-brand-400 mt-1">
+              Selected: {{ memberSearchQuery }}
+            </p>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-300 mb-1.5">Role</label>
@@ -311,7 +316,7 @@
           <div class="flex gap-3 pt-1">
             <button
               type="submit"
-              :disabled="savingMember"
+              :disabled="savingMember || !addMemberForm.userId"
               class="flex-1 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
             >
               {{ savingMember ? 'Adding…' : 'Add Member' }}
@@ -319,7 +324,7 @@
             <button
               type="button"
               class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 rounded-lg transition-colors"
-              @click="showAddMember = false"
+              @click="closeAddMember"
             >
               Cancel
             </button>
@@ -337,7 +342,7 @@
 import { useOrgsStore } from '~/stores/orgs'
 import { useTeamsStore } from '~/stores/teams'
 import { OrgRole, OrgRoleLabels } from '~/types'
-import type { Team } from '~/types'
+import type { Team, User } from '~/types'
 
 const route = useRoute()
 const orgId = route.params.id as string
@@ -345,9 +350,12 @@ const orgId = route.params.id as string
 const orgsStore = useOrgsStore()
 const teamsStore = useTeamsStore()
 
+const api = useApi()
+
 const tabs = [
   { id: 'teams', label: 'Teams' },
   { id: 'members', label: 'Members' },
+  { id: 'projects', label: 'Projects' },
 ]
 const activeTab = ref('teams')
 
@@ -362,6 +370,7 @@ onMounted(async () => {
 watch(activeTab, async (tab) => {
   if (tab === 'members') await orgsStore.fetchMembers(orgId)
   if (tab === 'teams') await teamsStore.fetchTeams(orgId)
+  if (tab === 'projects') await orgsStore.fetchOrgProjects(orgId)
 })
 
 // --- Teams ---
@@ -414,42 +423,46 @@ function confirmDeleteTeam(id: string, name: string) {
   }
 }
 
-// --- Team Members Modal ---
-const showTeamMembersModal = ref(false)
-const selectedTeam = ref<Team | null>(null)
-const newTeamMemberUserId = ref('')
-
-async function openTeamMembers(team: Team) {
-  selectedTeam.value = team
-  showTeamMembersModal.value = true
-  await teamsStore.fetchMembers(orgId, team.id)
-}
-
-async function addTeamMember() {
-  if (!newTeamMemberUserId.value || !selectedTeam.value) return
-  await teamsStore.addMember(orgId, selectedTeam.value.id, newTeamMemberUserId.value)
-  newTeamMemberUserId.value = ''
-}
-
-async function removeTeamMember(userId: string) {
-  if (!selectedTeam.value) return
-  if (confirm('Remove this member from the team?')) {
-    await teamsStore.removeMember(orgId, selectedTeam.value.id, userId)
-  }
-}
-
 // --- Org Members ---
 const showAddMember = ref(false)
 const savingMember = ref(false)
 const addMemberForm = reactive({ userId: '', role: OrgRole.Member })
+const memberSearchQuery = ref('')
+const memberSearchResults = ref<User[]>([])
+
+async function onMemberSearch() {
+  addMemberForm.userId = ''
+  if (!memberSearchQuery.value.trim()) {
+    memberSearchResults.value = []
+    return
+  }
+  try {
+    const data = await api.get<User[]>(`/api/users/search?q=${encodeURIComponent(memberSearchQuery.value)}`)
+    memberSearchResults.value = data
+  } catch {
+    memberSearchResults.value = []
+  }
+}
+
+function selectMemberUser(user: User) {
+  addMemberForm.userId = user.id
+  memberSearchQuery.value = user.username
+  memberSearchResults.value = []
+}
+
+function closeAddMember() {
+  showAddMember.value = false
+  memberSearchQuery.value = ''
+  memberSearchResults.value = []
+  Object.assign(addMemberForm, { userId: '', role: OrgRole.Member })
+}
 
 async function handleAddMember() {
   if (!addMemberForm.userId) return
   savingMember.value = true
   try {
     await orgsStore.addMember(orgId, addMemberForm.userId, addMemberForm.role)
-    showAddMember.value = false
-    Object.assign(addMemberForm, { userId: '', role: OrgRole.Member })
+    closeAddMember()
   } finally {
     savingMember.value = false
   }

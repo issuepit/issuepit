@@ -2,6 +2,7 @@ using Confluent.Kafka;
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
+using IssuePit.Core.Enums;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
@@ -23,6 +24,46 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         if (projectId.HasValue)
             query = query.Where(i => i.ProjectId == projectId.Value);
         var issues = await query.ToListAsync();
+        return Ok(issues);
+    }
+
+    /// <summary>
+    /// Returns cross-project issues filtered by <paramref name="filter"/>:
+    /// <list type="bullet">
+    ///   <item><c>my</c> – issues assigned to the current user.</item>
+    ///   <item><c>open</c> – all open issues (not done / cancelled).</item>
+    ///   <item><c>unassigned</c> – issues with no assignees.</item>
+    ///   <item><c>waiting</c> – issues assigned to an agent but no human assignee (waiting for human).</item>
+    /// </list>
+    /// </summary>
+    [HttpGet("feed")]
+    public async Task<IActionResult> GetFeed([FromQuery] string filter = "my")
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+
+        var projectIds = await db.Projects
+            .Include(p => p.Organization)
+            .Where(p => p.Organization.TenantId == ctx.CurrentTenant.Id)
+            .Select(p => p.Id)
+            .ToListAsync();
+
+        var query = db.Issues
+            .Include(i => i.Labels)
+            .Include(i => i.Assignees).ThenInclude(a => a.User)
+            .Include(i => i.Assignees).ThenInclude(a => a.Agent)
+            .Where(i => projectIds.Contains(i.ProjectId));
+
+        query = filter switch
+        {
+            "open" => query.Where(i => i.Status != Core.Enums.IssueStatus.Done && i.Status != Core.Enums.IssueStatus.Cancelled),
+            "unassigned" => query.Where(i => !i.Assignees.Any()),
+            "waiting" => query.Where(i => i.Assignees.Any() && i.Assignees.All(a => a.UserId == null)),
+            _ => ctx.CurrentUser != null
+                ? query.Where(i => i.Assignees.Any(a => a.UserId == ctx.CurrentUser.Id))
+                : query.Where(i => false),
+        };
+
+        var issues = await query.OrderByDescending(i => i.UpdatedAt).Take(100).ToListAsync();
         return Ok(issues);
     }
 
@@ -74,17 +115,17 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
     }
 
     [HttpPut("{id:guid}")]
-    public async Task<IActionResult> UpdateIssue(Guid id, [FromBody] Issue updated)
+    public async Task<IActionResult> UpdateIssue(Guid id, [FromBody] UpdateIssueRequest req)
     {
         var issue = await db.Issues.FindAsync(id);
         if (issue is null) return NotFound();
-        issue.Title = updated.Title;
-        issue.Body = updated.Body;
-        issue.Status = updated.Status;
-        issue.Priority = updated.Priority;
-        issue.Type = updated.Type;
-        issue.GitBranch = updated.GitBranch;
-        issue.MilestoneId = updated.MilestoneId;
+        if (req.Title is not null) issue.Title = req.Title;
+        if (req.Body is not null) issue.Body = req.Body;
+        if (req.Status.HasValue) issue.Status = req.Status.Value;
+        if (req.Priority.HasValue) issue.Priority = req.Priority.Value;
+        if (req.Type.HasValue) issue.Type = req.Type.Value;
+        if (req.GitBranch is not null) issue.GitBranch = req.GitBranch;
+        if (req.MilestoneId.HasValue) issue.MilestoneId = req.MilestoneId.Value;
         issue.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
         return Ok(issue);
@@ -210,3 +251,11 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
 public record CommentRequest(string Body, Guid? UserId);
 public record AssigneeRequest(Guid? UserId, Guid? AgentId);
 public record LabelAssignRequest(Guid LabelId);
+public record UpdateIssueRequest(
+    string? Title,
+    string? Body,
+    IssueStatus? Status,
+    IssuePriority? Priority,
+    IssueType? Type,
+    string? GitBranch,
+    Guid? MilestoneId);

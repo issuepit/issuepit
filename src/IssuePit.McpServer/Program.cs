@@ -4,6 +4,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 
+// Bind MCP server options (NonDestructive, AgentMode, ProjectId, …)
+builder.Services.Configure<McpServerOptions>(
+    builder.Configuration.GetSection(McpServerOptions.Section));
+
 // Configure the IssuePit API base URL and tenant from settings/environment
 var apiBaseUrl = builder.Configuration["IssuePit:ApiBaseUrl"] ?? "http://localhost:5000";
 var tenantId = builder.Configuration["IssuePit:TenantId"];
@@ -25,5 +29,9 @@ var app = builder.Build();
 
 app.MapDefaultEndpoints();
 app.MapMcp();
+
+// Serve the built-in playground UI for manual tool testing
+app.UseDefaultFiles();
+app.UseStaticFiles();
 
 app.Run();
