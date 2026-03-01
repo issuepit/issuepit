@@ -45,7 +45,7 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Restore
-        run: dotnet restore src/IssuePit.Core/IssuePit.Core.csproj
+        run: dotnet restore src/IssuePit.Api/IssuePit.Api.csproj
 
       - name: Install dotnet-ef tool
         run: dotnet tool install --global dotnet-ef --version 10.0.3
@@ -58,7 +58,8 @@ jobs:
             exit 0
           fi
           dotnet ef migrations has-pending-model-changes \
-            --project src/IssuePit.Core/IssuePit.Core.csproj
+            --project src/IssuePit.Core/IssuePit.Core.csproj \
+            --startup-project src/IssuePit.Api/IssuePit.Api.csproj
 
   unit-tests:
     name: Unit Tests
