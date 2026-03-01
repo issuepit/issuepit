@@ -69,7 +69,7 @@ builder.Services.AddAuthorization();
 // HttpClient used by AuthController to communicate with the GitHub API.
 builder.Services.AddHttpClient();
 
-var kafkaBootstrapServers = builder.Configuration["Kafka__BootstrapServers"] ?? "localhost:9092";
+var kafkaBootstrapServers = builder.Configuration.GetConnectionString("kafka") ?? "localhost:9092";
 builder.Services.AddSingleton<IProducer<string, string>>(_ =>
     new ProducerBuilder<string, string>(new ProducerConfig
     {

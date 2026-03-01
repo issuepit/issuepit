@@ -18,7 +18,7 @@ public class IssueWorker(
     // Tracks CancellationTokenSources for in-flight agent launches so they can be cancelled on demand.
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _activeSessions = new();
 
-    private string KafkaBootstrapServers => configuration["Kafka__BootstrapServers"] ?? "localhost:9092";
+    private string KafkaBootstrapServers => configuration.GetConnectionString("kafka") ?? "localhost:9092";
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {

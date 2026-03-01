@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
@@ -71,9 +72,9 @@ public static class ServiceDefaultsExtensions
         return builder;
     }
 
-    public static TBuilder AddKafkaHealthCheck<TBuilder>(this TBuilder builder, string configKey = "Kafka__BootstrapServers") where TBuilder : IHostApplicationBuilder
+    public static TBuilder AddKafkaHealthCheck<TBuilder>(this TBuilder builder, string connectionName = "kafka") where TBuilder : IHostApplicationBuilder
     {
-        var bootstrapServers = builder.Configuration[configKey] ?? "localhost:9092";
+        var bootstrapServers = builder.Configuration.GetConnectionString(connectionName) ?? "localhost:9092";
         builder.Services.AddHealthChecks()
             .AddCheck("kafka", new KafkaHealthCheck(bootstrapServers), tags: ["ready"]);
 
