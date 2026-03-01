@@ -493,3 +493,15 @@ export interface AgentSession {
   startedAt: string
   endedAt?: string
 }
+
+export interface DashboardAgentSession extends AgentSession {
+  projectId: string
+  projectName: string
+}
+
+export interface IssueHistoryEntry {
+  date: string
+  open: number
+  inProgress: number
+  done: number
+}
