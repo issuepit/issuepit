@@ -74,16 +74,9 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: backend-build
-          path: .
-
       - name: Unit Tests
         run: >
           dotnet test src/IssuePit.Tests.Unit/IssuePit.Tests.Unit.csproj
-          --no-build
           --configuration Release
           --filter "Category!=Integration&Category!=E2E"
           --verbosity normal
@@ -108,16 +101,9 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: backend-build
-          path: .
-
       - name: Integration Tests
         run: >
           dotnet test src/IssuePit.Tests.Integration/IssuePit.Tests.Integration.csproj
-          --no-build
           --configuration Release
           --filter "Category=Integration"
           --verbosity normal
@@ -136,7 +122,6 @@ jobs:
     needs: build
     env:
       FRONTEND_URL: http://localhost:3000
-      NUXT_PUBLIC_API_BASE: http://localhost:5000
     steps:
       - uses: actions/checkout@v4
 
@@ -152,22 +137,17 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: backend-build
-          path: .
-
-      - name: Install and build frontend
+      - name: Install frontend dependencies
         working-directory: frontend
-        run: npm ci && npm run build
+        run: npm ci
 
-      - name: Start frontend preview
-        working-directory: frontend
-        run: nohup npm run preview > preview.log 2>&1 &
+      - name: Build E2E test project
+        run: dotnet build src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj --configuration Release
 
-      - name: Wait for frontend
-        run: npx --yes wait-on ${{ env.FRONTEND_URL }} --timeout 60000
+      - name: Install Playwright browsers
+        run: |
+          PLAYWRIGHT_SCRIPT=$(find src/IssuePit.Tests.E2E/bin/Release -name 'playwright.ps1' | head -1)
+          pwsh "$PLAYWRIGHT_SCRIPT" install --with-deps chromium
 
       - name: E2E Tests
         run: >
