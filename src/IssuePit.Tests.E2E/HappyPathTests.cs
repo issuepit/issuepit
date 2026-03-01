@@ -331,8 +331,14 @@ public class HappyPathTests : IAsyncLifetime
             await page.ClickAsync("button[type='submit']");
             await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
 
-            // Navigate to org page
-            await page.GotoAsync($"/orgs/{orgId}");
+            // Navigate to orgs list first to ensure auth state is fully established,
+            // then use the SPA link to navigate to the specific org (avoids SSR hydration
+            // race conditions that can leave the org detail page in a loading/error state).
+            await page.GotoAsync("/orgs");
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForSelectorAsync($"a[href*='{orgId}']", new PageWaitForSelectorOptions { Timeout = 10_000 });
+            await page.ClickAsync($"a[href*='{orgId}']");
+            await page.WaitForURLAsync($"**/orgs/{orgId}", new PageWaitForURLOptions { Timeout = 10_000 });
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
 
             // Create a team via UI

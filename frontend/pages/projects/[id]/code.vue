@@ -347,6 +347,7 @@ import { useIssuesStore } from '~/stores/issues'
 import { IssueType, IssuePriority, IssueStatus } from '~/types'
 
 const route = useRoute()
+const router = useRouter()
 const id = route.params.id as string
 const store = useGitStore()
 
@@ -378,6 +379,30 @@ const localBranches = computed(() =>
   store.branches.filter(b => !b.isRemote)
 )
 
+// Handle browser back/forward navigation by syncing state with URL query params.
+// State is updated before router.push() is called, so these comparisons prevent
+// duplicate fetches when navigations are initiated within the component.
+watch(() => route.query, async (query) => {
+  if (!store.repo || !repoChecked.value) return
+  const path = (query.path as string) || ''
+  const file = (query.file as string) || ''
+  if (path !== currentPath.value) {
+    currentPath.value = path
+    selectedFile.value = ''
+    store.blob = null
+    await store.fetchTree(id, selectedBranch.value, path)
+  }
+  if (file !== selectedFile.value) {
+    if (file) {
+      selectedFile.value = file
+      await store.fetchBlob(id, file, selectedBranch.value)
+    } else {
+      selectedFile.value = ''
+      store.blob = null
+    }
+  }
+}, { deep: true })
+
 onMounted(async () => {
   store.reset()
   await store.fetchRepo(id)
@@ -399,6 +424,17 @@ async function initRepo() {
   const found = localBranches.value.find(b => b.name === def) ?? localBranches.value[0]
   selectedBranch.value = found?.name ?? def
   await store.fetchCommits(id, selectedBranch.value, 0, commitTake)
+  // Restore navigation state from URL query params (e.g. on page reload or direct link)
+  const queryPath = (route.query.path as string) || ''
+  const queryFile = (route.query.file as string) || ''
+  if (queryPath) {
+    currentPath.value = queryPath
+    await store.fetchTree(id, selectedBranch.value, queryPath)
+  }
+  if (queryFile) {
+    selectedFile.value = queryFile
+    await store.fetchBlob(id, queryFile, selectedBranch.value)
+  }
 }
 
 async function onBranchChange() {
@@ -409,6 +445,7 @@ async function onBranchChange() {
   commitSkip.value = 0
   if (activeTab.value === 'commits')
     await store.fetchCommits(id, selectedBranch.value, 0, commitTake)
+  router.push({ query: {} })
 }
 
 async function onEntryClick(entry: { type: string; path: string }) {
@@ -417,9 +454,12 @@ async function onEntryClick(entry: { type: string; path: string }) {
     selectedFile.value = ''
     store.blob = null
     await store.fetchTree(id, selectedBranch.value, entry.path)
+    router.push({ query: { path: entry.path } })
   } else {
     selectedFile.value = entry.path
     await store.fetchBlob(id, entry.path, selectedBranch.value)
+    // Use undefined for empty path so the query param is omitted from the URL
+    router.push({ query: { path: currentPath.value ? currentPath.value : undefined, file: entry.path } })
   }
 }
 
@@ -428,6 +468,8 @@ async function navigateTo(path: string) {
   selectedFile.value = ''
   store.blob = null
   await store.fetchTree(id, selectedBranch.value, path)
+  // Use undefined for empty path so the query param is omitted from the URL
+  router.push({ query: { path: path ? path : undefined } })
 }
 
 async function navigateUp() {

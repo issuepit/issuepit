@@ -3,7 +3,7 @@ using IssuePit.CiCdClient.Runtimes;
 using IssuePit.CiCdClient.Workers;
 using IssuePit.Core.Data;
 
-var builder = Host.CreateApplicationBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 builder.AddKafkaHealthCheck();
@@ -21,5 +21,6 @@ builder.Services.AddSingleton<CiCdRuntimeFactory>();
 
 builder.Services.AddHostedService<CiCdWorker>();
 
-var host = builder.Build();
-host.Run();
+var app = builder.Build();
+app.MapDefaultEndpoints();
+app.Run();

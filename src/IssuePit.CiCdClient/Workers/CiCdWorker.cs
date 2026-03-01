@@ -25,7 +25,8 @@ public class CiCdWorker(
         // Run the cancel-signal consumer in parallel with the trigger consumer.
         var cancelConsumerTask = RunCancelConsumerAsync(stoppingToken);
 
-        var bootstrapServers = configuration["Kafka__BootstrapServers"] ?? "localhost:9092";
+        var bootstrapServers = configuration.GetConnectionString("kafka")
+            ?? throw new InvalidOperationException("Kafka connection string 'kafka' is not configured.");
 
         var config = new ConsumerConfig
         {
@@ -69,7 +70,8 @@ public class CiCdWorker(
     /// <summary>Subscribes to 'cicd-cancel' and cancels any in-flight run matching the message key (runId).</summary>
     private async Task RunCancelConsumerAsync(CancellationToken stoppingToken)
     {
-        var bootstrapServers = configuration["Kafka__BootstrapServers"] ?? "localhost:9092";
+        var bootstrapServers = configuration.GetConnectionString("kafka")
+            ?? throw new InvalidOperationException("Kafka connection string 'kafka' is not configured.");
 
         var config = new ConsumerConfig
         {
@@ -190,7 +192,8 @@ public class CiCdWorker(
         {
             logger.LogError(ex, "CI/CD run {RunId} failed", run.Id);
             run.Status = CiCdRunStatus.Failed;
-            await AppendLogAsync(run.Id, $"ERROR: {ex.Message}", LogStream.Stderr, db, stoppingToken);
+            foreach (var line in ex.ToString().Split('\n'))
+                await AppendLogAsync(run.Id, line.TrimEnd('\r'), LogStream.Stderr, db, stoppingToken);
         }
         finally
         {

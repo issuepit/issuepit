@@ -17,6 +17,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <PackageReference Include="ModelContextProtocol" Version="1.0.0" />
     <PackageReference Include="Scalar.AspNetCore" Version="2.12.50" />
   </ItemGroup>
   <ItemGroup>

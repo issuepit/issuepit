@@ -1,5 +1,3 @@
-using Confluent.Kafka;
-using System;
 using System.Text.Json.Serialization;
 using IssuePit.Api.Hubs;
 using IssuePit.Api.Middleware;
@@ -13,6 +11,7 @@ using StackExchange.Redis;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+builder.AddKafkaProducer();
 builder.AddKafkaHealthCheck();
 
 if (builder.Environment.IsEnvironment("Testing"))
@@ -41,6 +40,19 @@ builder.Services.AddHostedService<MetricSnapshotService>();
 builder.Services.AddScoped<TenantContext>();
 builder.Services.AddScoped<TenantDatabaseService>();
 builder.Services.AddScoped<GitService>();
+builder.Services.AddScoped<ApiKeyResolverService>();
+builder.Services.AddScoped<IssueEnhancementService>();
+
+builder.Services.AddHttpClient("openrouter");
+
+// HTTP client for calling the MCP server for issue enhancement.
+// In Aspire, the URL is injected via McpServer__BaseUrl. Set McpServer:BaseUrl in
+// appsettings.Development.json when running without Aspire (default port is arbitrary).
+var mcpBaseUrl = builder.Configuration["McpServer:BaseUrl"] ?? "http://localhost:5100";
+builder.Services.AddHttpClient("mcp-server", client =>
+{
+    client.BaseAddress = new Uri(mcpBaseUrl);
+});
 
 // Cookie-based authentication for GitHub SSO sessions.
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -68,15 +80,6 @@ builder.Services.AddAuthorization();
 
 // HttpClient used by AuthController to communicate with the GitHub API.
 builder.Services.AddHttpClient();
-
-var kafkaBootstrapServers = builder.Configuration["Kafka__BootstrapServers"] ?? "localhost:9092";
-var kafkaProducerConfig = new ProducerConfig { BootstrapServers = kafkaBootstrapServers };
-// Set log_level=0 so librdkafka never writes to stderr; SetLogHandler no-op is belt-and-suspenders.
-kafkaProducerConfig.Set("log_level", "0");
-builder.Services.AddSingleton<IProducer<string, string>>(_ =>
-    new ProducerBuilder<string, string>(kafkaProducerConfig)
-    .SetLogHandler((_, _) => { })
-    .Build());
 
 builder.Services.AddSignalR()
     .AddStackExchangeRedis(builder.Configuration.GetConnectionString("redis") ?? "localhost:6379");

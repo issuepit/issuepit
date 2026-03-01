@@ -1,10 +1,13 @@
 import { defineStore } from 'pinia'
-import type { CiCdRun, AgentSession, DashboardAgentSession } from '~/types'
+import type { CiCdRun, CiCdRunLog, AgentSession, AgentSessionDetail, DashboardAgentSession } from '~/types'
 
 export const useCiCdRunsStore = defineStore('cicdRuns', () => {
   const runs = ref<CiCdRun[]>([])
   const agentSessions = ref<AgentSession[]>([])
   const dashboardSessions = ref<DashboardAgentSession[]>([])
+  const currentRun = ref<CiCdRun | null>(null)
+  const currentRunLogs = ref<CiCdRunLog[]>([])
+  const currentSession = ref<AgentSessionDetail | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
 
@@ -23,6 +26,19 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     }
   }
 
+  async function fetchRun(runId: string) {
+    loading.value = true
+    error.value = null
+    try {
+      currentRun.value = await api.get<CiCdRun>(`/api/cicd-runs/${runId}`)
+      currentRunLogs.value = await api.get<CiCdRunLog[]>(`/api/cicd-runs/${runId}/logs`)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to fetch CI/CD run'
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function fetchAgentSessions(projectId: string) {
     loading.value = true
     error.value = null
@@ -32,6 +48,26 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
       error.value = e instanceof Error ? e.message : 'Failed to fetch agent sessions'
     } finally {
       loading.value = false
+    }
+  }
+
+  async function fetchAgentSession(sessionId: string) {
+    loading.value = true
+    error.value = null
+    try {
+      currentSession.value = await api.get<AgentSessionDetail>(`/api/agent-sessions/${sessionId}`)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to fetch agent session'
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function retryRun(runId: string) {
+    try {
+      await api.post(`/api/cicd-runs/${runId}/retry`, {})
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to retry CI/CD run'
     }
   }
 
@@ -64,10 +100,16 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     runs,
     agentSessions,
     dashboardSessions,
+    currentRun,
+    currentRunLogs,
+    currentSession,
     loading,
     error,
     fetchRuns,
+    fetchRun,
     fetchAgentSessions,
+    fetchAgentSession,
+    retryRun,
     cancelRun,
     fetchDashboardSessions,
   }

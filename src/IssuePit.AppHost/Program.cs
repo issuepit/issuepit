@@ -41,7 +41,7 @@ var api = builder.AddProject<Projects.IssuePit_Api>("api")
     .WaitForCompletion(migrator)
     .WaitFor(kafka)
     .WaitFor(redis)
-    .WithEnvironment("Kafka__BootstrapServers", kafka.Resource.ConnectionStringExpression)
+    .WithHttpHealthCheck("/health")
     .WithEnvironment("AllowedOrigins", frontend.GetEndpoint("http"))
     .WithEnvironment("GitHub__OAuth__FrontendUrl", frontend.GetEndpoint("http"))
     .WithUrlForEndpoint("http", u =>
@@ -55,21 +55,26 @@ var mcpServer = builder.AddProject<Projects.IssuePit_McpServer>("mcp-server")
     .WaitFor(api)
     .WithEnvironment("IssuePit__ApiBaseUrl", api.GetEndpoint("http"));
 
+// Allow the API to discover and call the MCP server (e.g. for issue enhancement).
+api.WithEnvironment("McpServer__BaseUrl", mcpServer.GetEndpoint("http"));
+
 var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("execution-client")
+    .WithReference(postgresDb)
     .WithReference(postgresServer)
     .WithReference(kafka)
-    .WaitFor(postgresServer)
+    .WaitForCompletion(migrator)
     .WaitFor(kafka)
-    .WithEnvironment("Kafka__BootstrapServers", kafka.Resource.ConnectionStringExpression);
+    .WithHttpHealthCheck("/health");
 
 var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     .WithReference(postgresDb)
+    .WithReference(postgresServer)
     .WithReference(kafka)
     .WithReference(redis)
     .WaitForCompletion(migrator)
     .WaitFor(kafka)
     .WaitFor(redis)
-    .WithEnvironment("Kafka__BootstrapServers", kafka.Resource.ConnectionStringExpression);
+    .WithHttpHealthCheck("/health");
 
 frontend
     .WithEnvironment("NUXT_PUBLIC_API_BASE", api.GetEndpoint("http"))

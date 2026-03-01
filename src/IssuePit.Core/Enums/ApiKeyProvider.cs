@@ -9,5 +9,6 @@ public enum ApiKeyProvider
     GitLab,
     AzureOpenAi,
     Google,
+    OpenRouter,
     Custom,
 }

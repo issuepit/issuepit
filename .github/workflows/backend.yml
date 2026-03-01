@@ -139,6 +139,7 @@ jobs:
     name: E2E Tests
     runs-on: ubuntu-latest
     needs: build
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -174,6 +175,7 @@ jobs:
           --filter "Category=E2E"
           --verbosity normal
           --logger "trx;LogFileName=e2e-results.trx"
+          --blame-hang-timeout 1min
 
       - name: Upload test results
         if: always()
