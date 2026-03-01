@@ -4,6 +4,8 @@
 
 IssuePit is a self-hosted project management platform that combines issue tracking (Jira-like), kanban boards, and an AI agent orchestration layer. Agents can be assigned to issues, run in Docker containers, and report back results — all within the same platform.
 
+📖 **[Documentation](https://issuepit.github.io/issuepit/)**
+
 ---
 
 ## Architecture
