@@ -141,7 +141,7 @@ public class CiCdEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
     }
 
-    private sealed record SyncResult(Guid id, int status, string statusName);
+    private sealed record SyncResult(Guid id, string status, string statusName);
 
     [Fact]
     public async Task Retry_FailedRun_Returns_Accepted()
