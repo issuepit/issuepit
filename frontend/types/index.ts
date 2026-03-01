@@ -106,11 +106,11 @@ export interface IssueTask {
 
 export interface McpServer {
   id: string
+  orgId: string
   name: string
   url: string
-  description?: string
-  tools: string[]
-  isActive: boolean
+  configuration: string
+  createdAt: string
 }
 
 export interface Agent {

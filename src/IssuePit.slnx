@@ -1,6 +1,7 @@
 <Solution>
   <Project Path="IssuePit.Api/IssuePit.Api.csproj" />
   <Project Path="IssuePit.AppHost/IssuePit.AppHost.csproj" />
+  <Project Path="IssuePit.McpServer/IssuePit.McpServer.csproj" />
   <Project Path="IssuePit.CiCdClient/IssuePit.CiCdClient.csproj" />
   <Project Path="IssuePit.Core/IssuePit.Core.csproj" />
   <Project Path="IssuePit.ExecutionClient/IssuePit.ExecutionClient.csproj" />
