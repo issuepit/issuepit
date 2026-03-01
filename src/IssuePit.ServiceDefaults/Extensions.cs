@@ -74,7 +74,8 @@ public static class ServiceDefaultsExtensions
 
     public static TBuilder AddKafkaHealthCheck<TBuilder>(this TBuilder builder, string connectionName = "kafka") where TBuilder : IHostApplicationBuilder
     {
-        var bootstrapServers = builder.Configuration.GetConnectionString(connectionName) ?? "localhost:9092";
+        var bootstrapServers = builder.Configuration.GetConnectionString(connectionName)
+            ?? throw new InvalidOperationException($"Kafka connection string '{connectionName}' is not configured.");
         builder.Services.AddHealthChecks()
             .AddCheck("kafka", new KafkaHealthCheck(bootstrapServers), tags: ["ready"]);
 
