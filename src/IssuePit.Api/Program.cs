@@ -45,6 +45,15 @@ builder.Services.AddScoped<IssueEnhancementService>();
 
 builder.Services.AddHttpClient("openrouter");
 
+// HTTP client for calling the MCP server for issue enhancement.
+// In Aspire, the URL is injected via McpServer__BaseUrl. Set McpServer:BaseUrl in
+// appsettings.Development.json when running without Aspire (default port is arbitrary).
+var mcpBaseUrl = builder.Configuration["McpServer:BaseUrl"] ?? "http://localhost:5100";
+builder.Services.AddHttpClient("mcp-server", client =>
+{
+    client.BaseAddress = new Uri(mcpBaseUrl);
+});
+
 // Cookie-based authentication for GitHub SSO sessions.
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
