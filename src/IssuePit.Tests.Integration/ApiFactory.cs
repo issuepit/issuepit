@@ -27,6 +27,9 @@ public class ApiFactory : WebApplicationFactory<Program>
         // the actual DbContext will be replaced with in-memory below.
         builder.UseSetting("ConnectionStrings:issuepit-db", "Host=localhost;Database=test;Username=test;Password=test");
         builder.UseSetting("ConnectionStrings:redis", "localhost:6379,abortConnect=false");
+        // Kafka bootstrap address: AddKafkaProducer/AddKafkaHealthCheck throw if this is absent.
+        // The real IProducer<> is replaced with NoOpProducer in ConfigureServices below.
+        builder.UseSetting("ConnectionStrings:kafka", "localhost:9092");
 
         builder.ConfigureServices(services =>
         {
