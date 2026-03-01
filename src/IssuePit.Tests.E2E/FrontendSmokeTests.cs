@@ -4,20 +4,17 @@ namespace IssuePit.Tests.E2E;
 
 /// <summary>
 /// E2E tests for the Vue/Nuxt frontend, launched against the running Aspire stack.
-/// Requires the frontend to be served separately (e.g. via docker-compose or nuxt build/preview).
-/// The FRONTEND_URL environment variable controls which URL is tested (defaults to http://localhost:3000).
+/// The FRONTEND_URL environment variable overrides the Aspire-started frontend URL.
 /// </summary>
 [Trait("Category", "E2E")]
-public class FrontendSmokeTests : IAsyncLifetime
+public class FrontendSmokeTests(AspireFixture fixture) : IClassFixture<AspireFixture>, IAsyncLifetime
 {
     private IPlaywright? _playwright;
     private IBrowser? _browser;
     private IBrowserContext? _context;
 
-    // Only use an explicitly-configured URL; do NOT fall back to localhost:3000 because
-    // in CI the frontend is served by Aspire on a dynamic port (use HappyPathTests for that).
-    private static string? FrontendUrl =>
-        Environment.GetEnvironmentVariable("FRONTEND_URL");
+    private string? FrontendUrl =>
+        fixture.FrontendUrl ?? Environment.GetEnvironmentVariable("FRONTEND_URL");
 
     public async Task InitializeAsync()
     {
@@ -41,8 +38,7 @@ public class FrontendSmokeTests : IAsyncLifetime
     public async Task Dashboard_Loads_WithoutErrors()
     {
         var frontendUrl = FrontendUrl;
-        if (frontendUrl is null)
-            return; // Skip when FRONTEND_URL is not set (e.g. in CI without a running frontend)
+        Assert.NotNull(frontendUrl);
 
         var page = await _context!.NewPageAsync();
 
@@ -63,8 +59,7 @@ public class FrontendSmokeTests : IAsyncLifetime
     public async Task Dashboard_ContainsIssuePitTitle()
     {
         var frontendUrl = FrontendUrl;
-        if (frontendUrl is null)
-            return; // Skip when FRONTEND_URL is not set (e.g. in CI without a running frontend)
+        Assert.NotNull(frontendUrl);
 
         var page = await _context!.NewPageAsync();
         await page.GotoAsync(frontendUrl);
@@ -78,8 +73,7 @@ public class FrontendSmokeTests : IAsyncLifetime
     public async Task Dashboard_StatCards_AreLinks()
     {
         var frontendUrl = FrontendUrl;
-        if (frontendUrl is null)
-            return; // Skip when FRONTEND_URL is not set
+        Assert.NotNull(frontendUrl);
 
         var page = await _context!.NewPageAsync();
         await page.GotoAsync(frontendUrl);
@@ -106,8 +100,7 @@ public class FrontendSmokeTests : IAsyncLifetime
     public async Task Dashboard_RecentIssues_ItemsAreLinks()
     {
         var frontendUrl = FrontendUrl;
-        if (frontendUrl is null)
-            return; // Skip when FRONTEND_URL is not set
+        Assert.NotNull(frontendUrl);
 
         var page = await _context!.NewPageAsync();
         await page.GotoAsync(frontendUrl);

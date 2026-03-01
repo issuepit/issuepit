@@ -145,8 +145,7 @@ public class HappyPathTests : IClassFixture<AspireFixture>, IAsyncLifetime
     [Fact]
     public async Task Ui_HappyPath_RegisterCreateOrgProjectAndIssue()
     {
-        if (FrontendUrl is null)
-            return; // Skip gracefully when no frontend is available
+        Assert.NotNull(FrontendUrl);
 
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
         var page = await context.NewPageAsync();
@@ -293,8 +292,7 @@ public class HappyPathTests : IClassFixture<AspireFixture>, IAsyncLifetime
     [Fact]
     public async Task Ui_HappyPath_CreateTeamAndAddMemberWithRole()
     {
-        if (FrontendUrl is null)
-            return; // Skip gracefully when no frontend is available
+        Assert.NotNull(FrontendUrl);
 
         var tenantId = await GetDefaultTenantIdAsync();
         using var apiClient = CreateCookieClient();
