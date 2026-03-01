@@ -164,6 +164,7 @@ export interface Project {
   name: string
   slug: string
   description?: string
+  gitHubRepo?: string
   icon?: string
   color?: string
   isPrivate: boolean
@@ -363,7 +364,7 @@ export interface RuntimeConfiguration {
 }
 
 export interface GitRepository {
-  id: string | null
+  id: string
   projectId: string
   remoteUrl: string
   defaultBranch: string
