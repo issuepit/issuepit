@@ -28,7 +28,7 @@ public class McpServersController(IssuePitDbContext db, TenantContext ctx) : Con
                 m.CreatedAt,
                 LinkedAgents = m.AgentMcpServers.Select(am => new { am.AgentId, am.Agent.Name }),
                 LinkedProjects = m.McpServerProjects.Select(mp => new { mp.ProjectId, mp.Project.Name }),
-                Secrets = m.Secrets.Select(s => new { s.Id, s.Key, s.CreatedAt }),
+                Secrets = m.Secrets.Select(s => new { s.Id, s.Key, Scope = s.Scope.ToString(), s.ScopeId, s.CreatedAt }),
             })
             .ToListAsync();
         return Ok(servers);
@@ -52,7 +52,7 @@ public class McpServersController(IssuePitDbContext db, TenantContext ctx) : Con
                 m.CreatedAt,
                 LinkedAgents = m.AgentMcpServers.Select(am => new { am.AgentId, am.Agent.Name }),
                 LinkedProjects = m.McpServerProjects.Select(mp => new { mp.ProjectId, mp.Project.Name }),
-                Secrets = m.Secrets.Select(s => new { s.Id, s.Key, s.CreatedAt }),
+                Secrets = m.Secrets.Select(s => new { s.Id, s.Key, Scope = s.Scope.ToString(), s.ScopeId, s.CreatedAt }),
             })
             .FirstOrDefaultAsync();
         return server is null ? NotFound() : Ok(server);
@@ -105,6 +105,12 @@ public class McpServersController(IssuePitDbContext db, TenantContext ctx) : Con
             .AnyAsync(m => m.Id == id && db.Organizations.Any(o => o.Id == m.OrgId && o.TenantId == ctx.CurrentTenant.Id));
         if (!exists) return NotFound();
 
+        var parsedScope = McpSecretScope.Global;
+        if (!string.IsNullOrEmpty(req.Scope))
+            Enum.TryParse(req.Scope, ignoreCase: true, out parsedScope);
+        if (parsedScope != McpSecretScope.Global && req.ScopeId is null)
+            return BadRequest("ScopeId is required when Scope is not Global.");
+
         var secret = new McpServerSecret
         {
             Id = Guid.NewGuid(),
@@ -112,11 +118,13 @@ public class McpServersController(IssuePitDbContext db, TenantContext ctx) : Con
             Key = req.Key,
             // In production, encrypt before storing. Placeholder prefix marks it as unencrypted for now.
             EncryptedValue = $"plain:{req.Value}",
+            Scope = parsedScope,
+            ScopeId = req.ScopeId,
             CreatedAt = DateTime.UtcNow,
         };
         db.McpServerSecrets.Add(secret);
         await db.SaveChangesAsync();
-        return Created($"/api/mcp-servers/{id}/secrets/{secret.Id}", new { secret.Id, secret.Key, secret.CreatedAt });
+        return Created($"/api/mcp-servers/{id}/secrets/{secret.Id}", new { secret.Id, secret.Key, Scope = secret.Scope.ToString(), secret.ScopeId, secret.CreatedAt });
     }
 
     [HttpDelete("{id:guid}/secrets/{secretId:guid}")]
@@ -172,4 +180,4 @@ public class McpServersController(IssuePitDbContext db, TenantContext ctx) : Con
     }
 }
 
-public record McpSecretRequest(string Key, string Value);
+public record McpSecretRequest(string Key, string Value, string? Scope = null, Guid? ScopeId = null);

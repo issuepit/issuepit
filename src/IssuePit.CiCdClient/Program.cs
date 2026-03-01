@@ -6,6 +6,7 @@ using IssuePit.Core.Data;
 var builder = Host.CreateApplicationBuilder(args);
 
 builder.AddServiceDefaults();
+builder.AddKafkaHealthCheck();
 builder.AddNpgsqlDbContext<IssuePitDbContext>("issuepit-db");
 builder.AddRedisClient("redis");
 

@@ -41,6 +41,7 @@ var api = builder.AddProject<Projects.IssuePit_Api>("api")
     .WaitForCompletion(migrator)
     .WaitFor(kafka)
     .WaitFor(redis)
+    .WithEnvironment("Kafka__BootstrapServers", kafka.Resource.ConnectionStringExpression)
     .WithEnvironment("AllowedOrigins", frontend.GetEndpoint("http"))
     .WithEnvironment("GitHub__OAuth__FrontendUrl", frontend.GetEndpoint("http"))
     .WithUrlForEndpoint("http", u =>

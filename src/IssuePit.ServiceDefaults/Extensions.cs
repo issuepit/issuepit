@@ -71,6 +71,15 @@ public static class ServiceDefaultsExtensions
         return builder;
     }
 
+    public static TBuilder AddKafkaHealthCheck<TBuilder>(this TBuilder builder, string configKey = "Kafka__BootstrapServers") where TBuilder : IHostApplicationBuilder
+    {
+        var bootstrapServers = builder.Configuration[configKey] ?? "localhost:9092";
+        builder.Services.AddHealthChecks()
+            .AddCheck("kafka", new KafkaHealthCheck(bootstrapServers), tags: ["ready"]);
+
+        return builder;
+    }
+
     public static WebApplication MapDefaultEndpoints(this WebApplication app)
     {
         app.MapHealthChecks("/health");
