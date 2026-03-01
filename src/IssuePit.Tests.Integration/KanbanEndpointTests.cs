@@ -111,6 +111,30 @@ public class KanbanEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task CreateColumn_GetBoards_ReturnsExactlyOneColumn()
+    {
+        var (tenantId, projectId) = await SeedProjectAsync();
+        var boardId = await SeedBoardAsync(projectId);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        await _client.PostAsJsonAsync(
+            $"/api/kanban/boards/{boardId}/columns",
+            new { name = "In Progress", position = 0, issueStatus = 2 });
+
+        var boardsResp = await _client.GetAsync($"/api/kanban/boards?projectId={projectId}");
+        Assert.Equal(HttpStatusCode.OK, boardsResp.StatusCode);
+
+        var boards = await boardsResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var board = boards.EnumerateArray().First(b => b.GetProperty("id").GetString() == boardId.ToString());
+        var columns = board.GetProperty("columns");
+        Assert.Equal(1, columns.GetArrayLength());
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
     public async Task UpdateColumn_Returns200()
     {
         var (tenantId, projectId) = await SeedProjectAsync();

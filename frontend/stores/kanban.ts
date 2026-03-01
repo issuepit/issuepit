@@ -80,8 +80,11 @@ export const useKanbanStore = defineStore('kanban', () => {
     try {
       const col = await api.post<KanbanColumn>(`/api/kanban/boards/${boardId}/columns`, { name, position, issueStatus })
       const board = boards.value.find(b => b.id === boardId)
-      if (board) board.columns.push(col)
-      if (currentBoard.value?.id === boardId) currentBoard.value.columns.push(col)
+      if (board) {
+        board.columns.push(col)
+      } else if (currentBoard.value?.id === boardId) {
+        currentBoard.value.columns.push(col)
+      }
       return col
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Failed to add column'

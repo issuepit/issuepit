@@ -91,6 +91,54 @@ public class HappyPathTests : IClassFixture<AspireFixture>, IAsyncLifetime
     }
 
     /// <summary>
+    /// API happy path for kanban: create board → add lane → verify boards list shows exactly one lane (no duplication).
+    /// Regression test for the bug where adding a lane caused it to appear twice before page reload.
+    /// </summary>
+    [Fact]
+    public async Task Api_HappyPath_CreateBoardAndLane_LaneAppearsExactlyOnce()
+    {
+        using var client = CreateCookieClient();
+
+        var tenantId = await GetDefaultTenantIdAsync();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"e2e{Guid.NewGuid():N}"[..12];
+        const string password = "TestPass1!";
+
+        await client.PostAsJsonAsync("/api/auth/register", new { username, password });
+
+        var orgSlug = $"e2e-org-{Guid.NewGuid():N}"[..16];
+        var orgResp = await client.PostAsJsonAsync("/api/orgs", new { name = "E2E Kanban Org", slug = orgSlug });
+        var org = await orgResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var orgId = Guid.Parse(org.GetProperty("id").GetString()!);
+
+        var projectSlug = $"e2e-kb-{Guid.NewGuid():N}"[..14];
+        var projResp = await client.PostAsJsonAsync("/api/projects", new { name = "Kanban Project", slug = projectSlug, orgId });
+        var project = await projResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var projectId = Guid.Parse(project.GetProperty("id").GetString()!);
+
+        // Create a board
+        var boardResp = await client.PostAsJsonAsync("/api/kanban/boards", new { projectId, name = "Sprint 1" });
+        Assert.Equal(HttpStatusCode.Created, boardResp.StatusCode);
+        var board = await boardResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var boardId = board.GetProperty("id").GetString()!;
+
+        // Add a single lane
+        var laneResp = await client.PostAsJsonAsync(
+            $"/api/kanban/boards/{boardId}/columns",
+            new { name = "Todo", position = 0, issueStatus = 1 });
+        Assert.Equal(HttpStatusCode.Created, laneResp.StatusCode);
+
+        // Fetch boards and verify the lane appears exactly once
+        var boardsResp = await client.GetAsync($"/api/kanban/boards?projectId={projectId}");
+        Assert.Equal(HttpStatusCode.OK, boardsResp.StatusCode);
+        var boards = await boardsResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var fetchedBoard = boards.EnumerateArray().First(b => b.GetProperty("id").GetString() == boardId);
+        var columns = fetchedBoard.GetProperty("columns");
+        Assert.Equal(1, columns.GetArrayLength());
+    }
+
+    /// <summary>
     /// UI happy path through the Vue frontend: register → create org via UI → create project → create issue via UI.
     /// Requires a running frontend (Aspire-started or FRONTEND_URL env var) and the Aspire API backend.
     /// </summary>
