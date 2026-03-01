@@ -9,8 +9,8 @@
     <!-- Stats -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
       <StatCard label="Projects" :value="stats.projects" icon="projects" color="blue" to="/projects" />
-      <StatCard label="Open Issues" :value="stats.openIssues" icon="issues" color="amber" to="/projects" />
-      <StatCard label="In Progress" :value="stats.inProgress" icon="progress" color="indigo" to="/projects" />
+      <StatCard label="Open Issues" :value="stats.openIssues" icon="issues" color="amber" to="/issues?status=open" />
+      <StatCard label="In Progress" :value="stats.inProgress" icon="progress" color="indigo" to="/issues?status=in_progress" />
       <StatCard label="Agents" :value="stats.agents" icon="agents" color="green" to="/agents" />
     </div>
 

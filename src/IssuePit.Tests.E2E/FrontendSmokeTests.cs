@@ -75,6 +75,14 @@ public class FrontendSmokeTests : IAsyncLifetime
         var projectsLink = page.Locator("a[href='/projects']:has-text('Projects')");
         Assert.True(await projectsLink.CountAsync() > 0, "Projects stat card should be a link to /projects");
 
+        // Open Issues stat card links to the filtered issues page
+        var openIssuesLink = page.Locator("a[href='/issues?status=open']:has-text('Open Issues')");
+        Assert.True(await openIssuesLink.CountAsync() > 0, "Open Issues stat card should be a link to /issues?status=open");
+
+        // In Progress stat card links to the filtered issues page
+        var inProgressLink = page.Locator("a[href='/issues?status=in_progress']:has-text('In Progress')");
+        Assert.True(await inProgressLink.CountAsync() > 0, "In Progress stat card should be a link to /issues?status=in_progress");
+
         // Agents stat card links to /agents
         var agentsLink = page.Locator("a[href='/agents']:has-text('Agents')");
         Assert.True(await agentsLink.CountAsync() > 0, "Agents stat card should be a link to /agents");
