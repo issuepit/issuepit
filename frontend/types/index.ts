@@ -43,6 +43,78 @@ export interface Organization {
   updatedAt: string
 }
 
+export interface User {
+  id: string
+  tenantId: string
+  username: string
+  email: string
+  createdAt: string
+}
+
+export enum OrgRole {
+  Member = 0,
+  Admin = 1,
+  Owner = 2
+}
+
+export const OrgRoleLabels: Record<OrgRole, string> = {
+  [OrgRole.Member]: 'Member',
+  [OrgRole.Admin]: 'Admin',
+  [OrgRole.Owner]: 'Owner',
+}
+
+export enum ProjectPermission {
+  None = 0,
+  Read = 1,
+  Write = 2,
+  CommentPrs = 4,
+  MoveKanban = 8,
+  Milestones = 16,
+  Labels = 32,
+  ProjectAdmin = 64,
+}
+
+export const ProjectPermissionLabels: Record<number, string> = {
+  [ProjectPermission.Read]: 'Read',
+  [ProjectPermission.Write]: 'Write',
+  [ProjectPermission.CommentPrs]: 'Comment PRs',
+  [ProjectPermission.MoveKanban]: 'Move Kanban',
+  [ProjectPermission.Milestones]: 'Milestones',
+  [ProjectPermission.Labels]: 'Labels',
+  [ProjectPermission.ProjectAdmin]: 'Project Admin',
+}
+
+export interface Team {
+  id: string
+  orgId: string
+  name: string
+  slug: string
+  createdAt: string
+}
+
+export interface TeamMember {
+  teamId: string
+  userId: string
+  user: User
+}
+
+export interface OrganizationMember {
+  orgId: string
+  userId: string
+  user: User
+  role: OrgRole
+}
+
+export interface ProjectMember {
+  id: string
+  projectId: string
+  userId?: string
+  teamId?: string
+  user?: User
+  team?: Team
+  permissions: ProjectPermission
+}
+
 export interface Label {
   id: string
   projectId: string
