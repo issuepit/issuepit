@@ -203,8 +203,19 @@ export interface McpServer {
   id: string
   orgId: string
   name: string
+  description?: string
   url: string
   configuration: string
+  allowedTools: string[]
+  createdAt: string
+  linkedAgents?: Array<{ agentId: string; name: string }>
+  linkedProjects?: Array<{ projectId: string; name: string }>
+  secrets?: McpServerSecret[]
+}
+
+export interface McpServerSecret {
+  id: string
+  key: string
   createdAt: string
 }
 
@@ -217,6 +228,8 @@ export interface Agent {
   allowedTools: string[]
   mcpServers: string[]
   isActive: boolean
+  runnerType?: RunnerType
+  model?: string
   createdAt: string
   updatedAt: string
 }
@@ -293,6 +306,18 @@ export const RuntimeTypeLabels: Record<RuntimeType, string> = {
   [RuntimeType.OpenSandbox]: 'OpenSandbox',
 }
 
+export enum RunnerType {
+  OpenCode = 0,
+  Codex = 1,
+  GitHubCopilotCli = 2,
+}
+
+export const RunnerTypeLabels: Record<RunnerType, string> = {
+  [RunnerType.OpenCode]: 'OpenCode',
+  [RunnerType.Codex]: 'Codex CLI',
+  [RunnerType.GitHubCopilotCli]: 'GitHub Copilot CLI',
+}
+
 export interface ApiKey {
   id: string
   orgId: string
@@ -353,4 +378,31 @@ export interface GitBlob {
   size: number
   isBinary: boolean
   content: string
+export enum TelegramNotificationEvent {
+  IssueCreated = 1,
+  IssueUpdated = 2,
+  IssueAssigned = 4,
+  AgentStarted = 8,
+  AgentCompleted = 16,
+  AgentFailed = 32,
+}
+
+export const TelegramNotificationEventLabels: Record<TelegramNotificationEvent, string> = {
+  [TelegramNotificationEvent.IssueCreated]: 'Issue Created',
+  [TelegramNotificationEvent.IssueUpdated]: 'Issue Updated',
+  [TelegramNotificationEvent.IssueAssigned]: 'Issue Assigned',
+  [TelegramNotificationEvent.AgentStarted]: 'Agent Started',
+  [TelegramNotificationEvent.AgentCompleted]: 'Agent Completed',
+  [TelegramNotificationEvent.AgentFailed]: 'Agent Failed',
+}
+
+export interface TelegramBot {
+  id: string
+  orgId?: string
+  projectId?: string
+  name: string
+  chatId: string
+  events: number
+  isSilent: boolean
+  createdAt: string
 }

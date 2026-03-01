@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using IssuePit.Core.Entities;
+using IssuePit.Core.Runners;
 
 namespace IssuePit.ExecutionClient.Runtimes;
 
@@ -37,9 +38,12 @@ public class NativeAgentRuntime(ILogger<NativeAgentRuntime> logger) : IAgentRunt
         if (!File.Exists(config.Command))
             throw new InvalidOperationException($"Agent command not found: {config.Command}");
 
+        var runnerArgs = RunnerCommandBuilder.BuildArgs(agent, issue);
+
         var startInfo = new ProcessStartInfo
         {
             FileName = config.Command,
+            Arguments = runnerArgs,
             UseShellExecute = false,
             RedirectStandardOutput = false,
             RedirectStandardError = false,
@@ -52,11 +56,16 @@ public class NativeAgentRuntime(ILogger<NativeAgentRuntime> logger) : IAgentRunt
         startInfo.Environment["ISSUEPIT_ISSUE_TITLE"] = issue.Title;
         startInfo.Environment["ISSUEPIT_ISSUE_BODY"] = issue.Body ?? string.Empty;
         startInfo.Environment["ISSUEPIT_AGENT_ID"] = agent.Id.ToString();
+        startInfo.Environment["ISSUEPIT_SYSTEM_PROMPT"] = agent.SystemPrompt;
 
         if (issue.GitBranch is not null)
             startInfo.Environment["ISSUEPIT_GIT_BRANCH"] = issue.GitBranch;
 
         foreach (var (key, value) in credentials)
+            startInfo.Environment[key] = value;
+
+        // Runner-specific env vars (e.g. OPENCODE_SYSTEM_PROMPT, CODEX_SYSTEM_PROMPT)
+        foreach (var (key, value) in RunnerCommandBuilder.BuildRunnerEnv(agent))
             startInfo.Environment[key] = value;
 
         using var process = Process.Start(startInfo)

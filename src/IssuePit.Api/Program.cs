@@ -1,11 +1,13 @@
 using Confluent.Kafka;
 using System;
+using System.Text.Json.Serialization;
 using IssuePit.Api.Hubs;
 using IssuePit.Api.Middleware;
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
+using Scalar.AspNetCore;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -74,7 +76,13 @@ builder.Services.AddSingleton<IProducer<string, string>>(_ =>
 builder.Services.AddSignalR()
     .AddStackExchangeRedis(builder.Configuration.GetConnectionString("redis") ?? "localhost:6379");
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(opts =>
+    {
+        opts.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+        opts.JsonSerializerOptions.Converters.Add(
+            new JsonStringEnumConverter(System.Text.Json.JsonNamingPolicy.SnakeCaseLower));
+    });
 builder.Services.AddOpenApi();
 
 builder.Services.AddCors(options =>
@@ -121,14 +129,15 @@ app.MapDefaultEndpoints();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.MapScalarApiReference();
 }
-
-app.UseMiddleware<TenantMiddleware>();
 
 app.UseCors();
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.UseMiddleware<TenantMiddleware>();
 
 app.MapControllers();
 

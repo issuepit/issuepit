@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using IssuePit.Core.Entities;
+using IssuePit.Core.Runners;
 
 namespace IssuePit.ExecutionClient.Runtimes;
 
@@ -103,6 +104,7 @@ public class OpenSandboxAgentRuntime(
             ["ISSUEPIT_ISSUE_TITLE"] = issue.Title,
             ["ISSUEPIT_ISSUE_BODY"] = issue.Body ?? string.Empty,
             ["ISSUEPIT_AGENT_ID"] = agent.Id.ToString(),
+            ["ISSUEPIT_SYSTEM_PROMPT"] = agent.SystemPrompt,
         };
 
         if (issue.GitBranch is not null)
@@ -110,6 +112,10 @@ public class OpenSandboxAgentRuntime(
 
         // Inject agent logins / API key credentials
         foreach (var (key, value) in credentials)
+            env[key] = value;
+
+        // Runner-specific env vars (e.g. OPENCODE_SYSTEM_PROMPT, CODEX_SYSTEM_PROMPT)
+        foreach (var (key, value) in RunnerCommandBuilder.BuildRunnerEnv(agent))
             env[key] = value;
 
         return env;
