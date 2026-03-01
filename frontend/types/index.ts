@@ -516,3 +516,12 @@ export interface IssueHistoryEntry {
   inProgress: number
   done: number
 }
+
+export interface ProjectMetricSnapshot {
+  recordedAt: string
+  openIssues: number
+  inProgressIssues: number
+  doneIssues: number
+  totalAgentRuns: number
+  totalCiCdRuns: number
+}

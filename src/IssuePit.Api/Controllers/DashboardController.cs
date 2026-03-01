@@ -86,4 +86,39 @@ public class DashboardController(IssuePitDbContext db, TenantContext ctx) : Cont
 
         return Ok(sessions);
     }
+
+    /// <summary>
+    /// Returns hourly metric snapshots for a specific project for the last <paramref name="hours"/> hours.
+    /// </summary>
+    [HttpGet("projects/{projectId}/metric-history")]
+    public async Task<IActionResult> GetProjectMetricHistory(Guid projectId, [FromQuery] int hours = 24)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        if (hours < 1 || hours > 720) hours = 24;
+
+        // Verify the project belongs to the tenant.
+        var project = await db.Projects
+            .Include(p => p.Organization)
+            .FirstOrDefaultAsync(p => p.Id == projectId && p.Organization.TenantId == ctx.CurrentTenant.Id);
+
+        if (project is null) return NotFound();
+
+        var since = DateTime.UtcNow.AddHours(-hours);
+
+        var snapshots = await db.ProjectMetricSnapshots
+            .Where(s => s.ProjectId == projectId && s.RecordedAt >= since)
+            .OrderBy(s => s.RecordedAt)
+            .Select(s => new
+            {
+                s.RecordedAt,
+                s.OpenIssues,
+                s.InProgressIssues,
+                s.DoneIssues,
+                s.TotalAgentRuns,
+                s.TotalCiCdRuns,
+            })
+            .ToListAsync();
+
+        return Ok(snapshots);
+    }
 }
