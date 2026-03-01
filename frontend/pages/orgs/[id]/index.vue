@@ -169,9 +169,9 @@
       </div>
     </template>
 
-    <!-- Not found -->
+    <!-- Not found / Error -->
     <div v-else class="flex flex-col items-center justify-center py-20 text-center">
-      <p class="text-gray-400 font-medium">Organization not found</p>
+      <p class="text-gray-400 font-medium">{{ orgsStore.error || 'Organization not found' }}</p>
       <NuxtLink to="/orgs" class="mt-3 text-brand-400 hover:text-brand-300 text-sm">← Back to Organizations</NuxtLink>
     </div>
 
@@ -328,11 +328,8 @@
       </div>
     </div>
 
-    <!-- Error -->
-    <div v-if="orgsStore.error || teamsStore.error"
-      class="fixed bottom-4 right-4 bg-red-900/20 border border-red-800 rounded-lg px-4 py-3 text-sm text-red-400 max-w-sm">
-      {{ orgsStore.error || teamsStore.error }}
-    </div>
+    <!-- Error toast for secondary operations (teams, members) -->
+    <ToastError v-if="orgsStore.currentOrg" :error="orgsStore.error || teamsStore.error" />
   </div>
 </template>
 

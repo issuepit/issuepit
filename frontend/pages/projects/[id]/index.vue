@@ -87,9 +87,9 @@
       </div>
     </template>
 
-    <!-- Not found -->
+    <!-- Not found / Error -->
     <div v-else class="flex flex-col items-center justify-center py-20 text-center">
-      <p class="text-gray-400 font-medium">Project not found</p>
+      <p class="text-gray-400 font-medium">{{ store.error || 'Project not found' }}</p>
       <NuxtLink to="/projects" class="mt-3 text-brand-400 hover:text-brand-300 text-sm">← Back to Projects</NuxtLink>
     </div>
   </div>
