@@ -76,7 +76,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         if (repo is null) return NotFound();
         try
         {
-            await Task.Run(() => gitService.Fetch(repo));
+            await gitService.FetchAsync(repo);
             repo.LastFetchedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
             return Ok(new { message = "Fetched successfully.", lastFetchedAt = repo.LastFetchedAt });
@@ -96,7 +96,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         if (repo is null) return NotFound();
         try
         {
-            var path = await Task.Run(() => gitService.EnsureCloned(repo));
+            var path = await gitService.EnsureClonedAsync(repo);
             return Ok(new { message = "Repository ready.", localPath = path });
         }
         catch (Exception ex)

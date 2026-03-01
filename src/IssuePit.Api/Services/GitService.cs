@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using IssuePit.Core.Entities;
 using LibGit2Sharp;
 
@@ -7,6 +8,14 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
 {
     private readonly string _reposBasePath = configuration["Git:ReposBasePath"]
         ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "issuepit", "repos");
+
+    // Shared across all scoped instances so locks work regardless of DI lifetime.
+    // One SemaphoreSlim per repository ID; the dictionary grows monotonically but is bounded
+    // by the total number of git repositories, which is expected to be small.
+    private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> _repoLocks = new();
+
+    private static SemaphoreSlim GetRepoLock(Guid repoId) =>
+        _repoLocks.GetOrAdd(repoId, _ => new SemaphoreSlim(1, 1));
 
     private string GetLocalPath(GitRepository repo)
     {
@@ -49,8 +58,8 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
         return opts;
     }
 
-    /// <summary>Clones the remote repository to the local path if not already cloned.</summary>
-    public string EnsureCloned(GitRepository repo)
+    /// <summary>Clones the remote repository to the local path if not already cloned. Internal: no locking.</summary>
+    private string EnsureClonedCore(GitRepository repo)
     {
         var localPath = GetLocalPath(repo);
         if (Repository.IsValid(localPath))
@@ -62,16 +71,69 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
         return localPath;
     }
 
-    /// <summary>Fetches latest changes from all remotes.</summary>
-    public void Fetch(GitRepository repo)
+    /// <summary>Clones the remote repository to the local path if not already cloned.</summary>
+    public string EnsureCloned(GitRepository repo)
     {
-        var localPath = EnsureCloned(repo);
-        using var gitRepo = new Repository(localPath);
-        foreach (var remote in gitRepo.Network.Remotes)
+        var localPath = GetLocalPath(repo);
+        // Fast path: already cloned, no lock needed
+        if (Repository.IsValid(localPath))
+            return localPath;
+
+        // Slow path: acquire per-repo lock before cloning (serialises concurrent clone attempts)
+        var sem = GetRepoLock(repo.Id);
+        sem.Wait();
+        try
         {
-            var refSpecs = remote.FetchRefSpecs.Select(r => r.Specification).ToArray();
-            Commands.Fetch(gitRepo, remote.Name, refSpecs, BuildFetchOptions(repo), null);
-            logger.LogInformation("Fetched from remote '{Remote}' for repo {Id}", remote.Name, repo.Id);
+            return EnsureClonedCore(repo);
+        }
+        finally
+        {
+            sem.Release();
+        }
+    }
+
+    /// <summary>Clones the remote repository asynchronously, serialising concurrent requests per repository.</summary>
+    public async Task<string> EnsureClonedAsync(GitRepository repo)
+    {
+        var localPath = GetLocalPath(repo);
+        // Fast path: already cloned, no lock needed
+        if (Repository.IsValid(localPath))
+            return localPath;
+
+        var sem = GetRepoLock(repo.Id);
+        await sem.WaitAsync();
+        try
+        {
+            return await Task.Run(() => EnsureClonedCore(repo));
+        }
+        finally
+        {
+            sem.Release();
+        }
+    }
+
+    /// <summary>Fetches latest changes from all remotes, serialising concurrent requests per repository.</summary>
+    public async Task FetchAsync(GitRepository repo)
+    {
+        var sem = GetRepoLock(repo.Id);
+        await sem.WaitAsync();
+        try
+        {
+            await Task.Run(() =>
+            {
+                var localPath = EnsureClonedCore(repo);
+                using var gitRepo = new Repository(localPath);
+                foreach (var remote in gitRepo.Network.Remotes)
+                {
+                    var refSpecs = remote.FetchRefSpecs.Select(r => r.Specification).ToArray();
+                    Commands.Fetch(gitRepo, remote.Name, refSpecs, BuildFetchOptions(repo), null);
+                    logger.LogInformation("Fetched from remote '{Remote}' for repo {Id}", remote.Name, repo.Id);
+                }
+            });
+        }
+        finally
+        {
+            sem.Release();
         }
     }
 
