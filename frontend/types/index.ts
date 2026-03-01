@@ -172,6 +172,25 @@ export interface Project {
   updatedAt: string
 }
 
+export interface IssueAssignee {
+  id: string
+  issueId: string
+  userId?: string
+  user?: User
+  agentId?: string
+  agent?: Agent
+}
+
+export interface IssueComment {
+  id: string
+  issueId: string
+  userId?: string
+  user?: User
+  body: string
+  createdAt: string
+  updatedAt: string
+}
+
 export interface Issue {
   id: string
   projectId: string
@@ -181,22 +200,25 @@ export interface Issue {
   status: IssueStatus
   priority: IssuePriority
   type: IssueType
-  assigneeIds: string[]
-  labelIds: string[]
+  assignees: IssueAssignee[]
+  labels: Label[]
   milestoneId?: string
   parentIssueId?: string
   dueDate?: string
   estimate?: number
   createdAt: string
   updatedAt: string
+  subIssues?: Issue[]
 }
 
 export interface IssueTask {
   id: string
   issueId: string
   title: string
-  completed: boolean
-  order: number
+  body?: string
+  status: IssueStatus
+  createdAt: string
+  updatedAt: string
 }
 
 export interface McpServer {
