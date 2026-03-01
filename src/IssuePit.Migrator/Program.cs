@@ -328,7 +328,7 @@ static async Task SeedDemoDataAsync(IssuePitDbContext db, Guid tenantId, ILogger
     );
     await db.SaveChangesAsync();
 
-    logger.LogInformation("Demo data seeded: org 'Acme Corp', 3 projects (frontend, backend, issuepit), 13 issues, 3 agents, 2 MCP servers.");
+    logger.LogInformation("Demo data seeded: org 'Acme Corp', 3 projects (frontend, backend, IssuePit), 13 issues, 3 agents, 2 MCP servers.");
 }
 
 static Issue CreateDemoIssue(Guid projectId, int number, string title, string body, IssueStatus status, IssuePriority priority, IssueType type, int daysAgo) =>
