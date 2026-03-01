@@ -21,6 +21,11 @@ var api = builder.AddProject<Projects.IssuePit_Api>("api")
     .WaitFor(redis)
     .WithEnvironment("AllowedOrigins", frontend.GetEndpoint("http"));
 
+var mcpServer = builder.AddProject<Projects.IssuePit_McpServer>("mcp-server")
+    .WithReference(api)
+    .WaitFor(api)
+    .WithEnvironment("IssuePit__ApiBaseUrl", api.GetEndpoint("http"));
+
 var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("execution-client")
     .WithReference(kafka)
     .WaitFor(kafka)

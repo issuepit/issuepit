@@ -31,6 +31,7 @@ const route = useRoute()
 const tabs = [
   { id: 'keys', label: 'API Keys', href: '/config/keys' },
   { id: 'runtimes', label: 'Agent Runtimes', href: '/config/runtimes' },
+  { id: 'mcp-servers', label: 'MCP Servers', href: '/config/mcp-servers' },
 ]
 
 watch(active, (val) => {

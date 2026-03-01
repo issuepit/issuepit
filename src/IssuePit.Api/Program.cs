@@ -79,6 +79,7 @@ app.MapAgentEndpoints();
 app.MapConfigurationEndpoints();
 app.MapCiCdEndpoints();
 app.MapTenantEndpoints();
+app.MapTeamEndpoints();
 
 app.MapHub<AgentOutputHub>("/hubs/agent-output");
 app.MapHub<KanbanHub>("/hubs/kanban");
