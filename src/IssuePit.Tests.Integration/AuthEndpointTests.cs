@@ -148,4 +148,46 @@ public class AuthEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var response = await client.PostAsJsonAsync("/api/auth/register", new { username = "dupuser", password = "pass2" });
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
+
+    [Fact]
+    public async Task ChangePassword_WithoutSession_Returns401()
+    {
+        var response = await _client.PatchAsJsonAsync("/api/auth/me/password", new { newPassword = "newpass" });
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ChangePassword_WithCorrectCurrentPassword_Returns204()
+    {
+        var (tenantId, _) = await SeedTenantWithUserAsync("pwchange_user", "oldpass");
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        // Login first to establish a session
+        var loginResponse = await client.PostAsJsonAsync("/api/auth/login", new { username = "pwchange_user", password = "oldpass" });
+        Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
+
+        var changeResponse = await client.PatchAsJsonAsync("/api/auth/me/password", new { currentPassword = "oldpass", newPassword = "newpass123" });
+        Assert.Equal(HttpStatusCode.NoContent, changeResponse.StatusCode);
+
+        // Verify login works with new password
+        var loginNewResponse = await client.PostAsJsonAsync("/api/auth/login", new { username = "pwchange_user", password = "newpass123" });
+        Assert.Equal(HttpStatusCode.OK, loginNewResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task ChangePassword_WithWrongCurrentPassword_Returns401()
+    {
+        var (tenantId, _) = await SeedTenantWithUserAsync("wrongpw_user", "correctpass");
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var loginResponse = await client.PostAsJsonAsync("/api/auth/login", new { username = "wrongpw_user", password = "correctpass" });
+        Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
+
+        var changeResponse = await client.PatchAsJsonAsync("/api/auth/me/password", new { currentPassword = "wrongpass", newPassword = "newpass123" });
+        Assert.Equal(HttpStatusCode.Unauthorized, changeResponse.StatusCode);
+    }
 }
