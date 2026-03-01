@@ -11,6 +11,12 @@
         <NuxtLink :to="`/projects/${id}`" class="hover:text-gray-300">Project</NuxtLink>
         <span>/</span>
         <NuxtLink :to="`/projects/${id}/issues`" class="hover:text-gray-300">Issues</NuxtLink>
+        <template v-if="store.currentIssue.parentIssue">
+          <span>/</span>
+          <NuxtLink :to="`/projects/${id}/issues/${store.currentIssue.parentIssue.id}`" class="hover:text-gray-300">
+            #{{ store.currentIssue.parentIssue.number }} {{ store.currentIssue.parentIssue.title }}
+          </NuxtLink>
+        </template>
         <span>/</span>
         <span class="text-gray-400">#{{ store.currentIssue.number }}</span>
       </div>
@@ -153,12 +159,25 @@
                   <div class="flex items-center gap-2 mb-1">
                     <span class="text-xs font-medium text-gray-300">{{ comment.user?.username ?? 'Unknown' }}</span>
                     <span class="text-xs text-gray-600">{{ formatDate(comment.createdAt) }}</span>
-                    <button @click="store.deleteComment(issueId, comment.id)"
-                      class="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition-all ml-auto text-xs">
-                      Delete
-                    </button>
+                    <div class="ml-auto flex gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                      <button @click="startEditingComment(comment)"
+                        class="text-gray-600 hover:text-brand-400 text-xs">Edit</button>
+                      <button @click="store.deleteComment(issueId, comment.id)"
+                        class="text-gray-600 hover:text-red-400 text-xs">Delete</button>
+                    </div>
                   </div>
-                  <p class="text-sm text-gray-300 whitespace-pre-wrap">{{ comment.body }}</p>
+                  <template v-if="editingCommentId === comment.id">
+                    <textarea v-model="commentEdit" rows="3"
+                      class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-2 text-sm text-white focus:outline-none resize-none focus:ring-1 focus:ring-brand-500" />
+                    <div class="flex gap-2 mt-2">
+                      <button @click="saveComment(comment.id)" :disabled="!commentEdit.trim()"
+                        class="text-xs bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-3 py-1 rounded-md transition-colors">Save</button>
+                      <button @click="editingCommentId = null"
+                        class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1 rounded-md transition-colors">Cancel</button>
+                    </div>
+                  </template>
+                  <div v-else class="prose prose-invert prose-sm max-w-none text-sm"
+                    v-html="parseMarkdown(comment.body)"></div>
                 </div>
               </div>
             </div>
@@ -306,7 +325,6 @@ import type { IssuePriority } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
 import { useLabelsStore } from '~/stores/labels'
 import { useAgentsStore } from '~/stores/agents'
-import { useProjectMembersStore } from '~/stores/projectMembers'
 
 const route = useRoute()
 const router = useRouter()
@@ -315,7 +333,7 @@ const issueId = route.params.issueId as string
 const store = useIssuesStore()
 const labelsStore = useLabelsStore()
 const agentsStore = useAgentsStore()
-const membersStore = useProjectMembersStore()
+const api = useApi()
 
 const editingTitle = ref(false)
 const editingBody = ref(false)
@@ -326,6 +344,20 @@ const newComment = ref('')
 const newTaskTitle = ref('')
 const creatingSubIssue = ref(false)
 const newSubIssueTitle = ref('')
+const editingCommentId = ref<string | null>(null)
+const commentEdit = ref('')
+
+// All tenant users for assignee browsing
+const tenantUsers = ref<Array<{ id: string; username: string }>>([])
+
+async function fetchTenantUsers() {
+  try {
+    tenantUsers.value = await api.get<Array<{ id: string; username: string }>>('/api/users/search')
+  } catch (e) {
+    console.error('Failed to fetch tenant users for assignee selection', e)
+    tenantUsers.value = []
+  }
+}
 
 function parseMarkdown(text: string): string {
   return DOMPurify.sanitize(marked(text, { async: false }))
@@ -356,7 +388,7 @@ onMounted(async () => {
     store.fetchTasks(issueId),
     labelsStore.fetchLabels(id),
     agentsStore.fetchAgents(),
-    membersStore.fetchMembers(id),
+    fetchTenantUsers(),
   ])
 })
 
@@ -367,7 +399,7 @@ const availableLabels = computed(() => {
 
 const availableUsers = computed(() => {
   const assigned = new Set(store.currentIssue?.assignees.filter(a => a.userId).map(a => a.userId) ?? [])
-  return membersStore.members.filter(m => m.user && !assigned.has(m.user.id)).map(m => m.user!)
+  return tenantUsers.value.filter(u => !assigned.has(u.id))
 })
 
 const availableAgents = computed(() => {
@@ -411,6 +443,18 @@ async function submitComment() {
   if (!newComment.value.trim()) return
   await store.addComment(issueId, newComment.value.trim())
   newComment.value = ''
+}
+
+function startEditingComment(comment: { id: string; body: string }) {
+  editingCommentId.value = comment.id
+  commentEdit.value = comment.body
+}
+
+async function saveComment(commentId: string) {
+  if (!commentEdit.value.trim()) return
+  await store.updateComment(issueId, commentId, commentEdit.value.trim())
+  editingCommentId.value = null
+  commentEdit.value = ''
 }
 
 async function addTask() {

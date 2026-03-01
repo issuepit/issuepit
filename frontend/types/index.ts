@@ -206,6 +206,7 @@ export interface Issue {
   labels: Label[]
   milestoneId?: string
   parentIssueId?: string
+  parentIssue?: Issue
   dueDate?: string
   estimate?: number
   createdAt: string
