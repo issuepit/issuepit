@@ -32,7 +32,10 @@ public class IssueWorker(
             AutoOffsetReset = AutoOffsetReset.Earliest
         };
 
-        using var consumer = new ConsumerBuilder<string, string>(config).Build();
+        using var consumer = new ConsumerBuilder<string, string>(config)
+            // Suppress librdkafka's default stderr output; connection errors are surfaced via .NET logging.
+            .SetLogHandler((_, _) => { })
+            .Build();
         consumer.Subscribe("issue-assigned");
 
         logger.LogInformation("IssueWorker started, listening on 'issue-assigned' topic");
@@ -71,7 +74,10 @@ public class IssueWorker(
             AutoOffsetReset = AutoOffsetReset.Latest
         };
 
-        using var consumer = new ConsumerBuilder<string, string>(config).Build();
+        using var consumer = new ConsumerBuilder<string, string>(config)
+            // Suppress librdkafka's default stderr output; connection errors are surfaced via .NET logging.
+            .SetLogHandler((_, _) => { })
+            .Build();
         consumer.Subscribe("agent-cancel");
 
         logger.LogInformation("IssueWorker cancel consumer started, listening on 'agent-cancel' topic");

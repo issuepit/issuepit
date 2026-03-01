@@ -34,7 +34,10 @@ public class CiCdWorker(
             AutoOffsetReset = AutoOffsetReset.Earliest
         };
 
-        using var consumer = new ConsumerBuilder<string, string>(config).Build();
+        using var consumer = new ConsumerBuilder<string, string>(config)
+            // Suppress librdkafka's default stderr output; connection errors are surfaced via .NET logging.
+            .SetLogHandler((_, _) => { })
+            .Build();
         consumer.Subscribe("cicd-trigger");
 
         logger.LogInformation("CiCdWorker started, listening on 'cicd-trigger' topic");
@@ -75,7 +78,10 @@ public class CiCdWorker(
             AutoOffsetReset = AutoOffsetReset.Latest
         };
 
-        using var consumer = new ConsumerBuilder<string, string>(config).Build();
+        using var consumer = new ConsumerBuilder<string, string>(config)
+            // Suppress librdkafka's default stderr output; connection errors are surfaced via .NET logging.
+            .SetLogHandler((_, _) => { })
+            .Build();
         consumer.Subscribe("cicd-cancel");
 
         logger.LogInformation("CiCdWorker cancel consumer started, listening on 'cicd-cancel' topic");

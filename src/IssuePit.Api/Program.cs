@@ -74,7 +74,10 @@ builder.Services.AddSingleton<IProducer<string, string>>(_ =>
     new ProducerBuilder<string, string>(new ProducerConfig
     {
         BootstrapServers = kafkaBootstrapServers
-    }).Build());
+    })
+    // Suppress librdkafka's default stderr output; connection errors are surfaced via .NET logging.
+    .SetLogHandler((_, _) => { })
+    .Build());
 
 builder.Services.AddSignalR()
     .AddStackExchangeRedis(builder.Configuration.GetConnectionString("redis") ?? "localhost:6379");

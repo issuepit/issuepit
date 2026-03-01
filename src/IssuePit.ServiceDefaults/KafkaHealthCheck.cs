@@ -6,7 +6,10 @@ namespace Microsoft.Extensions.Hosting;
 public sealed class KafkaHealthCheck(string bootstrapServers) : IHealthCheck, IDisposable
 {
     private readonly IAdminClient _adminClient = new AdminClientBuilder(
-        new AdminClientConfig { BootstrapServers = bootstrapServers }).Build();
+        new AdminClientConfig { BootstrapServers = bootstrapServers })
+        // Suppress librdkafka's default stderr output; connection errors surface via HealthCheckResult.
+        .SetLogHandler((_, _) => { })
+        .Build();
 
     public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
