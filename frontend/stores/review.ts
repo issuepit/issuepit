@@ -115,7 +115,7 @@ export function parsePatch(patch: string | undefined): DiffLine[] {
     } else if (raw.startsWith('\\')) {
       // "\ No newline at end of file" - skip
     } else {
-      lines.push({ content: raw.slice(1), type: 'context', lineNumber: newLine, oldLineNumber: oldLine, newLineNumber: newLine })
+      lines.push({ content: raw.startsWith(' ') ? raw.slice(1) : raw, type: 'context', lineNumber: newLine, oldLineNumber: oldLine, newLineNumber: newLine })
       oldLine++
       newLine++
     }

@@ -27,14 +27,6 @@
         </p>
       </div>
       <div class="flex gap-3">
-        <button v-if="pendingComments.length > 0" @click="submitReview"
-          :disabled="reviewStore.loading"
-          class="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-          </svg>
-          Submit Review ({{ pendingComments.length }})
-        </button>
         <NuxtLink :to="`/projects/${id}/issues/${issueId}`"
           class="text-sm text-gray-400 hover:text-gray-300 px-3 py-2 rounded-lg border border-gray-700 hover:border-gray-600 transition-colors">
           ← Back to Issue
@@ -242,13 +234,13 @@
         </div>
       </div>
 
-      <!-- Bottom submit -->
-      <div v-if="pendingComments.length === 0 && reviewStore.comments.length > 0"
+      <!-- Review summary -->
+      <div v-if="reviewStore.comments.length > 0"
         class="mt-6 bg-gray-900 border border-green-900/30 rounded-xl p-4 flex items-center gap-3">
         <svg class="w-5 h-5 text-green-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
-        <p class="text-sm text-green-400">Review submitted — {{ reviewStore.comments.length }} comment{{ reviewStore.comments.length !== 1 ? 's' : '' }} added</p>
+        <p class="text-sm text-green-400">Review in progress — {{ reviewStore.comments.length }} comment{{ reviewStore.comments.length !== 1 ? 's' : '' }} added</p>
       </div>
     </template>
   </div>
@@ -297,9 +289,6 @@ function lineComments(fileName: string, line: DiffLine): IssueComment[] {
     (line.newLineNumber === c.lineStart || line.oldLineNumber === c.lineStart)
   )
 }
-
-// Pending comments = unsaved drafts (not used here — all comments are immediately saved)
-const pendingComments = computed(() => [] as IssueComment[])
 
 async function loadDiff() {
   await reviewStore.fetchDiff(issueId)
@@ -354,10 +343,6 @@ async function addPrComment() {
 
 async function removeComment(commentId: string) {
   await reviewStore.deleteComment(issueId, commentId)
-}
-
-async function submitReview() {
-  // All comments are already saved; this button is for future batch submit flows
 }
 
 function lineRowClass(type: DiffLine['type']): string {

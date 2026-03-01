@@ -62,7 +62,7 @@ public static class ReviewEndpoints
                 {
                     Branch = issue.GitBranch,
                     BaseLabel = comparison.BaseCommit?.Sha ?? string.Empty,
-                    HeadLabel = comparison.MergeBaseCommit?.Sha ?? string.Empty,
+                    HeadLabel = comparison.Commits.LastOrDefault()?.Sha ?? string.Empty,
                     CommitSha = comparison.Commits.LastOrDefault()?.Sha ?? string.Empty,
                     Files = diffFiles,
                     TotalAdditions = diffFiles.Sum(f => f.Additions),
@@ -100,7 +100,7 @@ public static class ReviewEndpoints
         });
 
         // POST /api/issues/{issueId}/review/comments
-        group.MapPost("/comments", async (Guid issueId, IssuePit.Core.Entities.IssueComment comment, IssuePitDbContext db, TenantContext ctx) =>
+        group.MapPost("/comments", async (Guid issueId, CreateCommentRequest req, IssuePitDbContext db, TenantContext ctx) =>
         {
             if (ctx.CurrentTenant is null) return Results.Unauthorized();
 
@@ -111,10 +111,19 @@ public static class ReviewEndpoints
 
             if (!issueExists) return Results.NotFound();
 
-            comment.Id = Guid.NewGuid();
-            comment.IssueId = issueId;
-            comment.CreatedAt = DateTime.UtcNow;
-            comment.UpdatedAt = DateTime.UtcNow;
+            var comment = new IssuePit.Core.Entities.IssueComment
+            {
+                Id = Guid.NewGuid(),
+                IssueId = issueId,
+                Body = req.Body,
+                FilePath = req.FilePath,
+                LineStart = req.LineStart,
+                LineEnd = req.LineEnd,
+                DiffSide = req.DiffSide,
+                CommitSha = req.CommitSha,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
 
             db.IssueComments.Add(comment);
             await db.SaveChangesAsync();
@@ -178,3 +187,12 @@ public sealed record DiffResultDto
     public int TotalAdditions { get; init; }
     public int TotalDeletions { get; init; }
 }
+
+/// <summary>Payload accepted when creating a new review comment.</summary>
+public sealed record CreateCommentRequest(
+    string Body,
+    string? FilePath = null,
+    int? LineStart = null,
+    int? LineEnd = null,
+    string? DiffSide = null,
+    string? CommitSha = null);
