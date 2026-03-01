@@ -1,4 +1,5 @@
 using Microsoft.Playwright;
+using Xunit.Abstractions;
 
 namespace IssuePit.Tests.E2E;
 
@@ -10,6 +11,7 @@ namespace IssuePit.Tests.E2E;
 public class FrontendSmokeTests : IClassFixture<AspireFixture>, IAsyncLifetime
 {
     private readonly AspireFixture _fixture;
+    private readonly ITestOutputHelper _testOutputHelper;
     private IPlaywright? _playwright;
     private IBrowser? _browser;
     private IBrowserContext? _context;
@@ -17,12 +19,16 @@ public class FrontendSmokeTests : IClassFixture<AspireFixture>, IAsyncLifetime
     // Only use an explicitly-configured URL; do NOT fall back to localhost:3000 because
     // in CI the frontend is served by Aspire on a dynamic port (use HappyPathTests for that).
 
-    private string? FrontendUrl =>
+    private string FrontendUrl =>
         _fixture.FrontendUrl ??
         Environment.GetEnvironmentVariable("FRONTEND_URL") ??
         throw new InvalidOperationException("FRONTEND_URL environment variable must be set to run frontend smoke tests");
 
-    public FrontendSmokeTests(AspireFixture fixture) => _fixture = fixture;
+    public FrontendSmokeTests(AspireFixture fixture, ITestOutputHelper testOutputHelper)
+    {
+        _fixture = fixture;
+        _testOutputHelper = testOutputHelper;
+    }
 
     public async Task InitializeAsync()
     {
@@ -47,10 +53,15 @@ public class FrontendSmokeTests : IClassFixture<AspireFixture>, IAsyncLifetime
     {
         var page = await _context!.NewPageAsync();
 
-        var errors = new List<string>();
+        var errors = new List<IConsoleMessage>();
         page.Console += (_, e) =>
         {
-            if (e.Type == "error") errors.Add(e.Text);
+            if (e.Type == "error")
+            {
+                errors.Add(e);
+                // log error
+                _testOutputHelper.WriteLine($"Console error: {e.Text}");
+            }
         };
 
         var response = await page.GotoAsync(FrontendUrl);
