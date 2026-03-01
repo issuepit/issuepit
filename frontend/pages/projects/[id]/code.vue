@@ -226,7 +226,7 @@
                       @click="onLineNumberClick(idx + 1, $event)">
                       {{ idx + 1 }}
                     </td>
-                    <td class="pl-4 pr-4 whitespace-pre text-gray-200 align-top">{{ line }}</td>
+                    <td class="pl-4 pr-4 whitespace-pre align-top" v-html="highlightedLines[idx] ?? ''"></td>
                   </tr>
                 </tbody>
               </table>
@@ -341,6 +341,7 @@
 <script setup lang="ts">
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
+import hljs from 'highlight.js'
 import { useGitStore } from '~/stores/git'
 import { useIssuesStore } from '~/stores/issues'
 import { IssueType, IssuePriority, IssueStatus } from '~/types'
@@ -482,6 +483,58 @@ const renderedMd = computed(() => {
 
 // Line numbers
 const fileLines = computed(() => store.blob?.content.split('\n') ?? [])
+
+// Language map: file extension → highlight.js language alias
+const EXT_TO_LANG: Record<string, string> = {
+  ts: 'typescript', tsx: 'typescript',
+  js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
+  vue: 'html',
+  py: 'python',
+  cs: 'csharp',
+  java: 'java',
+  go: 'go',
+  rs: 'rust',
+  rb: 'ruby',
+  php: 'php',
+  css: 'css', scss: 'scss', less: 'less',
+  html: 'html', htm: 'html',
+  xml: 'xml', svg: 'xml',
+  json: 'json', jsonc: 'json',
+  yaml: 'yaml', yml: 'yaml',
+  sh: 'bash', bash: 'bash', zsh: 'bash',
+  md: 'markdown',
+  sql: 'sql',
+  cpp: 'cpp', cc: 'cpp', cxx: 'cpp',
+  c: 'c', h: 'c',
+  kt: 'kotlin', kts: 'kotlin',
+  swift: 'swift',
+  r: 'r',
+  tf: 'hcl', hcl: 'hcl',
+  toml: 'toml',
+  ini: 'ini',
+  dockerfile: 'dockerfile',
+}
+
+const highlightedLines = computed(() => {
+  const content = store.blob?.content
+  if (!content) return []
+  const path = store.blob?.path.toLowerCase() ?? ''
+  const filename = path.split('/').pop() ?? ''
+  const ext = filename.includes('.') ? filename.split('.').pop()! : filename
+  const lang = EXT_TO_LANG[ext]
+  let highlighted: string
+  try {
+    if (lang && hljs.getLanguage(lang)) {
+      highlighted = hljs.highlight(content, { language: lang }).value
+    } else {
+      highlighted = hljs.highlightAuto(content).value
+    }
+    highlighted = DOMPurify.sanitize(highlighted)
+  } catch {
+    highlighted = content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  }
+  return highlighted.split('\n')
+})
 
 // Line selection
 const selectionStart = ref<number | null>(null)
