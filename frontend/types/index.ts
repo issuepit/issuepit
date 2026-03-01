@@ -28,9 +28,9 @@ export enum IssueType {
 export interface Tenant {
   id: string
   name: string
-  slug: string
+  hostname: string
+  databaseConnectionString?: string
   createdAt: string
-  updatedAt: string
 }
 
 export interface Organization {

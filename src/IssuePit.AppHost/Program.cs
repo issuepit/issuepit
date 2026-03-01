@@ -1,7 +1,7 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-var postgres = builder.AddPostgres("postgres")
-    .AddDatabase("issuepit-db");
+var postgresServer = builder.AddPostgres("postgres");
+var postgresDb = postgresServer.AddDatabase("issuepit-db");
 
 var kafka = builder.AddKafka("kafka");
 
@@ -12,10 +12,11 @@ var frontend = builder.AddNpmApp("frontend", "../../frontend", "dev")
     .WithExternalHttpEndpoints();
 
 var api = builder.AddProject<Projects.IssuePit_Api>("api")
-    .WithReference(postgres)
+    .WithReference(postgresDb)
+    .WithReference(postgresServer)
     .WithReference(kafka)
     .WithReference(redis)
-    .WaitFor(postgres)
+    .WaitFor(postgresServer)
     .WaitFor(kafka)
     .WaitFor(redis)
     .WithEnvironment("AllowedOrigins", frontend.GetEndpoint("http"));
@@ -26,9 +27,9 @@ var mcpServer = builder.AddProject<Projects.IssuePit_McpServer>("mcp-server")
     .WithEnvironment("IssuePit__ApiBaseUrl", api.GetEndpoint("http"));
 
 var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("execution-client")
-    .WithReference(postgres)
+    .WithReference(postgresServer)
     .WithReference(kafka)
-    .WaitFor(postgres)
+    .WaitFor(postgresServer)
     .WaitFor(kafka)
     .WithEnvironment("Kafka__BootstrapServers", kafka.Resource.ConnectionStringExpression);
 
