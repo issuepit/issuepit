@@ -24,7 +24,12 @@ var api = builder.AddProject<Projects.IssuePit_Api>("api")
     .WaitForCompletion(migrator)
     .WaitFor(kafka)
     .WaitFor(redis)
-    .WithEnvironment("AllowedOrigins", frontend.GetEndpoint("http"));
+    .WithEnvironment("AllowedOrigins", frontend.GetEndpoint("http"))
+    .WithUrlForEndpoint("http", u =>
+    {
+        u.DisplayText = "Scalar API Reference";
+        u.Url = "/scalar/v1";
+    });
 
 var mcpServer = builder.AddProject<Projects.IssuePit_McpServer>("mcp-server")
     .WithReference(api)
