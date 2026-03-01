@@ -38,14 +38,14 @@ frontend/                      # Vue 3 + Nuxt 3 + Pinia frontend
 - Drag-and-drop cards; per-project board configuration
 
 ### Agent Management
-- Define agents: system prompt, default Docker image, allowed tools
-- Manage MCP servers and link them to agents
+- Define agent modes: system prompt, default Docker image, allowed tools
+- Manage MCP servers and link them to agent modes
 - Multi-agent, parallel execution runtime
 - Container runtimes: native, SSH, Docker, Hetzner+Terraform+SSH, OpenSandbox
 
 ### Execution Client
 - Consumes `issue-assigned` Kafka topic
-- Runs agents (opencode, codex, GitHub Copilot CLI) in Docker (DinD)
+- Spawns work agents (opencode, codex, GitHub Copilot CLI) in Docker (DinD) with the agent mode configuration on demand
 - Copies agent logins to workspace containers
 - Supports spawning Hetzner machines for vibe-coding agents
 

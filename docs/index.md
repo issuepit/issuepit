@@ -14,7 +14,7 @@ nav_order: 1
 
 - 🗂 **Track issues** across multiple projects and organizations
 - 📋 **Kanban boards** with drag-and-drop cards (Backlog → Todo → In Progress → In Review → Done)
-- 🤖 **AI agents** that automatically work on issues in Docker/Podman containers
+- 🤖 **AI agents** that automatically work on issues — agent modes define behavior, work agents execute them in Docker/Podman containers
 - 🔗 **Link GitHub repositories** to your projects
 - 🏷 **Labels, milestones, assignees** (users or agents)
 
@@ -28,5 +28,5 @@ nav_order: 1
 |------|-------------|
 | [Getting Started](getting-started) | Install and start IssuePit with Podman or Docker Compose |
 | [Projects](projects) | Create projects and link Git repositories |
-| [Agents](agents) | Configure AI work agents |
+| [Agents](agents) | Configure agent modes (system prompt, MCP tools, auth keys) |
 | [Configuration](configuration) | API keys, MCP servers, and other settings |
