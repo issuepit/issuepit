@@ -386,6 +386,9 @@ export interface GitRepository {
   hasAuth: boolean
   createdAt: string
   lastFetchedAt?: string
+  status: 'Active' | 'Disabled' | 'Throttled'
+  statusMessage?: string
+  throttledUntil?: string
 }
 
 export interface GitBranch {

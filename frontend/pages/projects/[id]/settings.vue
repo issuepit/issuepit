@@ -63,7 +63,31 @@
             <div class="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
           </div>
 
-          <form v-else class="space-y-3" @submit.prevent="saveRepo">
+          <!-- Status banner for disabled / throttled repos -->
+          <div v-if="gitStore.repo && gitStore.repo.status !== 'Active'" class="mb-4 rounded-lg px-4 py-3 flex items-start gap-3"
+            :class="repoStatusClasses.banner">
+            <svg class="w-5 h-5 mt-0.5 flex-shrink-0" :class="repoStatusClasses.icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium" :class="repoStatusClasses.title">
+                {{ gitStore.repo.status === 'Disabled' ? 'Repository disabled' : 'Repository throttled' }}
+              </p>
+              <p v-if="gitStore.repo.statusMessage" class="text-xs mt-0.5 text-gray-400 break-words">{{ gitStore.repo.statusMessage }}</p>
+              <p v-if="gitStore.repo.status === 'Throttled' && gitStore.repo.throttledUntil" class="text-xs mt-0.5 text-gray-400">
+                Polling resumes at {{ new Date(gitStore.repo.throttledUntil).toLocaleString() }}
+              </p>
+            </div>
+            <button
+              :disabled="gitStore.loading"
+              class="text-xs px-2.5 py-1 rounded-md font-medium transition-colors flex-shrink-0"
+              :class="repoStatusClasses.button"
+              @click="enableRepo">
+              Re-enable
+            </button>
+          </div>
+
+          <form v-if="!gitStore.loading" class="space-y-3" @submit.prevent="saveRepo">
             <div>
               <label class="block text-sm font-medium text-gray-300 mb-1">Remote URL</label>
               <input v-model="repoForm.remoteUrl" type="text" placeholder="https://github.com/org/repo.git or git@…"
@@ -253,6 +277,17 @@ const saveRunnerError = ref<string | null>(null)
 // ── Repo form ─────────────────────────────────────────────────
 const repoForm = reactive({ remoteUrl: '', defaultBranch: 'main', authUsername: '', authToken: '' })
 
+// ── Repo status styling ───────────────────────────────────────
+const repoStatusClasses = computed(() => {
+  const isDisabled = gitStore.repo?.status === 'Disabled'
+  return {
+    banner: isDisabled ? 'bg-red-950/50 border border-red-800' : 'bg-yellow-950/50 border border-yellow-800',
+    icon: isDisabled ? 'text-red-400' : 'text-yellow-400',
+    title: isDisabled ? 'text-red-300' : 'text-yellow-300',
+    button: isDisabled ? 'bg-red-700 hover:bg-red-600 text-white' : 'bg-yellow-700 hover:bg-yellow-600 text-white',
+  }
+})
+
 // ── Agents ───────────────────────────────────────────────────
 const api = useApi()
 const loadingAgents = ref(false)
@@ -368,6 +403,10 @@ async function saveRepo() {
   } else {
     await gitStore.createRepo(id, payload)
   }
+}
+
+async function enableRepo() {
+  await gitStore.enableRepo(id)
 }
 
 async function moveToOrg() {
