@@ -6,7 +6,7 @@ using Renci.SshNet;
 namespace IssuePit.ExecutionClient.Runtimes;
 
 /// <summary>
-/// Connects to a remote host via SSH and runs the agent executable natively there (no Docker).
+/// Connects to a remote host via SSH and launches the agent in a Docker container there.
 /// 
 /// Expected <see cref="RuntimeConfiguration.Configuration"/> JSON:
 /// <code>
@@ -14,12 +14,11 @@ namespace IssuePit.ExecutionClient.Runtimes;
 ///   "Host": "192.168.1.1",
 ///   "Port": 22,
 ///   "Username": "ubuntu",
-///   "PrivateKey": "-----BEGIN OPENSSH PRIVATE KEY-----\n...",
-///   "Command": "/usr/local/bin/opencode"
+///   "PrivateKey": "-----BEGIN OPENSSH PRIVATE KEY-----\n..."
 /// }
 /// </code>
 /// </summary>
-public class SshAgentRuntime(ILogger<SshAgentRuntime> logger) : IAgentRuntime
+public class SshDockerAgentRuntime(ILogger<SshDockerAgentRuntime> logger) : IAgentRuntime
 {
     public async Task<string> LaunchAsync(
         AgentSession session,
@@ -30,9 +29,9 @@ public class SshAgentRuntime(ILogger<SshAgentRuntime> logger) : IAgentRuntime
         CancellationToken cancellationToken)
     {
         if (runtimeConfig is null)
-            throw new InvalidOperationException("SshAgentRuntime requires a RuntimeConfiguration.");
+            throw new InvalidOperationException("SshDockerAgentRuntime requires a RuntimeConfiguration.");
 
-        var config = JsonSerializer.Deserialize<SshNativeConfig>(runtimeConfig.Configuration,
+        var config = JsonSerializer.Deserialize<SshConfig>(runtimeConfig.Configuration,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
             ?? throw new InvalidOperationException("Could not deserialize SSH RuntimeConfiguration.");
 
@@ -40,18 +39,16 @@ public class SshAgentRuntime(ILogger<SshAgentRuntime> logger) : IAgentRuntime
             throw new InvalidOperationException("SSH RuntimeConfiguration missing 'Host'.");
         if (string.IsNullOrWhiteSpace(config.Username))
             throw new InvalidOperationException("SSH RuntimeConfiguration missing 'Username'.");
-        if (string.IsNullOrWhiteSpace(config.Command))
-            throw new InvalidOperationException("SSH RuntimeConfiguration missing 'Command'.");
 
-        return await RunNativeOverSshAsync(session, agent, issue, credentials, config, cancellationToken);
+        return await RunDockerOverSshAsync(session, agent, issue, credentials, config, cancellationToken);
     }
 
-    private async Task<string> RunNativeOverSshAsync(
+    private async Task<string> RunDockerOverSshAsync(
         AgentSession session,
         Agent agent,
         Issue issue,
         IReadOnlyDictionary<string, string> credentials,
-        SshNativeConfig config,
+        SshConfig config,
         CancellationToken cancellationToken)
     {
         using var client = BuildSshClient(config);
@@ -63,26 +60,21 @@ public class SshAgentRuntime(ILogger<SshAgentRuntime> logger) : IAgentRuntime
 
         try
         {
-            // Run the agent command with env vars exported inline and nohup so it survives the SSH session
-            var remoteCmd = BuildNativeCommand(session, agent, issue, credentials, config.Command);
-            logger.LogDebug("Running on {Host}: {Cmd}", config.Host, remoteCmd);
+            var dockerCmd = BuildDockerRunCommand(session, agent, issue, credentials);
+            logger.LogDebug("Running on {Host}: {Cmd}", config.Host, dockerCmd);
 
-            using var cmd = client.CreateCommand(remoteCmd);
+            using var cmd = client.CreateCommand(dockerCmd);
             await cmd.ExecuteAsync(cancellationToken);
 
             if (cmd.ExitStatus != 0)
                 throw new InvalidOperationException(
-                    $"Agent command exited with code {cmd.ExitStatus}: {cmd.Error}");
+                    $"docker run exited with code {cmd.ExitStatus}: {cmd.Error}");
 
-            // nohup outputs the PID; use it as the runtime identifier
-            var pid = cmd.Result.Trim();
-            if (!int.TryParse(pid, out _))
-                throw new InvalidOperationException(
-                    $"Expected a PID from agent start command but got: '{pid}'");
-
-            logger.LogInformation("Started native agent (PID {Pid}) on {Host} for session {SessionId}",
-                pid, config.Host, session.Id);
-            return pid;
+            // `docker run -d` prints the full container ID on stdout
+            var containerId = cmd.Result.Trim();
+            logger.LogInformation("Started remote container {ContainerId} on {Host} for session {SessionId}",
+                containerId, config.Host, session.Id);
+            return containerId;
         }
         finally
         {
@@ -90,7 +82,7 @@ public class SshAgentRuntime(ILogger<SshAgentRuntime> logger) : IAgentRuntime
         }
     }
 
-    private static SshClient BuildSshClient(SshNativeConfig config)
+    private static SshClient BuildSshClient(SshConfig config)
     {
         var port = config.Port > 0 ? config.Port : 22;
 
@@ -109,17 +101,16 @@ public class SshAgentRuntime(ILogger<SshAgentRuntime> logger) : IAgentRuntime
         return new SshClient(config.Host, port, config.Username, config.Password ?? string.Empty);
     }
 
-    private static string BuildNativeCommand(
+    private static string BuildDockerRunCommand(
         AgentSession session,
         Agent agent,
         Issue issue,
-        IReadOnlyDictionary<string, string> credentials,
-        string command)
+        IReadOnlyDictionary<string, string> credentials)
     {
-        var envPrefix = new StringBuilder();
+        var envArgs = new StringBuilder();
 
         void AppendEnv(string key, string value) =>
-            envPrefix.Append($"{EscapeShell(SanitizeValue(key))}={EscapeShell(SanitizeValue(value))} ");
+            envArgs.Append($" -e {EscapeShell(SanitizeValue(key))}={EscapeShell(SanitizeValue(value))}");
 
         AppendEnv("ISSUEPIT_SESSION_ID", session.Id.ToString());
         AppendEnv("ISSUEPIT_ISSUE_ID", issue.Id.ToString());
@@ -133,9 +124,13 @@ public class SshAgentRuntime(ILogger<SshAgentRuntime> logger) : IAgentRuntime
         foreach (var (key, value) in credentials)
             AppendEnv(key, value);
 
-        // nohup + & disowns the process so it keeps running after the SSH session closes;
-        // echo $! returns the PID for tracking
-        return $"nohup env {envPrefix}{EscapeShell(command)} </dev/null >/dev/null 2>&1 & echo $!";
+        var labels =
+            $"--label issuepit.session-id={session.Id} " +
+            $"--label issuepit.issue-id={issue.Id} " +
+            $"--label issuepit.agent-id={agent.Id}";
+
+        // -d = detached; --rm = auto-remove on exit
+        return $"docker run -d --rm {labels}{envArgs} {EscapeShell(agent.DockerImage)}";
     }
 
     /// <summary>Removes control characters (null bytes, newlines, etc.) that could break shell argument parsing.</summary>
@@ -146,11 +141,10 @@ public class SshAgentRuntime(ILogger<SshAgentRuntime> logger) : IAgentRuntime
     private static string EscapeShell(string value) =>
         $"'{value.Replace("'", "'\\''")}'";
 
-    private record SshNativeConfig(
+    private record SshConfig(
         string Host,
         int Port,
         string Username,
-        string Command,
         string? PrivateKey,
         string? PrivateKeyPassphrase,
         string? Password);

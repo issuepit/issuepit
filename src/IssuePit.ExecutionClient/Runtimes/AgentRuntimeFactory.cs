@@ -10,6 +10,7 @@ public class AgentRuntimeFactory(IServiceProvider services)
         RuntimeType.Docker => services.GetRequiredService<DockerAgentRuntime>(),
         RuntimeType.Native => services.GetRequiredService<NativeAgentRuntime>(),
         RuntimeType.Ssh => services.GetRequiredService<SshAgentRuntime>(),
+        RuntimeType.SshDocker => services.GetRequiredService<SshDockerAgentRuntime>(),
         RuntimeType.HetznerSsh => services.GetRequiredService<HetznerSshAgentRuntime>(),
         RuntimeType.OpenSandbox => services.GetRequiredService<OpenSandboxAgentRuntime>(),
         _ => throw new NotSupportedException($"Runtime type '{type}' is not supported."),

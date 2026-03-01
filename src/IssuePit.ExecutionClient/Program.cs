@@ -18,6 +18,7 @@ builder.Services.AddHttpClient();
 builder.Services.AddSingleton<DockerAgentRuntime>();
 builder.Services.AddSingleton<NativeAgentRuntime>();
 builder.Services.AddSingleton<SshAgentRuntime>();
+builder.Services.AddSingleton<SshDockerAgentRuntime>();
 builder.Services.AddSingleton<HetznerSshAgentRuntime>();
 builder.Services.AddSingleton<OpenSandboxAgentRuntime>();
 builder.Services.AddSingleton<AgentRuntimeFactory>();
