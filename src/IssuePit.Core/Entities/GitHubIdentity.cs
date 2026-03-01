@@ -19,6 +19,10 @@ public class GitHubIdentity
     [ForeignKey(nameof(UserId))]
     public User User { get; set; } = null!;
 
+    /// <summary>Optional friendly display name for this identity (e.g. "Work PAT").</summary>
+    [MaxLength(200)]
+    public string? Name { get; set; }
+
     /// <summary>GitHub's numeric user ID — stable across username changes.</summary>
     [Required, MaxLength(20)]
     public string GitHubId { get; set; } = string.Empty;
@@ -30,14 +34,23 @@ public class GitHubIdentity
     public string? GitHubEmail { get; set; }
 
     /// <summary>
-    /// The GitHub OAuth access token, stored encrypted via ASP.NET Core Data Protection.
+    /// The GitHub OAuth access token or PAT, stored encrypted via ASP.NET Core Data Protection.
     /// Retrieve the plaintext value through <c>AuthController.GetToken</c> only for
     /// authenticated sessions. Agents receive it via a dedicated secure endpoint.
     /// </summary>
     [Required]
     public string EncryptedToken { get; set; } = string.Empty;
 
+    /// <summary>Optional agent this identity is mapped to.</summary>
+    public Guid? AgentId { get; set; }
+
+    [ForeignKey(nameof(AgentId))]
+    public Agent? Agent { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+    public ICollection<GitHubIdentityProject> Projects { get; set; } = [];
+    public ICollection<GitHubIdentityOrg> Orgs { get; set; } = [];
 }
