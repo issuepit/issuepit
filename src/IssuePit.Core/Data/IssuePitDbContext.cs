@@ -25,6 +25,10 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<AgentSession> AgentSessions => Set<AgentSession>();
     public DbSet<CiCdRun> CiCdRuns => Set<CiCdRun>();
     public DbSet<CiCdRunLog> CiCdRunLogs => Set<CiCdRunLog>();
+    public DbSet<Team> Teams => Set<Team>();
+    public DbSet<TeamMember> TeamMembers => Set<TeamMember>();
+    public DbSet<OrganizationMember> OrganizationMembers => Set<OrganizationMember>();
+    public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -70,5 +74,48 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
             .HasMany(i => i.Labels)
             .WithMany()
             .UsingEntity("issue_labels");
+
+        modelBuilder.Entity<TeamMember>()
+            .HasKey(x => new { x.TeamId, x.UserId });
+
+        modelBuilder.Entity<TeamMember>()
+            .HasOne(x => x.Team)
+            .WithMany(t => t.Members)
+            .HasForeignKey(x => x.TeamId);
+
+        modelBuilder.Entity<TeamMember>()
+            .HasOne(x => x.User)
+            .WithMany()
+            .HasForeignKey(x => x.UserId);
+
+        modelBuilder.Entity<OrganizationMember>()
+            .HasKey(x => new { x.OrgId, x.UserId });
+
+        modelBuilder.Entity<OrganizationMember>()
+            .HasOne(x => x.Organization)
+            .WithMany()
+            .HasForeignKey(x => x.OrgId);
+
+        modelBuilder.Entity<OrganizationMember>()
+            .HasOne(x => x.User)
+            .WithMany()
+            .HasForeignKey(x => x.UserId);
+
+        modelBuilder.Entity<ProjectMember>()
+            .HasOne(x => x.Project)
+            .WithMany()
+            .HasForeignKey(x => x.ProjectId);
+
+        modelBuilder.Entity<ProjectMember>()
+            .HasOne(x => x.User)
+            .WithMany()
+            .HasForeignKey(x => x.UserId)
+            .IsRequired(false);
+
+        modelBuilder.Entity<ProjectMember>()
+            .HasOne(x => x.Team)
+            .WithMany()
+            .HasForeignKey(x => x.TeamId)
+            .IsRequired(false);
     }
 }
