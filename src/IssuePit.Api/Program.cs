@@ -76,7 +76,15 @@ builder.Services.AddSingleton<IProducer<string, string>>(_ =>
 builder.Services.AddSignalR()
     .AddStackExchangeRedis(builder.Configuration.GetConnectionString("redis") ?? "localhost:6379");
 
-builder.Services.AddControllers()
+builder.Services.AddControllers(options =>
+    {
+        // Navigation properties (e.g. Tenant, Organization) on EF Core entities used directly
+        // as [FromBody] parameters are non-nullable but are never supplied in the request JSON
+        // — they are populated by EF Core at query time. Suppress the implicit [Required]
+        // that ASP.NET Core otherwise adds to every non-nullable reference-type property so
+        // that these endpoints accept a body without those navigation properties.
+        options.SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true;
+    })
     .AddJsonOptions(opts =>
     {
         opts.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
