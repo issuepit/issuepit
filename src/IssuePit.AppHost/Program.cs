@@ -5,7 +5,7 @@ var postgresDb = postgresServer.AddDatabase("issuepit-db");
 
 var kafka = builder.AddKafka("kafka");
 
-var redis = builder.AddRedis("redis");
+var redis = builder.AddValkey("redis");
 
 var frontend = builder.AddNpmApp("frontend", "../../frontend", "dev")
     .WithHttpEndpoint(env: "NUXT_PORT")
