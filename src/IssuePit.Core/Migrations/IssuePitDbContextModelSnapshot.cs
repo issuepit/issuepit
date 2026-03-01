@@ -40,6 +40,9 @@ namespace IssuePit.Core.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("Model")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
@@ -448,6 +451,37 @@ namespace IssuePit.Core.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("issue_assignees");
+                });
+
+            modelBuilder.Entity("IssuePit.Core.Entities.IssueComment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("IssueId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IssueId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("issue_comments");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.IssueTask", b =>
@@ -1237,6 +1271,23 @@ namespace IssuePit.Core.Migrations
                         .HasForeignKey("UserId");
 
                     b.Navigation("Agent");
+
+                    b.Navigation("Issue");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("IssuePit.Core.Entities.IssueComment", b =>
+                {
+                    b.HasOne("IssuePit.Core.Entities.Issue", "Issue")
+                        .WithMany()
+                        .HasForeignKey("IssueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("IssuePit.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId");
 
                     b.Navigation("Issue");
 
