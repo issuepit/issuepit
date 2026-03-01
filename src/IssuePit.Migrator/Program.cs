@@ -174,13 +174,13 @@ await db.Database.ExecuteSqlRawAsync("""
         updated_at timestamptz NOT NULL DEFAULT now()
     );
     CREATE TABLE IF NOT EXISTS github_identity_orgs (
-        github_identity_id uuid NOT NULL REFERENCES github_identities(id) ON DELETE CASCADE,
-        org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        github_identity_id uuid NOT NULL REFERENCES github_identities ON DELETE CASCADE,
+        org_id uuid NOT NULL REFERENCES organizations ON DELETE CASCADE,
         PRIMARY KEY (github_identity_id, org_id)
     );
     CREATE TABLE IF NOT EXISTS github_identity_projects (
-        github_identity_id uuid NOT NULL REFERENCES github_identities(id) ON DELETE CASCADE,
-        project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        github_identity_id uuid NOT NULL REFERENCES github_identities ON DELETE CASCADE,
+        project_id uuid NOT NULL REFERENCES projects ON DELETE CASCADE,
         PRIMARY KEY (github_identity_id, project_id)
     );
     """);
