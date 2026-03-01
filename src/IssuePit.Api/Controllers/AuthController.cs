@@ -177,6 +177,8 @@ public class AuthController(
             return Unauthorized("Invalid username or password.");
 
         // Block the default admin/admin credential from non-localhost requests.
+        // This check is intentionally done with BCrypt.Verify so that admins who have
+        // changed their password are no longer restricted to localhost-only access.
         if (user.IsAdmin && BCrypt.Net.BCrypt.Verify("admin", user.PasswordHash))
         {
             var remote = HttpContext.Connection.RemoteIpAddress;

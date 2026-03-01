@@ -85,8 +85,14 @@ public class UsersController(IssuePitDbContext db, TenantContext ctx) : Controll
         if (user is null || user.TenantId != ctx.CurrentUser.TenantId)
             return NotFound();
 
-        if (!string.IsNullOrWhiteSpace(req.Username))
+        if (!string.IsNullOrWhiteSpace(req.Username) && req.Username != user.Username)
+        {
+            var taken = await db.Users.AnyAsync(
+                u => u.Username == req.Username && u.TenantId == ctx.CurrentUser.TenantId && u.Id != id);
+            if (taken)
+                return Conflict("Username already taken.");
             user.Username = req.Username;
+        }
         if (!string.IsNullOrWhiteSpace(req.Email))
             user.Email = req.Email;
         if (req.IsAdmin.HasValue)
