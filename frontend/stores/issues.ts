@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { Issue, IssuePriority, IssueType } from '~/types'
+import type { Issue, IssuePriority, IssueType, IssueComment, IssueTask, IssueAssignee, Label } from '~/types'
 import { IssueStatus } from '~/types'
 
 interface IssueFilters {
@@ -14,6 +14,8 @@ interface IssueFilters {
 export const useIssuesStore = defineStore('issues', () => {
   const issues = ref<Issue[]>([])
   const currentIssue = ref<Issue | null>(null)
+  const currentComments = ref<IssueComment[]>([])
+  const currentTasks = ref<IssueTask[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
   const filters = ref<IssueFilters>({})
@@ -47,11 +49,11 @@ export const useIssuesStore = defineStore('issues', () => {
     return grouped
   })
 
-  async function fetchIssues(projectId: string, params?: IssueFilters) {
+  async function fetchIssues(projectId?: string, params?: IssueFilters) {
     loading.value = true
     error.value = null
     try {
-      const data = await api.get<Issue[]>('/api/issues', { params: { projectId, ...params } })
+      const data = await api.get<Issue[]>('/api/issues', { params: { ...(projectId ? { projectId } : {}), ...params } })
       issues.value = data
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Failed to fetch issues'
@@ -95,7 +97,7 @@ export const useIssuesStore = defineStore('issues', () => {
       const data = await api.put<Issue>(`/api/issues/${issueId}`, payload)
       const idx = issues.value.findIndex(i => i.id === issueId)
       if (idx !== -1) issues.value[idx] = data
-      if (currentIssue.value?.id === issueId) currentIssue.value = data
+      if (currentIssue.value?.id === issueId) currentIssue.value = { ...currentIssue.value, ...data }
       return data
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Failed to update issue'
@@ -121,6 +123,129 @@ export const useIssuesStore = defineStore('issues', () => {
     }
   }
 
+  // --- Comments ---
+
+  async function fetchComments(issueId: string) {
+    try {
+      const data = await api.get<IssueComment[]>(`/api/issues/${issueId}/comments`)
+      currentComments.value = data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to fetch comments'
+    }
+  }
+
+  async function addComment(issueId: string, body: string, userId?: string) {
+    try {
+      const data = await api.post<IssueComment>(`/api/issues/${issueId}/comments`, { body, userId })
+      currentComments.value.push(data)
+      return data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to add comment'
+    }
+  }
+
+  async function deleteComment(issueId: string, commentId: string) {
+    try {
+      await api.del(`/api/issues/${issueId}/comments/${commentId}`)
+      currentComments.value = currentComments.value.filter(c => c.id !== commentId)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to delete comment'
+    }
+  }
+
+  // --- Tasks ---
+
+  async function fetchTasks(issueId: string) {
+    try {
+      const data = await api.get<IssueTask[]>(`/api/issues/${issueId}/tasks`)
+      currentTasks.value = data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to fetch tasks'
+    }
+  }
+
+  async function createTask(issueId: string, title: string) {
+    try {
+      const data = await api.post<IssueTask>(`/api/issues/${issueId}/tasks`, { title })
+      currentTasks.value.push(data)
+      return data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to create task'
+    }
+  }
+
+  async function toggleTask(issueId: string, taskId: string, completed: boolean) {
+    try {
+      const task = currentTasks.value.find(t => t.id === taskId)
+      if (!task) return
+      const data = await api.put<IssueTask>(`/api/issues/${issueId}/tasks/${taskId}`, { title: task.title, completed })
+      const idx = currentTasks.value.findIndex(t => t.id === taskId)
+      if (idx !== -1) currentTasks.value[idx] = data
+      return data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to update task'
+    }
+  }
+
+  async function deleteTask(issueId: string, taskId: string) {
+    try {
+      await api.del(`/api/issues/${issueId}/tasks/${taskId}`)
+      currentTasks.value = currentTasks.value.filter(t => t.id !== taskId)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to delete task'
+    }
+  }
+
+  // --- Assignees ---
+
+  async function addAssignee(issueId: string, payload: { userId?: string; agentId?: string }) {
+    try {
+      const data = await api.post<IssueAssignee>(`/api/issues/${issueId}/assignees`, payload)
+      if (currentIssue.value?.id === issueId) {
+        currentIssue.value = { ...currentIssue.value, assignees: [...(currentIssue.value.assignees ?? []), data] }
+      }
+      return data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to add assignee'
+    }
+  }
+
+  async function removeAssignee(issueId: string, assigneeId: string) {
+    try {
+      await api.del(`/api/issues/${issueId}/assignees/${assigneeId}`)
+      if (currentIssue.value?.id === issueId) {
+        currentIssue.value = { ...currentIssue.value, assignees: currentIssue.value.assignees.filter(a => a.id !== assigneeId) }
+      }
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to remove assignee'
+    }
+  }
+
+  // --- Labels on Issue ---
+
+  async function addIssueLabel(issueId: string, labelId: string) {
+    try {
+      const data = await api.post<Label>(`/api/issues/${issueId}/labels`, { labelId })
+      if (currentIssue.value?.id === issueId) {
+        currentIssue.value = { ...currentIssue.value, labels: [...(currentIssue.value.labels ?? []), data] }
+      }
+      return data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to add label'
+    }
+  }
+
+  async function removeIssueLabel(issueId: string, labelId: string) {
+    try {
+      await api.del(`/api/issues/${issueId}/labels/${labelId}`)
+      if (currentIssue.value?.id === issueId) {
+        currentIssue.value = { ...currentIssue.value, labels: currentIssue.value.labels.filter(l => l.id !== labelId) }
+      }
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to remove label'
+    }
+  }
+
   function setFilters(f: IssueFilters) {
     filters.value = f
   }
@@ -132,6 +257,8 @@ export const useIssuesStore = defineStore('issues', () => {
   return {
     issues,
     currentIssue,
+    currentComments,
+    currentTasks,
     loading,
     error,
     filters,
@@ -143,6 +270,17 @@ export const useIssuesStore = defineStore('issues', () => {
     updateIssue,
     updateIssueStatus,
     deleteIssue,
+    fetchComments,
+    addComment,
+    deleteComment,
+    fetchTasks,
+    createTask,
+    toggleTask,
+    deleteTask,
+    addAssignee,
+    removeAssignee,
+    addIssueLabel,
+    removeIssueLabel,
     setFilters,
     clearFilters
   }

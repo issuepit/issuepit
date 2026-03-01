@@ -11,6 +11,7 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<Issue> Issues => Set<Issue>();
     public DbSet<IssueTask> IssueTasks => Set<IssueTask>();
     public DbSet<IssueAssignee> IssueAssignees => Set<IssueAssignee>();
+    public DbSet<IssueComment> IssueComments => Set<IssueComment>();
     public DbSet<Label> Labels => Set<Label>();
     public DbSet<Milestone> Milestones => Set<Milestone>();
     public DbSet<Agent> Agents => Set<Agent>();

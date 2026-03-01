@@ -1,14 +1,18 @@
 using System.ComponentModel;
+using Microsoft.Extensions.Options;
 using ModelContextProtocol.Server;
 
 namespace IssuePit.McpServer.Tools;
 
 [McpServerToolType]
-public class ProjectTools(IssuePitApiClient api)
+public class ProjectTools(IssuePitApiClient api, IOptions<McpServerOptions> options)
 {
+    private McpServerOptions Opts => options.Value;
+
     [McpServerTool, Description("List all projects for the current tenant.")]
     public async Task<string> ListProjects(CancellationToken ct = default)
     {
+        ToolGuard.EnforceNotAgentMode(Opts, "ListProjects");
         var result = await api.GetAsync<object>("/api/projects", ct);
         return Serialize(result);
     }
@@ -30,6 +34,7 @@ public class ProjectTools(IssuePitApiClient api)
         [Description("Optional description.")] string? description = null,
         CancellationToken ct = default)
     {
+        ToolGuard.EnforceNotAgentMode(Opts, "CreateProject");
         var body = new { orgId, name, slug, description };
         var result = await api.PostAsync<object>("/api/projects", body, ct);
         return Serialize(result);
@@ -53,6 +58,8 @@ public class ProjectTools(IssuePitApiClient api)
         [Description("The project ID (GUID).")] Guid id,
         CancellationToken ct = default)
     {
+        ToolGuard.EnforceNotAgentMode(Opts, "DeleteProject");
+        ToolGuard.EnforceDestructive(Opts, "DeleteProject");
         await api.DeleteAsync($"/api/projects/{id}", ct);
         return "Project deleted successfully.";
     }

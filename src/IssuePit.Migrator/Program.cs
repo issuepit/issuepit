@@ -41,6 +41,14 @@ await db.Database.ExecuteSqlRawAsync("""
     );
     ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS description text NULL;
     ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS allowed_tools text NOT NULL DEFAULT '[]';
+    CREATE TABLE IF NOT EXISTS issue_comments (
+        id uuid PRIMARY KEY,
+        issue_id uuid NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+        user_id uuid NULL REFERENCES users(id) ON DELETE SET NULL,
+        body text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+    );
     ALTER TABLE agents ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT false;
     CREATE TABLE IF NOT EXISTS mcp_server_secrets (
         id uuid PRIMARY KEY,
@@ -53,6 +61,127 @@ await db.Database.ExecuteSqlRawAsync("""
         mcp_server_id uuid NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
         project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
         PRIMARY KEY (mcp_server_id, project_id)
+    );
+    ALTER TABLE issues ADD COLUMN IF NOT EXISTS parent_issue_id uuid NULL REFERENCES issues(id) ON DELETE SET NULL;
+    ALTER TABLE issues ADD COLUMN IF NOT EXISTS github_issue_number integer NULL;
+    ALTER TABLE issues ADD COLUMN IF NOT EXISTS github_issue_url text NULL;
+    ALTER TABLE issues ADD COLUMN IF NOT EXISTS git_branch varchar(500) NULL;
+    CREATE TABLE IF NOT EXISTS issue_assignees (
+        id uuid PRIMARY KEY,
+        issue_id uuid NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+        user_id uuid NULL REFERENCES users(id) ON DELETE SET NULL,
+        agent_id uuid NULL REFERENCES agents(id) ON DELETE SET NULL
+    );
+    CREATE TABLE IF NOT EXISTS issue_tasks (
+        id uuid PRIMARY KEY,
+        issue_id uuid NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+        title varchar(500) NOT NULL,
+        body text NULL,
+        status integer NOT NULL DEFAULT 1,
+        assignee_id uuid NULL REFERENCES users(id) ON DELETE SET NULL,
+        git_branch text NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+    );
+    ALTER TABLE agents ADD COLUMN IF NOT EXISTS runner_type integer NULL;
+    ALTER TABLE agents ADD COLUMN IF NOT EXISTS model varchar(200) NULL;
+    ALTER TABLE kanban_transitions ADD COLUMN IF NOT EXISTS agent_id uuid NULL REFERENCES agents(id) ON DELETE SET NULL;
+    CREATE TABLE IF NOT EXISTS runtime_configurations (
+        id uuid PRIMARY KEY,
+        org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        name varchar(200) NOT NULL,
+        type integer NOT NULL DEFAULT 0,
+        configuration text NOT NULL DEFAULT '{}',
+        is_default boolean NOT NULL DEFAULT false,
+        created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS agent_sessions (
+        id uuid PRIMARY KEY,
+        agent_id uuid NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        issue_id uuid NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+        issue_task_id uuid NULL REFERENCES issue_tasks(id) ON DELETE SET NULL,
+        runtime_config_id uuid NULL REFERENCES runtime_configurations(id) ON DELETE SET NULL,
+        commit_sha varchar(200) NULL,
+        git_branch varchar(200) NULL,
+        status integer NOT NULL DEFAULT 0,
+        started_at timestamptz NOT NULL DEFAULT now(),
+        ended_at timestamptz NULL
+    );
+    CREATE TABLE IF NOT EXISTS api_keys (
+        id uuid PRIMARY KEY,
+        org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        name varchar(100) NOT NULL,
+        provider integer NOT NULL DEFAULT 0,
+        encrypted_value text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        expires_at timestamptz NULL
+    );
+    CREATE TABLE IF NOT EXISTS teams (
+        id uuid PRIMARY KEY,
+        org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        name varchar(200) NOT NULL,
+        slug varchar(100) NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS team_members (
+        team_id uuid NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+        user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        PRIMARY KEY (team_id, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS org_members (
+        org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        role integer NOT NULL DEFAULT 0,
+        PRIMARY KEY (org_id, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS project_members (
+        id uuid PRIMARY KEY,
+        project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        user_id uuid NULL REFERENCES users(id) ON DELETE CASCADE,
+        team_id uuid NULL REFERENCES teams(id) ON DELETE CASCADE,
+        permissions integer NOT NULL DEFAULT 1
+    );
+    CREATE TABLE IF NOT EXISTS cicd_runs (
+        id uuid PRIMARY KEY,
+        project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        agent_session_id uuid NULL REFERENCES agent_sessions(id) ON DELETE SET NULL,
+        commit_sha varchar(200) NOT NULL DEFAULT '',
+        branch varchar(200) NULL,
+        workflow varchar(200) NULL,
+        status integer NOT NULL DEFAULT 0,
+        started_at timestamptz NOT NULL DEFAULT now(),
+        ended_at timestamptz NULL,
+        external_source varchar(100) NULL,
+        external_run_id varchar(200) NULL
+    );
+    CREATE TABLE IF NOT EXISTS cicd_run_logs (
+        id uuid PRIMARY KEY,
+        cicd_run_id uuid NOT NULL REFERENCES cicd_runs(id) ON DELETE CASCADE,
+        line text NOT NULL,
+        stream integer NOT NULL DEFAULT 0,
+        timestamp timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS github_identities (
+        id uuid PRIMARY KEY,
+        user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name varchar(200) NULL,
+        github_id varchar(20) NOT NULL,
+        github_username varchar(100) NOT NULL,
+        github_email varchar(254) NULL,
+        encrypted_token text NOT NULL,
+        agent_id uuid NULL REFERENCES agents(id) ON DELETE SET NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS github_identity_orgs (
+        github_identity_id uuid NOT NULL REFERENCES github_identities(id) ON DELETE CASCADE,
+        org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        PRIMARY KEY (github_identity_id, org_id)
+    );
+    CREATE TABLE IF NOT EXISTS github_identity_projects (
+        github_identity_id uuid NOT NULL REFERENCES github_identities(id) ON DELETE CASCADE,
+        project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        PRIMARY KEY (github_identity_id, project_id)
     );
     """);
 
@@ -264,7 +393,65 @@ static async Task SeedDemoDataAsync(IssuePitDbContext db, Guid tenantId, ILogger
     db.Agents.AddRange(planAgent, codeAgent, evalAgent);
     await db.SaveChangesAsync();
 
-    logger.LogInformation("Demo data seeded: org 'Acme Corp', 2 projects, 8 issues, 3 agents, 2 MCP servers.");
+    // --- IssuePit project ---
+    var issuePitProject = new Project
+    {
+        Id = Guid.NewGuid(),
+        OrgId = org.Id,
+        Name = "IssuePit",
+        Slug = "issuepit",
+        Description = "IssuePit — AI-powered issue tracker and agent orchestration platform",
+        GitHubRepo = "https://github.com/issuepit/issuepit",
+        CreatedAt = DateTime.UtcNow,
+    };
+    db.Projects.Add(issuePitProject);
+    await db.SaveChangesAsync();
+
+    var ipLabelBug = new Label { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Name = "bug", Color = "#e11d48" };
+    var ipLabelFeature = new Label { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Name = "feature", Color = "#2563eb" };
+    var ipLabelEnhancement = new Label { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Name = "enhancement", Color = "#0891b2" };
+    var ipLabelDocs = new Label { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Name = "docs", Color = "#7c3aed" };
+    db.Labels.AddRange(ipLabelBug, ipLabelFeature, ipLabelEnhancement, ipLabelDocs);
+    await db.SaveChangesAsync();
+
+    var ipBoard = new KanbanBoard { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Name = "Main Board", CreatedAt = DateTime.UtcNow };
+    db.KanbanBoards.Add(ipBoard);
+    await db.SaveChangesAsync();
+    db.KanbanColumns.AddRange(
+        new KanbanColumn { Id = Guid.NewGuid(), BoardId = ipBoard.Id, Name = "Backlog",     Position = 0, IssueStatus = IssueStatus.Backlog },
+        new KanbanColumn { Id = Guid.NewGuid(), BoardId = ipBoard.Id, Name = "To Do",       Position = 1, IssueStatus = IssueStatus.Todo },
+        new KanbanColumn { Id = Guid.NewGuid(), BoardId = ipBoard.Id, Name = "In Progress", Position = 2, IssueStatus = IssueStatus.InProgress },
+        new KanbanColumn { Id = Guid.NewGuid(), BoardId = ipBoard.Id, Name = "In Review",   Position = 3, IssueStatus = IssueStatus.InReview },
+        new KanbanColumn { Id = Guid.NewGuid(), BoardId = ipBoard.Id, Name = "Done",        Position = 4, IssueStatus = IssueStatus.Done }
+    );
+    await db.SaveChangesAsync();
+
+    var ipIssue1 = CreateDemoIssue(issuePitProject.Id, 1, "feat: issue editor improvements", "Make the issue page use more screen real estate, add comments, label manager, type changing, assign to user/agent, create sub-issues and tasks.", IssueStatus.InProgress, IssuePriority.High, IssueType.Feature, 3);
+    var ipIssue2 = CreateDemoIssue(issuePitProject.Id, 2, "feat: kanban board drag-and-drop", "Allow dragging issue cards between kanban columns to change their status.", IssueStatus.Todo, IssuePriority.High, IssueType.Feature, 5);
+    var ipIssue3 = CreateDemoIssue(issuePitProject.Id, 3, "fix: agent session logs not streaming", "Agent session logs are not streaming in real time via SignalR — only show after completion.", IssueStatus.InProgress, IssuePriority.Urgent, IssueType.Bug, 1);
+    var ipIssue4 = CreateDemoIssue(issuePitProject.Id, 4, "feat: GitHub webhook integration", "Sync issues and PRs from GitHub repositories via webhooks.", IssueStatus.Backlog, IssuePriority.Medium, IssueType.Feature, 10);
+    var ipIssue5 = CreateDemoIssue(issuePitProject.Id, 5, "chore: extend seed data", "Add richer seed data including the issuepit/issuepit project itself.", IssueStatus.Done, IssuePriority.Low, IssueType.Task, 2);
+    db.Issues.AddRange(ipIssue1, ipIssue2, ipIssue3, ipIssue4, ipIssue5);
+    await db.SaveChangesAsync();
+
+    // Attach labels to some issues
+    ipIssue1.Labels.Add(ipLabelFeature);
+    ipIssue1.Labels.Add(ipLabelEnhancement);
+    ipIssue3.Labels.Add(ipLabelBug);
+    ipIssue4.Labels.Add(ipLabelFeature);
+    ipIssue5.Labels.Add(ipLabelDocs);
+    await db.SaveChangesAsync();
+
+    // Add tasks to ipIssue1
+    db.IssueTasks.AddRange(
+        new IssueTask { Id = Guid.NewGuid(), IssueId = ipIssue1.Id, Title = "Redesign issue detail page layout", Body = "Use full-width layout and improved sidebar", Status = IssueStatus.Done, CreatedAt = DateTime.UtcNow.AddDays(-2) },
+        new IssueTask { Id = Guid.NewGuid(), IssueId = ipIssue1.Id, Title = "Add comment functionality", Body = "Allow users to add and delete comments on issues", Status = IssueStatus.InProgress, CreatedAt = DateTime.UtcNow.AddDays(-2) },
+        new IssueTask { Id = Guid.NewGuid(), IssueId = ipIssue1.Id, Title = "Label manager in sidebar", Body = "Add/remove labels from an issue", Status = IssueStatus.Todo, CreatedAt = DateTime.UtcNow.AddDays(-1) },
+        new IssueTask { Id = Guid.NewGuid(), IssueId = ipIssue1.Id, Title = "Make issue type editable", Body = "Allow changing the type from the sidebar dropdown", Status = IssueStatus.Todo, CreatedAt = DateTime.UtcNow.AddDays(-1) }
+    );
+    await db.SaveChangesAsync();
+
+    logger.LogInformation("Demo data seeded: org 'Acme Corp', 3 projects (frontend, backend, IssuePit), 13 issues, 3 agents, 2 MCP servers.");
 }
 
 static Issue CreateDemoIssue(Guid projectId, int number, string title, string body, IssueStatus status, IssuePriority priority, IssueType type, int daysAgo) =>
