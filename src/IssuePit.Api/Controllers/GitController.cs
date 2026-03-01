@@ -168,6 +168,24 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         }
     }
 
+    [HttpGet("diff")]
+    public async Task<IActionResult> GetDiff(Guid projectId, [FromQuery] string base_, [FromQuery] string compare, [FromQuery] int context = 3)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var repo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == projectId);
+        if (repo is null) return NotFound();
+        try
+        {
+            var diff = await Task.Run(() => gitService.GetDiff(repo, base_, compare, context));
+            return Ok(diff);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to get diff for project {ProjectId}", projectId);
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
     [HttpGet("blob")]
     public async Task<IActionResult> GetBlob(Guid projectId, [FromQuery] string? ref_, [FromQuery] string path)
     {

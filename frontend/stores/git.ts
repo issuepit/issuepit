@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { GitRepository, GitBranch, GitCommit, GitTreeEntry, GitBlob } from '~/types'
+import type { GitRepository, GitBranch, GitCommit, GitTreeEntry, GitBlob, GitDiffFile } from '~/types'
 
 export const useGitStore = defineStore('git', () => {
   const repo = ref<GitRepository | null>(null)
@@ -7,6 +7,7 @@ export const useGitStore = defineStore('git', () => {
   const commits = ref<GitCommit[]>([])
   const tree = ref<GitTreeEntry[]>([])
   const blob = ref<GitBlob | null>(null)
+  const diff = ref<GitDiffFile[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
   const hasMoreCommits = ref(false)
@@ -112,6 +113,19 @@ export const useGitStore = defineStore('git', () => {
     }
   }
 
+  async function fetchDiff(projectId: string, baseBranch: string, compareBranch: string, context = 3) {
+    loading.value = true
+    error.value = null
+    try {
+      const params = new URLSearchParams({ base_: baseBranch, compare: compareBranch, context: String(context) })
+      diff.value = await api.get<GitDiffFile[]>(`/api/projects/${projectId}/git/diff?${params}`)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to fetch diff'
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function triggerFetch(projectId: string) {
     error.value = null
     try {
@@ -137,6 +151,7 @@ export const useGitStore = defineStore('git', () => {
     commits.value = []
     tree.value = []
     blob.value = null
+    diff.value = []
     error.value = null
     hasMoreCommits.value = false
   }
@@ -147,6 +162,7 @@ export const useGitStore = defineStore('git', () => {
     commits,
     tree,
     blob,
+    diff,
     loading,
     error,
     hasMoreCommits,
@@ -157,6 +173,7 @@ export const useGitStore = defineStore('git', () => {
     fetchCommits,
     fetchTree,
     fetchBlob,
+    fetchDiff,
     triggerFetch,
     triggerClone,
     reset

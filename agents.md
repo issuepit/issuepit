@@ -20,6 +20,7 @@ this file descripes rules on how agenting coding tools work with this repository
 - Check that helpers and other methods were not created twice
 - Do not remove comments
 - Do not create MD files for task descriptions done in this session
+- **PRs that include UI changes must add screenshots** showing the new/changed UI in the PR description or as a PR comment
 
 - Always run tests at the end of a session
 - Use conventional commits
