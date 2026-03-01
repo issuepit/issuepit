@@ -4,7 +4,13 @@ var postgresServer = builder.AddPostgres("postgres");
 var postgresDb = postgresServer.AddDatabase("issuepit-db");
 
 var kafka = builder.AddKafka("kafka")
-    .WithImage("confluentinc/confluent-local", "8.1.0"); // Confluent Platform 8.1.0 (Kafka 4.1.x, KRaft)
+    .WithImage("apache/kafka", "3.9.0") // Official Apache Kafka 3.9.0 (KRaft) - more stable than confluent-local in E2E tests
+    .WithEnvironment("KAFKA_NODE_ID", "1")
+    .WithEnvironment("KAFKA_PROCESS_ROLES", "broker,controller")
+    .WithEnvironment("KAFKA_CONTROLLER_QUORUM_VOTERS", "1@localhost:29093")
+    .WithEnvironment("KAFKA_CONTROLLER_LISTENER_NAMES", "CONTROLLER")
+    .WithEnvironment("KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR", "1")
+    .WithEnvironment("KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS", "0");
 
 var redis = builder.AddValkey("redis");
 
