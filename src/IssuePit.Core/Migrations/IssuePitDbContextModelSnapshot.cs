@@ -40,6 +40,10 @@ namespace IssuePit.Core.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
+                    b.Property<string>("Model")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -47,6 +51,9 @@ namespace IssuePit.Core.Migrations
 
                     b.Property<Guid>("OrgId")
                         .HasColumnType("uuid");
+
+                    b.Property<int?>("RunnerType")
+                        .HasColumnType("integer");
 
                     b.Property<string>("SystemPrompt")
                         .IsRequired()
@@ -609,12 +616,19 @@ namespace IssuePit.Core.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("AllowedTools")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<string>("Configuration")
                         .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -632,6 +646,49 @@ namespace IssuePit.Core.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("mcp_servers");
+                });
+
+            modelBuilder.Entity("IssuePit.Core.Entities.McpServerProject", b =>
+                {
+                    b.Property<Guid>("McpServerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("McpServerId", "ProjectId");
+
+                    b.HasIndex("ProjectId");
+
+                    b.ToTable("mcp_server_projects");
+                });
+
+            modelBuilder.Entity("IssuePit.Core.Entities.McpServerSecret", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EncryptedValue")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("McpServerId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("McpServerId");
+
+                    b.ToTable("mcp_server_secrets");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.Milestone", b =>
@@ -851,6 +908,50 @@ namespace IssuePit.Core.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("team_members");
+                });
+
+            modelBuilder.Entity("IssuePit.Core.Entities.TelegramBot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ChatId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EncryptedBotToken")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Events")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsSilent")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid?>("OrgId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ProjectId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrgId");
+
+                    b.HasIndex("ProjectId");
+
+                    b.ToTable("telegram_bots");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.Tenant", b =>
@@ -1225,6 +1326,36 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("Project");
                 });
 
+            modelBuilder.Entity("IssuePit.Core.Entities.McpServerProject", b =>
+                {
+                    b.HasOne("IssuePit.Core.Entities.McpServer", "McpServer")
+                        .WithMany("McpServerProjects")
+                        .HasForeignKey("McpServerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("IssuePit.Core.Entities.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("McpServer");
+
+                    b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("IssuePit.Core.Entities.McpServerSecret", b =>
+                {
+                    b.HasOne("IssuePit.Core.Entities.McpServer", "McpServer")
+                        .WithMany("Secrets")
+                        .HasForeignKey("McpServerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("McpServer");
+                });
+
             modelBuilder.Entity("IssuePit.Core.Entities.Milestone", b =>
                 {
                     b.HasOne("IssuePit.Core.Entities.Project", "Project")
@@ -1341,6 +1472,21 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("IssuePit.Core.Entities.TelegramBot", b =>
+                {
+                    b.HasOne("IssuePit.Core.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrgId");
+
+                    b.HasOne("IssuePit.Core.Entities.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId");
+
+                    b.Navigation("Organization");
+
+                    b.Navigation("Project");
+                });
+
             modelBuilder.Entity("IssuePit.Core.Entities.User", b =>
                 {
                     b.HasOne("IssuePit.Core.Entities.Tenant", "Tenant")
@@ -1404,6 +1550,10 @@ namespace IssuePit.Core.Migrations
             modelBuilder.Entity("IssuePit.Core.Entities.McpServer", b =>
                 {
                     b.Navigation("AgentMcpServers");
+
+                    b.Navigation("McpServerProjects");
+
+                    b.Navigation("Secrets");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.Team", b =>

@@ -18,8 +18,10 @@ namespace IssuePit.Core.Migrations
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     OrgId = table.Column<Guid>(type: "uuid", nullable: false),
                     Name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    Description = table.Column<string>(type: "text", nullable: true),
                     Url = table.Column<string>(type: "character varying(2000)", maxLength: 2000, nullable: false),
                     Configuration = table.Column<string>(type: "text", nullable: false),
+                    AllowedTools = table.Column<string>(type: "text", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
@@ -40,6 +42,27 @@ namespace IssuePit.Core.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_tenants", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "mcp_server_secrets",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    McpServerId = table.Column<Guid>(type: "uuid", nullable: false),
+                    Key = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    EncryptedValue = table.Column<string>(type: "text", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_mcp_server_secrets", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_mcp_server_secrets_mcp_servers_McpServerId",
+                        column: x => x.McpServerId,
+                        principalTable: "mcp_servers",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -96,6 +119,8 @@ namespace IssuePit.Core.Migrations
                     SystemPrompt = table.Column<string>(type: "text", nullable: false),
                     DockerImage = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
                     AllowedTools = table.Column<string>(type: "text", nullable: false),
+                    RunnerType = table.Column<int>(type: "integer", nullable: true),
+                    Model = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
@@ -345,6 +370,30 @@ namespace IssuePit.Core.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "mcp_server_projects",
+                columns: table => new
+                {
+                    McpServerId = table.Column<Guid>(type: "uuid", nullable: false),
+                    ProjectId = table.Column<Guid>(type: "uuid", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_mcp_server_projects", x => new { x.McpServerId, x.ProjectId });
+                    table.ForeignKey(
+                        name: "FK_mcp_server_projects_mcp_servers_McpServerId",
+                        column: x => x.McpServerId,
+                        principalTable: "mcp_servers",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_mcp_server_projects_projects_ProjectId",
+                        column: x => x.ProjectId,
+                        principalTable: "projects",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "milestones",
                 columns: table => new
                 {
@@ -364,6 +413,35 @@ namespace IssuePit.Core.Migrations
                         principalTable: "projects",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "telegram_bots",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    OrgId = table.Column<Guid>(type: "uuid", nullable: true),
+                    ProjectId = table.Column<Guid>(type: "uuid", nullable: true),
+                    Name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    EncryptedBotToken = table.Column<string>(type: "text", nullable: false),
+                    ChatId = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    Events = table.Column<int>(type: "integer", nullable: false),
+                    IsSilent = table.Column<bool>(type: "boolean", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_telegram_bots", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_telegram_bots_organizations_OrgId",
+                        column: x => x.OrgId,
+                        principalTable: "organizations",
+                        principalColumn: "Id");
+                    table.ForeignKey(
+                        name: "FK_telegram_bots_projects_ProjectId",
+                        column: x => x.ProjectId,
+                        principalTable: "projects",
+                        principalColumn: "Id");
                 });
 
             migrationBuilder.CreateTable(
@@ -907,6 +985,16 @@ namespace IssuePit.Core.Migrations
                 column: "ProjectId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_mcp_server_projects_ProjectId",
+                table: "mcp_server_projects",
+                column: "ProjectId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_mcp_server_secrets_McpServerId",
+                table: "mcp_server_secrets",
+                column: "McpServerId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_milestones_ProjectId",
                 table: "milestones",
                 column: "ProjectId");
@@ -957,6 +1045,16 @@ namespace IssuePit.Core.Migrations
                 column: "OrgId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_telegram_bots_OrgId",
+                table: "telegram_bots",
+                column: "OrgId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_telegram_bots_ProjectId",
+                table: "telegram_bots",
+                column: "ProjectId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_users_TenantId",
                 table: "users",
                 column: "TenantId");
@@ -993,6 +1091,12 @@ namespace IssuePit.Core.Migrations
                 name: "kanban_transitions");
 
             migrationBuilder.DropTable(
+                name: "mcp_server_projects");
+
+            migrationBuilder.DropTable(
+                name: "mcp_server_secrets");
+
+            migrationBuilder.DropTable(
                 name: "org_members");
 
             migrationBuilder.DropTable(
@@ -1002,7 +1106,7 @@ namespace IssuePit.Core.Migrations
                 name: "team_members");
 
             migrationBuilder.DropTable(
-                name: "mcp_servers");
+                name: "telegram_bots");
 
             migrationBuilder.DropTable(
                 name: "cicd_runs");
@@ -1015,6 +1119,9 @@ namespace IssuePit.Core.Migrations
 
             migrationBuilder.DropTable(
                 name: "kanban_columns");
+
+            migrationBuilder.DropTable(
+                name: "mcp_servers");
 
             migrationBuilder.DropTable(
                 name: "teams");
