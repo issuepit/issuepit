@@ -134,6 +134,23 @@ public class TeamsController(IssuePitDbContext db, TenantContext ctx) : Controll
         await db.SaveChangesAsync();
         return NoContent();
     }
+
+    [HttpGet("{id:guid}/projects")]
+    public async Task<IActionResult> GetTeamProjects(Guid orgId, Guid id)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var org = await db.Organizations
+            .FirstOrDefaultAsync(o => o.Id == orgId && o.TenantId == ctx.CurrentTenant.Id);
+        if (org is null) return NotFound();
+        var team = await db.Teams
+            .FirstOrDefaultAsync(t => t.Id == id && t.OrgId == orgId);
+        if (team is null) return NotFound();
+        var projectMembers = await db.ProjectMembers
+            .Include(m => m.Project)
+            .Where(m => m.TeamId == id)
+            .ToListAsync();
+        return Ok(projectMembers);
+    }
 }
 
 public record CreateTeamRequest(string Name, string Slug);

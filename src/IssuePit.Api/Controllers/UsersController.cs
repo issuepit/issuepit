@@ -11,6 +11,21 @@ namespace IssuePit.Api.Controllers;
 [Route("api/admin/users")]
 public class UsersController(IssuePitDbContext db, TenantContext ctx) : ControllerBase
 {
+    [HttpGet("/api/users/search")]
+    public async Task<IActionResult> SearchUsers([FromQuery] string? q)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var query = db.Users.Where(u => u.TenantId == ctx.CurrentTenant.Id);
+        if (!string.IsNullOrWhiteSpace(q))
+            query = query.Where(u => u.Username.ToLower().Contains(q.ToLower()));
+        var users = await query
+            .OrderBy(u => u.Username)
+            .Take(20)
+            .Select(u => new { u.Id, u.Username, u.Email })
+            .ToListAsync();
+        return Ok(users);
+    }
+
     [HttpGet]
     public async Task<IActionResult> GetUsers()
     {

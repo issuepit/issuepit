@@ -8,10 +8,10 @@
 
     <!-- Stats -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-      <StatCard label="Projects" :value="stats.projects" icon="projects" color="blue" />
-      <StatCard label="Open Issues" :value="stats.openIssues" icon="issues" color="amber" />
-      <StatCard label="In Progress" :value="stats.inProgress" icon="progress" color="indigo" />
-      <StatCard label="Agents" :value="stats.agents" icon="agents" color="green" />
+      <StatCard label="Projects" :value="stats.projects" icon="projects" color="blue" to="/projects" />
+      <StatCard label="Open Issues" :value="stats.openIssues" icon="issues" color="amber" to="/issues?status=open" />
+      <StatCard label="In Progress" :value="stats.inProgress" icon="progress" color="indigo" to="/issues?status=in_progress" />
+      <StatCard label="Agents" :value="stats.agents" icon="agents" color="green" to="/agents" />
     </div>
 
     <!-- Recent Activity -->
@@ -23,8 +23,9 @@
           <NuxtLink to="/projects" class="text-xs text-brand-400 hover:text-brand-300">View all →</NuxtLink>
         </div>
         <div class="space-y-2">
-          <div v-for="issue in recentIssues" :key="issue.id"
-            class="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-800 cursor-pointer transition-colors">
+          <NuxtLink v-for="issue in recentIssues" :key="issue.id"
+            :to="`/projects/${issue.projectId}/issues/${issue.id}`"
+            class="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-800 transition-colors block">
             <span :class="statusDot(issue.status)" class="w-2 h-2 rounded-full shrink-0"></span>
             <div class="flex-1 min-w-0">
               <p class="text-sm text-gray-200 truncate">{{ issue.title }}</p>
@@ -33,7 +34,7 @@
             <span :class="priorityBadge(issue.priority)" class="text-xs px-1.5 py-0.5 rounded font-medium">
               {{ issue.priority }}
             </span>
-          </div>
+          </NuxtLink>
           <p v-if="recentIssues.length === 0" class="text-sm text-gray-500 py-4 text-center">No recent issues</p>
         </div>
       </div>
@@ -123,7 +124,7 @@ function priorityBadge(priority: IssuePriority) {
 
 // Stat card component
 const StatCard = defineComponent({
-  props: { label: String, value: Number, icon: String, color: String },
+  props: { label: String, value: Number, icon: String, color: String, to: String },
   setup(props) {
     const colorMap: Record<string, string> = {
       blue: 'bg-blue-900/30 text-blue-400',
@@ -131,19 +132,21 @@ const StatCard = defineComponent({
       indigo: 'bg-indigo-900/30 text-indigo-400',
       green: 'bg-green-900/30 text-green-400'
     }
-    return () => h('div', { class: 'bg-gray-900 border border-gray-800 rounded-xl p-5' }, [
-      h('div', { class: 'flex items-center justify-between' }, [
-        h('div', [
-          h('p', { class: 'text-sm text-gray-400' }, props.label),
-          h('p', { class: 'text-3xl font-bold text-white mt-1' }, props.value ?? 0)
-        ]),
-        h('div', { class: `w-10 h-10 rounded-lg flex items-center justify-center ${colorMap[props.color!] ?? colorMap.blue}` },
-          h('svg', { class: 'w-5 h-5', fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24' },
-            h('path', { 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'stroke-width': '2', d: 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6' })
-          )
+    const baseClass = 'bg-gray-900 border border-gray-800 rounded-xl p-5'
+    const inner = () => h('div', { class: 'flex items-center justify-between' }, [
+      h('div', [
+        h('p', { class: 'text-sm text-gray-400' }, props.label),
+        h('p', { class: 'text-3xl font-bold text-white mt-1' }, props.value ?? 0)
+      ]),
+      h('div', { class: `w-10 h-10 rounded-lg flex items-center justify-center ${colorMap[props.color!] ?? colorMap.blue}` },
+        h('svg', { class: 'w-5 h-5', fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24' },
+          h('path', { 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'stroke-width': '2', d: 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6' })
         )
-      ])
+      )
     ])
+    return () => props.to
+      ? h(resolveComponent('NuxtLink'), { to: props.to, class: `${baseClass} block hover:border-gray-700 transition-colors` }, { default: inner })
+      : h('div', { class: baseClass }, inner())
   }
 })
 </script>

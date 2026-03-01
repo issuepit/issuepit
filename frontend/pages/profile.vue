@@ -83,6 +83,32 @@
         <p v-else class="text-sm text-gray-500">No projects yet.</p>
       </div>
 
+      <!-- Teams -->
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <h2 class="font-semibold text-white mb-4">Teams</h2>
+        <div v-if="teamsLoading" class="flex items-center gap-2 text-gray-500 text-sm">
+          <div class="w-4 h-4 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+          Loading…
+        </div>
+        <div v-else-if="allTeams.length" class="space-y-2">
+          <NuxtLink
+            v-for="item in allTeams"
+            :key="item.team.id"
+            :to="`/orgs/${item.team.orgId}`"
+            class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors"
+          >
+            <div class="w-7 h-7 rounded-md bg-green-900/50 flex items-center justify-center shrink-0">
+              <svg class="w-3.5 h-3.5 text-green-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+              </svg>
+            </div>
+            <span class="text-sm text-gray-200">{{ item.team.name }}</span>
+            <span class="text-xs text-gray-600 ml-auto">{{ item.orgName }}</span>
+          </NuxtLink>
+        </div>
+        <p v-else class="text-sm text-gray-500">No teams yet.</p>
+      </div>
       <!-- GitHub Account -->
       <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
         <h2 class="font-semibold text-white mb-4">GitHub Account</h2>
@@ -97,6 +123,16 @@
             </svg>
             GitHub Identities
           </NuxtLink>
+          <a
+            href="/api/auth/github?returnUrl=/config/github-identities"
+            class="flex items-center gap-2 text-sm text-gray-300 hover:text-white px-4 py-2 rounded-lg border border-gray-700 hover:bg-gray-800 transition-colors"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+            Add via GitHub SSO
+          </a>
           <a
             href="https://github.com/settings/profile"
             target="_blank"
@@ -168,17 +204,34 @@
 import { useAuthStore } from '~/stores/auth'
 import { useOrgsStore } from '~/stores/orgs'
 import { useProjectsStore } from '~/stores/projects'
+import type { Team } from '~/types'
 
 const auth = useAuthStore()
 const orgsStore = useOrgsStore()
 const projectsStore = useProjectsStore()
 const api = useApi()
 
+const teamsLoading = ref(false)
+const allTeams = ref<Array<{ team: Team; orgName: string }>>([])
+
 onMounted(async () => {
   await Promise.all([
     orgsStore.fetchOrgs(),
     projectsStore.fetchProjects(),
   ])
+  teamsLoading.value = true
+  try {
+    const teamArrays = await Promise.all(
+      orgsStore.orgs.map(org =>
+        api.get<Team[]>(`/api/orgs/${org.id}/teams`)
+          .then(teams => teams.map(t => ({ team: t, orgName: org.name })))
+          .catch(() => [] as Array<{ team: Team; orgName: string }>)
+      )
+    )
+    allTeams.value = teamArrays.flat()
+  } finally {
+    teamsLoading.value = false
+  }
 })
 
 const displayName = computed(() => auth.user?.username ?? auth.user?.email?.split('@')[0] ?? 'User')
