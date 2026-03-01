@@ -133,9 +133,9 @@
       </div>
 
       <!-- Code browser tab -->
-      <div v-if="activeTab === 'code'" class="flex gap-4">
+      <div v-if="activeTab === 'code'" class="flex gap-4 items-start">
         <!-- File tree -->
-        <div class="w-64 shrink-0 bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <div class="w-64 shrink-0 bg-gray-900 border border-gray-800 rounded-xl overflow-hidden sticky top-4">
           <!-- Breadcrumb path -->
           <div class="flex items-center gap-1 px-3 py-2 border-b border-gray-800 text-sm text-gray-400 flex-wrap">
             <button @click="navigateTo('')" class="hover:text-white transition-colors">root</button>
@@ -148,7 +148,7 @@
           <div v-if="store.loading" class="flex justify-center py-6">
             <div class="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
           </div>
-          <div v-else class="overflow-y-auto max-h-[600px]">
+          <div v-else class="overflow-y-auto max-h-[calc(100vh-8rem)]">
             <button v-if="currentPath" @click="navigateUp"
               class="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -214,10 +214,10 @@
             </div>
             <!-- Markdown preview -->
             <div v-else-if="isMdFile && showRenderedMd"
-              class="p-6 overflow-auto max-h-[600px] prose prose-invert prose-sm max-w-none"
+              class="p-6 prose prose-invert prose-sm max-w-none"
               v-html="renderedMd"></div>
             <!-- Code with line numbers -->
-            <div v-else class="overflow-auto max-h-[600px]">
+            <div v-else class="overflow-x-auto">
               <table class="w-full border-collapse text-sm font-mono leading-relaxed">
                 <tbody>
                   <tr v-for="(line, idx) in fileLines" :key="idx"

@@ -56,8 +56,8 @@
                   class="text-xs px-2.5 py-1 rounded transition-colors"
                   :class="descTab === 'preview' ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'">Preview</button>
               </div>
-              <textarea v-if="descTab === 'write'" v-model="bodyEdit" rows="8" autofocus
-                class="w-full bg-transparent text-sm text-gray-300 focus:outline-none resize-none font-mono"
+              <textarea v-if="descTab === 'write'" v-model="bodyEdit" rows="15" autofocus
+                class="w-full bg-transparent text-sm text-gray-300 focus:outline-none resize-y font-mono min-h-[15rem]"
                 placeholder="Describe this issue... (Markdown supported)"></textarea>
               <div v-else class="prose prose-invert prose-sm max-w-none min-h-16 text-sm"
                 v-html="renderedBodyEdit"></div>
