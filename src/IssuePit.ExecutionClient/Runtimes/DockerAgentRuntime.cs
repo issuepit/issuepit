@@ -134,6 +134,9 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         if (issue.GitBranch is not null)
             env.Add($"ISSUEPIT_GIT_BRANCH={issue.GitBranch}");
 
+        // Inform the entrypoint whether internet access is disabled (used for DNS logging display).
+        env.Add($"ISSUEPIT_DISABLE_INTERNET={agent.DisableInternet.ToString().ToLowerInvariant()}");
+
         // Inject git repository info so the container can clone the repo on startup.
         if (gitRepository is not null)
         {
