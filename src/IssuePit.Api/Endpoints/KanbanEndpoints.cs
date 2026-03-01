@@ -217,3 +217,4 @@ public record UpdateBoardRequest(string Name);
 public record UpdateColumnRequest(string Name, int Position, IssuePit.Core.Enums.IssueStatus IssueStatus);
 public record UpdateTransitionRequest(string Name, Guid FromColumnId, Guid ToColumnId, bool IsAuto, Guid? AgentId);
 public record TriggerTransitionRequest(Guid IssueId);
+
