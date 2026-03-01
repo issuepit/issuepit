@@ -50,7 +50,9 @@
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-800">
-            <tr v-for="run in store.runs" :key="run.id" class="hover:bg-gray-900/50 transition-colors">
+            <tr v-for="run in store.runs" :key="run.id"
+              class="hover:bg-gray-900/50 transition-colors cursor-pointer"
+              @click="navigateTo(`/projects/${id}/runs/cicd/${run.id}`)">
               <td class="px-4 py-3">
                 <span :class="statusClass(run.status)" class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium">
                   <span :class="statusDot(run.status)" class="w-1.5 h-1.5 rounded-full" />
@@ -72,7 +74,7 @@
               <td class="px-4 py-3 text-right">
                 <button v-if="run.status === CiCdRunStatus.Pending || run.status === CiCdRunStatus.Running"
                   class="text-xs text-red-400 hover:text-red-300 transition-colors"
-                  @click="cancelRun(run.id)">
+                  @click.stop="cancelRun(run.id)">
                   Cancel
                 </button>
               </td>
@@ -107,7 +109,9 @@
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-800">
-            <tr v-for="session in store.agentSessions" :key="session.id" class="hover:bg-gray-900/50 transition-colors">
+            <tr v-for="session in store.agentSessions" :key="session.id"
+              class="hover:bg-gray-900/50 transition-colors cursor-pointer"
+              @click="navigateTo(`/projects/${id}/runs/agent-sessions/${session.id}`)">
               <td class="px-4 py-3">
                 <span :class="statusClass(session.status)" class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium">
                   <span :class="statusDot(session.status)" class="w-1.5 h-1.5 rounded-full" />
@@ -116,8 +120,9 @@
               </td>
               <td class="px-4 py-3 text-gray-300">{{ session.agentName }}</td>
               <td class="px-4 py-3">
-                <NuxtLink :to="`/projects/${id}/issues`"
-                  class="text-brand-400 hover:text-brand-300 transition-colors">
+                <NuxtLink :to="`/projects/${id}/issues/${session.issueId}`"
+                  class="text-brand-400 hover:text-brand-300 transition-colors"
+                  @click.stop>
                   #{{ session.issueNumber }} {{ session.issueTitle }}
                 </NuxtLink>
               </td>
@@ -154,7 +159,7 @@ const id = route.params.id as string
 
 const store = useCiCdRunsStore()
 const tabs = ['CI/CD Runs', 'Agent Runs'] as const
-const activeTab = ref<typeof tabs[number]>('CI/CD Runs')
+const activeTab = ref<typeof tabs[number]>(route.query.tab === 'agent' ? 'Agent Runs' : 'CI/CD Runs')
 
 onMounted(async () => {
   await Promise.all([
