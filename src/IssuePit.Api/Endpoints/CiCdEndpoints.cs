@@ -1,5 +1,6 @@
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
+using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
 using Microsoft.EntityFrameworkCore;
 
@@ -35,6 +36,8 @@ public static class CiCdEndpoints
                     StatusName = r.Status.ToString(),
                     r.StartedAt,
                     r.EndedAt,
+                    r.ExternalSource,
+                    r.ExternalRunId,
                 })
                 .Take(100)
                 .ToListAsync();
@@ -59,6 +62,8 @@ public static class CiCdEndpoints
                     StatusName = r.Status.ToString(),
                     r.StartedAt,
                     r.EndedAt,
+                    r.ExternalSource,
+                    r.ExternalRunId,
                 })
                 .FirstOrDefaultAsync();
 
@@ -88,6 +93,99 @@ public static class CiCdEndpoints
             return Results.Ok(logs);
         });
 
+        // Accepts state updates pushed by external CI/CD systems (e.g. GitHub Actions webhooks).
+        // Creates a new run record or updates an existing one matched by (projectId, externalSource, externalRunId).
+        cicd.MapPost("/external-sync", async (ExternalSyncRequest request, IssuePitDbContext db, TenantContext tenant) =>
+        {
+            if (request.ProjectId == Guid.Empty)
+                return Results.BadRequest("projectId is required");
+
+            if (string.IsNullOrWhiteSpace(request.ExternalSource))
+                return Results.BadRequest("externalSource is required");
+
+            if (string.IsNullOrWhiteSpace(request.ExternalRunId))
+                return Results.BadRequest("externalRunId is required");
+
+            // Ensure the project belongs to this tenant.
+            // Return NotFound (not Unauthorized) to avoid leaking whether a project exists across tenant boundaries.
+            var projectExists = await db.Projects
+                .AnyAsync(p => p.Id == request.ProjectId && p.Organization.TenantId == tenant.CurrentTenant!.Id);
+
+            if (!projectExists) return Results.NotFound();
+
+            var status = MapExternalStatus(request.Status, request.Conclusion);
+
+            // Try to find an existing run for this external source + run ID
+            var run = await db.CiCdRuns
+                .FirstOrDefaultAsync(r =>
+                    r.ProjectId == request.ProjectId &&
+                    r.ExternalSource == request.ExternalSource &&
+                    r.ExternalRunId == request.ExternalRunId);
+
+            if (run is null)
+            {
+                run = new CiCdRun
+                {
+                    Id = Guid.NewGuid(),
+                    ProjectId = request.ProjectId,
+                    CommitSha = request.CommitSha ?? string.Empty,
+                    Branch = request.Branch,
+                    Workflow = request.Workflow,
+                    ExternalSource = request.ExternalSource,
+                    ExternalRunId = request.ExternalRunId,
+                    Status = status,
+                    StartedAt = request.StartedAt ?? DateTime.UtcNow,
+                    EndedAt = request.EndedAt,
+                };
+                db.CiCdRuns.Add(run);
+            }
+            else
+            {
+                run.Status = status;
+                if (!string.IsNullOrWhiteSpace(request.CommitSha))
+                    run.CommitSha = request.CommitSha;
+                if (!string.IsNullOrWhiteSpace(request.Branch))
+                    run.Branch = request.Branch;
+                if (!string.IsNullOrWhiteSpace(request.Workflow))
+                    run.Workflow = request.Workflow;
+                if (request.EndedAt.HasValue)
+                    run.EndedAt = request.EndedAt;
+            }
+
+            await db.SaveChangesAsync();
+
+            return Results.Ok(new { run.Id, run.Status, StatusName = run.Status.ToString() });
+        });
+
         return app;
     }
+
+    private static CiCdRunStatus MapExternalStatus(string? status, string? conclusion) =>
+        status?.ToLowerInvariant() switch
+        {
+            "queued" => CiCdRunStatus.Pending,
+            "in_progress" => CiCdRunStatus.Running,
+            "completed" => conclusion?.ToLowerInvariant() switch
+            {
+                "success" => CiCdRunStatus.Succeeded,
+                "cancelled" => CiCdRunStatus.Cancelled,
+                _ => CiCdRunStatus.Failed,
+            },
+            _ => CiCdRunStatus.Pending,
+        };
 }
+
+/// <summary>Request body for the external CI/CD sync endpoint.</summary>
+internal sealed record ExternalSyncRequest(
+    Guid ProjectId,
+    string ExternalSource,
+    string ExternalRunId,
+    string? CommitSha,
+    string? Branch,
+    string? Workflow,
+    /// <summary>GitHub status values: queued | in_progress | completed</summary>
+    string? Status,
+    /// <summary>GitHub conclusion values: success | failure | cancelled | skipped | timed_out | action_required | neutral</summary>
+    string? Conclusion,
+    DateTime? StartedAt,
+    DateTime? EndedAt);

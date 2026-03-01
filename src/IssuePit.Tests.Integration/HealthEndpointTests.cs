@@ -10,7 +10,7 @@ public class HealthEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
     [Fact]
     public async Task GetHealthz_ReturnsOk()
     {
-        var response = await _client.GetAsync("/healthz");
+        var response = await _client.GetAsync("/health");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 

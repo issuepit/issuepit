@@ -37,5 +37,13 @@ public class CiCdRun
 
     public DateTime? EndedAt { get; set; }
 
+    /// <summary>Source external CI/CD system that created this run (e.g. "github", "gitlab"). Null for locally triggered runs.</summary>
+    [MaxLength(100)]
+    public string? ExternalSource { get; set; }
+
+    /// <summary>Run ID in the external CI/CD system (e.g. GitHub Actions run_id). Null for locally triggered runs.</summary>
+    [MaxLength(200)]
+    public string? ExternalRunId { get; set; }
+
     public ICollection<CiCdRunLog> Logs { get; set; } = [];
 }
