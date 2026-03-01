@@ -27,6 +27,7 @@ public class SshDockerAgentRuntime(ILogger<SshDockerAgentRuntime> logger) : IAge
         Issue issue,
         IReadOnlyDictionary<string, string> credentials,
         RuntimeConfiguration? runtimeConfig,
+        GitRepository? gitRepository,
         CancellationToken cancellationToken)
     {
         if (runtimeConfig is null)
@@ -41,7 +42,7 @@ public class SshDockerAgentRuntime(ILogger<SshDockerAgentRuntime> logger) : IAge
         if (string.IsNullOrWhiteSpace(config.Username))
             throw new InvalidOperationException("SSH RuntimeConfiguration missing 'Username'.");
 
-        return await RunDockerOverSshAsync(session, agent, issue, credentials, config, cancellationToken);
+        return await RunDockerOverSshAsync(session, agent, issue, credentials, gitRepository, config, cancellationToken);
     }
 
     private async Task<string> RunDockerOverSshAsync(
@@ -49,6 +50,7 @@ public class SshDockerAgentRuntime(ILogger<SshDockerAgentRuntime> logger) : IAge
         Agent agent,
         Issue issue,
         IReadOnlyDictionary<string, string> credentials,
+        GitRepository? gitRepository,
         SshConfig config,
         CancellationToken cancellationToken)
     {
@@ -61,7 +63,7 @@ public class SshDockerAgentRuntime(ILogger<SshDockerAgentRuntime> logger) : IAge
 
         try
         {
-            var dockerCmd = BuildDockerRunCommand(session, agent, issue, credentials);
+            var dockerCmd = BuildDockerRunCommand(session, agent, issue, credentials, gitRepository);
             logger.LogDebug("Running on {Host}: {Cmd}", config.Host, dockerCmd);
 
             using var cmd = client.CreateCommand(dockerCmd);
@@ -106,7 +108,8 @@ public class SshDockerAgentRuntime(ILogger<SshDockerAgentRuntime> logger) : IAge
         AgentSession session,
         Agent agent,
         Issue issue,
-        IReadOnlyDictionary<string, string> credentials)
+        IReadOnlyDictionary<string, string> credentials,
+        GitRepository? gitRepository)
     {
         var envArgs = new StringBuilder();
 
@@ -122,6 +125,16 @@ public class SshDockerAgentRuntime(ILogger<SshDockerAgentRuntime> logger) : IAge
 
         if (issue.GitBranch is not null)
             AppendEnv("ISSUEPIT_GIT_BRANCH", issue.GitBranch);
+
+        if (gitRepository is not null)
+        {
+            AppendEnv("ISSUEPIT_GIT_REMOTE_URL", gitRepository.RemoteUrl);
+            AppendEnv("ISSUEPIT_GIT_DEFAULT_BRANCH", gitRepository.DefaultBranch);
+            if (!string.IsNullOrEmpty(gitRepository.AuthUsername))
+                AppendEnv("ISSUEPIT_GIT_AUTH_USERNAME", gitRepository.AuthUsername);
+            if (!string.IsNullOrEmpty(gitRepository.AuthToken))
+                AppendEnv("ISSUEPIT_GIT_AUTH_TOKEN", gitRepository.AuthToken);
+        }
 
         foreach (var (key, value) in credentials)
             AppendEnv(key, value);

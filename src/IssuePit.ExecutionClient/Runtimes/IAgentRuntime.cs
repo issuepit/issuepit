@@ -11,5 +11,6 @@ public interface IAgentRuntime
         Issue issue,
         IReadOnlyDictionary<string, string> credentials,
         RuntimeConfiguration? runtimeConfig,
+        GitRepository? gitRepository,
         CancellationToken cancellationToken);
 }

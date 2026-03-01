@@ -23,6 +23,7 @@ public class NativeAgentRuntime(ILogger<NativeAgentRuntime> logger) : IAgentRunt
         Issue issue,
         IReadOnlyDictionary<string, string> credentials,
         RuntimeConfiguration? runtimeConfig,
+        GitRepository? gitRepository,
         CancellationToken cancellationToken)
     {
         if (runtimeConfig is null)
@@ -60,6 +61,16 @@ public class NativeAgentRuntime(ILogger<NativeAgentRuntime> logger) : IAgentRunt
 
         if (issue.GitBranch is not null)
             startInfo.Environment["ISSUEPIT_GIT_BRANCH"] = issue.GitBranch;
+
+        if (gitRepository is not null)
+        {
+            startInfo.Environment["ISSUEPIT_GIT_REMOTE_URL"] = gitRepository.RemoteUrl;
+            startInfo.Environment["ISSUEPIT_GIT_DEFAULT_BRANCH"] = gitRepository.DefaultBranch;
+            if (!string.IsNullOrEmpty(gitRepository.AuthUsername))
+                startInfo.Environment["ISSUEPIT_GIT_AUTH_USERNAME"] = gitRepository.AuthUsername;
+            if (!string.IsNullOrEmpty(gitRepository.AuthToken))
+                startInfo.Environment["ISSUEPIT_GIT_AUTH_TOKEN"] = gitRepository.AuthToken;
+        }
 
         foreach (var (key, value) in credentials)
             startInfo.Environment[key] = value;
