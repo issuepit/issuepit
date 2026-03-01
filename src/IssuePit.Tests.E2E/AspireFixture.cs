@@ -1,6 +1,8 @@
+using System.Reflection;
 using Aspire.Hosting;
 using Aspire.Hosting.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 
 namespace IssuePit.Tests.E2E;
@@ -38,6 +40,32 @@ public sealed class AspireFixture : IAsyncLifetime
         appHost.Services.Configure<LoggerFilterOptions>(opts =>
         {
             opts.MinLevel = LogLevel.Warning;
+        });
+
+        // Aspire.Hosting.Kafka registers a "kafka_check" health check whose ProducerConfig
+        // has no log suppression. The AppHost runs IN-PROCESS, so when the Kafka container
+        // stops during test teardown, librdkafka writes %3|…|ERROR| lines directly to fd 2
+        // of the test process — bypassing EnableResourceLogging=false and ILogger filters.
+        // Wrap the factory so the first-use ProducerConfig gets log_level=0.
+        appHost.Services.PostConfigure<HealthCheckServiceOptions>(opts =>
+        {
+            var reg = opts.Registrations.FirstOrDefault(r => r.Name == "kafka_check");
+            if (reg is null) return;
+            var original = reg.Factory;
+            opts.Registrations.Remove(reg);
+            opts.Registrations.Add(new HealthCheckRegistration("kafka_check", sp =>
+            {
+                var check = original(sp);
+                // Patch _options.Configuration.Set("log_level","0") via reflection so
+                // librdkafka never writes to stderr regardless of the log callback.
+                var hcOpts = check.GetType()
+                    .GetField("_options", BindingFlags.NonPublic | BindingFlags.Instance)
+                    ?.GetValue(check);
+                var cfg = hcOpts?.GetType().GetProperty("Configuration")?.GetValue(hcOpts);
+                cfg?.GetType().GetMethod("Set", [typeof(string), typeof(string)])
+                    ?.Invoke(cfg, ["log_level", "0"]);
+                return check;
+            }, reg.FailureStatus, reg.Tags, reg.Timeout));
         });
 
         App = await appHost.BuildAsync();
