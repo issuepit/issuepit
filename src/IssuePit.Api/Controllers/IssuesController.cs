@@ -185,61 +185,6 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         return NoContent();
     }
 
-    // --- Tasks ---
-
-    [HttpGet("{id:guid}/tasks")]
-    public async Task<IActionResult> GetTasks(Guid id)
-    {
-        var tasks = await db.IssueTasks
-            .Where(t => t.IssueId == id)
-            .OrderBy(t => t.CreatedAt)
-            .ToListAsync();
-        return Ok(tasks);
-    }
-
-    [HttpPost("{id:guid}/tasks")]
-    public async Task<IActionResult> CreateTask(Guid id, [FromBody] TaskRequest req)
-    {
-        var issue = await db.Issues.FindAsync(id);
-        if (issue is null) return NotFound();
-        var task = new IssueTask
-        {
-            Id = Guid.NewGuid(),
-            IssueId = id,
-            Title = req.Title,
-            Body = req.Body,
-            Status = Core.Enums.IssueStatus.Todo,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-        };
-        db.IssueTasks.Add(task);
-        await db.SaveChangesAsync();
-        return Created($"/api/issues/{id}/tasks/{task.Id}", task);
-    }
-
-    [HttpPut("{id:guid}/tasks/{taskId:guid}")]
-    public async Task<IActionResult> UpdateTask(Guid id, Guid taskId, [FromBody] TaskRequest req)
-    {
-        var task = await db.IssueTasks.FirstOrDefaultAsync(t => t.Id == taskId && t.IssueId == id);
-        if (task is null) return NotFound();
-        task.Title = req.Title;
-        if (req.Body is not null) task.Body = req.Body;
-        if (req.Completed.HasValue) task.Status = req.Completed.Value ? Core.Enums.IssueStatus.Done : Core.Enums.IssueStatus.Todo;
-        task.UpdatedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync();
-        return Ok(task);
-    }
-
-    [HttpDelete("{id:guid}/tasks/{taskId:guid}")]
-    public async Task<IActionResult> DeleteTask(Guid id, Guid taskId)
-    {
-        var task = await db.IssueTasks.FirstOrDefaultAsync(t => t.Id == taskId && t.IssueId == id);
-        if (task is null) return NotFound();
-        db.IssueTasks.Remove(task);
-        await db.SaveChangesAsync();
-        return NoContent();
-    }
-
     // --- Assignees ---
 
     [HttpPost("{id:guid}/assignees")]
@@ -304,7 +249,6 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
 }
 
 public record CommentRequest(string Body, Guid? UserId);
-public record TaskRequest(string Title, string? Body, bool? Completed);
 public record AssigneeRequest(Guid? UserId, Guid? AgentId);
 public record LabelAssignRequest(Guid LabelId);
 public record UpdateIssueRequest(
