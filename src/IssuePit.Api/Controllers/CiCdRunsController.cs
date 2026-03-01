@@ -160,6 +160,25 @@ public class CiCdRunsController(IssuePitDbContext db, TenantContext tenant) : Co
         return Ok(new { run.Id, run.Status, StatusName = run.Status.ToString() });
     }
 
+    [HttpPost("{id:guid}/cancel")]
+    public async Task<IActionResult> CancelRun(Guid id)
+    {
+        var run = await db.CiCdRuns
+            .Include(r => r.Project)
+            .FirstOrDefaultAsync(r => r.Id == id && r.Project.Organization.TenantId == tenant.CurrentTenant!.Id);
+
+        if (run is null) return NotFound();
+
+        if (run.Status is not (CiCdRunStatus.Pending or CiCdRunStatus.Running))
+            return Conflict(new { error = "Run is already in a terminal state.", run.Status, StatusName = run.Status.ToString() });
+
+        run.Status = CiCdRunStatus.Cancelled;
+        run.EndedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        return Ok(new { run.Id, run.Status, StatusName = run.Status.ToString() });
+    }
+
     private static CiCdRunStatus MapExternalStatus(string? status, string? conclusion) =>
         status?.ToLowerInvariant() switch
         {

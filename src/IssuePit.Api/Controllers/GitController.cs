@@ -1,14 +1,16 @@
+using Confluent.Kafka;
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace IssuePit.Api.Controllers;
 
 [ApiController]
 [Route("api/projects/{projectId:guid}/git")]
-public class GitController(IssuePitDbContext db, TenantContext ctx, GitService gitService, ILogger<GitController> logger) : ControllerBase
+public class GitController(IssuePitDbContext db, TenantContext ctx, GitService gitService, ILogger<GitController> logger, IServiceScopeFactory scopeFactory, IProducer<string, string> producer) : ControllerBase
 {
     // ─────────────────────────── repository config ──────────────────────────
 
@@ -45,6 +47,10 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         };
         db.GitRepositories.Add(repo);
         await db.SaveChangesAsync();
+
+        // Fire-and-forget: clone, fetch and trigger an initial CI/CD run for the default branch.
+        _ = TriggerInitialCiCdAsync(repo);
+
         return Created($"/api/projects/{projectId}/git/repo", ToDto(repo));
     }
 
@@ -197,6 +203,42 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         repo.CreatedAt,
         repo.LastFetchedAt
     };
+
+    /// <summary>Background task: clones/fetches the newly linked repo and triggers an initial CI/CD run.</summary>
+    private async Task TriggerInitialCiCdAsync(GitRepository repo)
+    {
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            var gitSvc = scope.ServiceProvider.GetRequiredService<GitService>();
+            var dbCtx = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+            await gitSvc.FetchAsync(repo);
+
+            var sha = await Task.Run(() => gitSvc.GetBranchTipSha(repo, repo.DefaultBranch));
+            if (sha is null)
+            {
+                logger.LogWarning("No tip SHA found for branch '{Branch}' in repo {RepoId} after initial fetch", repo.DefaultBranch, repo.Id);
+                return;
+            }
+
+            var workspacePath = gitSvc.GetLocalPath(repo);
+            await GitPollingService.PublishCiCdTriggerAsync(producer, repo.ProjectId, sha, repo.DefaultBranch, workspacePath, logger);
+
+            // Record the last known SHA so the poller doesn't re-trigger immediately.
+            var repoRecord = await dbCtx.GitRepositories.FindAsync(repo.Id);
+            if (repoRecord is not null)
+            {
+                repoRecord.LastKnownCommitSha = sha;
+                repoRecord.LastFetchedAt = DateTime.UtcNow;
+                await dbCtx.SaveChangesAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Initial CI/CD trigger failed for repo {RepoId}", repo.Id);
+        }
+    }
 }
 
 public record GitRepoRequest(string RemoteUrl, string? DefaultBranch, string? AuthUsername, string? AuthToken);

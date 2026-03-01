@@ -54,6 +54,8 @@ public class ApiFactory : WebApplicationFactory<Program>
 
             // Remove hosted services whose implementation depends on Redis
             RemoveHostedServiceByImplementation<RedisLogRelayService>(services);
+            // Remove git polling service which requires real git infrastructure
+            RemoveHostedServiceByImplementation<GitPollingService>(services);
 
             // Replace SignalR Redis backplane with the default in-memory backplane
             RemoveByServiceName(services, "SignalR.StackExchangeRedis");

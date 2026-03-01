@@ -92,6 +92,18 @@ public class CiCdWorker(
 
         try
         {
+            // Re-read from DB: the run may have been cancelled via the API before we started processing.
+            var currentStatus = await db.CiCdRuns
+                .Where(r => r.Id == run.Id)
+                .Select(r => r.Status)
+                .FirstAsync(cancellationToken);
+
+            if (currentStatus == CiCdRunStatus.Cancelled)
+            {
+                run.Status = CiCdRunStatus.Cancelled;
+                return;
+            }
+
             await RunWorkflowAsync(run.Id, trigger, db, cancellationToken);
 
             run.Status = CiCdRunStatus.Succeeded;

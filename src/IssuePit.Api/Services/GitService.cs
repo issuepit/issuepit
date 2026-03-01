@@ -17,8 +17,7 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
     private static SemaphoreSlim GetRepoLock(Guid repoId) =>
         _repoLocks.GetOrAdd(repoId, _ => new SemaphoreSlim(1, 1));
 
-    private string GetLocalPath(GitRepository repo)
-    {
+    public string GetLocalPath(GitRepository repo)    {
         if (!string.IsNullOrEmpty(repo.LocalPath))
             return repo.LocalPath;
         return Path.Combine(_reposBasePath, repo.ProjectId.ToString());
@@ -186,6 +185,20 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
                 c.Author?.When.UtcDateTime ?? DateTime.MinValue,
                 c.Parents.Select(p => p.Sha).ToList()))
             .ToList();
+    }
+
+    /// <summary>Returns the tip commit SHA for the given branch, or null if the repo is not cloned or the branch is not found.</summary>
+    public string? GetBranchTipSha(GitRepository repo, string branchName)
+    {
+        var localPath = GetLocalPath(repo);
+        if (!Repository.IsValid(localPath))
+            return null;
+
+        using var gitRepo = new Repository(localPath);
+        var branch = gitRepo.Branches.FirstOrDefault(b =>
+            b.FriendlyName.Equals(branchName, StringComparison.OrdinalIgnoreCase) ||
+            b.FriendlyName.Equals($"origin/{branchName}", StringComparison.OrdinalIgnoreCase));
+        return branch?.Tip?.Sha;
     }
 
     /// <summary>Returns the directory tree at the given path for a branch/commit.</summary>
