@@ -77,8 +77,12 @@ public class FrontendSmokeTests : IAsyncLifetime
     [Fact]
     public async Task Dashboard_StatCards_AreLinks()
     {
+        var frontendUrl = FrontendUrl;
+        if (frontendUrl is null)
+            return; // Skip when FRONTEND_URL is not set
+
         var page = await _context!.NewPageAsync();
-        await page.GotoAsync(FrontendUrl);
+        await page.GotoAsync(frontendUrl);
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
 
         // Projects stat card links to /projects
@@ -101,8 +105,12 @@ public class FrontendSmokeTests : IAsyncLifetime
     [Fact]
     public async Task Dashboard_RecentIssues_ItemsAreLinks()
     {
+        var frontendUrl = FrontendUrl;
+        if (frontendUrl is null)
+            return; // Skip when FRONTEND_URL is not set
+
         var page = await _context!.NewPageAsync();
-        await page.GotoAsync(FrontendUrl);
+        await page.GotoAsync(frontendUrl);
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
 
         // Recent issues section should exist
