@@ -324,7 +324,7 @@ const tabs = [
 const activeTab = ref('members')
 
 onMounted(async () => {
-  const teams = await teamsStore.fetchTeams(orgId)
+  await teamsStore.fetchTeams(orgId)
   team.value = teamsStore.teams.find(t => t.id === teamId) || null
   await Promise.all([
     teamsStore.fetchMembers(orgId, teamId),
