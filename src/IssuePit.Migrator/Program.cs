@@ -41,6 +41,7 @@ await db.Database.ExecuteSqlRawAsync("""
     );
     ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS description text NULL;
     ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS allowed_tools text NOT NULL DEFAULT '[]';
+    ALTER TABLE agents ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT false;
     CREATE TABLE IF NOT EXISTS mcp_server_secrets (
         id uuid PRIMARY KEY,
         mcp_server_id uuid NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
