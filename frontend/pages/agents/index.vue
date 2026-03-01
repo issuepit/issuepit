@@ -141,6 +141,18 @@
               <input v-model="toolsInput" type="text" placeholder="read_file, write_file, execute_command"
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500" />
             </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">Runner</label>
+              <select v-model="form.runnerType"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option v-for="opt in runnerOptions" :key="String(opt.value)" :value="opt.value">{{ opt.label }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">Model</label>
+              <input v-model="form.model" type="text" placeholder="anthropic/claude-opus-4-5"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
           </div>
         </div>
         <div class="flex gap-3 mt-6">
@@ -161,6 +173,7 @@
 <script setup lang="ts">
 import { useAgentsStore } from '~/stores/agents'
 import type { Agent } from '~/types'
+import { RunnerType, RunnerTypeLabels } from '~/types'
 
 const store = useAgentsStore()
 const showModal = ref(false)
@@ -172,8 +185,15 @@ const form = reactive({
   description: '',
   dockerImage: '',
   systemPrompt: '',
-  isActive: true
+  isActive: true,
+  runnerType: null as RunnerType | null,
+  model: '',
 })
+
+const runnerOptions = [
+  { value: null, label: '— None (use container entrypoint)' },
+  ...Object.entries(RunnerTypeLabels).map(([k, v]) => ({ value: Number(k) as RunnerType, label: v }))
+]
 
 onMounted(() => store.fetchAgents())
 
@@ -190,6 +210,8 @@ function openEdit(agent: Agent) {
   form.dockerImage = agent.dockerImage
   form.systemPrompt = agent.systemPrompt
   form.isActive = agent.isActive
+  form.runnerType = agent.runnerType ?? null
+  form.model = agent.model ?? ''
   toolsInput.value = (agent.allowedTools ?? []).join(', ')
   showModal.value = true
 }
@@ -198,7 +220,9 @@ async function submitModal() {
   if (!form.name) return
   const payload = {
     ...form,
-    allowedTools: toolsInput.value.split(',').map(t => t.trim()).filter(Boolean)
+    allowedTools: toolsInput.value.split(',').map(t => t.trim()).filter(Boolean),
+    runnerType: form.runnerType,
+    model: form.model || undefined,
   }
   if (editingId.value) {
     await store.updateAgent(editingId.value, payload)
@@ -216,6 +240,8 @@ function resetForm() {
   form.dockerImage = ''
   form.systemPrompt = ''
   form.isActive = true
+  form.runnerType = null
+  form.model = ''
   toolsInput.value = ''
 }
 </script>

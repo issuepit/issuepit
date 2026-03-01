@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using IssuePit.Core.Entities;
+using IssuePit.Core.Runners;
 using Renci.SshNet;
 
 namespace IssuePit.ExecutionClient.Runtimes;
@@ -126,6 +127,7 @@ public class SshAgentRuntime(ILogger<SshAgentRuntime> logger) : IAgentRuntime
         AppendEnv("ISSUEPIT_ISSUE_TITLE", issue.Title);
         AppendEnv("ISSUEPIT_ISSUE_BODY", issue.Body ?? string.Empty);
         AppendEnv("ISSUEPIT_AGENT_ID", agent.Id.ToString());
+        AppendEnv("ISSUEPIT_SYSTEM_PROMPT", agent.SystemPrompt);
 
         if (issue.GitBranch is not null)
             AppendEnv("ISSUEPIT_GIT_BRANCH", issue.GitBranch);
@@ -133,9 +135,17 @@ public class SshAgentRuntime(ILogger<SshAgentRuntime> logger) : IAgentRuntime
         foreach (var (key, value) in credentials)
             AppendEnv(key, value);
 
+        // Runner-specific env vars (e.g. OPENCODE_SYSTEM_PROMPT, CODEX_SYSTEM_PROMPT)
+        foreach (var (key, value) in RunnerCommandBuilder.BuildRunnerEnv(agent))
+            AppendEnv(key, value);
+
+        // Append runner-specific CLI args (model, task) after the base command
+        var runnerArgs = RunnerCommandBuilder.BuildArgs(agent, issue);
+        var fullCommand = string.IsNullOrEmpty(runnerArgs) ? command : $"{command} {runnerArgs}";
+
         // nohup + & disowns the process so it keeps running after the SSH session closes;
         // echo $! returns the PID for tracking
-        return $"nohup env {envPrefix}{EscapeShell(command)} </dev/null >/dev/null 2>&1 & echo $!";
+        return $"nohup env {envPrefix}{EscapeShell(fullCommand)} </dev/null >/dev/null 2>&1 & echo $!";
     }
 
     /// <summary>Removes control characters (null bytes, newlines, etc.) that could break shell argument parsing.</summary>

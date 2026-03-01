@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using IssuePit.Core.Entities;
+using IssuePit.Core.Runners;
 using Renci.SshNet;
 
 namespace IssuePit.ExecutionClient.Runtimes;
@@ -117,6 +118,7 @@ public class SshDockerAgentRuntime(ILogger<SshDockerAgentRuntime> logger) : IAge
         AppendEnv("ISSUEPIT_ISSUE_TITLE", issue.Title);
         AppendEnv("ISSUEPIT_ISSUE_BODY", issue.Body ?? string.Empty);
         AppendEnv("ISSUEPIT_AGENT_ID", agent.Id.ToString());
+        AppendEnv("ISSUEPIT_SYSTEM_PROMPT", agent.SystemPrompt);
 
         if (issue.GitBranch is not null)
             AppendEnv("ISSUEPIT_GIT_BRANCH", issue.GitBranch);
@@ -124,13 +126,23 @@ public class SshDockerAgentRuntime(ILogger<SshDockerAgentRuntime> logger) : IAge
         foreach (var (key, value) in credentials)
             AppendEnv(key, value);
 
+        // Runner-specific env vars (e.g. OPENCODE_SYSTEM_PROMPT, CODEX_SYSTEM_PROMPT)
+        foreach (var (key, value) in RunnerCommandBuilder.BuildRunnerEnv(agent))
+            AppendEnv(key, value);
+
         var labels =
             $"--label issuepit.session-id={session.Id} " +
             $"--label issuepit.issue-id={issue.Id} " +
             $"--label issuepit.agent-id={agent.Id}";
 
+        // Append runner-specific CMD args (model, task) after the image name
+        var runnerArgs = RunnerCommandBuilder.BuildArgs(agent, issue);
+        var imageAndArgs = string.IsNullOrEmpty(runnerArgs)
+            ? EscapeShell(agent.DockerImage)
+            : $"{EscapeShell(agent.DockerImage)} {runnerArgs}";
+
         // -d = detached; --rm = auto-remove on exit
-        return $"docker run -d --rm {labels}{envArgs} {EscapeShell(agent.DockerImage)}";
+        return $"docker run -d --rm {labels}{envArgs} {imageAndArgs}";
     }
 
     /// <summary>Removes control characters (null bytes, newlines, etc.) that could break shell argument parsing.</summary>

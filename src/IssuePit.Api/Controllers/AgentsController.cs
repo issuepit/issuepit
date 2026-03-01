@@ -51,6 +51,8 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
         agent.SystemPrompt = updated.SystemPrompt;
         agent.DockerImage = updated.DockerImage;
         agent.AllowedTools = updated.AllowedTools;
+        agent.RunnerType = updated.RunnerType;
+        agent.Model = updated.Model;
         await db.SaveChangesAsync();
         return Ok(agent);
     }
