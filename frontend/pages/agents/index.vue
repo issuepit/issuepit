@@ -3,15 +3,15 @@
     <!-- Header -->
     <div class="flex items-center justify-between mb-8">
       <div>
-        <h1 class="text-2xl font-bold text-white">Agents</h1>
-        <p class="text-gray-400 mt-1">{{ store.agents.length }} agents configured</p>
+        <h1 class="text-2xl font-bold text-white">Agent Modes</h1>
+        <p class="text-gray-400 mt-1">{{ store.agents.length }} agent modes configured</p>
       </div>
       <button @click="openCreate"
         class="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
         </svg>
-        New Agent
+        New Agent Mode
       </button>
     </div>
 
@@ -28,7 +28,7 @@
       <div v-for="agent in store.agents" :key="agent.id"
         class="bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors">
         <div class="flex items-start justify-between">
-          <div class="flex items-center gap-3">
+          <NuxtLink :to="`/agents/${agent.id}`" class="flex items-center gap-3 flex-1 min-w-0 mr-4">
             <div class="w-10 h-10 bg-indigo-900/40 rounded-lg flex items-center justify-center shrink-0">
               <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -45,7 +45,7 @@
               </div>
               <p v-if="agent.description" class="text-sm text-gray-400 mt-0.5">{{ agent.description }}</p>
             </div>
-          </div>
+          </NuxtLink>
 
           <div class="flex items-center gap-2 shrink-0">
             <button @click="store.toggleAgent(agent.id, !agent.isActive)"
@@ -53,10 +53,10 @@
               class="text-xs px-3 py-1.5 rounded-md border border-gray-700 hover:bg-gray-800 transition-colors">
               {{ agent.isActive ? 'Deactivate' : 'Activate' }}
             </button>
-            <button @click="openEdit(agent)"
+            <NuxtLink :to="`/agents/${agent.id}`"
               class="text-xs text-gray-400 hover:text-gray-200 px-3 py-1.5 rounded-md border border-gray-700 hover:bg-gray-800 transition-colors">
               Edit
-            </button>
+            </NuxtLink>
             <button @click="store.deleteAgent(agent.id)"
               class="text-xs text-red-400 hover:text-red-300 px-3 py-1.5 rounded-md border border-red-900/30 hover:bg-red-900/20 transition-colors">
               Delete
@@ -97,11 +97,11 @@
               d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2" />
           </svg>
         </div>
-        <p class="text-gray-400 font-medium">No agents yet</p>
-        <p class="text-gray-600 text-sm mt-1">Create your first agent to automate tasks</p>
+        <p class="text-gray-400 font-medium">No agent modes yet</p>
+        <p class="text-gray-600 text-sm mt-1">Create your first agent mode to automate tasks</p>
         <button @click="openCreate"
           class="mt-4 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-          Create Agent
+          Create Agent Mode
         </button>
       </div>
     </div>
@@ -109,7 +109,7 @@
     <!-- Create/Edit Modal -->
     <div v-if="showModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
       <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-xl p-6 shadow-xl max-h-[90vh] overflow-y-auto">
-        <h2 class="text-lg font-bold text-white mb-5">{{ editingId ? 'Edit Agent' : 'Create Agent' }}</h2>
+        <h2 class="text-lg font-bold text-white mb-5">{{ editingId ? 'Edit Agent Mode' : 'Create Agent Mode' }}</h2>
         <div class="space-y-4">
           <div class="grid grid-cols-2 gap-3">
             <div class="col-span-2">

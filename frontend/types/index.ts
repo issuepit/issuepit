@@ -242,14 +242,23 @@ export interface McpServerSecret {
   createdAt: string
 }
 
+export interface AgentLinkedMcpServer {
+  id: string
+  name: string
+  url: string
+  description?: string
+  allowedTools: string
+}
+
 export interface Agent {
   id: string
   name: string
   description?: string
   systemPrompt: string
   dockerImage: string
-  allowedTools: string[]
+  allowedTools: string | string[]
   mcpServers: string[]
+  linkedMcpServers?: AgentLinkedMcpServer[]
   isActive: boolean
   runnerType?: RunnerType
   model?: string
