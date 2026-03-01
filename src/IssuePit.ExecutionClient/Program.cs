@@ -3,7 +3,7 @@ using IssuePit.Core.Data;
 using IssuePit.ExecutionClient.Runtimes;
 using IssuePit.ExecutionClient.Workers;
 
-var builder = Host.CreateApplicationBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 builder.AddKafkaHealthCheck();
@@ -26,5 +26,6 @@ builder.Services.AddSingleton<AgentRuntimeFactory>();
 
 builder.Services.AddHostedService<IssueWorker>();
 
-var host = builder.Build();
-host.Run();
+var app = builder.Build();
+app.MapDefaultEndpoints();
+app.Run();

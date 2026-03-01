@@ -1,5 +1,10 @@
+using System.Text;
+using System.Text.Json;
+using Confluent.Kafka;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
@@ -71,9 +76,23 @@ public static class ServiceDefaultsExtensions
         return builder;
     }
 
-    public static TBuilder AddKafkaHealthCheck<TBuilder>(this TBuilder builder, string configKey = "Kafka__BootstrapServers") where TBuilder : IHostApplicationBuilder
+    public static TBuilder AddKafkaProducer<TBuilder>(this TBuilder builder, string connectionName = "kafka") where TBuilder : IHostApplicationBuilder
     {
-        var bootstrapServers = builder.Configuration[configKey] ?? "localhost:9092";
+        var bootstrapServers = builder.Configuration.GetConnectionString(connectionName)
+            ?? throw new InvalidOperationException($"Kafka connection string '{connectionName}' is not configured.");
+        builder.Services.AddSingleton<IProducer<string, string>>(_ =>
+            new ProducerBuilder<string, string>(new ProducerConfig
+            {
+                BootstrapServers = bootstrapServers
+            }).Build());
+
+        return builder;
+    }
+
+    public static TBuilder AddKafkaHealthCheck<TBuilder>(this TBuilder builder, string connectionName = "kafka") where TBuilder : IHostApplicationBuilder
+    {
+        var bootstrapServers = builder.Configuration.GetConnectionString(connectionName)
+            ?? throw new InvalidOperationException($"Kafka connection string '{connectionName}' is not configured.");
         builder.Services.AddHealthChecks()
             .AddCheck("kafka", new KafkaHealthCheck(bootstrapServers), tags: ["ready"]);
 
@@ -82,12 +101,38 @@ public static class ServiceDefaultsExtensions
 
     public static WebApplication MapDefaultEndpoints(this WebApplication app)
     {
-        app.MapHealthChecks("/health");
+        app.MapHealthChecks("/health", new HealthCheckOptions
+        {
+            ResponseWriter = WriteJsonHealthReport
+        });
         app.MapHealthChecks("/alive", new HealthCheckOptions
         {
-            Predicate = r => r.Tags.Contains("live")
+            Predicate = r => r.Tags.Contains("live"),
+            ResponseWriter = WriteJsonHealthReport
         });
 
         return app;
+    }
+
+    private static readonly JsonSerializerOptions _healthJsonOptions = new() { WriteIndented = true };
+
+    private static Task WriteJsonHealthReport(HttpContext context, HealthReport report)
+    {
+        context.Response.ContentType = "application/json; charset=utf-8";
+        var result = new
+        {
+            status = report.Status.ToString(),
+            results = report.Entries.ToDictionary(
+                e => e.Key,
+                e => (object)new
+                {
+                    status = e.Value.Status.ToString(),
+                    description = e.Value.Description,
+                    exception = e.Value.Exception?.Message
+                })
+        };
+        return context.Response.WriteAsync(
+            JsonSerializer.Serialize(result, _healthJsonOptions),
+            Encoding.UTF8);
     }
 }
