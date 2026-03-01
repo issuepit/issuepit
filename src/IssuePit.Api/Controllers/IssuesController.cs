@@ -74,6 +74,7 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         var issue = await db.Issues
             .Include(i => i.Labels)
             .Include(i => i.SubIssues)
+            .Include(i => i.ParentIssue)
             .Include(i => i.Assignees).ThenInclude(a => a.User)
             .Include(i => i.Assignees).ThenInclude(a => a.Agent)
             .FirstOrDefaultAsync(i => i.Id == id);
@@ -173,6 +174,19 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         await db.SaveChangesAsync();
         await db.Entry(comment).Reference(c => c.User).LoadAsync();
         return Created($"/api/issues/{id}/comments/{comment.Id}", comment);
+    }
+
+    [HttpPut("{id:guid}/comments/{commentId:guid}")]
+    public async Task<IActionResult> UpdateComment(Guid id, Guid commentId, [FromBody] CommentRequest req)
+    {
+        var comment = await db.IssueComments
+            .Include(c => c.User)
+            .FirstOrDefaultAsync(c => c.Id == commentId && c.IssueId == id);
+        if (comment is null) return NotFound();
+        comment.Body = req.Body;
+        comment.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        return Ok(comment);
     }
 
     [HttpDelete("{id:guid}/comments/{commentId:guid}")]
