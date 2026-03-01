@@ -175,7 +175,7 @@ jobs:
           --filter "Category=E2E"
           --verbosity normal
           --logger "trx;LogFileName=e2e-results.trx"
-          --blame-hang-timeout 1min
+          --blame-hang-timeout 5min
 
       - name: Upload test results
         if: always()

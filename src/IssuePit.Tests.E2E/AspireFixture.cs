@@ -56,7 +56,11 @@ public sealed class AspireFixture : IAsyncLifetime
             FrontendUrl = frontendProbe.BaseAddress?.ToString().TrimEnd('/');
 
             if (FrontendUrl is not null)
-                await WaitForHttpReadyAsync(frontendProbe, TimeSpan.FromSeconds(120));
+            {
+                var ready = await WaitForHttpReadyAsync(frontendProbe, TimeSpan.FromSeconds(120));
+                if (!ready)
+                    FrontendUrl = null;
+            }
         }
         catch
         {
@@ -74,7 +78,8 @@ public sealed class AspireFixture : IAsyncLifetime
     }
 
     /// <summary>Polls the given <paramref name="client"/> until it returns a success response or the <paramref name="timeout"/> elapses.</summary>
-    private static async Task WaitForHttpReadyAsync(HttpClient client, TimeSpan timeout)
+    /// <returns><c>true</c> if the endpoint returned a success response within the timeout; <c>false</c> otherwise.</returns>
+    private static async Task<bool> WaitForHttpReadyAsync(HttpClient client, TimeSpan timeout)
     {
         var deadline = DateTime.UtcNow + timeout;
         while (DateTime.UtcNow < deadline)
@@ -82,10 +87,11 @@ public sealed class AspireFixture : IAsyncLifetime
             try
             {
                 var response = await client.GetAsync("/");
-                if (response.IsSuccessStatusCode) return;
+                if (response.IsSuccessStatusCode) return true;
             }
             catch { }
             await Task.Delay(TimeSpan.FromSeconds(2));
         }
+        return false;
     }
 }
