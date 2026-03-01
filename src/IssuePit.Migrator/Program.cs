@@ -53,6 +53,127 @@ await db.Database.ExecuteSqlRawAsync("""
         project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
         PRIMARY KEY (mcp_server_id, project_id)
     );
+    ALTER TABLE issues ADD COLUMN IF NOT EXISTS parent_issue_id uuid NULL REFERENCES issues(id) ON DELETE SET NULL;
+    ALTER TABLE issues ADD COLUMN IF NOT EXISTS github_issue_number integer NULL;
+    ALTER TABLE issues ADD COLUMN IF NOT EXISTS github_issue_url text NULL;
+    ALTER TABLE issues ADD COLUMN IF NOT EXISTS git_branch varchar(500) NULL;
+    CREATE TABLE IF NOT EXISTS issue_assignees (
+        id uuid PRIMARY KEY,
+        issue_id uuid NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+        user_id uuid NULL REFERENCES users(id) ON DELETE SET NULL,
+        agent_id uuid NULL REFERENCES agents(id) ON DELETE SET NULL
+    );
+    CREATE TABLE IF NOT EXISTS issue_tasks (
+        id uuid PRIMARY KEY,
+        issue_id uuid NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+        title varchar(500) NOT NULL,
+        body text NULL,
+        status integer NOT NULL DEFAULT 1,
+        assignee_id uuid NULL REFERENCES users(id) ON DELETE SET NULL,
+        git_branch text NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+    );
+    ALTER TABLE agents ADD COLUMN IF NOT EXISTS runner_type integer NULL;
+    ALTER TABLE agents ADD COLUMN IF NOT EXISTS model varchar(200) NULL;
+    ALTER TABLE kanban_transitions ADD COLUMN IF NOT EXISTS agent_id uuid NULL REFERENCES agents(id) ON DELETE SET NULL;
+    CREATE TABLE IF NOT EXISTS runtime_configurations (
+        id uuid PRIMARY KEY,
+        org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        name varchar(200) NOT NULL,
+        type integer NOT NULL DEFAULT 0,
+        configuration text NOT NULL DEFAULT '{}',
+        is_default boolean NOT NULL DEFAULT false,
+        created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS agent_sessions (
+        id uuid PRIMARY KEY,
+        agent_id uuid NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        issue_id uuid NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+        issue_task_id uuid NULL REFERENCES issue_tasks(id) ON DELETE SET NULL,
+        runtime_config_id uuid NULL REFERENCES runtime_configurations(id) ON DELETE SET NULL,
+        commit_sha varchar(200) NULL,
+        git_branch varchar(200) NULL,
+        status integer NOT NULL DEFAULT 0,
+        started_at timestamptz NOT NULL DEFAULT now(),
+        ended_at timestamptz NULL
+    );
+    CREATE TABLE IF NOT EXISTS api_keys (
+        id uuid PRIMARY KEY,
+        org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        name varchar(100) NOT NULL,
+        provider integer NOT NULL DEFAULT 0,
+        encrypted_value text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        expires_at timestamptz NULL
+    );
+    CREATE TABLE IF NOT EXISTS teams (
+        id uuid PRIMARY KEY,
+        org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        name varchar(200) NOT NULL,
+        slug varchar(100) NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS team_members (
+        team_id uuid NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+        user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        PRIMARY KEY (team_id, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS org_members (
+        org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        role integer NOT NULL DEFAULT 0,
+        PRIMARY KEY (org_id, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS project_members (
+        id uuid PRIMARY KEY,
+        project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        user_id uuid NULL REFERENCES users(id) ON DELETE CASCADE,
+        team_id uuid NULL REFERENCES teams(id) ON DELETE CASCADE,
+        permissions integer NOT NULL DEFAULT 1
+    );
+    CREATE TABLE IF NOT EXISTS cicd_runs (
+        id uuid PRIMARY KEY,
+        project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        agent_session_id uuid NULL REFERENCES agent_sessions(id) ON DELETE SET NULL,
+        commit_sha varchar(200) NOT NULL DEFAULT '',
+        branch varchar(200) NULL,
+        workflow varchar(200) NULL,
+        status integer NOT NULL DEFAULT 0,
+        started_at timestamptz NOT NULL DEFAULT now(),
+        ended_at timestamptz NULL,
+        external_source varchar(100) NULL,
+        external_run_id varchar(200) NULL
+    );
+    CREATE TABLE IF NOT EXISTS cicd_run_logs (
+        id uuid PRIMARY KEY,
+        cicd_run_id uuid NOT NULL REFERENCES cicd_runs(id) ON DELETE CASCADE,
+        line text NOT NULL,
+        stream integer NOT NULL DEFAULT 0,
+        timestamp timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS github_identities (
+        id uuid PRIMARY KEY,
+        user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name varchar(200) NULL,
+        github_id varchar(20) NOT NULL,
+        github_username varchar(100) NOT NULL,
+        github_email varchar(254) NULL,
+        encrypted_token text NOT NULL,
+        agent_id uuid NULL REFERENCES agents(id) ON DELETE SET NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS github_identity_orgs (
+        github_identity_id uuid NOT NULL REFERENCES github_identities(id) ON DELETE CASCADE,
+        org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        PRIMARY KEY (github_identity_id, org_id)
+    );
+    CREATE TABLE IF NOT EXISTS github_identity_projects (
+        github_identity_id uuid NOT NULL REFERENCES github_identities(id) ON DELETE CASCADE,
+        project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        PRIMARY KEY (github_identity_id, project_id)
+    );
     """);
 
 logger.LogInformation("Schema applied successfully.");
