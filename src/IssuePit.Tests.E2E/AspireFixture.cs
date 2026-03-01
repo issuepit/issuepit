@@ -33,15 +33,10 @@ public sealed class AspireFixture : IAsyncLifetime
         // 2. LogLevel.None on "IssuePit.AppHost.Resources": silences the Aspire resource-relay
         //    category that captures stdout/stderr from child processes (execution-client,
         //    cicd-client, api, etc.) and re-logs them at LogLevel.Error.
-        //    The librdkafka C library writes its connection errors directly to stderr as
-        //    "%3|...|FAIL|rdkafka#...|...brokers are down" lines.  Aspire picks these up and
-        //    emits them via ILogger at Error level under the category
+        //    The librdkafka C library may still emit transient connection errors to stderr during
+        //    startup and teardown (e.g. before the KRaft container is fully ready, or when the
+        //    distributed app is disposed).  Aspire relays these as ILogger Error entries under
         //    "IssuePit.AppHost.Resources.<resource-name>", bypassing the MinLevel filter above.
-        //    These "bootstrap brokers are down" / "Connection refused" messages are expected
-        //    startup and teardown noise: the execution-client and cicd-client begin connecting
-        //    to Kafka on the Aspire-assigned dynamic port before the KRaft container is fully
-        //    ready, and again when the test disposes the distributed app.  They do not affect
-        //    test correctness in any way.
         appHost.Services.Configure<LoggerFilterOptions>(opts =>
         {
             opts.MinLevel = LogLevel.Warning;
