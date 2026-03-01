@@ -1,0 +1,27 @@
+# Helper base image: .NET SDK + Playwright + Chrome/Chromium + Node.js/npm
+# Used as base for the act and opencode helper containers.
+#
+# Build args (override at build time):
+#   PLAYWRIGHT_VERSION   — Playwright .NET image tag (default: v1.50.1)
+#   NODE_MAJOR           — Node.js major version to install (default: 22)
+
+ARG PLAYWRIGHT_VERSION=v1.50.1
+
+FROM mcr.microsoft.com/playwright/dotnet:${PLAYWRIGHT_VERSION}-noble
+
+ARG NODE_MAJOR=22
+
+# Install Node.js via NodeSource
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl gnupg && \
+    curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
+# Expose version info as labels
+ARG PLAYWRIGHT_VERSION
+ARG NODE_MAJOR
+LABEL org.opencontainers.image.title="issuepit-helper-base" \
+      org.opencontainers.image.description="IssuePit helper base: .NET SDK + Playwright + Chrome + Node.js" \
+      issuepit.node.major="${NODE_MAJOR}" \
+      issuepit.playwright.version="${PLAYWRIGHT_VERSION}"

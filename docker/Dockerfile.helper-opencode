@@ -1,0 +1,17 @@
+# Helper opencode image: helper-base + opencode CLI
+#
+# Build args (override at build time):
+#   BASE_IMAGE         — fully-qualified helper-base image reference
+#   OPENCODE_VERSION   — npm package version to install (default: latest)
+
+ARG BASE_IMAGE=ghcr.io/issuepit/issuepit-helper-base:latest
+FROM ${BASE_IMAGE}
+
+ARG OPENCODE_VERSION=latest
+
+RUN npm install -g opencode-ai@${OPENCODE_VERSION} && \
+    opencode --version
+
+LABEL org.opencontainers.image.title="issuepit-helper-opencode" \
+      org.opencontainers.image.description="IssuePit helper image for agent runs: helper-base + opencode CLI" \
+      issuepit.opencode.version="${OPENCODE_VERSION}"
