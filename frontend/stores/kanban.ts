@@ -126,6 +126,27 @@ export const useKanbanStore = defineStore('kanban', () => {
     }
   }
 
+  async function reorderColumns(boardId: string, columnIds: string[]) {
+    loading.value = true
+    error.value = null
+    try {
+      await api.post(`/api/kanban/boards/${boardId}/columns/reorder`, { columnIds })
+      // Update positions locally to keep store in sync
+      const updatePositions = (b: KanbanBoard) => {
+        columnIds.forEach((id, idx) => {
+          const col = b.columns.find(c => c.id === id)
+          if (col) col.position = idx
+        })
+      }
+      boards.value.forEach(updatePositions)
+      if (currentBoard.value) updatePositions(currentBoard.value)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to reorder columns'
+    } finally {
+      loading.value = false
+    }
+  }
+
   // ── Transitions ───────────────────────────────────────────────────────────
 
   async function fetchTransitions(boardId: string) {
@@ -208,6 +229,7 @@ export const useKanbanStore = defineStore('kanban', () => {
     addColumn,
     updateColumn,
     deleteColumn,
+    reorderColumns,
     fetchTransitions,
     createTransition,
     updateTransition,
