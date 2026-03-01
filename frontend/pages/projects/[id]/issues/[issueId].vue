@@ -34,14 +34,27 @@
           <!-- Description -->
           <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
             <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Description</h2>
-            <div v-if="!editingBody" @click="editingBody = true"
-              class="text-sm text-gray-300 cursor-text min-h-12 whitespace-pre-wrap">
-              {{ store.currentIssue.body || 'Click to add description...' }}
+            <div v-if="!editingBody" @click="startEditingBody"
+              class="text-sm text-gray-300 cursor-text min-h-12">
+              <div v-if="store.currentIssue.body"
+                class="prose prose-invert prose-sm max-w-none"
+                v-html="renderedBody"></div>
+              <span v-else class="text-gray-600">Click to add description...</span>
             </div>
             <div v-else>
-              <textarea v-model="bodyEdit" rows="6" autofocus
-                class="w-full bg-transparent text-sm text-gray-300 focus:outline-none resize-none"
-                placeholder="Describe this issue..."></textarea>
+              <div class="flex gap-2 mb-2 border-b border-gray-800 pb-2">
+                <button @click="descTab = 'write'"
+                  class="text-xs px-2.5 py-1 rounded transition-colors"
+                  :class="descTab === 'write' ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'">Write</button>
+                <button @click="descTab = 'preview'"
+                  class="text-xs px-2.5 py-1 rounded transition-colors"
+                  :class="descTab === 'preview' ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'">Preview</button>
+              </div>
+              <textarea v-if="descTab === 'write'" v-model="bodyEdit" rows="8" autofocus
+                class="w-full bg-transparent text-sm text-gray-300 focus:outline-none resize-none font-mono"
+                placeholder="Describe this issue... (Markdown supported)"></textarea>
+              <div v-else class="prose prose-invert prose-sm max-w-none min-h-16 text-sm"
+                v-html="renderedBodyEdit"></div>
               <div class="flex gap-2 mt-3">
                 <button @click="saveBody"
                   class="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1 rounded-md transition-colors">Save</button>
@@ -286,6 +299,8 @@
 </template>
 
 <script setup lang="ts">
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import { IssueStatus, IssueType } from '~/types'
 import type { IssuePriority } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
@@ -304,12 +319,31 @@ const membersStore = useProjectMembersStore()
 
 const editingTitle = ref(false)
 const editingBody = ref(false)
+const descTab = ref<'write' | 'preview'>('write')
 const titleEdit = ref('')
 const bodyEdit = ref('')
 const newComment = ref('')
 const newTaskTitle = ref('')
 const creatingSubIssue = ref(false)
 const newSubIssueTitle = ref('')
+
+function parseMarkdown(text: string): string {
+  return DOMPurify.sanitize(marked(text, { async: false }))
+}
+
+function startEditingBody() {
+  bodyEdit.value = store.currentIssue?.body ?? ''
+  descTab.value = 'write'
+  editingBody.value = true
+}
+
+const renderedBody = computed(() => {
+  return store.currentIssue?.body ? parseMarkdown(store.currentIssue.body) : ''
+})
+
+const renderedBodyEdit = computed(() => {
+  return bodyEdit.value ? parseMarkdown(bodyEdit.value) : '<span class="text-gray-600">Nothing to preview.</span>'
+})
 
 onMounted(async () => {
   await store.fetchIssue(id, issueId)
