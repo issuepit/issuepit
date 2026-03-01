@@ -268,7 +268,7 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
             await producer.ProduceAsync("issue-assigned", new Message<string, string>
             {
                 Key = issue.Id.ToString(),
-                Value = JsonSerializer.Serialize(new { issue.Id, issue.ProjectId, issue.Title })
+                Value = JsonSerializer.Serialize(new { issue.Id, issue.ProjectId, issue.Title, AgentId = req.AgentId.Value })
             });
         }
 

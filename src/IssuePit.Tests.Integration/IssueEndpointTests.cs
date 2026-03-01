@@ -166,6 +166,7 @@ public class IssueAssigneeKafkaTests(TrackingApiFactory factory) : IClassFixture
         var message = published.Single(m => m.Topic == "issue-assigned" && m.Message.Key == issue.Id.ToString());
         var payload = JsonSerializer.Deserialize<JsonElement>(message.Message.Value);
         Assert.Equal(issue.Id.ToString(), payload.GetProperty("Id").GetString());
+        Assert.Equal(agent.Id.ToString(), payload.GetProperty("AgentId").GetString());
 
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
     }
