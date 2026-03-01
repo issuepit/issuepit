@@ -20,6 +20,13 @@ public class McpServerOptionsTests
     }
 
     [Fact]
+    public void McpServerOptions_EnhanceMode_DefaultsToFalse()
+    {
+        var opts = new McpServerOptions();
+        Assert.False(opts.EnhanceMode);
+    }
+
+    [Fact]
     public void McpServerOptions_ProjectId_DefaultsToNull()
     {
         var opts = new McpServerOptions();

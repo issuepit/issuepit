@@ -15,6 +15,24 @@ public class ApiKey
     [ForeignKey(nameof(OrgId))]
     public Organization Organization { get; set; } = null!;
 
+    // Optional narrower scopes. The resolver picks the most specific non-null scope first:
+    // project > team > user > org (null = org-level key).
+
+    public Guid? ProjectId { get; set; }
+
+    [ForeignKey(nameof(ProjectId))]
+    public Project? Project { get; set; }
+
+    public Guid? TeamId { get; set; }
+
+    [ForeignKey(nameof(TeamId))]
+    public Team? Team { get; set; }
+
+    public Guid? UserId { get; set; }
+
+    [ForeignKey(nameof(UserId))]
+    public User? User { get; set; }
+
     [Required, MaxLength(100)]
     public string Name { get; set; } = string.Empty;
 

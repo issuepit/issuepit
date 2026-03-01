@@ -11,10 +11,13 @@ namespace IssuePit.Api.Services;
 /// <summary>
 /// Enhances an issue using an LLM via OpenRouter by extending its description,
 /// creating sub-issues, and creating tasks via an agentic tool-calling loop.
+/// The tool set mirrors the MCP server running in enhance mode (issue tools,
+/// task tools, and repo file tools only).
 /// </summary>
 public class IssueEnhancementService(
     IssuePitDbContext db,
     GitService gitService,
+    ApiKeyResolverService keyResolver,
     IHttpClientFactory httpClientFactory,
     ILogger<IssueEnhancementService> logger)
 {
@@ -35,13 +38,14 @@ public class IssueEnhancementService(
 
         var orgId = issue.Project!.OrgId;
 
-        var apiKey = await db.ApiKeys
-            .FirstOrDefaultAsync(k => k.OrgId == orgId && k.Provider == ApiKeyProvider.OpenRouter, ct)
+        // Resolve the most specific OpenRouter key: project → team → user → org
+        var apiKey = await keyResolver.ResolveAsync(
+            orgId, ApiKeyProvider.OpenRouter, projectId: issue.ProjectId, ct: ct)
             ?? throw new InvalidOperationException(
                 "No OpenRouter API key configured for this organization. " +
                 "Add one via POST /api/config/keys with provider 'OpenRouter'.");
 
-        var plainKey = DecryptKey(apiKey.EncryptedValue);
+        var plainKey = ApiKeyResolverService.DecryptValue(apiKey.EncryptedValue);
 
         // Inject agents.md content from the git repository if available
         var agentsMd = await ReadAgentsMdAsync(issue.ProjectId, ct);
@@ -130,6 +134,7 @@ public class IssueEnhancementService(
                 "create_sub_issue" => await CreateSubIssueAsync(issue, args, ct),
                 "create_task" => await CreateTaskAsync(issue, args, ct),
                 "get_repo_file" => await GetRepoFileAsync(issue, args, ct),
+                "list_repo_files" => await ListRepoFilesAsync(issue, args, ct),
                 _ => $"Unknown tool: {functionName}",
             };
         }
@@ -222,6 +227,21 @@ public class IssueEnhancementService(
         return blob.Content;
     }
 
+    private async Task<string> ListRepoFilesAsync(Issue issue, JsonElement args, CancellationToken ct)
+    {
+        var path = args.TryGetProperty("path", out var p) ? p.GetString() : null;
+        var gitRef = args.TryGetProperty("ref", out var r) ? r.GetString() : null;
+
+        var repo = await db.GitRepositories
+            .FirstOrDefaultAsync(r => r.ProjectId == issue.ProjectId, ct);
+
+        if (repo is null)
+            return "No git repository configured for this project.";
+
+        var entries = await Task.Run(() => gitService.GetTree(repo, gitRef, path), ct);
+        return JsonSerializer.Serialize(entries, JsonOptions);
+    }
+
     private async Task<string?> ReadAgentsMdAsync(Guid projectId, CancellationToken ct)
     {
         var repo = await db.GitRepositories
@@ -259,7 +279,7 @@ public class IssueEnhancementService(
             - Sub-issues should represent distinct pieces of work that can be tracked separately.
             - Tasks should be specific, actionable implementation steps (e.g. "Add API endpoint", "Write unit tests").
             - Enhanced descriptions should include: context, acceptance criteria, and technical considerations.
-            - Use get_repo_file to read relevant source files when you need additional context.
+            - Use list_repo_files to explore the repository structure and get_repo_file to read relevant source files for additional context.
             """);
 
         if (!string.IsNullOrWhiteSpace(agentsMd))
@@ -291,15 +311,6 @@ public class IssueEnhancementService(
         sb.AppendLine();
         sb.AppendLine("Please enhance this issue using the available tools.");
         return sb.ToString().Trim();
-    }
-
-    private static string DecryptKey(string encryptedValue)
-    {
-        // TODO: Replace with proper decryption using ASP.NET Core Data Protection once encryption is implemented.
-        // The "plain:" prefix convention is used by ConfigurationController as a placeholder until then.
-        if (encryptedValue.StartsWith("plain:", StringComparison.Ordinal))
-            return encryptedValue["plain:".Length..];
-        return encryptedValue;
     }
 
     private static IssuePriority ParsePriority(string s) => s switch
@@ -387,6 +398,32 @@ public class IssueEnhancementService(
                         body = new { type = "string", description = "Task details (Markdown)." },
                     },
                     required = new[] { "title" },
+                },
+            },
+        },
+        new
+        {
+            type = "function",
+            function = new
+            {
+                name = "list_repo_files",
+                description = "List files and directories in the project's git repository to explore the codebase structure.",
+                parameters = new
+                {
+                    type = "object",
+                    properties = new
+                    {
+                        path = new
+                        {
+                            type = "string",
+                            description = "Optional directory path to list (e.g. 'src/IssuePit.Api'). Defaults to the root.",
+                        },
+                        @ref = new
+                        {
+                            type = "string",
+                            description = "Optional branch name or commit SHA. Defaults to the default branch.",
+                        },
+                    },
                 },
             },
         },

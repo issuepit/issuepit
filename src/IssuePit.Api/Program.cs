@@ -40,6 +40,7 @@ builder.Services.AddHostedService<MetricSnapshotService>();
 builder.Services.AddScoped<TenantContext>();
 builder.Services.AddScoped<TenantDatabaseService>();
 builder.Services.AddScoped<GitService>();
+builder.Services.AddScoped<ApiKeyResolverService>();
 builder.Services.AddScoped<IssueEnhancementService>();
 
 builder.Services.AddHttpClient("openrouter");

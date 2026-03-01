@@ -20,6 +20,13 @@ public class McpServerOptions
     public bool AgentMode { get; set; } = false;
 
     /// <summary>
+    /// When true, the server operates in enhance mode: only issue, task, and repository
+    /// file tools are available. CI/CD and organisation-level tools are disabled so the
+    /// LLM is restricted to operations relevant to issue enhancement.
+    /// </summary>
+    public bool EnhanceMode { get; set; } = false;
+
+    /// <summary>
     /// Optional. When set, all issue operations are scoped to this project.
     /// Attempts to operate on a different project are rejected.
     /// </summary>

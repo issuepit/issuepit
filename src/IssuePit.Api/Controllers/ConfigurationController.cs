@@ -22,6 +22,9 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
             {
                 k.Id,
                 k.OrgId,
+                k.ProjectId,
+                k.TeamId,
+                k.UserId,
                 k.Name,
                 k.Provider,
                 ProviderName = k.Provider.ToString(),
@@ -40,6 +43,9 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
         {
             Id = Guid.NewGuid(),
             OrgId = req.OrgId,
+            ProjectId = req.ProjectId,
+            TeamId = req.TeamId,
+            UserId = req.UserId,
             Name = req.Name,
             Provider = req.Provider,
             // In production, encrypt before storing. Placeholder prefix marks it as unencrypted for now.
@@ -48,7 +54,7 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
         };
         db.ApiKeys.Add(key);
         await db.SaveChangesAsync();
-        return Created($"/api/config/keys/{key.Id}", new { key.Id, key.Name, key.Provider, key.CreatedAt });
+        return Created($"/api/config/keys/{key.Id}", new { key.Id, key.Name, key.Provider, key.ProjectId, key.TeamId, key.UserId, key.CreatedAt });
     }
 
     [HttpDelete("keys/{id:guid}")]
@@ -223,6 +229,6 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
     }
 }
 
-public record ApiKeyRequest(Guid OrgId, string Name, ApiKeyProvider Provider, string Value, DateTime? ExpiresAt);
+public record ApiKeyRequest(Guid OrgId, string Name, ApiKeyProvider Provider, string Value, DateTime? ExpiresAt, Guid? ProjectId = null, Guid? TeamId = null, Guid? UserId = null);
 public record RuntimeConfigRequest(Guid OrgId, string Name, RuntimeType Type, string Configuration, bool IsDefault);
 public record TelegramBotRequest(string Name, string BotToken, string ChatId, int Events, bool IsSilent, Guid? OrgId, Guid? ProjectId);

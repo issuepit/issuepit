@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
@@ -79,5 +80,42 @@ public class IssueEnhanceEndpointTests(ApiFactory factory) : IClassFixture<ApiFa
         Assert.Contains("API key", error, StringComparison.OrdinalIgnoreCase);
 
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
+    public async Task ApiKeyResolver_ProjectScopedKey_TakesPriorityOverOrgKey()
+    {
+        var (_, projectId, orgId) = await SeedProjectAsync();
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+        // Seed an org-level key and a project-level key
+        db.ApiKeys.Add(new ApiKey
+        {
+            Id = Guid.NewGuid(),
+            OrgId = orgId,
+            Name = "Org Key",
+            Provider = ApiKeyProvider.OpenRouter,
+            EncryptedValue = "plain:org-key",
+        });
+        var projectKey = new ApiKey
+        {
+            Id = Guid.NewGuid(),
+            OrgId = orgId,
+            ProjectId = projectId,
+            Name = "Project Key",
+            Provider = ApiKeyProvider.OpenRouter,
+            EncryptedValue = "plain:project-key",
+        };
+        db.ApiKeys.Add(projectKey);
+        await db.SaveChangesAsync();
+
+        var resolver = scope.ServiceProvider.GetRequiredService<ApiKeyResolverService>();
+        var resolved = await resolver.ResolveAsync(orgId, ApiKeyProvider.OpenRouter, projectId: projectId);
+
+        Assert.NotNull(resolved);
+        Assert.Equal(projectKey.Id, resolved.Id);
+        Assert.Equal("project-key", ApiKeyResolverService.DecryptValue(resolved.EncryptedValue));
     }
 }
