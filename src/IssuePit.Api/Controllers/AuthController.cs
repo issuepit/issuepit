@@ -1,3 +1,4 @@
+using BCrypt.Net;
 using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Text.Json;
@@ -121,6 +122,7 @@ public class AuthController(
             ctx.CurrentUser.Id,
             ctx.CurrentUser.Username,
             ctx.CurrentUser.Email,
+            ctx.CurrentUser.IsAdmin,
             ctx.CurrentUser.CreatedAt,
         });
     }
@@ -156,6 +158,110 @@ public class AuthController(
     {
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         return NoContent();
+    }
+
+    /// <summary>
+    /// Authenticates a local user with username/password credentials and issues a session cookie.
+    /// The default admin/admin credential is restricted to localhost/loopback requests.
+    /// </summary>
+    [HttpPost("login")]
+    public async Task<IActionResult> LocalLogin([FromBody] LocalLoginRequest req)
+    {
+        if (ctx.CurrentTenant is null)
+            return Unauthorized("No tenant found for this request.");
+
+        var user = await db.Users.FirstOrDefaultAsync(
+            u => u.Username == req.Username && u.TenantId == ctx.CurrentTenant.Id);
+
+        if (user is null || string.IsNullOrEmpty(user.PasswordHash))
+            return Unauthorized("Invalid username or password.");
+
+        // Block the default admin/admin credential from non-localhost requests.
+        if (user.IsAdmin && BCrypt.Net.BCrypt.Verify("admin", user.PasswordHash))
+        {
+            var remote = HttpContext.Connection.RemoteIpAddress;
+            if (remote is not null && !System.Net.IPAddress.IsLoopback(remote))
+                return Unauthorized("The default admin password can only be used from localhost. Please change it.");
+        }
+
+        if (!BCrypt.Net.BCrypt.Verify(req.Password, user.PasswordHash))
+            return Unauthorized("Invalid username or password.");
+
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new(ClaimTypes.Name, user.Username),
+            new(ClaimTypes.Email, user.Email),
+        };
+        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+        var principal = new ClaimsPrincipal(identity);
+
+        await HttpContext.SignInAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            principal,
+            new AuthenticationProperties { IsPersistent = true, ExpiresUtc = DateTimeOffset.UtcNow.AddDays(30) });
+
+        return Ok(new
+        {
+            user.Id,
+            user.Username,
+            user.Email,
+            user.IsAdmin,
+            user.CreatedAt,
+        });
+    }
+
+    /// <summary>
+    /// Registers a new local user account.
+    /// </summary>
+    [HttpPost("register")]
+    public async Task<IActionResult> Register([FromBody] RegisterRequest req)
+    {
+        if (ctx.CurrentTenant is null)
+            return Unauthorized("No tenant found for this request.");
+
+        if (string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrWhiteSpace(req.Password))
+            return BadRequest("Username and password are required.");
+
+        var exists = await db.Users.AnyAsync(
+            u => u.Username == req.Username && u.TenantId == ctx.CurrentTenant.Id);
+        if (exists)
+            return Conflict("Username already taken.");
+
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            TenantId = ctx.CurrentTenant.Id,
+            Username = req.Username,
+            Email = req.Email ?? $"{req.Username}@{ctx.CurrentTenant.Hostname}",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
+            CreatedAt = DateTime.UtcNow,
+        };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new(ClaimTypes.Name, user.Username),
+            new(ClaimTypes.Email, user.Email),
+        };
+        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+        var principal = new ClaimsPrincipal(identity);
+
+        await HttpContext.SignInAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            principal,
+            new AuthenticationProperties { IsPersistent = true, ExpiresUtc = DateTimeOffset.UtcNow.AddDays(30) });
+
+        return Created($"/api/auth/me", new
+        {
+            user.Id,
+            user.Username,
+            user.Email,
+            user.IsAdmin,
+            user.CreatedAt,
+        });
     }
 
     // -------------------------------------------------------------------------
@@ -280,3 +386,6 @@ public class AuthController(
 
     private record GitHubUserProfile(string Id, string Login, string Email);
 }
+
+public record LocalLoginRequest(string Username, string Password);
+public record RegisterRequest(string Username, string Password, string? Email = null);
