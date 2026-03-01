@@ -9,6 +9,7 @@ export const useGitStore = defineStore('git', () => {
   const blob = ref<GitBlob | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const hasMoreCommits = ref(false)
 
   const api = useApi()
 
