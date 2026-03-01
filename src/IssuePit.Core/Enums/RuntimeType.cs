@@ -14,4 +14,7 @@ public enum RuntimeType
     HetznerSsh,
     /// <summary>Uses Alibaba OpenSandbox as the execution environment.</summary>
     OpenSandbox,
+    /// <summary>Runs the OpenCode CLI tool as the agent executable. Supports Native, SSH, and Docker runtimes.
+    /// See https://github.com/opencode/cli for setup and auth.</summary>
+    OpenCodeCli,
 }

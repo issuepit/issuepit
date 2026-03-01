@@ -263,6 +263,7 @@ export enum ApiKeyProvider {
   AzureOpenAi = 5,
   Google = 6,
   Custom = 7,
+  OpenRouter = 8,
 }
 
 export const ApiKeyProviderLabels: Record<ApiKeyProvider, string> = {
@@ -274,6 +275,7 @@ export const ApiKeyProviderLabels: Record<ApiKeyProvider, string> = {
   [ApiKeyProvider.AzureOpenAi]: 'Azure OpenAI',
   [ApiKeyProvider.Google]: 'Google',
   [ApiKeyProvider.Custom]: 'Custom',
+  [ApiKeyProvider.OpenRouter]: 'OpenRouter',
 }
 
 export enum RuntimeType {
@@ -282,6 +284,8 @@ export enum RuntimeType {
   Ssh = 2,
   HetznerSsh = 3,
   OpenSandbox = 4,
+  // Note: value 5 (SshDocker) is defined in the backend but not exposed in the UI.
+  OpenCodeCli = 6,
 }
 
 export const RuntimeTypeLabels: Record<RuntimeType, string> = {
@@ -290,6 +294,7 @@ export const RuntimeTypeLabels: Record<RuntimeType, string> = {
   [RuntimeType.Ssh]: 'SSH',
   [RuntimeType.HetznerSsh]: 'Hetzner + Terraform + SSH',
   [RuntimeType.OpenSandbox]: 'OpenSandbox',
+  [RuntimeType.OpenCodeCli]: 'OpenCode CLI',
 }
 
 export interface ApiKey {

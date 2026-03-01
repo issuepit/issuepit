@@ -185,6 +185,7 @@ public class IssueWorker(
         ApiKeyProvider.Google => "GOOGLE_API_KEY",
         ApiKeyProvider.AzureOpenAi => "AZURE_OPENAI_API_KEY",
         ApiKeyProvider.Hetzner => "HCLOUD_TOKEN",
+        ApiKeyProvider.OpenRouter => "OPENROUTER_API_KEY",
         _ => $"ISSUEPIT_{provider.ToString().ToUpperInvariant()}_API_KEY",
     };
 

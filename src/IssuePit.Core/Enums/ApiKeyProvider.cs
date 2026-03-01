@@ -10,4 +10,6 @@ public enum ApiKeyProvider
     AzureOpenAi,
     Google,
     Custom,
+    /// <summary>OpenRouter — unified API gateway for multiple LLM providers. See https://openrouter.ai/docs</summary>
+    OpenRouter,
 }

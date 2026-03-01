@@ -132,6 +132,7 @@ function providerBadgeClass(provider: ApiKeyProvider) {
     [ApiKeyProvider.GitLab]: 'bg-orange-900/50 text-orange-300',
     [ApiKeyProvider.AzureOpenAi]: 'bg-blue-900/50 text-blue-300',
     [ApiKeyProvider.Google]: 'bg-yellow-900/50 text-yellow-300',
+    [ApiKeyProvider.OpenRouter]: 'bg-purple-900/50 text-purple-300',
   }
   return map[provider] ?? 'bg-gray-700 text-gray-300'
 }
