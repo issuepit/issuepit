@@ -248,4 +248,34 @@ public class KanbanEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
             new { issueId = issue.Id });
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
+
+    [Fact]
+    public async Task ReorderColumns_Returns204()
+    {
+        var (tenantId, projectId) = await SeedProjectAsync();
+        var boardId = await SeedBoardAsync(projectId);
+        var col1Id = await SeedColumnAsync(boardId, "Todo", 0, IssueStatus.Todo);
+        var col2Id = await SeedColumnAsync(boardId, "In Progress", 1, IssueStatus.InProgress);
+        var col3Id = await SeedColumnAsync(boardId, "Done", 2, IssueStatus.Done);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        // Reverse the order
+        var response = await _client.PostAsJsonAsync(
+            $"/api/kanban/boards/{boardId}/columns/reorder",
+            new { columnIds = new[] { col3Id, col2Id, col1Id } });
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+
+        // Verify updated positions via GET
+        var boardResp = await _client.GetAsync($"/api/kanban/boards/{boardId}");
+        Assert.Equal(HttpStatusCode.OK, boardResp.StatusCode);
+        var board = await boardResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var columns = board.GetProperty("columns").EnumerateArray().ToList();
+        var col3 = columns.FirstOrDefault(c => c.GetProperty("id").GetString() == col3Id.ToString());
+        Assert.NotEqual(default, col3);
+        Assert.Equal(0, col3.GetProperty("position").GetInt32());
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
 }

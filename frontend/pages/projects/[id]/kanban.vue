@@ -31,7 +31,10 @@
 
         <!-- Manage transitions -->
         <button v-if="activeBoard" @click="openTransitions"
-          class="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">
+          :class="[
+            'text-xs bg-gray-800 hover:bg-gray-700 border text-gray-300 px-3 py-1.5 rounded-lg transition-colors',
+            transitionsButtonAlert ? 'border-amber-400 animate-pulse text-amber-300' : 'border-gray-700'
+          ]">
           Transitions
         </button>
 
@@ -47,17 +50,25 @@
     <!-- Board -->
     <div v-else class="flex gap-4 overflow-x-auto flex-1 pb-4">
       <div v-for="col in boardColumns" :key="col.id"
-        class="flex flex-col w-72 shrink-0">
+        class="flex flex-col w-72 shrink-0"
+        :data-col-id="col.id"
+        :class="{ 'opacity-50': draggedColId === col.id }"
+        @dragover.prevent="onColDragOver($event, col.id)"
+        @drop="onColDrop($event, col.id)">
         <!-- Column Header -->
-        <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center justify-between mb-3 cursor-grab active:cursor-grabbing"
+          draggable="true"
+          @dragstart="onColDragStart($event, col.id)"
+          @dragend="onColDragEnd">
           <div class="flex items-center gap-2">
+            <span class="text-gray-600 select-none">⠿</span>
             <span :class="statusDotColor(col.issueStatus)" class="w-2.5 h-2.5 rounded-full"></span>
             <h3 class="text-sm font-semibold text-gray-300">{{ col.name }}</h3>
             <span class="text-xs text-gray-600 bg-gray-800 px-1.5 py-0.5 rounded-full">
               {{ issuesByStatus[col.issueStatus]?.length ?? 0 }}
             </span>
           </div>
-          <button @click="openCreateForStatus(col.issueStatus)"
+          <button @click.stop="openCreateForStatus(col.issueStatus)"
             class="text-gray-600 hover:text-gray-400 transition-colors p-0.5 rounded">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -67,10 +78,12 @@
 
         <!-- Cards -->
         <div class="flex-1 space-y-2 bg-gray-900/40 rounded-xl p-2 min-h-32 border border-gray-800/60"
-          @dragover.prevent @drop="onDrop($event, col.issueStatus)">
+          :class="{ 'border-brand-500/60 bg-brand-900/10': isValidDropTarget(col.id) && draggedId }"
+          @dragover.prevent @drop="onIssueDrop($event, col)">
           <div v-for="issue in issuesByStatus[col.issueStatus]" :key="issue.id"
             draggable="true"
-            @dragstart="onDragStart($event, issue.id)"
+            @dragstart="onDragStart($event, issue)"
+            @dragend="onIssueDragEnd"
             class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-lg p-3 cursor-pointer group transition-all hover:shadow-lg hover:-translate-y-0.5"
             @click="$router.push(`/projects/${id}/issues/${issue.id}`)">
             <div class="flex items-start justify-between gap-2 mb-2">
@@ -169,10 +182,16 @@
       <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-lg p-6 shadow-xl">
         <h2 class="text-lg font-bold text-white mb-5">Manage Lanes — {{ activeBoard.name }}</h2>
 
-        <!-- Existing columns -->
+        <!-- Existing columns (draggable for reorder) -->
         <div class="space-y-2 mb-4 max-h-64 overflow-y-auto">
           <div v-for="col in boardColumns" :key="col.id"
-            class="flex items-center gap-3 bg-gray-800 rounded-lg px-3 py-2">
+            draggable="true"
+            @dragstart="onLaneDragStart($event, col.id)"
+            @dragover.prevent="onLaneDragOver($event, col.id)"
+            @drop.stop="onLaneDrop($event, col.id)"
+            @dragend="draggedLaneId = null"
+            :class="['flex items-center gap-3 bg-gray-800 rounded-lg px-3 py-2 cursor-grab active:cursor-grabbing', draggedLaneId === col.id ? 'opacity-50' : '']">
+            <span class="text-gray-500 select-none">⠿</span>
             <span :class="statusDotColor(col.issueStatus)" class="w-2 h-2 rounded-full shrink-0"></span>
             <span class="text-sm text-gray-300 flex-1">{{ col.name }}</span>
             <span class="text-xs text-gray-600">pos {{ col.position }}</span>
@@ -274,6 +293,7 @@
 
 <script setup lang="ts">
 import { IssueStatus, IssuePriority, IssueType } from '~/types'
+import type { Issue, KanbanColumn } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
 import { useKanbanStore } from '~/stores/kanban'
 
@@ -287,7 +307,17 @@ const showCreate = ref(false)
 const createTitle = ref('')
 const createPriority = ref<IssuePriority>(IssuePriority.NoPriority)
 const createStatus = ref<IssueStatus>(IssueStatus.Backlog)
+
+// ── Issue drag state ──────────────────────────────────────────────────────
 const draggedId = ref<string | null>(null)
+const draggedIssueStatus = ref<IssueStatus | null>(null)
+const transitionsButtonAlert = ref(false)
+
+// ── Column drag state (board view) ─────────────────────────────────────────
+const draggedColId = ref<string | null>(null)
+
+// ── Lane drag state (modal) ────────────────────────────────────────────────
+const draggedLaneId = ref<string | null>(null)
 
 // ── Board state ───────────────────────────────────────────────────────────
 const showNewBoard = ref(false)
@@ -332,20 +362,119 @@ onMounted(async () => {
 })
 
 watch(activeBoardId, (bid) => {
-  if (bid) kanban.selectBoard(kanban.boards.find(b => b.id === bid)!)
+  if (bid) {
+    kanban.selectBoard(kanban.boards.find(b => b.id === bid)!)
+    kanban.fetchTransitions(bid)
+  }
 })
 
-// ── Drag & drop ───────────────────────────────────────────────────────────
-function onDragStart(e: DragEvent, issueId: string) {
-  draggedId.value = issueId
+// ── Issue drag & drop ─────────────────────────────────────────────────────
+function onDragStart(e: DragEvent, issue: Issue) {
+  draggedId.value = issue.id
+  draggedIssueStatus.value = issue.status
+  e.dataTransfer!.effectAllowed = 'move'
+  // Blink the Transitions button if the source column has no outgoing transitions
+  const sourceCol = boardColumns.value.find(c => c.issueStatus === issue.status)
+  if (sourceCol) {
+    const hasOutgoing = kanban.transitions.some(t => t.fromColumnId === sourceCol.id)
+    transitionsButtonAlert.value = !hasOutgoing
+  } else {
+    transitionsButtonAlert.value = false
+  }
+}
+
+function onIssueDragEnd() {
+  draggedId.value = null
+  draggedIssueStatus.value = null
+  transitionsButtonAlert.value = false
+}
+
+function isValidDropTarget(targetColId: string): boolean {
+  if (!draggedId.value || !draggedIssueStatus.value) return false
+  const sourceCol = boardColumns.value.find(c => c.issueStatus === draggedIssueStatus.value)
+  if (!sourceCol) return false
+  if (sourceCol.id === targetColId) return false
+  // If no transitions are defined, all columns are valid drop targets (open board)
+  if (kanban.transitions.length === 0) return true
+  return kanban.transitions.some(t => t.fromColumnId === sourceCol.id && t.toColumnId === targetColId)
+}
+
+async function onIssueDrop(e: DragEvent, targetCol: KanbanColumn) {
+  e.preventDefault()
+  // Ignore if this is a column drag
+  if (draggedColId.value) return
+  if (!draggedId.value) return
+  if (!isValidDropTarget(targetCol.id)) return
+  await issueStore.updateIssueStatus(id, draggedId.value, targetCol.issueStatus)
+  draggedId.value = null
+  draggedIssueStatus.value = null
+  transitionsButtonAlert.value = false
+}
+
+// ── Column drag & drop (main board reorder) ────────────────────────────────
+function onColDragStart(e: DragEvent, colId: string) {
+  draggedColId.value = colId
+  e.dataTransfer!.effectAllowed = 'move'
+  // Prevent issue drag handlers from firing
+  e.stopPropagation()
+}
+
+function onColDragEnd() {
+  draggedColId.value = null
+}
+
+function onColDragOver(e: DragEvent, _colId: string) {
+  if (!draggedColId.value) return
+  e.preventDefault()
+}
+
+async function onColDrop(e: DragEvent, targetColId: string) {
+  if (!draggedColId.value || draggedColId.value === targetColId) {
+    draggedColId.value = null
+    return
+  }
+  e.stopPropagation()
+  const cols = [...boardColumns.value]
+  const fromIdx = cols.findIndex(c => c.id === draggedColId.value)
+  const toIdx = cols.findIndex(c => c.id === targetColId)
+  if (fromIdx === -1 || toIdx === -1) {
+    draggedColId.value = null
+    return
+  }
+  const [moved] = cols.splice(fromIdx, 1)
+  cols.splice(toIdx, 0, moved)
+  draggedColId.value = null
+  await kanban.reorderColumns(activeBoardId.value, cols.map(c => c.id))
+}
+
+// ── Lane drag & drop (modal reorder) ──────────────────────────────────────
+function onLaneDragStart(e: DragEvent, laneId: string) {
+  draggedLaneId.value = laneId
   e.dataTransfer!.effectAllowed = 'move'
 }
 
-async function onDrop(e: DragEvent, status: IssueStatus) {
+function onLaneDragOver(e: DragEvent, _laneId: string) {
+  if (!draggedLaneId.value) return
   e.preventDefault()
-  if (!draggedId.value) return
-  await issueStore.updateIssueStatus(id, draggedId.value, status)
-  draggedId.value = null
+}
+
+async function onLaneDrop(e: DragEvent, targetLaneId: string) {
+  if (!draggedLaneId.value || draggedLaneId.value === targetLaneId) {
+    draggedLaneId.value = null
+    return
+  }
+  e.preventDefault()
+  const cols = [...boardColumns.value]
+  const fromIdx = cols.findIndex(c => c.id === draggedLaneId.value)
+  const toIdx = cols.findIndex(c => c.id === targetLaneId)
+  if (fromIdx === -1 || toIdx === -1) {
+    draggedLaneId.value = null
+    return
+  }
+  const [moved] = cols.splice(fromIdx, 1)
+  cols.splice(toIdx, 0, moved)
+  draggedLaneId.value = null
+  await kanban.reorderColumns(activeBoardId.value, cols.map(c => c.id))
 }
 
 // ── Quick create ──────────────────────────────────────────────────────────
