@@ -4,8 +4,7 @@ namespace IssuePit.Tests.E2E;
 
 /// <summary>
 /// E2E tests for the Vue/Nuxt frontend, launched against the running Aspire stack.
-/// Requires the frontend to be served separately (e.g. via docker-compose or nuxt build/preview).
-/// The FRONTEND_URL environment variable controls which URL is tested (defaults to http://localhost:3000).
+/// The FRONTEND_URL environment variable overrides the Aspire-started frontend URL.
 /// </summary>
 [Trait("Category", "E2E")]
 public class FrontendSmokeTests : IClassFixture<AspireFixture>, IAsyncLifetime
