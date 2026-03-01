@@ -124,4 +124,4 @@ Background worker that subscribes to the `cicd-trigger` Kafka topic and drives l
 
 ## License
 
-MIT
+will later be opensourced, currently is just source available and copyrighted by issuepit
