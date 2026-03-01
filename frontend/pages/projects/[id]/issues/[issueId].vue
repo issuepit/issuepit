@@ -105,6 +105,20 @@
               </div>
             </div>
 
+            <!-- Git Branch / Code Review -->
+            <div v-if="store.currentIssue.gitBranch">
+              <p class="text-xs text-gray-500 uppercase tracking-wide mb-1.5">Branch</p>
+              <p class="text-xs font-mono text-brand-400 mb-2 truncate">{{ store.currentIssue.gitBranch }}</p>
+              <NuxtLink :to="`/projects/${id}/issues/${issueId}/review`"
+                class="flex items-center gap-2 w-full text-xs bg-purple-900/20 hover:bg-purple-900/40 text-purple-300 border border-purple-900/30 hover:border-purple-700/50 rounded-lg px-3 py-2 transition-colors">
+                <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                </svg>
+                Code Review
+              </NuxtLink>
+            </div>
+
             <!-- Dates -->
             <div>
               <p class="text-xs text-gray-500 uppercase tracking-wide mb-1.5">Created</p>

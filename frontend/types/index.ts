@@ -92,6 +92,7 @@ export interface Issue {
   parentIssueId?: string
   dueDate?: string
   estimate?: number
+  gitBranch?: string
   createdAt: string
   updatedAt: string
 }
@@ -217,4 +218,46 @@ export interface RuntimeConfiguration {
   configuration: string
   isDefault: boolean
   createdAt: string
+}
+
+export interface IssueComment {
+  id: string
+  issueId: string
+  body: string
+  filePath?: string
+  lineStart?: number
+  lineEnd?: number
+  diffSide?: string
+  commitSha?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DiffLine {
+  content: string
+  lineNumber: number | null
+  oldLineNumber: number | null
+  newLineNumber: number | null
+  type: 'context' | 'add' | 'del' | 'hunk'
+}
+
+export interface DiffFile {
+  fileName: string
+  status: string
+  additions: number
+  deletions: number
+  changes: number
+  patch?: string
+  blobUrl?: string
+  rawUrl?: string
+}
+
+export interface DiffResult {
+  branch: string
+  baseLabel: string
+  headLabel: string
+  commitSha: string
+  files: DiffFile[]
+  totalAdditions: number
+  totalDeletions: number
 }

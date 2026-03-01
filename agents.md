@@ -31,6 +31,7 @@
 
 - Do not add redundant information in documentation (e.g., listing what tests cover when the tests themselves are self-documenting)
 - Keep documentation focused on concepts, formats, and implementation approaches rather than test descriptions
+- PRs that include UI changes **must** include screenshots of the UI in the PR description
 
 ## Ending a Task / Conversation / Session
 
