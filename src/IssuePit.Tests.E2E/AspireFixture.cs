@@ -25,10 +25,29 @@ public sealed class AspireFixture : IAsyncLifetime
         var appHost = await DistributedApplicationTestingBuilder
             .CreateAsync<Projects.IssuePit_AppHost>();
 
-        // Suppress INFO-level noise from Kafka, Aspire orchestration, and librdkafka
-        // bootstrap-broker warnings that appear during container startup.
+        // Suppress log noise produced during E2E test runs:
+        //
+        // 1. MinLevel = Warning: silences INFO-level messages from Aspire orchestration and
+        //    application startup across all categories.
+        //
+        // 2. LogLevel.None on "IssuePit.AppHost.Resources": silences the Aspire resource-relay
+        //    category that captures stdout/stderr from child processes (execution-client,
+        //    cicd-client, api, etc.) and re-logs them at LogLevel.Error.
+        //    The librdkafka C library writes its connection errors directly to stderr as
+        //    "%3|...|FAIL|rdkafka#...|...brokers are down" lines.  Aspire picks these up and
+        //    emits them via ILogger at Error level under the category
+        //    "IssuePit.AppHost.Resources.<resource-name>", bypassing the MinLevel filter above.
+        //    These "bootstrap brokers are down" / "Connection refused" messages are expected
+        //    startup and teardown noise: the execution-client and cicd-client begin connecting
+        //    to Kafka on the Aspire-assigned dynamic port before the KRaft container is fully
+        //    ready, and again when the test disposes the distributed app.  They do not affect
+        //    test correctness in any way.
         appHost.Services.Configure<LoggerFilterOptions>(opts =>
-            opts.MinLevel = LogLevel.Warning);
+        {
+            opts.MinLevel = LogLevel.Warning;
+            // Silence the Aspire resource-process stdout/stderr relay entirely; see comment above.
+            opts.Rules.Add(new LoggerFilterRule(null, "IssuePit.AppHost.Resources", LogLevel.None, null));
+        });
 
         App = await appHost.BuildAsync();
         await App.StartAsync();
