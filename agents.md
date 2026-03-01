@@ -1,5 +1,6 @@
 # IssuePit Agent Guidelines
 
+
 ## Testing and Coding
 
 - Create Aspire integration tests

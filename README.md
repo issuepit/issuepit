@@ -75,7 +75,7 @@ frontend/                      # Vue 3 + Nuxt 3 + Pinia frontend
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
 - [Node.js 22+](https://nodejs.org/)
-- [Docker](https://www.docker.com/)
+- [Docker](https://www.docker.com/) or better [Podman](https://podman.io/)
 
 ### Run with Aspire
 
@@ -136,6 +136,12 @@ dotnet dev-certs https --trust
 https://aspire.dev/get-started/install-cli/
 ```bash
 export PATH="/c/Users/user/.aspire/bin:$PATH"
+```
+
+## frontend is not starting inside of aspire:
+```bash
+cd frontend
+npm ci
 ```
 
 ---
