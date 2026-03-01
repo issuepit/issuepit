@@ -14,15 +14,121 @@
 
       <!-- Card -->
       <div class="bg-gray-900 border border-gray-800 rounded-2xl p-8 shadow-xl">
-        <h1 class="text-xl font-semibold text-white mb-1 text-center">Sign in</h1>
-        <p class="text-sm text-gray-400 text-center mb-8">
-          Use your GitHub account to sign in to IssuePit.
-        </p>
+        <!-- Tabs -->
+        <div class="flex border-b border-gray-800 mb-6">
+          <button
+            class="flex-1 pb-3 text-sm font-medium transition-colors"
+            :class="tab === 'local' ? 'text-white border-b-2 border-brand-500' : 'text-gray-500 hover:text-gray-300'"
+            @click="tab = 'local'"
+          >
+            Sign in
+          </button>
+          <button
+            class="flex-1 pb-3 text-sm font-medium transition-colors"
+            :class="tab === 'register' ? 'text-white border-b-2 border-brand-500' : 'text-gray-500 hover:text-gray-300'"
+            @click="tab = 'register'"
+          >
+            Create account
+          </button>
+        </div>
 
-        <a :href="githubLoginUrl"
+        <!-- Local login -->
+        <form v-if="tab === 'local'" class="space-y-4" @submit.prevent="handleLogin">
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Username</label>
+            <input
+              v-model="loginForm.username"
+              type="text"
+              required
+              autocomplete="username"
+              placeholder="username"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Password</label>
+            <input
+              v-model="loginForm.password"
+              type="password"
+              required
+              autocomplete="current-password"
+              placeholder="••••••••"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+          <div v-if="error" class="text-sm text-red-400 bg-red-900/20 border border-red-900/30 rounded-lg px-3 py-2">
+            {{ error }}
+          </div>
+          <button
+            type="submit"
+            :disabled="loading"
+            class="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-medium py-2.5 px-4 rounded-lg transition-colors duration-150"
+          >
+            {{ loading ? 'Signing in…' : 'Sign in' }}
+          </button>
+        </form>
+
+        <!-- Register -->
+        <form v-else class="space-y-4" @submit.prevent="handleRegister">
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Username</label>
+            <input
+              v-model="registerForm.username"
+              type="text"
+              required
+              autocomplete="username"
+              placeholder="username"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Email <span class="text-gray-500">(optional)</span></label>
+            <input
+              v-model="registerForm.email"
+              type="email"
+              autocomplete="email"
+              placeholder="you@example.com"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Password</label>
+            <input
+              v-model="registerForm.password"
+              type="password"
+              required
+              autocomplete="new-password"
+              placeholder="••••••••"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+          <div v-if="error" class="text-sm text-red-400 bg-red-900/20 border border-red-900/30 rounded-lg px-3 py-2">
+            {{ error }}
+          </div>
+          <button
+            type="submit"
+            :disabled="loading"
+            class="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-medium py-2.5 px-4 rounded-lg transition-colors duration-150"
+          >
+            {{ loading ? 'Creating account…' : 'Create account' }}
+          </button>
+        </form>
+
+        <!-- Divider -->
+        <div v-if="githubLoginUrl" class="flex items-center gap-3 my-5">
+          <div class="flex-1 h-px bg-gray-800" />
+          <span class="text-xs text-gray-500">or</span>
+          <div class="flex-1 h-px bg-gray-800" />
+        </div>
+
+        <!-- GitHub SSO -->
+        <a
+          v-if="githubLoginUrl"
+          :href="githubLoginUrl"
           class="flex items-center justify-center gap-3 w-full bg-gray-800 hover:bg-gray-700
                  text-white font-medium py-2.5 px-4 rounded-lg border border-gray-700
-                 transition-colors duration-150">
+                 transition-colors duration-150"
+        >
           <!-- GitHub logo -->
           <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.44 9.8 8.2 11.38.6.11.82-.26.82-.58
@@ -42,13 +148,60 @@
 </template>
 
 <script setup lang="ts">
+import { useAuthStore } from '~/stores/auth'
+
 definePageMeta({ layout: false })
 
 const config = useRuntimeConfig()
 const apiBase = config.public.apiBase as string
+const auth = useAuthStore()
+const router = useRouter()
 
-// Build the login URL so the callback redirects back to the current page.
+// Build the GitHub login URL so the callback redirects back to the current page.
 const returnUrl = useRoute().query.returnUrl as string | undefined
 const query = returnUrl ? `?returnUrl=${encodeURIComponent(returnUrl)}` : ''
-const githubLoginUrl = `${apiBase}/api/auth/github${query}`
+const githubLoginUrl = apiBase ? `${apiBase}/api/auth/github${query}` : null
+
+const tab = ref<'local' | 'register'>('local')
+const loading = ref(false)
+const error = ref<string | null>(null)
+
+const loginForm = reactive({ username: '', password: '' })
+const registerForm = reactive({ username: '', email: '', password: '' })
+
+watch(tab, () => { error.value = null })
+
+async function handleLogin() {
+  error.value = null
+  loading.value = true
+  try {
+    const api = useApi()
+    await api.post('/api/auth/login', { username: loginForm.username, password: loginForm.password })
+    await auth.fetchMe()
+    await router.push(returnUrl ?? '/')
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : 'Invalid username or password.'
+  } finally {
+    loading.value = false
+  }
+}
+
+async function handleRegister() {
+  error.value = null
+  loading.value = true
+  try {
+    const api = useApi()
+    await api.post('/api/auth/register', {
+      username: registerForm.username,
+      email: registerForm.email || undefined,
+      password: registerForm.password,
+    })
+    await auth.fetchMe()
+    await router.push(returnUrl ?? '/')
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : 'Failed to create account.'
+  } finally {
+    loading.value = false
+  }
+}
 </script>

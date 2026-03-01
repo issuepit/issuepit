@@ -1,4 +1,6 @@
+using BCrypt.Net;
 using IssuePit.Core.Data;
+using IssuePit.Core.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -16,16 +18,22 @@ var logger = host.Services.GetRequiredService<ILogger<Program>>();
 using var scope = host.Services.CreateScope();
 var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
 
-logger.LogInformation("Running EF Core migrations...");
-await db.Database.MigrateAsync();
-logger.LogInformation("Migrations applied successfully.");
+logger.LogInformation("Ensuring database schema is up to date...");
 
-if (args.Contains("--seed"))
-{
-    logger.LogInformation("Running database seed...");
-    await SeedAsync(db, logger);
-    logger.LogInformation("Seed completed.");
-}
+// Create schema for fresh databases; no-op for existing ones.
+await db.Database.EnsureCreatedAsync();
+
+// Apply incremental schema changes for existing databases (idempotent).
+await db.Database.ExecuteSqlRawAsync("""
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash text NULL;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin boolean NOT NULL DEFAULT false;
+    """);
+
+logger.LogInformation("Schema applied successfully.");
+
+logger.LogInformation("Running database seed...");
+await SeedAsync(db, logger);
+logger.LogInformation("Seed completed.");
 
 static async Task SeedAsync(IssuePitDbContext db, ILogger logger)
 {
@@ -40,5 +48,24 @@ static async Task SeedAsync(IssuePitDbContext db, ILogger logger)
         db.Tenants.Add(tenant);
         await db.SaveChangesAsync();
         logger.LogInformation("Seeded default tenant.");
+    }
+
+    var defaultTenant = await db.Tenants.FirstAsync(t => t.Hostname == "localhost");
+
+    if (!await db.Users.AnyAsync(u => u.Username == "admin" && u.TenantId == defaultTenant.Id))
+    {
+        var admin = new User
+        {
+            Id = Guid.NewGuid(),
+            TenantId = defaultTenant.Id,
+            Username = "admin",
+            Email = "admin@localhost",
+            IsAdmin = true,
+            CreatedAt = DateTime.UtcNow,
+        };
+        admin.PasswordHash = BCrypt.Net.BCrypt.HashPassword("admin");
+        db.Users.Add(admin);
+        await db.SaveChangesAsync();
+        logger.LogInformation("Seeded default admin user (admin/admin).");
     }
 }
