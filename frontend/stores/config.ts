@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { ApiKey, RuntimeConfiguration, ApiKeyProvider, RuntimeType } from '~/types'
+import type { ApiKey, RuntimeConfiguration, ApiKeyProvider, RuntimeType, TelegramBot } from '~/types'
 
 export const useConfigStore = defineStore('config', () => {
   const { get, post, put, del } = useApi()
@@ -58,8 +58,39 @@ export const useConfigStore = defineStore('config', () => {
     runtimes.value = runtimes.value.filter(r => r.id !== id)
   }
 
+  // --- Telegram Bots ---
+  const telegramBots = ref<TelegramBot[]>([])
+  const telegramBotsLoading = ref(false)
+
+  async function fetchTelegramBots() {
+    telegramBotsLoading.value = true
+    try {
+      telegramBots.value = await get<TelegramBot[]>('/api/config/telegram-bots')
+    } finally {
+      telegramBotsLoading.value = false
+    }
+  }
+
+  async function createTelegramBot(payload: { name: string; botToken: string; chatId: string; events: number; isSilent: boolean; orgId?: string; projectId?: string }) {
+    const created = await post<TelegramBot>('/api/config/telegram-bots', payload)
+    await fetchTelegramBots()
+    return created
+  }
+
+  async function updateTelegramBot(id: string, payload: { name: string; botToken: string; chatId: string; events: number; isSilent: boolean; orgId?: string; projectId?: string }) {
+    const updated = await put<TelegramBot>(`/api/config/telegram-bots/${id}`, payload)
+    await fetchTelegramBots()
+    return updated
+  }
+
+  async function deleteTelegramBot(id: string) {
+    await del(`/api/config/telegram-bots/${id}`)
+    telegramBots.value = telegramBots.value.filter(b => b.id !== id)
+  }
+
   return {
     apiKeys, keysLoading, fetchApiKeys, createApiKey, deleteApiKey,
     runtimes, runtimesLoading, fetchRuntimes, createRuntime, updateRuntime, deleteRuntime,
+    telegramBots, telegramBotsLoading, fetchTelegramBots, createTelegramBot, updateTelegramBot, deleteTelegramBot,
   }
 })

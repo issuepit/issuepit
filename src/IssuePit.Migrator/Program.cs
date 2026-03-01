@@ -28,6 +28,16 @@ await db.Database.EnsureCreatedAsync();
 await db.Database.ExecuteSqlRawAsync("""
     ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash text NULL;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin boolean NOT NULL DEFAULT false;
+    CREATE TABLE IF NOT EXISTS telegram_bots (
+        id uuid PRIMARY KEY,
+        org_id uuid NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        project_id uuid NULL REFERENCES projects(id) ON DELETE CASCADE,
+        name character varying(200) NOT NULL,
+        encrypted_bot_token text NOT NULL,
+        chat_id character varying(100) NOT NULL,
+        events integer NOT NULL DEFAULT 0,
+        is_silent boolean NOT NULL DEFAULT false,
+        created_at timestamp with time zone NOT NULL DEFAULT now()
     ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS description text NULL;
     ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS allowed_tools text NOT NULL DEFAULT '[]';
     CREATE TABLE IF NOT EXISTS mcp_server_secrets (
