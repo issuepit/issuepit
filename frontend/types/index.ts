@@ -164,6 +164,7 @@ export interface Project {
   name: string
   slug: string
   description?: string
+  gitHubRepo?: string
   icon?: string
   color?: string
   isPrivate: boolean

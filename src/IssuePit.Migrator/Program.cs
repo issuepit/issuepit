@@ -110,6 +110,12 @@ static async Task SeedDemoDataAsync(IssuePitDbContext db, Guid tenantId, ILogger
     db.Projects.AddRange(frontendProject, backendProject);
     await db.SaveChangesAsync();
 
+    db.GitRepositories.AddRange(
+        new GitRepository { Id = Guid.NewGuid(), ProjectId = frontendProject.Id, RemoteUrl = frontendProject.GitHubRepo!, DefaultBranch = "main", CreatedAt = DateTime.UtcNow },
+        new GitRepository { Id = Guid.NewGuid(), ProjectId = backendProject.Id, RemoteUrl = backendProject.GitHubRepo!, DefaultBranch = "main", CreatedAt = DateTime.UtcNow }
+    );
+    await db.SaveChangesAsync();
+
     // --- Labels ---
     var labelBug = new Label { Id = Guid.NewGuid(), ProjectId = frontendProject.Id, Name = "bug", Color = "#e11d48" };
     var labelFeature = new Label { Id = Guid.NewGuid(), ProjectId = frontendProject.Id, Name = "feature", Color = "#2563eb" };
@@ -242,6 +248,9 @@ static async Task SeedDemoDataAsync(IssuePitDbContext db, Guid tenantId, ILogger
         CreatedAt = DateTime.UtcNow,
     };
     db.Projects.Add(issuePitProject);
+    await db.SaveChangesAsync();
+
+    db.GitRepositories.Add(new GitRepository { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, RemoteUrl = issuePitProject.GitHubRepo!, DefaultBranch = "main", CreatedAt = DateTime.UtcNow });
     await db.SaveChangesAsync();
 
     var ipLabelBug = new Label { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Name = "bug", Color = "#e11d48" };
