@@ -21,6 +21,13 @@ public class TenantMiddleware(RequestDelegate next)
                 .FirstOrDefaultAsync(t => t.Hostname == hostname);
         }
 
+        // Resolve the authenticated user from the session claim set by cookie auth.
+        var userIdClaim = context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (!string.IsNullOrEmpty(userIdClaim) && Guid.TryParse(userIdClaim, out var userId))
+        {
+            tenantContext.CurrentUser = await db.Users.FindAsync(userId);
+        }
+
         await next(context);
     }
 }

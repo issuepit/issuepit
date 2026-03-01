@@ -38,10 +38,25 @@
 
       <!-- Footer -->
       <div class="p-3 border-t border-gray-800">
-        <div class="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-gray-800 cursor-pointer">
-          <div class="w-6 h-6 rounded-full bg-brand-600 flex items-center justify-center text-xs font-bold">U</div>
-          <span class="text-sm text-gray-300">User</span>
+        <div v-if="auth.user" class="flex items-center gap-2 px-2 py-1.5 rounded-md">
+          <div class="w-6 h-6 rounded-full bg-brand-600 flex items-center justify-center text-xs font-bold shrink-0">
+            {{ initials }}
+          </div>
+          <span class="text-sm text-gray-300 truncate flex-1">{{ displayName }}</span>
+          <button
+            class="text-gray-500 hover:text-gray-300 transition-colors ml-1"
+            title="Sign out"
+            @click="auth.logout()">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+          </button>
         </div>
+        <NuxtLink v-else to="/login" class="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-gray-800 cursor-pointer">
+          <div class="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center text-xs font-bold">?</div>
+          <span class="text-sm text-gray-400">Sign in</span>
+        </NuxtLink>
       </div>
     </aside>
 
@@ -53,6 +68,8 @@
 </template>
 
 <script setup lang="ts">
+import { useAuthStore } from '~/stores/auth'
+
 // Sidebar link component defined inline
 const SidebarLink = defineComponent({
   props: { to: String, icon: String, label: String },
@@ -87,4 +104,15 @@ const SidebarLink = defineComponent({
     ])
   }
 })
+
+const auth = useAuthStore()
+
+// Fetch the current user on initial load so the sidebar reflects the logged-in state.
+onMounted(async () => {
+  await auth.fetchMe()
+})
+
+// Display name for the sidebar footer: GitHub username or email prefix.
+const displayName = computed(() => auth.user?.username ?? auth.user?.email?.split('@')[0] ?? 'User')
+const initials = computed(() => displayName.value.slice(0, 2).padEnd(2, displayName.value[0] ?? 'U').toUpperCase())
 </script>

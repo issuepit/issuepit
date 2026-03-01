@@ -51,6 +51,23 @@ export interface User {
   createdAt: string
 }
 
+export interface GitHubIdentity {
+  id: string
+  userId: string
+  gitHubId: string
+  gitHubUsername: string
+  gitHubEmail?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AuthUser {
+  id: string
+  username: string
+  email: string
+  createdAt: string
+}
+
 export enum OrgRole {
   Member = 0,
   Admin = 1,
