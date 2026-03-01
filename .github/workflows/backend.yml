@@ -58,9 +58,22 @@ jobs:
             exit 0
           fi
           dotnet build src/IssuePit.Api/IssuePit.Api.csproj --no-restore
-          dotnet ef migrations has-pending-model-changes \
+          if ! dotnet ef migrations has-pending-model-changes \
             --project src/IssuePit.Core/IssuePit.Core.csproj \
-            --startup-project src/IssuePit.Api/IssuePit.Api.csproj
+            --startup-project src/IssuePit.Api/IssuePit.Api.csproj; then
+            echo "::error::Pending model changes detected! Run 'dotnet ef migrations add <MigrationName>' to create a new migration."
+            MIGRATION_TMP_DIR=$(mktemp -d)
+            dotnet ef migrations add PendingChanges \
+              --project src/IssuePit.Core/IssuePit.Core.csproj \
+              --startup-project src/IssuePit.Api/IssuePit.Api.csproj \
+              --output-dir "$MIGRATION_TMP_DIR" --no-build || true
+            MIGRATION_FILE=$(find "$MIGRATION_TMP_DIR" -name "*.cs" ! -name "*.Designer.cs" | head -1)
+            if [ -n "$MIGRATION_FILE" ]; then
+              echo "--- Detected changes ---"
+              cat "$MIGRATION_FILE"
+            fi
+            exit 1
+          fi
 
   unit-tests:
     name: Unit Tests
