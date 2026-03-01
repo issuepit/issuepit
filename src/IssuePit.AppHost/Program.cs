@@ -25,45 +25,11 @@ var api = builder.AddProject<Projects.IssuePit_Api>("api")
     .WaitFor(kafka)
     .WaitFor(redis)
     .WithEnvironment("AllowedOrigins", frontend.GetEndpoint("http"))
+    .WithEnvironment("GitHub__OAuth__FrontendUrl", frontend.GetEndpoint("http"))
     .WithUrlForEndpoint("http", u =>
     {
         u.DisplayText = "Scalar API Reference";
         u.Url = "/scalar/v1";
-    });
-
-api.WithCommand(
-    name: "get-admin-login-link",
-    displayName: "Get Admin Login Link",
-    executeCommand: async ctx =>
-    {
-        try
-        {
-            var apiUrl = api.GetEndpoint("http");
-            using var httpClient = new HttpClient();
-            var response = await httpClient.GetAsync($"{apiUrl}/api/auth/admin-login-link");
-            if (!response.IsSuccessStatusCode)
-            {
-                var error = await response.Content.ReadAsStringAsync();
-                return new ExecuteCommandResult { Success = false, ErrorMessage = $"Failed to get admin login link: {error}" };
-            }
-
-            var content = await response.Content.ReadAsStringAsync();
-            var json = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(content);
-            var loginUrl = json.GetProperty("loginUrl").GetString();
-            return new ExecuteCommandResult { Success = false, ErrorMessage = $"Open this URL in your browser to log in as admin (valid for 10 minutes):\n{loginUrl}" };
-        }
-        catch (Exception ex)
-        {
-            return new ExecuteCommandResult { Success = false, ErrorMessage = $"Error: {ex.Message}" };
-        }
-    },
-    commandOptions: new CommandOptions
-    {
-        Description = "Generates a one-time magic login link for the admin user.",
-        IconName = "Key",
-        UpdateState = ctx => ctx.ResourceSnapshot.HealthStatus == Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy
-            ? ResourceCommandState.Enabled
-            : ResourceCommandState.Disabled,
     });
 
 var mcpServer = builder.AddProject<Projects.IssuePit_McpServer>("mcp-server")
@@ -87,6 +53,11 @@ var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
 
 frontend
     .WithEnvironment("NUXT_PUBLIC_API_BASE", api.GetEndpoint("http"))
-    .WaitFor(api);
+    .WaitFor(api)
+    .WithUrlForEndpoint("http", u =>
+    {
+        u.DisplayText = "Admin Login";
+        u.Url = "/admin-login";
+    });
 
 builder.Build().Run();

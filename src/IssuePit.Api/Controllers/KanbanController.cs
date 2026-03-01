@@ -128,6 +128,32 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
         return NoContent();
     }
 
+    /// <summary>
+    /// Reorder lanes by providing column IDs in the desired order.
+    /// Position 0 is assigned to the first element, 1 to the second, etc.
+    /// </summary>
+    [HttpPost("boards/{boardId:guid}/columns/reorder")]
+    public async Task<IActionResult> ReorderColumns(Guid boardId, [FromBody] ReorderColumnsRequest req)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var boardExists = await db.KanbanBoards
+            .Include(b => b.Project)
+            .ThenInclude(p => p.Organization)
+            .AnyAsync(b => b.Id == boardId && b.Project.Organization.TenantId == ctx.CurrentTenant.Id);
+        if (!boardExists) return NotFound();
+        var columns = await db.KanbanColumns.Where(c => c.BoardId == boardId).ToListAsync();
+        // Validate all provided IDs belong to this board
+        var boardColumnIds = columns.Select(c => c.Id).ToHashSet();
+        if (req.ColumnIds.Any(id => !boardColumnIds.Contains(id))) return BadRequest();
+        for (var i = 0; i < req.ColumnIds.Count; i++)
+        {
+            var col = columns.First(c => c.Id == req.ColumnIds[i]);
+            col.Position = i;
+        }
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
     // ── Issue movement ────────────────────────────────────────────────────
 
     [HttpPost("boards/{boardId:guid}/move-issue")]
@@ -247,6 +273,7 @@ public record CreateBoardRequest(Guid ProjectId, string Name);
 public record CreateColumnRequest(string Name, int Position, IssuePit.Core.Enums.IssueStatus IssueStatus);
 public record CreateTransitionRequest(string Name, Guid FromColumnId, Guid ToColumnId, bool IsAuto, Guid? AgentId);
 public record MoveIssueRequest(Guid IssueId, Guid ColumnId);
+public record ReorderColumnsRequest(List<Guid> ColumnIds);
 public record UpdateBoardRequest(string Name);
 public record UpdateColumnRequest(string Name, int Position, IssuePit.Core.Enums.IssueStatus IssueStatus);
 public record UpdateTransitionRequest(string Name, Guid FromColumnId, Guid ToColumnId, bool IsAuto, Guid? AgentId);
