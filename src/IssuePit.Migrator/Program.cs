@@ -25,7 +25,7 @@ logger.LogInformation("Ensuring database schema is up to date...");
 await db.Database.EnsureCreatedAsync();
 
 // Apply incremental schema changes for existing databases (idempotent).
-await db.Database.ExecuteSqlRawAsync("""
+/*await db.Database.ExecuteSqlRawAsync("""
     ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash text NULL;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin boolean NOT NULL DEFAULT false;
     CREATE TABLE IF NOT EXISTS telegram_bots (
@@ -183,7 +183,7 @@ await db.Database.ExecuteSqlRawAsync("""
         project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
         PRIMARY KEY (github_identity_id, project_id)
     );
-    """);
+    """);*/
 
 logger.LogInformation("Schema applied successfully.");
 
