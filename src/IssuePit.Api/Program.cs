@@ -35,6 +35,7 @@ builder.Services.AddHostedService<RedisLogRelayService>();
 
 builder.Services.AddScoped<TenantContext>();
 builder.Services.AddScoped<TenantDatabaseService>();
+builder.Services.AddScoped<GitService>();
 
 // Cookie-based authentication for GitHub SSO sessions.
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
