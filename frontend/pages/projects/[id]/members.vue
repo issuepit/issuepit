@@ -1,0 +1,291 @@
+<template>
+  <div class="p-8">
+    <!-- Loading -->
+    <div v-if="projectsStore.loading && !projectsStore.currentProject" class="flex items-center justify-center py-20">
+      <div class="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+
+    <template v-else-if="projectsStore.currentProject">
+      <!-- Header -->
+      <div class="flex items-center gap-3 mb-6">
+        <NuxtLink :to="`/projects/${id}`" class="text-gray-500 hover:text-gray-300 transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+          </svg>
+        </NuxtLink>
+        <div>
+          <h1 class="text-2xl font-bold text-white">{{ projectsStore.currentProject.name }} — Members</h1>
+          <p class="text-gray-500 text-sm">Manage who has access to this project</p>
+        </div>
+      </div>
+
+      <!-- Actions bar -->
+      <div class="flex items-center justify-between mb-4">
+        <p class="text-gray-400 text-sm">{{ membersStore.members.length }} member{{ membersStore.members.length === 1 ? '' : 's' }}</p>
+        <button
+          class="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
+          @click="showAddModal = true"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          Add Member
+        </button>
+      </div>
+
+      <!-- Loading members -->
+      <div v-if="membersStore.loading" class="flex items-center justify-center py-12">
+        <div class="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+
+      <!-- Members table -->
+      <div v-else-if="membersStore.members.length" class="rounded-xl border border-gray-800 overflow-hidden">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-900">
+            <tr>
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Principal</th>
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Type</th>
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Permissions</th>
+              <th class="px-4 py-3" />
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-800">
+            <tr v-for="member in membersStore.members" :key="member.id" class="hover:bg-gray-900/50 transition-colors">
+              <td class="px-4 py-3 text-white font-medium">
+                <span v-if="member.user">{{ member.user.username }}</span>
+                <span v-else-if="member.team">{{ member.team.name }}</span>
+                <span v-else class="text-gray-500">—</span>
+              </td>
+              <td class="px-4 py-3">
+                <span v-if="member.userId"
+                  class="inline-flex items-center text-xs bg-blue-900/30 text-blue-400 px-2 py-0.5 rounded-full">
+                  User
+                </span>
+                <span v-else
+                  class="inline-flex items-center text-xs bg-purple-900/30 text-purple-400 px-2 py-0.5 rounded-full">
+                  Team
+                </span>
+              </td>
+              <td class="px-4 py-3">
+                <div class="flex flex-wrap gap-1">
+                  <span
+                    v-for="(label, flag) in permissionFlags"
+                    :key="flag"
+                    :class="[
+                      'text-xs px-1.5 py-0.5 rounded',
+                      hasPermission(member.permissions, Number(flag))
+                        ? 'bg-green-900/30 text-green-400'
+                        : 'bg-gray-800 text-gray-600'
+                    ]"
+                  >
+                    {{ label }}
+                  </span>
+                </div>
+              </td>
+              <td class="px-4 py-3 text-right">
+                <div class="flex items-center justify-end gap-2">
+                  <button
+                    class="text-xs text-gray-400 hover:text-gray-200 px-3 py-1.5 rounded-md border border-gray-700 hover:bg-gray-800 transition-colors"
+                    @click="openEditMember(member)"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    class="text-xs text-red-400 hover:text-red-300 px-3 py-1.5 rounded-md border border-red-900/30 hover:bg-red-900/20 transition-colors"
+                    @click="confirmRemoveMember(member)"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Empty state -->
+      <div v-else class="flex flex-col items-center justify-center py-16 text-center">
+        <div class="w-12 h-12 bg-gray-800 rounded-full flex items-center justify-center mb-3">
+          <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+              d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </div>
+        <p class="text-gray-400 font-medium">No members yet</p>
+        <p class="text-gray-600 text-sm mt-1">Add users or teams to grant access</p>
+      </div>
+    </template>
+
+    <!-- Not found -->
+    <div v-else class="flex flex-col items-center justify-center py-20 text-center">
+      <p class="text-gray-400 font-medium">Project not found</p>
+      <NuxtLink to="/projects" class="mt-3 text-brand-400 hover:text-brand-300 text-sm">← Back to Projects</NuxtLink>
+    </div>
+
+    <!-- Add / Edit Modal -->
+    <div v-if="showAddModal || editingMember" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md p-6 shadow-xl">
+        <h2 class="text-lg font-bold text-white mb-5">{{ editingMember ? 'Edit Permissions' : 'Add Member' }}</h2>
+        <form class="space-y-4" @submit.prevent="handleSubmit">
+          <!-- Principal type (only when adding) -->
+          <div v-if="!editingMember">
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Type</label>
+            <div class="flex gap-3">
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input v-model="form.type" type="radio" value="user" class="text-brand-500" />
+                <span class="text-sm text-gray-300">User</span>
+              </label>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input v-model="form.type" type="radio" value="team" class="text-brand-500" />
+                <span class="text-sm text-gray-300">Team</span>
+              </label>
+            </div>
+          </div>
+
+          <div v-if="!editingMember">
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">
+              {{ form.type === 'user' ? 'User ID' : 'Team ID' }}
+            </label>
+            <input
+              v-model="form.principalId"
+              type="text"
+              required
+              :placeholder="form.type === 'user' ? 'User UUID' : 'Team UUID'"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+
+          <!-- Permissions checkboxes -->
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-2">Permissions</label>
+            <div class="grid grid-cols-2 gap-2">
+              <label
+                v-for="(label, flag) in permissionFlags"
+                :key="flag"
+                class="flex items-center gap-2 cursor-pointer rounded-lg p-2 hover:bg-gray-800 transition-colors"
+              >
+                <input
+                  type="checkbox"
+                  :checked="hasPermission(form.permissions, Number(flag))"
+                  class="w-4 h-4 rounded border-gray-600 text-brand-600 focus:ring-brand-500 bg-gray-700"
+                  @change="togglePermission(Number(flag))"
+                />
+                <span class="text-sm text-gray-300">{{ label }}</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="flex gap-3 pt-1">
+            <button
+              type="submit"
+              :disabled="saving"
+              class="flex-1 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
+            >
+              {{ saving ? 'Saving…' : editingMember ? 'Update' : 'Add' }}
+            </button>
+            <button
+              type="button"
+              class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 rounded-lg transition-colors"
+              @click="closeModal"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Error -->
+    <div v-if="membersStore.error"
+      class="fixed bottom-4 right-4 bg-red-900/20 border border-red-800 rounded-lg px-4 py-3 text-sm text-red-400 max-w-sm">
+      {{ membersStore.error }}
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { useProjectsStore } from '~/stores/projects'
+import { useProjectMembersStore } from '~/stores/projectMembers'
+import { ProjectPermission, ProjectPermissionLabels } from '~/types'
+import type { ProjectMember } from '~/types'
+
+const route = useRoute()
+const id = route.params.id as string
+
+const projectsStore = useProjectsStore()
+const membersStore = useProjectMembersStore()
+
+const permissionFlags = ProjectPermissionLabels
+
+onMounted(async () => {
+  await Promise.all([
+    projectsStore.fetchProject(id),
+    membersStore.fetchMembers(id),
+  ])
+})
+
+function hasPermission(perms: ProjectPermission, flag: number): boolean {
+  return (perms & flag) !== 0
+}
+
+const showAddModal = ref(false)
+const editingMember = ref<ProjectMember | null>(null)
+const saving = ref(false)
+
+const form = reactive({
+  type: 'user' as 'user' | 'team',
+  principalId: '',
+  permissions: ProjectPermission.Read,
+})
+
+function openEditMember(member: ProjectMember) {
+  editingMember.value = member
+  form.permissions = member.permissions
+}
+
+function closeModal() {
+  showAddModal.value = false
+  editingMember.value = null
+  Object.assign(form, { type: 'user', principalId: '', permissions: ProjectPermission.Read })
+}
+
+function togglePermission(flag: number) {
+  if (hasPermission(form.permissions, flag)) {
+    form.permissions = (form.permissions & ~flag) as ProjectPermission
+  } else {
+    form.permissions = (form.permissions | flag) as ProjectPermission
+  }
+}
+
+async function handleSubmit() {
+  saving.value = true
+  try {
+    if (editingMember.value) {
+      await membersStore.updateMember(id, {
+        userId: editingMember.value.userId,
+        teamId: editingMember.value.teamId,
+        permissions: form.permissions,
+      })
+    } else {
+      await membersStore.addMember(id, {
+        userId: form.type === 'user' ? form.principalId : undefined,
+        teamId: form.type === 'team' ? form.principalId : undefined,
+        permissions: form.permissions,
+      })
+    }
+    closeModal()
+  } finally {
+    saving.value = false
+  }
+}
+
+function confirmRemoveMember(member: ProjectMember) {
+  const name = member.user?.username || member.team?.name || 'this member'
+  if (confirm(`Remove "${name}" from the project?`)) {
+    membersStore.removeMember(id, {
+      userId: member.userId,
+      teamId: member.teamId,
+    })
+  }
+}
+</script>
