@@ -430,3 +430,65 @@ export interface TelegramBot {
   isSilent: boolean
   createdAt: string
 }
+
+export enum CiCdRunStatus {
+  Pending = 0,
+  Running = 1,
+  Succeeded = 2,
+  Failed = 3,
+  Cancelled = 4,
+}
+
+export const CiCdRunStatusLabels: Record<CiCdRunStatus, string> = {
+  [CiCdRunStatus.Pending]: 'Pending',
+  [CiCdRunStatus.Running]: 'Running',
+  [CiCdRunStatus.Succeeded]: 'Succeeded',
+  [CiCdRunStatus.Failed]: 'Failed',
+  [CiCdRunStatus.Cancelled]: 'Cancelled',
+}
+
+export interface CiCdRun {
+  id: string
+  projectId: string
+  agentSessionId?: string
+  commitSha: string
+  branch?: string
+  workflow?: string
+  status: CiCdRunStatus
+  statusName: string
+  startedAt: string
+  endedAt?: string
+  externalSource?: string
+  externalRunId?: string
+}
+
+export enum AgentSessionStatus {
+  Pending = 0,
+  Running = 1,
+  Succeeded = 2,
+  Failed = 3,
+  Cancelled = 4,
+}
+
+export const AgentSessionStatusLabels: Record<AgentSessionStatus, string> = {
+  [AgentSessionStatus.Pending]: 'Pending',
+  [AgentSessionStatus.Running]: 'Running',
+  [AgentSessionStatus.Succeeded]: 'Succeeded',
+  [AgentSessionStatus.Failed]: 'Failed',
+  [AgentSessionStatus.Cancelled]: 'Cancelled',
+}
+
+export interface AgentSession {
+  id: string
+  agentId: string
+  agentName: string
+  issueId: string
+  issueTitle: string
+  issueNumber: number
+  commitSha?: string
+  gitBranch?: string
+  status: AgentSessionStatus
+  statusName: string
+  startedAt: string
+  endedAt?: string
+}
