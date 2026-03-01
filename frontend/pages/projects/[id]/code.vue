@@ -471,7 +471,10 @@ function formatSize(bytes: number) {
 
 // Markdown support
 const showRenderedMd = ref(false)
-const isMdFile = computed(() => store.blob?.path.toLowerCase().endsWith('.md') ?? false)
+const isMdFile = computed(() => {
+  const p = store.blob?.path.toLowerCase() ?? ''
+  return p.endsWith('.md') || p.endsWith('.markdown')
+})
 const renderedMd = computed(() => {
   if (!store.blob?.content) return ''
   return DOMPurify.sanitize(marked.parse(store.blob.content) as string)
