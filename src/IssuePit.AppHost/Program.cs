@@ -25,6 +25,7 @@ var api = builder.AddProject<Projects.IssuePit_Api>("api")
     .WaitFor(kafka)
     .WaitFor(redis)
     .WithEnvironment("AllowedOrigins", frontend.GetEndpoint("http"))
+    .WithEnvironment("GitHub__OAuth__FrontendUrl", frontend.GetEndpoint("http"))
     .WithUrlForEndpoint("http", u =>
     {
         u.DisplayText = "Scalar API Reference";
