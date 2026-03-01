@@ -17,6 +17,9 @@
       </button>
     </div>
 
+    <!-- Error -->
+    <ErrorBox :error="store.error" />
+
     <!-- Loading -->
     <div v-if="store.loading" class="flex items-center justify-center py-20">
       <div class="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
@@ -86,11 +89,6 @@
       >
         Create Tenant
       </button>
-    </div>
-
-    <!-- Error -->
-    <div v-if="store.error" class="mt-4 bg-red-900/20 border border-red-800 rounded-lg px-4 py-3 text-sm text-red-400">
-      {{ store.error }}
     </div>
 
     <!-- Create / Edit Modal -->

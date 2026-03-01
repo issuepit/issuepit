@@ -15,6 +15,9 @@
       </button>
     </div>
 
+    <!-- Error -->
+    <ErrorBox :error="store.error" />
+
     <!-- Loading -->
     <div v-if="store.loading" class="flex items-center justify-center py-20">
       <div class="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
