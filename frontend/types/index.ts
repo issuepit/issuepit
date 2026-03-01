@@ -39,6 +39,7 @@ export interface Organization {
   name: string
   slug: string
   description?: string
+  maxConcurrentRunners: number
   createdAt: string
   updatedAt: string
 }
@@ -170,6 +171,8 @@ export interface Project {
   isPrivate: boolean
   issueCount: number
   memberCount: number
+  mountRepositoryInDocker: boolean
+  maxConcurrentRunners: number
   createdAt: string
   updatedAt: string
 }
@@ -537,6 +540,20 @@ export interface AgentSession {
 export interface DashboardAgentSession extends AgentSession {
   projectId: string
   projectName: string
+}
+
+export interface CiCdRunLog {
+  id: string
+  line: string
+  stream: number
+  streamName: string
+  timestamp: string
+}
+
+export interface AgentSessionDetail extends AgentSession {
+  projectId: string
+  projectName: string
+  ciCdRuns: CiCdRun[]
 }
 
 export interface IssueHistoryEntry {

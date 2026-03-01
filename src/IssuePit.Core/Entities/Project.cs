@@ -24,5 +24,11 @@ public class Project
 
     public string? GitHubRepo { get; set; }
 
+    /// <summary>Whether to mount the repository workspace into the Docker runner container. Default is true.</summary>
+    public bool MountRepositoryInDocker { get; set; } = true;
+
+    /// <summary>Maximum number of concurrent CI/CD runners for this project. 0 means unlimited.</summary>
+    public int MaxConcurrentRunners { get; set; } = 0;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

@@ -135,7 +135,9 @@
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-800">
-              <tr v-for="run in runsStore.runs.slice(0, 10)" :key="run.id" class="hover:bg-gray-800/40 transition-colors">
+              <tr v-for="run in runsStore.runs.slice(0, 10)" :key="run.id"
+                class="hover:bg-gray-800/40 transition-colors cursor-pointer"
+                @click="navigateTo(`/projects/${run.projectId}/runs/cicd/${run.id}`)">
                 <td class="px-3 py-2">
                   <span :class="runStatusClass(run.status)" class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium">
                     <span :class="runStatusDot(run.status)" class="w-1.5 h-1.5 rounded-full" />
@@ -169,7 +171,9 @@
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-800">
-              <tr v-for="session in runsStore.dashboardSessions.slice(0, 10)" :key="session.id" class="hover:bg-gray-800/40 transition-colors">
+              <tr v-for="session in runsStore.dashboardSessions.slice(0, 10)" :key="session.id"
+                class="hover:bg-gray-800/40 transition-colors cursor-pointer"
+                @click="navigateTo(`/projects/${session.projectId}/runs/agent-sessions/${session.id}`)">
                 <td class="px-3 py-2">
                   <span :class="runStatusClass(session.status)" class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium">
                     <span :class="runStatusDot(session.status)" class="w-1.5 h-1.5 rounded-full" />
@@ -179,7 +183,8 @@
                 <td class="px-3 py-2 text-gray-300 text-xs">{{ session.agentName }}</td>
                 <td class="px-3 py-2 text-xs">
                   <NuxtLink :to="`/projects/${session.projectId}/issues/${session.issueId}`"
-                    class="text-brand-400 hover:text-brand-300 transition-colors">
+                    class="text-brand-400 hover:text-brand-300 transition-colors"
+                    @click.stop>
                     #{{ session.issueNumber }} {{ session.issueTitle }}
                   </NuxtLink>
                 </td>

@@ -216,6 +216,29 @@
           <p class="text-gray-400 font-medium">No projects yet</p>
         </div>
       </div>
+      <!-- Settings Tab -->
+      <div v-if="activeTab === 'settings'" class="max-w-2xl">
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h2 class="font-semibold text-white mb-1">Runner Options</h2>
+          <p class="text-sm text-gray-500 mb-4">Default CI/CD runner limits for all projects in this organization</p>
+          <form class="space-y-4" @submit.prevent="saveRunnerSettings">
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">
+                Max concurrent runners
+                <span class="text-gray-500 font-normal">(0 = unlimited)</span>
+              </label>
+              <input v-model.number="runnerSettingsForm.maxConcurrentRunners" type="number" min="0"
+                class="w-40 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+              <p class="text-xs text-gray-500 mt-1">Applies across all projects in this organization unless overridden per project</p>
+            </div>
+            <p v-if="saveRunnerSettingsError" class="text-red-400 text-sm">{{ saveRunnerSettingsError }}</p>
+            <button type="submit" :disabled="savingRunnerSettings"
+              class="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+              {{ savingRunnerSettings ? 'Saving…' : 'Save Runner Options' }}
+            </button>
+          </form>
+        </div>
+      </div>
     </template>
 
     <!-- Not found / Error -->
@@ -356,8 +379,14 @@ const tabs = [
   { id: 'teams', label: 'Teams' },
   { id: 'members', label: 'Members' },
   { id: 'projects', label: 'Projects' },
+  { id: 'settings', label: 'Settings' },
 ]
 const activeTab = ref('teams')
+
+// --- Runner Settings ---
+const runnerSettingsForm = reactive({ maxConcurrentRunners: 0 })
+const savingRunnerSettings = ref(false)
+const saveRunnerSettingsError = ref<string | null>(null)
 
 onMounted(async () => {
   await Promise.all([
@@ -365,7 +394,27 @@ onMounted(async () => {
     teamsStore.fetchTeams(orgId),
     orgsStore.fetchMembers(orgId),
   ])
+  if (orgsStore.currentOrg) {
+    runnerSettingsForm.maxConcurrentRunners = orgsStore.currentOrg.maxConcurrentRunners ?? 0
+  }
 })
+
+async function saveRunnerSettings() {
+  if (!orgsStore.currentOrg) return
+  savingRunnerSettings.value = true
+  saveRunnerSettingsError.value = null
+  try {
+    await orgsStore.updateOrg(orgId, {
+      name: orgsStore.currentOrg.name,
+      slug: orgsStore.currentOrg.slug,
+      maxConcurrentRunners: runnerSettingsForm.maxConcurrentRunners,
+    })
+  } catch (e: unknown) {
+    saveRunnerSettingsError.value = e instanceof Error ? e.message : 'Failed to save'
+  } finally {
+    savingRunnerSettings.value = false
+  }
+}
 
 watch(activeTab, async (tab) => {
   if (tab === 'members') await orgsStore.fetchMembers(orgId)

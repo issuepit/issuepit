@@ -161,6 +161,39 @@ public class CiCdRunsController(IssuePitDbContext db, TenantContext tenant, IPro
         return Ok(new { run.Id, run.Status, StatusName = run.Status.ToString() });
     }
 
+    [HttpPost("{id:guid}/retry")]
+    public async Task<IActionResult> RetryRun(Guid id)
+    {
+        var run = await db.CiCdRuns
+            .Include(r => r.Project)
+            .FirstOrDefaultAsync(r => r.Id == id && r.Project.Organization.TenantId == tenant.CurrentTenant!.Id);
+
+        if (run is null) return NotFound();
+
+        if (run.Status is not (CiCdRunStatus.Failed or CiCdRunStatus.Cancelled))
+            return Conflict(new { error = "Only failed or cancelled runs can be retried.", run.Status, StatusName = run.Status.ToString() });
+
+        // Publish a new trigger — the CiCdWorker will create a new run record.
+        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            projectId = run.ProjectId,
+            commitSha = run.CommitSha,
+            branch = run.Branch,
+            workflow = run.Workflow,
+            agentSessionId = run.AgentSessionId,
+            workspacePath = (string?)null,
+            eventName = "push",
+        });
+
+        await producer.ProduceAsync("cicd-trigger", new Message<string, string>
+        {
+            Key = run.CommitSha,
+            Value = payload,
+        });
+
+        return Accepted(new { retriedRunId = run.Id });
+    }
+
     [HttpPost("{id:guid}/cancel")]
     public async Task<IActionResult> CancelRun(Guid id)
     {
