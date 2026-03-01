@@ -71,7 +71,8 @@
           </div>
         </NuxtLink>
 
-        <div class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 flex items-center gap-4 transition-colors group cursor-pointer">
+        <NuxtLink :to="`/projects/${id}/members`"
+          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 flex items-center gap-4 transition-colors group">
           <div class="w-10 h-10 bg-green-900/30 rounded-lg flex items-center justify-center">
             <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -82,13 +83,13 @@
             <p class="font-semibold text-white group-hover:text-brand-300 transition-colors">Members</p>
             <p class="text-xs text-gray-500">{{ store.currentProject.memberCount }} members</p>
           </div>
-        </div>
+        </NuxtLink>
       </div>
     </template>
 
-    <!-- Not found -->
+    <!-- Not found / Error -->
     <div v-else class="flex flex-col items-center justify-center py-20 text-center">
-      <p class="text-gray-400 font-medium">Project not found</p>
+      <p class="text-gray-400 font-medium">{{ store.error || 'Project not found' }}</p>
       <NuxtLink to="/projects" class="mt-3 text-brand-400 hover:text-brand-300 text-sm">← Back to Projects</NuxtLink>
     </div>
   </div>

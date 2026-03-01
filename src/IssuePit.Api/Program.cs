@@ -1,9 +1,10 @@
 using Confluent.Kafka;
-using IssuePit.Api.Endpoints;
+using System;
 using IssuePit.Api.Hubs;
 using IssuePit.Api.Middleware;
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using StackExchange.Redis;
 
@@ -33,6 +34,34 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 builder.Services.AddHostedService<RedisLogRelayService>();
 
 builder.Services.AddScoped<TenantContext>();
+builder.Services.AddScoped<TenantDatabaseService>();
+
+// Cookie-based authentication for GitHub SSO sessions.
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.Cookie.Name = "issuepit-session";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        options.ExpireTimeSpan = TimeSpan.FromDays(30);
+        options.SlidingExpiration = true;
+        // Return 401 JSON instead of redirecting to a login page for API clients.
+        options.Events.OnRedirectToLogin = ctx =>
+        {
+            ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return Task.CompletedTask;
+        };
+        options.Events.OnRedirectToAccessDenied = ctx =>
+        {
+            ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return Task.CompletedTask;
+        };
+    });
+builder.Services.AddAuthorization();
+
+// HttpClient used by AuthController to communicate with the GitHub API.
+builder.Services.AddHttpClient();
 
 var kafkaBootstrapServers = builder.Configuration["Kafka__BootstrapServers"] ?? "localhost:9092";
 builder.Services.AddSingleton<IProducer<string, string>>(_ =>
@@ -44,16 +73,43 @@ builder.Services.AddSingleton<IProducer<string, string>>(_ =>
 builder.Services.AddSignalR()
     .AddStackExchangeRedis(builder.Configuration.GetConnectionString("redis") ?? "localhost:6379");
 
+builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.WithOrigins(builder.Configuration["AllowedOrigins"]?.Split(',') ?? ["http://localhost:3000"])
-              .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials();
+        // During development allow dynamic local origins (covers different ports and hosts
+        // used by dev tools like Aspire/Vite). In non-development environments we keep
+        // the stricter loopback-only rule.
+        if (builder.Environment.IsDevelopment())
+        {
+            policy
+            .SetIsOriginAllowed(_ => true)
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
+        }
+        else
+        {
+            // Allow any loopback (localhost) origin in production-like environments.
+            policy.SetIsOriginAllowed(origin =>
+            {
+                try
+                {
+                    var uri = new Uri(origin);
+                    return uri.IsLoopback;
+                }
+                catch
+                {
+                    return false;
+                }
+            })
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
+        }
     });
 });
 
@@ -70,16 +126,10 @@ app.UseMiddleware<TenantMiddleware>();
 
 app.UseCors();
 
-app.MapOrganizationEndpoints();
-app.MapProjectEndpoints();
-app.MapIssueEndpoints();
-app.MapKanbanEndpoints();
-app.MapAgentEndpoints();
-app.MapConfigurationEndpoints();
-app.MapCiCdEndpoints();
-app.MapTeamEndpoints();
-app.MapReviewEndpoints();
+app.UseAuthentication();
+app.UseAuthorization();
 
+app.MapControllers();
 
 app.MapHub<AgentOutputHub>("/hubs/agent-output");
 app.MapHub<KanbanHub>("/hubs/kanban");

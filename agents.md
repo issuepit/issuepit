@@ -1,4 +1,14 @@
+this file descripes rules on how agenting coding tools work with this repository
+
 # IssuePit Agent Guidelines
+
+## Agent Terminology
+
+- **Agent mode** — a configuration with a system prompt and settings such as MCP tools and authentication keys. This is what you create in the IssuePit UI.
+- **(Work) agent** — the CLI tool or process (e.g. `opencode`, `codex`, GitHub Copilot CLI) that performs the actual work. It is launched with an agent mode configuration.
+- **Agent** — can refer to either concept, but typically means the entity doing work. An agent mode is executed _by_ a work agent.
+- Multiple agent modes can be executed by multiple work agents in parallel.
+- Work agents are spawned by `IssuePit.ExecutionClient` with the agent mode configuration on demand whenever work needs to be done.
 
 ## Testing and Coding
 

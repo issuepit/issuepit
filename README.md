@@ -38,14 +38,14 @@ frontend/                      # Vue 3 + Nuxt 3 + Pinia frontend
 - Drag-and-drop cards; per-project board configuration
 
 ### Agent Management
-- Define agents: system prompt, default Docker image, allowed tools
-- Manage MCP servers and link them to agents
+- Define agent modes: system prompt, default Docker image, allowed tools
+- Manage MCP servers and link them to agent modes
 - Multi-agent, parallel execution runtime
 - Container runtimes: native, SSH, Docker, Hetzner+Terraform+SSH, OpenSandbox
 
 ### Execution Client
 - Consumes `issue-assigned` Kafka topic
-- Runs agents (opencode, codex, GitHub Copilot CLI) in Docker (DinD)
+- Spawns work agents (opencode, codex, GitHub Copilot CLI) in Docker (DinD) with the agent mode configuration on demand
 - Copies agent logins to workspace containers
 - Supports spawning Hetzner machines for vibe-coding agents
 
@@ -75,10 +75,14 @@ frontend/                      # Vue 3 + Nuxt 3 + Pinia frontend
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
 - [Node.js 22+](https://nodejs.org/)
-- [Docker](https://www.docker.com/)
+- [Docker](https://www.docker.com/) or better [Podman](https://podman.io/)
 
 ### Run with Aspire
 
+```bash
+aspire run
+```
+or
 ```bash
 cd src
 dotnet run --project IssuePit.AppHost
@@ -120,8 +124,28 @@ Background worker that subscribes to the `issue-assigned` Kafka topic. Uses `Doc
 ### `IssuePit.CiCdClient`
 Background worker that subscribes to the `cicd-trigger` Kafka topic and drives local CI runs via `act`.
 
+
+# Known issue:
+
+## aspire ssl outdated
+```bash
+dotnet dev-certs https --clean
+dotnet dev-certs https --trust
+```
+## aspire cli not found
+https://aspire.dev/get-started/install-cli/
+```bash
+export PATH="/c/Users/user/.aspire/bin:$PATH"
+```
+
+## frontend is not starting inside of aspire:
+```bash
+cd frontend
+npm ci
+```
+
 ---
 
 ## License
 
-MIT
+will later be opensourced, currently is just source available and copyrighted by issuepit

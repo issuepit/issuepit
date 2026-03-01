@@ -28,9 +28,9 @@ export enum IssueType {
 export interface Tenant {
   id: string
   name: string
-  slug: string
+  hostname: string
+  databaseConnectionString?: string
   createdAt: string
-  updatedAt: string
 }
 
 export interface Organization {
@@ -41,6 +41,101 @@ export interface Organization {
   description?: string
   createdAt: string
   updatedAt: string
+}
+
+export interface User {
+  id: string
+  tenantId: string
+  username: string
+  email: string
+  createdAt: string
+}
+
+export interface GitHubIdentity {
+  id: string
+  userId: string
+  name?: string
+  gitHubId: string
+  gitHubUsername: string
+  gitHubEmail?: string
+  agentId?: string
+  agentName?: string
+  createdAt: string
+  updatedAt: string
+  projects: Array<{ projectId: string; name: string }>
+  orgs: Array<{ orgId: string; name: string }>
+}
+
+export interface AuthUser {
+  id: string
+  username: string
+  email: string
+  isAdmin: boolean
+  createdAt: string
+}
+
+export enum OrgRole {
+  Member = 0,
+  Admin = 1,
+  Owner = 2
+}
+
+export const OrgRoleLabels: Record<OrgRole, string> = {
+  [OrgRole.Member]: 'Member',
+  [OrgRole.Admin]: 'Admin',
+  [OrgRole.Owner]: 'Owner',
+}
+
+export enum ProjectPermission {
+  None = 0,
+  Read = 1,
+  Write = 2,
+  CommentPrs = 4,
+  MoveKanban = 8,
+  Milestones = 16,
+  Labels = 32,
+  ProjectAdmin = 64,
+}
+
+export const ProjectPermissionLabels: Record<number, string> = {
+  [ProjectPermission.Read]: 'Read',
+  [ProjectPermission.Write]: 'Write',
+  [ProjectPermission.CommentPrs]: 'Comment PRs',
+  [ProjectPermission.MoveKanban]: 'Move Kanban',
+  [ProjectPermission.Milestones]: 'Milestones',
+  [ProjectPermission.Labels]: 'Labels',
+  [ProjectPermission.ProjectAdmin]: 'Project Admin',
+}
+
+export interface Team {
+  id: string
+  orgId: string
+  name: string
+  slug: string
+  createdAt: string
+}
+
+export interface TeamMember {
+  teamId: string
+  userId: string
+  user: User
+}
+
+export interface OrganizationMember {
+  orgId: string
+  userId: string
+  user: User
+  role: OrgRole
+}
+
+export interface ProjectMember {
+  id: string
+  projectId: string
+  userId?: string
+  teamId?: string
+  user?: User
+  team?: Team
+  permissions: ProjectPermission
 }
 
 export interface Label {

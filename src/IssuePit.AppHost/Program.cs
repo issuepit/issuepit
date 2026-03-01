@@ -1,21 +1,27 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-var postgres = builder.AddPostgres("postgres")
-    .AddDatabase("issuepit-db");
+var postgresServer = builder.AddPostgres("postgres");
+var postgresDb = postgresServer.AddDatabase("issuepit-db");
 
-var kafka = builder.AddKafka("kafka");
+var kafka = builder.AddKafka("kafka")
+    .WithImage("confluentinc/confluent-local", "8.1.0"); // Confluent Platform 8.1.0 (Kafka 4.1.x, KRaft)
 
-var redis = builder.AddRedis("redis");
+var redis = builder.AddValkey("redis");
+
+var migrator = builder.AddProject<Projects.IssuePit_Migrator>("migrator")
+    .WithReference(postgresDb)
+    .WaitFor(postgresServer);
 
 var frontend = builder.AddNpmApp("frontend", "../../frontend", "dev")
     .WithHttpEndpoint(env: "NUXT_PORT")
     .WithExternalHttpEndpoints();
 
 var api = builder.AddProject<Projects.IssuePit_Api>("api")
-    .WithReference(postgres)
+    .WithReference(postgresDb)
+    .WithReference(postgresServer)
     .WithReference(kafka)
     .WithReference(redis)
-    .WaitFor(postgres)
+    .WaitForCompletion(migrator)
     .WaitFor(kafka)
     .WaitFor(redis)
     .WithEnvironment("AllowedOrigins", frontend.GetEndpoint("http"));
@@ -26,9 +32,9 @@ var mcpServer = builder.AddProject<Projects.IssuePit_McpServer>("mcp-server")
     .WithEnvironment("IssuePit__ApiBaseUrl", api.GetEndpoint("http"));
 
 var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("execution-client")
-    .WithReference(postgres)
+    .WithReference(postgresServer)
     .WithReference(kafka)
-    .WaitFor(postgres)
+    .WaitFor(postgresServer)
     .WaitFor(kafka)
     .WithEnvironment("Kafka__BootstrapServers", kafka.Resource.ConnectionStringExpression);
 

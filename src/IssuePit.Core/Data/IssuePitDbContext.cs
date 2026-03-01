@@ -20,6 +20,9 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<KanbanColumn> KanbanColumns => Set<KanbanColumn>();
     public DbSet<KanbanTransition> KanbanTransitions => Set<KanbanTransition>();
     public DbSet<User> Users => Set<User>();
+    public DbSet<GitHubIdentity> GitHubIdentities => Set<GitHubIdentity>();
+    public DbSet<GitHubIdentityProject> GitHubIdentityProjects => Set<GitHubIdentityProject>();
+    public DbSet<GitHubIdentityOrg> GitHubIdentityOrgs => Set<GitHubIdentityOrg>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
     public DbSet<RuntimeConfiguration> RuntimeConfigurations => Set<RuntimeConfiguration>();
     public DbSet<AgentSession> AgentSessions => Set<AgentSession>();
@@ -118,5 +121,31 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
             .WithMany()
             .HasForeignKey(x => x.TeamId)
             .IsRequired(false);
+
+        modelBuilder.Entity<GitHubIdentityProject>()
+            .HasKey(x => new { x.GitHubIdentityId, x.ProjectId });
+
+        modelBuilder.Entity<GitHubIdentityProject>()
+            .HasOne(x => x.GitHubIdentity)
+            .WithMany(g => g.Projects)
+            .HasForeignKey(x => x.GitHubIdentityId);
+
+        modelBuilder.Entity<GitHubIdentityProject>()
+            .HasOne(x => x.Project)
+            .WithMany()
+            .HasForeignKey(x => x.ProjectId);
+
+        modelBuilder.Entity<GitHubIdentityOrg>()
+            .HasKey(x => new { x.GitHubIdentityId, x.OrgId });
+
+        modelBuilder.Entity<GitHubIdentityOrg>()
+            .HasOne(x => x.GitHubIdentity)
+            .WithMany(g => g.Orgs)
+            .HasForeignKey(x => x.GitHubIdentityId);
+
+        modelBuilder.Entity<GitHubIdentityOrg>()
+            .HasOne(x => x.Organization)
+            .WithMany()
+            .HasForeignKey(x => x.OrgId);
     }
 }

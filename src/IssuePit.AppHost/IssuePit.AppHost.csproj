@@ -11,10 +11,11 @@
     <PackageReference Include="Aspire.Hosting.NodeJs" Version="9.5.2" />
     <PackageReference Include="Aspire.Hosting.PostgreSQL" Version="13.1.2" />
     <PackageReference Include="Aspire.Hosting.Kafka" Version="13.1.2" />
-    <PackageReference Include="Aspire.Hosting.Redis" Version="13.1.2" />
+    <PackageReference Include="Aspire.Hosting.Valkey" Version="13.1.2" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\IssuePit.Api\IssuePit.Api.csproj" />
+    <ProjectReference Include="..\IssuePit.Migrator\IssuePit.Migrator.csproj" />
     <ProjectReference Include="..\IssuePit.McpServer\IssuePit.McpServer.csproj" />
     <ProjectReference Include="..\IssuePit.ExecutionClient\IssuePit.ExecutionClient.csproj" />
     <ProjectReference Include="..\IssuePit.CiCdClient\IssuePit.CiCdClient.csproj" />

@@ -30,6 +30,36 @@ jobs:
             src/*/obj/
           retention-days: 1
 
+  check-migrations:
+    name: Check Pending Migrations
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore src/IssuePit.Core/IssuePit.Core.csproj
+
+      - name: Install dotnet-ef tool
+        run: dotnet tool install --global dotnet-ef --version 9.0.2
+
+      - name: Check pending model changes
+        run: |
+          MIGRATION_COUNT=$(find src -path "*/Migrations/*" -name "*_*.cs" | wc -l)
+          if [ "$MIGRATION_COUNT" -eq "0" ]; then
+            echo "No migrations found, skipping pending model changes check"
+            exit 0
+          fi
+          dotnet ef migrations has-pending-model-changes \
+            --project src/IssuePit.Core/IssuePit.Core.csproj
+
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest

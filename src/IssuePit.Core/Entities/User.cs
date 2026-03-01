@@ -20,5 +20,11 @@ public class User
     [Required, MaxLength(254)]
     public string Email { get; set; } = string.Empty;
 
+    /// <summary>Hashed password for local authentication. Null for SSO-only accounts.</summary>
+    public string? PasswordHash { get; set; }
+
+    /// <summary>Whether this user has system-wide admin privileges.</summary>
+    public bool IsAdmin { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
