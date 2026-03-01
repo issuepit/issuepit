@@ -83,6 +83,7 @@ builder.Services.AddControllers()
         opts.JsonSerializerOptions.Converters.Add(
             new JsonStringEnumConverter(System.Text.Json.JsonNamingPolicy.SnakeCaseLower));
     });
+builder.Services.AddMemoryCache();
 builder.Services.AddOpenApi();
 
 builder.Services.AddCors(options =>

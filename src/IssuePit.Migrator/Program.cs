@@ -80,6 +80,7 @@ static async Task SeedAsync(IssuePitDbContext db, ILogger logger)
 
     if (!await db.Users.AnyAsync(u => u.Username == "admin" && u.TenantId == defaultTenant.Id))
     {
+        var randomPassword = Guid.NewGuid().ToString("N");
         var admin = new User
         {
             Id = Guid.NewGuid(),
@@ -89,10 +90,10 @@ static async Task SeedAsync(IssuePitDbContext db, ILogger logger)
             IsAdmin = true,
             CreatedAt = DateTime.UtcNow,
         };
-        admin.PasswordHash = BCrypt.Net.BCrypt.HashPassword("admin");
+        admin.PasswordHash = BCrypt.Net.BCrypt.HashPassword(randomPassword);
         db.Users.Add(admin);
         await db.SaveChangesAsync();
-        logger.LogInformation("Seeded default admin user (admin/admin).");
+        logger.LogInformation("Seeded default admin user with a random password. Use the Aspire dashboard 'Get Admin Login Link' command to log in.");
     }
 
     await SeedDemoDataAsync(db, defaultTenant.Id, logger);
