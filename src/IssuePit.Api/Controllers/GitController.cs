@@ -215,7 +215,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
 
             await gitSvc.FetchAsync(repo);
 
-            var sha = await Task.Run(() => gitSvc.GetBranchTipSha(repo, repo.DefaultBranch));
+            var sha = gitSvc.GetBranchTipSha(repo, repo.DefaultBranch);
             if (sha is null)
             {
                 logger.LogWarning("No tip SHA found for branch '{Branch}' in repo {RepoId} after initial fetch", repo.DefaultBranch, repo.Id);

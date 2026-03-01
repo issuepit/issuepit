@@ -65,7 +65,7 @@ public class GitPollingService(
                 await gitService.FetchAsync(repo);
                 repo.LastFetchedAt = DateTime.UtcNow;
 
-                var sha = await Task.Run(() => gitService.GetBranchTipSha(repo, repo.DefaultBranch), cancellationToken);
+                var sha = gitService.GetBranchTipSha(repo, repo.DefaultBranch);
                 if (sha is null)
                 {
                     logger.LogDebug("No tip SHA for branch '{Branch}' in repo {RepoId} — skipping", repo.DefaultBranch, repo.Id);
