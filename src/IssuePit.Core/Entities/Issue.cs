@@ -13,7 +13,7 @@ public class Issue
     public Guid ProjectId { get; set; }
 
     [ForeignKey(nameof(ProjectId))]
-    public Project Project { get; set; } = null!;
+    public Project? Project { get; set; }
 
     [Required, MaxLength(500)]
     public string Title { get; set; } = string.Empty;
