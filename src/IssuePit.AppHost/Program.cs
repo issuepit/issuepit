@@ -13,6 +13,10 @@ postgresServer.WithPgAdmin(admin => admin.WithExplicitStart());
 kafka.WithKafkaUI(ui => ui.WithExplicitStart());
 builder.AddContainer("redis-insight", "redis/redisinsight")
     .WithHttpEndpoint(targetPort: 5540, name: "http")
+    .WithReference(redis)
+    .WithEnvironment("RI_DATABASE_HOST", redis.Resource.PrimaryEndpoint.Property(EndpointProperty.IPV4Host))
+    .WithEnvironment("RI_DATABASE_PORT", redis.Resource.PrimaryEndpoint.Property(EndpointProperty.Port))
+    .WithEnvironment("RI_DATABASE_NAME", "valkey")
     .WithExplicitStart();
 
 var migrator = builder.AddProject<Projects.IssuePit_Migrator>("migrator")
