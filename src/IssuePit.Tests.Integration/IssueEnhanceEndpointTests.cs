@@ -76,6 +76,7 @@ public class IssueEnhanceEndpointTests(ApiFactory factory) : IClassFixture<ApiFa
         var body = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
         var error = body.GetProperty("error").GetString();
         Assert.Contains("OpenRouter", error, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("API key", error, StringComparison.OrdinalIgnoreCase);
 
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
     }

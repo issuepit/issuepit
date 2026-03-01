@@ -39,7 +39,7 @@ public class IssueEnhancementService(
             .FirstOrDefaultAsync(k => k.OrgId == orgId && k.Provider == ApiKeyProvider.OpenRouter, ct)
             ?? throw new InvalidOperationException(
                 "No OpenRouter API key configured for this organization. " +
-                "Add one via POST /api/config/keys with provider 'open_router'.");
+                "Add one via POST /api/config/keys with provider 'OpenRouter'.");
 
         var plainKey = DecryptKey(apiKey.EncryptedValue);
 
@@ -67,7 +67,7 @@ public class IssueEnhancementService(
 
         var client = httpClientFactory.CreateClient("openrouter");
 
-        // Guard against runaway loops
+        // Cap iterations to prevent runaway loops and limit OpenRouter API costs.
         const int maxIterations = 10;
 
         for (var iteration = 0; iteration < maxIterations; iteration++)
@@ -94,6 +94,8 @@ public class IssueEnhancementService(
             // Add assistant reply to conversation history
             messages.Add(JsonSerializer.Deserialize<object>(assistantMessage.GetRawText(), JsonOptions)!);
 
+            // Some providers set finish_reason to "tool_calls"; others include tool_calls in the message
+            // without updating the finish_reason. Check both to ensure cross-provider compatibility.
             var hasToolCalls = finishReason == "tool_calls"
                 || assistantMessage.TryGetProperty("tool_calls", out _);
 
