@@ -41,8 +41,8 @@ export const useMcpServersStore = defineStore('mcp-servers', () => {
 
   // --- Secrets ---
 
-  async function addSecret(mcpServerId: string, key: string, value: string) {
-    await post(`/api/mcp-servers/${mcpServerId}/secrets`, { key, value })
+  async function addSecret(mcpServerId: string, key: string, value: string, scope?: string, scopeId?: string) {
+    await post(`/api/mcp-servers/${mcpServerId}/secrets`, { key, value, scope, scopeId })
     await fetchMcpServers()
   }
 

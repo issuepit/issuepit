@@ -241,6 +241,8 @@ export interface McpServer {
 export interface McpServerSecret {
   id: string
   key: string
+  scope?: string
+  scopeId?: string
   createdAt: string
 }
 

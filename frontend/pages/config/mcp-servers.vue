@@ -38,7 +38,8 @@
       <div
         v-for="server in store.mcpServers"
         :key="server.id"
-        class="bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors"
+        class="bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors cursor-pointer"
+        @click="openDetail(server)"
       >
         <div class="flex items-start justify-between gap-4">
           <div class="min-w-0 flex-1">
@@ -59,20 +60,8 @@
           </div>
           <div class="flex gap-2 shrink-0">
             <button
-              class="text-xs text-gray-400 hover:text-gray-200 px-3 py-1.5 rounded-md border border-gray-700 hover:bg-gray-800 transition-colors"
-              @click="openDetail(server)"
-            >
-              Manage
-            </button>
-            <button
-              class="text-xs text-gray-400 hover:text-gray-200 px-3 py-1.5 rounded-md border border-gray-700 hover:bg-gray-800 transition-colors"
-              @click="openEdit(server)"
-            >
-              Edit
-            </button>
-            <button
               class="text-xs text-red-400 hover:text-red-300 px-3 py-1.5 rounded-md border border-red-900/30 hover:bg-red-900/20 transition-colors"
-              @click="confirmDelete(server.id, server.name)"
+              @click.stop="confirmDelete(server.id, server.name)"
             >
               Delete
             </button>
@@ -142,8 +131,11 @@
     <div v-if="detailServer" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div class="bg-gray-900 rounded-xl border border-gray-700 w-full max-w-2xl p-6 shadow-xl max-h-[90vh] overflow-y-auto">
         <div class="flex items-center justify-between mb-5">
-          <h3 class="text-lg font-semibold text-white">{{ detailServer.name }}</h3>
-          <button class="text-gray-500 hover:text-gray-300" @click="detailServer = null">✕</button>
+          <div class="min-w-0">
+            <h3 class="text-lg font-semibold text-white">{{ detailServer.name }}</h3>
+            <code class="text-xs text-green-300 font-mono truncate block mt-0.5">{{ detailServer.url }}</code>
+          </div>
+          <button class="text-gray-500 hover:text-gray-300 ml-4 shrink-0" @click="detailServer = null">✕</button>
         </div>
 
         <!-- Tabs -->
@@ -156,29 +148,103 @@
           </button>
         </div>
 
+        <!-- Info tab -->
+        <div v-if="detailTab === 'Info'">
+          <dl class="space-y-3 text-sm">
+            <div class="flex gap-4">
+              <dt class="w-32 text-gray-500 shrink-0">Name</dt>
+              <dd class="text-white">{{ detailServer.name }}</dd>
+            </div>
+            <div v-if="detailServer.description" class="flex gap-4">
+              <dt class="w-32 text-gray-500 shrink-0">Description</dt>
+              <dd class="text-gray-300">{{ detailServer.description }}</dd>
+            </div>
+            <div class="flex gap-4">
+              <dt class="w-32 text-gray-500 shrink-0">URL</dt>
+              <dd><code class="text-green-300 font-mono text-xs">{{ detailServer.url }}</code></dd>
+            </div>
+            <div class="flex gap-4">
+              <dt class="w-32 text-gray-500 shrink-0">Allowed Tools</dt>
+              <dd>
+                <span v-if="allowedToolsList(detailServer).length" class="flex flex-wrap gap-1">
+                  <span v-for="t in allowedToolsList(detailServer)" :key="t"
+                    class="bg-blue-900/30 text-blue-300 px-1.5 py-0.5 rounded text-xs font-mono">{{ t }}</span>
+                </span>
+                <span v-else class="text-gray-600">All tools allowed</span>
+              </dd>
+            </div>
+            <div class="flex gap-4">
+              <dt class="w-32 text-gray-500 shrink-0">Configuration</dt>
+              <dd><code class="text-gray-300 font-mono text-xs">{{ detailServer.configuration }}</code></dd>
+            </div>
+            <div class="flex gap-4">
+              <dt class="w-32 text-gray-500 shrink-0">Created</dt>
+              <dd class="text-gray-400">{{ formatDate(detailServer.createdAt) }}</dd>
+            </div>
+          </dl>
+          <div class="mt-5 pt-5 border-t border-gray-800 flex gap-3">
+            <button
+              class="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium rounded-lg transition-colors"
+              @click="startEditFromDetail"
+            >
+              Edit Server
+            </button>
+            <NuxtLink to="/config/mcp-playground"
+              class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium rounded-lg transition-colors border border-gray-700"
+              @click="detailServer = null"
+            >
+              Open Playground
+            </NuxtLink>
+          </div>
+        </div>
+
         <!-- Secrets tab -->
         <div v-if="detailTab === 'Secrets'">
-          <p class="text-sm text-gray-400 mb-4">Environment secrets injected when an agent uses this MCP server.</p>
+          <p class="text-sm text-gray-400 mb-4">Environment secrets injected when an agent uses this MCP server. Scope secrets to specific projects, orgs, or agents for fine-grained control.</p>
           <div v-if="detailServer.secrets?.length" class="space-y-2 mb-4">
             <div v-for="s in detailServer.secrets" :key="s.id"
               class="flex items-center justify-between bg-gray-800 rounded-lg px-3 py-2">
-              <code class="text-sm text-yellow-300 font-mono">{{ s.key }}</code>
-              <div class="flex items-center gap-3 text-xs text-gray-500">
+              <div class="flex items-center gap-3 min-w-0">
+                <code class="text-sm text-yellow-300 font-mono">{{ s.key }}</code>
+                <span v-if="s.scope && s.scope !== 'Global'" class="text-xs px-1.5 py-0.5 rounded-full"
+                  :class="{
+                    'bg-blue-900/40 text-blue-400': s.scope === 'Project',
+                    'bg-purple-900/40 text-purple-400': s.scope === 'Org',
+                    'bg-indigo-900/40 text-indigo-400': s.scope === 'Agent',
+                  }">{{ s.scope }}</span>
+              </div>
+              <div class="flex items-center gap-3 text-xs text-gray-500 shrink-0">
                 <span>{{ formatDate(s.createdAt) }}</span>
                 <button class="text-red-400 hover:text-red-300" @click="removeSecret(s.id)">Delete</button>
               </div>
             </div>
           </div>
           <div v-else class="text-sm text-gray-600 mb-4">No secrets configured.</div>
-          <form class="flex gap-2" @submit.prevent="addSecret">
-            <input v-model="newSecretKey" placeholder="KEY_NAME" required
-              class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-brand-500" />
-            <input v-model="newSecretValue" placeholder="secret value" type="password" required
-              class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-500" />
-            <button type="submit" :disabled="savingSecret"
-              class="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white text-sm rounded-lg transition-colors whitespace-nowrap">
-              {{ savingSecret ? '…' : 'Add' }}
-            </button>
+          <form class="space-y-2" @submit.prevent="addSecret">
+            <div class="flex gap-2">
+              <input v-model="newSecretKey" placeholder="KEY_NAME" required
+                class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-brand-500" />
+              <input v-model="newSecretValue" placeholder="secret value" type="password" required
+                class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-500" />
+            </div>
+            <div class="flex gap-2">
+              <select v-model="newSecretScope"
+                class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-500">
+                <option value="Global">Global (all contexts)</option>
+                <option value="Project">Project-scoped</option>
+                <option value="Org">Org-scoped</option>
+                <option value="Agent">Agent-scoped</option>
+              </select>
+              <select v-if="newSecretScope === 'Project'" v-model="newSecretScopeId"
+                class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-500">
+                <option value="">Select project…</option>
+                <option v-for="p in projectsStore.projects" :key="p.id" :value="p.id">{{ p.name }}</option>
+              </select>
+              <button type="submit" :disabled="savingSecret"
+                class="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white text-sm rounded-lg transition-colors whitespace-nowrap">
+                {{ savingSecret ? '…' : 'Add Secret' }}
+              </button>
+            </div>
           </form>
         </div>
 
@@ -433,12 +499,19 @@ function confirmDelete(id: string, name: string) {
 // ── Detail / Manage ──────────────────────────────────────────────────────────
 
 const detailServer = ref<McpServer | null>(null)
-const detailTabs = ['Secrets', 'Linked Agents', 'Projects'] as const
-const detailTab = ref<typeof detailTabs[number]>('Secrets')
+const detailTabs = ['Info', 'Secrets', 'Linked Agents', 'Projects'] as const
+const detailTab = ref<typeof detailTabs[number]>('Info')
 
 function openDetail(server: McpServer) {
   detailServer.value = server
-  detailTab.value = 'Secrets'
+  detailTab.value = 'Info'
+}
+
+function startEditFromDetail() {
+  if (!detailServer.value) return
+  const server = detailServer.value
+  detailServer.value = null
+  openEdit(server)
 }
 
 // Refresh detail panel when store updates
@@ -452,15 +525,19 @@ watch(() => store.mcpServers, (servers) => {
 
 const newSecretKey = ref('')
 const newSecretValue = ref('')
+const newSecretScope = ref('Global')
+const newSecretScopeId = ref('')
 const savingSecret = ref(false)
 
 async function addSecret() {
   if (!detailServer.value) return
   savingSecret.value = true
   try {
-    await store.addSecret(detailServer.value.id, newSecretKey.value, newSecretValue.value)
+    await store.addSecret(detailServer.value.id, newSecretKey.value, newSecretValue.value, newSecretScope.value, newSecretScopeId.value || undefined)
     newSecretKey.value = ''
     newSecretValue.value = ''
+    newSecretScope.value = 'Global'
+    newSecretScopeId.value = ''
   } finally {
     savingSecret.value = false
   }
