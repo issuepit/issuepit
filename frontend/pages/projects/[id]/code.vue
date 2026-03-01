@@ -272,7 +272,6 @@ const currentPath = ref('')
 const selectedFile = ref('')
 const commitSkip = ref(0)
 const commitTake = 30
-const hasMoreCommits = ref(false)
 
 const form = reactive({
   remoteUrl: '',
