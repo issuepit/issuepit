@@ -52,23 +52,36 @@ builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        // Allow any loopback (localhost) origin during local development (covers different ports).
-        // This keeps credentials enabled while avoiding a blanket AllowAnyOrigin.
-        policy.SetIsOriginAllowed(origin =>
+        // During development allow dynamic local origins (covers different ports and hosts
+        // used by dev tools like Aspire/Vite). In non-development environments we keep
+        // the stricter loopback-only rule.
+        if (builder.Environment.IsDevelopment())
         {
-            try
+            policy
+            .SetIsOriginAllowed(_ => true)
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
+        }
+        else
+        {
+            // Allow any loopback (localhost) origin in production-like environments.
+            policy.SetIsOriginAllowed(origin =>
             {
-                var uri = new Uri(origin);
-                return uri.IsLoopback;
-            }
-            catch
-            {
-                return false;
-            }
-        })
-        .AllowAnyHeader()
-        .AllowAnyMethod()
-        .AllowCredentials();
+                try
+                {
+                    var uri = new Uri(origin);
+                    return uri.IsLoopback;
+                }
+                catch
+                {
+                    return false;
+                }
+            })
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
+        }
     });
 });
 
