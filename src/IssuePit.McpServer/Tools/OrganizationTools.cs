@@ -13,6 +13,7 @@ public class OrganizationTools(IssuePitApiClient api, IOptions<McpServerOptions>
     public async Task<string> ListOrganizations(CancellationToken ct = default)
     {
         ToolGuard.EnforceNotAgentMode(Opts, "ListOrganizations");
+        ToolGuard.EnforceNotEnhanceMode(Opts, "ListOrganizations");
         var result = await api.GetAsync<object>("/api/orgs", ct);
         return ToolSerializer.Serialize(result);
     }
@@ -22,6 +23,7 @@ public class OrganizationTools(IssuePitApiClient api, IOptions<McpServerOptions>
         [Description("The organization ID (GUID).")] Guid id,
         CancellationToken ct = default)
     {
+        ToolGuard.EnforceNotEnhanceMode(Opts, "GetOrganization");
         var result = await api.GetAsync<object>($"/api/orgs/{id}", ct);
         return ToolSerializer.Serialize(result);
     }

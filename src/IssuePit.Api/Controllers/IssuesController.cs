@@ -11,7 +11,7 @@ namespace IssuePit.Api.Controllers;
 
 [ApiController]
 [Route("api/issues")]
-public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer<string, string> producer) : ControllerBase
+public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer<string, string> producer, IssueEnhancementService enhancementService) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetIssues([FromQuery] Guid? projectId)
@@ -140,6 +140,38 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         db.Issues.Remove(issue);
         await db.SaveChangesAsync();
         return NoContent();
+    }
+
+    // --- Enhance (LLM) ---
+
+    /// <summary>
+    /// Enhances the issue using an LLM via OpenRouter.
+    /// The LLM receives a custom system prompt with agents.md context and calls tools to:
+    /// extend the description, create sub-issues, and create tasks.
+    /// Requires an OpenRouter API key configured for the organisation.
+    /// </summary>
+    [HttpPost("{id:guid}/enhance")]
+    public async Task<IActionResult> EnhanceIssue(Guid id, CancellationToken ct)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+
+        var issue = await db.Issues
+            .Include(i => i.Project)
+            .ThenInclude(p => p!.Organization)
+            .FirstOrDefaultAsync(i => i.Id == id, ct);
+
+        if (issue is null) return NotFound();
+        if (issue.Project?.Organization.TenantId != ctx.CurrentTenant.Id) return Forbid();
+
+        try
+        {
+            await enhancementService.EnhanceAsync(id, ct);
+            return Ok(new { message = "Issue enhanced successfully." });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
     }
 
     // --- Comments ---

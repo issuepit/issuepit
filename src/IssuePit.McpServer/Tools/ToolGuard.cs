@@ -20,6 +20,17 @@ internal static class ToolGuard
                 $"Tool '{toolName}' is not available in agent mode.");
     }
 
+    /// <summary>
+    /// Blocks tools that are not relevant to issue enhancement (CI/CD, organisations).
+    /// In enhance mode only issue, task, and repository file tools are permitted.
+    /// </summary>
+    public static void EnforceNotEnhanceMode(McpServerOptions opts, string toolName)
+    {
+        if (opts.EnhanceMode)
+            throw new InvalidOperationException(
+                $"Tool '{toolName}' is not available in enhance mode.");
+    }
+
     public static void EnforceProjectScope(McpServerOptions opts, Guid projectId)
     {
         if (opts.ProjectId.HasValue && opts.ProjectId.Value != projectId)

@@ -49,6 +49,9 @@ var mcpServer = builder.AddProject<Projects.IssuePit_McpServer>("mcp-server")
     .WaitFor(api)
     .WithEnvironment("IssuePit__ApiBaseUrl", api.GetEndpoint("http"));
 
+// Allow the API to discover and call the MCP server (e.g. for issue enhancement).
+api.WithEnvironment("McpServer__BaseUrl", mcpServer.GetEndpoint("http"));
+
 var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("execution-client")
     .WithReference(postgresServer)
     .WithReference(kafka)
