@@ -172,8 +172,8 @@
 
 <script setup lang="ts">
 import { useAgentsStore } from '~/stores/agents'
-import type { Agent } from '~/types'
-import { RunnerType, RunnerTypeLabels } from '~/types'
+import type { Agent, RunnerType } from '~/types'
+import { RunnerTypeLabels } from '~/types'
 
 const store = useAgentsStore()
 const showModal = ref(false)
