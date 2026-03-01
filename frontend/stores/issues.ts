@@ -62,6 +62,19 @@ export const useIssuesStore = defineStore('issues', () => {
     }
   }
 
+  async function fetchFeed(filter: 'my' | 'open' | 'unassigned' | 'waiting' = 'my') {
+    loading.value = true
+    error.value = null
+    try {
+      const data = await api.get<Issue[]>('/api/issues/feed', { params: { filter } })
+      issues.value = data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to fetch issues'
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function fetchIssue(projectId: string, issueId: string) {
     loading.value = true
     error.value = null
@@ -265,6 +278,7 @@ export const useIssuesStore = defineStore('issues', () => {
     filteredIssues,
     issuesByStatus,
     fetchIssues,
+    fetchFeed,
     fetchIssue,
     createIssue,
     updateIssue,
