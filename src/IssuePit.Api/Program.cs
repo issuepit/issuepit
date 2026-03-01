@@ -1,5 +1,3 @@
-using Confluent.Kafka;
-using System;
 using System.Text.Json.Serialization;
 using IssuePit.Api.Hubs;
 using IssuePit.Api.Middleware;
@@ -13,6 +11,7 @@ using StackExchange.Redis;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+builder.AddKafkaProducer();
 builder.AddKafkaHealthCheck();
 
 if (builder.Environment.IsEnvironment("Testing"))
@@ -68,14 +67,6 @@ builder.Services.AddAuthorization();
 
 // HttpClient used by AuthController to communicate with the GitHub API.
 builder.Services.AddHttpClient();
-
-var kafkaBootstrapServers = builder.Configuration.GetConnectionString("kafka")
-    ?? throw new InvalidOperationException("Kafka connection string 'kafka' is not configured.");
-builder.Services.AddSingleton<IProducer<string, string>>(_ =>
-    new ProducerBuilder<string, string>(new ProducerConfig
-    {
-        BootstrapServers = kafkaBootstrapServers
-    }).Build());
 
 builder.Services.AddSignalR()
     .AddStackExchangeRedis(builder.Configuration.GetConnectionString("redis") ?? "localhost:6379");
