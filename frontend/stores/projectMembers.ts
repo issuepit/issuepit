@@ -1,6 +1,5 @@
 import { defineStore } from 'pinia'
-import type { ProjectMember } from '~/types'
-import { ProjectPermission } from '~/types'
+import type { ProjectMember, ProjectPermission } from '~/types'
 
 export const useProjectMembersStore = defineStore('projectMembers', () => {
   const members = ref<ProjectMember[]>([])

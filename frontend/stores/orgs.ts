@@ -1,6 +1,5 @@
 import { defineStore } from 'pinia'
-import type { Organization, OrganizationMember } from '~/types'
-import { OrgRole } from '~/types'
+import type { Organization, OrganizationMember, OrgRole } from '~/types'
 
 export const useOrgsStore = defineStore('orgs', () => {
   const orgs = ref<Organization[]>([])
