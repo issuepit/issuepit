@@ -1,4 +1,5 @@
 using Confluent.Kafka;
+using System;
 using IssuePit.Api.Hubs;
 using IssuePit.Api.Middleware;
 using IssuePit.Api.Services;
@@ -51,10 +52,23 @@ builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.WithOrigins(builder.Configuration["AllowedOrigins"]?.Split(',') ?? ["http://localhost:3000"])
-              .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials();
+        // Allow any loopback (localhost) origin during local development (covers different ports).
+        // This keeps credentials enabled while avoiding a blanket AllowAnyOrigin.
+        policy.SetIsOriginAllowed(origin =>
+        {
+            try
+            {
+                var uri = new Uri(origin);
+                return uri.IsLoopback;
+            }
+            catch
+            {
+                return false;
+            }
+        })
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials();
     });
 });
 

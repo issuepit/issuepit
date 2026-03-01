@@ -80,6 +80,10 @@ frontend/                      # Vue 3 + Nuxt 3 + Pinia frontend
 ### Run with Aspire
 
 ```bash
+aspire run
+```
+or
+```bash
 cd src
 dotnet run --project IssuePit.AppHost
 ```
@@ -119,6 +123,15 @@ Background worker that subscribes to the `issue-assigned` Kafka topic. Uses `Doc
 
 ### `IssuePit.CiCdClient`
 Background worker that subscribes to the `cicd-trigger` Kafka topic and drives local CI runs via `act`.
+
+
+# Known issue:
+
+## aspire ssl outdated:
+```bash
+dotnet dev-certs https --clean
+dotnet dev-certs https --trust
+```
 
 ---
 
