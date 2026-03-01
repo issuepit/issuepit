@@ -142,6 +142,33 @@ public class AuthController(
         return Ok(new { token = plainToken, githubUsername = identity.GitHubUsername });
     }
 
+    /// <summary>Changes the password for the currently authenticated user.</summary>
+    [HttpPatch("me/password")]
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest req)
+    {
+        if (ctx.CurrentUser is null)
+            return Unauthorized();
+
+        var user = await db.Users.FindAsync(ctx.CurrentUser.Id);
+        if (user is null)
+            return Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(req.NewPassword) || req.NewPassword.Length < 6)
+            return BadRequest("New password must be at least 6 characters.");
+
+        // If the user already has a password, the current password must be provided and correct.
+        if (!string.IsNullOrEmpty(user.PasswordHash))
+        {
+            if (string.IsNullOrEmpty(req.CurrentPassword) || !BCrypt.Net.BCrypt.Verify(req.CurrentPassword, user.PasswordHash))
+                return Unauthorized("Current password is incorrect.");
+        }
+
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.NewPassword);
+        await db.SaveChangesAsync();
+
+        return NoContent();
+    }
+
     /// <summary>Clears the session cookie and signs out the current user.</summary>
     [HttpPost("logout")]
     public async Task<IActionResult> Logout()
@@ -418,3 +445,4 @@ public class AuthController(
 
 public record LocalLoginRequest(string Username, string Password);
 public record RegisterRequest(string Username, string Password, string? Email = null);
+public record ChangePasswordRequest(string? CurrentPassword, string NewPassword);
