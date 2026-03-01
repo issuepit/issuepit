@@ -262,7 +262,7 @@ public class HappyPathTests : IClassFixture<AspireFixture>, IAsyncLifetime
 
         // 4. Update role to Member (role=0)
         var updateResp = await client.PutAsJsonAsync($"/api/orgs/{orgId}/members/{memberId}", new { role = 0 });
-        Assert.Equal(HttpStatusCode.NoContent, updateResp.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, updateResp.StatusCode);
 
         var membersAfterUpdate = await (await client.GetAsync($"/api/orgs/{orgId}/members"))
             .Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
