@@ -144,15 +144,45 @@
 
           <div v-if="!editingMember">
             <label class="block text-sm font-medium text-gray-300 mb-1.5">
-              {{ form.type === 'user' ? 'User ID' : 'Team ID' }}
+              {{ form.type === 'user' ? 'Search User' : 'Select Team' }}
             </label>
-            <input
+            <!-- User autocomplete -->
+            <div v-if="form.type === 'user'" class="relative">
+              <input
+                v-model="userSearchQuery"
+                type="text"
+                required
+                placeholder="Search by username…"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                @input="onPrincipalSearch"
+              />
+              <div
+                v-if="userSearchResults.length"
+                class="absolute z-10 mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden"
+              >
+                <button
+                  v-for="user in userSearchResults"
+                  :key="user.id"
+                  type="button"
+                  class="w-full text-left px-3 py-2 hover:bg-gray-700 transition-colors"
+                  @click="selectPrincipalUser(user)"
+                >
+                  <span class="text-white text-sm font-medium">{{ user.username }}</span>
+                  <span class="text-gray-400 text-xs ml-2">{{ user.email }}</span>
+                </button>
+              </div>
+              <p v-if="form.principalId" class="text-xs text-brand-400 mt-1">Selected: {{ userSearchQuery }}</p>
+            </div>
+            <!-- Team dropdown -->
+            <select
+              v-else
               v-model="form.principalId"
-              type="text"
               required
-              :placeholder="form.type === 'user' ? 'User UUID' : 'Team UUID'"
-              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
-            />
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            >
+              <option value="" disabled>Select a team…</option>
+              <option v-for="team in orgTeams" :key="team.id" :value="team.id">{{ team.name }}</option>
+            </select>
           </div>
 
           <!-- Permissions checkboxes -->
@@ -203,22 +233,32 @@
 <script setup lang="ts">
 import { useProjectsStore } from '~/stores/projects'
 import { useProjectMembersStore } from '~/stores/projectMembers'
+import { useTeamsStore } from '~/stores/teams'
 import { ProjectPermission, ProjectPermissionLabels } from '~/types'
-import type { ProjectMember } from '~/types'
+import type { ProjectMember, Team, User } from '~/types'
 
 const route = useRoute()
 const id = route.params.id as string
 
 const projectsStore = useProjectsStore()
 const membersStore = useProjectMembersStore()
+const teamsStore = useTeamsStore()
+const api = useApi()
 
 const permissionFlags = ProjectPermissionLabels
+
+// Teams available for the project's org (for autocomplete in add modal)
+const orgTeams = computed<Team[]>(() => teamsStore.teams)
 
 onMounted(async () => {
   await Promise.all([
     projectsStore.fetchProject(id),
     membersStore.fetchMembers(id),
   ])
+  // Load org teams for the team autocomplete once the project is available
+  if (projectsStore.currentProject?.orgId) {
+    await teamsStore.fetchTeams(projectsStore.currentProject.orgId)
+  }
 })
 
 function hasPermission(perms: ProjectPermission, flag: number): boolean {
@@ -229,10 +269,39 @@ const showAddModal = ref(false)
 const editingMember = ref<ProjectMember | null>(null)
 const saving = ref(false)
 
+const userSearchQuery = ref('')
+const userSearchResults = ref<User[]>([])
+
+async function onPrincipalSearch() {
+  form.principalId = ''
+  if (!userSearchQuery.value.trim()) {
+    userSearchResults.value = []
+    return
+  }
+  try {
+    const data = await api.get<User[]>(`/api/users/search?q=${encodeURIComponent(userSearchQuery.value)}`)
+    userSearchResults.value = data
+  } catch {
+    userSearchResults.value = []
+  }
+}
+
+function selectPrincipalUser(user: User) {
+  form.principalId = user.id
+  userSearchQuery.value = user.username
+  userSearchResults.value = []
+}
+
 const form = reactive({
   type: 'user' as 'user' | 'team',
   principalId: '',
   permissions: ProjectPermission.Read,
+})
+
+watch(() => form.type, () => {
+  form.principalId = ''
+  userSearchQuery.value = ''
+  userSearchResults.value = []
 })
 
 function openEditMember(member: ProjectMember) {
@@ -243,6 +312,8 @@ function openEditMember(member: ProjectMember) {
 function closeModal() {
   showAddModal.value = false
   editingMember.value = null
+  userSearchQuery.value = ''
+  userSearchResults.value = []
   Object.assign(form, { type: 'user', principalId: '', permissions: ProjectPermission.Read })
 }
 
