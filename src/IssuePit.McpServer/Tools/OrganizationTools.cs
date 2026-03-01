@@ -1,14 +1,18 @@
 using System.ComponentModel;
+using Microsoft.Extensions.Options;
 using ModelContextProtocol.Server;
 
 namespace IssuePit.McpServer.Tools;
 
 [McpServerToolType]
-public class OrganizationTools(IssuePitApiClient api)
+public class OrganizationTools(IssuePitApiClient api, IOptions<McpServerOptions> options)
 {
+    private McpServerOptions Opts => options.Value;
+
     [McpServerTool, Description("List all organizations for the current tenant.")]
     public async Task<string> ListOrganizations(CancellationToken ct = default)
     {
+        ToolGuard.EnforceNotAgentMode(Opts, "ListOrganizations");
         var result = await api.GetAsync<object>("/api/orgs", ct);
         return ToolSerializer.Serialize(result);
     }
