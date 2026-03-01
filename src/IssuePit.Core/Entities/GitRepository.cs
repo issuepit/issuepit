@@ -38,4 +38,8 @@ public class GitRepository
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime? LastFetchedAt { get; set; }
+
+    /// <summary>The last commit SHA on <see cref="DefaultBranch"/> for which a CI/CD run was triggered.</summary>
+    [MaxLength(200)]
+    public string? LastKnownCommitSha { get; set; }
 }

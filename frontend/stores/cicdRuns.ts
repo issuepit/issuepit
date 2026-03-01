@@ -35,6 +35,19 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     }
   }
 
+  async function cancelRun(runId: string) {
+    try {
+      const updated = await api.post<{ id: string; status: number; statusName: string }>(`/api/cicd-runs/${runId}/cancel`, {})
+      const run = runs.value.find(r => r.id === runId)
+      if (run) {
+        run.status = updated.status
+        run.statusName = updated.statusName
+      }
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to cancel CI/CD run'
+    }
+  }
+  
   async function fetchDashboardSessions() {
     loading.value = true
     error.value = null
@@ -55,6 +68,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     error,
     fetchRuns,
     fetchAgentSessions,
+    cancelRun,
     fetchDashboardSessions,
   }
 })
