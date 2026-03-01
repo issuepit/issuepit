@@ -53,6 +53,19 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
         agent.AllowedTools = updated.AllowedTools;
         agent.RunnerType = updated.RunnerType;
         agent.Model = updated.Model;
+        agent.IsActive = updated.IsActive;
+        await db.SaveChangesAsync();
+        return Ok(agent);
+    }
+
+    [HttpPatch("{id:guid}/active")]
+    public async Task<IActionResult> SetAgentActive(Guid id, [FromBody] SetAgentActiveRequest request)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var agent = await db.Agents.Include(a => a.Organization).FirstOrDefaultAsync(a => a.Id == id);
+        if (agent is null) return NotFound();
+        if (agent.Organization.TenantId != ctx.CurrentTenant.Id) return Forbid();
+        agent.IsActive = request.IsActive;
         await db.SaveChangesAsync();
         return Ok(agent);
     }
@@ -86,3 +99,5 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
         return NoContent();
     }
 }
+
+public sealed record SetAgentActiveRequest(bool IsActive);
