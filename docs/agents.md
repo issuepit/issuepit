@@ -22,6 +22,8 @@ An agent is a configured AI worker that:
 
 ## Creating an Agent
 
+![Agents page](https://github.com/user-attachments/assets/73ea2a27-90c3-4b7a-8521-88b472c78b7d)
+
 1. Go to **Configuration → Agents** (or **Agents** in the sidebar).
 2. Click **New Agent**.
 3. Fill in the agent details:
@@ -32,6 +34,8 @@ An agent is a configured AI worker that:
    | **System Prompt** | Instructions for the AI (role, rules, tools) |
    | **Docker Image** | Container image to run (e.g. `ghcr.io/sst/opencode:latest`) |
    | **Queue** | Which queue the agent handles: `Plan`, `Code`, or `Evaluate` |
+
+   ![Create Agent dialog](https://github.com/user-attachments/assets/3cf747fb-9899-40cd-b852-ebd69b87ddb3)
 
 4. Click **Save**.
 

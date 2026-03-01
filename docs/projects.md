@@ -12,11 +12,16 @@ Projects are the main organizational unit in IssuePit. Each project belongs to a
 
 ## Creating a Project
 
+![Projects page](https://github.com/user-attachments/assets/7dc21998-66e4-40c3-aefe-57e81efeffca)
+
 1. Navigate to the **Projects** section in the sidebar.
 2. Click **New Project**.
 3. Fill in the details:
    - **Name** — a short display name (e.g. `my-app`)
    - **Description** *(optional)* — what the project is about
+
+   ![Create Project dialog](https://github.com/user-attachments/assets/0dc2cea0-cc12-4cff-a7cf-4a632239f3fb)
+
 4. Click **Create**.
 
 Your new project appears in the project list immediately.

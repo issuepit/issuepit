@@ -20,6 +20,8 @@ nav_order: 1
 
 ---
 
+![IssuePit Dashboard](https://github.com/user-attachments/assets/373e93ec-e591-4cfa-948c-3ac86cc22249)
+
 ## Quick Navigation
 
 | Page | Description |
