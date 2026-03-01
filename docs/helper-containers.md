@@ -52,11 +52,11 @@ Tags follow the pattern `<version>-dotnet<DOTNET_MAJOR>-node<NODE_MAJOR>`, makin
 | Tag | Description |
 |-----|-------------|
 | `latest` | Most recent release build |
-| `dotnet9-node22` | Floating tag for dotnet 9 + Node 22 builds |
-| `1.0.0-dotnet9-node22` | Pinned release with exact runtime versions |
-| `1.0-dotnet9-node22` | Pinned minor release |
+| `dotnet10-node24` | Floating tag for dotnet 10 + Node 24 builds |
+| `1.0.0-dotnet10-node24` | Pinned release with exact runtime versions |
+| `1.0-dotnet10-node24` | Pinned minor release |
 | `sha-<short-sha>` | Specific commit build |
-| `main-dotnet9-node22` | Latest commit on `main` |
+| `main-dotnet10-node24` | Latest commit on `main` |
 
 ---
 
@@ -67,7 +67,7 @@ The Dockerfiles accept build arguments that you can override when building local
 | Argument | Image | Default | Description |
 |----------|-------|---------|-------------|
 | `PLAYWRIGHT_VERSION` | `helper-base` | `v1.50.1` | Playwright .NET image tag (e.g. `v1.51.0`) |
-| `NODE_MAJOR` | `helper-base` | `22` | Node.js major version |
+| `NODE_MAJOR` | `helper-base` | `24` | Node.js major version |
 | `BASE_IMAGE` | `helper-act`, `helper-opencode` | `ghcr.io/issuepit/issuepit-helper-base:latest` | Base image reference |
 | `ACT_VERSION` | `helper-act` | `0.2.74` | nektos/act release version |
 | `OPENCODE_VERSION` | `helper-opencode` | `latest` | opencode-ai npm package version |
@@ -78,7 +78,7 @@ The Dockerfiles accept build arguments that you can override when building local
 # Build the base image
 docker build \
   --build-arg PLAYWRIGHT_VERSION=v1.50.1 \
-  --build-arg NODE_MAJOR=22 \
+  --build-arg NODE_MAJOR=24 \
   -f docker/Dockerfile.helper-base \
   -t issuepit-helper-base:local \
   .
@@ -120,7 +120,7 @@ To upgrade bundled runtimes:
 1. Update the `env` constants in `.github/workflows/helper-containers.yml`:
    ```yaml
    DOTNET_MAJOR: "10"
-   NODE_MAJOR: "22"
+   NODE_MAJOR: "24"
    PLAYWRIGHT_VERSION: "v1.51.0"
    ACT_VERSION: "0.2.74"
    ```
