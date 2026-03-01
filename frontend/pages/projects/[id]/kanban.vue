@@ -50,9 +50,12 @@
     <!-- Board -->
     <div v-else class="flex gap-4 overflow-x-auto flex-1 pb-4">
       <div v-for="col in boardColumns" :key="col.id"
-        class="flex flex-col w-72 shrink-0"
+        class="flex flex-col w-72 shrink-0 transition-opacity duration-150"
         :data-col-id="col.id"
-        :class="{ 'opacity-50': draggedColId === col.id }"
+        :class="{
+          'opacity-50': draggedColId === col.id,
+          'opacity-40': draggedId && !draggedColId && !isValidDropTarget(col.id),
+        }"
         @dragover.prevent="onColDragOver($event, col.id)"
         @drop="onColDrop($event, col.id)">
         <!-- Column Header -->
@@ -78,7 +81,10 @@
 
         <!-- Cards -->
         <div class="flex-1 space-y-2 bg-gray-900/40 rounded-xl p-2 min-h-32 border border-gray-800/60"
-          :class="{ 'border-brand-500/60 bg-brand-900/10': isValidDropTarget(col.id) && draggedId }"
+          :class="{
+            'border-brand-500/60 bg-brand-900/10': isValidDropTarget(col.id) && draggedId,
+            'border-gray-700/30 bg-gray-900/20': draggedId && !draggedColId && !isValidDropTarget(col.id),
+          }"
           @dragover.prevent @drop="onIssueDrop($event, col)">
           <div v-for="issue in issuesByStatus[col.issueStatus]" :key="issue.id"
             draggable="true"
