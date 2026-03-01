@@ -184,7 +184,8 @@ public class CiCdWorker(
         {
             logger.LogError(ex, "CI/CD run {RunId} failed", run.Id);
             run.Status = CiCdRunStatus.Failed;
-            await AppendLogAsync(run.Id, $"ERROR: {ex.Message}", LogStream.Stderr, db, stoppingToken);
+            foreach (var line in ex.ToString().Split('\n'))
+                await AppendLogAsync(run.Id, line.TrimEnd('\r'), LogStream.Stderr, db, stoppingToken);
         }
         finally
         {
