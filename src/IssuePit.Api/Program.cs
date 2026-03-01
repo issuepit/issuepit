@@ -3,6 +3,7 @@ using IssuePit.Api.Hubs;
 using IssuePit.Api.Middleware;
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using StackExchange.Redis;
 
@@ -33,6 +34,8 @@ builder.Services.AddHostedService<RedisLogRelayService>();
 
 builder.Services.AddScoped<TenantContext>();
 builder.Services.AddScoped<TenantDatabaseService>();
+builder.Services.AddSingleton<JwtService>();
+builder.Services.AddHttpClient();
 
 var kafkaBootstrapServers = builder.Configuration["Kafka__BootstrapServers"] ?? "localhost:9092";
 builder.Services.AddSingleton<IProducer<string, string>>(_ =>
@@ -46,6 +49,15 @@ builder.Services.AddSignalR()
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
+
+// Configure JWT authentication using settings from Jwt:* config section
+var jwtService = new JwtService(builder.Configuration);
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = jwtService.GetValidationParameters();
+    });
+builder.Services.AddAuthorization();
 
 builder.Services.AddCors(options =>
 {
@@ -70,6 +82,8 @@ if (app.Environment.IsDevelopment())
 app.UseMiddleware<TenantMiddleware>();
 
 app.UseCors();
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
 

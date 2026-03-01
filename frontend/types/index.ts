@@ -218,3 +218,13 @@ export interface RuntimeConfiguration {
   isDefault: boolean
   createdAt: string
 }
+
+export interface AuthUser {
+  id: string
+  tenantId: string
+  username: string
+  email: string
+  avatarUrl?: string
+  githubId?: string
+  createdAt: string
+}

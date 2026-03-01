@@ -20,6 +20,7 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<KanbanColumn> KanbanColumns => Set<KanbanColumn>();
     public DbSet<KanbanTransition> KanbanTransitions => Set<KanbanTransition>();
     public DbSet<User> Users => Set<User>();
+    public DbSet<UserSession> UserSessions => Set<UserSession>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
     public DbSet<RuntimeConfiguration> RuntimeConfigurations => Set<RuntimeConfiguration>();
     public DbSet<AgentSession> AgentSessions => Set<AgentSession>();

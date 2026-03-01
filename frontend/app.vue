@@ -37,9 +37,31 @@
 
       <!-- Footer -->
       <div class="p-3 border-t border-gray-800">
-        <div class="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-gray-800 cursor-pointer">
-          <div class="w-6 h-6 rounded-full bg-brand-600 flex items-center justify-center text-xs font-bold">U</div>
-          <span class="text-sm text-gray-300">User</span>
+        <div v-if="authStore.user" class="flex items-center gap-2 px-2 py-1.5 rounded-md group">
+          <img
+            v-if="authStore.user.avatarUrl"
+            :src="authStore.user.avatarUrl"
+            :alt="authStore.user.username"
+            class="w-6 h-6 rounded-full shrink-0"
+          />
+          <div v-else class="w-6 h-6 rounded-full bg-brand-600 flex items-center justify-center text-xs font-bold shrink-0">
+            {{ authStore.user.username[0]?.toUpperCase() }}
+          </div>
+          <span class="text-sm text-gray-300 flex-1 truncate">{{ authStore.user.username }}</span>
+          <button
+            class="text-gray-600 hover:text-gray-300 transition-colors opacity-0 group-hover:opacity-100"
+            title="Sign out"
+            @click="authStore.logout().then(() => navigateTo('/login'))"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+          </button>
+        </div>
+        <div v-else class="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-gray-800 cursor-pointer" @click="navigateTo('/login')">
+          <div class="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center text-xs font-bold">?</div>
+          <span class="text-sm text-gray-500">Not signed in</span>
         </div>
       </div>
     </aside>
@@ -52,6 +74,8 @@
 </template>
 
 <script setup lang="ts">
+const authStore = useAuthStore()
+
 // Sidebar link component defined inline
 const SidebarLink = defineComponent({
   props: { to: String, icon: String, label: String },
