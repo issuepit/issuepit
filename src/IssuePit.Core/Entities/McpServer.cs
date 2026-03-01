@@ -14,8 +14,15 @@ public class McpServer
     [Required, MaxLength(200)]
     public string Name { get; set; } = string.Empty;
 
+    [MaxLength(1000)]
+    public string? Description { get; set; }
+
     [Required, MaxLength(2000)]
     public string Url { get; set; } = string.Empty;
+
+    /// <summary>JSON array of tool names this MCP server exposes, e.g. ["search_issues","create_issue"].</summary>
+    [Required]
+    public string AllowedTools { get; set; } = "[]";
 
     [Required]
     public string Configuration { get; set; } = "{}";

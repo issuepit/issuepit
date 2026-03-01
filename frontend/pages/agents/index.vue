@@ -83,6 +83,22 @@
             <p class="text-xs text-gray-400 line-clamp-2">{{ agent.systemPrompt || '—' }}</p>
           </div>
         </div>
+
+        <!-- MCP Servers -->
+        <div class="mt-3 bg-gray-800/40 rounded-lg p-3">
+          <div class="flex items-center justify-between mb-2">
+            <p class="text-xs text-gray-500 uppercase tracking-wide">MCP Servers</p>
+            <button @click="openMcpManager(agent)"
+              class="text-xs text-brand-400 hover:text-brand-300 transition-colors">
+              Manage
+            </button>
+          </div>
+          <div v-if="linkedMcpServers(agent).length" class="flex flex-wrap gap-1">
+            <span v-for="srv in linkedMcpServers(agent)" :key="srv.id"
+              class="text-xs bg-indigo-900/30 text-indigo-300 px-1.5 py-0.5 rounded">{{ srv.name }}</span>
+          </div>
+          <p v-else class="text-xs text-gray-600">No MCP servers linked</p>
+        </div>
       </div>
 
       <!-- Empty State -->
@@ -152,17 +168,67 @@
         </div>
       </div>
     </div>
+
+    <!-- MCP Server Manager Modal -->
+    <div v-if="mcpManagerAgent" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-xl p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+        <h2 class="text-lg font-bold text-white mb-1">MCP Servers</h2>
+        <p class="text-sm text-gray-400 mb-5">Manage MCP servers for <span class="text-white font-medium">{{ mcpManagerAgent.name }}</span></p>
+
+        <!-- Available MCP Servers -->
+        <div v-if="mcpStore.loading" class="text-gray-500 text-sm">Loading…</div>
+        <div v-else-if="!mcpStore.mcpServers.length" class="text-gray-500 text-sm">
+          No MCP servers configured. <NuxtLink to="/config/mcp-servers" class="text-brand-400 hover:text-brand-300">Add one →</NuxtLink>
+        </div>
+        <div v-else class="space-y-2">
+          <div v-for="srv in mcpStore.mcpServers" :key="srv.id"
+            class="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-800/40 px-3 py-2.5">
+            <div>
+              <p class="text-sm font-medium text-white">{{ srv.name }}</p>
+              <p v-if="srv.description" class="text-xs text-gray-500 mt-0.5">{{ srv.description }}</p>
+            </div>
+            <button
+              v-if="isLinked(mcpManagerAgent, srv.id)"
+              class="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded border border-red-900/30 transition-colors"
+              @click="unlinkMcp(mcpManagerAgent!, srv.id)"
+            >
+              Unlink
+            </button>
+            <button
+              v-else
+              class="text-xs text-brand-400 hover:text-brand-300 px-2 py-1 rounded border border-brand-900/30 transition-colors"
+              @click="linkMcp(mcpManagerAgent!, srv.id)"
+            >
+              Link
+            </button>
+          </div>
+        </div>
+
+        <div class="mt-6">
+          <button @click="mcpManagerAgent = null"
+            class="w-full bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 rounded-lg transition-colors">
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useAgentsStore } from '~/stores/agents'
-import type { Agent } from '~/types'
+import { useMcpServersStore } from '~/stores/mcp-servers'
+import type { Agent, AgentMcpServerLink, McpServer } from '~/types'
 
 const store = useAgentsStore()
+const mcpStore = useMcpServersStore()
 const showModal = ref(false)
 const editingId = ref<string | null>(null)
 const toolsInput = ref('')
+const mcpManagerAgent = ref<Agent | null>(null)
+
+// Tracks which MCP server IDs are linked to the agent being managed in the modal
+const linkedMcpIds = ref<Set<string>>(new Set())
 
 const form = reactive({
   name: '',
@@ -172,7 +238,10 @@ const form = reactive({
   isActive: true
 })
 
-onMounted(() => store.fetchAgents())
+onMounted(() => {
+  store.fetchAgents()
+  mcpStore.fetchMcpServers()
+})
 
 function openCreate() {
   editingId.value = null
@@ -214,5 +283,36 @@ function resetForm() {
   form.systemPrompt = ''
   form.isActive = true
   toolsInput.value = ''
+}
+
+function linkedMcpServers(agent: Agent): McpServer[] {
+  const ids = new Set((agent.agentMcpServers ?? []).map((l: AgentMcpServerLink) => l.mcpServerId))
+  return mcpStore.mcpServers.filter(s => ids.has(s.id))
+}
+
+function isLinked(agent: Agent, mcpServerId: string): boolean {
+  return linkedMcpIds.value.has(mcpServerId)
+}
+
+async function openMcpManager(agent: Agent) {
+  mcpManagerAgent.value = agent
+  // Rebuild the linked IDs set from the agent's current links
+  linkedMcpIds.value = new Set((agent.agentMcpServers ?? []).map((l: AgentMcpServerLink) => l.mcpServerId))
+}
+
+async function linkMcp(agent: Agent, mcpServerId: string) {
+  await mcpStore.linkToAgent(agent.id, mcpServerId)
+  linkedMcpIds.value.add(mcpServerId)
+  // Update agent's agentMcpServers list so the card reflects the change immediately
+  if (!agent.agentMcpServers) agent.agentMcpServers = []
+  agent.agentMcpServers.push({ agentId: agent.id, mcpServerId })
+}
+
+async function unlinkMcp(agent: Agent, mcpServerId: string) {
+  await mcpStore.unlinkFromAgent(agent.id, mcpServerId)
+  linkedMcpIds.value.delete(mcpServerId)
+  if (agent.agentMcpServers) {
+    agent.agentMcpServers = agent.agentMcpServers.filter((l: AgentMcpServerLink) => l.mcpServerId !== mcpServerId)
+  }
 }
 </script>

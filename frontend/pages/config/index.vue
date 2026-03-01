@@ -2,7 +2,7 @@
   <div class="p-8 max-w-4xl mx-auto">
     <div class="mb-8">
       <h1 class="text-2xl font-bold text-white">Configuration</h1>
-      <p class="text-gray-400 mt-1">Manage API keys and agent runtime environments.</p>
+      <p class="text-gray-400 mt-1">Manage API keys, MCP servers, and agent runtime environments.</p>
     </div>
 
     <!-- Tab bar -->
@@ -30,6 +30,7 @@ const route = useRoute()
 
 const tabs = [
   { id: 'keys', label: 'API Keys', href: '/config/keys' },
+  { id: 'mcp-servers', label: 'MCP Servers', href: '/config/mcp-servers' },
   { id: 'runtimes', label: 'Agent Runtimes', href: '/config/runtimes' },
 ]
 

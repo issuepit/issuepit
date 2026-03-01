@@ -106,11 +106,28 @@ export interface IssueTask {
 
 export interface McpServer {
   id: string
+  orgId: string
   name: string
-  url: string
   description?: string
-  tools: string[]
-  isActive: boolean
+  url: string
+  allowedTools: string[]
+  configuration: string
+  createdAt: string
+  agentMcpServers?: AgentMcpServerLink[]
+}
+
+export interface AgentMcpServerLink {
+  agentId: string
+  mcpServerId: string
+}
+
+export interface McpServerTemplate {
+  key: string
+  name: string
+  description: string
+  url: string
+  allowedTools: string[]
+  configuration: string
 }
 
 export interface Agent {
@@ -121,6 +138,7 @@ export interface Agent {
   dockerImage: string
   allowedTools: string[]
   mcpServers: string[]
+  agentMcpServers?: AgentMcpServerLink[]
   isActive: boolean
   createdAt: string
   updatedAt: string
