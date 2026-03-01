@@ -28,7 +28,28 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
             .Include(a => a.AgentMcpServers)
             .ThenInclude(am => am.McpServer)
             .FirstOrDefaultAsync(a => a.Id == id);
-        return agent is null ? NotFound() : Ok(agent);
+        if (agent is null) return NotFound();
+        return Ok(new
+        {
+            agent.Id,
+            agent.OrgId,
+            agent.Name,
+            agent.SystemPrompt,
+            agent.DockerImage,
+            agent.AllowedTools,
+            agent.RunnerType,
+            agent.Model,
+            agent.IsActive,
+            agent.CreatedAt,
+            LinkedMcpServers = agent.AgentMcpServers.Select(am => new
+            {
+                am.McpServer.Id,
+                am.McpServer.Name,
+                am.McpServer.Url,
+                am.McpServer.Description,
+                am.McpServer.AllowedTools,
+            }),
+        });
     }
 
     [HttpPost]

@@ -69,8 +69,8 @@ stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
         </template>
       </SidebarSection>
 
-      <!-- Agents section (lazy loaded) -->
-      <SidebarSection label="Agents" icon="agents" :lazy="true" @open="loadAgents">
+      <!-- Agent Modes section (lazy loaded) -->
+      <SidebarSection label="Agent Modes" icon="agents" :lazy="true" @open="loadAgents">
         <div v-if="agentsLoading" class="px-2 py-1">
           <div class="h-3 bg-gray-800 rounded animate-pulse w-3/4 mb-1.5"/>
           <div class="h-3 bg-gray-800 rounded animate-pulse w-1/2"/>

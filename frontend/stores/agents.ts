@@ -95,6 +95,26 @@ export const useAgentsStore = defineStore('agents', () => {
     }
   }
 
+  async function linkMcpServer(agentId: string, mcpServerId: string) {
+    error.value = null
+    try {
+      await api.post(`/api/agents/${agentId}/mcp-servers/${mcpServerId}`, {})
+      if (currentAgent.value?.id === agentId) await fetchAgent(agentId)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to link MCP server'
+    }
+  }
+
+  async function unlinkMcpServer(agentId: string, mcpServerId: string) {
+    error.value = null
+    try {
+      await api.del(`/api/agents/${agentId}/mcp-servers/${mcpServerId}`)
+      if (currentAgent.value?.id === agentId) await fetchAgent(agentId)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to unlink MCP server'
+    }
+  }
+
   return {
     agents,
     currentAgent,
@@ -105,6 +125,8 @@ export const useAgentsStore = defineStore('agents', () => {
     createAgent,
     updateAgent,
     deleteAgent,
-    toggleAgent
+    toggleAgent,
+    linkMcpServer,
+    unlinkMcpServer,
   }
 })
