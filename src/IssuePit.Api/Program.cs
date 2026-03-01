@@ -40,6 +40,9 @@ builder.Services.AddHostedService<MetricSnapshotService>();
 builder.Services.AddScoped<TenantContext>();
 builder.Services.AddScoped<TenantDatabaseService>();
 builder.Services.AddScoped<GitService>();
+builder.Services.AddScoped<IssueEnhancementService>();
+
+builder.Services.AddHttpClient("openrouter");
 
 // Cookie-based authentication for GitHub SSO sessions.
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
