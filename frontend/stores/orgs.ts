@@ -1,10 +1,11 @@
 import { defineStore } from 'pinia'
-import type { Organization, OrganizationMember, OrgRole } from '~/types'
+import type { Organization, OrganizationMember, OrgRole, Project } from '~/types'
 
 export const useOrgsStore = defineStore('orgs', () => {
   const orgs = ref<Organization[]>([])
   const currentOrg = ref<Organization | null>(null)
   const members = ref<OrganizationMember[]>([])
+  const orgProjects = ref<Project[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
 
@@ -133,10 +134,24 @@ export const useOrgsStore = defineStore('orgs', () => {
     }
   }
 
+  async function fetchOrgProjects(orgId: string) {
+    loading.value = true
+    error.value = null
+    try {
+      const data = await api.get<Project[]>(`/api/orgs/${orgId}/projects`)
+      orgProjects.value = data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to fetch org projects'
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     orgs,
     currentOrg,
     members,
+    orgProjects,
     loading,
     error,
     fetchOrgs,
@@ -148,5 +163,6 @@ export const useOrgsStore = defineStore('orgs', () => {
     addMember,
     updateMember,
     removeMember,
+    fetchOrgProjects,
   }
 })

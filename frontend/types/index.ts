@@ -135,6 +135,7 @@ export interface ProjectMember {
   teamId?: string
   user?: User
   team?: Team
+  project?: Project
   permissions: ProjectPermission
 }
 
@@ -159,7 +160,7 @@ export interface Milestone {
 
 export interface Project {
   id: string
-  organizationId: string
+  orgId: string
   name: string
   slug: string
   description?: string
