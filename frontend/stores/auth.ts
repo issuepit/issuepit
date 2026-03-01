@@ -20,7 +20,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function getToken(): string | null {
-    if (!process.client) return null
+    if (!import.meta.client) return null
     return localStorage.getItem('issuepit_token')
   }
 

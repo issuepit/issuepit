@@ -3,7 +3,7 @@ export const useApi = () => {
   const baseURL = config.public.apiBase as string
 
   const getHeaders = () => {
-    const token = process.client ? localStorage.getItem('issuepit_token') : null
+    const token = import.meta.client ? localStorage.getItem('issuepit_token') : null
     return token ? { Authorization: `Bearer ${token}` } : {}
   }
 

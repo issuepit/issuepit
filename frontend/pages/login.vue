@@ -45,7 +45,6 @@
 definePageMeta({ layout: false })
 
 const authStore = useAuthStore()
-const router = useRouter()
 const route = useRoute()
 
 // If already logged in, redirect to the intended destination
