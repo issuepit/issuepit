@@ -6,12 +6,12 @@
     </div>
 
     <!-- Tab bar -->
-    <div class="flex gap-1 mb-8 border-b border-gray-800 overflow-x-auto">
+    <div class="flex flex-wrap gap-1 mb-8 border-b border-gray-800">
       <NuxtLink
         v-for="tab in tabs"
         :key="tab.id"
         :to="tab.href"
-        class="px-4 py-2 text-sm font-medium rounded-t transition-colors whitespace-nowrap"
+        class="px-4 py-2 text-sm font-medium rounded-t transition-colors"
         :class="route.path.startsWith(tab.href)
           ? 'text-white border-b-2 border-brand-500 -mb-px'
           : 'text-gray-400 hover:text-gray-200'"
