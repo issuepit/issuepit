@@ -179,6 +179,7 @@ async function cancelRun(runId: string) {
 
 async function retryRun(runId: string) {
   await store.retryRun(runId)
+  await store.fetchRuns(id)
 }
 
 function formatDate(d: string) {

@@ -43,6 +43,14 @@ public class DockerCiCdRuntime(
         var actArgs = NativeCiCdRuntime.BuildActArgumentsList(trigger);
         var cmd = new[] { actBin }.Concat(actArgs).ToList();
 
+        logger.LogInformation("Pulling Docker image {Image} for CI/CD run {RunId}", image, run.Id);
+        await dockerClient.Images.CreateImageAsync(
+            new ImagesCreateParameters { FromImage = image },
+            null,
+            // Progress handler is required by the API but pull status is captured via container logs
+            new Progress<JSONMessage>(),
+            cancellationToken);
+
         logger.LogInformation("Creating Docker container from image {Image} for CI/CD run {RunId}", image, run.Id);
 
         var createParams = new CreateContainerParameters
@@ -68,7 +76,7 @@ public class DockerCiCdRuntime(
         };
 
         var container = await dockerClient.Containers.CreateContainerAsync(createParams, cancellationToken);
-        logger.LogInformation("Started Docker container {ContainerId} for CI/CD run {RunId}",
+        logger.LogInformation("Created Docker container {ContainerId} for CI/CD run {RunId}",
             container.ID, run.Id);
 
         await dockerClient.Containers.StartContainerAsync(
