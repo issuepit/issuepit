@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
-using System.Diagnostics;
 using System.Text.Json;
 using Confluent.Kafka;
+using IssuePit.CiCdClient.Runtimes;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
@@ -14,7 +14,8 @@ public class CiCdWorker(
     ILogger<CiCdWorker> logger,
     IConfiguration configuration,
     IServiceProvider services,
-    IConnectionMultiplexer redis) : BackgroundService
+    IConnectionMultiplexer redis,
+    CiCdRuntimeFactory runtimeFactory) : BackgroundService
 {
     // Tracks CancellationTokenSources for in-flight runs so they can be cancelled on demand.
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _activeRuns = new();
@@ -161,7 +162,12 @@ public class CiCdWorker(
                 return;
             }
 
-            await RunWorkflowAsync(run.Id, trigger, db, runCts.Token);
+            var runtime = runtimeFactory.Create();
+            await runtime.RunAsync(
+                run,
+                trigger,
+                (line, stream) => AppendLogAsync(run.Id, line, stream, db, stoppingToken),
+                runCts.Token);
 
             run.Status = CiCdRunStatus.Succeeded;
         }
@@ -187,122 +193,6 @@ public class CiCdWorker(
             // Notify clients that the run has completed
             await PublishLogLineAsync(run.Id.ToString(),
                 JsonSerializer.Serialize(new { @event = "run-completed", status = run.Status.ToString() }));
-        }
-    }
-
-    private async Task RunWorkflowAsync(
-        Guid runId,
-        TriggerPayload trigger,
-        IssuePitDbContext db,
-        CancellationToken cancellationToken)
-    {
-        // Dry-run mode: simulate workflow output. Only enabled when CiCd__DryRun is explicitly true.
-        if (configuration.GetValue<bool>("CiCd__DryRun"))
-        {
-            await SimulateWorkflowAsync(runId, trigger, db, cancellationToken);
-            return;
-        }
-
-        var actBin = configuration["CiCd__ActBinaryPath"] ?? "act";
-        var workspacePath = trigger.WorkspacePath
-            ?? configuration["CiCd__DefaultWorkspacePath"];
-
-        if (string.IsNullOrWhiteSpace(workspacePath) || !Directory.Exists(workspacePath))
-            throw new InvalidOperationException(
-                $"Workspace path '{workspacePath}' is not configured or does not exist. " +
-                "Set CiCd__DefaultWorkspacePath to the repository workspace, or enable CiCd__DryRun for simulation.");
-
-        // Build `act` arguments
-        var args = BuildActArguments(trigger);
-
-        var psi = new ProcessStartInfo(actBin, args)
-        {
-            WorkingDirectory = workspacePath,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-
-        using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
-        process.Start();
-
-        try
-        {
-            // Stream stdout and stderr concurrently
-            var stdoutTask = StreamOutputAsync(process.StandardOutput, runId, LogStream.Stdout, db, cancellationToken);
-            var stderrTask = StreamOutputAsync(process.StandardError, runId, LogStream.Stderr, db, cancellationToken);
-
-            await Task.WhenAll(stdoutTask, stderrTask);
-            await process.WaitForExitAsync(cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            // Kill the process when cancellation (user cancel or app shutdown) is requested.
-            try { process.Kill(entireProcessTree: true); } catch { /* best-effort */ }
-            throw;
-        }
-
-        if (process.ExitCode != 0)
-            throw new Exception($"act exited with code {process.ExitCode} (workspace: {workspacePath}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
-    }
-
-    private static string BuildActArguments(TriggerPayload trigger)
-    {
-        var args = new System.Text.StringBuilder();
-
-        // Determine the event; default to "push" which is the most common
-        var eventName = trigger.EventName ?? "push";
-        args.Append(eventName);
-
-        if (!string.IsNullOrWhiteSpace(trigger.Workflow))
-        {
-            args.Append(" -W ");
-            args.Append(trigger.Workflow);
-        }
-
-        return args.ToString();
-    }
-
-    private async Task StreamOutputAsync(
-        System.IO.StreamReader reader,
-        Guid runId,
-        LogStream stream,
-        IssuePitDbContext db,
-        CancellationToken cancellationToken)
-    {
-        string? line;
-        while ((line = await reader.ReadLineAsync(cancellationToken)) is not null)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            await AppendLogAsync(runId, line, stream, db, cancellationToken);
-        }
-    }
-
-    private async Task SimulateWorkflowAsync(
-        Guid runId,
-        TriggerPayload trigger,
-        IssuePitDbContext db,
-        CancellationToken cancellationToken)
-    {
-        // Placeholder: used only when CiCd__DryRun=true.
-        var lines = new[]
-        {
-            $"[INFO] Starting workflow '{trigger.Workflow ?? "default"}' for commit {trigger.CommitSha}",
-            "[INFO] Pulling runner image…",
-            "[INFO] Running job: build",
-            "[INFO] ✓ Restore succeeded",
-            "[INFO] ✓ Build succeeded",
-            "[INFO] Running job: test",
-            "[INFO] ✓ Tests passed",
-            "[INFO] Workflow completed successfully",
-        };
-
-        foreach (var line in lines)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            await AppendLogAsync(runId, line, LogStream.Stdout, db, cancellationToken);
-            await Task.Delay(200, cancellationToken);
         }
     }
 
@@ -342,14 +232,5 @@ public class CiCdWorker(
             RedisChannel.Literal($"cicd-run:{runId}"),
             payload);
     }
-
-    private record TriggerPayload(
-        Guid ProjectId,
-        string? CommitSha,
-        string? Branch,
-        string? Workflow,
-        Guid? AgentSessionId,
-        string? WorkspacePath,
-        string? EventName);
 }
 

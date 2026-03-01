@@ -45,8 +45,10 @@ var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("exe
     .WithEnvironment("Kafka__BootstrapServers", kafka.Resource.ConnectionStringExpression);
 
 var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
+    .WithReference(postgresDb)
     .WithReference(kafka)
     .WithReference(redis)
+    .WaitForCompletion(migrator)
     .WaitFor(kafka)
     .WaitFor(redis)
     .WithEnvironment("Kafka__BootstrapServers", kafka.Resource.ConnectionStringExpression);
