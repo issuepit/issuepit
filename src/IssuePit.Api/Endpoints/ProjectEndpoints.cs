@@ -1,6 +1,7 @@
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
+using IssuePit.Core.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace IssuePit.Api.Endpoints;
@@ -66,5 +67,79 @@ public static class ProjectEndpoints
             await db.SaveChangesAsync();
             return Results.NoContent();
         });
+
+        // Project member management
+        group.MapGet("/{id:guid}/members", async (Guid id, IssuePitDbContext db, TenantContext ctx) =>
+        {
+            if (ctx.CurrentTenant is null) return Results.Unauthorized();
+            var project = await db.Projects
+                .Include(p => p.Organization)
+                .FirstOrDefaultAsync(p => p.Id == id && p.Organization.TenantId == ctx.CurrentTenant.Id);
+            if (project is null) return Results.NotFound();
+            var members = await db.ProjectMembers
+                .Include(m => m.User)
+                .Include(m => m.Team)
+                .Where(m => m.ProjectId == id)
+                .ToListAsync();
+            return Results.Ok(members);
+        });
+
+        group.MapPost("/{id:guid}/members", async (Guid id, ProjectMemberRequest req, IssuePitDbContext db, TenantContext ctx) =>
+        {
+            if (ctx.CurrentTenant is null) return Results.Unauthorized();
+            if ((req.UserId is null) == (req.TeamId is null)) return Results.BadRequest();
+            var project = await db.Projects
+                .Include(p => p.Organization)
+                .FirstOrDefaultAsync(p => p.Id == id && p.Organization.TenantId == ctx.CurrentTenant.Id);
+            if (project is null) return Results.NotFound();
+            var exists = await db.ProjectMembers
+                .AnyAsync(m => m.ProjectId == id && m.UserId == req.UserId && m.TeamId == req.TeamId);
+            if (exists) return Results.Conflict();
+            db.ProjectMembers.Add(new ProjectMember
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = id,
+                UserId = req.UserId,
+                TeamId = req.TeamId,
+                Permissions = req.Permissions
+            });
+            await db.SaveChangesAsync();
+            return Results.Created($"/api/projects/{id}/members", null);
+        });
+
+        group.MapPut("/{id:guid}/members", async (Guid id, ProjectMemberRequest req, IssuePitDbContext db, TenantContext ctx) =>
+        {
+            if (ctx.CurrentTenant is null) return Results.Unauthorized();
+            if ((req.UserId is null) == (req.TeamId is null)) return Results.BadRequest();
+            var project = await db.Projects
+                .Include(p => p.Organization)
+                .FirstOrDefaultAsync(p => p.Id == id && p.Organization.TenantId == ctx.CurrentTenant.Id);
+            if (project is null) return Results.NotFound();
+            var member = await db.ProjectMembers
+                .FirstOrDefaultAsync(m => m.ProjectId == id && m.UserId == req.UserId && m.TeamId == req.TeamId);
+            if (member is null) return Results.NotFound();
+            member.Permissions = req.Permissions;
+            await db.SaveChangesAsync();
+            return Results.Ok(member);
+        });
+
+        group.MapDelete("/{id:guid}/members", async (Guid id, ProjectMemberRequest req, IssuePitDbContext db, TenantContext ctx) =>
+        {
+            if (ctx.CurrentTenant is null) return Results.Unauthorized();
+            if ((req.UserId is null) == (req.TeamId is null)) return Results.BadRequest();
+            var project = await db.Projects
+                .Include(p => p.Organization)
+                .FirstOrDefaultAsync(p => p.Id == id && p.Organization.TenantId == ctx.CurrentTenant.Id);
+            if (project is null) return Results.NotFound();
+            var member = await db.ProjectMembers
+                .FirstOrDefaultAsync(m => m.ProjectId == id && m.UserId == req.UserId && m.TeamId == req.TeamId);
+            if (member is null) return Results.NotFound();
+            db.ProjectMembers.Remove(member);
+            await db.SaveChangesAsync();
+            return Results.NoContent();
+        });
     }
 }
+
+public record ProjectMemberRequest(Guid? UserId, Guid? TeamId, ProjectPermission Permissions);
+
