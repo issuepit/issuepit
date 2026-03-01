@@ -8,6 +8,17 @@ var kafka = builder.AddKafka("kafka")
 
 var redis = builder.AddValkey("redis");
 
+// Management UI tools - set to explicit start so they are not auto-started in CI and require manual start from the Aspire dashboard
+postgresServer.WithPgAdmin(admin => admin.WithExplicitStart());
+kafka.WithKafkaUI(ui => ui.WithExplicitStart());
+builder.AddContainer("redis-insight", "redis/redisinsight")
+    .WithHttpEndpoint(targetPort: 5540, name: "http")
+    .WithReference(redis)
+    .WithEnvironment("RI_DATABASE_HOST", redis.Resource.PrimaryEndpoint.Property(EndpointProperty.IPV4Host))
+    .WithEnvironment("RI_DATABASE_PORT", redis.Resource.PrimaryEndpoint.Property(EndpointProperty.Port))
+    .WithEnvironment("RI_DATABASE_NAME", "valkey")
+    .WithExplicitStart();
+
 var migrator = builder.AddProject<Projects.IssuePit_Migrator>("migrator")
     .WithReference(postgresDb)
     .WaitFor(postgresServer);
