@@ -34,20 +34,14 @@
       <div class="flex flex-wrap items-center gap-3 mb-5">
         <div class="flex items-center gap-2">
           <span class="text-sm text-gray-400">Base:</span>
-          <select v-model="baseBranch"
-            class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
-            <option v-for="b in localBranches" :key="b.name" :value="b.name">{{ b.name }}</option>
-          </select>
+          <BranchSelect v-model="baseBranch" :branches="allBranches" />
         </div>
         <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
         </svg>
         <div class="flex items-center gap-2">
           <span class="text-sm text-gray-400">Compare:</span>
-          <select v-model="compareBranch"
-            class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
-            <option v-for="b in localBranches" :key="b.name" :value="b.name">{{ b.name }}</option>
-          </select>
+          <BranchSelect v-model="compareBranch" :branches="allBranches" />
         </div>
         <button @click="loadDiff" :disabled="store.loading || !baseBranch || !compareBranch || baseBranch === compareBranch"
           class="flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white text-sm px-4 py-1.5 rounded-lg transition-colors disabled:opacity-50">
@@ -678,8 +672,8 @@ function scrollToFile(path: string) {
 const totalAdded = computed(() => store.diff.reduce((s, f) => s + f.addedLines, 0))
 const totalRemoved = computed(() => store.diff.reduce((s, f) => s + f.removedLines, 0))
 
-const localBranches = computed(() =>
-  store.branches.filter(b => !b.isRemote)
+const allBranches = computed(() =>
+  store.branches
 )
 
 // ── Lifecycle ─────────────────────────────────────────────────
@@ -690,7 +684,7 @@ onMounted(async () => {
   if (store.repo) {
     await store.fetchBranches(id)
     const def = store.repo.defaultBranch ?? 'main'
-    const found = localBranches.value.find(b => b.name === def) ?? localBranches.value[0]
+    const found = allBranches.value.find(b => b.name === def) ?? allBranches.value[0]
     if (found) {
       baseBranch.value = found.name
       compareBranch.value = found.name
