@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using IssuePit.Core.Enums;
 
 namespace IssuePit.Core.Entities;
 
@@ -25,6 +26,13 @@ public class Agent
 
     [Required]
     public string AllowedTools { get; set; } = "[]";
+
+    /// <summary>The CLI runner to use (e.g. OpenCode, Codex, GitHubCopilotCli). Null = legacy Docker/native entrypoint.</summary>
+    public RunnerType? RunnerType { get; set; }
+
+    /// <summary>The AI model to use, passed to the CLI runner via --model flag (e.g. "anthropic/claude-opus-4-5").</summary>
+    [MaxLength(200)]
+    public string? Model { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

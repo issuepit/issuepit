@@ -217,6 +217,8 @@ export interface Agent {
   allowedTools: string[]
   mcpServers: string[]
   isActive: boolean
+  runnerType?: RunnerType
+  model?: string
   createdAt: string
   updatedAt: string
 }
@@ -291,6 +293,18 @@ export const RuntimeTypeLabels: Record<RuntimeType, string> = {
   [RuntimeType.Ssh]: 'SSH',
   [RuntimeType.HetznerSsh]: 'Hetzner + Terraform + SSH',
   [RuntimeType.OpenSandbox]: 'OpenSandbox',
+}
+
+export enum RunnerType {
+  OpenCode = 0,
+  Codex = 1,
+  GitHubCopilotCli = 2,
+}
+
+export const RunnerTypeLabels: Record<RunnerType, string> = {
+  [RunnerType.OpenCode]: 'OpenCode',
+  [RunnerType.Codex]: 'Codex CLI',
+  [RunnerType.GitHubCopilotCli]: 'GitHub Copilot CLI',
 }
 
 export interface ApiKey {
