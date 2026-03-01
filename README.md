@@ -127,10 +127,15 @@ Background worker that subscribes to the `cicd-trigger` Kafka topic and drives l
 
 # Known issue:
 
-## aspire ssl outdated:
+## aspire ssl outdated
 ```bash
 dotnet dev-certs https --clean
 dotnet dev-certs https --trust
+```
+## aspire cli not found
+https://aspire.dev/get-started/install-cli/
+```bash
+export PATH="/c/Users/user/.aspire/bin:$PATH"
 ```
 
 ---
