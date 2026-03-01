@@ -53,14 +53,16 @@ var mcpServer = builder.AddProject<Projects.IssuePit_McpServer>("mcp-server")
 api.WithEnvironment("McpServer__BaseUrl", mcpServer.GetEndpoint("http"));
 
 var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("execution-client")
+    .WithReference(postgresDb)
     .WithReference(postgresServer)
     .WithReference(kafka)
-    .WaitFor(postgresServer)
+    .WaitForCompletion(migrator)
     .WaitFor(kafka)
     .WithHttpHealthCheck("/health");
 
 var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     .WithReference(postgresDb)
+    .WithReference(postgresServer)
     .WithReference(kafka)
     .WithReference(redis)
     .WaitForCompletion(migrator)
