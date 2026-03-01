@@ -27,6 +27,20 @@ await db.Database.EnsureCreatedAsync();
 await db.Database.ExecuteSqlRawAsync("""
     ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash text NULL;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin boolean NOT NULL DEFAULT false;
+    ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS description text NULL;
+    ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS allowed_tools text NOT NULL DEFAULT '[]';
+    CREATE TABLE IF NOT EXISTS mcp_server_secrets (
+        id uuid PRIMARY KEY,
+        mcp_server_id uuid NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
+        key varchar(200) NOT NULL,
+        encrypted_value text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS mcp_server_projects (
+        mcp_server_id uuid NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
+        project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        PRIMARY KEY (mcp_server_id, project_id)
+    );
     """);
 
 logger.LogInformation("Schema applied successfully.");
