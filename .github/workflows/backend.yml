@@ -57,6 +57,7 @@ jobs:
             echo "No migrations found, skipping pending model changes check"
             exit 0
           fi
+          dotnet build src/IssuePit.Api/IssuePit.Api.csproj --no-restore
           dotnet ef migrations has-pending-model-changes \
             --project src/IssuePit.Core/IssuePit.Core.csproj \
             --startup-project src/IssuePit.Api/IssuePit.Api.csproj

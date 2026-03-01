@@ -378,6 +378,8 @@ export interface GitBlob {
   size: number
   isBinary: boolean
   content: string
+}
+
 export enum TelegramNotificationEvent {
   IssueCreated = 1,
   IssueUpdated = 2,
