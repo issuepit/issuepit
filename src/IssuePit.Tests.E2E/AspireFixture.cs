@@ -49,6 +49,11 @@ public sealed class AspireFixture : IAsyncLifetime
 
         ApiClient = App.CreateHttpClient("api");
 
+        // Wait for the API (and all its dependencies, including Kafka) to report healthy
+        // before allowing any test to run.  Without this guard the Kafka health check can
+        // still be starting up when the first test hits /health, which returns 503.
+        await WaitForHttpReadyAsync(ApiClient, TimeSpan.FromSeconds(120), "/health");
+
         // Attempt to resolve the Aspire-started frontend URL; fall back to env var.
         try
         {
@@ -74,14 +79,14 @@ public sealed class AspireFixture : IAsyncLifetime
     }
 
     /// <summary>Polls the given <paramref name="client"/> until it returns a success response or the <paramref name="timeout"/> elapses.</summary>
-    private static async Task WaitForHttpReadyAsync(HttpClient client, TimeSpan timeout)
+    private static async Task WaitForHttpReadyAsync(HttpClient client, TimeSpan timeout, string path = "/")
     {
         var deadline = DateTime.UtcNow + timeout;
         while (DateTime.UtcNow < deadline)
         {
             try
             {
-                var response = await client.GetAsync("/");
+                var response = await client.GetAsync(path);
                 if (response.IsSuccessStatusCode) return;
             }
             catch { }
