@@ -8,16 +8,22 @@ namespace IssuePit.Tests.E2E;
 /// The FRONTEND_URL environment variable controls which URL is tested (defaults to http://localhost:3000).
 /// </summary>
 [Trait("Category", "E2E")]
-public class FrontendSmokeTests : IAsyncLifetime
+public class FrontendSmokeTests : IClassFixture<AspireFixture>, IAsyncLifetime
 {
+    private readonly AspireFixture _fixture;
     private IPlaywright? _playwright;
     private IBrowser? _browser;
     private IBrowserContext? _context;
 
     // Only use an explicitly-configured URL; do NOT fall back to localhost:3000 because
     // in CI the frontend is served by Aspire on a dynamic port (use HappyPathTests for that).
-    private static string? FrontendUrl =>
-        Environment.GetEnvironmentVariable("FRONTEND_URL");
+
+    private string? FrontendUrl =>
+        _fixture.FrontendUrl ??
+        Environment.GetEnvironmentVariable("FRONTEND_URL") ??
+        throw new InvalidOperationException("FRONTEND_URL environment variable must be set to run frontend smoke tests");
+
+    public FrontendSmokeTests(AspireFixture fixture) => _fixture = fixture;
 
     public async Task InitializeAsync()
     {
@@ -40,10 +46,6 @@ public class FrontendSmokeTests : IAsyncLifetime
     [Fact]
     public async Task Dashboard_Loads_WithoutErrors()
     {
-        var frontendUrl = FrontendUrl;
-        if (frontendUrl is null)
-            return; // Skip when FRONTEND_URL is not set (e.g. in CI without a running frontend)
-
         var page = await _context!.NewPageAsync();
 
         var errors = new List<string>();
@@ -52,7 +54,7 @@ public class FrontendSmokeTests : IAsyncLifetime
             if (e.Type == "error") errors.Add(e.Text);
         };
 
-        var response = await page.GotoAsync(frontendUrl);
+        var response = await page.GotoAsync(FrontendUrl);
 
         Assert.NotNull(response);
         Assert.True(response.Ok, $"Expected 2xx, got {response.Status}");
@@ -62,12 +64,8 @@ public class FrontendSmokeTests : IAsyncLifetime
     [Fact]
     public async Task Dashboard_ContainsIssuePitTitle()
     {
-        var frontendUrl = FrontendUrl;
-        if (frontendUrl is null)
-            return; // Skip when FRONTEND_URL is not set (e.g. in CI without a running frontend)
-
         var page = await _context!.NewPageAsync();
-        await page.GotoAsync(frontendUrl);
+        await page.GotoAsync(FrontendUrl);
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
 
         var content = await page.ContentAsync();
@@ -77,12 +75,8 @@ public class FrontendSmokeTests : IAsyncLifetime
     [Fact]
     public async Task Dashboard_StatCards_AreLinks()
     {
-        var frontendUrl = FrontendUrl;
-        if (frontendUrl is null)
-            return; // Skip when FRONTEND_URL is not set
-
         var page = await _context!.NewPageAsync();
-        await page.GotoAsync(frontendUrl);
+        await page.GotoAsync(FrontendUrl);
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
 
         // Projects stat card links to /projects
@@ -105,12 +99,8 @@ public class FrontendSmokeTests : IAsyncLifetime
     [Fact]
     public async Task Dashboard_RecentIssues_ItemsAreLinks()
     {
-        var frontendUrl = FrontendUrl;
-        if (frontendUrl is null)
-            return; // Skip when FRONTEND_URL is not set
-
         var page = await _context!.NewPageAsync();
-        await page.GotoAsync(frontendUrl);
+        await page.GotoAsync(FrontendUrl);
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
 
         // Recent issues section should exist
