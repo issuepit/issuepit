@@ -163,8 +163,8 @@ public class AuthController(
         if (user is null)
             return Unauthorized();
 
-        if (string.IsNullOrWhiteSpace(req.NewPassword))
-            return BadRequest("New password is required.");
+        if (string.IsNullOrWhiteSpace(req.NewPassword) || req.NewPassword.Length < 6)
+            return BadRequest("New password must be at least 6 characters.");
 
         // If the user already has a password, the current password must be provided and correct.
         if (!string.IsNullOrEmpty(user.PasswordHash))
