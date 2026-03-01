@@ -1,3 +1,5 @@
+this file descripes rules on how agenting coding tools work with this repository
+
 # IssuePit Agent Guidelines
 
 ## Agent Terminology
