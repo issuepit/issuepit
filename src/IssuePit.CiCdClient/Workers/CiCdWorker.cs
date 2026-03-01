@@ -33,6 +33,7 @@ public class CiCdWorker(
             GroupId = "cicd-client",
             AutoOffsetReset = AutoOffsetReset.Earliest
         };
+        config.Set("log_level", "0");
 
         using var consumer = new ConsumerBuilder<string, string>(config)
             // Suppress librdkafka's default stderr output; connection errors are surfaced via .NET logging.
@@ -77,6 +78,7 @@ public class CiCdWorker(
             // Only react to cancel requests that arrive while the worker is running.
             AutoOffsetReset = AutoOffsetReset.Latest
         };
+        config.Set("log_level", "0");
 
         using var consumer = new ConsumerBuilder<string, string>(config)
             // Suppress librdkafka's default stderr output; connection errors are surfaced via .NET logging.

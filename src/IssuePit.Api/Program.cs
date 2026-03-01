@@ -70,12 +70,11 @@ builder.Services.AddAuthorization();
 builder.Services.AddHttpClient();
 
 var kafkaBootstrapServers = builder.Configuration["Kafka__BootstrapServers"] ?? "localhost:9092";
+var kafkaProducerConfig = new ProducerConfig { BootstrapServers = kafkaBootstrapServers };
+// Set log_level=0 so librdkafka never writes to stderr; SetLogHandler no-op is belt-and-suspenders.
+kafkaProducerConfig.Set("log_level", "0");
 builder.Services.AddSingleton<IProducer<string, string>>(_ =>
-    new ProducerBuilder<string, string>(new ProducerConfig
-    {
-        BootstrapServers = kafkaBootstrapServers
-    })
-    // Suppress librdkafka's default stderr output; connection errors are surfaced via .NET logging.
+    new ProducerBuilder<string, string>(kafkaProducerConfig)
     .SetLogHandler((_, _) => { })
     .Build());
 

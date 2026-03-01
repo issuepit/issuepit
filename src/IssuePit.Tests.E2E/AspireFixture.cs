@@ -22,26 +22,22 @@ public sealed class AspireFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // Disable resource logging so Aspire does not relay child-process stdout/stderr through
+        // ILogger — the librdkafka C library can emit verbose connection-error lines to stderr
+        // during Kafka container startup/teardown, which would otherwise flood the test output.
+        // Individual Kafka clients also set log_level=0 to prevent librdkafka from generating
+        // those messages in the first place.
         var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.IssuePit_AppHost>();
+            .CreateAsync<Projects.IssuePit_AppHost>(
+                args: [],
+                configureBuilder: (opts, _) => { opts.EnableResourceLogging = false; });
 
         // Suppress log noise produced during E2E test runs:
-        //
-        // 1. MinLevel = Warning: silences INFO-level messages from Aspire orchestration and
-        //    application startup across all categories.
-        //
-        // 2. LogLevel.None on "IssuePit.AppHost.Resources": silences the Aspire resource-relay
-        //    category that captures stdout/stderr from child processes (execution-client,
-        //    cicd-client, api, etc.) and re-logs them at LogLevel.Error.
-        //    The librdkafka C library may still emit transient connection errors to stderr during
-        //    startup and teardown (e.g. before the KRaft container is fully ready, or when the
-        //    distributed app is disposed).  Aspire relays these as ILogger Error entries under
-        //    "IssuePit.AppHost.Resources.<resource-name>", bypassing the MinLevel filter above.
+        // MinLevel = Warning: silences INFO-level messages from Aspire orchestration and
+        // application startup across all categories.
         appHost.Services.Configure<LoggerFilterOptions>(opts =>
         {
             opts.MinLevel = LogLevel.Warning;
-            // Silence the Aspire resource-process stdout/stderr relay entirely; see comment above.
-            opts.Rules.Add(new LoggerFilterRule(null, "IssuePit.AppHost.Resources", LogLevel.None, null));
         });
 
         App = await appHost.BuildAsync();
