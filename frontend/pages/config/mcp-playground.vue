@@ -216,17 +216,26 @@ async function callTool() {
   callStatus.value = null
   try {
     const args: Record<string, unknown> = {}
+    const parseErrors: string[] = []
     for (const param of toolParams.value) {
       const val = paramValues.value[param.name]
       if (val !== undefined && val !== '') {
         if (param.type === 'boolean') {
           args[param.name] = val === 'true'
         } else if (param.type === 'object' || param.type === 'array') {
-          try { args[param.name] = JSON.parse(val) } catch { args[param.name] = val }
+          try {
+            args[param.name] = JSON.parse(val)
+          } catch {
+            parseErrors.push(`"${param.name}" is not valid JSON`)
+            args[param.name] = val
+          }
         } else {
           args[param.name] = val
         }
       }
+    }
+    if (parseErrors.length) {
+      callStatus.value = { ok: false, message: `JSON parse warning: ${parseErrors.join(', ')}` }
     }
     const rpc = await mcpRequest('tools/call', { name: selectedTool.value.name, arguments: args })
     const content = rpc.result?.content ?? rpc.error ?? rpc

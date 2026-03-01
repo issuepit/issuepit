@@ -105,6 +105,10 @@ public class McpServersController(IssuePitDbContext db, TenantContext ctx) : Con
             .AnyAsync(m => m.Id == id && db.Organizations.Any(o => o.Id == m.OrgId && o.TenantId == ctx.CurrentTenant.Id));
         if (!exists) return NotFound();
 
+        var parsedScope = Enum.TryParse<McpSecretScope>(req.Scope, ignoreCase: true, out var scope) ? scope : McpSecretScope.Global;
+        if (parsedScope != McpSecretScope.Global && req.ScopeId is null)
+            return BadRequest("ScopeId is required when Scope is not Global.");
+
         var secret = new McpServerSecret
         {
             Id = Guid.NewGuid(),
@@ -112,7 +116,7 @@ public class McpServersController(IssuePitDbContext db, TenantContext ctx) : Con
             Key = req.Key,
             // In production, encrypt before storing. Placeholder prefix marks it as unencrypted for now.
             EncryptedValue = $"plain:{req.Value}",
-            Scope = Enum.TryParse<McpSecretScope>(req.Scope, ignoreCase: true, out var scope) ? scope : McpSecretScope.Global,
+            Scope = parsedScope,
             ScopeId = req.ScopeId,
             CreatedAt = DateTime.UtcNow,
         };

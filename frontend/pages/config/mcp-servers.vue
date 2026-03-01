@@ -240,7 +240,17 @@
                 <option value="">Select project…</option>
                 <option v-for="p in projectsStore.projects" :key="p.id" :value="p.id">{{ p.name }}</option>
               </select>
-              <button type="submit" :disabled="savingSecret"
+              <select v-else-if="newSecretScope === 'Org'" v-model="newSecretScopeId"
+                class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-500">
+                <option value="">Select org…</option>
+                <option v-for="o in orgsStore.orgs" :key="o.id" :value="o.id">{{ o.name }}</option>
+              </select>
+              <select v-else-if="newSecretScope === 'Agent'" v-model="newSecretScopeId"
+                class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-500">
+                <option value="">Select agent…</option>
+                <option v-for="a in agentsStore.agents" :key="a.id" :value="a.id">{{ a.name }}</option>
+              </select>
+              <button type="submit" :disabled="savingSecret || (newSecretScope !== 'Global' && !newSecretScopeId)"
                 class="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white text-sm rounded-lg transition-colors whitespace-nowrap">
                 {{ savingSecret ? '…' : 'Add Secret' }}
               </button>
@@ -335,14 +345,22 @@
 <script setup lang="ts">
 import { useMcpServersStore } from '~/stores/mcp-servers'
 import { useProjectsStore } from '~/stores/projects'
+import { useOrgsStore } from '~/stores/orgs'
+import { useAgentsStore } from '~/stores/agents'
 import type { McpServer } from '~/types'
 
 const store = useMcpServersStore()
 const projectsStore = useProjectsStore()
+const orgsStore = useOrgsStore()
+const agentsStore = useAgentsStore()
 
 onMounted(async () => {
   await store.fetchMcpServers()
-  await projectsStore.fetchProjects()
+  await Promise.all([
+    projectsStore.fetchProjects(),
+    orgsStore.fetchOrgs(),
+    agentsStore.fetchAgents(),
+  ])
 })
 
 // ── List helpers ──────────────────────────────────────────────────────────────
@@ -528,6 +546,8 @@ const newSecretValue = ref('')
 const newSecretScope = ref('Global')
 const newSecretScopeId = ref('')
 const savingSecret = ref(false)
+
+watch(newSecretScope, () => { newSecretScopeId.value = '' })
 
 async function addSecret() {
   if (!detailServer.value) return
