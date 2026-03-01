@@ -75,7 +75,7 @@ frontend/                      # Vue 3 + Nuxt 3 + Pinia frontend
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
 - [Node.js 22+](https://nodejs.org/)
-- [Docker](https://www.docker.com/)
+- [Docker](https://www.docker.com/) or better [Podman](https://podman.io/)
 
 ### Run with Aspire
 
@@ -131,6 +131,12 @@ Background worker that subscribes to the `cicd-trigger` Kafka topic and drives l
 ```bash
 dotnet dev-certs https --clean
 dotnet dev-certs https --trust
+```
+
+## frontend is not starting inside of aspire:
+```bash
+cd frontend
+npm ci
 ```
 
 ---
