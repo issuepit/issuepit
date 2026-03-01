@@ -83,6 +83,7 @@ jobs:
           dotnet test src/IssuePit.Tests.Unit/IssuePit.Tests.Unit.csproj
           --no-build
           --configuration Release
+          --filter "Category!=Integration&Category!=E2E"
           --verbosity normal
           --logger "trx;LogFileName=unit-results.trx"
 
