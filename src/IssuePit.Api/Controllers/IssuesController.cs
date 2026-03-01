@@ -13,13 +13,16 @@ namespace IssuePit.Api.Controllers;
 public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer<string, string> producer) : ControllerBase
 {
     [HttpGet]
-    public async Task<IActionResult> GetIssues([FromQuery] Guid projectId)
+    public async Task<IActionResult> GetIssues([FromQuery] Guid? projectId)
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
-        var issues = await db.Issues
+        var tenantId = ctx.CurrentTenant.Id;
+        var query = db.Issues
             .Include(i => i.Labels)
-            .Where(i => i.ProjectId == projectId)
-            .ToListAsync();
+            .Where(i => i.Project!.Organization.TenantId == tenantId);
+        if (projectId.HasValue)
+            query = query.Where(i => i.ProjectId == projectId.Value);
+        var issues = await query.ToListAsync();
         return Ok(issues);
     }
 

@@ -49,11 +49,11 @@ export const useIssuesStore = defineStore('issues', () => {
     return grouped
   })
 
-  async function fetchIssues(projectId: string, params?: IssueFilters) {
+  async function fetchIssues(projectId?: string, params?: IssueFilters) {
     loading.value = true
     error.value = null
     try {
-      const data = await api.get<Issue[]>('/api/issues', { params: { projectId, ...params } })
+      const data = await api.get<Issue[]>('/api/issues', { params: { ...(projectId ? { projectId } : {}), ...params } })
       issues.value = data
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Failed to fetch issues'
