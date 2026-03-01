@@ -339,6 +339,47 @@ export interface RuntimeConfiguration {
   createdAt: string
 }
 
+export interface GitRepository {
+  id: string
+  projectId: string
+  remoteUrl: string
+  defaultBranch: string
+  hasAuth: boolean
+  createdAt: string
+  lastFetchedAt?: string
+}
+
+export interface GitBranch {
+  name: string
+  isRemote: boolean
+  sha: string
+  commitDate?: string
+}
+
+export interface GitCommit {
+  sha: string
+  messageShort: string
+  message: string
+  authorName: string
+  authorEmail: string
+  date: string
+  parentShas: string[]
+}
+
+export interface GitTreeEntry {
+  name: string
+  path: string
+  type: 'tree' | 'blob'
+  size: number
+}
+
+export interface GitBlob {
+  path: string
+  size: number
+  isBinary: boolean
+  content: string
+}
+
 export enum TelegramNotificationEvent {
   IssueCreated = 1,
   IssueUpdated = 2,
