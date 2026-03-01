@@ -414,6 +414,33 @@ export interface GitBlob {
   content: string
 }
 
+export interface GitDiffLine {
+  oldLineNumber: number | null
+  newLineNumber: number | null
+  content: string
+  lineType: 'added' | 'removed' | 'context'
+}
+
+export interface GitDiffHunk {
+  oldStart: number
+  oldCount: number
+  newStart: number
+  newCount: number
+  header: string
+  lines: GitDiffLine[]
+}
+
+export interface GitDiffFile {
+  oldPath: string
+  newPath: string
+  status: string
+  addedLines: number
+  removedLines: number
+  isBinary: boolean
+  isTooLarge: boolean
+  hunks: GitDiffHunk[]
+}
+
 export enum TelegramNotificationEvent {
   IssueCreated = 1,
   IssueUpdated = 2,
