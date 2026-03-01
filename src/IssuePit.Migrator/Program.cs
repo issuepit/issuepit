@@ -91,7 +91,7 @@ await db.Database.ExecuteSqlRawAsync("""
         org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
         name varchar(200) NOT NULL,
         type integer NOT NULL DEFAULT 0,
-        configuration text NOT NULL DEFAULT '{}',
+        configuration text NOT NULL DEFAULT '{{}}',
         is_default boolean NOT NULL DEFAULT false,
         created_at timestamptz NOT NULL DEFAULT now()
     );
