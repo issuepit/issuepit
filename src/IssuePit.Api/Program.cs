@@ -1,5 +1,4 @@
 using Confluent.Kafka;
-using IssuePit.Api.Endpoints;
 using IssuePit.Api.Hubs;
 using IssuePit.Api.Middleware;
 using IssuePit.Api.Services;
@@ -45,6 +44,7 @@ builder.Services.AddSingleton<IProducer<string, string>>(_ =>
 builder.Services.AddSignalR()
     .AddStackExchangeRedis(builder.Configuration.GetConnectionString("redis") ?? "localhost:6379");
 
+builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
 builder.Services.AddCors(options =>
@@ -71,15 +71,7 @@ app.UseMiddleware<TenantMiddleware>();
 
 app.UseCors();
 
-app.MapOrganizationEndpoints();
-app.MapProjectEndpoints();
-app.MapIssueEndpoints();
-app.MapKanbanEndpoints();
-app.MapAgentEndpoints();
-app.MapConfigurationEndpoints();
-app.MapCiCdEndpoints();
-app.MapTenantEndpoints();
-app.MapTeamEndpoints();
+app.MapControllers();
 
 app.MapHub<AgentOutputHub>("/hubs/agent-output");
 app.MapHub<KanbanHub>("/hubs/kanban");
