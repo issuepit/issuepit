@@ -12,7 +12,7 @@ Projects are the main organizational unit in IssuePit. Each project belongs to a
 
 ## Creating a Project
 
-![Projects page](https://github.com/user-attachments/assets/7dc21998-66e4-40c3-aefe-57e81efeffca)
+![Projects page](https://github.com/user-attachments/assets/3fbde9ad-827a-4be3-a87d-880626634340)
 
 1. Navigate to the **Projects** section in the sidebar.
 2. Click **New Project**.
@@ -62,6 +62,8 @@ Once a repository is linked, you can import individual issues by their GitHub is
 ## Managing Boards
 
 Each project has a **Kanban board** with the following columns by default:
+
+![Kanban board](https://github.com/user-attachments/assets/19c72963-a4c9-463f-a692-f6e2d6aeea1d)
 
 | Column | Meaning |
 |--------|---------|

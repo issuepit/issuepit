@@ -1,6 +1,7 @@
 using BCrypt.Net;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
+using IssuePit.Core.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -82,4 +83,187 @@ static async Task SeedAsync(IssuePitDbContext db, ILogger logger)
         await db.SaveChangesAsync();
         logger.LogInformation("Seeded default admin user (admin/admin).");
     }
+
+    await SeedDemoDataAsync(db, defaultTenant.Id, logger);
 }
+
+static async Task SeedDemoDataAsync(IssuePitDbContext db, Guid tenantId, ILogger logger)
+{
+    // Only seed demo data once (guard on the demo org slug).
+    if (await db.Organizations.AnyAsync(o => o.TenantId == tenantId && o.Slug == "acme"))
+        return;
+
+    logger.LogInformation("Seeding demo organization and sample data...");
+
+    // --- Organization ---
+    var org = new Organization
+    {
+        Id = Guid.NewGuid(),
+        TenantId = tenantId,
+        Name = "Acme Corp",
+        Slug = "acme",
+        CreatedAt = DateTime.UtcNow,
+    };
+    db.Organizations.Add(org);
+    await db.SaveChangesAsync();
+
+    // --- Projects ---
+    var frontendProject = new Project
+    {
+        Id = Guid.NewGuid(),
+        OrgId = org.Id,
+        Name = "Frontend",
+        Slug = "frontend",
+        Description = "Vue 3 / Nuxt 3 web application",
+        GitHubRepo = "https://github.com/acme/frontend",
+        CreatedAt = DateTime.UtcNow,
+    };
+    var backendProject = new Project
+    {
+        Id = Guid.NewGuid(),
+        OrgId = org.Id,
+        Name = "Backend API",
+        Slug = "backend-api",
+        Description = "ASP.NET Core REST API",
+        GitHubRepo = "https://github.com/acme/backend",
+        CreatedAt = DateTime.UtcNow,
+    };
+    db.Projects.AddRange(frontendProject, backendProject);
+    await db.SaveChangesAsync();
+
+    // --- Labels ---
+    var labelBug = new Label { Id = Guid.NewGuid(), ProjectId = frontendProject.Id, Name = "bug", Color = "#e11d48" };
+    var labelFeature = new Label { Id = Guid.NewGuid(), ProjectId = frontendProject.Id, Name = "feature", Color = "#2563eb" };
+    var labelUx = new Label { Id = Guid.NewGuid(), ProjectId = frontendProject.Id, Name = "ux", Color = "#7c3aed" };
+    var labelBackend = new Label { Id = Guid.NewGuid(), ProjectId = backendProject.Id, Name = "backend", Color = "#0891b2" };
+    var labelPerf = new Label { Id = Guid.NewGuid(), ProjectId = backendProject.Id, Name = "performance", Color = "#d97706" };
+    db.Labels.AddRange(labelBug, labelFeature, labelUx, labelBackend, labelPerf);
+    await db.SaveChangesAsync();
+
+    // --- Milestones ---
+    var milestone = new Milestone
+    {
+        Id = Guid.NewGuid(),
+        ProjectId = frontendProject.Id,
+        Title = "v1.0 Launch",
+        Description = "Initial public release",
+        DueDate = DateTime.UtcNow.AddDays(30),
+        CreatedAt = DateTime.UtcNow,
+    };
+    db.Milestones.Add(milestone);
+    await db.SaveChangesAsync();
+
+    // --- Kanban boards ---
+    var feBoard = new KanbanBoard { Id = Guid.NewGuid(), ProjectId = frontendProject.Id, Name = "Main Board", CreatedAt = DateTime.UtcNow };
+    var beBoard = new KanbanBoard { Id = Guid.NewGuid(), ProjectId = backendProject.Id, Name = "Main Board", CreatedAt = DateTime.UtcNow };
+    db.KanbanBoards.AddRange(feBoard, beBoard);
+    await db.SaveChangesAsync();
+
+    var feColumns = new[]
+    {
+        new KanbanColumn { Id = Guid.NewGuid(), BoardId = feBoard.Id, Name = "Backlog",     Position = 0, IssueStatus = IssueStatus.Backlog },
+        new KanbanColumn { Id = Guid.NewGuid(), BoardId = feBoard.Id, Name = "To Do",       Position = 1, IssueStatus = IssueStatus.Todo },
+        new KanbanColumn { Id = Guid.NewGuid(), BoardId = feBoard.Id, Name = "In Progress", Position = 2, IssueStatus = IssueStatus.InProgress },
+        new KanbanColumn { Id = Guid.NewGuid(), BoardId = feBoard.Id, Name = "In Review",   Position = 3, IssueStatus = IssueStatus.InReview },
+        new KanbanColumn { Id = Guid.NewGuid(), BoardId = feBoard.Id, Name = "Done",        Position = 4, IssueStatus = IssueStatus.Done },
+    };
+    var beColumns = new[]
+    {
+        new KanbanColumn { Id = Guid.NewGuid(), BoardId = beBoard.Id, Name = "Backlog",     Position = 0, IssueStatus = IssueStatus.Backlog },
+        new KanbanColumn { Id = Guid.NewGuid(), BoardId = beBoard.Id, Name = "To Do",       Position = 1, IssueStatus = IssueStatus.Todo },
+        new KanbanColumn { Id = Guid.NewGuid(), BoardId = beBoard.Id, Name = "In Progress", Position = 2, IssueStatus = IssueStatus.InProgress },
+        new KanbanColumn { Id = Guid.NewGuid(), BoardId = beBoard.Id, Name = "In Review",   Position = 3, IssueStatus = IssueStatus.InReview },
+        new KanbanColumn { Id = Guid.NewGuid(), BoardId = beBoard.Id, Name = "Done",        Position = 4, IssueStatus = IssueStatus.Done },
+    };
+    db.KanbanColumns.AddRange(feColumns);
+    db.KanbanColumns.AddRange(beColumns);
+    await db.SaveChangesAsync();
+
+    // --- Issues (frontend project) ---
+    var issues = new[]
+    {
+        CreateDemoIssue(frontendProject.Id, 1, "Dark mode flicker on page load", "The page briefly shows light mode before switching to dark mode.", IssueStatus.Todo, IssuePriority.High, IssueType.Bug, 10),
+        CreateDemoIssue(frontendProject.Id, 2, "Add keyboard shortcuts for common actions", "Users should be able to navigate and perform actions without a mouse.", IssueStatus.InProgress, IssuePriority.Medium, IssueType.Feature, 8),
+        CreateDemoIssue(frontendProject.Id, 3, "Improve mobile responsiveness on issue detail page", "On small screens, the sidebar overlaps the content area.", IssueStatus.Backlog, IssuePriority.Low, IssueType.Bug, 5),
+        CreateDemoIssue(frontendProject.Id, 4, "Kanban board drag-and-drop support", "Allow dragging issue cards between kanban columns.", IssueStatus.Done, IssuePriority.High, IssueType.Feature, 20),
+        CreateDemoIssue(frontendProject.Id, 5, "Rich text editor for issue descriptions", "Replace the plain textarea with a Markdown-capable rich text editor.", IssueStatus.InReview, IssuePriority.Medium, IssueType.Feature, 3),
+        // backend project
+        CreateDemoIssue(backendProject.Id, 1, "Add rate limiting to public API endpoints", "Prevent abuse by limiting requests per IP address.", IssueStatus.Todo, IssuePriority.High, IssueType.Feature, 7),
+        CreateDemoIssue(backendProject.Id, 2, "Slow query on issue list with many labels", "N+1 query detected when loading issues with labels. Add `.Include()` and index.", IssueStatus.InProgress, IssuePriority.Urgent, IssueType.Bug, 2),
+        CreateDemoIssue(backendProject.Id, 3, "Webhook support for issue state changes", "Allow external systems to subscribe to issue lifecycle events.", IssueStatus.Backlog, IssuePriority.Medium, IssueType.Feature, 15),
+    };
+    db.Issues.AddRange(issues);
+    await db.SaveChangesAsync();
+
+    // --- MCP Servers ---
+    var mcpGitHub = new McpServer
+    {
+        Id = Guid.NewGuid(),
+        OrgId = org.Id,
+        Name = "GitHub MCP",
+        Url = "https://mcp.example.com/github",
+        Configuration = "{}",
+        CreatedAt = DateTime.UtcNow,
+    };
+    var mcpFilesystem = new McpServer
+    {
+        Id = Guid.NewGuid(),
+        OrgId = org.Id,
+        Name = "Filesystem MCP",
+        Url = "https://mcp.example.com/filesystem",
+        Configuration = "{}",
+        CreatedAt = DateTime.UtcNow,
+    };
+    db.McpServers.AddRange(mcpGitHub, mcpFilesystem);
+    await db.SaveChangesAsync();
+
+    // --- Agents ---
+    var planAgent = new Agent
+    {
+        Id = Guid.NewGuid(),
+        OrgId = org.Id,
+        Name = "Plan Agent",
+        SystemPrompt = "You are a senior software architect. Analyze the assigned issue and create a detailed implementation plan with subtasks. Be concise and actionable.",
+        DockerImage = "ghcr.io/sst/opencode:latest",
+        AllowedTools = "[]",
+        CreatedAt = DateTime.UtcNow,
+    };
+    var codeAgent = new Agent
+    {
+        Id = Guid.NewGuid(),
+        OrgId = org.Id,
+        Name = "Code Agent",
+        SystemPrompt = "You are a senior full-stack developer. Implement the described issue following existing code conventions. Create a conventional commit. Do not modify unrelated files.",
+        DockerImage = "ghcr.io/sst/opencode:latest",
+        AllowedTools = "[]",
+        CreatedAt = DateTime.UtcNow,
+    };
+    var evalAgent = new Agent
+    {
+        Id = Guid.NewGuid(),
+        OrgId = org.Id,
+        Name = "Evaluate Agent",
+        SystemPrompt = "You are a code reviewer. Review the changes made for the assigned issue. Check for correctness, code style, tests, and security issues. Leave concise feedback.",
+        DockerImage = "ghcr.io/sst/opencode:latest",
+        AllowedTools = "[]",
+        CreatedAt = DateTime.UtcNow,
+    };
+    db.Agents.AddRange(planAgent, codeAgent, evalAgent);
+    await db.SaveChangesAsync();
+
+    logger.LogInformation("Demo data seeded: org 'Acme Corp', 2 projects, 8 issues, 3 agents, 2 MCP servers.");
+}
+
+static Issue CreateDemoIssue(Guid projectId, int number, string title, string body, IssueStatus status, IssuePriority priority, IssueType type, int daysAgo) =>
+    new()
+    {
+        Id = Guid.NewGuid(),
+        ProjectId = projectId,
+        Number = number,
+        Title = title,
+        Body = body,
+        Status = status,
+        Priority = priority,
+        Type = type,
+        CreatedAt = DateTime.UtcNow.AddDays(-daysAgo),
+    };
