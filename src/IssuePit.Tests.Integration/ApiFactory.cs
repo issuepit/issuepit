@@ -93,6 +93,41 @@ public class ApiFactory : WebApplicationFactory<Program>
             services.Remove(d);
     }
 
+    /// <summary>Kafka producer stub that records all produced messages for test assertions.</summary>
+    public sealed class TrackingProducer : IProducer<string, string>
+    {
+        private readonly List<(string Topic, Message<string, string> Message)> _produced = [];
+        public IReadOnlyList<(string Topic, Message<string, string> Message)> Produced => _produced;
+
+        public Handle Handle => throw new NotSupportedException();
+        public string Name => "tracking";
+        public int AddBrokers(string brokers) => 0;
+        public void SetSaslCredentials(string username, string password) { }
+        public Task<DeliveryResult<string, string>> ProduceAsync(string topic, Message<string, string> message, CancellationToken cancellationToken = default)
+        {
+            _produced.Add((topic, message));
+            return Task.FromResult(new DeliveryResult<string, string> { Status = PersistenceStatus.NotPersisted });
+        }
+        public Task<DeliveryResult<string, string>> ProduceAsync(TopicPartition topicPartition, Message<string, string> message, CancellationToken cancellationToken = default)
+        {
+            _produced.Add((topicPartition.Topic, message));
+            return Task.FromResult(new DeliveryResult<string, string> { Status = PersistenceStatus.NotPersisted });
+        }
+        public void Produce(string topic, Message<string, string> message, Action<DeliveryReport<string, string>>? deliveryHandler = null) => _produced.Add((topic, message));
+        public void Produce(TopicPartition topicPartition, Message<string, string> message, Action<DeliveryReport<string, string>>? deliveryHandler = null) => _produced.Add((topicPartition.Topic, message));
+        public int Poll(TimeSpan timeout) => 0;
+        public int Flush(TimeSpan timeout) => 0;
+        public void Flush(CancellationToken cancellationToken = default) { }
+        public void InitTransactions(TimeSpan timeout) { }
+        public void BeginTransaction() { }
+        public void CommitTransaction(TimeSpan timeout) { }
+        public void CommitTransaction() { }
+        public void AbortTransaction(TimeSpan timeout) { }
+        public void AbortTransaction() { }
+        public void SendOffsetsToTransaction(IEnumerable<TopicPartitionOffset> offsets, IConsumerGroupMetadata groupMetadata, TimeSpan timeout) { }
+        public void Dispose() { }
+    }
+
     /// <summary>No-op Kafka producer stub used during integration tests.</summary>
     private sealed class NoOpProducer : IProducer<string, string>
     {
@@ -117,5 +152,24 @@ public class ApiFactory : WebApplicationFactory<Program>
         public void AbortTransaction() { }
         public void SendOffsetsToTransaction(IEnumerable<TopicPartitionOffset> offsets, IConsumerGroupMetadata groupMetadata, TimeSpan timeout) { }
         public void Dispose() { }
+    }
+}
+
+/// <summary>
+/// A variant of <see cref="ApiFactory"/> that uses a <see cref="ApiFactory.TrackingProducer"/>
+/// so that tests can assert which Kafka messages were published.
+/// </summary>
+public class TrackingApiFactory : ApiFactory
+{
+    public ApiFactory.TrackingProducer Producer { get; } = new();
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        base.ConfigureWebHost(builder);
+        builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<IProducer<string, string>>();
+            services.AddSingleton<IProducer<string, string>>(Producer);
+        });
     }
 }

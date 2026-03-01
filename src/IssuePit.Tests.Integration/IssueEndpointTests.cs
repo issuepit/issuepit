@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
@@ -116,6 +117,83 @@ public class IssueEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
         var response = await _client.GetAsync($"/api/issues?projectId={projectId}");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+}
+
+[Trait("Category", "Integration")]
+public class IssueAssigneeKafkaTests(TrackingApiFactory factory) : IClassFixture<TrackingApiFactory>
+{
+    private readonly HttpClient _client = factory.CreateClient();
+
+    private async Task<(Guid tenantId, Guid projectId, Guid orgId)> SeedProjectAsync()
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+        var tenantId = Guid.NewGuid();
+        db.Tenants.Add(new Tenant { Id = tenantId, Name = "T", Hostname = $"host-{tenantId}" });
+        var org = new Organization { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Org", Slug = $"org-{tenantId}" };
+        db.Organizations.Add(org);
+        var project = new Project { Id = Guid.NewGuid(), OrgId = org.Id, Name = "Proj", Slug = $"proj-{tenantId}" };
+        db.Projects.Add(project);
+        await db.SaveChangesAsync();
+        return (tenantId, project.Id, org.Id);
+    }
+
+    [Fact]
+    public async Task AddAgentAssignee_PublishesIssueAssignedKafkaEvent()
+    {
+        var (tenantId, projectId, orgId) = await SeedProjectAsync();
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+        var issue = new Issue { Id = Guid.NewGuid(), ProjectId = projectId, Title = "Agent Issue", Number = 1 };
+        db.Issues.Add(issue);
+        var agent = new Agent { Id = Guid.NewGuid(), OrgId = orgId, Name = "Bot", SystemPrompt = "sys", DockerImage = "img", AllowedTools = "[]", CreatedAt = DateTime.UtcNow };
+        db.Agents.Add(agent);
+        await db.SaveChangesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var response = await _client.PostAsJsonAsync($"/api/issues/{issue.Id}/assignees", new { agentId = agent.Id });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var published = factory.Producer.Produced;
+        var message = published.Single(m => m.Topic == "issue-assigned" && m.Message.Key == issue.Id.ToString());
+        var payload = JsonSerializer.Deserialize<JsonElement>(message.Message.Value);
+        Assert.Equal(issue.Id.ToString(), payload.GetProperty("Id").GetString());
+        Assert.Equal(agent.Id.ToString(), payload.GetProperty("AgentId").GetString());
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
+    public async Task AddUserAssignee_DoesNotPublishKafkaEvent()
+    {
+        var (tenantId, projectId, _) = await SeedProjectAsync();
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+        var issue = new Issue { Id = Guid.NewGuid(), ProjectId = projectId, Title = "User Issue", Number = 2 };
+        db.Issues.Add(issue);
+        var user = new User { Id = Guid.NewGuid(), TenantId = tenantId, Email = $"u-{Guid.NewGuid()}@test.com", Username = "testuser" };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        var before = factory.Producer.Produced.Count;
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var response = await _client.PostAsJsonAsync($"/api/issues/{issue.Id}/assignees", new { userId = user.Id });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        Assert.Equal(before, factory.Producer.Produced.Count);
 
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
     }

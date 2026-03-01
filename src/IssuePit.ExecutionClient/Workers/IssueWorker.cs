@@ -86,10 +86,25 @@ public class IssueWorker(
                 return;
             }
 
-            agentIds = issue.Assignees
-                .Where(a => a.AgentId is not null)
-                .Select(a => a.AgentId!.Value)
-                .ToList();
+            // If a specific agent was assigned, only launch that agent.
+            // Otherwise (e.g. issue created with pre-assigned agents), launch all agent assignees.
+            if (message.AgentId.HasValue)
+            {
+                var isAssigned = issue.Assignees.Any(a => a.AgentId == message.AgentId.Value);
+                if (!isAssigned)
+                {
+                    logger.LogWarning("Agent {AgentId} is not assigned to issue {IssueId}, skipping", message.AgentId.Value, issue.Id);
+                    return;
+                }
+                agentIds = [message.AgentId.Value];
+            }
+            else
+            {
+                agentIds = issue.Assignees
+                    .Where(a => a.AgentId is not null)
+                    .Select(a => a.AgentId!.Value)
+                    .ToList();
+            }
 
             if (agentIds.Count == 0)
             {
@@ -192,5 +207,5 @@ public class IssueWorker(
     private static string DecryptValue(string encryptedValue) =>
         encryptedValue.StartsWith("plain:") ? encryptedValue["plain:".Length..] : encryptedValue;
 
-    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title);
+    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null);
 }

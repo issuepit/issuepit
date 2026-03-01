@@ -207,6 +207,16 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         await db.SaveChangesAsync();
         await db.Entry(assignee).Reference(a => a.User).LoadAsync();
         await db.Entry(assignee).Reference(a => a.Agent).LoadAsync();
+
+        if (req.AgentId.HasValue)
+        {
+            await producer.ProduceAsync("issue-assigned", new Message<string, string>
+            {
+                Key = issue.Id.ToString(),
+                Value = JsonSerializer.Serialize(new { issue.Id, issue.ProjectId, issue.Title, AgentId = req.AgentId.Value })
+            });
+        }
+
         return Created($"/api/issues/{id}/assignees/{assignee.Id}", assignee);
     }
 
