@@ -4,7 +4,8 @@ export default defineNuxtConfig({
   css: ['highlight.js/styles/github-dark.css'],
   runtimeConfig: {
     public: {
-      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:5000'
+      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:5000',
+      mcpBase: process.env.NUXT_PUBLIC_MCP_BASE || 'http://localhost:5010',
     }
   },
   typescript: {

@@ -80,12 +80,36 @@
 
       <!-- MCP Servers -->
       <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6">
-        <h2 class="text-base font-semibold text-white mb-1">MCP Servers</h2>
+        <div class="flex items-center justify-between mb-1">
+          <h2 class="text-base font-semibold text-white">MCP Servers</h2>
+          <NuxtLink to="/config/mcp-servers" class="text-xs text-gray-500 hover:text-gray-300 transition-colors">
+            Manage MCP Servers →
+          </NuxtLink>
+        </div>
         <p class="text-sm text-gray-500 mb-5">Link MCP servers to give this agent access to external tools.</p>
+
+        <!-- Built-in IssuePit MCP (always available) -->
+        <div class="flex items-center gap-3 bg-indigo-950/30 rounded-lg px-4 py-3 border border-indigo-800/40 mb-3">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-medium text-white">IssuePit MCP</span>
+              <span class="text-xs bg-indigo-900/60 text-indigo-300 px-1.5 py-0.5 rounded-full">Built-in · Auto-linked</span>
+            </div>
+            <p class="text-xs text-gray-500 mt-0.5">Built-in MCP server with full IssuePit API access (issues, projects, tasks, CI/CD).</p>
+            <a :href="mcpBase" target="_blank" rel="noopener"
+              class="text-xs text-green-400 font-mono mt-0.5 block hover:text-green-300 transition-colors truncate">
+              {{ mcpBase }}/mcp
+            </a>
+          </div>
+          <NuxtLink to="/config/mcp-playground"
+            class="text-xs text-indigo-400 hover:text-indigo-300 px-3 py-1.5 rounded-md border border-indigo-900/40 hover:bg-indigo-900/20 transition-colors shrink-0">
+            Playground
+          </NuxtLink>
+        </div>
 
         <div v-if="mcpStore.loading" class="text-sm text-gray-500">Loading MCP servers…</div>
         <div v-else-if="!mcpStore.mcpServers.length" class="text-sm text-gray-600">
-          No MCP servers configured. Add them in
+          No additional MCP servers configured. Add them in
           <NuxtLink to="/config/mcp-servers" class="text-brand-400 hover:text-brand-300">Configuration → MCP Servers</NuxtLink>.
         </div>
         <div v-else class="space-y-2">
@@ -94,7 +118,7 @@
             :class="isLinked(server.id) ? 'border-indigo-700/50' : 'border-gray-700/50'">
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2">
-                <span class="text-sm font-medium text-white">{{ server.name }}</span>
+                <NuxtLink to="/config/mcp-servers" class="text-sm font-medium text-white hover:text-brand-300 transition-colors">{{ server.name }}</NuxtLink>
                 <span v-if="isLinked(server.id)" class="text-xs bg-indigo-900/40 text-indigo-400 px-1.5 py-0.5 rounded-full">Linked</span>
               </div>
               <p v-if="server.description" class="text-xs text-gray-500 mt-0.5 truncate">{{ server.description }}</p>
@@ -165,6 +189,8 @@ import { RunnerTypeLabels } from '~/types'
 const route = useRoute()
 const store = useAgentsStore()
 const mcpStore = useMcpServersStore()
+const config = useRuntimeConfig()
+const mcpBase = config.public.mcpBase as string
 
 const saving = ref(false)
 const savingTools = ref(false)

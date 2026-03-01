@@ -32,6 +32,7 @@ const tabs = [
   { id: 'keys', label: 'API Keys', href: '/config/keys' },
   { id: 'runtimes', label: 'Agent Runtimes', href: '/config/runtimes' },
   { id: 'mcp-servers', label: 'MCP Servers', href: '/config/mcp-servers' },
+  { id: 'mcp-playground', label: 'MCP Playground', href: '/config/mcp-playground' },
   { id: 'github-identities', label: 'GitHub Identities', href: '/config/github-identities' },
   { id: 'telegram-bots', label: 'Telegram Bots', href: '/config/telegram-bots' },
 ]
