@@ -13,6 +13,7 @@ using StackExchange.Redis;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+builder.AddKafkaHealthCheck();
 
 if (builder.Environment.IsEnvironment("Testing"))
 {

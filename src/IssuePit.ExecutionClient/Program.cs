@@ -6,6 +6,7 @@ using IssuePit.ExecutionClient.Workers;
 var builder = Host.CreateApplicationBuilder(args);
 
 builder.AddServiceDefaults();
+builder.AddKafkaHealthCheck();
 builder.AddNpgsqlDbContext<IssuePitDbContext>("issuepit-db");
 
 // Register Docker client (used by DockerAgentRuntime)
