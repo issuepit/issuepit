@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Confluent.Kafka;
 using IssuePit.Core.Data;
@@ -14,13 +15,19 @@ public class IssueWorker(
     IServiceProvider services,
     AgentRuntimeFactory runtimeFactory) : BackgroundService
 {
+    // Tracks CancellationTokenSources for in-flight agent launches so they can be cancelled on demand.
+    private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _activeSessions = new();
+
+    private string KafkaBootstrapServers => configuration["Kafka__BootstrapServers"] ?? "localhost:9092";
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var bootstrapServers = configuration["Kafka__BootstrapServers"] ?? "localhost:9092";
+        // Run the cancel-signal consumer in parallel with the trigger consumer.
+        var cancelConsumerTask = RunCancelConsumerAsync(stoppingToken);
 
         var config = new ConsumerConfig
         {
-            BootstrapServers = bootstrapServers,
+            BootstrapServers = KafkaBootstrapServers,
             GroupId = "execution-client",
             AutoOffsetReset = AutoOffsetReset.Earliest
         };
@@ -50,6 +57,50 @@ public class IssueWorker(
         }
 
         consumer.Close();
+        await cancelConsumerTask;
+    }
+
+    /// <summary>Subscribes to 'agent-cancel' and cancels any in-flight agent launch matching the session id.</summary>
+    private async Task RunCancelConsumerAsync(CancellationToken stoppingToken)
+    {
+        var config = new ConsumerConfig
+        {
+            BootstrapServers = KafkaBootstrapServers,
+            GroupId = "execution-cancel-client",
+            // Only react to cancel requests that arrive while the worker is running.
+            AutoOffsetReset = AutoOffsetReset.Latest
+        };
+
+        using var consumer = new ConsumerBuilder<string, string>(config).Build();
+        consumer.Subscribe("agent-cancel");
+
+        logger.LogInformation("IssueWorker cancel consumer started, listening on 'agent-cancel' topic");
+
+        await Task.Run(() =>
+        {
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                try
+                {
+                    var result = consumer.Consume(stoppingToken);
+                    if (Guid.TryParse(result.Message.Key, out var sessionId)
+                        && _activeSessions.TryGetValue(sessionId, out var cts))
+                    {
+                        logger.LogInformation("Received cancel signal for session {SessionId} — cancelling", sessionId);
+                        cts.Cancel();
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Error in agent cancel consumer");
+                }
+            }
+            consumer.Close();
+        }, stoppingToken);
     }
 
     private async Task ProcessIssueAsync(string issueId, string payload, CancellationToken cancellationToken)
@@ -158,15 +209,27 @@ public class IssueWorker(
         db.AgentSessions.Add(session);
         await db.SaveChangesAsync(cancellationToken);
 
+        // Create a per-session CTS linked to the host stoppingToken so we can cancel this launch independently.
+        using var sessionCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _activeSessions[session.Id] = sessionCts;
+
         try
         {
-            var credentials = await LoadCredentialsAsync(agent.OrgId, db, cancellationToken);
+            var credentials = await LoadCredentialsAsync(agent.OrgId, db, sessionCts.Token);
             var runtime = runtimeFactory.Create(runtimeType);
-            var runtimeId = await runtime.LaunchAsync(session, agent, issue, credentials, runtimeConfig, cancellationToken);
+            var runtimeId = await runtime.LaunchAsync(session, agent, issue, credentials, runtimeConfig, sessionCts.Token);
 
             logger.LogInformation(
                 "Agent {AgentId} launched via {RuntimeType} with id '{RuntimeId}' for session {SessionId}",
                 agent.Id, runtimeType, runtimeId, session.Id);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // Cancelled by an agent-cancel signal (not by application shutdown).
+            logger.LogInformation("Agent session {SessionId} was cancelled before launch completed", session.Id);
+            session.Status = AgentSessionStatus.Cancelled;
+            session.EndedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(cancellationToken);
         }
         catch (Exception ex)
         {
@@ -174,6 +237,10 @@ public class IssueWorker(
             session.Status = AgentSessionStatus.Failed;
             session.EndedAt = DateTime.UtcNow;
             await db.SaveChangesAsync(cancellationToken);
+        }
+        finally
+        {
+            _activeSessions.TryRemove(session.Id, out _);
         }
     }
 

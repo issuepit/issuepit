@@ -262,6 +262,98 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
         return new GitBlobContent(path, blob.Size, isBinary, content);
     }
 
+    /// <summary>Returns the diff between two branches/commits as a list of changed files with parsed hunks.</summary>
+    public IReadOnlyList<GitDiffFile> GetDiff(GitRepository repo, string baseBranch, string compareBranch, int contextLines = 3, int maxLinesPerFile = 2000)
+    {
+        var localPath = EnsureCloned(repo);
+        using var gitRepo = new Repository(localPath);
+
+        var baseCommit = ResolveCommit(gitRepo, baseBranch);
+        var compareCommit = ResolveCommit(gitRepo, compareBranch);
+
+        if (baseCommit is null || compareCommit is null)
+            return [];
+
+        var compareOptions = new CompareOptions { ContextLines = contextLines };
+        var patch = gitRepo.Diff.Compare<Patch>(baseCommit.Tree, compareCommit.Tree, compareOptions);
+
+        var result = new List<GitDiffFile>();
+        foreach (PatchEntryChanges entry in patch)
+        {
+            var tooLarge = entry.LinesAdded + entry.LinesDeleted > maxLinesPerFile;
+            var hunks = tooLarge ? (IReadOnlyList<GitDiffHunk>)[] : ParseHunks(entry.Patch);
+            result.Add(new GitDiffFile(
+                entry.OldPath,
+                entry.Path,
+                entry.Status.ToString(),
+                entry.LinesAdded,
+                entry.LinesDeleted,
+                entry.IsBinaryComparison,
+                tooLarge,
+                hunks));
+        }
+
+        return result;
+    }
+
+    private static IReadOnlyList<GitDiffHunk> ParseHunks(string patchContent)
+    {
+        if (string.IsNullOrEmpty(patchContent)) return [];
+
+        var hunks = new List<GitDiffHunk>();
+        var rawLines = patchContent.Split('\n');
+
+        int oldStart = 0, oldCount = 0, newStart = 0, newCount = 0;
+        string hunkHeader = string.Empty;
+        var currentLines = new List<GitDiffLine>();
+        bool inHunk = false;
+        int oldLine = 0, newLine = 0;
+
+        foreach (var rawLine in rawLines)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(
+                rawLine, @"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$");
+            if (m.Success)
+            {
+                if (inHunk)
+                    hunks.Add(new GitDiffHunk(oldStart, oldCount, newStart, newCount, hunkHeader, currentLines.AsReadOnly()));
+
+                oldStart = int.Parse(m.Groups[1].Value);
+                oldCount = m.Groups[2].Success ? int.Parse(m.Groups[2].Value) : 1;
+                newStart = int.Parse(m.Groups[3].Value);
+                newCount = m.Groups[4].Success ? int.Parse(m.Groups[4].Value) : 1;
+                hunkHeader = m.Groups[5].Value.Trim();
+                currentLines = [];
+                inHunk = true;
+                oldLine = oldStart;
+                newLine = newStart;
+                continue;
+            }
+
+            if (!inHunk) continue;
+
+            if (rawLine.StartsWith('+'))
+            {
+                currentLines.Add(new GitDiffLine(null, newLine++, rawLine[1..], "added"));
+            }
+            else if (rawLine.StartsWith('-'))
+            {
+                currentLines.Add(new GitDiffLine(oldLine++, null, rawLine[1..], "removed"));
+            }
+            else if (rawLine.Length == 0 || rawLine.StartsWith(' '))
+            {
+                string content = rawLine.Length > 0 ? rawLine[1..] : string.Empty;
+                currentLines.Add(new GitDiffLine(oldLine++, newLine++, content, "context"));
+            }
+            // Skip lines like "\ No newline at end of file"
+        }
+
+        if (inHunk)
+            hunks.Add(new GitDiffHunk(oldStart, oldCount, newStart, newCount, hunkHeader, currentLines.AsReadOnly()));
+
+        return hunks;
+    }
+
     private static Commit? ResolveCommit(Repository gitRepo, string? branchOrSha)
     {
         if (string.IsNullOrEmpty(branchOrSha))
@@ -286,3 +378,6 @@ public record GitBranchInfo(string Name, bool IsRemote, string Sha, DateTime? Co
 public record GitCommitInfo(string Sha, string MessageShort, string Message, string AuthorName, string AuthorEmail, DateTime Date, IList<string> ParentShas);
 public record GitTreeEntry(string Name, string Path, string Type, long Size);
 public record GitBlobContent(string Path, long Size, bool IsBinary, string Content);
+public record GitDiffLine(int? OldLineNumber, int? NewLineNumber, string Content, string LineType);
+public record GitDiffHunk(int OldStart, int OldCount, int NewStart, int NewCount, string Header, IReadOnlyList<GitDiffLine> Lines);
+public record GitDiffFile(string OldPath, string NewPath, string Status, long AddedLines, long RemovedLines, bool IsBinary, bool IsTooLarge, IReadOnlyList<GitDiffHunk> Hunks);
