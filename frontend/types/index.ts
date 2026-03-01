@@ -203,8 +203,19 @@ export interface McpServer {
   id: string
   orgId: string
   name: string
+  description?: string
   url: string
   configuration: string
+  allowedTools: string[]
+  createdAt: string
+  linkedAgents?: Array<{ agentId: string; name: string }>
+  linkedProjects?: Array<{ projectId: string; name: string }>
+  secrets?: McpServerSecret[]
+}
+
+export interface McpServerSecret {
+  id: string
+  key: string
   createdAt: string
 }
 

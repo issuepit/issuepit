@@ -37,6 +37,19 @@ await db.Database.ExecuteSqlRawAsync("""
         events integer NOT NULL DEFAULT 0,
         is_silent boolean NOT NULL DEFAULT false,
         created_at timestamp with time zone NOT NULL DEFAULT now()
+    ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS description text NULL;
+    ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS allowed_tools text NOT NULL DEFAULT '[]';
+    CREATE TABLE IF NOT EXISTS mcp_server_secrets (
+        id uuid PRIMARY KEY,
+        mcp_server_id uuid NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
+        key varchar(200) NOT NULL,
+        encrypted_value text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS mcp_server_projects (
+        mcp_server_id uuid NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
+        project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        PRIMARY KEY (mcp_server_id, project_id)
     );
     """);
 

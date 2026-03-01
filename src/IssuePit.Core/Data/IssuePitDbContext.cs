@@ -16,6 +16,8 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<Agent> Agents => Set<Agent>();
     public DbSet<McpServer> McpServers => Set<McpServer>();
     public DbSet<AgentMcpServer> AgentMcpServers => Set<AgentMcpServer>();
+    public DbSet<McpServerSecret> McpServerSecrets => Set<McpServerSecret>();
+    public DbSet<McpServerProject> McpServerProjects => Set<McpServerProject>();
     public DbSet<KanbanBoard> KanbanBoards => Set<KanbanBoard>();
     public DbSet<KanbanColumn> KanbanColumns => Set<KanbanColumn>();
     public DbSet<KanbanTransition> KanbanTransitions => Set<KanbanTransition>();
@@ -50,6 +52,19 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
             .HasOne(x => x.McpServer)
             .WithMany(m => m.AgentMcpServers)
             .HasForeignKey(x => x.McpServerId);
+
+        modelBuilder.Entity<McpServerProject>()
+            .HasKey(x => new { x.McpServerId, x.ProjectId });
+
+        modelBuilder.Entity<McpServerProject>()
+            .HasOne(x => x.McpServer)
+            .WithMany(m => m.McpServerProjects)
+            .HasForeignKey(x => x.McpServerId);
+
+        modelBuilder.Entity<McpServerProject>()
+            .HasOne(x => x.Project)
+            .WithMany()
+            .HasForeignKey(x => x.ProjectId);
 
         modelBuilder.Entity<IssueAssignee>()
             .HasOne(x => x.Issue)
