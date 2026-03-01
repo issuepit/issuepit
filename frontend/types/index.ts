@@ -167,6 +167,7 @@ export interface Project {
   isPrivate: boolean
   issueCount: number
   memberCount: number
+  gitHubRepo?: string
   createdAt: string
   updatedAt: string
 }
@@ -311,4 +312,36 @@ export interface RuntimeConfiguration {
   configuration: string
   isDefault: boolean
   createdAt: string
+}
+
+export interface GitBranch {
+  name: string
+  sha: string
+  isProtected: boolean
+}
+
+export interface GitCommit {
+  sha: string
+  message: string
+  author: string
+  authorEmail: string
+  date: string
+  url: string
+}
+
+export interface GitTreeEntry {
+  name: string
+  path: string
+  type: 'file' | 'dir' | 'submodule' | 'symlink'
+  size?: number
+  sha: string
+}
+
+export interface GitBlob {
+  name: string
+  path: string
+  sha: string
+  size: number
+  content: string
+  encoding: string
 }

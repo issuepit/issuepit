@@ -42,7 +42,7 @@
       </div>
 
       <!-- Quick Links -->
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <NuxtLink :to="`/projects/${id}/issues`"
           class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 flex items-center gap-4 transition-colors group">
           <div class="w-10 h-10 bg-blue-900/30 rounded-lg flex items-center justify-center">
@@ -82,6 +82,20 @@
           <div>
             <p class="font-semibold text-white group-hover:text-brand-300 transition-colors">Members</p>
             <p class="text-xs text-gray-500">{{ store.currentProject.memberCount }} members</p>
+          </div>
+        </NuxtLink>
+
+        <NuxtLink :to="`/projects/${id}/code`"
+          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 flex items-center gap-4 transition-colors group">
+          <div class="w-10 h-10 bg-orange-900/30 rounded-lg flex items-center justify-center">
+            <svg class="w-5 h-5 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+            </svg>
+          </div>
+          <div>
+            <p class="font-semibold text-white group-hover:text-brand-300 transition-colors">Code</p>
+            <p class="text-xs text-gray-500">Browse repository</p>
           </div>
         </NuxtLink>
       </div>
