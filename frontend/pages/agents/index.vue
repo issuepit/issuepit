@@ -172,7 +172,7 @@
 
 <script setup lang="ts">
 import { useAgentsStore } from '~/stores/agents'
-import type { Agent, RunnerType } from '~/types'
+import type { RunnerType } from '~/types'
 import { RunnerTypeLabels } from '~/types'
 
 const store = useAgentsStore()
@@ -200,19 +200,6 @@ onMounted(() => store.fetchAgents())
 function openCreate() {
   editingId.value = null
   resetForm()
-  showModal.value = true
-}
-
-function openEdit(agent: Agent) {
-  editingId.value = agent.id
-  form.name = agent.name
-  form.description = agent.description ?? ''
-  form.dockerImage = agent.dockerImage
-  form.systemPrompt = agent.systemPrompt
-  form.isActive = agent.isActive
-  form.runnerType = agent.runnerType ?? null
-  form.model = agent.model ?? ''
-  toolsInput.value = (agent.allowedTools ?? []).join(', ')
   showModal.value = true
 }
 
