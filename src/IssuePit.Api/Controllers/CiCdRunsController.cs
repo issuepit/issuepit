@@ -1,3 +1,4 @@
+using Confluent.Kafka;
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
@@ -9,7 +10,7 @@ namespace IssuePit.Api.Controllers;
 
 [ApiController]
 [Route("api/cicd-runs")]
-public class CiCdRunsController(IssuePitDbContext db, TenantContext tenant) : ControllerBase
+public class CiCdRunsController(IssuePitDbContext db, TenantContext tenant, IProducer<string, string> producer) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetRuns([FromQuery] Guid? projectId)
@@ -175,6 +176,13 @@ public class CiCdRunsController(IssuePitDbContext db, TenantContext tenant) : Co
         run.Status = CiCdRunStatus.Cancelled;
         run.EndedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
+
+        // Signal the CiCdClient worker to kill any in-flight execution for this run.
+        await producer.ProduceAsync("cicd-cancel", new Message<string, string>
+        {
+            Key = run.Id.ToString(),
+            Value = run.Id.ToString(),
+        });
 
         return Ok(new { run.Id, run.Status, StatusName = run.Status.ToString() });
     }
