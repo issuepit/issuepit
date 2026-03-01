@@ -109,6 +109,29 @@
         </button>
       </div>
 
+      <!-- Review session bar -->
+      <div v-if="reviewComments.length > 0"
+        class="mb-4 bg-brand-900/20 border border-brand-800/40 rounded-xl px-4 py-2.5 flex items-center gap-3">
+        <div class="w-2 h-2 rounded-full bg-brand-500 animate-pulse shrink-0"></div>
+        <span class="text-sm text-brand-300">
+          Review in progress —
+          <strong class="text-white">{{ reviewComments.length }}</strong>
+          comment{{ reviewComments.length !== 1 ? 's' : '' }} across
+          <strong class="text-white">{{ reviewedFilesCount }}</strong>
+          file{{ reviewedFilesCount !== 1 ? 's' : '' }}
+        </span>
+        <div class="ml-auto flex items-center gap-2">
+          <button @click="discardReview"
+            class="text-xs text-gray-500 hover:text-red-400 transition-colors">
+            Discard
+          </button>
+          <button @click="finishReview" :disabled="savingReview"
+            class="text-xs bg-brand-600 hover:bg-brand-700 text-white px-4 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+            {{ savingReview ? 'Creating issue…' : 'Finish Review' }}
+          </button>
+        </div>
+      </div>
+
       <!-- Code browser tab -->
       <div v-if="activeTab === 'code'" class="flex gap-4">
         <!-- File tree -->
@@ -177,15 +200,79 @@
             <!-- File header -->
             <div class="flex items-center justify-between px-4 py-2 border-b border-gray-800">
               <span class="text-sm text-gray-300 font-mono">{{ store.blob.path }}</span>
-              <span class="text-xs text-gray-500">{{ formatSize(store.blob.size) }}</span>
+              <div class="flex items-center gap-3">
+                <button v-if="isMdFile" @click="showRenderedMd = !showRenderedMd"
+                  class="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-2 py-0.5 rounded transition-colors">
+                  {{ showRenderedMd ? 'Source' : 'Preview' }}
+                </button>
+                <span class="text-xs text-gray-500">{{ formatSize(store.blob.size) }}</span>
+              </div>
             </div>
             <!-- Binary notice -->
             <div v-if="store.blob.isBinary" class="p-6 text-center text-gray-400 text-sm">
               Binary file — preview not available
             </div>
-            <!-- Text content -->
-            <pre v-else
-              class="p-4 text-sm font-mono text-gray-200 overflow-auto max-h-[600px] whitespace-pre leading-relaxed">{{ store.blob.content }}</pre>
+            <!-- Markdown preview -->
+            <div v-else-if="isMdFile && showRenderedMd"
+              class="p-6 overflow-auto max-h-[600px] prose prose-invert prose-sm max-w-none"
+              v-html="renderedMd"></div>
+            <!-- Code with line numbers -->
+            <div v-else class="overflow-auto max-h-[600px]">
+              <table class="w-full border-collapse text-sm font-mono leading-relaxed">
+                <tbody>
+                  <tr v-for="(line, idx) in fileLines" :key="idx"
+                    :class="isLineInSelection(idx + 1) ? 'bg-brand-900/30' : ''">
+                    <td class="select-none text-right text-gray-600 pr-3 pl-3 w-12 border-r border-gray-800/60 align-top cursor-pointer hover:text-brand-400 transition-colors"
+                      @click="onLineNumberClick(idx + 1, $event)">
+                      {{ idx + 1 }}
+                    </td>
+                    <td class="pl-4 pr-4 whitespace-pre text-gray-200 align-top">{{ line }}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <!-- Selection action bar -->
+              <div v-if="selectedLines && !showCommentPanel"
+                class="sticky bottom-0 border-t border-gray-800 bg-gray-900 px-4 py-2 flex items-center gap-3">
+                <span class="text-xs text-gray-400">
+                  <template v-if="selectedLines.start === selectedLines.end">Line {{ selectedLines.start }}</template>
+                  <template v-else>Lines {{ selectedLines.start }}–{{ selectedLines.end }}</template>
+                  selected
+                </span>
+                <button @click="showCommentPanel = true"
+                  class="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1 rounded transition-colors">
+                  Add Comment
+                </button>
+                <button @click="clearSelection" class="text-xs text-gray-500 hover:text-gray-300 transition-colors">
+                  Clear
+                </button>
+              </div>
+              <!-- Comment input -->
+              <div v-if="showCommentPanel && selectedLines"
+                class="sticky bottom-0 border-t border-gray-800 bg-gray-900 p-3">
+                <p class="text-xs text-gray-500 mb-2">
+                  Comment on
+                  <template v-if="selectedLines.start === selectedLines.end">line {{ selectedLines.start }}</template>
+                  <template v-else>lines {{ selectedLines.start }}–{{ selectedLines.end }}</template>
+                  of <code class="text-brand-400">{{ store.blob.path }}</code>
+                </p>
+                <div class="flex items-start gap-2">
+                  <textarea v-model="commentText" rows="3"
+                    placeholder="Add a comment… (Ctrl+Enter to submit)"
+                    class="flex-1 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white px-3 py-2 focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none"
+                    @keydown.ctrl.enter="addReviewComment"></textarea>
+                  <div class="flex flex-col gap-1.5">
+                    <button @click="addReviewComment" :disabled="!commentText.trim()"
+                      class="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                      Add
+                    </button>
+                    <button @click="cancelComment"
+                      class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </template>
         </div>
       </div>
@@ -252,7 +339,11 @@
 </template>
 
 <script setup lang="ts">
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import { useGitStore } from '~/stores/git'
+import { useIssuesStore } from '~/stores/issues'
+import { IssueType, IssuePriority, IssueStatus } from '~/types'
 
 const route = useRoute()
 const id = route.params.id as string
@@ -377,4 +468,117 @@ function formatSize(bytes: number) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
+
+// Markdown support
+const showRenderedMd = ref(false)
+const isMdFile = computed(() => store.blob?.path.toLowerCase().endsWith('.md') ?? false)
+const renderedMd = computed(() => {
+  if (!store.blob?.content) return ''
+  return DOMPurify.sanitize(marked.parse(store.blob.content) as string)
+})
+
+// Line numbers
+const fileLines = computed(() => store.blob?.content.split('\n') ?? [])
+
+// Line selection
+const selectionStart = ref<number | null>(null)
+const selectionEnd = ref<number | null>(null)
+const showCommentPanel = ref(false)
+const commentText = ref('')
+
+const selectedLines = computed(() => {
+  if (selectionStart.value === null) return null
+  const s = Math.min(selectionStart.value, selectionEnd.value ?? selectionStart.value)
+  const e = Math.max(selectionStart.value, selectionEnd.value ?? selectionStart.value)
+  return { start: s, end: e }
+})
+
+function isLineInSelection(lineNum: number) {
+  if (!selectedLines.value) return false
+  return lineNum >= selectedLines.value.start && lineNum <= selectedLines.value.end
+}
+
+function onLineNumberClick(lineNum: number, event: MouseEvent) {
+  if (event.shiftKey && selectionStart.value !== null) {
+    selectionEnd.value = lineNum
+  } else {
+    selectionStart.value = lineNum
+    selectionEnd.value = lineNum
+    showCommentPanel.value = false
+    commentText.value = ''
+  }
+}
+
+function clearSelection() {
+  selectionStart.value = null
+  selectionEnd.value = null
+  showCommentPanel.value = false
+  commentText.value = ''
+}
+
+function cancelComment() {
+  showCommentPanel.value = false
+  commentText.value = ''
+}
+
+// Review session
+interface ReviewComment {
+  filePath: string
+  lines: { start: number; end: number }
+  comment: string
+  snippet: string
+}
+
+const reviewComments = ref<ReviewComment[]>([])
+const savingReview = ref(false)
+const issuesStore = useIssuesStore()
+const reviewedFilesCount = computed(() => new Set(reviewComments.value.map(c => c.filePath)).size)
+
+function addReviewComment() {
+  if (!commentText.value.trim() || !selectedLines.value || !store.blob) return
+  const lines = fileLines.value
+  const snippet = lines.slice(selectedLines.value.start - 1, selectedLines.value.end).join('\n')
+  reviewComments.value.push({
+    filePath: store.blob.path,
+    lines: { ...selectedLines.value },
+    comment: commentText.value.trim(),
+    snippet
+  })
+  clearSelection()
+}
+
+function discardReview() {
+  reviewComments.value = []
+}
+
+async function finishReview() {
+  if (reviewComments.value.length === 0) return
+  savingReview.value = true
+  try {
+    const body = reviewComments.value.map(c => {
+      const lineRange = c.lines.start === c.lines.end
+        ? `line ${c.lines.start}`
+        : `lines ${c.lines.start}–${c.lines.end}`
+      const ext = c.filePath.split('.').pop() ?? ''
+      return `### \`${c.filePath}\` (${lineRange})\n\`\`\`${ext}\n${c.snippet}\n\`\`\`\n\n${c.comment}`
+    }).join('\n\n---\n\n')
+    const now = new Date()
+    const title = `Code Review – ${selectedBranch.value} – ${now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+    await issuesStore.createIssue(id, {
+      title,
+      body,
+      type: IssueType.Issue,
+      priority: IssuePriority.Medium,
+      status: IssueStatus.Backlog
+    })
+    reviewComments.value = []
+  } finally {
+    savingReview.value = false
+  }
+}
+
+watch(() => store.blob?.path, () => {
+  clearSelection()
+  showRenderedMd.value = false
+})
 </script>
