@@ -79,6 +79,22 @@ export const useProjectsStore = defineStore('projects', () => {
     }
   }
 
+  async function moveProject(id: string, orgId: string) {
+    loading.value = true
+    error.value = null
+    try {
+      const data = await api.post<Project>(`/api/projects/${id}/move`, { orgId })
+      const idx = projects.value.findIndex(p => p.id === id)
+      if (idx !== -1) projects.value[idx] = data
+      if (currentProject.value?.id === id) currentProject.value = data
+      return data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to move project'
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     projects,
     currentProject,
@@ -88,6 +104,7 @@ export const useProjectsStore = defineStore('projects', () => {
     fetchProject,
     createProject,
     updateProject,
-    deleteProject
+    deleteProject,
+    moveProject
   }
 })
