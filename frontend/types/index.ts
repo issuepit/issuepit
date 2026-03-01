@@ -54,11 +54,16 @@ export interface User {
 export interface GitHubIdentity {
   id: string
   userId: string
+  name?: string
   gitHubId: string
   gitHubUsername: string
   gitHubEmail?: string
+  agentId?: string
+  agentName?: string
   createdAt: string
   updatedAt: string
+  projects: Array<{ projectId: string; name: string }>
+  orgs: Array<{ orgId: string; name: string }>
 }
 
 export interface AuthUser {
