@@ -52,6 +52,11 @@ var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
 
 frontend
     .WithEnvironment("NUXT_PUBLIC_API_BASE", api.GetEndpoint("http"))
-    .WaitFor(api);
+    .WaitFor(api)
+    .WithUrlForEndpoint("http", u =>
+    {
+        u.DisplayText = "Admin Login";
+        u.Url = "/admin-login";
+    });
 
 builder.Build().Run();

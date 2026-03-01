@@ -30,7 +30,8 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         var issue = await db.Issues
             .Include(i => i.Labels)
             .Include(i => i.SubIssues)
-            .Include(i => i.Assignees)
+            .Include(i => i.Assignees).ThenInclude(a => a.User)
+            .Include(i => i.Assignees).ThenInclude(a => a.Agent)
             .FirstOrDefaultAsync(i => i.Id == id);
         return issue is null ? NotFound() : Ok(issue);
     }
@@ -95,4 +96,170 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         await db.SaveChangesAsync();
         return NoContent();
     }
+
+    // --- Comments ---
+
+    [HttpGet("{id:guid}/comments")]
+    public async Task<IActionResult> GetComments(Guid id)
+    {
+        var comments = await db.IssueComments
+            .Include(c => c.User)
+            .Where(c => c.IssueId == id)
+            .OrderBy(c => c.CreatedAt)
+            .ToListAsync();
+        return Ok(comments);
+    }
+
+    [HttpPost("{id:guid}/comments")]
+    public async Task<IActionResult> AddComment(Guid id, [FromBody] CommentRequest req)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var issue = await db.Issues.FindAsync(id);
+        if (issue is null) return NotFound();
+        var comment = new IssueComment
+        {
+            Id = Guid.NewGuid(),
+            IssueId = id,
+            UserId = req.UserId,
+            Body = req.Body,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+        db.IssueComments.Add(comment);
+        await db.SaveChangesAsync();
+        await db.Entry(comment).Reference(c => c.User).LoadAsync();
+        return Created($"/api/issues/{id}/comments/{comment.Id}", comment);
+    }
+
+    [HttpDelete("{id:guid}/comments/{commentId:guid}")]
+    public async Task<IActionResult> DeleteComment(Guid id, Guid commentId)
+    {
+        var comment = await db.IssueComments.FirstOrDefaultAsync(c => c.Id == commentId && c.IssueId == id);
+        if (comment is null) return NotFound();
+        db.IssueComments.Remove(comment);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    // --- Tasks ---
+
+    [HttpGet("{id:guid}/tasks")]
+    public async Task<IActionResult> GetTasks(Guid id)
+    {
+        var tasks = await db.IssueTasks
+            .Where(t => t.IssueId == id)
+            .OrderBy(t => t.CreatedAt)
+            .ToListAsync();
+        return Ok(tasks);
+    }
+
+    [HttpPost("{id:guid}/tasks")]
+    public async Task<IActionResult> CreateTask(Guid id, [FromBody] TaskRequest req)
+    {
+        var issue = await db.Issues.FindAsync(id);
+        if (issue is null) return NotFound();
+        var task = new IssueTask
+        {
+            Id = Guid.NewGuid(),
+            IssueId = id,
+            Title = req.Title,
+            Body = req.Body,
+            Status = Core.Enums.IssueStatus.Todo,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+        db.IssueTasks.Add(task);
+        await db.SaveChangesAsync();
+        return Created($"/api/issues/{id}/tasks/{task.Id}", task);
+    }
+
+    [HttpPut("{id:guid}/tasks/{taskId:guid}")]
+    public async Task<IActionResult> UpdateTask(Guid id, Guid taskId, [FromBody] TaskRequest req)
+    {
+        var task = await db.IssueTasks.FirstOrDefaultAsync(t => t.Id == taskId && t.IssueId == id);
+        if (task is null) return NotFound();
+        task.Title = req.Title;
+        if (req.Body is not null) task.Body = req.Body;
+        if (req.Completed.HasValue) task.Status = req.Completed.Value ? Core.Enums.IssueStatus.Done : Core.Enums.IssueStatus.Todo;
+        task.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        return Ok(task);
+    }
+
+    [HttpDelete("{id:guid}/tasks/{taskId:guid}")]
+    public async Task<IActionResult> DeleteTask(Guid id, Guid taskId)
+    {
+        var task = await db.IssueTasks.FirstOrDefaultAsync(t => t.Id == taskId && t.IssueId == id);
+        if (task is null) return NotFound();
+        db.IssueTasks.Remove(task);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    // --- Assignees ---
+
+    [HttpPost("{id:guid}/assignees")]
+    public async Task<IActionResult> AddAssignee(Guid id, [FromBody] AssigneeRequest req)
+    {
+        var issue = await db.Issues.FindAsync(id);
+        if (issue is null) return NotFound();
+        if ((req.UserId is null) == (req.AgentId is null)) return BadRequest("Provide exactly one of userId or agentId.");
+        var exists = await db.IssueAssignees.AnyAsync(a =>
+            a.IssueId == id && a.UserId == req.UserId && a.AgentId == req.AgentId);
+        if (exists) return Conflict();
+        var assignee = new IssueAssignee
+        {
+            Id = Guid.NewGuid(),
+            IssueId = id,
+            UserId = req.UserId,
+            AgentId = req.AgentId,
+        };
+        db.IssueAssignees.Add(assignee);
+        await db.SaveChangesAsync();
+        await db.Entry(assignee).Reference(a => a.User).LoadAsync();
+        await db.Entry(assignee).Reference(a => a.Agent).LoadAsync();
+        return Created($"/api/issues/{id}/assignees/{assignee.Id}", assignee);
+    }
+
+    [HttpDelete("{id:guid}/assignees/{assigneeId:guid}")]
+    public async Task<IActionResult> RemoveAssignee(Guid id, Guid assigneeId)
+    {
+        var assignee = await db.IssueAssignees.FirstOrDefaultAsync(a => a.Id == assigneeId && a.IssueId == id);
+        if (assignee is null) return NotFound();
+        db.IssueAssignees.Remove(assignee);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    // --- Labels on Issue ---
+
+    [HttpPost("{id:guid}/labels")]
+    public async Task<IActionResult> AddLabel(Guid id, [FromBody] LabelAssignRequest req)
+    {
+        var issue = await db.Issues.Include(i => i.Labels).FirstOrDefaultAsync(i => i.Id == id);
+        if (issue is null) return NotFound();
+        var label = await db.Labels.FindAsync(req.LabelId);
+        if (label is null) return NotFound("Label not found.");
+        if (issue.Labels.Any(l => l.Id == req.LabelId)) return Conflict();
+        issue.Labels.Add(label);
+        await db.SaveChangesAsync();
+        return Ok(label);
+    }
+
+    [HttpDelete("{id:guid}/labels/{labelId:guid}")]
+    public async Task<IActionResult> RemoveLabel(Guid id, Guid labelId)
+    {
+        var issue = await db.Issues.Include(i => i.Labels).FirstOrDefaultAsync(i => i.Id == id);
+        if (issue is null) return NotFound();
+        var label = issue.Labels.FirstOrDefault(l => l.Id == labelId);
+        if (label is null) return NotFound();
+        issue.Labels.Remove(label);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
 }
+
+public record CommentRequest(string Body, Guid? UserId);
+public record TaskRequest(string Title, string? Body, bool? Completed);
+public record AssigneeRequest(Guid? UserId, Guid? AgentId);
+public record LabelAssignRequest(Guid LabelId);

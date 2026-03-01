@@ -11,6 +11,7 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<Issue> Issues => Set<Issue>();
     public DbSet<IssueTask> IssueTasks => Set<IssueTask>();
     public DbSet<IssueAssignee> IssueAssignees => Set<IssueAssignee>();
+    public DbSet<IssueComment> IssueComments => Set<IssueComment>();
     public DbSet<Label> Labels => Set<Label>();
     public DbSet<Milestone> Milestones => Set<Milestone>();
     public DbSet<Agent> Agents => Set<Agent>();
@@ -34,6 +35,7 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<TeamMember> TeamMembers => Set<TeamMember>();
     public DbSet<OrganizationMember> OrganizationMembers => Set<OrganizationMember>();
     public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
+    public DbSet<GitRepository> GitRepositories => Set<GitRepository>();
     public DbSet<TelegramBot> TelegramBots => Set<TelegramBot>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

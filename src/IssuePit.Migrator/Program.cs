@@ -41,6 +41,15 @@ await db.Database.ExecuteSqlRawAsync("""
     );
     ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS description text NULL;
     ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS allowed_tools text NOT NULL DEFAULT '[]';
+    CREATE TABLE IF NOT EXISTS issue_comments (
+        id uuid PRIMARY KEY,
+        issue_id uuid NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+        user_id uuid NULL REFERENCES users(id) ON DELETE SET NULL,
+        body text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+    );
+    ALTER TABLE agents ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT false;
     CREATE TABLE IF NOT EXISTS mcp_server_secrets (
         id uuid PRIMARY KEY,
         mcp_server_id uuid NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
@@ -201,6 +210,7 @@ static async Task SeedAsync(IssuePitDbContext db, ILogger logger)
 
     if (!await db.Users.AnyAsync(u => u.Username == "admin" && u.TenantId == defaultTenant.Id))
     {
+        var randomPassword = Guid.NewGuid().ToString("N");
         var admin = new User
         {
             Id = Guid.NewGuid(),
@@ -210,10 +220,10 @@ static async Task SeedAsync(IssuePitDbContext db, ILogger logger)
             IsAdmin = true,
             CreatedAt = DateTime.UtcNow,
         };
-        admin.PasswordHash = BCrypt.Net.BCrypt.HashPassword("admin");
+        admin.PasswordHash = BCrypt.Net.BCrypt.HashPassword(randomPassword);
         db.Users.Add(admin);
         await db.SaveChangesAsync();
-        logger.LogInformation("Seeded default admin user (admin/admin).");
+        logger.LogInformation("Seeded default admin user with a random password. Use the Aspire dashboard 'Get Admin Login Link' command to log in.");
     }
 
     await SeedDemoDataAsync(db, defaultTenant.Id, logger);
@@ -383,7 +393,65 @@ static async Task SeedDemoDataAsync(IssuePitDbContext db, Guid tenantId, ILogger
     db.Agents.AddRange(planAgent, codeAgent, evalAgent);
     await db.SaveChangesAsync();
 
-    logger.LogInformation("Demo data seeded: org 'Acme Corp', 2 projects, 8 issues, 3 agents, 2 MCP servers.");
+    // --- IssuePit project ---
+    var issuePitProject = new Project
+    {
+        Id = Guid.NewGuid(),
+        OrgId = org.Id,
+        Name = "IssuePit",
+        Slug = "issuepit",
+        Description = "IssuePit — AI-powered issue tracker and agent orchestration platform",
+        GitHubRepo = "https://github.com/issuepit/issuepit",
+        CreatedAt = DateTime.UtcNow,
+    };
+    db.Projects.Add(issuePitProject);
+    await db.SaveChangesAsync();
+
+    var ipLabelBug = new Label { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Name = "bug", Color = "#e11d48" };
+    var ipLabelFeature = new Label { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Name = "feature", Color = "#2563eb" };
+    var ipLabelEnhancement = new Label { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Name = "enhancement", Color = "#0891b2" };
+    var ipLabelDocs = new Label { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Name = "docs", Color = "#7c3aed" };
+    db.Labels.AddRange(ipLabelBug, ipLabelFeature, ipLabelEnhancement, ipLabelDocs);
+    await db.SaveChangesAsync();
+
+    var ipBoard = new KanbanBoard { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Name = "Main Board", CreatedAt = DateTime.UtcNow };
+    db.KanbanBoards.Add(ipBoard);
+    await db.SaveChangesAsync();
+    db.KanbanColumns.AddRange(
+        new KanbanColumn { Id = Guid.NewGuid(), BoardId = ipBoard.Id, Name = "Backlog",     Position = 0, IssueStatus = IssueStatus.Backlog },
+        new KanbanColumn { Id = Guid.NewGuid(), BoardId = ipBoard.Id, Name = "To Do",       Position = 1, IssueStatus = IssueStatus.Todo },
+        new KanbanColumn { Id = Guid.NewGuid(), BoardId = ipBoard.Id, Name = "In Progress", Position = 2, IssueStatus = IssueStatus.InProgress },
+        new KanbanColumn { Id = Guid.NewGuid(), BoardId = ipBoard.Id, Name = "In Review",   Position = 3, IssueStatus = IssueStatus.InReview },
+        new KanbanColumn { Id = Guid.NewGuid(), BoardId = ipBoard.Id, Name = "Done",        Position = 4, IssueStatus = IssueStatus.Done }
+    );
+    await db.SaveChangesAsync();
+
+    var ipIssue1 = CreateDemoIssue(issuePitProject.Id, 1, "feat: issue editor improvements", "Make the issue page use more screen real estate, add comments, label manager, type changing, assign to user/agent, create sub-issues and tasks.", IssueStatus.InProgress, IssuePriority.High, IssueType.Feature, 3);
+    var ipIssue2 = CreateDemoIssue(issuePitProject.Id, 2, "feat: kanban board drag-and-drop", "Allow dragging issue cards between kanban columns to change their status.", IssueStatus.Todo, IssuePriority.High, IssueType.Feature, 5);
+    var ipIssue3 = CreateDemoIssue(issuePitProject.Id, 3, "fix: agent session logs not streaming", "Agent session logs are not streaming in real time via SignalR — only show after completion.", IssueStatus.InProgress, IssuePriority.Urgent, IssueType.Bug, 1);
+    var ipIssue4 = CreateDemoIssue(issuePitProject.Id, 4, "feat: GitHub webhook integration", "Sync issues and PRs from GitHub repositories via webhooks.", IssueStatus.Backlog, IssuePriority.Medium, IssueType.Feature, 10);
+    var ipIssue5 = CreateDemoIssue(issuePitProject.Id, 5, "chore: extend seed data", "Add richer seed data including the issuepit/issuepit project itself.", IssueStatus.Done, IssuePriority.Low, IssueType.Task, 2);
+    db.Issues.AddRange(ipIssue1, ipIssue2, ipIssue3, ipIssue4, ipIssue5);
+    await db.SaveChangesAsync();
+
+    // Attach labels to some issues
+    ipIssue1.Labels.Add(ipLabelFeature);
+    ipIssue1.Labels.Add(ipLabelEnhancement);
+    ipIssue3.Labels.Add(ipLabelBug);
+    ipIssue4.Labels.Add(ipLabelFeature);
+    ipIssue5.Labels.Add(ipLabelDocs);
+    await db.SaveChangesAsync();
+
+    // Add tasks to ipIssue1
+    db.IssueTasks.AddRange(
+        new IssueTask { Id = Guid.NewGuid(), IssueId = ipIssue1.Id, Title = "Redesign issue detail page layout", Body = "Use full-width layout and improved sidebar", Status = IssueStatus.Done, CreatedAt = DateTime.UtcNow.AddDays(-2) },
+        new IssueTask { Id = Guid.NewGuid(), IssueId = ipIssue1.Id, Title = "Add comment functionality", Body = "Allow users to add and delete comments on issues", Status = IssueStatus.InProgress, CreatedAt = DateTime.UtcNow.AddDays(-2) },
+        new IssueTask { Id = Guid.NewGuid(), IssueId = ipIssue1.Id, Title = "Label manager in sidebar", Body = "Add/remove labels from an issue", Status = IssueStatus.Todo, CreatedAt = DateTime.UtcNow.AddDays(-1) },
+        new IssueTask { Id = Guid.NewGuid(), IssueId = ipIssue1.Id, Title = "Make issue type editable", Body = "Allow changing the type from the sidebar dropdown", Status = IssueStatus.Todo, CreatedAt = DateTime.UtcNow.AddDays(-1) }
+    );
+    await db.SaveChangesAsync();
+
+    logger.LogInformation("Demo data seeded: org 'Acme Corp', 3 projects (frontend, backend, IssuePit), 13 issues, 3 agents, 2 MCP servers.");
 }
 
 static Issue CreateDemoIssue(Guid projectId, int number, string title, string body, IssueStatus status, IssuePriority priority, IssueType type, int daysAgo) =>

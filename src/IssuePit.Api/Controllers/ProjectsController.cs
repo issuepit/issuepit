@@ -72,6 +72,55 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
         return NoContent();
     }
 
+    [HttpPost("{id:guid}/move")]
+    public async Task<IActionResult> MoveProject(Guid id, [FromBody] MoveProjectRequest req)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var project = await db.Projects
+            .Include(p => p.Organization)
+            .FirstOrDefaultAsync(p => p.Id == id && p.Organization.TenantId == ctx.CurrentTenant.Id);
+        if (project is null) return NotFound();
+        var targetOrg = await db.Organizations
+            .FirstOrDefaultAsync(o => o.Id == req.OrgId && o.TenantId == ctx.CurrentTenant.Id);
+        if (targetOrg is null) return BadRequest("Target organization not found or not accessible.");
+        project.OrgId = req.OrgId;
+        await db.SaveChangesAsync();
+        return Ok(project);
+    }
+
+    [HttpGet("{id:guid}/agent-sessions")]
+    public async Task<IActionResult> GetAgentSessions(Guid id)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var project = await db.Projects
+            .Include(p => p.Organization)
+            .FirstOrDefaultAsync(p => p.Id == id && p.Organization.TenantId == ctx.CurrentTenant.Id);
+        if (project is null) return NotFound();
+        var sessions = await db.AgentSessions
+            .Include(s => s.Agent)
+            .Include(s => s.Issue)
+            .Where(s => s.Issue.ProjectId == id)
+            .OrderByDescending(s => s.StartedAt)
+            .Take(100)
+            .Select(s => new
+            {
+                s.Id,
+                s.AgentId,
+                AgentName = s.Agent.Name,
+                s.IssueId,
+                IssueTitle = s.Issue.Title,
+                IssueNumber = s.Issue.Number,
+                s.CommitSha,
+                s.GitBranch,
+                s.Status,
+                StatusName = s.Status.ToString(),
+                s.StartedAt,
+                s.EndedAt,
+            })
+            .ToListAsync();
+        return Ok(sessions);
+    }
+
     [HttpGet("{id:guid}/members")]
     public async Task<IActionResult> GetMembers(Guid id)
     {
@@ -148,3 +197,4 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
 }
 
 public record ProjectMemberRequest(Guid? UserId, Guid? TeamId, ProjectPermission Permissions);
+public record MoveProjectRequest(Guid OrgId);

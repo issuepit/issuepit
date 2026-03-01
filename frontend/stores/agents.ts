@@ -80,7 +80,19 @@ export const useAgentsStore = defineStore('agents', () => {
   }
 
   async function toggleAgent(id: string, isActive: boolean) {
-    return updateAgent(id, { isActive })
+    loading.value = true
+    error.value = null
+    try {
+      const data = await api.patch<Agent>(`/api/agents/${id}/active`, { isActive })
+      const idx = agents.value.findIndex(a => a.id === id)
+      if (idx !== -1) agents.value[idx] = data
+      if (currentAgent.value?.id === id) currentAgent.value = data
+      return data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to toggle agent'
+    } finally {
+      loading.value = false
+    }
   }
 
   return {
