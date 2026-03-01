@@ -4,13 +4,22 @@ using IssuePit.Api.Hubs;
 using IssuePit.Api.Middleware;
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
+using Microsoft.EntityFrameworkCore;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 
-builder.AddNpgsqlDbContext<IssuePitDbContext>("issuepit-db");
+if (builder.Environment.IsEnvironment("Testing"))
+{
+    builder.Services.AddDbContext<IssuePitDbContext>(opts =>
+        opts.UseInMemoryDatabase("issuepit-testing"));
+}
+else
+{
+    builder.AddNpgsqlDbContext<IssuePitDbContext>("issuepit-db");
+}
 
 builder.AddRedisClient("redis");
 
@@ -37,6 +46,17 @@ builder.Services.AddSignalR()
 
 builder.Services.AddOpenApi();
 
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.WithOrigins(builder.Configuration["AllowedOrigins"]?.Split(',') ?? ["http://localhost:3000"])
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    });
+});
+
 var app = builder.Build();
 
 app.MapDefaultEndpoints();
@@ -47,6 +67,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseMiddleware<TenantMiddleware>();
+
+app.UseCors();
 
 app.MapOrganizationEndpoints();
 app.MapProjectEndpoints();

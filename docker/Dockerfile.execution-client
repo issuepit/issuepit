@@ -17,7 +17,7 @@ FROM mcr.microsoft.com/dotnet/runtime:10.0 AS runtime
 WORKDIR /app
 
 # Docker socket access is required for DinD agent execution
-RUN addgroup --system app && adduser --system --ingroup app app
+RUN groupadd --system app && useradd --system --gid app app
 USER app
 
 COPY --from=build /app/publish .

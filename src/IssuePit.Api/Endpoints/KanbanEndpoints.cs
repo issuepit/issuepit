@@ -110,6 +110,8 @@ public static class KanbanEndpoints
             return Results.NoContent();
         });
 
+        // ── Issue movement ────────────────────────────────────────────────────
+
         group.MapPost("/boards/{boardId:guid}/move-issue", async (Guid boardId, MoveIssueRequest req, IssuePitDbContext db) =>
         {
             var issue = await db.Issues.FindAsync(req.IssueId);

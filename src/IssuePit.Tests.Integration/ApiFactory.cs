@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using StackExchange.Redis;
 
 namespace IssuePit.Tests.Integration;
@@ -118,12 +119,38 @@ public class ApiFactory : WebApplicationFactory<Program>
     }
 }
 
-internal static class ServiceCollectionExtensions
-{
-    internal static IServiceCollection RemoveAll<T>(this IServiceCollection services)
+    private static void RemoveByImplementationType<T>(IServiceCollection services)
     {
-        var toRemove = services.Where(d => d.ServiceType == typeof(T)).ToList();
-        foreach (var d in toRemove) services.Remove(d);
-        return services;
+        var toRemove = services
+            .Where(d => d.ImplementationType == typeof(T))
+            .ToList();
+        foreach (var d in toRemove)
+            services.Remove(d);
+    }
+
+    /// <summary>No-op Kafka producer stub used during integration tests.</summary>
+    private sealed class NoOpProducer : IProducer<string, string>
+    {
+        public Handle Handle => throw new NotSupportedException();
+        public string Name => "no-op";
+        public int AddBrokers(string brokers) => 0;
+        public void SetSaslCredentials(string username, string password) { }
+        public Task<DeliveryResult<string, string>> ProduceAsync(string topic, Message<string, string> message, CancellationToken cancellationToken = default)
+            => Task.FromResult(new DeliveryResult<string, string> { Status = PersistenceStatus.NotPersisted });
+        public Task<DeliveryResult<string, string>> ProduceAsync(TopicPartition topicPartition, Message<string, string> message, CancellationToken cancellationToken = default)
+            => Task.FromResult(new DeliveryResult<string, string> { Status = PersistenceStatus.NotPersisted });
+        public void Produce(string topic, Message<string, string> message, Action<DeliveryReport<string, string>>? deliveryHandler = null) { }
+        public void Produce(TopicPartition topicPartition, Message<string, string> message, Action<DeliveryReport<string, string>>? deliveryHandler = null) { }
+        public int Poll(TimeSpan timeout) => 0;
+        public int Flush(TimeSpan timeout) => 0;
+        public void Flush(CancellationToken cancellationToken = default) { }
+        public void InitTransactions(TimeSpan timeout) { }
+        public void BeginTransaction() { }
+        public void CommitTransaction(TimeSpan timeout) { }
+        public void CommitTransaction() { }
+        public void AbortTransaction(TimeSpan timeout) { }
+        public void AbortTransaction() { }
+        public void SendOffsetsToTransaction(IEnumerable<TopicPartitionOffset> offsets, IConsumerGroupMetadata groupMetadata, TimeSpan timeout) { }
+        public void Dispose() { }
     }
 }
