@@ -6,6 +6,7 @@ using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
+using Scalar.AspNetCore;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -120,6 +121,7 @@ app.MapDefaultEndpoints();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.MapScalarApiReference();
 }
 
 app.UseMiddleware<TenantMiddleware>();
