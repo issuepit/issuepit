@@ -363,7 +363,7 @@ export interface RuntimeConfiguration {
 }
 
 export interface GitRepository {
-  id: string
+  id: string | null
   projectId: string
   remoteUrl: string
   defaultBranch: string

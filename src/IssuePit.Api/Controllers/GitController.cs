@@ -20,7 +20,12 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         if (project is null) return NotFound();
 
         var repo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == projectId);
-        return repo is null ? NotFound() : Ok(ToDto(repo));
+        if (repo is not null) return Ok(ToDto(repo));
+
+        if (!string.IsNullOrEmpty(project.GitHubRepo))
+            return Ok(ToDtoFromProject(projectId, project));
+
+        return NotFound();
     }
 
     [HttpPost("repo")]
@@ -196,6 +201,17 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         hasAuth = !string.IsNullOrEmpty(repo.AuthToken) || !string.IsNullOrEmpty(repo.AuthUsername),
         repo.CreatedAt,
         repo.LastFetchedAt
+    };
+
+    private static object ToDtoFromProject(Guid projectId, Project project) => new
+    {
+        Id = (Guid?)null,
+        ProjectId = projectId,
+        RemoteUrl = project.GitHubRepo!,
+        DefaultBranch = "main",
+        hasAuth = false,
+        project.CreatedAt,
+        LastFetchedAt = (DateTime?)null
     };
 }
 

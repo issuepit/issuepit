@@ -82,7 +82,7 @@
             <p v-if="gitStore.error" class="text-red-400 text-sm">{{ gitStore.error }}</p>
             <button type="submit" :disabled="gitStore.loading"
               class="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-              {{ gitStore.repo ? 'Update Repository' : 'Link Repository' }}
+              {{ gitStore.repo?.id ? 'Update Repository' : 'Link Repository' }}
             </button>
           </form>
         </div>
@@ -294,7 +294,7 @@ async function saveRepo() {
     authUsername: repoForm.authUsername || undefined,
     authToken: repoForm.authToken || undefined,
   }
-  if (gitStore.repo) {
+  if (gitStore.repo?.id) {
     await gitStore.updateRepo(id, payload)
   } else {
     await gitStore.createRepo(id, payload)
