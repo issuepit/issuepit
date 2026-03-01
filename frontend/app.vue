@@ -40,10 +40,12 @@
       <!-- Footer -->
       <div class="p-3 border-t border-gray-800">
         <div v-if="auth.user" class="flex items-center gap-2 px-2 py-1.5 rounded-md">
-          <div class="w-6 h-6 rounded-full bg-brand-600 flex items-center justify-center text-xs font-bold shrink-0">
-            {{ initials }}
-          </div>
-          <span class="text-sm text-gray-300 truncate flex-1">{{ displayName }}</span>
+          <NuxtLink to="/profile" class="flex items-center gap-2 flex-1 min-w-0 hover:opacity-80 transition-opacity">
+            <div class="w-6 h-6 rounded-full bg-brand-600 flex items-center justify-center text-xs font-bold shrink-0">
+              {{ initials }}
+            </div>
+            <span class="text-sm text-gray-300 truncate">{{ displayName }}</span>
+          </NuxtLink>
           <button
             class="text-gray-500 hover:text-gray-300 transition-colors ml-1"
             title="Sign out"

@@ -37,6 +37,7 @@ builder.Services.AddHostedService<RedisLogRelayService>();
 
 builder.Services.AddScoped<TenantContext>();
 builder.Services.AddScoped<TenantDatabaseService>();
+builder.Services.AddScoped<GitService>();
 
 // Cookie-based authentication for GitHub SSO sessions.
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -82,6 +83,7 @@ builder.Services.AddControllers()
         opts.JsonSerializerOptions.Converters.Add(
             new JsonStringEnumConverter(System.Text.Json.JsonNamingPolicy.SnakeCaseLower));
     });
+builder.Services.AddMemoryCache();
 builder.Services.AddOpenApi();
 
 builder.Services.AddCors(options =>

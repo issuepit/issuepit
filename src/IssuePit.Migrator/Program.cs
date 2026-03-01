@@ -49,6 +49,7 @@ await db.Database.ExecuteSqlRawAsync("""
         created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now()
     );
+    ALTER TABLE agents ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT false;
     CREATE TABLE IF NOT EXISTS mcp_server_secrets (
         id uuid PRIMARY KEY,
         mcp_server_id uuid NOT NULL REFERENCES mcp_servers(id) ON DELETE CASCADE,
@@ -88,6 +89,7 @@ static async Task SeedAsync(IssuePitDbContext db, ILogger logger)
 
     if (!await db.Users.AnyAsync(u => u.Username == "admin" && u.TenantId == defaultTenant.Id))
     {
+        var randomPassword = Guid.NewGuid().ToString("N");
         var admin = new User
         {
             Id = Guid.NewGuid(),
@@ -97,10 +99,10 @@ static async Task SeedAsync(IssuePitDbContext db, ILogger logger)
             IsAdmin = true,
             CreatedAt = DateTime.UtcNow,
         };
-        admin.PasswordHash = BCrypt.Net.BCrypt.HashPassword("admin");
+        admin.PasswordHash = BCrypt.Net.BCrypt.HashPassword(randomPassword);
         db.Users.Add(admin);
         await db.SaveChangesAsync();
-        logger.LogInformation("Seeded default admin user (admin/admin).");
+        logger.LogInformation("Seeded default admin user with a random password. Use the Aspire dashboard 'Get Admin Login Link' command to log in.");
     }
 
     await SeedDemoDataAsync(db, defaultTenant.Id, logger);

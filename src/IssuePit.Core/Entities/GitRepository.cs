@@ -1,0 +1,41 @@
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+
+namespace IssuePit.Core.Entities;
+
+[Table("git_repositories")]
+public class GitRepository
+{
+    [Key]
+    public Guid Id { get; set; }
+
+    public Guid ProjectId { get; set; }
+
+    [ForeignKey(nameof(ProjectId))]
+    public Project Project { get; set; } = null!;
+
+    /// <summary>The remote git URL to clone from (https or git protocol).</summary>
+    [Required, MaxLength(500)]
+    public string RemoteUrl { get; set; } = string.Empty;
+
+    /// <summary>Local filesystem path where the bare/working clone is stored.</summary>
+    [MaxLength(500)]
+    public string? LocalPath { get; set; }
+
+    /// <summary>Default branch name (e.g. "main" or "master").</summary>
+    [MaxLength(200)]
+    public string DefaultBranch { get; set; } = "main";
+
+    /// <summary>Optional username for HTTP basic auth or token-based auth.</summary>
+    [MaxLength(200)]
+    public string? AuthUsername { get; set; }
+
+    /// <summary>Optional PAT/token for authentication.
+    /// TODO: Encrypt using ASP.NET Core Data Protection (see <see cref="GitHubIdentity.EncryptedToken"/> for the pattern).</summary>
+    [MaxLength(500)]
+    public string? AuthToken { get; set; }
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public DateTime? LastFetchedAt { get; set; }
+}

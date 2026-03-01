@@ -34,6 +34,8 @@ public class Agent
     [MaxLength(200)]
     public string? Model { get; set; }
 
+    public bool IsActive { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public ICollection<AgentMcpServer> AgentMcpServers { get; set; } = [];
