@@ -38,6 +38,7 @@ await db.Database.ExecuteSqlRawAsync("""
         events integer NOT NULL DEFAULT 0,
         is_silent boolean NOT NULL DEFAULT false,
         created_at timestamp with time zone NOT NULL DEFAULT now()
+    );
     ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS description text NULL;
     ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS allowed_tools text NOT NULL DEFAULT '[]';
     CREATE TABLE IF NOT EXISTS mcp_server_secrets (
