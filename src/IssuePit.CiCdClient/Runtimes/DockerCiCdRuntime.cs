@@ -1,0 +1,161 @@
+using System.Text;
+using Docker.DotNet;
+using Docker.DotNet.Models;
+using IssuePit.Core.Entities;
+using IssuePit.Core.Enums;
+
+namespace IssuePit.CiCdClient.Runtimes;
+
+/// <summary>
+/// Runs <c>act</c> inside a Docker container, mounting the workspace as a volume.
+/// This is the default CI/CD runtime.
+///
+/// Reads from:
+/// <list type="bullet">
+///   <item><c>CiCd__Docker__Image</c> — Docker image that has <c>act</c> installed
+///     (default: <c>catthehatcher/ubuntu:act-latest</c>)</item>
+///   <item><c>CiCd__ActBinaryPath</c> — path to <c>act</c> inside the container (default: <c>act</c>)</item>
+///   <item><c>CiCd__DefaultWorkspacePath</c> — fallback host path to the repository workspace</item>
+/// </list>
+/// </summary>
+public class DockerCiCdRuntime(
+    ILogger<DockerCiCdRuntime> logger,
+    DockerClient dockerClient,
+    IConfiguration configuration) : ICiCdRuntime
+{
+    private const string DefaultImage = "catthehatcher/ubuntu:act-latest";
+
+    public async Task RunAsync(
+        CiCdRun run,
+        TriggerPayload trigger,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        var image = configuration["CiCd__Docker__Image"] ?? DefaultImage;
+        var actBin = configuration["CiCd__ActBinaryPath"] ?? "act";
+        var workspacePath = trigger.WorkspacePath ?? configuration["CiCd__DefaultWorkspacePath"];
+
+        if (string.IsNullOrWhiteSpace(workspacePath) || !Directory.Exists(workspacePath))
+            throw new InvalidOperationException(
+                $"Workspace path '{workspacePath}' is not configured or does not exist. " +
+                "Set CiCd__DefaultWorkspacePath to the repository workspace.");
+
+        var actArgs = NativeCiCdRuntime.BuildActArgumentsList(trigger);
+        var cmd = new[] { actBin }.Concat(actArgs).ToList();
+
+        logger.LogInformation("Creating Docker container from image {Image} for CI/CD run {RunId}", image, run.Id);
+
+        var createParams = new CreateContainerParameters
+        {
+            Image = image,
+            Cmd = cmd,
+            WorkingDir = "/workspace",
+            HostConfig = new HostConfig
+            {
+                Binds =
+                [
+                    $"{workspacePath}:/workspace",
+                    // Mount Docker socket so act can spin up runner containers (DinD)
+                    "/var/run/docker.sock:/var/run/docker.sock",
+                ],
+                AutoRemove = false,
+            },
+            Labels = new Dictionary<string, string>
+            {
+                ["issuepit.run-id"] = run.Id.ToString(),
+                ["issuepit.project-id"] = run.ProjectId.ToString(),
+            },
+        };
+
+        var container = await dockerClient.Containers.CreateContainerAsync(createParams, cancellationToken);
+        logger.LogInformation("Started Docker container {ContainerId} for CI/CD run {RunId}",
+            container.ID, run.Id);
+
+        await dockerClient.Containers.StartContainerAsync(
+            container.ID, new ContainerStartParameters(), cancellationToken);
+
+        try
+        {
+            var logStreamTask = StreamContainerLogsAsync(container.ID, onLogLine, cancellationToken);
+            var waitResponse = await dockerClient.Containers.WaitContainerAsync(container.ID, cancellationToken);
+            // Drain any remaining log output before checking the exit code.
+            await logStreamTask;
+
+            if (waitResponse.StatusCode != 0)
+                throw new Exception(
+                    $"act exited with code {waitResponse.StatusCode} " +
+                    $"(image: {image}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
+        }
+        catch (OperationCanceledException)
+        {
+            // Kill the container when cancellation is requested.
+            try
+            {
+                await dockerClient.Containers.KillContainerAsync(
+                    container.ID, new ContainerKillParameters(), CancellationToken.None);
+            }
+            catch { /* best-effort */ }
+            throw;
+        }
+        finally
+        {
+            try
+            {
+                await dockerClient.Containers.RemoveContainerAsync(
+                    container.ID,
+                    new ContainerRemoveParameters { Force = true },
+                    CancellationToken.None);
+            }
+            catch { /* best-effort */ }
+        }
+    }
+
+    private async Task StreamContainerLogsAsync(
+        string containerId,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        var logsParams = new ContainerLogsParameters
+        {
+            Follow = true,
+            ShowStdout = true,
+            ShowStderr = true,
+        };
+
+        using var stream = await dockerClient.Containers.GetContainerLogsAsync(
+            containerId, false, logsParams, cancellationToken);
+
+        var buffer = new byte[81920];
+        var remainder = string.Empty;
+        var lastTarget = LogStream.Stdout;
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var result = await stream.ReadOutputAsync(buffer, 0, buffer.Length, cancellationToken);
+            if (result.EOF) break;
+
+            lastTarget = result.Target == MultiplexedStream.TargetStream.StandardError
+                ? LogStream.Stderr
+                : LogStream.Stdout;
+
+            var text = remainder + Encoding.UTF8.GetString(buffer, 0, result.Count);
+            var lines = text.Split('\n');
+
+            // All but the last element are complete lines.
+            for (var i = 0; i < lines.Length - 1; i++)
+            {
+                var line = lines[i].TrimEnd('\r');
+                if (!string.IsNullOrEmpty(line))
+                    await onLogLine(line, lastTarget);
+            }
+
+            // Keep the trailing (possibly incomplete) fragment for the next iteration.
+            remainder = lines[^1];
+        }
+
+        // Flush any remaining content after EOF.
+        var flushed = remainder.TrimEnd('\r');
+        if (!string.IsNullOrEmpty(flushed))
+            await onLogLine(flushed, lastTarget);
+    }
+}
