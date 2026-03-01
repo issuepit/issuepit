@@ -23,6 +23,46 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         return Ok(issues);
     }
 
+    /// <summary>
+    /// Returns cross-project issues filtered by <paramref name="filter"/>:
+    /// <list type="bullet">
+    ///   <item><c>my</c> – issues assigned to the current user.</item>
+    ///   <item><c>open</c> – all open issues (not done / cancelled).</item>
+    ///   <item><c>unassigned</c> – issues with no assignees.</item>
+    ///   <item><c>waiting</c> – issues assigned to an agent but no human assignee (waiting for human).</item>
+    /// </list>
+    /// </summary>
+    [HttpGet("feed")]
+    public async Task<IActionResult> GetFeed([FromQuery] string filter = "my")
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+
+        var projectIds = await db.Projects
+            .Include(p => p.Organization)
+            .Where(p => p.Organization.TenantId == ctx.CurrentTenant.Id)
+            .Select(p => p.Id)
+            .ToListAsync();
+
+        var query = db.Issues
+            .Include(i => i.Labels)
+            .Include(i => i.Assignees).ThenInclude(a => a.User)
+            .Include(i => i.Assignees).ThenInclude(a => a.Agent)
+            .Where(i => projectIds.Contains(i.ProjectId));
+
+        query = filter switch
+        {
+            "open" => query.Where(i => i.Status != Core.Enums.IssueStatus.Done && i.Status != Core.Enums.IssueStatus.Cancelled),
+            "unassigned" => query.Where(i => !i.Assignees.Any()),
+            "waiting" => query.Where(i => i.Assignees.Any() && i.Assignees.All(a => a.UserId == null)),
+            _ => ctx.CurrentUser != null
+                ? query.Where(i => i.Assignees.Any(a => a.UserId == ctx.CurrentUser.Id))
+                : query.Where(i => false),
+        };
+
+        var issues = await query.OrderByDescending(i => i.UpdatedAt).Take(100).ToListAsync();
+        return Ok(issues);
+    }
+
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetIssue(Guid id)
     {
