@@ -539,6 +539,20 @@ export interface DashboardAgentSession extends AgentSession {
   projectName: string
 }
 
+export interface CiCdRunLog {
+  id: string
+  line: string
+  stream: number
+  streamName: string
+  timestamp: string
+}
+
+export interface AgentSessionDetail extends AgentSession {
+  projectId: string
+  projectName: string
+  ciCdRuns: CiCdRun[]
+}
+
 export interface IssueHistoryEntry {
   date: string
   open: number
