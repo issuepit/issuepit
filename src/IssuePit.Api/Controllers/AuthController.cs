@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace IssuePit.Api.Controllers;
 
@@ -20,7 +21,8 @@ public class AuthController(
     TenantContext ctx,
     IConfiguration config,
     IDataProtectionProvider dpProvider,
-    IHttpClientFactory httpClientFactory) : ControllerBase
+    IHttpClientFactory httpClientFactory,
+    IMemoryCache cache) : ControllerBase
 {
     private static readonly string ProtectorPurpose = "GitHubOAuthToken";
 
@@ -90,19 +92,7 @@ public class AuthController(
         var (user, _) = await UpsertUserAndIdentityAsync(githubUser, token, ctx.CurrentTenant.Id);
 
         // Issue a session cookie.
-        var claims = new List<Claim>
-        {
-            new(ClaimTypes.NameIdentifier, user.Id.ToString()),
-            new(ClaimTypes.Name, user.Username),
-            new(ClaimTypes.Email, user.Email),
-        };
-        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-        var principal = new ClaimsPrincipal(identity);
-
-        await HttpContext.SignInAsync(
-            CookieAuthenticationDefaults.AuthenticationScheme,
-            principal,
-            new AuthenticationProperties { IsPersistent = true, ExpiresUtc = DateTimeOffset.UtcNow.AddDays(30) });
+        await SignInUserAsync(user);
 
         // Redirect to frontend (use state as returnUrl, default to /).
         var frontendBase = config["GitHub:OAuth:FrontendUrl"] ?? "http://localhost:3000";
@@ -161,8 +151,62 @@ public class AuthController(
     }
 
     /// <summary>
+    /// Creates a one-time magic login link for the admin user.
+    /// Only accessible from loopback (localhost) — intended for the Aspire dashboard command.
+    /// </summary>
+    [HttpGet("admin-login-link")]
+    public async Task<IActionResult> GetAdminLoginLink()
+    {
+        var remote = HttpContext.Connection.RemoteIpAddress;
+        if (remote is null || !System.Net.IPAddress.IsLoopback(remote))
+            return Unauthorized("This endpoint is only accessible from localhost.");
+
+        if (ctx.CurrentTenant is null)
+            return Unauthorized("No tenant found for this request.");
+
+        var admin = await db.Users.FirstOrDefaultAsync(
+            u => u.Username == "admin" && u.TenantId == ctx.CurrentTenant.Id && u.IsAdmin);
+
+        if (admin is null)
+            return NotFound("Admin user not found.");
+
+        var token = Guid.NewGuid().ToString("N");
+        cache.Set($"magic-token:{token}", admin.Id, TimeSpan.FromMinutes(10));
+
+        var apiBase = $"{Request.Scheme}://{Request.Host}";
+        var loginUrl = $"{apiBase}/api/auth/magic?token={token}";
+
+        return Ok(new { loginUrl });
+    }
+
+    /// <summary>
+    /// Validates a one-time magic login token (created by <see cref="GetAdminLoginLink"/>),
+    /// signs in the corresponding user, and redirects to the frontend.
+    /// </summary>
+    [HttpGet("magic")]
+    public async Task<IActionResult> MagicLogin([FromQuery] string token)
+    {
+        if (string.IsNullOrEmpty(token))
+            return BadRequest("Missing token.");
+
+        var cacheKey = $"magic-token:{token}";
+        if (!cache.TryGetValue(cacheKey, out Guid userId))
+            return Unauthorized("Invalid or expired login token.");
+
+        cache.Remove(cacheKey);
+
+        var user = await db.Users.FindAsync(userId);
+        if (user is null)
+            return Unauthorized("User not found.");
+
+        await SignInUserAsync(user);
+
+        var frontendBase = config["GitHub:OAuth:FrontendUrl"] ?? "http://localhost:3000";
+        return Redirect(frontendBase);
+    }
+
+    /// <summary>
     /// Authenticates a local user with username/password credentials and issues a session cookie.
-    /// The default admin/admin credential is restricted to localhost/loopback requests.
     /// </summary>
     [HttpPost("login")]
     public async Task<IActionResult> LocalLogin([FromBody] LocalLoginRequest req)
@@ -176,32 +220,10 @@ public class AuthController(
         if (user is null || string.IsNullOrEmpty(user.PasswordHash))
             return Unauthorized("Invalid username or password.");
 
-        // Block the default admin/admin credential from non-localhost requests.
-        // This check is intentionally done with BCrypt.Verify so that admins who have
-        // changed their password are no longer restricted to localhost-only access.
-        if (user.IsAdmin && BCrypt.Net.BCrypt.Verify("admin", user.PasswordHash))
-        {
-            var remote = HttpContext.Connection.RemoteIpAddress;
-            if (remote is not null && !System.Net.IPAddress.IsLoopback(remote))
-                return Unauthorized("The default admin password can only be used from localhost. Please change it.");
-        }
-
         if (!BCrypt.Net.BCrypt.Verify(req.Password, user.PasswordHash))
             return Unauthorized("Invalid username or password.");
 
-        var claims = new List<Claim>
-        {
-            new(ClaimTypes.NameIdentifier, user.Id.ToString()),
-            new(ClaimTypes.Name, user.Username),
-            new(ClaimTypes.Email, user.Email),
-        };
-        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-        var principal = new ClaimsPrincipal(identity);
-
-        await HttpContext.SignInAsync(
-            CookieAuthenticationDefaults.AuthenticationScheme,
-            principal,
-            new AuthenticationProperties { IsPersistent = true, ExpiresUtc = DateTimeOffset.UtcNow.AddDays(30) });
+        await SignInUserAsync(user);
 
         return Ok(new
         {
@@ -242,19 +264,7 @@ public class AuthController(
         db.Users.Add(user);
         await db.SaveChangesAsync();
 
-        var claims = new List<Claim>
-        {
-            new(ClaimTypes.NameIdentifier, user.Id.ToString()),
-            new(ClaimTypes.Name, user.Username),
-            new(ClaimTypes.Email, user.Email),
-        };
-        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-        var principal = new ClaimsPrincipal(identity);
-
-        await HttpContext.SignInAsync(
-            CookieAuthenticationDefaults.AuthenticationScheme,
-            principal,
-            new AuthenticationProperties { IsPersistent = true, ExpiresUtc = DateTimeOffset.UtcNow.AddDays(30) });
+        await SignInUserAsync(user);
 
         return Created($"/api/auth/me", new
         {
@@ -387,6 +397,23 @@ public class AuthController(
     }
 
     private record GitHubUserProfile(string Id, string Login, string Email);
+
+    private async Task SignInUserAsync(User user)
+    {
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new(ClaimTypes.Name, user.Username),
+            new(ClaimTypes.Email, user.Email),
+        };
+        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+        var principal = new ClaimsPrincipal(identity);
+
+        await HttpContext.SignInAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            principal,
+            new AuthenticationProperties { IsPersistent = true, ExpiresUtc = DateTimeOffset.UtcNow.AddDays(30) });
+    }
 }
 
 public record LocalLoginRequest(string Username, string Password);
