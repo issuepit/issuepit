@@ -101,9 +101,15 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Build Integration Tests
+        run: >
+          dotnet build src/IssuePit.Tests.Integration/IssuePit.Tests.Integration.csproj
+          --configuration Release
+
       - name: Integration Tests
         run: >
           dotnet test src/IssuePit.Tests.Integration/IssuePit.Tests.Integration.csproj
+          --no-build
           --configuration Release
           --filter "Category=Integration"
           --verbosity normal

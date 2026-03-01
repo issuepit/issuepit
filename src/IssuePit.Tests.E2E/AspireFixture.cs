@@ -1,6 +1,7 @@
 using Aspire.Hosting;
 using Aspire.Hosting.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace IssuePit.Tests.E2E;
 
@@ -23,6 +24,11 @@ public sealed class AspireFixture : IAsyncLifetime
     {
         var appHost = await DistributedApplicationTestingBuilder
             .CreateAsync<Projects.IssuePit_AppHost>();
+
+        // Suppress INFO-level noise from Kafka, Aspire orchestration, and librdkafka
+        // bootstrap-broker warnings that appear during container startup.
+        appHost.Services.Configure<LoggerFilterOptions>(opts =>
+            opts.MinLevel = LogLevel.Warning);
 
         App = await appHost.BuildAsync();
         await App.StartAsync();

@@ -141,5 +141,6 @@ public class CiCdEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
     }
 
-    private sealed record SyncResult(Guid id, int status, string statusName);
+    // status is serialized as a string by the API (JsonStringEnumConverter with snake_case_lower).
+    private sealed record SyncResult(Guid id, string status, string statusName);
 }

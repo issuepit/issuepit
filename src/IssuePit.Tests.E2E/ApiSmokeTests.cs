@@ -11,7 +11,8 @@ public class ApiSmokeTests(AspireFixture fixture) : IClassFixture<AspireFixture>
     [Fact]
     public async Task Api_HealthEndpoint_ReturnsOk()
     {
-        var response = await fixture.ApiClient!.GetAsync("/healthz");
+        // The API maps health checks to "/health" (not "/healthz") via MapDefaultEndpoints.
+        var response = await fixture.ApiClient!.GetAsync("/health");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
