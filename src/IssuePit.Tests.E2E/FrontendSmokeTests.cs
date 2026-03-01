@@ -3,19 +3,16 @@ using Microsoft.Playwright;
 namespace IssuePit.Tests.E2E;
 
 /// <summary>
-/// E2E tests for the Vue/Nuxt frontend, launched against the running Aspire stack.
-/// Requires the frontend to be served separately (e.g. via docker-compose or nuxt build/preview).
-/// The FRONTEND_URL environment variable controls which URL is tested (defaults to http://localhost:3000).
+/// Smoke tests that verify the Vue/Nuxt frontend loads correctly.
+/// Uses the <see cref="AspireFixture"/> so the Aspire-started dev server
+/// (which has the correct API URL injected) is exercised.
 /// </summary>
 [Trait("Category", "E2E")]
-public class FrontendSmokeTests : IAsyncLifetime
+public class FrontendSmokeTests(AspireFixture fixture) : IClassFixture<AspireFixture>, IAsyncLifetime
 {
     private IPlaywright? _playwright;
     private IBrowser? _browser;
     private IBrowserContext? _context;
-
-    private static string FrontendUrl =>
-        Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:3000";
 
     public async Task InitializeAsync()
     {
@@ -23,7 +20,6 @@ public class FrontendSmokeTests : IAsyncLifetime
         _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
         {
             Headless = true,
-            Channel = "chrome",
         });
         _context = await _browser.NewContextAsync();
     }
@@ -46,7 +42,7 @@ public class FrontendSmokeTests : IAsyncLifetime
             if (e.Type == "error") errors.Add(e.Text);
         };
 
-        var response = await page.GotoAsync(FrontendUrl);
+        var response = await page.GotoAsync(fixture.FrontendUrl);
 
         Assert.NotNull(response);
         Assert.True(response.Ok, $"Expected 2xx, got {response.Status}");
@@ -57,7 +53,7 @@ public class FrontendSmokeTests : IAsyncLifetime
     public async Task Dashboard_ContainsIssuePitTitle()
     {
         var page = await _context!.NewPageAsync();
-        await page.GotoAsync(FrontendUrl);
+        await page.GotoAsync(fixture.FrontendUrl);
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
 
         var content = await page.ContentAsync();
