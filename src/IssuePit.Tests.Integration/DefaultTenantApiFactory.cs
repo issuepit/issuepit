@@ -13,57 +13,44 @@ using StackExchange.Redis;
 namespace IssuePit.Tests.Integration;
 
 /// <summary>
-/// Custom WebApplicationFactory that replaces the PostgreSQL DbContext with an
-/// in-memory database so integration tests run without any infrastructure.
-/// The tenant middleware is bypassed by seeding a default tenant.
+/// A variant of <see cref="ApiFactory"/> that pre-configures a <c>DefaultTenantId</c>
+/// so the <c>TenantMiddleware</c> fallback behaviour can be tested.
 /// </summary>
-public class ApiFactory : WebApplicationFactory<Program>
+public class DefaultTenantApiFactory : WebApplicationFactory<Program>
 {
+    public static readonly Guid DefaultTenantId = Guid.Parse("10000000-0000-0000-0000-000000000001");
+
+    private readonly string _dbName = $"issuepit-default-tenant-{Guid.NewGuid()}";
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
 
-        // Provide dummy connection strings so Aspire's startup validation is satisfied;
-        // the actual DbContext will be replaced with in-memory below.
         builder.UseSetting("ConnectionStrings:issuepit-db", "Host=localhost;Database=test;Username=test;Password=test");
         builder.UseSetting("ConnectionStrings:redis", "localhost:6379,abortConnect=false");
+        builder.UseSetting("DefaultTenantId", DefaultTenantId.ToString());
 
         builder.ConfigureServices(services =>
         {
-            // Remove all DbContextOptions registrations to avoid conflicts with Npgsql
             services.RemoveAll<DbContextOptions<IssuePitDbContext>>();
-            // Also remove Aspire's IDbContextOptionsConfiguration<TContext> to prevent Npgsql
-            // extensions from being applied when in-memory options are built.
             services.RemoveAll<IDbContextOptionsConfiguration<IssuePitDbContext>>();
-
-            // Remove Npgsql EF Core internal services (provider, options, etc.) to avoid
-            // "multiple providers" conflict when registering the in-memory database provider.
             RemoveByServiceName(services, "Npgsql");
 
-            // Register in-memory database with a stable name for this factory instance
-            var dbName = $"issuepit-test-{Guid.NewGuid()}";
             services.AddDbContext<IssuePitDbContext>(opts =>
-                opts.UseInMemoryDatabase(dbName));
+                opts.UseInMemoryDatabase(_dbName));
 
-            // Remove Redis and Kafka registrations so tests don't need infrastructure
             RemoveByServiceName(services, "StackExchange.Redis");
             RemoveByServiceName(services, "Confluent.Kafka");
 
-            // Remove the IConnectionMultiplexer singleton registered in Program.cs
             services.RemoveAll<IConnectionMultiplexer>();
 
-            // Remove hosted services whose implementation depends on Redis
             RemoveHostedServiceByImplementation<RedisLogRelayService>(services);
 
-            // Replace SignalR Redis backplane with the default in-memory backplane
             RemoveByServiceName(services, "SignalR.StackExchangeRedis");
 
-            // Register a no-op Kafka producer so endpoints that inject it can be resolved
             services.RemoveAll<IProducer<string, string>>();
             services.AddSingleton<IProducer<string, string>>(new NoOpProducer());
 
-            // Remove infrastructure health checks (Npgsql, Redis) that require real services.
-            // Only the built-in "self" liveness check should remain for integration tests.
             services.Configure<HealthCheckServiceOptions>(opts =>
             {
                 var infra = opts.Registrations.Where(r => r.Name != "self").ToList();

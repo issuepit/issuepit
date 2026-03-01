@@ -89,3 +89,21 @@ public class TenantEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
     }
 }
+
+[Trait("Category", "Integration")]
+public class TenantMiddlewareFallbackTests(DefaultTenantApiFactory factory) : IClassFixture<DefaultTenantApiFactory>
+{
+    private readonly HttpClient _client = factory.CreateClient();
+
+    [Fact]
+    public async Task GetOrganizations_WithDefaultTenantId_ReturnsOkWhenNoHeader()
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+        db.Tenants.Add(new Tenant { Id = DefaultTenantApiFactory.DefaultTenantId, Name = "Default", Hostname = "default.example.com" });
+        await db.SaveChangesAsync();
+
+        var response = await _client.GetAsync("/api/orgs");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+}
