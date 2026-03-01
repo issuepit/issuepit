@@ -63,4 +63,40 @@ public class FrontendSmokeTests : IAsyncLifetime
         var content = await page.ContentAsync();
         Assert.Contains("IssuePit", content);
     }
+
+    [Fact]
+    public async Task Dashboard_StatCards_AreLinks()
+    {
+        var page = await _context!.NewPageAsync();
+        await page.GotoAsync(FrontendUrl);
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+
+        // Projects stat card links to /projects
+        var projectsLink = page.Locator("a[href='/projects']:has-text('Projects')");
+        Assert.True(await projectsLink.CountAsync() > 0, "Projects stat card should be a link to /projects");
+
+        // Agents stat card links to /agents
+        var agentsLink = page.Locator("a[href='/agents']:has-text('Agents')");
+        Assert.True(await agentsLink.CountAsync() > 0, "Agents stat card should be a link to /agents");
+    }
+
+    [Fact]
+    public async Task Dashboard_RecentIssues_ItemsAreLinks()
+    {
+        var page = await _context!.NewPageAsync();
+        await page.GotoAsync(FrontendUrl);
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+
+        // Recent issues section should exist
+        var recentIssuesHeading = page.Locator("h2:has-text('Recent Issues')");
+        Assert.True(await recentIssuesHeading.CountAsync() > 0, "Recent Issues section should be present on the dashboard");
+
+        // If any issues are present, they should be anchor elements linking to the issue detail page
+        var issueLinks = page.Locator("h2:has-text('Recent Issues') ~ div a[href*='/projects/']");
+        var count = await issueLinks.CountAsync();
+        // We can only assert links exist if there are issues; verify no plain div rows exist with cursor-pointer
+        // (i.e. all issue rows are now links)
+        var divRows = page.Locator("h2:has-text('Recent Issues') ~ div div.cursor-pointer");
+        Assert.Equal(0, await divRows.CountAsync());
+    }
 }
