@@ -128,6 +128,19 @@ public class OrganizationsController(IssuePitDbContext db, TenantContext ctx) : 
         await db.SaveChangesAsync();
         return NoContent();
     }
+
+    [HttpGet("{id:guid}/projects")]
+    public async Task<IActionResult> GetOrgProjects(Guid id)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var org = await db.Organizations
+            .FirstOrDefaultAsync(o => o.Id == id && o.TenantId == ctx.CurrentTenant.Id);
+        if (org is null) return NotFound();
+        var projects = await db.Projects
+            .Where(p => p.OrgId == id)
+            .ToListAsync();
+        return Ok(projects);
+    }
 }
 
 public record OrgMemberRequest(OrgRole Role);
