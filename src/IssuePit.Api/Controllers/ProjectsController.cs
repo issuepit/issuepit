@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
@@ -15,9 +16,9 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
     public async Task<IActionResult> GetProjects()
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
-        var projects = await db.Projects
-            .Include(p => p.Organization)
+        var projects = await ProjectsQuery()
             .Where(p => p.Organization.TenantId == ctx.CurrentTenant.Id)
+            .Select(ProjectDto.Selector(db))
             .ToListAsync();
         return Ok(projects);
     }
@@ -26,11 +27,15 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
     public async Task<IActionResult> GetProject(Guid id)
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
-        var project = await db.Projects
-            .Include(p => p.Organization)
-            .FirstOrDefaultAsync(p => p.Id == id && p.Organization.TenantId == ctx.CurrentTenant.Id);
+        var project = await ProjectsQuery()
+            .Where(p => p.Id == id && p.Organization.TenantId == ctx.CurrentTenant.Id)
+            .Select(ProjectDto.Selector(db))
+            .FirstOrDefaultAsync();
         return project is null ? NotFound() : Ok(project);
     }
+
+    private IQueryable<Project> ProjectsQuery() =>
+        db.Projects.Include(p => p.Organization);
 
     [HttpPost]
     public async Task<IActionResult> CreateProject([FromBody] Project project)
@@ -198,3 +203,15 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
 
 public record ProjectMemberRequest(Guid? UserId, Guid? TeamId, ProjectPermission Permissions);
 public record MoveProjectRequest(Guid OrgId);
+
+public record ProjectDto(
+    Guid Id, Guid OrgId, string Name, string Slug,
+    string? Description, string? GitHubRepo, DateTime CreatedAt,
+    int IssueCount, int MemberCount)
+{
+    public static Expression<Func<Project, ProjectDto>> Selector(IssuePitDbContext db) =>
+        p => new ProjectDto(
+            p.Id, p.OrgId, p.Name, p.Slug, p.Description, p.GitHubRepo, p.CreatedAt,
+            db.Issues.Count(i => i.ProjectId == p.Id),
+            db.ProjectMembers.Count(m => m.ProjectId == p.Id));
+}
