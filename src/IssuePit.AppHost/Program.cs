@@ -27,9 +27,9 @@ var mcpServer = builder.AddProject<Projects.IssuePit_McpServer>("mcp-server")
     .WithEnvironment("IssuePit__ApiBaseUrl", api.GetEndpoint("http"));
 
 var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("execution-client")
-    .WithReference(postgres)
+    .WithReference(postgresServer)
     .WithReference(kafka)
-    .WaitFor(postgres)
+    .WaitFor(postgresServer)
     .WaitFor(kafka)
     .WithEnvironment("Kafka__BootstrapServers", kafka.Resource.ConnectionStringExpression);
 
