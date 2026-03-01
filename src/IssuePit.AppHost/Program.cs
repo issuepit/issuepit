@@ -3,7 +3,8 @@ var builder = DistributedApplication.CreateBuilder(args);
 var postgresServer = builder.AddPostgres("postgres");
 var postgresDb = postgresServer.AddDatabase("issuepit-db");
 
-var kafka = builder.AddKafka("kafka");
+var kafka = builder.AddKafka("kafka")
+    .WithImage("confluentinc/confluent-local", "8.1.0"); // Confluent Platform 8.1.0 (Kafka 4.1.x, KRaft)
 
 var redis = builder.AddValkey("redis");
 
