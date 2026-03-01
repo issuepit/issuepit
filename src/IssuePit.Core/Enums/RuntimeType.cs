@@ -14,4 +14,6 @@ public enum RuntimeType
     HetznerSsh,
     /// <summary>Uses Alibaba OpenSandbox as the execution environment.</summary>
     OpenSandbox,
+    /// <summary>Runs the GitHub Copilot CLI (<c>gh copilot suggest</c>) as the agent process.</summary>
+    CopilotCli,
 }

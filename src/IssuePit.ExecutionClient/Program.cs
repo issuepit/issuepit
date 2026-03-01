@@ -21,6 +21,7 @@ builder.Services.AddSingleton<SshAgentRuntime>();
 builder.Services.AddSingleton<SshDockerAgentRuntime>();
 builder.Services.AddSingleton<HetznerSshAgentRuntime>();
 builder.Services.AddSingleton<OpenSandboxAgentRuntime>();
+builder.Services.AddSingleton<CopilotCliAgentRuntime>();
 builder.Services.AddSingleton<AgentRuntimeFactory>();
 
 builder.Services.AddHostedService<IssueWorker>();

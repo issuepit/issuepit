@@ -13,6 +13,7 @@ public class AgentRuntimeFactory(IServiceProvider services)
         RuntimeType.SshDocker => services.GetRequiredService<SshDockerAgentRuntime>(),
         RuntimeType.HetznerSsh => services.GetRequiredService<HetznerSshAgentRuntime>(),
         RuntimeType.OpenSandbox => services.GetRequiredService<OpenSandboxAgentRuntime>(),
+        RuntimeType.CopilotCli => services.GetRequiredService<CopilotCliAgentRuntime>(),
         _ => throw new NotSupportedException($"Runtime type '{type}' is not supported."),
     };
 }
