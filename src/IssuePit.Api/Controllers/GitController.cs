@@ -2,6 +2,7 @@ using Confluent.Kafka;
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
+using IssuePit.Core.Enums;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
@@ -112,6 +113,21 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         }
     }
 
+    [HttpPost("repo/enable")]
+    public async Task<IActionResult> EnableRepo(Guid projectId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var repo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == projectId);
+        if (repo is null) return NotFound();
+
+        repo.Status = GitRepoStatus.Active;
+        repo.StatusMessage = null;
+        repo.ThrottledUntil = null;
+        await db.SaveChangesAsync();
+
+        return Ok(ToDto(repo));
+    }
+
     // ────────────────────────── read operations ──────────────────────────────
 
     [HttpGet("branches")]
@@ -219,7 +235,10 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         repo.DefaultBranch,
         hasAuth = !string.IsNullOrEmpty(repo.AuthToken) || !string.IsNullOrEmpty(repo.AuthUsername),
         repo.CreatedAt,
-        repo.LastFetchedAt
+        repo.LastFetchedAt,
+        status = repo.Status.ToString(),
+        repo.StatusMessage,
+        repo.ThrottledUntil
     };
 
     /// <summary>Background task: clones/fetches the newly linked repo and triggers an initial CI/CD run.</summary>

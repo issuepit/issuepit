@@ -1,5 +1,6 @@
 using Confluent.Kafka;
 using IssuePit.Core.Data;
+using IssuePit.Core.Enums;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 
@@ -60,10 +61,32 @@ public class GitPollingService(
         {
             if (cancellationToken.IsCancellationRequested) break;
 
+            // Skip disabled repos entirely.
+            if (repo.Status == GitRepoStatus.Disabled)
+            {
+                logger.LogDebug("Repo {RepoId} is disabled — skipping poll", repo.Id);
+                continue;
+            }
+
+            // Skip throttled repos until the throttle window has passed.
+            if (repo.Status == GitRepoStatus.Throttled && repo.ThrottledUntil > DateTime.UtcNow)
+            {
+                logger.LogDebug("Repo {RepoId} is throttled until {Until} — skipping poll", repo.Id, repo.ThrottledUntil);
+                continue;
+            }
+
             try
             {
                 await gitService.FetchAsync(repo);
                 repo.LastFetchedAt = DateTime.UtcNow;
+
+                // Recover from a previous throttle once the fetch succeeds.
+                if (repo.Status == GitRepoStatus.Throttled)
+                {
+                    repo.Status = GitRepoStatus.Active;
+                    repo.StatusMessage = null;
+                    repo.ThrottledUntil = null;
+                }
 
                 var sha = gitService.GetBranchTipSha(repo, repo.DefaultBranch);
                 if (sha is null)
@@ -89,9 +112,50 @@ public class GitPollingService(
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                logger.LogWarning(ex, "Failed to poll repo {RepoId}", repo.Id);
+                var (newStatus, message) = ClassifyGitException(ex);
+                if (newStatus == GitRepoStatus.Disabled)
+                {
+                    repo.Status = GitRepoStatus.Disabled;
+                    repo.StatusMessage = $"Disabled after non-recoverable error: {message}";
+                    logger.LogWarning(ex, "Disabling repo {RepoId}: {Reason}", repo.Id, message);
+                }
+                else
+                {
+                    // Recoverable: throttle for 1 hour.
+                    repo.Status = GitRepoStatus.Throttled;
+                    repo.ThrottledUntil = DateTime.UtcNow.AddHours(1);
+                    repo.StatusMessage = $"Throttled after transient error: {message}";
+                    logger.LogWarning(ex, "Throttling repo {RepoId} for 1 hour: {Reason}", repo.Id, message);
+                }
+
+                try { await db.SaveChangesAsync(cancellationToken); }
+                catch (Exception saveEx) { logger.LogError(saveEx, "Failed to persist status update for repo {RepoId}", repo.Id); }
             }
         }
+    }
+
+    /// <summary>
+    /// Classifies a git exception into <see cref="GitRepoStatus.Disabled"/> (non-recoverable)
+    /// or <see cref="GitRepoStatus.Throttled"/> (transient/recoverable).
+    /// </summary>
+    private static (GitRepoStatus Status, string Message) ClassifyGitException(Exception ex)
+    {
+        var message = ex.Message ?? string.Empty;
+
+        // Non-recoverable: authentication failures and not-found errors.
+        if (message.Contains("authentication", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("credentials", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("401", StringComparison.Ordinal) ||
+            message.Contains("403", StringComparison.Ordinal) ||
+            message.Contains("not found", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("repository not found", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("404", StringComparison.Ordinal))
+        {
+            return (GitRepoStatus.Disabled, message);
+        }
+
+        // Recoverable: server-side errors.
+        return (GitRepoStatus.Throttled, message);
     }
 
     /// <summary>Publishes a CI/CD trigger message to the 'cicd-trigger' Kafka topic.</summary>
