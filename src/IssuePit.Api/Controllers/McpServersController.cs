@@ -105,7 +105,9 @@ public class McpServersController(IssuePitDbContext db, TenantContext ctx) : Con
             .AnyAsync(m => m.Id == id && db.Organizations.Any(o => o.Id == m.OrgId && o.TenantId == ctx.CurrentTenant.Id));
         if (!exists) return NotFound();
 
-        var parsedScope = Enum.TryParse<McpSecretScope>(req.Scope, ignoreCase: true, out var scope) ? scope : McpSecretScope.Global;
+        var parsedScope = McpSecretScope.Global;
+        if (!string.IsNullOrEmpty(req.Scope))
+            Enum.TryParse(req.Scope, ignoreCase: true, out parsedScope);
         if (parsedScope != McpSecretScope.Global && req.ScopeId is null)
             return BadRequest("ScopeId is required when Scope is not Global.");
 
