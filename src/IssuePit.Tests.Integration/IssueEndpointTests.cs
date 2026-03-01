@@ -77,6 +77,31 @@ public class IssueEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task UpdateIssue_WithPartialPayload_ReturnsOkAndPreservesOtherFields()
+    {
+        var (tenantId, projectId) = await SeedProjectAsync();
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+        var issue = new Issue { Id = Guid.NewGuid(), ProjectId = projectId, Title = "Original Title", Body = "Original body", Number = 1 };
+        db.Issues.Add(issue);
+        await db.SaveChangesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        // Update only the body — Title must not be required
+        var response = await _client.PutAsJsonAsync($"/api/issues/{issue.Id}", new { body = "Updated body" });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var result = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal("Original Title", result.GetProperty("title").GetString());
+        Assert.Equal("Updated body", result.GetProperty("body").GetString());
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
     public async Task GetIssues_ForProject_Returns200()
     {
         var (tenantId, projectId) = await SeedProjectAsync();

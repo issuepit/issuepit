@@ -1,10 +1,11 @@
 import { defineStore } from 'pinia'
-import type { Team, TeamMember } from '~/types'
+import type { Team, TeamMember, ProjectMember } from '~/types'
 
 export const useTeamsStore = defineStore('teams', () => {
   const teams = ref<Team[]>([])
   const currentTeam = ref<Team | null>(null)
   const members = ref<TeamMember[]>([])
+  const teamProjects = ref<ProjectMember[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
 
@@ -105,10 +106,24 @@ export const useTeamsStore = defineStore('teams', () => {
     }
   }
 
+  async function fetchTeamProjects(orgId: string, teamId: string) {
+    loading.value = true
+    error.value = null
+    try {
+      const data = await api.get<ProjectMember[]>(`/api/orgs/${orgId}/teams/${teamId}/projects`)
+      teamProjects.value = data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to fetch team projects'
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     teams,
     currentTeam,
     members,
+    teamProjects,
     loading,
     error,
     fetchTeams,
@@ -118,5 +133,6 @@ export const useTeamsStore = defineStore('teams', () => {
     fetchMembers,
     addMember,
     removeMember,
+    fetchTeamProjects,
   }
 })
