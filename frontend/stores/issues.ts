@@ -157,6 +157,17 @@ export const useIssuesStore = defineStore('issues', () => {
     }
   }
 
+  async function updateComment(issueId: string, commentId: string, body: string) {
+    try {
+      const data = await api.put<IssueComment>(`/api/issues/${issueId}/comments/${commentId}`, { body })
+      const idx = currentComments.value.findIndex(c => c.id === commentId)
+      if (idx !== -1) currentComments.value[idx] = data
+      return data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to update comment'
+    }
+  }
+
   async function deleteComment(issueId: string, commentId: string) {
     try {
       await api.del(`/api/issues/${issueId}/comments/${commentId}`)
@@ -286,6 +297,7 @@ export const useIssuesStore = defineStore('issues', () => {
     deleteIssue,
     fetchComments,
     addComment,
+    updateComment,
     deleteComment,
     fetchTasks,
     createTask,

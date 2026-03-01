@@ -147,7 +147,7 @@
                     class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
                     @change="updateMemberRole(member.userId, Number(($event.target as HTMLSelectElement).value))"
                   >
-                    <option v-for="(label, val) in OrgRoleLabels" :key="val" :value="val">{{ label }}</option>
+                    <option v-for="(label, val) in OrgRoleLabels" :key="val" :value="Number(val)">{{ label }}</option>
                   </select>
                 </td>
                 <td class="px-4 py-3 text-right">

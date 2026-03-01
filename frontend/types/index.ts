@@ -164,6 +164,7 @@ export interface Project {
   name: string
   slug: string
   description?: string
+  gitHubRepo?: string
   icon?: string
   color?: string
   isPrivate: boolean
@@ -205,6 +206,7 @@ export interface Issue {
   labels: Label[]
   milestoneId?: string
   parentIssueId?: string
+  parentIssue?: Issue
   dueDate?: string
   estimate?: number
   createdAt: string
@@ -492,4 +494,16 @@ export interface AgentSession {
   statusName: string
   startedAt: string
   endedAt?: string
+}
+
+export interface DashboardAgentSession extends AgentSession {
+  projectId: string
+  projectName: string
+}
+
+export interface IssueHistoryEntry {
+  date: string
+  open: number
+  inProgress: number
+  done: number
 }

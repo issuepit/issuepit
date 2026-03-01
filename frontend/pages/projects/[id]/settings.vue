@@ -41,6 +41,11 @@
               <textarea v-model="form.description" rows="3"
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none" />
             </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">GitHub Repository URL</label>
+              <input v-model="form.gitHubRepo" type="text" placeholder="https://github.com/org/repo"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
             <p v-if="saveGeneralError" class="text-red-400 text-sm">{{ saveGeneralError }}</p>
             <button type="submit" :disabled="savingGeneral"
               class="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
@@ -200,7 +205,7 @@ const orgsStore = useOrgsStore()
 const gitStore = useGitStore()
 
 // ── General form ──────────────────────────────────────────────
-const form = reactive({ name: '', slug: '', description: '' })
+const form = reactive({ name: '', slug: '', description: '', gitHubRepo: '' })
 const savingGeneral = ref(false)
 const saveGeneralError = ref<string | null>(null)
 
@@ -234,6 +239,7 @@ onMounted(async () => {
     form.name = projectsStore.currentProject.name
     form.slug = projectsStore.currentProject.slug
     form.description = projectsStore.currentProject.description || ''
+    form.gitHubRepo = projectsStore.currentProject.gitHubRepo || ''
   }
 
   if (gitStore.repo) {
@@ -278,6 +284,7 @@ async function saveGeneral() {
       name: form.name,
       slug: form.slug,
       description: form.description,
+      gitHubRepo: form.gitHubRepo.trim() || undefined,
     })
   } catch (e: unknown) {
     saveGeneralError.value = e instanceof Error ? e.message : 'Failed to save'
