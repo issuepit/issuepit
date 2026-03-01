@@ -140,7 +140,89 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
         await db.SaveChangesAsync();
         return NoContent();
     }
+
+    // --- Telegram Bots ---
+
+    [HttpGet("telegram-bots")]
+    public async Task<IActionResult> GetTelegramBots()
+    {
+        var bots = await db.TelegramBots
+            .Where(b =>
+                (b.OrgId != null && db.Organizations.Any(o => o.Id == b.OrgId && o.TenantId == tenant.CurrentTenant!.Id)) ||
+                (b.ProjectId != null && db.Projects.Any(p => p.Id == b.ProjectId && p.Organization.TenantId == tenant.CurrentTenant!.Id)))
+            .Select(b => new
+            {
+                b.Id,
+                b.OrgId,
+                b.ProjectId,
+                b.Name,
+                b.ChatId,
+                b.Events,
+                b.IsSilent,
+                b.CreatedAt,
+                // Never return the encrypted token
+            })
+            .ToListAsync();
+        return Ok(bots);
+    }
+
+    [HttpPost("telegram-bots")]
+    public async Task<IActionResult> CreateTelegramBot([FromBody] TelegramBotRequest req)
+    {
+        var bot = new TelegramBot
+        {
+            Id = Guid.NewGuid(),
+            OrgId = req.OrgId,
+            ProjectId = req.ProjectId,
+            Name = req.Name,
+            // In production, encrypt before storing. Placeholder prefix marks it as unencrypted for now.
+            EncryptedBotToken = $"plain:{req.BotToken}",
+            ChatId = req.ChatId,
+            Events = req.Events,
+            IsSilent = req.IsSilent,
+        };
+        db.TelegramBots.Add(bot);
+        await db.SaveChangesAsync();
+        return Created($"/api/config/telegram-bots/{bot.Id}", new { bot.Id, bot.Name, bot.OrgId, bot.ProjectId, bot.ChatId, bot.Events, bot.IsSilent, bot.CreatedAt });
+    }
+
+    [HttpPut("telegram-bots/{id:guid}")]
+    public async Task<IActionResult> UpdateTelegramBot(Guid id, [FromBody] TelegramBotRequest req)
+    {
+        var bot = await db.TelegramBots
+            .Where(b =>
+                (b.OrgId != null && db.Organizations.Any(o => o.Id == b.OrgId && o.TenantId == tenant.CurrentTenant!.Id)) ||
+                (b.ProjectId != null && db.Projects.Any(p => p.Id == b.ProjectId && p.Organization.TenantId == tenant.CurrentTenant!.Id)))
+            .FirstOrDefaultAsync(b => b.Id == id);
+        if (bot is null) return NotFound();
+
+        bot.Name = req.Name;
+        bot.OrgId = req.OrgId;
+        bot.ProjectId = req.ProjectId;
+        bot.ChatId = req.ChatId;
+        bot.Events = req.Events;
+        bot.IsSilent = req.IsSilent;
+        if (!string.IsNullOrEmpty(req.BotToken))
+            bot.EncryptedBotToken = $"plain:{req.BotToken}";
+        await db.SaveChangesAsync();
+        return Ok(new { bot.Id, bot.Name, bot.OrgId, bot.ProjectId, bot.ChatId, bot.Events, bot.IsSilent, bot.CreatedAt });
+    }
+
+    [HttpDelete("telegram-bots/{id:guid}")]
+    public async Task<IActionResult> DeleteTelegramBot(Guid id)
+    {
+        var bot = await db.TelegramBots
+            .Where(b =>
+                (b.OrgId != null && db.Organizations.Any(o => o.Id == b.OrgId && o.TenantId == tenant.CurrentTenant!.Id)) ||
+                (b.ProjectId != null && db.Projects.Any(p => p.Id == b.ProjectId && p.Organization.TenantId == tenant.CurrentTenant!.Id)))
+            .FirstOrDefaultAsync(b => b.Id == id);
+        if (bot is null) return NotFound();
+        db.TelegramBots.Remove(bot);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
 }
 
 public record ApiKeyRequest(Guid OrgId, string Name, ApiKeyProvider Provider, string Value, DateTime? ExpiresAt);
 public record RuntimeConfigRequest(Guid OrgId, string Name, RuntimeType Type, string Configuration, bool IsDefault);
+public record TelegramBotRequest(string Name, string BotToken, string ChatId, int Events, bool IsSilent, Guid? OrgId, Guid? ProjectId);

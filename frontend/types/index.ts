@@ -327,3 +327,32 @@ export interface RuntimeConfiguration {
   isDefault: boolean
   createdAt: string
 }
+
+export enum TelegramNotificationEvent {
+  IssueCreated = 1,
+  IssueUpdated = 2,
+  IssueAssigned = 4,
+  AgentStarted = 8,
+  AgentCompleted = 16,
+  AgentFailed = 32,
+}
+
+export const TelegramNotificationEventLabels: Record<TelegramNotificationEvent, string> = {
+  [TelegramNotificationEvent.IssueCreated]: 'Issue Created',
+  [TelegramNotificationEvent.IssueUpdated]: 'Issue Updated',
+  [TelegramNotificationEvent.IssueAssigned]: 'Issue Assigned',
+  [TelegramNotificationEvent.AgentStarted]: 'Agent Started',
+  [TelegramNotificationEvent.AgentCompleted]: 'Agent Completed',
+  [TelegramNotificationEvent.AgentFailed]: 'Agent Failed',
+}
+
+export interface TelegramBot {
+  id: string
+  orgId?: string
+  projectId?: string
+  name: string
+  chatId: string
+  events: number
+  isSilent: boolean
+  createdAt: string
+}
