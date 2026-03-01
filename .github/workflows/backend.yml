@@ -76,14 +76,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: backend-build
-          path: src/
+          path: .
 
       - name: Unit Tests
         run: >
           dotnet test src/IssuePit.Tests.Unit/IssuePit.Tests.Unit.csproj
           --no-build
           --configuration Release
-          --filter "Category=Unit"
           --verbosity normal
           --logger "trx;LogFileName=unit-results.trx"
 
@@ -110,7 +109,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: backend-build
-          path: src/
+          path: .
 
       - name: Integration Tests
         run: >
@@ -154,7 +153,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: backend-build
-          path: src/
+          path: .
 
       - name: Install and build frontend
         working-directory: frontend
