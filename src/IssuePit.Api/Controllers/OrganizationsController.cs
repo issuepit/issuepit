@@ -51,6 +51,7 @@ public class OrganizationsController(IssuePitDbContext db, TenantContext ctx) : 
         if (org is null) return NotFound();
         org.Name = updated.Name;
         org.Slug = updated.Slug;
+        org.MaxConcurrentRunners = updated.MaxConcurrentRunners;
         await db.SaveChangesAsync();
         return Ok(org);
     }

@@ -52,7 +52,7 @@ export const useOrgsStore = defineStore('orgs', () => {
     }
   }
 
-  async function updateOrg(id: string, payload: { name: string; slug: string }) {
+  async function updateOrg(id: string, payload: { name: string; slug: string; maxConcurrentRunners?: number }) {
     loading.value = true
     error.value = null
     try {

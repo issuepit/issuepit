@@ -92,6 +92,42 @@
           </form>
         </div>
 
+        <!-- Runner Options -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h2 class="font-semibold text-white mb-1">Runner Options</h2>
+          <p class="text-sm text-gray-500 mb-4">Configure CI/CD runner behaviour for this project</p>
+          <form class="space-y-4" @submit.prevent="saveRunnerOptions">
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="block text-sm font-medium text-gray-300">Mount repository in Docker</label>
+                <p class="text-xs text-gray-500 mt-0.5">Bind the workspace directory into the runner container</p>
+              </div>
+              <button
+                type="button"
+                :class="runnerForm.mountRepositoryInDocker ? 'bg-brand-600' : 'bg-gray-700'"
+                class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-gray-900"
+                @click="runnerForm.mountRepositoryInDocker = !runnerForm.mountRepositoryInDocker">
+                <span
+                  :class="runnerForm.mountRepositoryInDocker ? 'translate-x-6' : 'translate-x-1'"
+                  class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" />
+              </button>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">
+                Max concurrent runners
+                <span class="text-gray-500 font-normal">(0 = unlimited)</span>
+              </label>
+              <input v-model.number="runnerForm.maxConcurrentRunners" type="number" min="0"
+                class="w-40 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+            <p v-if="saveRunnerError" class="text-red-400 text-sm">{{ saveRunnerError }}</p>
+            <button type="submit" :disabled="savingRunner"
+              class="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+              {{ savingRunner ? 'Saving…' : 'Save Runner Options' }}
+            </button>
+          </form>
+        </div>
+
         <!-- Agents -->
         <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
           <h2 class="font-semibold text-white mb-1">Agents</h2>
@@ -209,6 +245,11 @@ const form = reactive({ name: '', slug: '', description: '', gitHubRepo: '' })
 const savingGeneral = ref(false)
 const saveGeneralError = ref<string | null>(null)
 
+// ── Runner Options form ────────────────────────────────────────
+const runnerForm = reactive({ mountRepositoryInDocker: true, maxConcurrentRunners: 0 })
+const savingRunner = ref(false)
+const saveRunnerError = ref<string | null>(null)
+
 // ── Repo form ─────────────────────────────────────────────────
 const repoForm = reactive({ remoteUrl: '', defaultBranch: 'main', authUsername: '', authToken: '' })
 
@@ -240,6 +281,8 @@ onMounted(async () => {
     form.slug = projectsStore.currentProject.slug
     form.description = projectsStore.currentProject.description || ''
     form.gitHubRepo = projectsStore.currentProject.gitHubRepo || ''
+    runnerForm.mountRepositoryInDocker = projectsStore.currentProject.mountRepositoryInDocker ?? true
+    runnerForm.maxConcurrentRunners = projectsStore.currentProject.maxConcurrentRunners ?? 0
   }
 
   if (gitStore.repo) {
@@ -276,8 +319,7 @@ async function fetchProjectAgents() {
   }
 }
 
-async function saveGeneral() {
-  savingGeneral.value = true
+async function saveGeneral() {  savingGeneral.value = true
   saveGeneralError.value = null
   try {
     await projectsStore.updateProject(id, {
@@ -293,8 +335,26 @@ async function saveGeneral() {
   }
 }
 
-async function saveRepo() {
-  if (!repoForm.remoteUrl) return
+async function saveRunnerOptions() {
+  savingRunner.value = true
+  saveRunnerError.value = null
+  try {
+    await projectsStore.updateProject(id, {
+      name: form.name,
+      slug: form.slug,
+      description: form.description,
+      gitHubRepo: form.gitHubRepo.trim() || undefined,
+      mountRepositoryInDocker: runnerForm.mountRepositoryInDocker,
+      maxConcurrentRunners: runnerForm.maxConcurrentRunners,
+    })
+  } catch (e: unknown) {
+    saveRunnerError.value = e instanceof Error ? e.message : 'Failed to save runner options'
+  } finally {
+    savingRunner.value = false
+  }
+}
+
+async function saveRepo() {  if (!repoForm.remoteUrl) return
   const payload = {
     remoteUrl: repoForm.remoteUrl,
     defaultBranch: repoForm.defaultBranch || 'main',

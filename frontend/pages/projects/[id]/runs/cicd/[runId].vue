@@ -61,6 +61,19 @@
             <p class="text-sm text-gray-400">{{ duration(store.currentRun.startedAt, store.currentRun.endedAt) }}</p>
           </div>
         </div>
+        <div v-if="store.currentRun.status === CiCdRunStatus.Failed || store.currentRun.status === CiCdRunStatus.Cancelled"
+          class="mt-4 pt-4 border-t border-gray-800 flex justify-end">
+          <button
+            :disabled="retrying"
+            class="flex items-center gap-1.5 text-sm text-brand-400 hover:text-brand-300 disabled:opacity-50 transition-colors"
+            @click="retryRun">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            {{ retrying ? 'Retrying…' : 'Retry Run' }}
+          </button>
+        </div>
       </div>
 
       <!-- Logs -->
@@ -106,6 +119,8 @@ const runId = route.params.runId as string
 
 const store = useCiCdRunsStore()
 
+const retrying = ref(false)
+
 const streamTabs = [
   { label: 'All', value: null },
   { label: 'Stdout', value: 1 },
@@ -122,6 +137,16 @@ const filteredLogs = computed(() =>
 onMounted(async () => {
   await store.fetchRun(runId)
 })
+
+async function retryRun() {
+  retrying.value = true
+  try {
+    await store.retryRun(runId)
+    navigateTo(`/projects/${projectId}/runs`)
+  } finally {
+    retrying.value = false
+  }
+}
 
 function formatDate(d: string) {
   return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })

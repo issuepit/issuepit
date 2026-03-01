@@ -39,6 +39,7 @@ export interface Organization {
   name: string
   slug: string
   description?: string
+  maxConcurrentRunners: number
   createdAt: string
   updatedAt: string
 }
@@ -170,6 +171,8 @@ export interface Project {
   isPrivate: boolean
   issueCount: number
   memberCount: number
+  mountRepositoryInDocker: boolean
+  maxConcurrentRunners: number
   createdAt: string
   updatedAt: string
 }

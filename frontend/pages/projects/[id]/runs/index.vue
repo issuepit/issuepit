@@ -77,6 +77,11 @@
                   @click.stop="cancelRun(run.id)">
                   Cancel
                 </button>
+                <button v-else-if="run.status === CiCdRunStatus.Failed || run.status === CiCdRunStatus.Cancelled"
+                  class="text-xs text-brand-400 hover:text-brand-300 transition-colors"
+                  @click.stop="retryRun(run.id)">
+                  Retry
+                </button>
               </td>
             </tr>
           </tbody>
@@ -170,6 +175,10 @@ onMounted(async () => {
 
 async function cancelRun(runId: string) {
   await store.cancelRun(runId)
+}
+
+async function retryRun(runId: string) {
+  await store.retryRun(runId)
 }
 
 function formatDate(d: string) {
