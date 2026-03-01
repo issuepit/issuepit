@@ -1,3 +1,4 @@
+using Confluent.Kafka;
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
@@ -9,7 +10,7 @@ namespace IssuePit.Api.Controllers;
 
 [ApiController]
 [Route("api/cicd-runs")]
-public class CiCdRunsController(IssuePitDbContext db, TenantContext tenant) : ControllerBase
+public class CiCdRunsController(IssuePitDbContext db, TenantContext tenant, IProducer<string, string> producer) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetRuns([FromQuery] Guid? projectId)
@@ -156,6 +157,32 @@ public class CiCdRunsController(IssuePitDbContext db, TenantContext tenant) : Co
         }
 
         await db.SaveChangesAsync();
+
+        return Ok(new { run.Id, run.Status, StatusName = run.Status.ToString() });
+    }
+
+    [HttpPost("{id:guid}/cancel")]
+    public async Task<IActionResult> CancelRun(Guid id)
+    {
+        var run = await db.CiCdRuns
+            .Include(r => r.Project)
+            .FirstOrDefaultAsync(r => r.Id == id && r.Project.Organization.TenantId == tenant.CurrentTenant!.Id);
+
+        if (run is null) return NotFound();
+
+        if (run.Status is not (CiCdRunStatus.Pending or CiCdRunStatus.Running))
+            return Conflict(new { error = "Run is already in a terminal state.", run.Status, StatusName = run.Status.ToString() });
+
+        run.Status = CiCdRunStatus.Cancelled;
+        run.EndedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        // Signal the CiCdClient worker to kill any in-flight execution for this run.
+        await producer.ProduceAsync("cicd-cancel", new Message<string, string>
+        {
+            Key = run.Id.ToString(),
+            Value = run.Id.ToString(),
+        });
 
         return Ok(new { run.Id, run.Status, StatusName = run.Status.ToString() });
     }

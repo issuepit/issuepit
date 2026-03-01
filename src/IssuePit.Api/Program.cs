@@ -34,6 +34,8 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 });
 
 builder.Services.AddHostedService<RedisLogRelayService>();
+builder.Services.AddHostedService<GitPollingService>();
+builder.Services.AddHostedService<MetricSnapshotService>();
 
 builder.Services.AddScoped<TenantContext>();
 builder.Services.AddScoped<TenantDatabaseService>();

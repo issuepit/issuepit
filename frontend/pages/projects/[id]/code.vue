@@ -133,9 +133,9 @@
       </div>
 
       <!-- Code browser tab -->
-      <div v-if="activeTab === 'code'" class="flex gap-4">
+      <div v-if="activeTab === 'code'" class="flex gap-4 items-start">
         <!-- File tree -->
-        <div class="w-64 shrink-0 bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <div class="w-64 shrink-0 bg-gray-900 border border-gray-800 rounded-xl overflow-hidden sticky top-4">
           <!-- Breadcrumb path -->
           <div class="flex items-center gap-1 px-3 py-2 border-b border-gray-800 text-sm text-gray-400 flex-wrap">
             <button @click="navigateTo('')" class="hover:text-white transition-colors">root</button>
@@ -148,7 +148,7 @@
           <div v-if="store.loading" class="flex justify-center py-6">
             <div class="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
           </div>
-          <div v-else class="overflow-y-auto max-h-[600px]">
+          <div v-else class="overflow-y-auto max-h-[calc(100vh-8rem)]">
             <button v-if="currentPath" @click="navigateUp"
               class="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -214,10 +214,10 @@
             </div>
             <!-- Markdown preview -->
             <div v-else-if="isMdFile && showRenderedMd"
-              class="p-6 overflow-auto max-h-[600px] prose prose-invert prose-sm max-w-none"
+              class="p-6 prose prose-invert prose-sm max-w-none"
               v-html="renderedMd"></div>
             <!-- Code with line numbers -->
-            <div v-else class="overflow-auto max-h-[600px]">
+            <div v-else class="overflow-x-auto">
               <table class="w-full border-collapse text-sm font-mono leading-relaxed">
                 <tbody>
                   <tr v-for="(line, idx) in fileLines" :key="idx"
@@ -226,7 +226,7 @@
                       @click="onLineNumberClick(idx + 1, $event)">
                       {{ idx + 1 }}
                     </td>
-                    <td class="pl-4 pr-4 whitespace-pre text-gray-200 align-top">{{ line }}</td>
+                    <td class="pl-4 pr-4 whitespace-pre align-top" v-html="highlightedLines[idx] ?? ''"></td>
                   </tr>
                 </tbody>
               </table>
@@ -341,6 +341,7 @@
 <script setup lang="ts">
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
+import hljs from 'highlight.js'
 import { useGitStore } from '~/stores/git'
 import { useIssuesStore } from '~/stores/issues'
 import { IssueType, IssuePriority, IssueStatus } from '~/types'
@@ -482,6 +483,58 @@ const renderedMd = computed(() => {
 
 // Line numbers
 const fileLines = computed(() => store.blob?.content.split('\n') ?? [])
+
+// Language map: file extension → highlight.js language alias
+const EXT_TO_LANG: Record<string, string> = {
+  ts: 'typescript', tsx: 'typescript',
+  js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
+  vue: 'html',
+  py: 'python',
+  cs: 'csharp',
+  java: 'java',
+  go: 'go',
+  rs: 'rust',
+  rb: 'ruby',
+  php: 'php',
+  css: 'css', scss: 'scss', less: 'less',
+  html: 'html', htm: 'html',
+  xml: 'xml', svg: 'xml',
+  json: 'json', jsonc: 'json',
+  yaml: 'yaml', yml: 'yaml',
+  sh: 'bash', bash: 'bash', zsh: 'bash',
+  md: 'markdown',
+  sql: 'sql',
+  cpp: 'cpp', cc: 'cpp', cxx: 'cpp',
+  c: 'c', h: 'c',
+  kt: 'kotlin', kts: 'kotlin',
+  swift: 'swift',
+  r: 'r',
+  tf: 'hcl', hcl: 'hcl',
+  toml: 'toml',
+  ini: 'ini',
+  dockerfile: 'dockerfile',
+}
+
+const highlightedLines = computed(() => {
+  const content = store.blob?.content
+  if (!content) return []
+  const path = store.blob?.path.toLowerCase() ?? ''
+  const filename = path.split('/').pop() ?? ''
+  const ext = filename.includes('.') ? filename.split('.').pop()! : filename
+  const lang = EXT_TO_LANG[ext]
+  let highlighted: string
+  try {
+    if (lang && hljs.getLanguage(lang)) {
+      highlighted = hljs.highlight(content, { language: lang }).value
+    } else {
+      highlighted = hljs.highlightAuto(content).value
+    }
+    highlighted = DOMPurify.sanitize(highlighted)
+  } catch {
+    highlighted = content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  }
+  return highlighted.split('\n')
+})
 
 // Line selection
 const selectionStart = ref<number | null>(null)

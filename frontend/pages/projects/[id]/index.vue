@@ -129,6 +129,56 @@
           </div>
         </NuxtLink>
       </div>
+
+      <!-- Metric History Chart -->
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mt-6">
+        <h2 class="font-semibold text-white mb-4">Issue &amp; Run History (last 24 h)</h2>
+        <div v-if="metricSnapshots.length" class="overflow-x-auto">
+          <svg :viewBox="`0 0 ${chartWidth} ${chartHeight}`" class="w-full" style="min-width:500px">
+            <!-- Grid lines -->
+            <line v-for="y in gridYValues" :key="y"
+              :x1="chartPad" :y1="yScale(y)" :x2="chartWidth - chartPad" :y2="yScale(y)"
+              stroke="#374151" stroke-width="1" />
+            <!-- Y labels -->
+            <text v-for="y in gridYValues" :key="`yl-${y}`"
+              :x="chartPad - 6" :y="yScale(y) + 4"
+              text-anchor="end" fill="#6b7280" font-size="10">{{ y }}</text>
+            <!-- Open issues line -->
+            <polyline :points="linePoints('openIssues')" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linejoin="round" />
+            <!-- In-progress issues line -->
+            <polyline :points="linePoints('inProgressIssues')" fill="none" stroke="#6366f1" stroke-width="2" stroke-linejoin="round" />
+            <!-- Done issues line -->
+            <polyline :points="linePoints('doneIssues')" fill="none" stroke="#22c55e" stroke-width="2" stroke-linejoin="round" />
+            <!-- Agent runs line -->
+            <polyline :points="linePoints('totalAgentRuns')" fill="none" stroke="#e879f9" stroke-width="2" stroke-linejoin="round" stroke-dasharray="4 2" />
+            <!-- CI/CD runs line -->
+            <polyline :points="linePoints('totalCiCdRuns')" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linejoin="round" stroke-dasharray="4 2" />
+            <!-- X labels -->
+            <text v-for="(snap, i) in metricSnapshots" :key="`xl-${i}`"
+              :x="xPos(i)" :y="chartHeight - 4"
+              text-anchor="middle" fill="#6b7280" font-size="9">{{ shortTime(snap.recordedAt) }}</text>
+          </svg>
+        </div>
+        <div v-else class="py-8 text-center text-sm text-gray-500">No history yet — snapshots are saved hourly</div>
+        <!-- Legend -->
+        <div class="flex flex-wrap items-center gap-5 mt-3">
+          <span class="flex items-center gap-1.5 text-xs text-gray-400">
+            <span class="w-3 h-0.5 bg-amber-400 rounded-full inline-block"></span> Open
+          </span>
+          <span class="flex items-center gap-1.5 text-xs text-gray-400">
+            <span class="w-3 h-0.5 bg-indigo-400 rounded-full inline-block"></span> In Progress
+          </span>
+          <span class="flex items-center gap-1.5 text-xs text-gray-400">
+            <span class="w-3 h-0.5 bg-green-400 rounded-full inline-block"></span> Done
+          </span>
+          <span class="flex items-center gap-1.5 text-xs text-gray-400">
+            <span class="w-3 h-0.5 bg-fuchsia-400 rounded-full inline-block" style="background: repeating-linear-gradient(90deg,#e879f9 0,#e879f9 4px,transparent 4px,transparent 6px)"></span> Agent Runs
+          </span>
+          <span class="flex items-center gap-1.5 text-xs text-gray-400">
+            <span class="w-3 h-0.5 bg-sky-400 rounded-full inline-block" style="background: repeating-linear-gradient(90deg,#38bdf8 0,#38bdf8 4px,transparent 4px,transparent 6px)"></span> CI/CD Runs
+          </span>
+        </div>
+      </div>
     </template>
 
     <!-- Not found / Error -->
@@ -140,15 +190,64 @@
 </template>
 
 <script setup lang="ts">
+import type { ProjectMetricSnapshot } from '~/types'
 import { useProjectsStore } from '~/stores/projects'
 
 const route = useRoute()
 const id = route.params.id as string
 const store = useProjectsStore()
+const api = useApi()
 
-onMounted(() => store.fetchProject(id))
+const metricSnapshots = ref<ProjectMetricSnapshot[]>([])
+
+onMounted(async () => {
+  await store.fetchProject(id)
+  api.get<ProjectMetricSnapshot[]>(`/api/dashboard/projects/${id}/metric-history`)
+    .then(data => { metricSnapshots.value = data })
+    .catch((e) => { console.error(`Failed to load metric history for project ${id}`, e) })
+})
 
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+// Chart helpers
+const chartWidth = 600
+const chartHeight = 160
+const chartPad = 36
+
+const chartMaxY = computed(() => {
+  const max = Math.max(
+    ...metricSnapshots.value.flatMap(s => [
+      s.openIssues, s.inProgressIssues, s.doneIssues, s.totalAgentRuns, s.totalCiCdRuns,
+    ]),
+    1,
+  )
+  return Math.ceil(max / 5) * 5 || 5
+})
+
+const gridYValues = computed(() => {
+  const step = Math.ceil(chartMaxY.value / 4)
+  return [0, step, step * 2, step * 3, step * 4].filter(v => v <= chartMaxY.value + step)
+})
+
+function yScale(val: number) {
+  const plotH = chartHeight - 30
+  return plotH - (val / chartMaxY.value) * plotH + 5
+}
+
+function xPos(i: number) {
+  const n = metricSnapshots.value.length
+  const plotW = chartWidth - chartPad * 2
+  return chartPad + (n > 1 ? (i / (n - 1)) * plotW : plotW / 2)
+}
+
+function linePoints(key: keyof ProjectMetricSnapshot) {
+  return metricSnapshots.value.map((s, i) => `${xPos(i)},${yScale(s[key] as number)}`).join(' ')
+}
+
+function shortTime(d: string) {
+  const dt = new Date(d)
+  return `${dt.getHours().toString().padStart(2, '0')}:00`
 }
 </script>

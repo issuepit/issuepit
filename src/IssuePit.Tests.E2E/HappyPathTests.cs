@@ -213,6 +213,155 @@ public class HappyPathTests : IClassFixture<AspireFixture>, IAsyncLifetime
         }
     }
 
+    /// <summary>
+    /// API happy path for org teams and members with roles:
+    /// create org → add member → set role → create team → verify.
+    /// </summary>
+    [Fact]
+    public async Task Api_HappyPath_OrgTeamAndMembersWithRoles()
+    {
+        using var client = CreateCookieClient();
+
+        var tenantId = await GetDefaultTenantIdAsync();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"e2e{Guid.NewGuid():N}"[..12];
+        const string password = "TestPass1!";
+
+        // Register owner
+        await client.PostAsJsonAsync("/api/auth/register", new { username, password });
+
+        // Register a second user to add as member
+        using var client2 = CreateCookieClient();
+        client2.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+        var memberUsername = $"e2e{Guid.NewGuid():N}"[..12];
+        var reg2 = await client2.PostAsJsonAsync("/api/auth/register", new { username = memberUsername, password });
+        Assert.Equal(HttpStatusCode.Created, reg2.StatusCode);
+        var me2 = await (await client2.GetAsync("/api/auth/me")).Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var memberId = me2.GetProperty("id").GetString()!;
+
+        // 1. Create an organization
+        var orgSlug = $"e2e-org-{Guid.NewGuid():N}"[..16];
+        var orgResp = await client.PostAsJsonAsync("/api/orgs", new { name = "E2E Team Org", slug = orgSlug });
+        Assert.Equal(HttpStatusCode.Created, orgResp.StatusCode);
+        var org = await orgResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var orgId = org.GetProperty("id").GetString()!;
+
+        // 2. Add second user as org member with Admin role (role=1)
+        var addMemberResp = await client.PostAsJsonAsync($"/api/orgs/{orgId}/members/{memberId}", new { role = 1 });
+        Assert.Equal(HttpStatusCode.Created, addMemberResp.StatusCode);
+
+        // 3. Verify member appears with correct role
+        var membersResp = await client.GetAsync($"/api/orgs/{orgId}/members");
+        Assert.Equal(HttpStatusCode.OK, membersResp.StatusCode);
+        var members = await membersResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var addedMember = members.EnumerateArray().FirstOrDefault(m => m.GetProperty("userId").GetString() == memberId);
+        Assert.NotEqual(default, addedMember);
+        Assert.Equal(1, addedMember.GetProperty("role").GetInt32());
+
+        // 4. Update role to Member (role=0)
+        var updateResp = await client.PutAsJsonAsync($"/api/orgs/{orgId}/members/{memberId}", new { role = 0 });
+        Assert.Equal(HttpStatusCode.NoContent, updateResp.StatusCode);
+
+        var membersAfterUpdate = await (await client.GetAsync($"/api/orgs/{orgId}/members"))
+            .Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var updatedMember = membersAfterUpdate.EnumerateArray().FirstOrDefault(m => m.GetProperty("userId").GetString() == memberId);
+        Assert.Equal(0, updatedMember.GetProperty("role").GetInt32());
+
+        // 5. Create a team in the org
+        var teamSlug = $"e2e-team-{Guid.NewGuid():N}"[..16];
+        var teamResp = await client.PostAsJsonAsync($"/api/orgs/{orgId}/teams", new { name = "E2E Team", slug = teamSlug });
+        Assert.Equal(HttpStatusCode.Created, teamResp.StatusCode);
+        var team = await teamResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var teamId = team.GetProperty("id").GetString()!;
+
+        // 6. Add member to the team
+        var addTeamMemberResp = await client.PostAsJsonAsync($"/api/orgs/{orgId}/teams/{teamId}/members/{memberId}", new { });
+        Assert.Equal(HttpStatusCode.Created, addTeamMemberResp.StatusCode);
+
+        // 7. Verify team member list
+        var teamMembersResp = await client.GetAsync($"/api/orgs/{orgId}/teams/{teamId}/members");
+        Assert.Equal(HttpStatusCode.OK, teamMembersResp.StatusCode);
+        var teamMembers = await teamMembersResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.True(teamMembers.GetArrayLength() >= 1);
+    }
+
+    /// <summary>
+    /// UI E2E test: create a team via the org page UI, then add a member with a role.
+    /// </summary>
+    [Fact]
+    public async Task Ui_HappyPath_CreateTeamAndAddMemberWithRole()
+    {
+        if (FrontendUrl is null)
+            return; // Skip gracefully when no frontend is available
+
+        var tenantId = await GetDefaultTenantIdAsync();
+        using var apiClient = CreateCookieClient();
+        apiClient.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        // Register owner
+        var ownerUsername = $"ui{Guid.NewGuid():N}"[..12];
+        const string password = "TestPass1!";
+        await apiClient.PostAsJsonAsync("/api/auth/register", new { username = ownerUsername, password });
+
+        // Register a second user to be added as member
+        using var apiClient2 = CreateCookieClient();
+        apiClient2.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+        var memberUsername = $"ui{Guid.NewGuid():N}"[..12];
+        await apiClient2.PostAsJsonAsync("/api/auth/register", new { username = memberUsername, password });
+
+        // Create org via API
+        var orgSlug = $"ui-org-{Guid.NewGuid():N}"[..14];
+        var orgResp = await apiClient.PostAsJsonAsync("/api/orgs", new { name = "UI Team Org", slug = orgSlug });
+        var org = await orgResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var orgId = org.GetProperty("id").GetString()!;
+
+        var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
+        var page = await context.NewPageAsync();
+
+        try
+        {
+            // Log in as owner
+            await page.GotoAsync("/login");
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.FillAsync("input[autocomplete='username']", ownerUsername);
+            await page.FillAsync("input[autocomplete='current-password']", password);
+            await page.ClickAsync("button[type='submit']");
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+
+            // Navigate to org page
+            await page.GotoAsync($"/orgs/{orgId}");
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+
+            // Create a team via UI
+            await page.ClickAsync("button:has-text('New Team')");
+            const string teamName = "UI E2E Team";
+            await page.FillAsync("input[placeholder='Engineering']", teamName);
+            await page.ClickAsync("button[type='submit']");
+            await page.WaitForSelectorAsync($"text={teamName}", new PageWaitForSelectorOptions { Timeout = 10_000 });
+
+            // Switch to Members tab and add the second user with Admin role
+            await page.ClickAsync("button:has-text('Members')");
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+
+            await page.ClickAsync("button:has-text('Add Member')");
+            await page.FillAsync("input[placeholder='Search by username…']", memberUsername);
+            await page.WaitForSelectorAsync($"text={memberUsername}", new PageWaitForSelectorOptions { Timeout = 8_000 });
+            await page.ClickAsync($"button:has-text('{memberUsername}')");
+
+            // Select Admin role
+            await page.SelectOptionAsync("select", new[] { "1" });
+            await page.ClickAsync("button:has-text('Add Member')");
+
+            // Verify the member appears in the table
+            await page.WaitForSelectorAsync($"text={memberUsername}", new PageWaitForSelectorOptions { Timeout = 10_000 });
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     /// <summary>Creates an <see cref="HttpClient"/> backed by a <see cref="CookieContainer"/> so session cookies persist across calls.</summary>

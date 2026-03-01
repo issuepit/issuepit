@@ -3,6 +3,7 @@ using System;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace IssuePit.Core.Migrations
 {
     [DbContext(typeof(IssuePitDbContext))]
-    partial class IssuePitDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260301093938_AddGitRepositoryLastKnownCommitSha")]
+    partial class AddGitRepositoryLastKnownCommitSha
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -870,40 +873,6 @@ namespace IssuePit.Core.Migrations
                     b.ToTable("project_members");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.ProjectMetricSnapshot", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("DoneIssues")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("InProgressIssues")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("OpenIssues")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("RecordedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("TotalAgentRuns")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("TotalCiCdRuns")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProjectId");
-
-                    b.ToTable("project_metric_snapshots");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.RuntimeConfiguration", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1518,17 +1487,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("Team");
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.ProjectMetricSnapshot", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Project");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.RuntimeConfiguration", b =>

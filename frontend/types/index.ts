@@ -164,6 +164,7 @@ export interface Project {
   name: string
   slug: string
   description?: string
+  gitHubRepo?: string
   icon?: string
   color?: string
   isPrivate: boolean
@@ -205,6 +206,7 @@ export interface Issue {
   labels: Label[]
   milestoneId?: string
   parentIssueId?: string
+  parentIssue?: Issue
   dueDate?: string
   estimate?: number
   createdAt: string
@@ -242,14 +244,23 @@ export interface McpServerSecret {
   createdAt: string
 }
 
+export interface AgentLinkedMcpServer {
+  id: string
+  name: string
+  url: string
+  description?: string
+  allowedTools: string
+}
+
 export interface Agent {
   id: string
   name: string
   description?: string
   systemPrompt: string
   dockerImage: string
-  allowedTools: string[]
+  allowedTools: string | string[]
   mcpServers: string[]
+  linkedMcpServers?: AgentLinkedMcpServer[]
   isActive: boolean
   runnerType?: RunnerType
   model?: string
@@ -492,4 +503,25 @@ export interface AgentSession {
   statusName: string
   startedAt: string
   endedAt?: string
+}
+
+export interface DashboardAgentSession extends AgentSession {
+  projectId: string
+  projectName: string
+}
+
+export interface IssueHistoryEntry {
+  date: string
+  open: number
+  inProgress: number
+  done: number
+}
+
+export interface ProjectMetricSnapshot {
+  recordedAt: string
+  openIssues: number
+  inProgressIssues: number
+  doneIssues: number
+  totalAgentRuns: number
+  totalCiCdRuns: number
 }

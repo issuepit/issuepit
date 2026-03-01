@@ -1,19 +1,21 @@
 import { defineStore } from 'pinia'
-import type { CiCdRun, AgentSession } from '~/types'
+import type { CiCdRun, AgentSession, DashboardAgentSession } from '~/types'
 
 export const useCiCdRunsStore = defineStore('cicdRuns', () => {
   const runs = ref<CiCdRun[]>([])
   const agentSessions = ref<AgentSession[]>([])
+  const dashboardSessions = ref<DashboardAgentSession[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
 
   const api = useApi()
 
-  async function fetchRuns(projectId: string) {
+  async function fetchRuns(projectId?: string) {
     loading.value = true
     error.value = null
     try {
-      runs.value = await api.get<CiCdRun[]>(`/api/cicd-runs?projectId=${projectId}`)
+      const url = projectId ? `/api/cicd-runs?projectId=${projectId}` : '/api/cicd-runs'
+      runs.value = await api.get<CiCdRun[]>(url)
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Failed to fetch CI/CD runs'
     } finally {
@@ -33,12 +35,40 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     }
   }
 
+  async function cancelRun(runId: string) {
+    try {
+      const updated = await api.post<{ id: string; status: number; statusName: string }>(`/api/cicd-runs/${runId}/cancel`, {})
+      const run = runs.value.find(r => r.id === runId)
+      if (run) {
+        run.status = updated.status
+        run.statusName = updated.statusName
+      }
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to cancel CI/CD run'
+    }
+  }
+  
+  async function fetchDashboardSessions() {
+    loading.value = true
+    error.value = null
+    try {
+      dashboardSessions.value = await api.get<DashboardAgentSession[]>('/api/dashboard/agent-sessions')
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to fetch agent sessions'
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     runs,
     agentSessions,
+    dashboardSessions,
     loading,
     error,
     fetchRuns,
     fetchAgentSessions,
+    cancelRun,
+    fetchDashboardSessions,
   }
 })

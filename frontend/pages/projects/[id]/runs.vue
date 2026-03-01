@@ -46,6 +46,7 @@
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Source</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Started</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Duration</th>
+              <th class="px-4 py-3" />
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-800">
@@ -68,6 +69,13 @@
               </td>
               <td class="px-4 py-3 text-gray-400 text-xs">{{ formatDate(run.startedAt) }}</td>
               <td class="px-4 py-3 text-gray-400 text-xs">{{ duration(run.startedAt, run.endedAt) }}</td>
+              <td class="px-4 py-3 text-right">
+                <button v-if="run.status === CiCdRunStatus.Pending || run.status === CiCdRunStatus.Running"
+                  class="text-xs text-red-400 hover:text-red-300 transition-colors"
+                  @click="cancelRun(run.id)">
+                  Cancel
+                </button>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -154,6 +162,10 @@ onMounted(async () => {
     store.fetchAgentSessions(id),
   ])
 })
+
+async function cancelRun(runId: string) {
+  await store.cancelRun(runId)
+}
 
 function formatDate(d: string) {
   return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })

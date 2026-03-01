@@ -1,0 +1,184 @@
+name: Helper Containers Build & Push
+
+on:
+  push:
+    branches: [main]
+    tags: ['helper-containers-v*']
+    paths:
+      - 'docker/Dockerfile.helper-*'
+      - 'docker/helper-containers/**'
+  merge_group:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag override (defaults to short SHA)'
+        required: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ toLower(github.repository_owner) }}/issuepit
+  # .NET major version bundled in the Playwright image (update when changing PLAYWRIGHT_VERSION)
+  DOTNET_MAJOR: "10"
+  NODE_MAJOR: "24"
+  PLAYWRIGHT_VERSION: "v1.50.1"
+  ACT_VERSION: "0.2.74"
+  OPENCODE_VERSION: "latest"
+
+jobs:
+  build-base:
+    name: Build & Push helper-base
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      # Pass the primary image reference to dependent jobs so they can FROM it directly.
+      base-image: ${{ steps.base-ref.outputs.image }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'merge_group'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-helper-base
+          tags: |
+            type=ref,event=branch,suffix=-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }}
+            type=semver,pattern={{version}},suffix=-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }},event=tag
+            type=semver,pattern={{major}}.{{minor}},suffix=-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }},event=tag
+            type=sha,prefix=sha-,format=short
+            type=raw,value=dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/helper-containers-v') }}
+            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push helper-base
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.helper-base
+          push: ${{ github.event_name != 'merge_group' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            PLAYWRIGHT_VERSION=${{ env.PLAYWRIGHT_VERSION }}
+            NODE_MAJOR=${{ env.NODE_MAJOR }}
+          cache-from: type=gha,scope=helper-base
+          cache-to: type=gha,mode=max,scope=helper-base
+
+      - name: Set base image output
+        id: base-ref
+        run: |
+          echo "image=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-helper-base@${{ steps.build.outputs.digest }}" >> "$GITHUB_OUTPUT"
+
+  build-act:
+    name: Build & Push helper-act
+    needs: build-base
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'merge_group'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-helper-act
+          tags: |
+            type=ref,event=branch,suffix=-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }}
+            type=semver,pattern={{version}},suffix=-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }},event=tag
+            type=semver,pattern={{major}}.{{minor}},suffix=-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }},event=tag
+            type=sha,prefix=sha-,format=short
+            type=raw,value=dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/helper-containers-v') }}
+            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push helper-act
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.helper-act
+          push: ${{ github.event_name != 'merge_group' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BASE_IMAGE=${{ needs.build-base.outputs.base-image }}
+            ACT_VERSION=${{ env.ACT_VERSION }}
+          cache-from: type=gha,scope=helper-act
+          cache-to: type=gha,mode=max,scope=helper-act
+
+  build-opencode:
+    name: Build & Push helper-opencode
+    needs: build-base
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'merge_group'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-helper-opencode
+          tags: |
+            type=ref,event=branch,suffix=-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }}
+            type=semver,pattern={{version}},suffix=-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }},event=tag
+            type=semver,pattern={{major}}.{{minor}},suffix=-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }},event=tag
+            type=sha,prefix=sha-,format=short
+            type=raw,value=dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/helper-containers-v') }}
+            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push helper-opencode
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.helper-opencode
+          push: ${{ github.event_name != 'merge_group' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BASE_IMAGE=${{ needs.build-base.outputs.base-image }}
+            OPENCODE_VERSION=${{ env.OPENCODE_VERSION }}
+          cache-from: type=gha,scope=helper-opencode
+          cache-to: type=gha,mode=max,scope=helper-opencode
