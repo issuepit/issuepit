@@ -142,4 +142,64 @@ public class CiCdEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     private sealed record SyncResult(Guid id, int status, string statusName);
+
+    [Fact]
+    public async Task Retry_FailedRun_Returns_Accepted()
+    {
+        var (tenantId, _, projectId) = await SeedProjectAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        // Create a failed run via external-sync
+        var syncResponse = await _client.PostAsJsonAsync("/api/cicd-runs/external-sync", new
+        {
+            projectId,
+            externalSource = "github",
+            externalRunId = $"retry-test-{Guid.NewGuid()}",
+            commitSha = "abc123",
+            branch = "main",
+            workflow = "ci.yml",
+            status = "completed",
+            conclusion = "failure",
+        });
+        Assert.Equal(HttpStatusCode.OK, syncResponse.StatusCode);
+        var syncBody = await syncResponse.Content.ReadFromJsonAsync<SyncResult>();
+        Assert.NotNull(syncBody);
+        Assert.Equal("Failed", syncBody.statusName);
+
+        // Retry the failed run
+        var retryResponse = await _client.PostAsJsonAsync($"/api/cicd-runs/{syncBody.id}/retry", new { });
+        Assert.Equal(HttpStatusCode.Accepted, retryResponse.StatusCode);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
+    public async Task Retry_RunningRun_Returns_Conflict()
+    {
+        var (tenantId, _, projectId) = await SeedProjectAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        // Create a running run via external-sync
+        var syncResponse = await _client.PostAsJsonAsync("/api/cicd-runs/external-sync", new
+        {
+            projectId,
+            externalSource = "github",
+            externalRunId = $"retry-conflict-{Guid.NewGuid()}",
+            commitSha = "def456",
+            status = "in_progress",
+        });
+        Assert.Equal(HttpStatusCode.OK, syncResponse.StatusCode);
+        var syncBody = await syncResponse.Content.ReadFromJsonAsync<SyncResult>();
+        Assert.NotNull(syncBody);
+
+        // Try to retry a running run — should be rejected
+        var retryResponse = await _client.PostAsJsonAsync($"/api/cicd-runs/{syncBody.id}/retry", new { });
+        Assert.Equal(HttpStatusCode.Conflict, retryResponse.StatusCode);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
 }
