@@ -700,3 +700,5 @@ onMounted(async () => {
 
 onUnmounted(() => store.reset())
 </script>
+
+<style>@import 'highlight.js/styles/github-dark.css';</style>
