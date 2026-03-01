@@ -123,8 +123,8 @@ const retrying = ref(false)
 
 const streamTabs = [
   { label: 'All', value: null },
-  { label: 'Stdout', value: 1 },
-  { label: 'Stderr', value: 2 },
+  { label: 'Stdout', value: 0 },
+  { label: 'Stderr', value: 1 },
 ]
 const activeStream = ref<number | null>(null)
 
