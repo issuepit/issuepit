@@ -39,7 +39,7 @@ When an issue is assigned to an agent mode, `IssuePit.ExecutionClient` spawns a 
 
 ## Creating an Agent Mode
 
-![Agents page](https://github.com/user-attachments/assets/73ea2a27-90c3-4b7a-8521-88b472c78b7d)
+![Agents page](https://github.com/user-attachments/assets/221ddf9b-6e1b-49e3-8302-5d47dbecbf0a)
 
 1. Go to **Configuration → Agents** (or **Agents** in the sidebar).
 2. Click **New Agent**.

@@ -20,7 +20,29 @@ nav_order: 1
 
 ---
 
-![IssuePit Dashboard](https://github.com/user-attachments/assets/373e93ec-e591-4cfa-948c-3ac86cc22249)
+## Screenshots
+
+![IssuePit Dashboard](https://github.com/user-attachments/assets/1a80823d-41f0-4bf5-bf7a-3ca8f01dfab2)
+
+*Dashboard — overview of projects, open issues, and agent count.*
+
+![Projects list](https://github.com/user-attachments/assets/3fbde9ad-827a-4be3-a87d-880626634340)
+
+*Projects page — each project card shows its slug and description.*
+
+![Issue list](https://github.com/user-attachments/assets/63af9ac8-f5e7-49c7-9254-894e6172fc05)
+
+*Issue list — filterable by status, priority, and type.*
+
+![Kanban board](https://github.com/user-attachments/assets/19c72963-a4c9-463f-a692-f6e2d6aeea1d)
+
+*Kanban board — issues organised across Backlog → To Do → In Progress → In Review → Done.*
+
+![Agents page](https://github.com/user-attachments/assets/221ddf9b-6e1b-49e3-8302-5d47dbecbf0a)
+
+*Agents — Plan, Code, and Evaluate agent modes ready to be activated.*
+
+---
 
 ## Quick Navigation
 
