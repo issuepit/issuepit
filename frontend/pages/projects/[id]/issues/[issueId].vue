@@ -183,6 +183,32 @@
             </div>
             <p v-else class="text-sm text-gray-600 mb-4">No comments yet.</p>
 
+            <!-- Code Review Comments -->
+            <div v-if="store.currentCodeReviewComments.length" class="mb-5">
+              <h3 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">
+                Code Review
+                <span class="ml-1 text-gray-600">{{ store.currentCodeReviewComments.length }}</span>
+              </h3>
+              <div class="space-y-3 pl-3 border-l-2 border-brand-800">
+                <div v-for="rc in store.currentCodeReviewComments" :key="rc.id"
+                  class="bg-gray-800/60 rounded-lg overflow-hidden">
+                  <div class="flex items-center gap-2 px-3 py-1.5 bg-gray-800 border-b border-gray-700/50">
+                    <svg class="w-3.5 h-3.5 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span class="text-xs text-brand-400 font-mono truncate">{{ rc.filePath }}</span>
+                    <span class="text-xs text-gray-500 shrink-0">
+                      L{{ rc.startLine }}{{ rc.startLine !== rc.endLine ? `–${rc.endLine}` : '' }}
+                    </span>
+                    <code class="text-xs text-gray-600 font-mono shrink-0">{{ rc.sha }}</code>
+                  </div>
+                  <pre v-if="rc.snippet" class="text-xs font-mono text-gray-300 px-3 py-2 overflow-x-auto bg-gray-900/50 border-b border-gray-700/50">{{ rc.snippet }}</pre>
+                  <div class="px-3 py-2 text-sm text-gray-300">{{ rc.body }}</div>
+                </div>
+              </div>
+            </div>
+
             <!-- Add comment -->
             <div class="border border-gray-700 rounded-lg overflow-hidden">
               <textarea v-model="newComment" rows="3" placeholder="Leave a comment..."
@@ -403,6 +429,7 @@ onMounted(async () => {
   }
   await Promise.all([
     store.fetchComments(issueId),
+    store.fetchCodeReviewComments(issueId),
     store.fetchTasks(issueId),
     labelsStore.fetchLabels(id),
     agentsStore.fetchAgents(),

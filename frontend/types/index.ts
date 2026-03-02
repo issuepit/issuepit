@@ -196,6 +196,18 @@ export interface IssueComment {
   updatedAt: string
 }
 
+export interface CodeReviewComment {
+  id: string
+  issueId: string
+  filePath: string
+  startLine: number
+  endLine: number
+  sha: string
+  snippet?: string
+  body: string
+  createdAt: string
+}
+
 export interface Issue {
   id: string
   projectId: string

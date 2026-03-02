@@ -485,6 +485,7 @@ interface ReviewComment {
   lines: { start: number; end: number }
   comment: string
   snippet: string
+  sha: string
 }
 
 const reviewComments = ref<ReviewComment[]>([])
@@ -559,7 +560,8 @@ function addGeneralComment() {
     filePath: '(general)',
     lines: { start: 0, end: 0 },
     comment: generalComment.value.trim(),
-    snippet: ''
+    snippet: '',
+    sha: compareSha.value ? compareSha.value.slice(0, 7) : compareBranch.value
   })
   generalComment.value = ''
 }
@@ -662,11 +664,13 @@ function submitInlineComment(file: GitDiffFile, hunk: GitDiffHunk, comment: Inli
   const startNum = startLine ? (startLine.newLineNumber ?? startLine.oldLineNumber ?? 0) : 0
   const endNum = endLine ? (endLine.newLineNumber ?? endLine.oldLineNumber ?? 0) : 0
   const snippet = hunk.lines.slice(comment.lineIdx, comment.endLineIdx + 1).map(l => l.content).join('\n')
+  const sha = compareSha.value ? compareSha.value.slice(0, 7) : compareBranch.value
   reviewComments.value.push({
     filePath: file.newPath,
     lines: { start: startNum, end: endNum },
     comment: comment.text.trim(),
-    snippet
+    snippet,
+    sha
   })
   // Mark as submitted in-place so it stays visible at its diff position
   comment.submitted = true
@@ -683,32 +687,23 @@ async function finishReview() {
     const versionRef = compareSha.value ? compareSha.value.slice(0, 7) : compareBranch.value
     const branchSuffix = !MAIN_BRANCHES.includes(compareBranch.value) ? ` (${compareBranch.value})` : ''
     const diffRef = `\`${baseBranch.value}\` → \`${versionRef}\`${branchSuffix}`
+
+    // Build the main comment body from general comments only
+    const generalComments = reviewComments.value.filter(c => c.filePath === '(general)')
+    const inlineCommentsList = reviewComments.value.filter(c => c.filePath !== '(general)')
     const bodyLines: string[] = [
       `> **Diff:** ${diffRef}\n`
     ]
-    for (const c of reviewComments.value) {
-      if (c.filePath === '(general)') {
-        bodyLines.push(c.comment)
-      } else {
-        const lineRange = c.lines.start === c.lines.end
-          ? `line ${c.lines.start}`
-          : `lines ${c.lines.start}–${c.lines.end}`
-        const ext = c.filePath.split('.').pop() ?? ''
-        bodyLines.push(`### \`${c.filePath}\` (${lineRange}) @ \`${versionRef}\`\n\`\`\`${ext}\n${c.snippet}\n\`\`\`\n\n${c.comment}`)
-      }
+    for (const c of generalComments) {
+      bodyLines.push(c.comment)
     }
     const body = bodyLines.join('\n\n---\n\n')
 
+    let issueId: string | undefined
     if (targetIssueId.value.trim()) {
       // Add as a comment to an existing issue
-      const existingIssueId = targetIssueId.value.trim()
-      await issuesStore.addComment(existingIssueId, body)
-      clearReviewStorage()
-      reviewComments.value = []
-      showFinishModal.value = false
-      reviewTitle.value = ''
-      targetIssueId.value = ''
-      router.push(`/projects/${id}/issues/${existingIssueId}`)
+      issueId = targetIssueId.value.trim()
+      await issuesStore.addComment(issueId, body)
     } else {
       // Create a new issue and auto-assign to the current user
       const title = reviewTitle.value.trim() || `Code Review: ${compareBranch.value} → ${baseBranch.value} (${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })})`
@@ -722,14 +717,28 @@ async function finishReview() {
       if (newIssue && authStore.user) {
         await issuesStore.addAssignee(newIssue.id, { userId: authStore.user.id })
       }
-      clearReviewStorage()
-      reviewComments.value = []
-      showFinishModal.value = false
-      reviewTitle.value = ''
-      targetIssueId.value = ''
-      if (newIssue) {
-        router.push(`/projects/${id}/issues/${newIssue.id}`)
-      }
+      issueId = newIssue?.id
+    }
+
+    // Persist each inline code-review comment as a structured CodeReviewComment
+    if (issueId && inlineCommentsList.length > 0) {
+      await issuesStore.addCodeReviewCommentsBatch(issueId, inlineCommentsList.map(c => ({
+        filePath: c.filePath,
+        startLine: c.lines.start,
+        endLine: c.lines.end,
+        sha: c.sha,
+        snippet: c.snippet || undefined,
+        body: c.comment
+      })))
+    }
+
+    clearReviewStorage()
+    reviewComments.value = []
+    showFinishModal.value = false
+    reviewTitle.value = ''
+    targetIssueId.value = ''
+    if (issueId) {
+      router.push(`/projects/${id}/issues/${issueId}`)
     }
   } finally {
     savingReview.value = false

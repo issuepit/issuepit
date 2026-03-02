@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { Issue, IssuePriority, IssueType, IssueComment, IssueTask, IssueAssignee, Label } from '~/types'
+import type { Issue, IssuePriority, IssueType, IssueComment, IssueTask, IssueAssignee, Label, CodeReviewComment } from '~/types'
 import { IssueStatus } from '~/types'
 
 interface IssueFilters {
@@ -16,6 +16,7 @@ export const useIssuesStore = defineStore('issues', () => {
   const issues = ref<Issue[]>([])
   const currentIssue = ref<Issue | null>(null)
   const currentComments = ref<IssueComment[]>([])
+  const currentCodeReviewComments = ref<CodeReviewComment[]>([])
   const currentTasks = ref<IssueTask[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
@@ -179,6 +180,37 @@ export const useIssuesStore = defineStore('issues', () => {
     }
   }
 
+  // --- Code Review Comments ---
+
+  async function fetchCodeReviewComments(issueId: string) {
+    try {
+      const data = await api.get<CodeReviewComment[]>(`/api/issues/${issueId}/code-review-comments`)
+      currentCodeReviewComments.value = data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to fetch code review comments'
+    }
+  }
+
+  async function addCodeReviewComment(issueId: string, comment: Omit<CodeReviewComment, 'id' | 'issueId' | 'createdAt'>) {
+    try {
+      const data = await api.post<CodeReviewComment>(`/api/issues/${issueId}/code-review-comments`, comment)
+      currentCodeReviewComments.value.push(data)
+      return data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to add code review comment'
+    }
+  }
+
+  async function addCodeReviewCommentsBatch(issueId: string, comments: Omit<CodeReviewComment, 'id' | 'issueId' | 'createdAt'>[]) {
+    try {
+      const data = await api.post<CodeReviewComment[]>(`/api/issues/${issueId}/code-review-comments/batch`, comments)
+      currentCodeReviewComments.value.push(...data)
+      return data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to add code review comments'
+    }
+  }
+
   // --- Tasks ---
 
   async function fetchTasks(issueId: string) {
@@ -298,6 +330,7 @@ export const useIssuesStore = defineStore('issues', () => {
     issues,
     currentIssue,
     currentComments,
+    currentCodeReviewComments,
     currentTasks,
     loading,
     error,
@@ -315,6 +348,9 @@ export const useIssuesStore = defineStore('issues', () => {
     addComment,
     updateComment,
     deleteComment,
+    fetchCodeReviewComments,
+    addCodeReviewComment,
+    addCodeReviewCommentsBatch,
     fetchTasks,
     createTask,
     toggleTask,

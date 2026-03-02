@@ -244,6 +244,64 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         return NoContent();
     }
 
+    // --- Code Review Comments ---
+
+    [HttpGet("{id:guid}/code-review-comments")]
+    public async Task<IActionResult> GetCodeReviewComments(Guid id)
+    {
+        var comments = await db.CodeReviewComments
+            .Where(c => c.IssueId == id)
+            .OrderBy(c => c.CreatedAt)
+            .ToListAsync();
+        return Ok(comments);
+    }
+
+    [HttpPost("{id:guid}/code-review-comments")]
+    public async Task<IActionResult> AddCodeReviewComment(Guid id, [FromBody] CodeReviewCommentRequest req)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var issue = await db.Issues.FindAsync(id);
+        if (issue is null) return NotFound();
+        var comment = new CodeReviewComment
+        {
+            Id = Guid.NewGuid(),
+            IssueId = id,
+            FilePath = req.FilePath,
+            StartLine = req.StartLine,
+            EndLine = req.EndLine,
+            Sha = req.Sha,
+            Snippet = req.Snippet,
+            Body = req.Body,
+            CreatedAt = DateTime.UtcNow,
+        };
+        db.CodeReviewComments.Add(comment);
+        await db.SaveChangesAsync();
+        return Created($"/api/issues/{id}/code-review-comments/{comment.Id}", comment);
+    }
+
+    [HttpPost("{id:guid}/code-review-comments/batch")]
+    public async Task<IActionResult> AddCodeReviewCommentsBatch(Guid id, [FromBody] IEnumerable<CodeReviewCommentRequest> requests)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var issue = await db.Issues.FindAsync(id);
+        if (issue is null) return NotFound();
+        var comments = requests.Select(req => new CodeReviewComment
+        {
+            Id = Guid.NewGuid(),
+            IssueId = id,
+            FilePath = req.FilePath,
+            StartLine = req.StartLine,
+            EndLine = req.EndLine,
+            Sha = req.Sha,
+            Snippet = req.Snippet,
+            Body = req.Body,
+            CreatedAt = DateTime.UtcNow,
+        }).ToList();
+        db.CodeReviewComments.AddRange(comments);
+        await db.SaveChangesAsync();
+        return Ok(comments);
+    }
+
     // --- Assignees ---
 
     [HttpPost("{id:guid}/assignees")]
@@ -318,6 +376,7 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
 }
 
 public record CommentRequest(string Body, Guid? UserId);
+public record CodeReviewCommentRequest(string FilePath, int StartLine, int EndLine, string Sha, string? Snippet, string Body);
 public record AssigneeRequest(Guid? UserId, Guid? AgentId);
 public record LabelAssignRequest(Guid LabelId);
 public record UpdateIssueRequest(

@@ -640,6 +640,7 @@ interface ReviewComment {
   lines: { start: number; end: number }
   comment: string
   snippet: string
+  sha: string
 }
 
 const reviewComments = ref<ReviewComment[]>([])
@@ -650,11 +651,13 @@ function addReviewComment() {
   if (!commentText.value.trim() || !selectedLines.value || !store.blob) return
   const lines = fileLines.value
   const snippet = lines.slice(selectedLines.value.start - 1, selectedLines.value.end).join('\n')
+  const branchSha = store.branches.find(b => b.name === selectedBranch.value)?.sha ?? ''
   reviewComments.value.push({
     filePath: store.blob.path,
     lines: { ...selectedLines.value },
     comment: commentText.value.trim(),
-    snippet
+    snippet,
+    sha: branchSha ? branchSha.slice(0, 7) : selectedBranch.value
   })
   clearSelection()
 }
@@ -667,24 +670,28 @@ async function finishReview() {
   if (reviewComments.value.length === 0) return
   savingReview.value = true
   try {
-    const body = reviewComments.value.map(c => {
-      const lineRange = c.lines.start === c.lines.end
-        ? `line ${c.lines.start}`
-        : `lines ${c.lines.start}–${c.lines.end}`
-      const ext = c.filePath.split('.').pop() ?? ''
-      return `### \`${c.filePath}\` (${lineRange})\n\`\`\`${ext}\n${c.snippet}\n\`\`\`\n\n${c.comment}`
-    }).join('\n\n---\n\n')
     const now = new Date()
     const title = `Code Review – ${selectedBranch.value} – ${now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
     const newIssue = await issuesStore.createIssue(id, {
       title,
-      body,
+      body: '',
       type: IssueType.Issue,
       priority: IssuePriority.Medium,
       status: IssueStatus.Backlog
     })
     if (newIssue && authStore.user) {
       await issuesStore.addAssignee(newIssue.id, { userId: authStore.user.id })
+    }
+    // Persist each comment as a structured CodeReviewComment
+    if (newIssue && reviewComments.value.length > 0) {
+      await issuesStore.addCodeReviewCommentsBatch(newIssue.id, reviewComments.value.map(c => ({
+        filePath: c.filePath,
+        startLine: c.lines.start,
+        endLine: c.lines.end,
+        sha: c.sha,
+        snippet: c.snippet || undefined,
+        body: c.comment
+      })))
     }
     reviewComments.value = []
     if (newIssue) {
