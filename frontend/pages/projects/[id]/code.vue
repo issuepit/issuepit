@@ -221,6 +221,7 @@
               <table class="w-full border-collapse text-sm font-mono leading-relaxed">
                 <tbody>
                   <tr v-for="(line, idx) in fileLines" :key="idx"
+                    :id="`L${idx + 1}`"
                     :class="isLineInSelection(idx + 1) ? 'bg-brand-900/30' : ''">
                     <td class="select-none text-right text-gray-600 pr-3 pl-3 w-12 border-r border-gray-800/60 align-top cursor-pointer hover:text-brand-400 transition-colors"
                       @click="onLineNumberClick(idx + 1, $event)">
@@ -344,12 +345,15 @@ import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
 import { useGitStore } from '~/stores/git'
 import { useIssuesStore } from '~/stores/issues'
+import { useAuthStore } from '~/stores/auth'
 import { IssueType, IssuePriority, IssueStatus } from '~/types'
 
 const route = useRoute()
 const router = useRouter()
 const id = route.params.id as string
 const store = useGitStore()
+const issuesStore = useIssuesStore()
+const authStore = useAuthStore()
 
 const repoChecked = ref(false)
 const fetching = ref(false)
@@ -409,6 +413,13 @@ onMounted(async () => {
   repoChecked.value = true
   if (store.repo) {
     await initRepo()
+    // Scroll to line anchor if present in URL hash
+    if (import.meta.client && window.location.hash) {
+      nextTick(() => {
+        const el = document.getElementById(window.location.hash.slice(1))
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
+    }
   }
 })
 
@@ -605,6 +616,10 @@ function onLineNumberClick(lineNum: number, event: MouseEvent) {
     showCommentPanel.value = false
     commentText.value = ''
   }
+  // Update URL hash for permanent link (single line or start of range)
+  if (import.meta.client) {
+    window.location.hash = `L${lineNum}`
+  }
 }
 
 function clearSelection() {
@@ -629,7 +644,6 @@ interface ReviewComment {
 
 const reviewComments = ref<ReviewComment[]>([])
 const savingReview = ref(false)
-const issuesStore = useIssuesStore()
 const reviewedFilesCount = computed(() => new Set(reviewComments.value.map(c => c.filePath)).size)
 
 function addReviewComment() {
@@ -662,14 +676,20 @@ async function finishReview() {
     }).join('\n\n---\n\n')
     const now = new Date()
     const title = `Code Review – ${selectedBranch.value} – ${now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-    await issuesStore.createIssue(id, {
+    const newIssue = await issuesStore.createIssue(id, {
       title,
       body,
       type: IssueType.Issue,
       priority: IssuePriority.Medium,
       status: IssueStatus.Backlog
     })
+    if (newIssue && authStore.user) {
+      await issuesStore.addAssignee(newIssue.id, { userId: authStore.user.id })
+    }
     reviewComments.value = []
+    if (newIssue) {
+      router.push(`/projects/${id}/issues/${newIssue.id}`)
+    }
   } finally {
     savingReview.value = false
   }
