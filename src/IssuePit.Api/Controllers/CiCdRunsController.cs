@@ -181,7 +181,7 @@ public class CiCdRunsController(IssuePitDbContext db, TenantContext tenant, IPro
             branch = run.Branch,
             workflow = run.Workflow,
             agentSessionId = run.AgentSessionId,
-            workspacePath = (string?)null,
+            workspacePath = run.WorkspacePath,
             eventName = "push",
         });
 

@@ -137,6 +137,7 @@ public class CiCdWorker(
             CommitSha = trigger.CommitSha ?? key,
             Branch = trigger.Branch,
             Workflow = trigger.Workflow,
+            WorkspacePath = trigger.WorkspacePath,
             Status = CiCdRunStatus.Running,
             StartedAt = DateTime.UtcNow,
         };
