@@ -493,8 +493,12 @@ public partial class DockerCiCdRuntime(
     /// <summary>
     /// Builds a POSIX shell command that:
     /// <list type="bullet">
-    ///   <item>Creates <c>/root/.config/act/actrc</c> with platform-image mappings if it does not already exist,
-    ///     preventing the interactive first-run prompt that causes EOF in non-interactive containers.</item>
+    ///   <item>Always writes <c>/root/.config/act/actrc</c> with platform-image mappings,
+    ///     preventing the interactive first-run prompt that causes EOF in non-interactive containers.
+    ///     The file is unconditionally overwritten so that a pre-existing (possibly empty) file baked
+    ///     into the image does not prevent the platform configuration from taking effect.</item>
+    ///   <item>Passes <c>-P</c> platform flags directly on the <c>act</c> command line as an additional
+    ///     safeguard so that the prompt is suppressed even if the actrc is not found or parsed.</item>
     ///   <item>Then <c>exec</c>s the <c>act</c> command so that the container process is replaced by <c>act</c>,
     ///     ensuring signal forwarding and the correct exit code.</item>
     /// </list>
@@ -502,22 +506,25 @@ public partial class DockerCiCdRuntime(
     private static string BuildActrcInjectionScript(string actRunnerImage, IList<string> cmd)
     {
         // Build the actrc content: map common Ubuntu runner labels to the configured image.
-        var platforms = new[]
-        {
-            $"-P ubuntu-latest={actRunnerImage}",
-            $"-P ubuntu-24.04={actRunnerImage}",
-            $"-P ubuntu-22.04={actRunnerImage}",
-            $"-P ubuntu-20.04={actRunnerImage}",
-        };
+        var platformLabels = new[] { "ubuntu-latest", "ubuntu-24.04", "ubuntu-22.04", "ubuntu-20.04" };
+        var platforms = platformLabels.Select(label => $"-P {label}={actRunnerImage}").ToArray();
+
         // Use printf with \n to write each line reliably; single-quoted to avoid shell expansion.
+        // The file is always overwritten (no [ ! -f ] guard) so a pre-existing empty actrc baked
+        // into the image does not silently skip the platform configuration.
         var actrcBody = string.Join("\\n", platforms);
 
+        // Also pass -P flags directly on the command line so the first-run interactive
+        // image-selection prompt is suppressed even when the actrc is not read
+        // (e.g. wrong XDG_CONFIG_HOME, stale image layer, or non-root HOME directory).
+        var platformCmdArgs = platformLabels.SelectMany(label => new[] { "-P", $"{label}={actRunnerImage}" });
+        var fullCmd = cmd.Concat(platformCmdArgs).ToList();
+
         // exec replaces the shell with act so signals and exit codes propagate correctly.
-        var actCmd = "exec " + string.Join(" ", cmd.Select(ShellQuote));
+        var actCmd = "exec " + string.Join(" ", fullCmd.Select(ShellQuote));
 
         return
             "mkdir -p /root/.config/act && " +
-            $"[ ! -f /root/.config/act/actrc ] && " +
             $"printf '{actrcBody}\\n' > /root/.config/act/actrc; " +
             actCmd;
     }
