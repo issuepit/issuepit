@@ -137,6 +137,7 @@ public class CiCdWorker(
             CommitSha = trigger.CommitSha ?? key,
             Branch = trigger.Branch,
             Workflow = trigger.Workflow,
+            WorkspacePath = trigger.WorkspacePath,
             Status = CiCdRunStatus.Running,
             StartedAt = DateTime.UtcNow,
         };
@@ -175,10 +176,27 @@ public class CiCdWorker(
         }
         catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
         {
-            // Cancelled by user request (not by application shutdown).
-            logger.LogInformation("CI/CD run {RunId} was cancelled", run.Id);
-            run.Status = CiCdRunStatus.Cancelled;
-            await AppendLogAsync(run.Id, "[INFO] Run cancelled by user.", LogStream.Stdout, db, stoppingToken);
+            if (runCts.IsCancellationRequested)
+            {
+                // The run was explicitly cancelled via the cancel API / Kafka cancel signal.
+                logger.LogInformation("CI/CD run {RunId} was cancelled by user", run.Id);
+                run.Status = CiCdRunStatus.Cancelled;
+                await AppendLogAsync(run.Id,
+                    $"[INFO] Run cancelled at {DateTime.UtcNow:u}.",
+                    LogStream.Stdout, db, stoppingToken);
+            }
+            else
+            {
+                // OperationCanceledException from an internal source (e.g. Docker client timeout, named-pipe reset).
+                // Treat as a failure so the user can inspect logs and retry.
+                logger.LogWarning("CI/CD run {RunId} was interrupted by an unexpected cancellation (Docker timeout / internal error)", run.Id);
+                run.Status = CiCdRunStatus.Failed;
+                await AppendLogAsync(run.Id,
+                    "[ERROR] Run was interrupted by an unexpected internal cancellation " +
+                    "(possible cause: Docker client timeout or named-pipe reset). " +
+                    "Check Docker daemon health and retry the run.",
+                    LogStream.Stderr, db, stoppingToken);
+            }
         }
         catch (Exception ex)
         {

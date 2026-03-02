@@ -63,12 +63,16 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     }
   }
 
-  async function retryRun(runId: string) {
-    try {
-      await api.post(`/api/cicd-runs/${runId}/retry`, {})
-    } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : 'Failed to retry CI/CD run'
-    }
+  async function retryRun(runId: string, options?: {
+    keepContainerOnFailure?: boolean
+    forceRetry?: boolean
+    noDind?: boolean
+    noVolumeMounts?: boolean
+    customImage?: string
+    customEntrypoint?: string
+    customArgs?: string
+  }) {
+    await api.post(`/api/cicd-runs/${runId}/retry`, options ?? {})
   }
 
   async function cancelRun(runId: string) {

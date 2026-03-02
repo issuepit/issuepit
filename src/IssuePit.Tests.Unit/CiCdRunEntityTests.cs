@@ -41,4 +41,18 @@ public class CiCdRunEntityTests
         Assert.Null(run.ExternalSource);
         Assert.Null(run.ExternalRunId);
     }
+
+    [Fact]
+    public void CiCdRun_WorkspacePath_NullableByDefault()
+    {
+        var run = new CiCdRun();
+        Assert.Null(run.WorkspacePath);
+    }
+
+    [Fact]
+    public void CiCdRun_WorkspacePath_CanBeSet()
+    {
+        var run = new CiCdRun { WorkspacePath = "/repos/my-project" };
+        Assert.Equal("/repos/my-project", run.WorkspacePath);
+    }
 }

@@ -46,6 +46,7 @@ public class CiCdRunsController(
                 r.EndedAt,
                 r.ExternalSource,
                 r.ExternalRunId,
+                r.WorkspacePath,
             })
             .Take(100)
             .ToListAsync();
@@ -73,6 +74,7 @@ public class CiCdRunsController(
                 r.EndedAt,
                 r.ExternalSource,
                 r.ExternalRunId,
+                r.WorkspacePath,
             })
             .FirstOrDefaultAsync();
 
@@ -171,7 +173,7 @@ public class CiCdRunsController(
     }
 
     [HttpPost("{id:guid}/retry")]
-    public async Task<IActionResult> RetryRun(Guid id)
+    public async Task<IActionResult> RetryRun(Guid id, [FromBody] RetryRunOptions? options = null)
     {
         var run = await db.CiCdRuns
             .Include(r => r.Project)
@@ -182,6 +184,26 @@ public class CiCdRunsController(
         if (run.Status is not (CiCdRunStatus.Failed or CiCdRunStatus.Cancelled))
             return Conflict(new { error = "Only failed or cancelled runs can be retried.", run.Status, StatusName = run.Status.ToString() });
 
+        // Warn if another run for the same project is already in progress, unless the caller forces it.
+        if (options?.ForceRetry != true)
+        {
+            var activeRun = await db.CiCdRuns
+                .Where(r => r.ProjectId == run.ProjectId
+                    && r.Id != run.Id
+                    && (r.Status == CiCdRunStatus.Running || r.Status == CiCdRunStatus.Pending))
+                .Select(r => new { r.Id, StatusName = r.Status.ToString() })
+                .FirstOrDefaultAsync();
+
+            if (activeRun is not null)
+                return Conflict(new
+                {
+                    error = "Another run is already in progress for this project.",
+                    activeRunId = activeRun.Id,
+                    activeRunStatus = activeRun.StatusName,
+                    canForce = true,
+                });
+        }
+
         // Publish a new trigger — the CiCdWorker will create a new run record.
         var payload = System.Text.Json.JsonSerializer.Serialize(new
         {
@@ -190,8 +212,14 @@ public class CiCdRunsController(
             branch = run.Branch,
             workflow = run.Workflow,
             agentSessionId = run.AgentSessionId,
-            workspacePath = (string?)null,
+            workspacePath = run.WorkspacePath,
             eventName = "push",
+            keepContainerOnFailure = options?.KeepContainerOnFailure ?? false,
+            noDind = options?.NoDind ?? false,
+            noVolumeMounts = options?.NoVolumeMounts ?? false,
+            customImage = options?.CustomImage,
+            customEntrypoint = options?.CustomEntrypoint,
+            customArgs = options?.CustomArgs,
         });
 
         await producer.ProduceAsync("cicd-trigger", new Message<string, string>
@@ -250,6 +278,23 @@ public class CiCdRunsController(
             .Group(ProjectHub.ProjectGroup(run.ProjectId.ToString()))
             .SendAsync("RunsUpdated", new { runId = run.Id, status = run.Status, statusName = run.Status.ToString() });
 }
+
+/// <summary>Options body for the retry run endpoint.</summary>
+public record RetryRunOptions(
+    /// <summary>When true the Docker container is not removed after a failed run, for debugging.</summary>
+    bool KeepContainerOnFailure = false,
+    /// <summary>When true the retry proceeds even if another run for the same project is already in progress.</summary>
+    bool ForceRetry = false,
+    /// <summary>When true the Docker socket is NOT mounted (disables DinD).</summary>
+    bool NoDind = false,
+    /// <summary>When true no host volumes are mounted (workspace and docker socket omitted).</summary>
+    bool NoVolumeMounts = false,
+    /// <summary>Override the Docker image for this run.</summary>
+    string? CustomImage = null,
+    /// <summary>Override the container entrypoint.</summary>
+    string? CustomEntrypoint = null,
+    /// <summary>Additional CLI arguments appended to the act command.</summary>
+    string? CustomArgs = null);
 
 /// <summary>Request body for the external CI/CD sync endpoint.</summary>
 public record ExternalSyncRequest(

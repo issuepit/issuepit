@@ -45,5 +45,9 @@ public class CiCdRun
     [MaxLength(200)]
     public string? ExternalRunId { get; set; }
 
+    /// <summary>Local filesystem path to the repository workspace used for this run. Persisted so retries can reuse the same path.</summary>
+    [MaxLength(500)]
+    public string? WorkspacePath { get; set; }
+
     public ICollection<CiCdRunLog> Logs { get; set; } = [];
 }
