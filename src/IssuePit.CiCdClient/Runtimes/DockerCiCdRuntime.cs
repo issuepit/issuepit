@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text;
 using Docker.DotNet;
 using Docker.DotNet.Models;
@@ -27,6 +28,16 @@ public class DockerCiCdRuntime(
     // which includes dotnet and JavaScript tooling (see https://github.com/catthehacker/docker_images).
     private const string DefaultImage = "ghcr.io/catthehacker/ubuntu:custom-24.04";
 
+    private static string AppVersion =>
+        Assembly.GetEntryAssembly()
+            ?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion
+        ?? "unknown";
+
+    // Builds a stable, human-readable Docker container name for a CI/CD run.
+    private static string BuildContainerName(CiCdRun run) =>
+        $"issuepit-cicd-{run.Id:N}"[..24]; // e.g. "issuepit-cicd-ab12cd34ef56"
+
     public async Task RunAsync(
         CiCdRun run,
         TriggerPayload trigger,
@@ -44,20 +55,24 @@ public class DockerCiCdRuntime(
 
         var actArgs = NativeCiCdRuntime.BuildActArgumentsList(trigger);
         var cmd = new[] { actBin }.Concat(actArgs).ToList();
+        var containerName = BuildContainerName(run);
 
         // Emit verbose diagnostics as the first log lines so they appear in the run's log output.
         await onLogLine($"[DEBUG] Runner machine : {Environment.MachineName}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Runtime        : Docker", LogStream.Stdout);
+        await onLogLine($"[DEBUG] IssuePit ver   : {AppVersion}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Docker image   : {image}", LogStream.Stdout);
+        await onLogLine($"[DEBUG] Container name : {containerName}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Command        : {string.Join(' ', cmd)}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Mount          : {workspacePath}:/workspace", LogStream.Stdout);
         await onLogLine($"[DEBUG] Mount          : /var/run/docker.sock:/var/run/docker.sock", LogStream.Stdout);
         await onLogLine($"[DEBUG] Working dir    : /workspace", LogStream.Stdout);
 
-        // Verify Docker daemon is reachable before attempting heavier operations.
+        // Verify Docker daemon is reachable and log its version.
         try
         {
-            await dockerClient.System.PingAsync(cancellationToken);
+            var dockerVersion = await dockerClient.System.GetVersionAsync(cancellationToken);
+            await onLogLine($"[DEBUG] Docker version : {dockerVersion.Version} (API {dockerVersion.APIVersion})", LogStream.Stdout);
         }
         catch (Exception ex)
         {
@@ -100,6 +115,7 @@ public class DockerCiCdRuntime(
         var createParams = new CreateContainerParameters
         {
             Image = image,
+            Name = containerName,
             Cmd = cmd,
             WorkingDir = "/workspace",
             HostConfig = new HostConfig
@@ -122,7 +138,11 @@ public class DockerCiCdRuntime(
         CreateContainerResponse container;
         try
         {
-            container = await dockerClient.Containers.CreateContainerAsync(createParams, cancellationToken);
+            container = await RetryDockerAsync(
+                () => dockerClient.Containers.CreateContainerAsync(createParams, cancellationToken),
+                "CreateContainer",
+                onLogLine,
+                cancellationToken);
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException ||
             (ex is OperationCanceledException oce && oce.CancellationToken != cancellationToken && !cancellationToken.IsCancellationRequested))
@@ -136,8 +156,8 @@ public class DockerCiCdRuntime(
             throw new InvalidOperationException(msg, ex);
         }
 
-        logger.LogInformation("Created Docker container {ContainerId} for CI/CD run {RunId}",
-            container.ID, run.Id);
+        logger.LogInformation("Created Docker container {ContainerId} ({ContainerName}) for CI/CD run {RunId}",
+            container.ID, containerName, run.Id);
         await onLogLine($"[DEBUG] Container ID   : {container.ID[..12]}", LogStream.Stdout);
 
         var succeeded = false;
@@ -161,8 +181,9 @@ public class DockerCiCdRuntime(
                 (ex is OperationCanceledException oce && oce.CancellationToken != cancellationToken && !cancellationToken.IsCancellationRequested))
             {
                 var startMsg = "Lost connection to the Docker daemon while starting the container. " +
-                    "This can happen on Windows when Docker Desktop resets named-pipe connections. " +
-                    "Try running the CI/CD run again.";
+                    $"The container '{containerName}' (ID {container.ID[..12]}) may be in Created state. " +
+                    $"You can start it manually: `docker start {containerName}`, then inspect with `docker exec -it {containerName} sh`. " +
+                    "Or retry the run.";
                 await onLogLine($"[ERROR] {startMsg}", LogStream.Stderr);
                 foreach (var line in ex.ToString().Split('\n'))
                     await onLogLine(line.TrimEnd('\r'), LogStream.Stderr);
@@ -194,16 +215,19 @@ public class DockerCiCdRuntime(
         }
         finally
         {
+            if (!succeeded)
+                await EmitFailureDiagnosticsAsync(container.ID, image, run, onLogLine);
+
             var keepContainer = !succeeded && trigger.KeepContainerOnFailure;
             if (keepContainer)
             {
                 await onLogLine(
-                    $"[DEBUG] Container kept : {container.ID[..12]} (KeepContainerOnFailure=true)" +
-                    " — run `docker ps -a` to find it, `docker exec -it <id> sh` to inspect",
+                    $"[DEBUG] Container kept : {container.ID[..12]} (name: {containerName}, KeepContainerOnFailure=true)" +
+                    $" — run `docker ps -a` to find it, `docker exec -it {containerName} sh` to inspect",
                     LogStream.Stdout);
                 logger.LogInformation(
-                    "Keeping Docker container {ContainerId} for failed CI/CD run {RunId} (KeepContainerOnFailure=true)",
-                    container.ID, run.Id);
+                    "Keeping Docker container {ContainerId} ({ContainerName}) for failed CI/CD run {RunId} (KeepContainerOnFailure=true)",
+                    container.ID, containerName, run.Id);
             }
             else
             {
@@ -217,6 +241,110 @@ public class DockerCiCdRuntime(
                 catch { /* best-effort */ }
             }
         }
+    }
+
+    /// <summary>
+    /// Retries a Docker API operation on connection-reset errors (HttpRequestException, IOException,
+    /// or an OperationCanceledException not caused by <paramref name="cancellationToken"/>).
+    /// Each retry is preceded by a 2-second delay and a connectivity ping to confirm the daemon is back.
+    /// </summary>
+    private async Task<T> RetryDockerAsync<T>(
+        Func<Task<T>> operation,
+        string context,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken,
+        int maxAttempts = 3)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await operation();
+            }
+            catch (Exception ex) when (
+                attempt < maxAttempts &&
+                !cancellationToken.IsCancellationRequested &&
+                (ex is HttpRequestException or IOException ||
+                 (ex is OperationCanceledException oce && oce.CancellationToken != cancellationToken)))
+            {
+                await onLogLine(
+                    $"[WARN] {context}: connection reset (attempt {attempt}/{maxAttempts}), retrying in 2s…",
+                    LogStream.Stderr);
+                await Task.Delay(2000, cancellationToken);
+                // Verify daemon is still reachable before retrying.
+                await dockerClient.System.PingAsync(cancellationToken);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Emits post-failure diagnostic information from the Docker daemon into the run log.
+    /// All operations are best-effort and never throw.
+    /// </summary>
+    private async Task EmitFailureDiagnosticsAsync(
+        string containerId,
+        string image,
+        CiCdRun run,
+        Func<string, LogStream, Task> onLogLine)
+    {
+        try
+        {
+            await onLogLine("[DEBUG] --- Failure diagnostics ---", LogStream.Stdout);
+
+            // Verify whether the image is present locally.
+            try
+            {
+                var images = await dockerClient.Images.ListImagesAsync(
+                    new ImagesListParameters
+                    {
+                        Filters = new Dictionary<string, IDictionary<string, bool>>
+                        {
+                            ["reference"] = new Dictionary<string, bool> { [image] = true },
+                        },
+                    },
+                    CancellationToken.None);
+                await onLogLine($"[DEBUG] Image present  : {(images.Count > 0 ? $"yes ({images.Count} tag(s))" : "no — image may not have been pulled correctly")}", LogStream.Stdout);
+            }
+            catch { /* best-effort */ }
+
+            // Inspect the container if we have an ID (may already be removed).
+            try
+            {
+                var inspect = await dockerClient.Containers.InspectContainerAsync(containerId, CancellationToken.None);
+                await onLogLine($"[DEBUG] Container state: {inspect.State?.Status}, exit code: {inspect.State?.ExitCode}, error: {inspect.State?.Error}", LogStream.Stdout);
+            }
+            catch { /* best-effort — container may have been removed already */ }
+
+            // List recent issuepit containers for context (docker ps -a with label filter).
+            try
+            {
+                var containers = await dockerClient.Containers.ListContainersAsync(
+                    new ContainersListParameters
+                    {
+                        All = true,
+                        Filters = new Dictionary<string, IDictionary<string, bool>>
+                        {
+                            ["label"] = new Dictionary<string, bool>
+                            {
+                                [$"issuepit.project-id={run.ProjectId}"] = true,
+                            },
+                        },
+                    },
+                    CancellationToken.None);
+
+                if (containers.Count > 0)
+                {
+                    await onLogLine($"[DEBUG] Related containers (project {run.ProjectId}):", LogStream.Stdout);
+                    foreach (var c in containers.Take(5))
+                    {
+                        var names = string.Join(", ", c.Names.Select(n => n.TrimStart('/')));
+                        await onLogLine($"[DEBUG]   {c.ID[..12]}  {names,-30}  state={c.State,-10}  status={c.Status}", LogStream.Stdout);
+                    }
+                }
+            }
+            catch { /* best-effort */ }
+        }
+        catch { /* diagnostics must never throw */ }
     }
 
     private async Task StreamContainerLogsAsync(
