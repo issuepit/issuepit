@@ -64,90 +64,99 @@ jobs:
           dotnet restore src/IssuePit.AppHost/IssuePit.AppHost.csproj
           dotnet build src/IssuePit.AppHost/IssuePit.AppHost.csproj --no-restore --configuration Release
 
-      - name: Start Aspire AppHost
+      - name: Start Aspire AppHost and discover service URLs
         if: ${{ !inputs.frontend_url }}
+        timeout-minutes: 15
         env:
           DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
           ASPIRE_ALLOW_UNSECURED_TRANSPORT: "true"
         run: |
+          # Start AppHost in background; resource logs are forwarded as "[name] <line>" by Aspire
           dotnet run --project src/IssuePit.AppHost --no-build --configuration Release \
             --launch-profile http \
             2>&1 | tee /tmp/aspire.log &
 
-          echo "Waiting for Aspire dashboard at http://localhost:15400..."
-          for i in $(seq 1 120); do
-            if curl -sf http://localhost:15400 > /dev/null 2>&1; then
-              echo "Aspire dashboard ready"
+          # Wait for the API service to log "Now listening on:" (prefixed with [api])
+          echo "Waiting for API to start..."
+          for i in $(seq 1 200); do
+            if grep -F '[api]' /tmp/aspire.log 2>/dev/null | grep -q 'Now listening on:'; then
+              echo "API is up"
               break
             fi
+            if [ "$i" -eq 200 ]; then
+              echo "::error::Timeout waiting for API service"
+              tail -100 /tmp/aspire.log
+              exit 1
+            fi
+            echo "Waiting for API... ($i)"
             sleep 3
           done
 
-      - name: Discover service URLs from Aspire
-        if: ${{ !inputs.frontend_url }}
-        run: |
-          # Query the Aspire dashboard resource API (SSE — read initial snapshot then stop).
-          # Retry a few times to handle the case where the dashboard is still initializing.
-          RESOURCES=""
-          for i in $(seq 1 5); do
-            RESOURCES=$(timeout 30 curl -sfN 'http://localhost:15400/api/v1/resources' 2>/dev/null || true)
-            [ -n "$RESOURCES" ] && break
-            echo "Retrying resource discovery... ($i)"
-            sleep 5
+          # Wait for the frontend to log "Local:" (Nuxt/Vite dev server)
+          echo "Waiting for frontend to start..."
+          for i in $(seq 1 200); do
+            if grep -F '[frontend]' /tmp/aspire.log 2>/dev/null | grep -q 'Local:'; then
+              echo "Frontend is up"
+              break
+            fi
+            if [ "$i" -eq 200 ]; then
+              echo "::error::Timeout waiting for frontend service"
+              tail -100 /tmp/aspire.log
+              exit 1
+            fi
+            echo "Waiting for frontend... ($i)"
+            sleep 3
           done
 
-          extract_url() {
-            local name="$1"
-            echo "$RESOURCES" | python3 - "$name" <<'EOF'
-          import sys, json
-          target = sys.argv[1]
-          for line in sys.stdin.read().splitlines():
-              if not line.startswith('data:'): continue
-              try:
-                  obj = json.loads(line[5:].strip())
-                  resources = obj if isinstance(obj, list) else obj.get('resources', [])
-                  for r in resources:
-                      if r.get('name') == target:
-                          for ep in r.get('endpoints', []):
-                              u = ep.get('endpointUrl', '')
-                              if u:
-                                  print(u.rstrip('/'))
-                                  sys.exit(0)
-              except Exception:
-                  pass
-          EOF
-          }
-
-          API_URL=$(extract_url api)
-          FRONTEND_URL=$(extract_url frontend)
+          # Extract service URLs from log lines like:
+          #   [api]       Now listening on: http://localhost:PORT/
+          #   [frontend]   ➜  Local:   http://localhost:PORT/
+          API_URL=$(grep -F '[api]' /tmp/aspire.log | grep 'Now listening on:' | grep -oP 'https?://localhost:\d+' | head -1 || true)
+          FRONTEND_URL=$(grep -F '[frontend]' /tmp/aspire.log | grep 'Local:' | grep -oP 'https?://localhost:\d+' | head -1 || true)
 
           echo "Discovered API_URL=$API_URL"
           echo "Discovered FRONTEND_URL=$FRONTEND_URL"
+
+          if [ -z "$API_URL" ] || [ -z "$FRONTEND_URL" ]; then
+            echo "::error::Failed to extract service URLs from Aspire log"
+            echo "=== Aspire log (last 100 lines) ==="
+            tail -100 /tmp/aspire.log
+            exit 1
+          fi
+
           echo "API_URL=$API_URL" >> "$GITHUB_ENV"
           echo "FRONTEND_URL=$FRONTEND_URL" >> "$GITHUB_ENV"
 
-          # Wait for API to be healthy
-          if [ -n "$API_URL" ]; then
-            for i in $(seq 1 60); do
-              if curl -sf "$API_URL/health" > /dev/null 2>&1; then
-                echo "API is healthy"
-                break
-              fi
-              echo "Waiting for API... ($i)"
-              sleep 3
-            done
+          # Confirm API health endpoint
+          API_HEALTHY=false
+          for i in $(seq 1 30); do
+            if curl -sf "$API_URL/health" > /dev/null 2>&1; then
+              echo "API health check passed"
+              API_HEALTHY=true
+              break
+            fi
+            echo "Waiting for API health... ($i)"
+            sleep 3
+          done
+          if [ "$API_HEALTHY" = false ]; then
+            echo "::error::API did not become healthy"
+            exit 1
           fi
 
-          # Wait for frontend to be ready
-          if [ -n "$FRONTEND_URL" ]; then
-            for i in $(seq 1 60); do
-              if curl -sf "$FRONTEND_URL" > /dev/null 2>&1; then
-                echo "Frontend is ready"
-                break
-              fi
-              echo "Waiting for frontend... ($i)"
-              sleep 3
-            done
+          # Confirm frontend is reachable
+          FRONTEND_READY=false
+          for i in $(seq 1 30); do
+            if curl -sf "$FRONTEND_URL" > /dev/null 2>&1; then
+              echo "Frontend is reachable"
+              FRONTEND_READY=true
+              break
+            fi
+            echo "Waiting for frontend... ($i)"
+            sleep 3
+          done
+          if [ "$FRONTEND_READY" = false ]; then
+            echo "::error::Frontend did not become reachable"
+            exit 1
           fi
 
       - name: Install Playwright
