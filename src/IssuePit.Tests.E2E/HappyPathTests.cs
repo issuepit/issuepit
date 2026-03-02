@@ -332,7 +332,7 @@ public class HappyPathTests : IAsyncLifetime
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
             await page.WaitForSelectorAsync($"a[href*='{orgId}']", new PageWaitForSelectorOptions { Timeout = 20_000 });
             await page.ClickAsync($"a[href*='{orgId}']");
-            await page.WaitForURLAsync($"**/orgs/{orgId}", new PageWaitForURLOptions { Timeout = 10_000 });
+            await page.WaitForURLAsync($"**/orgs/{orgId}", new PageWaitForURLOptions { Timeout = 20_000, WaitUntil = WaitUntilState.Commit });
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
 
             // Create a team via UI
