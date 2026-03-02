@@ -133,6 +133,55 @@ jobs:
           cache-from: type=gha,scope=helper-act
           cache-to: type=gha,mode=max,scope=helper-act
 
+  build-dind:
+    name: Build & Push helper-dind
+    needs: build-base
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'merge_group'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-helper-dind
+          tags: |
+            type=ref,event=branch,suffix=-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }}
+            type=semver,pattern={{version}},suffix=-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }},event=tag
+            type=semver,pattern={{major}}.{{minor}},suffix=-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }},event=tag
+            type=sha,prefix=sha-,format=short
+            type=raw,value=dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/helper-containers-v') }}
+            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push helper-dind
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.helper-dind
+          push: ${{ github.event_name != 'merge_group' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BASE_IMAGE=${{ needs.build-base.outputs.base-image }}
+          cache-from: type=gha,scope=helper-dind
+          cache-to: type=gha,mode=max,scope=helper-dind
+
   build-opencode:
     name: Build & Push helper-opencode
     needs: build-base

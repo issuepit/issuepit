@@ -13,7 +13,7 @@ namespace IssuePit.CiCdClient.Runtimes;
 /// Reads from:
 /// <list type="bullet">
 ///   <item><c>CiCd__Docker__Image</c> — Docker image that has <c>act</c> installed
-///     (default: <c>ghcr.io/catthehacker/ubuntu:custom-24.04</c>)</item>
+///     (default: <c>ghcr.io/issuepit/issuepit-helper-dind:latest</c>)</item>
 ///   <item><c>CiCd__ActBinaryPath</c> — path to <c>act</c> inside the container (default: <c>act</c>)</item>
 ///   <item><c>CiCd__DefaultWorkspacePath</c> — fallback host path to the repository workspace</item>
 /// </list>
@@ -23,9 +23,9 @@ public class DockerCiCdRuntime(
     DockerClient dockerClient,
     IConfiguration configuration) : ICiCdRuntime
 {
-    // Docker image used to run act. Uses the "custom" variant from ghcr.io/catthehacker/ubuntu
-    // which includes dotnet and JavaScript tooling (see https://github.com/catthehacker/docker_images).
-    private const string DefaultImage = "ghcr.io/catthehacker/ubuntu:custom-24.04";
+    // Docker image used to run act. Uses the IssuePit helper-dind image which includes
+    // .NET SDK, Playwright, Node.js, Docker CLI, and act (see docker/Dockerfile.helper-dind).
+    private const string DefaultImage = "ghcr.io/issuepit/issuepit-helper-dind:latest";
 
     public async Task RunAsync(
         CiCdRun run,

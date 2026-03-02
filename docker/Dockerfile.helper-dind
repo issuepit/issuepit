@@ -1,0 +1,28 @@
+# Helper dind image: helper-base + Docker CLI + act (via official install script)
+# Docker-in-Docker capable: mounts /var/run/docker.sock from the host at runtime,
+# giving act full access to the host Docker daemon so it can launch runner containers.
+#
+# Build args (override at build time):
+#   BASE_IMAGE   — fully-qualified helper-base image reference
+
+ARG BASE_IMAGE=ghcr.io/issuepit/issuepit-helper-base:latest
+FROM ${BASE_IMAGE}
+
+# Install Docker CLI so act can launch runner containers via the host Docker socket.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    install -m 0755 -d /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc && \
+    chmod a+r /etc/apt/keyrings/docker.asc && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+        > /etc/apt/sources.list.d/docker.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends docker-ce-cli && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install act via the official install script.
+RUN curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/nektos/act/master/install.sh | bash && \
+    act --version
+
+LABEL org.opencontainers.image.title="issuepit-helper-dind" \
+      org.opencontainers.image.description="IssuePit helper image for CI/CD runs: helper-base + Docker CLI + act"
