@@ -1,6 +1,7 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-var postgresServer = builder.AddPostgres("postgres");
+var postgresServer = builder.AddPostgres("postgres")
+    .WithImage("postgres", "17.6");
 var postgresDb = postgresServer.AddDatabase("issuepit-db");
 
 var kafka = builder.AddKafka("kafka")
@@ -12,7 +13,8 @@ var kafka = builder.AddKafka("kafka")
     .WithEnvironment("KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR", "1")
     .WithEnvironment("KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS", "0");
 
-var redis = builder.AddValkey("redis");
+var redis = builder.AddValkey("redis")
+    .WithImage("valkey/valkey", "9.0");
 
 // Management UI tools - set to explicit start so they are not auto-started in CI and require manual start from the Aspire dashboard
 postgresServer.WithPgAdmin(admin => admin.WithExplicitStart());

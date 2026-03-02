@@ -159,6 +159,12 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Pre-pull Docker images
+        run: |
+          docker pull postgres:17.6
+          docker pull valkey/valkey:9.0
+          docker pull apache/kafka:3.9.0
+
       - name: Build E2E test project
         run: dotnet build src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj --configuration Release
 
@@ -175,7 +181,7 @@ jobs:
           --filter "Category=E2E"
           --verbosity normal
           --logger "trx;LogFileName=e2e-results.trx"
-          --blame-hang-timeout 1min
+          --blame-hang-timeout 30sec
 
       - name: Upload test results
         if: always()
