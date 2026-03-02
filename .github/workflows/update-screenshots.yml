@@ -64,100 +64,98 @@ jobs:
           dotnet restore src/IssuePit.AppHost/IssuePit.AppHost.csproj
           dotnet build src/IssuePit.AppHost/IssuePit.AppHost.csproj --no-restore --configuration Release
 
-      - name: Start Aspire AppHost and discover service URLs
+      - name: Start Aspire AppHost
         if: ${{ !inputs.frontend_url }}
-        timeout-minutes: 15
+        timeout-minutes: 20
         env:
           DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
           ASPIRE_ALLOW_UNSECURED_TRANSPORT: "true"
         run: |
-          # Start AppHost in background; resource logs are forwarded as "[name] <line>" by Aspire
+          # Start AppHost in background, capturing its output for signal detection.
+          # Note: resource logs (api, frontend) are NOT forwarded to AppHost stdout in
+          # dotnet-run mode — only AppHost-level messages appear. We rely on
+          # "Distributed application started" as the readiness signal.
           dotnet run --project src/IssuePit.AppHost --no-build --configuration Release \
             --launch-profile http \
-            2>&1 | tee /tmp/aspire.log &
+            > /tmp/aspire.log 2>&1 &
 
-          # Wait for the API service to log "Now listening on:" (prefixed with [api])
-          echo "Waiting for API to start..."
-          for i in $(seq 1 200); do
-            if grep -F '[api]' /tmp/aspire.log 2>/dev/null | grep -q 'Now listening on:'; then
-              echo "API is up"
+          # ── Step 1: Wait for Aspire to distribute all resources ────────────────
+          echo "Waiting for Aspire to distribute resources..."
+          for i in $(seq 1 120); do
+            if grep -q 'Distributed application started' /tmp/aspire.log 2>/dev/null; then
+              echo "Aspire distributed (iteration $i)"
               break
             fi
-            if [ "$i" -eq 200 ]; then
-              echo "::error::Timeout waiting for API service"
-              tail -100 /tmp/aspire.log
+            if [ "$i" -eq 120 ]; then
+              echo "::error::Timeout waiting for Aspire to distribute"
+              cat /tmp/aspire.log
               exit 1
             fi
-            echo "Waiting for API... ($i)"
-            sleep 3
+            sleep 5
           done
 
-          # Wait for the frontend to log "Local:" (Nuxt/Vite dev server)
-          echo "Waiting for frontend to start..."
-          for i in $(seq 1 200); do
-            if grep -F '[frontend]' /tmp/aspire.log 2>/dev/null | grep -q 'Local:'; then
-              echo "Frontend is up"
+          # ── Step 2: Wait for the API health endpoint ───────────────────────────
+          # API uses the port from its launchSettings.json http profile (5035).
+          # Aspire passes this port to the project via ASPNETCORE_URLS / ASPNETCORE_HTTP_PORTS.
+          API_URL="http://localhost:5035"
+          echo "Polling API health at $API_URL/health..."
+          API_HEALTHY=false
+          for i in $(seq 1 180); do
+            if curl -sf "$API_URL/health" > /dev/null 2>&1; then
+              echo "API is healthy (iteration $i)"
+              API_HEALTHY=true
               break
             fi
-            if [ "$i" -eq 200 ]; then
-              echo "::error::Timeout waiting for frontend service"
-              tail -100 /tmp/aspire.log
-              exit 1
-            fi
-            echo "Waiting for frontend... ($i)"
-            sleep 3
+            sleep 5
+          done
+          if [ "$API_HEALTHY" = false ]; then
+            echo "::error::API did not become healthy within timeout"
+            echo "=== Aspire log ==="
+            cat /tmp/aspire.log
+            exit 1
+          fi
+
+          # ── Step 3: Discover the frontend port ─────────────────────────────────
+          # Aspire passes the allocated port to Nuxt via the NUXT_PORT env var.
+          # Read it from the node process environment via /proc.
+          echo "Waiting for frontend (node/nuxt) process with NUXT_PORT..."
+          FRONTEND_URL=""
+          for i in $(seq 1 60); do
+            for pid_dir in /proc/[0-9]*; do
+              port=$(cat "$pid_dir/environ" 2>/dev/null | tr '\0' '\n' | grep '^NUXT_PORT=' | cut -d= -f2)
+              if [ -n "$port" ]; then
+                FRONTEND_URL="http://localhost:$port"
+                break
+              fi
+            done
+            [ -n "$FRONTEND_URL" ] && break
+            sleep 5
           done
 
-          # Extract service URLs from log lines like:
-          #   [api]       Now listening on: http://localhost:PORT/
-          #   [frontend]   ➜  Local:   http://localhost:PORT/
-          API_URL=$(grep -F '[api]' /tmp/aspire.log | grep 'Now listening on:' | grep -oP 'https?://localhost:\d+' | head -1 || true)
-          FRONTEND_URL=$(grep -F '[frontend]' /tmp/aspire.log | grep 'Local:' | grep -oP 'https?://localhost:\d+' | head -1 || true)
+          if [ -z "$FRONTEND_URL" ]; then
+            echo "::error::Could not discover NUXT_PORT from any node process"
+            exit 1
+          fi
 
-          echo "Discovered API_URL=$API_URL"
-          echo "Discovered FRONTEND_URL=$FRONTEND_URL"
-
-          if [ -z "$API_URL" ] || [ -z "$FRONTEND_URL" ]; then
-            echo "::error::Failed to extract service URLs from Aspire log"
-            echo "=== Aspire log (last 100 lines) ==="
-            tail -100 /tmp/aspire.log
+          echo "Polling frontend at $FRONTEND_URL..."
+          FRONTEND_READY=false
+          for i in $(seq 1 60); do
+            if curl -sf "$FRONTEND_URL" > /dev/null 2>&1; then
+              echo "Frontend is reachable (iteration $i)"
+              FRONTEND_READY=true
+              break
+            fi
+            sleep 5
+          done
+          if [ "$FRONTEND_READY" = false ]; then
+            echo "::error::Frontend did not become reachable within timeout"
             exit 1
           fi
 
           echo "API_URL=$API_URL" >> "$GITHUB_ENV"
           echo "FRONTEND_URL=$FRONTEND_URL" >> "$GITHUB_ENV"
-
-          # Confirm API health endpoint
-          API_HEALTHY=false
-          for i in $(seq 1 30); do
-            if curl -sf "$API_URL/health" > /dev/null 2>&1; then
-              echo "API health check passed"
-              API_HEALTHY=true
-              break
-            fi
-            echo "Waiting for API health... ($i)"
-            sleep 3
-          done
-          if [ "$API_HEALTHY" = false ]; then
-            echo "::error::API did not become healthy"
-            exit 1
-          fi
-
-          # Confirm frontend is reachable
-          FRONTEND_READY=false
-          for i in $(seq 1 30); do
-            if curl -sf "$FRONTEND_URL" > /dev/null 2>&1; then
-              echo "Frontend is reachable"
-              FRONTEND_READY=true
-              break
-            fi
-            echo "Waiting for frontend... ($i)"
-            sleep 3
-          done
-          if [ "$FRONTEND_READY" = false ]; then
-            echo "::error::Frontend did not become reachable"
-            exit 1
-          fi
+          echo "Discovered API_URL=$API_URL"
+          echo "Discovered FRONTEND_URL=$FRONTEND_URL"
 
       - name: Install Playwright
         run: |
