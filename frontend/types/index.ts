@@ -186,6 +186,32 @@ export interface IssueAssignee {
   agent?: Agent
 }
 
+export enum IssueLinkType {
+  LinkedTo = 'linked_to',
+  Blocks = 'blocks',
+  BlockedBy = 'blocked_by',
+  Causes = 'causes',
+  CausedBy = 'caused_by',
+  Solves = 'solves',
+}
+
+export const IssueLinkTypeLabels: Record<IssueLinkType, string> = {
+  [IssueLinkType.LinkedTo]: 'linked to',
+  [IssueLinkType.Blocks]: 'blocks',
+  [IssueLinkType.BlockedBy]: 'blocked by',
+  [IssueLinkType.Causes]: 'causes',
+  [IssueLinkType.CausedBy]: 'caused by',
+  [IssueLinkType.Solves]: 'solves',
+}
+
+export interface IssueLink {
+  id: string
+  issueId: string
+  targetIssueId: string
+  targetIssue?: Issue
+  linkType: IssueLinkType
+  createdAt: string
+}
 export interface IssueComment {
   id: string
   issueId: string
