@@ -40,6 +40,33 @@ public class FrontendSmokeTests : IAsyncLifetime
             Channel = "chrome",
         });
         _context = await _browser.NewContextAsync();
+        await SetUpAuthAsync();
+    }
+
+    /// <summary>
+    /// Registers a fresh test user via the UI and waits for the post-login redirect to the
+    /// dashboard, so that all subsequent pages opened in <see cref="_context"/> are authenticated.
+    /// </summary>
+    private async Task SetUpAuthAsync()
+    {
+        var page = await _context!.NewPageAsync();
+        try
+        {
+            var username = $"smoke{Guid.NewGuid():N}"[..12];
+            const string password = "TestPass1!";
+
+            await page.GotoAsync($"{FrontendUrl}/login");
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.ClickAsync("button:has-text('Create account')");
+            await page.FillAsync("input[autocomplete='username']", username);
+            await page.FillAsync("input[autocomplete='new-password']", password);
+            await page.ClickAsync("button[type='submit']");
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+        }
+        finally
+        {
+            await page.CloseAsync();
+        }
     }
 
     public async Task DisposeAsync()
@@ -49,7 +76,7 @@ public class FrontendSmokeTests : IAsyncLifetime
         _playwright?.Dispose();
     }
 
-    [Fact(Skip = "This test currently fails and therefore is disabled to be fixed in a dedicated issue/task/session.")]
+    [Fact]
     public async Task Dashboard_Loads_WithoutErrors()
     {
         var page = await _context!.NewPageAsync();
@@ -83,7 +110,7 @@ public class FrontendSmokeTests : IAsyncLifetime
         Assert.Contains("IssuePit", content);
     }
 
-    [Fact(Skip = "This test currently fails and therefore is disabled to be fixed in a dedicated issue/task/session.")]
+    [Fact]
     public async Task Dashboard_StatCards_AreLinks()
     {
         var page = await _context!.NewPageAsync();
@@ -107,7 +134,7 @@ public class FrontendSmokeTests : IAsyncLifetime
         Assert.True(await agentsLink.CountAsync() > 0, "Agents stat card should be a link to /agents");
     }
 
-    [Fact(Skip = "This test currently fails and therefore is disabled to be fixed in a dedicated issue/task/session.")]
+    [Fact]
     public async Task Dashboard_RecentIssues_ItemsAreLinks()
     {
         var page = await _context!.NewPageAsync();
