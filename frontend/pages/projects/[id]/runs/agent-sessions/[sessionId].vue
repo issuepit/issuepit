@@ -225,9 +225,11 @@ const debugMetadata = computed(() => {
   return entries
 })
 
-// Live duration ticker
+// `now` is updated on each server-pushed event so the duration display stays live without a timer
 const now = ref(Date.now())
-let durationTimer: ReturnType<typeof setInterval> | null = null
+
+// SignalR: connect to project hub to receive RunsUpdated events (updates the CI/CD runs table)
+const { connection, isConnected, connect } = useSignalR('/hubs/project')
 
 // Whether the session is still in an active (non-terminal) state
 const isActive = computed(() =>
@@ -235,41 +237,18 @@ const isActive = computed(() =>
   store.currentSession?.statusName === 'Running'
 )
 
-// SignalR: connect to project hub to receive RunsUpdated events (updates the CI/CD runs table)
-const { connection, isConnected, connect } = useSignalR('/hubs/project')
-
-// Polling interval to refresh session status while it is active
-let pollTimer: ReturnType<typeof setInterval> | null = null
-
 onMounted(async () => {
   await store.fetchAgentSession(sessionId)
 
-  // Tick every second for live duration display
-  durationTimer = setInterval(() => { now.value = Date.now() }, 1000)
-
-  // Poll every 5 s while the session is still running to catch status changes; stop once it finishes
-  pollTimer = setInterval(async () => {
-    if (isActive.value) {
-      await store.fetchAgentSession(sessionId)
-    } else if (pollTimer) {
-      clearInterval(pollTimer)
-      pollTimer = null
-    }
-  }, 5000)
-
-  // Connect to project hub so the CI/CD runs table refreshes in real time
+  // Connect to project hub so the session and its CI/CD runs table refresh in real time
   await connect()
   if (connection.value) {
     await connection.value.invoke('JoinProject', projectId).catch((e: unknown) => { console.warn('Failed to join project group', e) })
     connection.value.on('RunsUpdated', async () => {
+      now.value = Date.now()
       if (store.currentSession) await store.fetchAgentSession(sessionId)
     })
   }
-})
-
-onUnmounted(() => {
-  if (durationTimer) clearInterval(durationTimer)
-  if (pollTimer) clearInterval(pollTimer)
 })
 
 async function copyLogsToClipboard() {

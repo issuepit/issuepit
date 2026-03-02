@@ -14,6 +14,7 @@ namespace IssuePit.Api.Services;
 /// Channel naming convention (set by CiCdWorker):
 ///   cicd-run:{runId}  →  message payload: JSON {"stream":"stdout","line":"...","timestamp":"..."}
 ///                         or control event: JSON {"event":"run-completed","status":"..."}
+///                                             or JSON {"event":"run-heartbeat"}
 /// </summary>
 public sealed class RedisLogRelayService(
     IConnectionMultiplexer redis,
@@ -44,14 +45,17 @@ public sealed class RedisLogRelayService(
                         .Group(CiCdOutputHub.RunGroup(runId))
                         .SendAsync("LogLine", new { runId, payload }, stoppingToken);
 
-                    // When a run finishes, also notify project-level subscribers so the runs list updates.
-                    if (payload.Contains("run-completed", StringComparison.Ordinal))
+                    // When a run finishes or sends a heartbeat, notify project-level subscribers
+                    // so the runs list refreshes (duration, status) without any client-side timer.
+                    if (payload.Contains("run-completed", StringComparison.Ordinal) ||
+                        payload.Contains("run-heartbeat", StringComparison.Ordinal))
                     {
                         using var doc = JsonDocument.Parse(payload);
-                        if (doc.RootElement.TryGetProperty("event", out var eventProp) &&
-                            eventProp.GetString() == "run-completed")
+                        if (doc.RootElement.TryGetProperty("event", out var eventProp))
                         {
-                            await NotifyProjectRunsUpdatedAsync(runId, stoppingToken);
+                            var evt = eventProp.GetString();
+                            if (evt == "run-completed" || evt == "run-heartbeat")
+                                await NotifyProjectRunsUpdatedAsync(runId, stoppingToken);
                         }
                     }
                 }

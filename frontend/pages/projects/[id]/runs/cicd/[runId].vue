@@ -318,9 +318,8 @@ const debugMetadata = computed(() => {
   return entries
 })
 
-// Live duration ticker
+// `now` is updated on each server-pushed event so the duration display stays live without a timer
 const now = ref(Date.now())
-let durationTimer: ReturnType<typeof setInterval> | null = null
 
 // SignalR connections
 const { connection: cicdConnection, isConnected, connect: connectCicd } = useSignalR('/hubs/cicd-output')
@@ -328,9 +327,6 @@ const { connection: projectConnection, connect: connectProject } = useSignalR('/
 
 onMounted(async () => {
   await store.fetchRun(runId)
-
-  // Tick every second so the duration display stays live while the run is in progress
-  durationTimer = setInterval(() => { now.value = Date.now() }, 1000)
 
   // Connect to the CiCd output hub to receive live log lines and run-completed events
   await connectCicd()
@@ -340,8 +336,11 @@ onMounted(async () => {
       try {
         const data = JSON.parse(event.payload) as { event?: string; stream?: string; line?: string; timestamp?: string }
         if (data.event === 'run-completed') {
+          now.value = Date.now()
           // Refresh the run info (status, endedAt) now that the run is finished
           store.fetchRun(runId)
+        } else if (data.event === 'run-heartbeat') {
+          now.value = Date.now()
         } else if (data.line !== undefined) {
           store.currentRunLogs.push({
             id: crypto.randomUUID(),
@@ -363,10 +362,6 @@ onMounted(async () => {
       if (data.runId === runId) store.fetchRun(runId)
     })
   }
-})
-
-onUnmounted(() => {
-  if (durationTimer) clearInterval(durationTimer)
 })
 
 async function retryRun() {
