@@ -93,6 +93,36 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
             list.Add(trigger.Workflow);
         }
 
+        foreach (var pair in ParseKeyValuePairs(trigger.ActEnv))
+        {
+            list.Add("--env");
+            list.Add(pair);
+        }
+
+        foreach (var pair in ParseKeyValuePairs(trigger.ActSecrets))
+        {
+            list.Add("--secret");
+            list.Add(pair);
+        }
+
         return list;
+    }
+
+    /// <summary>
+    /// Parses a newline-separated list of KEY=VALUE pairs, skipping blank lines and lines
+    /// where the key part (before the first '=') is empty.
+    /// </summary>
+    internal static IEnumerable<string> ParseKeyValuePairs(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            yield break;
+
+        foreach (var line in input.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            var eqIdx = trimmed.IndexOf('=');
+            if (eqIdx > 0)
+                yield return trimmed;
+        }
     }
 }

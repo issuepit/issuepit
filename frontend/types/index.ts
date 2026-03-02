@@ -173,6 +173,8 @@ export interface Project {
   memberCount: number
   mountRepositoryInDocker: boolean
   maxConcurrentRunners: number
+  actEnv?: string
+  actSecrets?: string
   createdAt: string
   updatedAt: string
 }
