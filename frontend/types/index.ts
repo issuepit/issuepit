@@ -196,6 +196,23 @@ export interface IssueComment {
   updatedAt: string
 }
 
+export interface CodeReviewComment {
+  id: string
+  issueId: string
+  filePath: string
+  startLine: number
+  endLine: number
+  sha: string
+  /** The actual lines that were commented on (startLine..endLine). Review target for agentic tools. */
+  snippet?: string
+  /** Context-only lines immediately before the commented block (informational, not directly commented on). */
+  contextBefore?: string
+  /** Context-only lines immediately after the commented block (informational, not directly commented on). */
+  contextAfter?: string
+  body: string
+  createdAt: string
+}
+
 export interface Issue {
   id: string
   projectId: string
