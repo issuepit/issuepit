@@ -177,6 +177,10 @@ const activeTab = ref<typeof tabs[number]>(route.query.tab === 'agent' ? 'Agent 
 
 const { connection, isConnected, connect } = useSignalR('/hubs/project')
 
+// Live duration ticker — keeps the duration column live for in-progress runs
+const now = ref(Date.now())
+let durationTimer: ReturnType<typeof setInterval> | null = null
+
 async function refreshRunsData() {
   await Promise.all([
     store.fetchRuns(id),
@@ -187,12 +191,19 @@ async function refreshRunsData() {
 onMounted(async () => {
   await refreshRunsData()
 
+  // Tick every second so duration displays stay live for in-progress runs
+  durationTimer = setInterval(() => { now.value = Date.now() }, 1000)
+
   // Connect to SignalR for live run updates
   await connect()
   if (connection.value) {
     await connection.value.invoke('JoinProject', id).catch((e) => { console.warn('Failed to join project group', e) })
     connection.value.on('RunsUpdated', refreshRunsData)
   }
+})
+
+onUnmounted(() => {
+  if (durationTimer) clearInterval(durationTimer)
 })
 
 async function cancelRun(runId: string) {
@@ -209,7 +220,7 @@ function formatDate(d: string) {
 }
 
 function duration(start: string, end?: string) {
-  const ms = (end ? new Date(end).getTime() : Date.now()) - new Date(start).getTime()
+  const ms = (end ? new Date(end).getTime() : now.value) - new Date(start).getTime()
   if (ms < 0) return '—'
   const s = Math.floor(ms / 1000)
   if (s < 60) return `${s}s`
