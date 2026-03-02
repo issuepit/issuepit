@@ -63,6 +63,18 @@ export const useMcpServersStore = defineStore('mcp-servers', () => {
     await fetchMcpServers()
   }
 
+  // --- Agent links ---
+
+  async function linkAgent(mcpServerId: string, agentId: string) {
+    await post(`/api/mcp-servers/${mcpServerId}/agents/${agentId}`, {})
+    await fetchMcpServers()
+  }
+
+  async function unlinkAgent(mcpServerId: string, agentId: string) {
+    await del(`/api/mcp-servers/${mcpServerId}/agents/${agentId}`)
+    await fetchMcpServers()
+  }
+
   return {
     mcpServers,
     loading,
@@ -74,5 +86,7 @@ export const useMcpServersStore = defineStore('mcp-servers', () => {
     deleteSecret,
     linkProject,
     unlinkProject,
+    linkAgent,
+    unlinkAgent,
   }
 })
