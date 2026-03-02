@@ -680,3 +680,5 @@ watch(() => store.blob?.path, () => {
   showRenderedMd.value = false
 })
 </script>
+
+<style>@import 'highlight.js/styles/github-dark.css';</style>

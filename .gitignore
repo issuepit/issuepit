@@ -129,7 +129,7 @@ ipch/
 *.sap
 
 # Visual Studio Trace Files
-*.e2e
+#*.e2e # clides with e2e test folder
 
 # TFS 2012 Local Workspace
 $tf/

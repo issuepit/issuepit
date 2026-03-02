@@ -8,8 +8,9 @@ namespace IssuePit.Tests.E2E;
 /// Happy path E2E tests verifying the full flow from registration to creating a project and issues.
 /// Uses the real Aspire stack (postgres, kafka, redis) started by <see cref="AspireFixture"/>.
 /// </summary>
+[Collection("E2E")]
 [Trait("Category", "E2E")]
-public class HappyPathTests : IClassFixture<AspireFixture>, IAsyncLifetime
+public class HappyPathTests : IAsyncLifetime
 {
     private readonly AspireFixture _fixture;
     private IPlaywright? _playwright;
@@ -145,9 +146,6 @@ public class HappyPathTests : IClassFixture<AspireFixture>, IAsyncLifetime
     [Fact]
     public async Task Ui_HappyPath_RegisterCreateOrgProjectAndIssue()
     {
-        if (FrontendUrl is null)
-            return; // Skip gracefully when no frontend is available
-
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
         var page = await context.NewPageAsync();
 
@@ -293,9 +291,6 @@ public class HappyPathTests : IClassFixture<AspireFixture>, IAsyncLifetime
     [Fact]
     public async Task Ui_HappyPath_CreateTeamAndAddMemberWithRole()
     {
-        if (FrontendUrl is null)
-            return; // Skip gracefully when no frontend is available
-
         var tenantId = await GetDefaultTenantIdAsync();
         using var apiClient = CreateCookieClient();
         apiClient.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
