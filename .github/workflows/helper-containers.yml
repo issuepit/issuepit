@@ -16,7 +16,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ toLower(github.repository_owner) }}/issuepit
+  IMAGE_PREFIX: ${{ github.repository_owner }}/issuepit
   # .NET major version bundled in the Playwright image (update when changing PLAYWRIGHT_VERSION)
   DOTNET_MAJOR: "10"
   NODE_MAJOR: "24"
