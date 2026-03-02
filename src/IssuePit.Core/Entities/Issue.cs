@@ -39,6 +39,8 @@ public class Issue
 
     public ICollection<IssueAssignee> Assignees { get; set; } = [];
 
+    public ICollection<IssueLink> Links { get; set; } = [];
+
     public Guid? MilestoneId { get; set; }
 
     [ForeignKey(nameof(MilestoneId))]
