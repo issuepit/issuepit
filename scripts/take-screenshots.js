@@ -134,14 +134,16 @@ async function main() {
   }
   await loginPage.waitForURL(`${FRONTEND_URL}/`, { timeout: 20_000 });
 
-  // Get tenant ID from API; context.request shares cookies with the browser context
+  // Get the default tenant ID from the admin API (seeded by Migrator with hostname "localhost").
+  // context.request shares cookies with the browser context so authenticated calls work.
   const apiClient = context.request;
-  const meRes = await apiClient.get(`${API_URL}/api/auth/me`);
-  const me = await meRes.json();
-  const tenantId = me.tenantId || me.tenant?.id;
-  if (!tenantId) {
-    throw new Error(`Could not determine tenantId from /api/auth/me response: ${JSON.stringify(me)}`);
+  const tenantsRes = await apiClient.get(`${API_URL}/api/admin/tenants`);
+  const tenants = await tenantsRes.json();
+  const defaultTenant = tenants.find((t) => t.hostname === 'localhost');
+  if (!defaultTenant) {
+    throw new Error(`Default 'localhost' tenant not found. Tenants: ${JSON.stringify(tenants)}`);
   }
+  const tenantId = defaultTenant.id;
 
   await loginPage.close();
 
