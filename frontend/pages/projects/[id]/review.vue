@@ -131,7 +131,7 @@
             <span class="text-red-400">-{{ file.removedLines }}</span>
           </span>
           <!-- Toggle large/full file -->
-          <button v-if="file.isTooLarge && !expandedFiles.has(file.newPath)"
+          <button v-if="originallyTooLarge.has(file.newPath) && !expandedFiles.has(file.newPath)"
             @click="expandFile(file)"
             class="text-xs text-brand-400 hover:text-brand-300 ml-2 transition-colors">
             Load diff
@@ -150,7 +150,7 @@
         </div>
 
         <!-- Too-large skeleton (not yet loaded) -->
-        <div v-else-if="file.isTooLarge && !expandedFiles.has(file.newPath)"
+        <div v-else-if="originallyTooLarge.has(file.newPath) && !expandedFiles.has(file.newPath)"
           class="bg-gray-900/50 border border-t-0 border-gray-800 rounded-b-xl p-4">
           <div class="space-y-2">
             <div v-for="n in 6" :key="n" class="h-4 bg-gray-800 rounded animate-pulse"
@@ -249,22 +249,48 @@
                 <template v-for="(pair, pairIdx) in splitLines(hunk.lines)" :key="pairIdx">
                   <tr class="group">
                     <!-- Left (old) -->
-                    <td class="select-none text-right text-gray-600 pr-2 pl-2 w-10 border-r border-gray-800/40 align-top"
-                      :class="pair.left ? lineRowClass(pair.left.lineType) : ''">
+                    <td class="select-none text-right text-gray-600 pr-2 pl-2 w-10 border-r border-gray-800/40 align-top cursor-pointer"
+                      :class="[pair.left ? lineRowClass(pair.left.lineType) : '', { 'hover:text-brand-400': !!pair.left }]"
+                      @click="pair.left && onLineClick(file, hunk, pair.left, 'old', $event)">
                       {{ pair.left?.oldLineNumber ?? '' }}
                     </td>
-                    <td class="pl-2 pr-2 whitespace-pre leading-relaxed w-1/2 border-r border-gray-800/40"
+                    <td class="pl-2 pr-2 whitespace-pre leading-relaxed w-1/2 border-r border-gray-800/40 overflow-hidden"
                       :class="pair.left ? lineRowClass(pair.left.lineType) : ''"
                       v-html="pair.left ? highlightLine(file.newPath, pair.left) : ''"></td>
                     <!-- Right (new) -->
-                    <td class="select-none text-right text-gray-600 pr-2 pl-2 w-10 border-r border-gray-800/40 align-top"
-                      :class="pair.right ? lineRowClass(pair.right.lineType) : ''">
+                    <td class="select-none text-right text-gray-600 pr-2 pl-2 w-10 border-r border-gray-800/40 align-top cursor-pointer"
+                      :class="[pair.right ? lineRowClass(pair.right.lineType) : '', { 'hover:text-brand-400': !!pair.right }]"
+                      @click="pair.right && onLineClick(file, hunk, pair.right, 'new', $event)">
                       {{ pair.right?.newLineNumber ?? '' }}
                     </td>
-                    <td class="pl-2 pr-2 whitespace-pre leading-relaxed w-1/2"
+                    <td class="pl-2 pr-2 whitespace-pre leading-relaxed w-1/2 overflow-hidden"
                       :class="pair.right ? lineRowClass(pair.right.lineType) : ''"
                       v-html="pair.right ? highlightLine(file.newPath, pair.right) : ''"></td>
                   </tr>
+                  <!-- Inline comment inputs (split) -->
+                  <template v-for="(comment, ci) in inlineComments[file.newPath] ?? []" :key="`ic-split-${ci}`">
+                    <tr v-if="comment.hunkIdx === hunkIdx && isCommentInPair(hunk, comment, pair)">
+                      <td colspan="4" class="bg-gray-900 border-t border-b border-brand-800/40 p-3">
+                        <div class="flex items-start gap-2">
+                          <textarea v-model="comment.text" rows="2"
+                            placeholder="Add a comment… (Ctrl+Enter to submit)"
+                            class="flex-1 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white px-3 py-2 focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none"
+                            @keydown.ctrl.enter="submitInlineComment(file, hunk, hunk.lines[comment.lineIdx], comment, hunkIdx, comment.lineIdx)"></textarea>
+                          <div class="flex flex-col gap-1.5">
+                            <button @click="submitInlineComment(file, hunk, hunk.lines[comment.lineIdx], comment, hunkIdx, comment.lineIdx)"
+                              :disabled="!comment.text.trim()"
+                              class="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                              Add
+                            </button>
+                            <button @click="removeInlineComment(file.newPath, ci)"
+                              class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  </template>
                 </template>
               </template>
               <tr v-if="!getHunks(file).length">
@@ -366,6 +392,7 @@ const expandedFiles = ref(new Set<string>())
 const expandingFiles = ref(new Set<string>())
 const fullFileMode = ref(new Set<string>())
 const fullFileCache = ref<Record<string, string[]>>({})
+const originallyTooLarge = ref(new Set<string>())
 
 // ── Review session ──────────────────────────────────────────
 interface ReviewComment {
@@ -502,12 +529,13 @@ async function loadDiff() {
   fullFileMode.value = new Set()
   fullFileCache.value = {}
   await store.fetchDiff(id, baseBranch.value, compareBranch.value)
+  originallyTooLarge.value = new Set(store.diff.filter(f => f.isTooLarge).map(f => f.newPath))
   comparedOnce.value = true
 }
 
 async function expandFile(file: GitDiffFile) {
   expandingFiles.value = new Set([...expandingFiles.value, file.newPath])
-  await store.fetchDiff(id, baseBranch.value, compareBranch.value, 3)
+  await store.fetchDiff(id, baseBranch.value, compareBranch.value, 3, true)
   // Find updated file entry from fresh diff
   expandedFiles.value = new Set([...expandedFiles.value, file.newPath])
   expandingFiles.value.delete(file.newPath)
@@ -625,6 +653,11 @@ function splitLines(lines: GitDiffLine[]): SplitPair[] {
     }
   }
   return pairs
+}
+
+function isCommentInPair(hunk: GitDiffHunk, comment: InlineCommentState, pair: SplitPair): boolean {
+  const line = hunk.lines[comment.lineIdx]
+  return line !== undefined && (line === pair.left || line === pair.right)
 }
 
 // ── UI helpers ────────────────────────────────────────────────
