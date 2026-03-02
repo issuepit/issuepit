@@ -14,12 +14,13 @@ public class ProjectsPage(IPage page)
     }
 
     /// <summary>
-    /// Creates a project via the UI form and waits for it to appear in the list.
-    /// Returns the new project's name.
+    /// Creates a project via the UI form, selecting the given org, and waits for it to appear in the list.
     /// </summary>
-    public async Task CreateProjectAsync(string name, string? slug = null)
+    public async Task CreateProjectAsync(string name, string orgId, string? slug = null)
     {
         await page.ClickAsync("button:has-text('New Project')");
+        await page.WaitForSelectorAsync("[data-testid='org-select']");
+        await page.SelectOptionAsync("[data-testid='org-select']", orgId);
         await page.FillAsync("input[placeholder='My Project']", name);
         if (slug is not null)
         {
