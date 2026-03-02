@@ -62,7 +62,7 @@ var app = builder.Build();
 
 app.MapDefaultEndpoints();
 app.UseCors();
-app.MapMcp();
+app.MapMcp("/mcp");
 
 // Serve the built-in playground UI for manual tool testing
 app.UseDefaultFiles();
