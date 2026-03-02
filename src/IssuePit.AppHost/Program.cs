@@ -11,7 +11,28 @@ var kafka = builder.AddKafka("kafka")
     .WithEnvironment("KAFKA_CONTROLLER_QUORUM_VOTERS", "1@localhost:29093")
     .WithEnvironment("KAFKA_CONTROLLER_LISTENER_NAMES", "CONTROLLER")
     .WithEnvironment("KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR", "1")
-    .WithEnvironment("KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS", "0");
+    .WithEnvironment("KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS", "0")
+    // KAFKA_INTER_BROKER_LISTENER_NAME must be in advertised.listeners (Kafka validation).
+    // Use PLAINTEXT_HOST — the host-mapped listener — so Kafka's metadata response points
+    // external clients to the correct reachable address.
+    .WithEnvironment("KAFKA_INTER_BROKER_LISTENER_NAME", "PLAINTEXT_HOST");
+
+// Aspire's default KAFKA_ADVERTISED_LISTENERS includes PLAINTEXT://localhost:29092,
+// which is bound only inside the container and is never port-mapped to the host.
+// librdkafka (used by api/execution-client/cicd-client) selects the first matching
+// PLAINTEXT listener from the metadata response; on Linux CI with Docker bridge
+// networking this resolves to localhost:29092 — a connection that always fails,
+// keeping every Kafka health-check permanently Unhealthy and hanging App.StartAsync().
+// Override to advertise only PLAINTEXT_HOST (the host-mapped port, reachable from all
+// .NET project processes) and PLAINTEXT_INTERNAL (container network, for kafka-ui).
+kafka.WithEnvironment(context =>
+{
+    if (!context.ExecutionContext.IsRunMode) return;
+    var hostPort = kafka.Resource.PrimaryEndpoint.Property(EndpointProperty.Port);
+    var internalPort = kafka.Resource.InternalEndpoint.Property(EndpointProperty.TargetPort);
+    context.EnvironmentVariables["KAFKA_ADVERTISED_LISTENERS"] =
+        ReferenceExpression.Create($"PLAINTEXT_HOST://localhost:{hostPort},PLAINTEXT_INTERNAL://{kafka.Resource.Name}:{internalPort}");
+});
 
 var redis = builder.AddValkey("redis")
     .WithImage("valkey/valkey", "9.0");

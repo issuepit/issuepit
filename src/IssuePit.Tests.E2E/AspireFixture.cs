@@ -76,9 +76,11 @@ public sealed class AspireFixture : IAsyncLifetime
 
         Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Starting Aspire AppHost (postgres, kafka, redis, api, frontend)...");
 
-        // Log every resource state change so we can see which container is blocking or stuck.
-        // Also acts as a heartbeat to prevent --blame-hang-timeout from firing during startup.
+        // Log resource state changes so we can see which container is blocking or stuck.
+        // Track the last-seen state per resource to suppress repeated identical states
+        // (Aspire emits a new event on every health-check poll even when state is unchanged).
         var notifications = App.Services.GetRequiredService<ResourceNotificationService>();
+        var lastStates = new Dictionary<string, string>();
         using var startCts = new CancellationTokenSource();
         var resourceLogger = Task.Run(async () =>
         {
@@ -87,6 +89,9 @@ public sealed class AspireFixture : IAsyncLifetime
                 await foreach (var evt in notifications.WatchAsync(startCts.Token))
                 {
                     var state = evt.Snapshot.State?.Text ?? "unknown";
+                    var resourceKey = $"{evt.Resource.Name}/{evt.ResourceId}";
+                    if (lastStates.TryGetValue(resourceKey, out var prev) && prev == state) continue;
+                    lastStates[resourceKey] = state;
                     Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] [{evt.Resource.Name}] -> {state}");
                 }
             }
