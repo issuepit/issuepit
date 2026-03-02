@@ -84,11 +84,18 @@ public sealed class AspireFixture : IAsyncLifetime
         {
             try
             {
+                var lastSeen = new Dictionary<string, (string State, HealthStatus? Health)>();
                 await foreach (var evt in notifications.WatchAsync(startCts.Token))
                 {
+                    var name = evt.Resource.Name;
                     var state = evt.Snapshot.State?.Text ?? "unknown";
                     var health = evt.Snapshot.HealthStatus;
-                    Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] [{evt.Resource.Name}] -> {state}; {health}");
+
+                    if (!lastSeen.TryGetValue(name, out var prev) || prev.State != state || prev.Health != health)
+                    {
+                        Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] [{name}] -> {state}; {health}");
+                        lastSeen[name] = (state, health);
+                    }
                 }
             }
             catch (OperationCanceledException) { }
