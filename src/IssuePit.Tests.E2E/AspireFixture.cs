@@ -1,5 +1,6 @@
 using System.Reflection;
 using Aspire.Hosting;
+using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -75,22 +76,26 @@ public sealed class AspireFixture : IAsyncLifetime
 
         Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Starting Aspire AppHost (postgres, kafka, redis, api, frontend)...");
 
-        // Print a heartbeat every 5 seconds while StartAsync() is running so the
-        // --blame-hang-timeout collector never fires during silent container startup.
+        // Log every resource state change so we can see which container is blocking or stuck.
+        // Also acts as a heartbeat to prevent --blame-hang-timeout from firing during startup.
+        var notifications = App.Services.GetRequiredService<ResourceNotificationService>();
         using var startCts = new CancellationTokenSource();
-        var heartbeat = Task.Run(async () =>
+        var resourceLogger = Task.Run(async () =>
         {
-            while (!startCts.Token.IsCancellationRequested)
+            try
             {
-                await Task.Delay(5000, startCts.Token).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
-                if (!startCts.Token.IsCancellationRequested)
-                    Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Waiting for Aspire startup...");
+                await foreach (var evt in notifications.WatchAsync(startCts.Token))
+                {
+                    var state = evt.Snapshot.State?.Text ?? "unknown";
+                    Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] [{evt.Resource.Name}] -> {state}");
+                }
             }
+            catch (OperationCanceledException) { }
         });
 
         await App.StartAsync();
         await startCts.CancelAsync();
-        await heartbeat;
+        await resourceLogger;
 
         Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Aspire AppHost started.");
 
