@@ -119,7 +119,23 @@ public class DockerCiCdRuntime(
             },
         };
 
-        var container = await dockerClient.Containers.CreateContainerAsync(createParams, cancellationToken);
+        CreateContainerResponse container;
+        try
+        {
+            container = await dockerClient.Containers.CreateContainerAsync(createParams, cancellationToken);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException ||
+            (ex is OperationCanceledException oce && oce.CancellationToken != cancellationToken && !cancellationToken.IsCancellationRequested))
+        {
+            var msg = "Lost connection to the Docker daemon while creating the container. " +
+                "This can happen on Windows when Docker Desktop resets named-pipe connections. " +
+                "Try running the CI/CD run again.";
+            await onLogLine($"[ERROR] {msg}", LogStream.Stderr);
+            foreach (var line in ex.ToString().Split('\n'))
+                await onLogLine(line.TrimEnd('\r'), LogStream.Stderr);
+            throw new InvalidOperationException(msg, ex);
+        }
+
         logger.LogInformation("Created Docker container {ContainerId} for CI/CD run {RunId}",
             container.ID, run.Id);
         await onLogLine($"[DEBUG] Container ID   : {container.ID[..12]}", LogStream.Stdout);
@@ -137,6 +153,17 @@ public class DockerCiCdRuntime(
                 $"The '{actBin}' binary was not found inside the Docker container. " +
                 $"Ensure the image '{image}' has 'act' installed, or override CiCd__ActBinaryPath " +
                 "with the correct path to the act binary inside the container.", ex);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException ||
+            (ex is OperationCanceledException oce && oce.CancellationToken != cancellationToken && !cancellationToken.IsCancellationRequested))
+        {
+            var msg = "Lost connection to the Docker daemon while starting the container. " +
+                "This can happen on Windows when Docker Desktop resets named-pipe connections. " +
+                "Try running the CI/CD run again.";
+            await onLogLine($"[ERROR] {msg}", LogStream.Stderr);
+            foreach (var line in ex.ToString().Split('\n'))
+                await onLogLine(line.TrimEnd('\r'), LogStream.Stderr);
+            throw new InvalidOperationException(msg, ex);
         }
 
         var succeeded = false;
