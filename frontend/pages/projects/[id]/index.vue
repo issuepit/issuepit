@@ -86,6 +86,8 @@
             <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
               {{ runsStore.runs.length }}
             </p>
+            <span v-if="isConnected" class="w-2 h-2 rounded-full bg-green-400 animate-pulse shrink-0" title="Live updates connected" />
+            <span v-else class="w-2 h-2 rounded-full bg-gray-600 shrink-0" title="Live updates disconnected" />
           </div>
           <p class="text-xs text-gray-500 mt-0.5">CI/CD Runs</p>
         </NuxtLink>
@@ -244,6 +246,15 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
               Recent CI/CD Runs
+              <!-- WS connection indicator -->
+              <span v-if="isConnected" class="flex items-center gap-1 text-xs text-green-400 font-normal">
+                <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                Live
+              </span>
+              <span v-else class="flex items-center gap-1 text-xs text-gray-600 font-normal">
+                <span class="w-1.5 h-1.5 rounded-full bg-gray-600" />
+                Offline
+              </span>
             </h2>
             <NuxtLink :to="`/projects/${id}/runs`"
               class="text-xs text-brand-400 hover:text-brand-300 transition-colors">

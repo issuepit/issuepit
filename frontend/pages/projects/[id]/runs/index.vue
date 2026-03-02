@@ -12,6 +12,15 @@
           d="M13 10V3L4 14h7v7l9-11h-7z" />
       </svg>
       <h1 class="text-xl font-bold text-white">Runs</h1>
+      <!-- WS connection indicator -->
+      <span v-if="isConnected" class="flex items-center gap-1 text-xs text-green-400 font-normal ml-1">
+        <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+        Live
+      </span>
+      <span v-else class="flex items-center gap-1 text-xs text-gray-600 font-normal ml-1">
+        <span class="w-1.5 h-1.5 rounded-full bg-gray-600" />
+        Offline
+      </span>
     </div>
 
     <!-- Tabs -->
@@ -166,11 +175,24 @@ const store = useCiCdRunsStore()
 const tabs = ['CI/CD Runs', 'Agent Runs'] as const
 const activeTab = ref<typeof tabs[number]>(route.query.tab === 'agent' ? 'Agent Runs' : 'CI/CD Runs')
 
-onMounted(async () => {
+const { connection, isConnected, connect } = useSignalR('/hubs/project')
+
+async function refreshRunsData() {
   await Promise.all([
     store.fetchRuns(id),
     store.fetchAgentSessions(id),
   ])
+}
+
+onMounted(async () => {
+  await refreshRunsData()
+
+  // Connect to SignalR for live run updates
+  await connect()
+  if (connection.value) {
+    await connection.value.invoke('JoinProject', id).catch((e) => { console.warn('Failed to join project group', e) })
+    connection.value.on('RunsUpdated', refreshRunsData)
+  }
 })
 
 async function cancelRun(runId: string) {
