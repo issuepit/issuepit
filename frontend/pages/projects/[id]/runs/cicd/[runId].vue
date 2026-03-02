@@ -87,7 +87,13 @@
         <div v-if="showRetryModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @click.self="showRetryModal = false">
           <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-xl p-6 w-full max-w-sm">
             <h3 class="text-base font-semibold text-white mb-4">Retry Options</h3>
-            <label class="flex items-start gap-3 cursor-pointer mb-6">
+
+            <!-- Conflict warning -->
+            <div v-if="retryConflict" class="mb-4 rounded-lg bg-yellow-900/40 border border-yellow-700/50 p-3 text-xs text-yellow-300">
+              {{ retryConflict.message }}
+            </div>
+
+            <label class="flex items-start gap-3 cursor-pointer mb-3">
               <input
                 v-model="retryOptions.keepContainerOnFailure"
                 type="checkbox"
@@ -97,10 +103,20 @@
                 <span class="block text-xs text-gray-500 mt-0.5">The Docker container is not removed when the run fails, so you can inspect it (e.g. verify where <code class="text-gray-400">act</code> is installed).</span>
               </span>
             </label>
+            <label class="flex items-start gap-3 cursor-pointer mb-6">
+              <input
+                v-model="retryOptions.forceRetry"
+                type="checkbox"
+                class="mt-0.5 rounded border-gray-600 bg-gray-800 text-brand-500 focus:ring-brand-500" />
+              <span class="text-sm text-gray-300">
+                Force retry
+                <span class="block text-xs text-gray-500 mt-0.5">Retry even if another run for this project is already in progress.</span>
+              </span>
+            </label>
             <div class="flex justify-end gap-2">
               <button
                 class="px-4 py-1.5 text-sm text-gray-400 hover:text-gray-200 transition-colors"
-                @click="showRetryModal = false">
+                @click="showRetryModal = false; retryConflict = null; retryOptions.forceRetry = false">
                 Cancel
               </button>
               <button
@@ -201,7 +217,8 @@ const store = useCiCdRunsStore()
 
 const retrying = ref(false)
 const showRetryModal = ref(false)
-const retryOptions = reactive({ keepContainerOnFailure: false })
+const retryOptions = reactive({ keepContainerOnFailure: false, forceRetry: false })
+const retryConflict = ref<{ message: string; activeRunId: string } | null>(null)
 
 const sectionTabs = [
   { label: 'Logs', value: 'logs' },
@@ -242,10 +259,28 @@ async function retryRun() {
 
 async function retryRunWithOptions() {
   retrying.value = true
+  retryConflict.value = null
   showRetryModal.value = false
   try {
-    await store.retryRun(runId, { keepContainerOnFailure: retryOptions.keepContainerOnFailure })
+    await store.retryRun(runId, {
+      keepContainerOnFailure: retryOptions.keepContainerOnFailure,
+      forceRetry: retryOptions.forceRetry,
+    })
+    retryOptions.forceRetry = false
     navigateTo(`/projects/${projectId}/runs`)
+  } catch (e: unknown) {
+    // Handle 409 "already running" conflict — surface it in the options modal
+    interface RetryConflictResponse { error?: string; canForce?: boolean; activeRunId?: string }
+    const data = (e as { data?: RetryConflictResponse })?.data
+    if (data?.canForce) {
+      retryConflict.value = {
+        message: data.error ?? 'Another run is already in progress for this project.',
+        activeRunId: data.activeRunId ?? '',
+      }
+      showRetryModal.value = true
+    } else {
+      store.error = e instanceof Error ? e.message : 'Failed to retry CI/CD run'
+    }
   } finally {
     retrying.value = false
   }

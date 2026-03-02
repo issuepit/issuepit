@@ -175,6 +175,26 @@ public class CiCdRunsController(IssuePitDbContext db, TenantContext tenant, IPro
         if (run.Status is not (CiCdRunStatus.Failed or CiCdRunStatus.Cancelled))
             return Conflict(new { error = "Only failed or cancelled runs can be retried.", run.Status, StatusName = run.Status.ToString() });
 
+        // Warn if another run for the same project is already in progress, unless the caller forces it.
+        if (options?.ForceRetry != true)
+        {
+            var activeRun = await db.CiCdRuns
+                .Where(r => r.ProjectId == run.ProjectId
+                    && r.Id != run.Id
+                    && (r.Status == CiCdRunStatus.Running || r.Status == CiCdRunStatus.Pending))
+                .Select(r => new { r.Id, StatusName = r.Status.ToString() })
+                .FirstOrDefaultAsync();
+
+            if (activeRun is not null)
+                return Conflict(new
+                {
+                    error = "Another run is already in progress for this project.",
+                    activeRunId = activeRun.Id,
+                    activeRunStatus = activeRun.StatusName,
+                    canForce = true,
+                });
+        }
+
         // Publish a new trigger — the CiCdWorker will create a new run record.
         var payload = System.Text.Json.JsonSerializer.Serialize(new
         {
@@ -241,7 +261,9 @@ public class CiCdRunsController(IssuePitDbContext db, TenantContext tenant, IPro
 /// <summary>Options body for the retry run endpoint.</summary>
 public record RetryRunOptions(
     /// <summary>When true the Docker container is not removed after a failed run, for debugging.</summary>
-    bool KeepContainerOnFailure = false);
+    bool KeepContainerOnFailure = false,
+    /// <summary>When true the retry proceeds even if another run for the same project is already in progress.</summary>
+    bool ForceRetry = false);
 
 /// <summary>Request body for the external CI/CD sync endpoint.</summary>
 public record ExternalSyncRequest(

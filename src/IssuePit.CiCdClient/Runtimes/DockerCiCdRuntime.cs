@@ -67,6 +67,8 @@ public class DockerCiCdRuntime(
         }
 
         logger.LogInformation("Pulling Docker image {Image} for CI/CD run {RunId}", image, run.Id);
+        var pullStart = DateTime.UtcNow;
+        await onLogLine($"[DEBUG] Pull started   : {pullStart:u}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Pulling image  : {image}", LogStream.Stdout);
         try
         {
@@ -87,6 +89,11 @@ public class DockerCiCdRuntime(
                 await onLogLine(line.TrimEnd('\r'), LogStream.Stderr);
             throw new InvalidOperationException(msg, ex);
         }
+
+        var pullDuration = DateTime.UtcNow - pullStart;
+        await onLogLine(
+            $"[DEBUG] Pull finished  : {DateTime.UtcNow:u} (took {pullDuration.TotalSeconds:F1}s)",
+            LogStream.Stdout);
 
         logger.LogInformation("Creating Docker container from image {Image} for CI/CD run {RunId}", image, run.Id);
 
@@ -164,7 +171,8 @@ public class DockerCiCdRuntime(
             if (keepContainer)
             {
                 await onLogLine(
-                    $"[DEBUG] Container kept : {container.ID[..12]} (KeepContainerOnFailure=true — inspect to debug)",
+                    $"[DEBUG] Container kept : {container.ID[..12]} (KeepContainerOnFailure=true)" +
+                    " — run `docker ps -a` to find it, `docker exec -it <id> sh` to inspect",
                     LogStream.Stdout);
                 logger.LogInformation(
                     "Keeping Docker container {ContainerId} for failed CI/CD run {RunId} (KeepContainerOnFailure=true)",
