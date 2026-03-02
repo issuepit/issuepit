@@ -64,7 +64,7 @@ var api = builder.AddProject<Projects.IssuePit_Api>("api")
     .WaitForCompletion(migrator)
     .WaitFor(kafka)
     .WaitFor(redis)
-    .WithHttpHealthCheck("/health")
+    .WithHttpHealthCheck("/health", endpointName: "http")
     .WithEnvironment("AllowedOrigins", frontend.GetEndpoint("http"))
     .WithEnvironment("GitHub__OAuth__FrontendUrl", frontend.GetEndpoint("http"))
     .WithUrlForEndpoint("http", u =>
@@ -87,7 +87,7 @@ var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("exe
     .WithReference(kafka)
     .WaitForCompletion(migrator)
     .WaitFor(kafka)
-    .WithHttpHealthCheck("/health");
+    .WithHttpHealthCheck("/health", endpointName: "http");
 
 var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     .WithReference(postgresDb)
@@ -97,7 +97,7 @@ var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     .WaitForCompletion(migrator)
     .WaitFor(kafka)
     .WaitFor(redis)
-    .WithHttpHealthCheck("/health");
+    .WithHttpHealthCheck("/health", endpointName: "http");
 
 frontend
     .WithEnvironment("NUXT_PUBLIC_API_BASE", api.GetEndpoint("http"))
