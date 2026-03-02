@@ -1,0 +1,30 @@
+using Microsoft.Playwright;
+
+namespace IssuePit.Tests.E2E.Pages;
+
+/// <summary>
+/// Page object for a project's issues page (/projects/{projectId}/issues).
+/// </summary>
+public class IssuesPage(IPage page)
+{
+    /// <summary>
+    /// Navigates to the issues page for the given project and waits for the heading.
+    /// </summary>
+    public async Task GotoAsync(string projectId)
+    {
+        await page.GotoAsync($"/projects/{projectId}/issues");
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await page.WaitForSelectorAsync("h1:has-text('Issues')", new PageWaitForSelectorOptions { Timeout = 10_000 });
+    }
+
+    /// <summary>
+    /// Creates an issue via the New Issue modal and waits for the title to appear in the list.
+    /// </summary>
+    public async Task CreateIssueAsync(string title)
+    {
+        await page.ClickAsync("button:has-text('New Issue')");
+        await page.FillAsync("input[placeholder='Issue title']", title);
+        await page.ClickAsync("button:has-text('Create Issue')");
+        await page.WaitForSelectorAsync($"text={title}", new PageWaitForSelectorOptions { Timeout = 10_000 });
+    }
+}
