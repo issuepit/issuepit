@@ -16,7 +16,7 @@ public class AgentsPage(IPage page)
     /// <summary>
     /// Creates an agent mode via the UI form, selecting the given org, and waits for it to appear in the list.
     /// </summary>
-    public async Task CreateAgentAsync(string name, string orgId, string? dockerImage = null)
+    public async Task CreateAgentAsync(string name, string orgId, string? dockerImage = null, string? systemPrompt = null)
     {
         await page.ClickAsync("button:has-text('New Agent Mode')");
         await page.WaitForSelectorAsync("[data-testid='org-select']");
@@ -26,6 +26,7 @@ public class AgentsPage(IPage page)
         {
             await page.FillAsync("input[placeholder='ghcr.io/org/agent:latest']", dockerImage);
         }
+        await page.FillAsync("textarea[placeholder='You are a helpful agent that...']", systemPrompt ?? "You are a test agent.");
         await page.ClickAsync("button:has-text('Create')");
         await page.WaitForSelectorAsync($"h3:has-text('{name}')", new PageWaitForSelectorOptions { Timeout = 10_000 });
     }
