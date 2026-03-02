@@ -198,3 +198,74 @@ public class IssueAssigneeKafkaTests(TrackingApiFactory factory) : IClassFixture
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
     }
 }
+
+[Trait("Category", "Integration")]
+public class IssueCreationKafkaTests(TrackingApiFactory factory) : IClassFixture<TrackingApiFactory>
+{
+    private readonly HttpClient _client = factory.CreateClient();
+
+    private async Task<(Guid tenantId, Guid projectId)> SeedProjectAsync()
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+        var tenantId = Guid.NewGuid();
+        db.Tenants.Add(new Tenant { Id = tenantId, Name = "T", Hostname = $"host-{tenantId}" });
+        var org = new Organization { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Org", Slug = $"org-{tenantId}" };
+        db.Organizations.Add(org);
+        var project = new Project { Id = Guid.NewGuid(), OrgId = org.Id, Name = "Proj", Slug = $"proj-{tenantId}" };
+        db.Projects.Add(project);
+        await db.SaveChangesAsync();
+        return (tenantId, project.Id);
+    }
+
+    [Fact]
+    public async Task CreateIssue_PublishesIssueAssignedKafkaEvent()
+    {
+        var (tenantId, projectId) = await SeedProjectAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var response = await _client.PostAsJsonAsync("/api/issues",
+            new { title = "Kafka Test Issue", projectId, status = IssueStatus.Backlog, priority = IssuePriority.NoPriority, type = IssueType.Issue });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var issue = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var issueId = issue.GetProperty("id").GetString();
+
+        var published = factory.Producer.Produced;
+
+        var message = published.Single(m => m.Topic == "issue-assigned" && m.Message.Key == issueId);
+        var payload = JsonSerializer.Deserialize<JsonElement>(message.Message.Value);
+        Assert.Equal(issueId, payload.GetProperty("Id").GetString());
+        Assert.Equal(projectId.ToString(), payload.GetProperty("ProjectId").GetString());
+        Assert.Equal("Kafka Test Issue", payload.GetProperty("Title").GetString());
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
+    public async Task CreateIssue_KafkaPayload_DoesNotContainAgentId()
+    {
+        var (tenantId, projectId) = await SeedProjectAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var response = await _client.PostAsJsonAsync("/api/issues",
+            new { title = "No Agent Issue", projectId, status = IssueStatus.Backlog, priority = IssuePriority.NoPriority, type = IssueType.Issue });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var issue = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var issueId = issue.GetProperty("id").GetString();
+
+        var message = factory.Producer.Produced.Single(m => m.Topic == "issue-assigned" && m.Message.Key == issueId);
+        var payload = JsonSerializer.Deserialize<JsonElement>(message.Message.Value);
+        Assert.False(payload.TryGetProperty("AgentId", out _), "Issue-created event must not contain AgentId");
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+}

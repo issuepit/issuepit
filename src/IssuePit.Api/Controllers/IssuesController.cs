@@ -11,7 +11,7 @@ namespace IssuePit.Api.Controllers;
 
 [ApiController]
 [Route("api/issues")]
-public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer<string, string> producer, ILogger<IssuesController> logger, IssueEnhancementService enhancementService) : ControllerBase
+public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer<string, string> producer, IssueEnhancementService enhancementService) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetIssues([FromQuery] Guid? projectId)
@@ -106,23 +106,11 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         db.Issues.Add(issue);
         await db.SaveChangesAsync();
 
-        // Fire-and-forget: the issue is persisted; Kafka notification is best-effort.
-        try
+        await producer.ProduceAsync("issue-assigned", new Message<string, string>
         {
-            producer.Produce("issue-assigned", new Message<string, string>
-            {
-                Key = issue.Id.ToString(),
-                Value = JsonSerializer.Serialize(new { issue.Id, issue.ProjectId, issue.Title })
-            }, report =>
-            {
-                if (report.Error.IsError)
-                    logger.LogWarning("Failed to deliver Kafka message for issue {IssueId}: {Reason}", issue.Id, report.Error.Reason);
-            });
-        }
-        catch (ProduceException<string, string> ex)
-        {
-            logger.LogWarning(ex, "Kafka unavailable when creating issue {IssueId}; event delivery skipped.", issue.Id);
-        }
+            Key = issue.Id.ToString(),
+            Value = JsonSerializer.Serialize(new { issue.Id, issue.ProjectId, issue.Title })
+        });
 
         return Created($"/api/issues/{issue.Id}", issue);
     }
