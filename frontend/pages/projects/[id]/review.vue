@@ -222,27 +222,39 @@
                   <template v-for="(comment, ci) in inlineComments[file.newPath] ?? []" :key="`ic-${ci}`">
                     <tr v-if="comment.hunkIdx === hunkIdx && comment.endLineIdx === lineIdx">
                       <td colspan="3" class="bg-gray-900 border-t border-b border-brand-800/40 p-3">
-                        <p v-if="commentLineLabel(hunk, comment)" class="text-xs text-gray-500 mb-1.5">
-                          Commenting on
-                          <span class="text-brand-300">{{ commentLineLabel(hunk, comment) }}</span>
-                        </p>
-                        <div class="flex items-start gap-2">
-                          <textarea v-model="comment.text" rows="2"
-                            placeholder="Add a comment… (Ctrl+Enter to submit)"
-                            class="flex-1 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white px-3 py-2 focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none"
-                            @keydown.ctrl.enter="submitInlineComment(file, hunk, comment, hunkIdx)"></textarea>
-                          <div class="flex flex-col gap-1.5">
-                            <button @click="submitInlineComment(file, hunk, comment, hunkIdx)"
-                              :disabled="!comment.text.trim()"
-                              class="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
-                              Add
-                            </button>
+                        <!-- Submitted comment: show as read-only chip -->
+                        <template v-if="comment.submitted">
+                          <div class="flex items-start gap-2 text-xs">
+                            <span class="text-brand-400 shrink-0">✓</span>
+                            <span class="text-gray-300 flex-1">{{ comment.text }}</span>
                             <button @click="removeInlineComment(file.newPath, ci)"
-                              class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">
-                              Cancel
-                            </button>
+                              class="text-gray-600 hover:text-red-400 transition-colors shrink-0">×</button>
                           </div>
-                        </div>
+                        </template>
+                        <!-- Pending comment: editable -->
+                        <template v-else>
+                          <p v-if="commentLineLabel(hunk, comment)" class="text-xs text-gray-500 mb-1.5">
+                            Commenting on
+                            <span class="text-brand-300">{{ commentLineLabel(hunk, comment) }}</span>
+                          </p>
+                          <div class="flex items-start gap-2">
+                            <textarea v-model="comment.text" rows="2"
+                              placeholder="Add a comment… (Ctrl+Enter to submit)"
+                              class="flex-1 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white px-3 py-2 focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none"
+                              @keydown.ctrl.enter="submitInlineComment(file, hunk, comment, hunkIdx)"></textarea>
+                            <div class="flex flex-col gap-1.5">
+                              <button @click="submitInlineComment(file, hunk, comment, hunkIdx)"
+                                :disabled="!comment.text.trim()"
+                                class="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                                Add
+                              </button>
+                              <button @click="removeInlineComment(file.newPath, ci)"
+                                class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        </template>
                       </td>
                     </tr>
                   </template>
@@ -303,27 +315,39 @@
                       <!-- Left empty spacer when comment is on the right side -->
                       <td v-if="comment.side === 'new'" colspan="2" class="bg-gray-900/30 border-b border-brand-800/20"></td>
                       <td colspan="2" class="bg-gray-900 border-t border-b border-brand-800/40 p-3">
-                        <p v-if="commentLineLabel(hunk, comment)" class="text-xs text-gray-500 mb-1.5">
-                          Commenting on
-                          <span class="text-brand-300">{{ commentLineLabel(hunk, comment) }}</span>
-                        </p>
-                        <div class="flex items-start gap-2">
-                          <textarea v-model="comment.text" rows="2"
-                            placeholder="Add a comment… (Ctrl+Enter to submit)"
-                            class="flex-1 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white px-3 py-2 focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none"
-                            @keydown.ctrl.enter="submitInlineComment(file, hunk, comment, hunkIdx)"></textarea>
-                          <div class="flex flex-col gap-1.5">
-                            <button @click="submitInlineComment(file, hunk, comment, hunkIdx)"
-                              :disabled="!comment.text.trim()"
-                              class="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
-                              Add
-                            </button>
+                        <!-- Submitted comment: show as read-only chip -->
+                        <template v-if="comment.submitted">
+                          <div class="flex items-start gap-2 text-xs">
+                            <span class="text-brand-400 shrink-0">✓</span>
+                            <span class="text-gray-300 flex-1">{{ comment.text }}</span>
                             <button @click="removeInlineComment(file.newPath, ci)"
-                              class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">
-                              Cancel
-                            </button>
+                              class="text-gray-600 hover:text-red-400 transition-colors shrink-0">×</button>
                           </div>
-                        </div>
+                        </template>
+                        <!-- Pending comment: editable -->
+                        <template v-else>
+                          <p v-if="commentLineLabel(hunk, comment)" class="text-xs text-gray-500 mb-1.5">
+                            Commenting on
+                            <span class="text-brand-300">{{ commentLineLabel(hunk, comment) }}</span>
+                          </p>
+                          <div class="flex items-start gap-2">
+                            <textarea v-model="comment.text" rows="2"
+                              placeholder="Add a comment… (Ctrl+Enter to submit)"
+                              class="flex-1 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white px-3 py-2 focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none"
+                              @keydown.ctrl.enter="submitInlineComment(file, hunk, comment, hunkIdx)"></textarea>
+                            <div class="flex flex-col gap-1.5">
+                              <button @click="submitInlineComment(file, hunk, comment, hunkIdx)"
+                                :disabled="!comment.text.trim()"
+                                class="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                                Add
+                              </button>
+                              <button @click="removeInlineComment(file.newPath, ci)"
+                                class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        </template>
                       </td>
                       <!-- Right empty spacer when comment is on the left side -->
                       <td v-if="comment.side === 'old'" colspan="2" class="bg-gray-900/30 border-b border-brand-800/20"></td>
@@ -441,6 +465,7 @@ const authStore = useAuthStore()
 const repoChecked = ref(false)
 const baseBranch = ref('')
 const compareBranch = ref('')
+const compareSha = ref('')  // SHA of the compare branch tip at load time
 const diffMode = ref<'unified' | 'split'>('unified')
 const comparedOnce = ref(false)
 const expandedFiles = ref(new Set<string>())
@@ -451,6 +476,7 @@ const originallyTooLarge = ref(new Set<string>())
 const collapsedFiles = ref(new Set<string>())
 
 const COLLAPSE_THRESHOLD = 5
+const MAIN_BRANCHES = ['main', 'master']
 const LS_KEY = computed(() => `issuepit-review-${id}`)
 
 // ── Review session ──────────────────────────────────────────
@@ -549,6 +575,7 @@ interface InlineCommentState {
   lineIdx: number    // start line index
   endLineIdx: number // end line index (inclusive; same as lineIdx for single-line)
   side: 'old' | 'new' // which side was clicked (for split view layout)
+  submitted?: boolean // true after the comment has been added to the review
   text: string
 }
 
@@ -584,7 +611,8 @@ function onLineClick(file: GitDiffFile, hunk: GitDiffHunk, line: GitDiffLine, si
     )
     if (existingRange !== -1) {
       inlineComments.value[fp].splice(existingRange, 1)
-      delete lineSelectionAnchor.value[fp]
+      const { [fp]: _removed, ...remaining } = lineSelectionAnchor.value
+      lineSelectionAnchor.value = remaining
     } else {
       inlineComments.value[fp].push({ hunkIdx, lineIdx: startIdx, endLineIdx: endIdx, side, text: '' })
     }
@@ -596,7 +624,8 @@ function onLineClick(file: GitDiffFile, hunk: GitDiffHunk, line: GitDiffLine, si
     )
     if (existing !== -1) {
       inlineComments.value[fp].splice(existing, 1)
-      delete lineSelectionAnchor.value[fp]
+      const { [fp]: _removed, ...remaining } = lineSelectionAnchor.value
+      lineSelectionAnchor.value = remaining
     } else {
       inlineComments.value[fp].push({ hunkIdx, lineIdx, endLineIdx: lineIdx, side, text: '' })
     }
@@ -639,10 +668,11 @@ function submitInlineComment(file: GitDiffFile, hunk: GitDiffHunk, comment: Inli
     comment: comment.text.trim(),
     snippet
   })
+  // Mark as submitted in-place so it stays visible at its diff position
+  comment.submitted = true
   const fp = file.newPath
-  const idx = (inlineComments.value[fp] ?? []).indexOf(comment)
-  removeInlineComment(fp, idx)
-  delete lineSelectionAnchor.value[fp]
+  const { [fp]: _removed, ...remaining } = lineSelectionAnchor.value
+  lineSelectionAnchor.value = remaining
 }
 
 // ── Finish review ────────────────────────────────────────────
@@ -650,7 +680,9 @@ async function finishReview() {
   if (reviewComments.value.length === 0) return
   savingReview.value = true
   try {
-    const diffRef = `\`${baseBranch.value}\` → \`${compareBranch.value}\``
+    const versionRef = compareSha.value ? compareSha.value.slice(0, 7) : compareBranch.value
+    const branchSuffix = !MAIN_BRANCHES.includes(compareBranch.value) ? ` (${compareBranch.value})` : ''
+    const diffRef = `\`${baseBranch.value}\` → \`${versionRef}\`${branchSuffix}`
     const bodyLines: string[] = [
       `> **Diff:** ${diffRef}\n`
     ]
@@ -662,7 +694,7 @@ async function finishReview() {
           ? `line ${c.lines.start}`
           : `lines ${c.lines.start}–${c.lines.end}`
         const ext = c.filePath.split('.').pop() ?? ''
-        bodyLines.push(`### \`${c.filePath}\` (${lineRange}) — ${compareBranch.value}\n\`\`\`${ext}\n${c.snippet}\n\`\`\`\n\n${c.comment}`)
+        bodyLines.push(`### \`${c.filePath}\` (${lineRange}) @ \`${versionRef}\`\n\`\`\`${ext}\n${c.snippet}\n\`\`\`\n\n${c.comment}`)
       }
     }
     const body = bodyLines.join('\n\n---\n\n')
@@ -712,6 +744,8 @@ async function loadDiff() {
   fullFileMode.value = new Set()
   fullFileCache.value = {}
   await store.fetchDiff(id, baseBranch.value, compareBranch.value)
+  // Capture the SHA of the compare branch tip for use in review comments
+  compareSha.value = allBranches.value.find(b => b.name === compareBranch.value)?.sha ?? ''
   originallyTooLarge.value = new Set(store.diff.filter(f => f.isTooLarge).map(f => f.newPath))
   // Collapse files when there are many — users can expand each on demand
   if (store.diff.length > COLLAPSE_THRESHOLD) {
