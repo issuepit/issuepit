@@ -271,6 +271,8 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
             EndLine = req.EndLine,
             Sha = req.Sha,
             Snippet = req.Snippet,
+            ContextBefore = req.ContextBefore,
+            ContextAfter = req.ContextAfter,
             Body = req.Body,
             CreatedAt = DateTime.UtcNow,
         };
@@ -294,6 +296,8 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
             EndLine = req.EndLine,
             Sha = req.Sha,
             Snippet = req.Snippet,
+            ContextBefore = req.ContextBefore,
+            ContextAfter = req.ContextAfter,
             Body = req.Body,
             CreatedAt = DateTime.UtcNow,
         }).ToList();
@@ -376,7 +380,7 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
 }
 
 public record CommentRequest(string Body, Guid? UserId);
-public record CodeReviewCommentRequest(string FilePath, int StartLine, int EndLine, string Sha, string? Snippet, string Body);
+public record CodeReviewCommentRequest(string FilePath, int StartLine, int EndLine, string Sha, string? Snippet, string? ContextBefore, string? ContextAfter, string Body);
 public record AssigneeRequest(Guid? UserId, Guid? AgentId);
 public record LabelAssignRequest(Guid LabelId);
 public record UpdateIssueRequest(

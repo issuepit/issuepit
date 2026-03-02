@@ -486,6 +486,8 @@ interface ReviewComment {
   comment: string
   snippet: string
   sha: string
+  contextBefore?: string
+  contextAfter?: string
 }
 
 const reviewComments = ref<ReviewComment[]>([])
@@ -665,12 +667,17 @@ function submitInlineComment(file: GitDiffFile, hunk: GitDiffHunk, comment: Inli
   const endNum = endLine ? (endLine.newLineNumber ?? endLine.oldLineNumber ?? 0) : 0
   const snippet = hunk.lines.slice(comment.lineIdx, comment.endLineIdx + 1).map(l => l.content).join('\n')
   const sha = compareSha.value ? compareSha.value.slice(0, 7) : compareBranch.value
+  // Capture up to 3 context lines before and after the commented block for agentic tools
+  const contextBeforeLines = hunk.lines.slice(Math.max(0, comment.lineIdx - 3), comment.lineIdx)
+  const contextAfterLines = hunk.lines.slice(comment.endLineIdx + 1, comment.endLineIdx + 4)
   reviewComments.value.push({
     filePath: file.newPath,
     lines: { start: startNum, end: endNum },
     comment: comment.text.trim(),
     snippet,
-    sha
+    sha,
+    contextBefore: contextBeforeLines.length ? contextBeforeLines.map(l => l.content).join('\n') : undefined,
+    contextAfter: contextAfterLines.length ? contextAfterLines.map(l => l.content).join('\n') : undefined,
   })
   // Mark as submitted in-place so it stays visible at its diff position
   comment.submitted = true
@@ -728,6 +735,8 @@ async function finishReview() {
         endLine: c.lines.end,
         sha: c.sha,
         snippet: c.snippet || undefined,
+        contextBefore: c.contextBefore,
+        contextAfter: c.contextAfter,
         body: c.comment
       })))
     }

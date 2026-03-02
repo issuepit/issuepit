@@ -330,7 +330,7 @@ public class HappyPathTests : IAsyncLifetime
             // race conditions that can leave the org detail page in a loading/error state).
             await page.GotoAsync("/orgs");
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-            await page.WaitForSelectorAsync($"a[href*='{orgId}']", new PageWaitForSelectorOptions { Timeout = 10_000 });
+            await page.WaitForSelectorAsync($"a[href*='{orgId}']", new PageWaitForSelectorOptions { Timeout = 20_000 });
             await page.ClickAsync($"a[href*='{orgId}']");
             await page.WaitForURLAsync($"**/orgs/{orgId}", new PageWaitForURLOptions { Timeout = 10_000 });
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);

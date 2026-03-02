@@ -641,6 +641,8 @@ interface ReviewComment {
   comment: string
   snippet: string
   sha: string
+  contextBefore?: string
+  contextAfter?: string
 }
 
 const reviewComments = ref<ReviewComment[]>([])
@@ -650,14 +652,20 @@ const reviewedFilesCount = computed(() => new Set(reviewComments.value.map(c => 
 function addReviewComment() {
   if (!commentText.value.trim() || !selectedLines.value || !store.blob) return
   const lines = fileLines.value
-  const snippet = lines.slice(selectedLines.value.start - 1, selectedLines.value.end).join('\n')
+  const { start, end } = selectedLines.value
+  const snippet = lines.slice(start - 1, end).join('\n')
   const branchSha = store.branches.find(b => b.name === selectedBranch.value)?.sha ?? ''
+  // Capture up to 3 context lines before and after the commented block for agentic tools
+  const contextBeforeLines = lines.slice(Math.max(0, start - 4), start - 1)
+  const contextAfterLines = lines.slice(end, end + 3)
   reviewComments.value.push({
     filePath: store.blob.path,
     lines: { ...selectedLines.value },
     comment: commentText.value.trim(),
     snippet,
-    sha: branchSha ? branchSha.slice(0, 7) : selectedBranch.value
+    sha: branchSha ? branchSha.slice(0, 7) : selectedBranch.value,
+    contextBefore: contextBeforeLines.length ? contextBeforeLines.join('\n') : undefined,
+    contextAfter: contextAfterLines.length ? contextAfterLines.join('\n') : undefined,
   })
   clearSelection()
 }
@@ -690,6 +698,8 @@ async function finishReview() {
         endLine: c.lines.end,
         sha: c.sha,
         snippet: c.snippet || undefined,
+        contextBefore: c.contextBefore,
+        contextAfter: c.contextAfter,
         body: c.comment
       })))
     }

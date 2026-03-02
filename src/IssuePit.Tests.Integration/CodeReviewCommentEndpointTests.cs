@@ -62,6 +62,8 @@ public class CodeReviewCommentEndpointTests(ApiFactory factory) : IClassFixture<
             endLine = 15,
             sha = "abc1234",
             snippet = "const x = 1;",
+            contextBefore = "// previous code",
+            contextAfter = "// next code",
             body = "Consider using a constant here."
         });
 
@@ -71,6 +73,8 @@ public class CodeReviewCommentEndpointTests(ApiFactory factory) : IClassFixture<
         Assert.Equal(10, body.GetProperty("startLine").GetInt32());
         Assert.Equal(15, body.GetProperty("endLine").GetInt32());
         Assert.Equal("abc1234", body.GetProperty("sha").GetString());
+        Assert.Equal("// previous code", body.GetProperty("contextBefore").GetString());
+        Assert.Equal("// next code", body.GetProperty("contextAfter").GetString());
         Assert.Equal("Consider using a constant here.", body.GetProperty("body").GetString());
 
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");

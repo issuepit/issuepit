@@ -203,8 +203,13 @@
                     </span>
                     <code class="text-xs text-gray-600 font-mono shrink-0">{{ rc.sha }}</code>
                   </div>
-                  <pre v-if="rc.snippet" class="text-xs font-mono text-gray-300 px-3 py-2 overflow-x-auto bg-gray-900/50 border-b border-gray-700/50">{{ rc.snippet }}</pre>
-                  <div class="px-3 py-2 text-sm text-gray-300">{{ rc.body }}</div>
+                  <!-- Context before (informational lines, not directly commented on) -->
+                  <pre v-if="rc.contextBefore" class="text-xs font-mono text-gray-500 px-3 py-1 overflow-x-auto bg-gray-900/30 opacity-70">{{ rc.contextBefore }}</pre>
+                  <!-- Snippet: the actual commented lines -->
+                  <pre v-if="rc.snippet" class="text-xs font-mono text-gray-200 px-3 py-2 overflow-x-auto bg-gray-900/70 border-l-2 border-brand-600">{{ rc.snippet }}</pre>
+                  <!-- Context after (informational lines, not directly commented on) -->
+                  <pre v-if="rc.contextAfter" class="text-xs font-mono text-gray-500 px-3 py-1 overflow-x-auto bg-gray-900/30 opacity-70">{{ rc.contextAfter }}</pre>
+                  <div class="px-3 py-2 text-sm text-gray-300 border-t border-gray-700/50">{{ rc.body }}</div>
                 </div>
               </div>
             </div>
