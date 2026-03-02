@@ -7,10 +7,14 @@
  *   FRONTEND_URL=http://localhost:3000 node scripts/take-screenshots.js [output-dir]
  *
  * The script:
- *   1. Registers a fresh user and logs in.
- *   2. Seeds minimal demo data (org, project, issues, agent mode).
+ *   1. Logs in (or registers) a user.
+ *   2. Seeds minimal demo data when no pre-seeded user is configured.
  *   3. Takes screenshots of each main UI page.
  *   4. Saves them to <output-dir> (defaults to docs/assets/screenshots).
+ *
+ * When running against an Aspire-managed stack the Migrator already seeds demo data
+ * (alice/alice with the Acme Corp org). Set SCREENSHOT_USERNAME=alice and
+ * SCREENSHOT_PASSWORD=alice to log in as that user and skip manual seeding.
  */
 
 const { chromium } = require('playwright');
@@ -21,8 +25,14 @@ const FRONTEND_URL = (process.env.FRONTEND_URL || 'http://localhost:3000').repla
 const API_URL = (process.env.API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const OUTPUT_DIR = process.argv[2] || path.join(__dirname, '..', 'docs', 'assets', 'screenshots');
 
-const USERNAME = `docs${Math.random().toString(36).slice(2, 10)}`;
-const PASSWORD = 'DocsPass1!';
+// When SCREENSHOT_USERNAME is set the script logs in with those credentials and
+// skips manual user registration and data seeding (the Aspire Migrator handles seeding).
+const SEEDED_USERNAME = process.env.SCREENSHOT_USERNAME || '';
+const SEEDED_PASSWORD = process.env.SCREENSHOT_PASSWORD || '';
+const USE_SEEDED_USER = !!SEEDED_USERNAME;
+
+const USERNAME = USE_SEEDED_USER ? SEEDED_USERNAME : `docs${Math.random().toString(36).slice(2, 10)}`;
+const PASSWORD = USE_SEEDED_USER ? SEEDED_PASSWORD : 'DocsPass1!';
 
 async function waitForBackend(maxWaitMs = 120_000) {
   const start = Date.now();
@@ -36,15 +46,6 @@ async function waitForBackend(maxWaitMs = 120_000) {
     await new Promise(r => setTimeout(r, 2000));
   }
   throw new Error(`Backend at ${API_URL} did not become healthy within ${maxWaitMs}ms`);
-}
-
-async function register(apiClient, username, password) {
-  const res = await apiClient.post(`${API_URL}/api/auth/register`, {
-    headers: { 'Content-Type': 'application/json' },
-    data: JSON.stringify({ username, password }),
-  });
-  if (!res.ok()) throw new Error(`Register failed: ${res.status()} ${await res.text()}`);
-  return res.json();
 }
 
 async function seedData(apiClient, tenantId) {
@@ -115,14 +116,22 @@ async function main() {
   });
 
   // --- Auth ---
-  console.log(`Registering user ${USERNAME}…`);
   const loginPage = await context.newPage();
   await loginPage.goto(`${FRONTEND_URL}/login`);
   await loginPage.waitForLoadState('networkidle');
-  await loginPage.click("button:has-text('Create account')");
-  await loginPage.fill("input[autocomplete='username']", USERNAME);
-  await loginPage.fill("input[autocomplete='new-password']", PASSWORD);
-  await loginPage.click("button[type='submit']");
+
+  if (USE_SEEDED_USER) {
+    console.log(`Logging in as seeded user ${USERNAME}…`);
+    await loginPage.fill("input[autocomplete='username']", USERNAME);
+    await loginPage.fill("input[autocomplete='current-password']", PASSWORD);
+    await loginPage.click("button[type='submit']");
+  } else {
+    console.log(`Registering fresh user ${USERNAME}…`);
+    await loginPage.click("button:has-text('Create account')");
+    await loginPage.fill("input[autocomplete='username']", USERNAME);
+    await loginPage.fill("input[autocomplete='new-password']", PASSWORD);
+    await loginPage.click("button[type='submit']");
+  }
   await loginPage.waitForURL(`${FRONTEND_URL}/`, { timeout: 20_000 });
 
   // Get tenant ID from API
@@ -136,9 +145,11 @@ async function main() {
 
   await loginPage.close();
 
-  // --- Seed data ---
-  console.log('Seeding demo data…');
-  await seedData(apiClient, tenantId);
+  // --- Seed data (only when not using a pre-seeded user) ---
+  if (!USE_SEEDED_USER) {
+    console.log('Seeding demo data…');
+    await seedData(apiClient, tenantId);
+  }
 
   // --- Screenshots ---
   console.log(`Taking screenshots → ${OUTPUT_DIR}`);
@@ -153,21 +164,21 @@ async function main() {
   await page.goto(`${FRONTEND_URL}/issues`);
   await screenshot(page, 'issues');
 
-  // Try to get the first project for board/issues
+  // Get the first available project for the kanban screenshot
   const projectsRes = await apiClient.get(`${API_URL}/api/projects`, {
     headers: tenantId ? { 'X-Tenant-Id': tenantId } : {},
   });
   const projects = await projectsRes.json();
   if (Array.isArray(projects) && projects.length > 0) {
     const proj = projects[0];
-    await page.goto(`${FRONTEND_URL}/projects/${proj.slug || proj.id}/board`);
+    await page.goto(`${FRONTEND_URL}/projects/${proj.id}/kanban`);
     await screenshot(page, 'kanban');
   }
 
   await page.goto(`${FRONTEND_URL}/agents`);
   await screenshot(page, 'agents');
 
-  await page.goto(`${FRONTEND_URL}/configuration/api-keys`);
+  await page.goto(`${FRONTEND_URL}/config/keys`);
   await screenshot(page, 'api-keys');
 
   await browser.close();

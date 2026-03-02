@@ -4,13 +4,22 @@ on:
   workflow_dispatch:
     inputs:
       frontend_url:
-        description: "Frontend URL (leave blank to start stack from source)"
+        description: "Frontend URL (leave blank to use Aspire-managed URL)"
         required: false
       api_url:
-        description: "API URL (leave blank to start stack from source)"
+        description: "API URL (leave blank to use Aspire-managed URL)"
         required: false
   release:
     types: [published]
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/update-screenshots.yml"
+      - "scripts/take-screenshots.js"
+  pull_request:
+    paths:
+      - ".github/workflows/update-screenshots.yml"
+      - "scripts/take-screenshots.js"
 
 permissions:
   contents: write
@@ -24,31 +33,122 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Start stack
+      - name: Setup .NET
         if: ${{ !inputs.frontend_url }}
-        run: |
-          docker compose up -d --build --wait
-        timeout-minutes: 15
-
-      - name: Wait for stack to be healthy
-        if: ${{ !inputs.frontend_url }}
-        run: |
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:5000/health; then
-              echo "Backend healthy"
-              break
-            fi
-            echo "Waiting for backend... ($i)"
-            sleep 5
-          done
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        if: ${{ !inputs.frontend_url }}
+        working-directory: frontend
+        run: npm ci
+
+      - name: Pre-pull Docker images
+        if: ${{ !inputs.frontend_url }}
+        run: |
+          docker pull postgres:17.6
+          docker pull valkey/valkey:9.0
+          docker pull apache/kafka:3.9.0
+
+      - name: Restore and build Aspire AppHost
+        if: ${{ !inputs.frontend_url }}
+        run: |
+          dotnet restore src/IssuePit.AppHost/IssuePit.AppHost.csproj
+          dotnet build src/IssuePit.AppHost/IssuePit.AppHost.csproj --no-restore --configuration Release
+
+      - name: Start Aspire AppHost
+        if: ${{ !inputs.frontend_url }}
+        env:
+          DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
+          ASPIRE_ALLOW_UNSECURED_TRANSPORT: "true"
+        run: |
+          dotnet run --project src/IssuePit.AppHost --no-build --configuration Release \
+            --launch-profile http \
+            2>&1 | tee /tmp/aspire.log &
+
+          echo "Waiting for Aspire dashboard at http://localhost:15400..."
+          for i in $(seq 1 120); do
+            if curl -sf http://localhost:15400 > /dev/null 2>&1; then
+              echo "Aspire dashboard ready"
+              break
+            fi
+            sleep 3
+          done
+
+      - name: Discover service URLs from Aspire
+        if: ${{ !inputs.frontend_url }}
+        run: |
+          # Query the Aspire dashboard resource API (SSE — read initial snapshot then stop).
+          # Retry a few times to handle the case where the dashboard is still initializing.
+          RESOURCES=""
+          for i in $(seq 1 5); do
+            RESOURCES=$(timeout 30 curl -sfN 'http://localhost:15400/api/v1/resources' 2>/dev/null || true)
+            [ -n "$RESOURCES" ] && break
+            echo "Retrying resource discovery... ($i)"
+            sleep 5
+          done
+
+          extract_url() {
+            local name="$1"
+            echo "$RESOURCES" | python3 - "$name" <<'EOF'
+          import sys, json
+          target = sys.argv[1]
+          for line in sys.stdin.read().splitlines():
+              if not line.startswith('data:'): continue
+              try:
+                  obj = json.loads(line[5:].strip())
+                  resources = obj if isinstance(obj, list) else obj.get('resources', [])
+                  for r in resources:
+                      if r.get('name') == target:
+                          for ep in r.get('endpoints', []):
+                              u = ep.get('endpointUrl', '')
+                              if u:
+                                  print(u.rstrip('/'))
+                                  sys.exit(0)
+              except Exception:
+                  pass
+          EOF
+          }
+
+          API_URL=$(extract_url api)
+          FRONTEND_URL=$(extract_url frontend)
+
+          echo "Discovered API_URL=$API_URL"
+          echo "Discovered FRONTEND_URL=$FRONTEND_URL"
+          echo "API_URL=$API_URL" >> "$GITHUB_ENV"
+          echo "FRONTEND_URL=$FRONTEND_URL" >> "$GITHUB_ENV"
+
+          # Wait for API to be healthy
+          if [ -n "$API_URL" ]; then
+            for i in $(seq 1 60); do
+              if curl -sf "$API_URL/health" > /dev/null 2>&1; then
+                echo "API is healthy"
+                break
+              fi
+              echo "Waiting for API... ($i)"
+              sleep 3
+            done
+          fi
+
+          # Wait for frontend to be ready
+          if [ -n "$FRONTEND_URL" ]; then
+            for i in $(seq 1 60); do
+              if curl -sf "$FRONTEND_URL" > /dev/null 2>&1; then
+                echo "Frontend is ready"
+                break
+              fi
+              echo "Waiting for frontend... ($i)"
+              sleep 3
+            done
+          fi
 
       - name: Install Playwright
         run: |
@@ -57,15 +157,16 @@ jobs:
 
       - name: Take screenshots
         env:
-          FRONTEND_URL: ${{ inputs.frontend_url || 'http://localhost:3000' }}
-          API_URL: ${{ inputs.api_url || 'http://localhost:5000' }}
+          FRONTEND_URL: ${{ inputs.frontend_url || env.FRONTEND_URL }}
+          API_URL: ${{ inputs.api_url || env.API_URL }}
+          # Use the Aspire-seeded alice user when running the managed stack.
+          # These are public demo credentials seeded by IssuePit.Migrator's DemoDataSeeder.
+          SCREENSHOT_USERNAME: ${{ !inputs.frontend_url && 'alice' || '' }}
+          SCREENSHOT_PASSWORD: ${{ !inputs.frontend_url && 'alice' || '' }}
         run: node scripts/take-screenshots.js docs/assets/screenshots
 
-      - name: Stop stack
-        if: ${{ !inputs.frontend_url && always() }}
-        run: docker compose down -v
-
       - name: Create Pull Request
+        if: ${{ github.event_name != 'pull_request' }}
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
