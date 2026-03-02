@@ -38,6 +38,13 @@
           Transitions
         </button>
 
+        <!-- Milestone filter -->
+        <select v-if="milestonesStore.milestones.length" v-model="filterMilestone"
+          class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500">
+          <option value="">All Milestones</option>
+          <option v-for="m in milestonesStore.milestones" :key="m.id" :value="m.id">{{ m.title }}</option>
+        </select>
+
         <span class="text-xs text-gray-500">{{ totalIssues }} issues</span>
       </div>
     </div>
@@ -302,17 +309,20 @@ import { IssueStatus, IssuePriority, IssueType } from '~/types'
 import type { Issue, KanbanColumn } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
 import { useKanbanStore } from '~/stores/kanban'
+import { useMilestonesStore } from '~/stores/milestones'
 
 const route = useRoute()
 const id = route.params.id as string
 const issueStore = useIssuesStore()
 const kanban = useKanbanStore()
+const milestonesStore = useMilestonesStore()
 
 // ── Issue create state ────────────────────────────────────────────────────
 const showCreate = ref(false)
 const createTitle = ref('')
 const createPriority = ref<IssuePriority>(IssuePriority.NoPriority)
 const createStatus = ref<IssueStatus>(IssueStatus.Backlog)
+const filterMilestone = ref<string>('')
 
 // ── Issue drag state ──────────────────────────────────────────────────────
 const draggedId = ref<string | null>(null)
@@ -347,8 +357,25 @@ const newTransFrom = ref('')
 const newTransTo = ref('')
 const newTransIsAuto = ref(false)
 
-const issuesByStatus = computed(() => issueStore.issuesByStatus)
-const totalIssues = computed(() => issueStore.issues.length)
+const issuesByStatus = computed(() => {
+  if (!filterMilestone.value) return issueStore.issuesByStatus
+  const filtered: Record<IssueStatus, Issue[]> = {
+    [IssueStatus.Backlog]: [],
+    [IssueStatus.Todo]: [],
+    [IssueStatus.InProgress]: [],
+    [IssueStatus.InReview]: [],
+    [IssueStatus.Done]: [],
+    [IssueStatus.Cancelled]: [],
+  }
+  for (const issue of issueStore.issues.filter(i => i.milestoneId === filterMilestone.value)) {
+    filtered[issue.status].push(issue)
+  }
+  return filtered
+})
+const totalIssues = computed(() => {
+  if (!filterMilestone.value) return issueStore.issues.length
+  return issueStore.issues.filter(i => i.milestoneId === filterMilestone.value).length
+})
 
 const statusOptions = [
   { value: IssueStatus.Backlog, label: 'Backlog' },
@@ -363,6 +390,7 @@ onMounted(async () => {
   await Promise.all([
     issueStore.fetchIssues(id),
     kanban.fetchBoards(id),
+    milestonesStore.fetchMilestones(id),
   ])
   if (kanban.boards.length) activeBoardId.value = kanban.boards[0].id
 })

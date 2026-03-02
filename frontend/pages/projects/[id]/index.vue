@@ -87,6 +87,20 @@
       </div>
 
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+        <NuxtLink :to="`/projects/${id}/milestones`"
+          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 flex items-center gap-4 transition-colors group">
+          <div class="w-10 h-10 bg-indigo-900/30 rounded-lg flex items-center justify-center">
+            <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
+            </svg>
+          </div>
+          <div>
+            <p class="font-semibold text-white group-hover:text-brand-300 transition-colors">Milestones</p>
+            <p class="text-xs text-gray-500">Track progress</p>
+          </div>
+        </NuxtLink>
+
         <NuxtLink :to="`/projects/${id}/kanban`"
           class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 flex items-center gap-4 transition-colors group">
           <div class="w-10 h-10 bg-purple-900/30 rounded-lg flex items-center justify-center">

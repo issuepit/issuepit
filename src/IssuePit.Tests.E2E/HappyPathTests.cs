@@ -368,6 +368,136 @@ public class HappyPathTests : IAsyncLifetime
 
     // ── Helpers ────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// API happy path for milestones: create org → project → milestone → verify CRUD and progress endpoint.
+    /// </summary>
+    [Fact]
+    public async Task Api_HappyPath_CreateMilestoneAndAssignToIssue()
+    {
+        using var client = CreateCookieClient();
+
+        var tenantId = await GetDefaultTenantIdAsync();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"e2e{Guid.NewGuid():N}"[..12];
+        const string password = "TestPass1!";
+
+        await client.PostAsJsonAsync("/api/auth/register", new { username, password });
+
+        var orgSlug = $"e2e-org-{Guid.NewGuid():N}"[..16];
+        var orgResp = await client.PostAsJsonAsync("/api/orgs", new { name = "E2E Milestone Org", slug = orgSlug });
+        var org = await orgResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var orgId = Guid.Parse(org.GetProperty("id").GetString()!);
+
+        var projectSlug = $"e2e-ms-{Guid.NewGuid():N}"[..14];
+        var projResp = await client.PostAsJsonAsync("/api/projects", new { name = "Milestone Project", slug = projectSlug, orgId });
+        var project = await projResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var projectId = Guid.Parse(project.GetProperty("id").GetString()!);
+
+        // 1. Create a milestone
+        var msResp = await client.PostAsJsonAsync(
+            $"/api/projects/{projectId}/milestones",
+            new { title = "Sprint 1", description = "First sprint", dueDate = (string?)null });
+        Assert.Equal(HttpStatusCode.Created, msResp.StatusCode);
+        var milestone = await msResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var milestoneId = Guid.Parse(milestone.GetProperty("id").GetString()!);
+        Assert.Equal("Sprint 1", milestone.GetProperty("title").GetString());
+        Assert.Equal("open", milestone.GetProperty("status").GetString());
+
+        // 2. Verify milestone appears in the project's milestone list
+        var listResp = await client.GetAsync($"/api/projects/{projectId}/milestones");
+        Assert.Equal(HttpStatusCode.OK, listResp.StatusCode);
+        var milestones = await listResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.True(milestones.GetArrayLength() >= 1);
+
+        // 3. Create an issue and assign it to the milestone
+        var issueResp = await client.PostAsJsonAsync("/api/issues",
+            new { title = "Milestone Issue", projectId, milestoneId });
+        Assert.Equal(HttpStatusCode.Created, issueResp.StatusCode);
+        var issue = await issueResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var issueId = Guid.Parse(issue.GetProperty("id").GetString()!);
+
+        // 4. Update the issue to set its status to done
+        var updateResp = await client.PutAsJsonAsync($"/api/issues/{issueId}",
+            new { status = "done" });
+        Assert.Equal(HttpStatusCode.OK, updateResp.StatusCode);
+
+        // 5. Check progress endpoint
+        var progressResp = await client.GetAsync($"/api/projects/{projectId}/milestones/{milestoneId}/progress");
+        Assert.Equal(HttpStatusCode.OK, progressResp.StatusCode);
+        var progress = await progressResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal(1, progress.GetProperty("total").GetInt32());
+        Assert.Equal(1, progress.GetProperty("done").GetInt32());
+        Assert.Equal(100, progress.GetProperty("percent").GetInt32());
+
+        // 6. Close the milestone
+        var closeResp = await client.PutAsJsonAsync(
+            $"/api/projects/{projectId}/milestones/{milestoneId}",
+            new { title = "Sprint 1", status = "closed" });
+        Assert.Equal(HttpStatusCode.OK, closeResp.StatusCode);
+        var closed = await closeResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal("closed", closed.GetProperty("status").GetString());
+    }
+
+    /// <summary>
+    /// UI E2E test for milestones: register → create org + project → navigate to milestones page
+    /// → create a milestone → verify it appears in the list.
+    /// </summary>
+    [Fact]
+    public async Task Ui_HappyPath_CreateMilestone()
+    {
+        var tenantId = await GetDefaultTenantIdAsync();
+        using var apiClient = CreateCookieClient();
+        apiClient.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"ui{Guid.NewGuid():N}"[..12];
+        const string password = "TestPass1!";
+        await apiClient.PostAsJsonAsync("/api/auth/register", new { username, password });
+
+        var orgSlug = $"ui-ms-org-{Guid.NewGuid():N}"[..16];
+        var orgResp = await apiClient.PostAsJsonAsync("/api/orgs", new { name = "UI Milestone Org", slug = orgSlug });
+        var org = await orgResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var orgId = Guid.Parse(org.GetProperty("id").GetString()!);
+
+        var projectSlug = $"ui-ms-{Guid.NewGuid():N}"[..14];
+        var projResp = await apiClient.PostAsJsonAsync("/api/projects",
+            new { name = "UI Milestone Project", slug = projectSlug, orgId });
+        var project = await projResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var projectId = project.GetProperty("id").GetString()!;
+
+        var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
+        var page = await context.NewPageAsync();
+
+        try
+        {
+            // Log in
+            await page.GotoAsync("/login");
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.FillAsync("input[autocomplete='username']", username);
+            await page.FillAsync("input[autocomplete='current-password']", password);
+            await page.ClickAsync("button[type='submit']");
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+
+            // Navigate to milestones page
+            await page.GotoAsync($"/projects/{projectId}/milestones");
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForSelectorAsync("h1:has-text('Milestones')", new PageWaitForSelectorOptions { Timeout = 10_000 });
+
+            // Create a milestone
+            await page.ClickAsync("button:has-text('New Milestone')");
+            const string milestoneName = "UI E2E Sprint 1";
+            await page.FillAsync("input[placeholder='Milestone title']", milestoneName);
+            await page.ClickAsync("button:has-text('Create Milestone')");
+
+            // Verify milestone appears in the list
+            await page.WaitForSelectorAsync($"text={milestoneName}", new PageWaitForSelectorOptions { Timeout = 10_000 });
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
+
     /// <summary>Creates an <see cref="HttpClient"/> backed by a <see cref="CookieContainer"/> so session cookies persist across calls.</summary>
     private HttpClient CreateCookieClient()
     {

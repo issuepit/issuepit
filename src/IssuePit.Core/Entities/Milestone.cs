@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using IssuePit.Core.Enums;
 
 namespace IssuePit.Core.Entities;
 
@@ -21,5 +22,9 @@ public class Milestone
 
     public DateTime? DueDate { get; set; }
 
+    public MilestoneStatus Status { get; set; } = MilestoneStatus.Open;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
