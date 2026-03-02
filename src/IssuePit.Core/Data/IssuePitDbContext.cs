@@ -33,6 +33,7 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
     public DbSet<RuntimeConfiguration> RuntimeConfigurations => Set<RuntimeConfiguration>();
     public DbSet<AgentSession> AgentSessions => Set<AgentSession>();
+    public DbSet<AgentSessionLog> AgentSessionLogs => Set<AgentSessionLog>();
     public DbSet<CiCdRun> CiCdRuns => Set<CiCdRun>();
     public DbSet<CiCdRunLog> CiCdRunLogs => Set<CiCdRunLog>();
     public DbSet<Team> Teams => Set<Team>();

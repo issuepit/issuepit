@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { CiCdRun, CiCdRunLog, AgentSession, AgentSessionDetail, DashboardAgentSession } from '~/types'
+import type { CiCdRun, CiCdRunLog, AgentSession, AgentSessionDetail, AgentSessionLog, DashboardAgentSession } from '~/types'
 
 export const useCiCdRunsStore = defineStore('cicdRuns', () => {
   const runs = ref<CiCdRun[]>([])
@@ -8,6 +8,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
   const currentRun = ref<CiCdRun | null>(null)
   const currentRunLogs = ref<CiCdRunLog[]>([])
   const currentSession = ref<AgentSessionDetail | null>(null)
+  const currentSessionLogs = ref<AgentSessionLog[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
 
@@ -56,6 +57,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     error.value = null
     try {
       currentSession.value = await api.get<AgentSessionDetail>(`/api/agent-sessions/${sessionId}`)
+      currentSessionLogs.value = await api.get<AgentSessionLog[]>(`/api/agent-sessions/${sessionId}/logs`)
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Failed to fetch agent session'
     } finally {
@@ -107,6 +109,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     currentRun,
     currentRunLogs,
     currentSession,
+    currentSessionLogs,
     loading,
     error,
     fetchRuns,

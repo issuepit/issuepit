@@ -1,6 +1,8 @@
+using System.Reflection;
 using Docker.DotNet;
 using Docker.DotNet.Models;
 using IssuePit.Core.Entities;
+using IssuePit.Core.Enums;
 using IssuePit.Core.Runners;
 
 namespace IssuePit.ExecutionClient.Runtimes;
@@ -8,6 +10,12 @@ namespace IssuePit.ExecutionClient.Runtimes;
 /// <summary>Runs the agent inside a local Docker container with Docker-in-Docker (DinD) support.</summary>
 public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient dockerClient, IConfiguration configuration) : IAgentRuntime
 {
+    private static string AppVersion =>
+        Assembly.GetEntryAssembly()
+            ?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion
+        ?? "unknown";
+
     public async Task<string> LaunchAsync(
         AgentSession session,
         Agent agent,
@@ -15,10 +23,43 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         IReadOnlyDictionary<string, string> credentials,
         RuntimeConfiguration? runtimeConfig,
         GitRepository? gitRepository,
+        Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {
+        // Emit verbose diagnostics as the first log lines so they appear in the session log output.
+        await onLogLine($"[DEBUG] Runner machine : {Environment.MachineName}", LogStream.Stdout);
+        await onLogLine($"[DEBUG] Runtime        : Docker", LogStream.Stdout);
+        await onLogLine($"[DEBUG] IssuePit ver   : {AppVersion}", LogStream.Stdout);
+        await onLogLine($"[DEBUG] Agent          : {agent.Name} ({agent.Id})", LogStream.Stdout);
+        await onLogLine($"[DEBUG] Issue          : #{issue.Number} {issue.Title}", LogStream.Stdout);
+        await onLogLine($"[DEBUG] Session        : {session.Id}", LogStream.Stdout);
+        await onLogLine($"[DEBUG] Docker image   : {agent.DockerImage}", LogStream.Stdout);
+        await onLogLine($"[DEBUG] Mount          : /var/run/docker.sock:/var/run/docker.sock", LogStream.Stdout);
+        if (agent.DisableInternet)
+            await onLogLine($"[DEBUG] Internet       : restricted", LogStream.Stdout);
+        if (gitRepository is not null)
+            await onLogLine($"[DEBUG] Git remote     : {gitRepository.RemoteUrl}", LogStream.Stdout);
+
+        // Verify Docker daemon is reachable and log its version.
+        try
+        {
+            var dockerVersion = await dockerClient.System.GetVersionAsync(cancellationToken);
+            await onLogLine($"[DEBUG] Docker version : {dockerVersion.Version} (API {dockerVersion.APIVersion})", LogStream.Stdout);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                "Cannot connect to the Docker daemon. Ensure Docker is running and the socket is accessible " +
+                $"(inner: {ex.Message})", ex);
+        }
+
         // Step 1: Pull the container image explicitly before creating the container.
+        var pullStart = DateTime.UtcNow;
+        await onLogLine($"[DEBUG] Pull started   : {pullStart:u}", LogStream.Stdout);
+        await onLogLine($"[DEBUG] Pulling image  : {agent.DockerImage}", LogStream.Stdout);
         await PullImageAsync(agent.DockerImage, cancellationToken);
+        var pullDuration = (DateTime.UtcNow - pullStart).TotalSeconds;
+        await onLogLine($"[DEBUG] Pull finished  : {DateTime.UtcNow:u} (took {pullDuration:F1}s)", LogStream.Stdout);
 
         // Step 2: Build environment including git repo info so the container can clone the repo on startup.
         var env = BuildEnvironment(session, agent, issue, credentials, gitRepository);
@@ -65,6 +106,9 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
 
         await dockerClient.Containers.StartContainerAsync(
             container.ID, new ContainerStartParameters(), cancellationToken);
+
+        var shortContainerId = container.ID[..Math.Min(12, container.ID.Length)];
+        await onLogLine($"[DEBUG] Container ID   : {shortContainerId}", LogStream.Stdout);
 
         logger.LogInformation("Started Docker container {ContainerId} for agent session {SessionId}",
             container.ID, session.Id);

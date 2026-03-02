@@ -51,4 +51,28 @@ public class AgentSessionsController(IssuePitDbContext db, TenantContext tenant)
 
         return session is null ? NotFound() : Ok(session);
     }
+
+    [HttpGet("{id:guid}/logs")]
+    public async Task<IActionResult> GetSessionLogs(Guid id)
+    {
+        var sessionExists = await db.AgentSessions
+            .AnyAsync(s => s.Id == id && s.Issue.Project!.Organization.TenantId == tenant.CurrentTenant!.Id);
+
+        if (!sessionExists) return NotFound();
+
+        var logs = await db.AgentSessionLogs
+            .Where(l => l.AgentSessionId == id)
+            .OrderBy(l => l.Timestamp)
+            .Select(l => new
+            {
+                l.Id,
+                l.Line,
+                Stream = l.Stream.ToString().ToLower(),
+                StreamName = l.Stream.ToString(),
+                l.Timestamp,
+            })
+            .ToListAsync();
+
+        return Ok(logs);
+    }
 }

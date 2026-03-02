@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using IssuePit.Core.Entities;
+using IssuePit.Core.Enums;
 using IssuePit.Core.Runners;
 
 namespace IssuePit.ExecutionClient.Runtimes;
@@ -24,6 +25,7 @@ public class NativeAgentRuntime(ILogger<NativeAgentRuntime> logger) : IAgentRunt
         IReadOnlyDictionary<string, string> credentials,
         RuntimeConfiguration? runtimeConfig,
         GitRepository? gitRepository,
+        Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {
         if (runtimeConfig is null)

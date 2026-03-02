@@ -44,4 +44,6 @@ public class AgentSession
     public DateTime? EndedAt { get; set; }
 
     public ICollection<CiCdRun> CiCdRuns { get; set; } = [];
+
+    public ICollection<AgentSessionLog> Logs { get; set; } = [];
 }

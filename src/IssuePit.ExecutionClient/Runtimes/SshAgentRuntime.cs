@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using IssuePit.Core.Entities;
+using IssuePit.Core.Enums;
 using IssuePit.Core.Runners;
 using Renci.SshNet;
 
@@ -29,6 +30,7 @@ public class SshAgentRuntime(ILogger<SshAgentRuntime> logger) : IAgentRuntime
         IReadOnlyDictionary<string, string> credentials,
         RuntimeConfiguration? runtimeConfig,
         GitRepository? gitRepository,
+        Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {
         if (runtimeConfig is null)
