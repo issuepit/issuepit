@@ -3,6 +3,7 @@ using Aspire.Hosting;
 using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using System.Linq;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 
@@ -86,13 +87,36 @@ public sealed class AspireFixture : IAsyncLifetime
         {
             try
             {
+                var lastSeen = new Dictionary<string, (string State, HealthStatus? Health)>();
                 await foreach (var evt in notifications.WatchAsync(startCts.Token))
                 {
+                    var name = evt.Resource.Name;
                     var state = evt.Snapshot.State?.Text ?? "unknown";
-                    var resourceKey = $"{evt.Resource.Name}/{evt.ResourceId}";
-                    if (lastStates.TryGetValue(resourceKey, out var prev) && prev == state) continue;
-                    lastStates[resourceKey] = state;
-                    Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] [{evt.Resource.Name}] -> {state}");
+                    var health = evt.Snapshot.HealthStatus;
+
+                    if (!lastSeen.TryGetValue(name, out var prev) || prev.State != state || prev.Health != health)
+                    {
+                        string details = string.Empty;
+                        if (health == HealthStatus.Unhealthy)
+                        {
+                            try
+                            {
+                                var reports = evt.Snapshot.HealthReports;
+                                if (reports.Length > 0)
+                                {
+                                    var failing = reports.Select(r => $"{r.Name}={r.Status};{r.Description};{r.ExceptionText}");
+                                    details = " -> FailingChecks: " + string.Join(", ", failing);
+                                }
+                            }
+                            catch { /* best-effort; don't crash logging */ }
+                        }
+                        
+                        if(state != "unknown" && state != "NotStarted" /*&& state != ""*/)
+                        {
+                            Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] [{name}] -> {state}; {health}{details}");
+                        }
+                        lastSeen[name] = (state, health);
+                    }
                 }
             }
             catch (OperationCanceledException) { }
