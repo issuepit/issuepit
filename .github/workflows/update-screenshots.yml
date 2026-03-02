@@ -1,0 +1,189 @@
+name: Update Documentation Screenshots
+
+on:
+  workflow_dispatch:
+    inputs:
+      frontend_url:
+        description: "Frontend URL (leave blank to use Aspire-managed URL)"
+        required: false
+      api_url:
+        description: "API URL (leave blank to use Aspire-managed URL)"
+        required: false
+  release:
+    types: [published]
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/update-screenshots.yml"
+      - "scripts/take-screenshots.js"
+  pull_request:
+    paths:
+      - ".github/workflows/update-screenshots.yml"
+      - "scripts/take-screenshots.js"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  screenshots:
+    name: Take Screenshots
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        if: ${{ !inputs.frontend_url }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        if: ${{ !inputs.frontend_url }}
+        working-directory: frontend
+        run: npm ci
+
+      - name: Pre-pull Docker images
+        if: ${{ !inputs.frontend_url }}
+        run: |
+          docker pull postgres:17.6
+          docker pull valkey/valkey:9.0
+          docker pull apache/kafka:3.9.0
+
+      - name: Restore and build Aspire AppHost
+        if: ${{ !inputs.frontend_url }}
+        run: |
+          dotnet restore src/IssuePit.AppHost/IssuePit.AppHost.csproj
+          dotnet build src/IssuePit.AppHost/IssuePit.AppHost.csproj --no-restore --configuration Release
+
+      - name: Start Aspire AppHost
+        if: ${{ !inputs.frontend_url }}
+        timeout-minutes: 5
+        env:
+          DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
+          ASPIRE_ALLOW_UNSECURED_TRANSPORT: "true"
+        run: |
+          # Start AppHost in background, capturing its output for signal detection.
+          # Note: resource logs (api, frontend) are NOT forwarded to AppHost stdout in
+          # dotnet-run mode — only AppHost-level messages appear. We rely on
+          # "Distributed application started" as the readiness signal.
+          dotnet run --project src/IssuePit.AppHost --no-build --configuration Release \
+            --launch-profile http \
+            > /tmp/aspire.log 2>&1 &
+
+          # ── Step 1: Wait for Aspire to distribute all resources ────────────────
+          echo "Waiting for Aspire to distribute resources..."
+          for i in $(seq 1 36); do
+            if grep -q 'Distributed application started' /tmp/aspire.log 2>/dev/null; then
+              echo "Aspire distributed (iteration $i)"
+              break
+            fi
+            if [ "$i" -eq 36 ]; then
+              echo "::error::Timeout waiting for Aspire to distribute"
+              cat /tmp/aspire.log
+              exit 1
+            fi
+            sleep 5
+          done
+
+          # ── Step 2: Wait for the API health endpoint ───────────────────────────
+          # API uses the port from its launchSettings.json http profile (5035).
+          # Aspire passes this port to the project via ASPNETCORE_URLS / ASPNETCORE_HTTP_PORTS.
+          API_URL="http://localhost:5035"
+          echo "Polling API health at $API_URL/health..."
+          API_HEALTHY=false
+          for i in $(seq 1 24); do
+            if curl -sf "$API_URL/health" > /dev/null 2>&1; then
+              echo "API is healthy (iteration $i)"
+              API_HEALTHY=true
+              break
+            fi
+            sleep 5
+          done
+          if [ "$API_HEALTHY" = false ]; then
+            echo "::error::API did not become healthy within timeout"
+            echo "=== Aspire log ==="
+            cat /tmp/aspire.log
+            exit 1
+          fi
+
+          # ── Step 3: Discover the frontend port ─────────────────────────────────
+          # Aspire passes the allocated port to Nuxt via the NUXT_PORT env var.
+          # Read it from the node process environment via /proc.
+          echo "Waiting for frontend (node/nuxt) process with NUXT_PORT..."
+          FRONTEND_URL=""
+          for i in $(seq 1 12); do
+            for pid_dir in /proc/[0-9]*; do
+              port=$(cat "$pid_dir/environ" 2>/dev/null | tr '\0' '\n' | grep '^NUXT_PORT=' | cut -d= -f2)
+              if [ -n "$port" ]; then
+                FRONTEND_URL="http://localhost:$port"
+                break
+              fi
+            done
+            [ -n "$FRONTEND_URL" ] && break
+            sleep 5
+          done
+
+          if [ -z "$FRONTEND_URL" ]; then
+            echo "::error::Could not discover NUXT_PORT from any node process"
+            exit 1
+          fi
+
+          echo "Polling frontend at $FRONTEND_URL..."
+          FRONTEND_READY=false
+          for i in $(seq 1 12); do
+            if curl -sf "$FRONTEND_URL" > /dev/null 2>&1; then
+              echo "Frontend is reachable (iteration $i)"
+              FRONTEND_READY=true
+              break
+            fi
+            sleep 5
+          done
+          if [ "$FRONTEND_READY" = false ]; then
+            echo "::error::Frontend did not become reachable within timeout"
+            exit 1
+          fi
+
+          echo "API_URL=$API_URL" >> "$GITHUB_ENV"
+          echo "FRONTEND_URL=$FRONTEND_URL" >> "$GITHUB_ENV"
+          echo "Discovered API_URL=$API_URL"
+          echo "Discovered FRONTEND_URL=$FRONTEND_URL"
+
+      - name: Install Playwright
+        run: |
+          npm install playwright
+          npx playwright install chromium --with-deps
+
+      - name: Take screenshots
+        env:
+          FRONTEND_URL: ${{ inputs.frontend_url || env.FRONTEND_URL }}
+          API_URL: ${{ inputs.api_url || env.API_URL }}
+          # Use the Aspire-seeded alice user when running the managed stack.
+          # These are public demo credentials seeded by IssuePit.Migrator's DemoDataSeeder.
+          SCREENSHOT_USERNAME: ${{ !inputs.frontend_url && 'alice' || '' }}
+          SCREENSHOT_PASSWORD: ${{ !inputs.frontend_url && 'alice' || '' }}
+        run: node scripts/take-screenshots.js docs/assets/screenshots
+
+      - name: Create Pull Request
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "docs: update screenshots"
+          branch: docs/update-screenshots
+          delete-branch: true
+          title: "docs: update documentation screenshots"
+          body: |
+            Automated screenshot update.
+
+            Triggered by: ${{ github.event_name }}${{ github.event_name == 'release' && format(' (release {0})', github.event.release.tag_name) || '' }}
+          labels: documentation
+          add-paths: docs/assets/screenshots/**

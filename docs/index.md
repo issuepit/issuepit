@@ -52,3 +52,4 @@ nav_order: 1
 | [Projects](projects) | Create projects and link Git repositories |
 | [Agents](agents) | Configure agent modes (system prompt, MCP tools, auth keys) |
 | [Configuration](configuration) | API keys, MCP servers, and other settings |
+| [Releases](releases) | Release notes, changelog, and upgrade instructions |

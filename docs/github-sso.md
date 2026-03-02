@@ -1,3 +1,10 @@
+---
+title: GitHub SSO
+layout: default
+parent: Developer
+nav_order: 1
+---
+
 ## GitHub SSO & Token Management
 
 ### Overview
