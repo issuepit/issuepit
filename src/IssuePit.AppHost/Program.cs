@@ -31,6 +31,10 @@ var migrator = builder.AddProject<Projects.IssuePit_Migrator>("migrator")
     .WithReference(postgresDb)
     .WaitFor(postgresServer);
 
+var kafkaInitializer = builder.AddProject<Projects.IssuePit_KafkaInitializer>("kafka-initializer")
+    .WithReference(kafka)
+    .WaitFor(kafka);
+
 var frontend = builder.AddNpmApp("frontend", "../../frontend", "dev")
     .WithHttpEndpoint(env: "NUXT_PORT")
     .WithExternalHttpEndpoints();
@@ -41,6 +45,7 @@ var api = builder.AddProject<Projects.IssuePit_Api>("api")
     .WithReference(kafka)
     .WithReference(redis)
     .WaitForCompletion(migrator)
+    .WaitForCompletion(kafkaInitializer)
     .WaitFor(kafka)
     .WaitFor(redis)
     .WithHttpHealthCheck("/health", endpointName: "http")
@@ -65,6 +70,7 @@ var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("exe
     .WithReference(postgresServer)
     .WithReference(kafka)
     .WaitForCompletion(migrator)
+    .WaitForCompletion(kafkaInitializer)
     .WaitFor(kafka)
     .WithHttpHealthCheck("/health", endpointName: "http");
 
@@ -74,6 +80,7 @@ var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     .WithReference(kafka)
     .WithReference(redis)
     .WaitForCompletion(migrator)
+    .WaitForCompletion(kafkaInitializer)
     .WaitFor(kafka)
     .WaitFor(redis)
     .WithHttpHealthCheck("/health", endpointName: "http");

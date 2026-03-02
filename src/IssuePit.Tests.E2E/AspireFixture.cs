@@ -19,6 +19,9 @@ public sealed class AspireFixture : IAsyncLifetime
     public DistributedApplication? App { get; private set; }
     public HttpClient? ApiClient { get; private set; }
 
+    /// <summary>Kafka bootstrap servers resolved from the Aspire-started Kafka container.</summary>
+    public string? KafkaBootstrapServers { get; private set; }
+
     /// <summary>
     /// The URL of the Vue frontend, either from the Aspire-started npm dev server
     /// or from the <c>FRONTEND_URL</c> environment variable as a fallback.
@@ -127,6 +130,7 @@ public sealed class AspireFixture : IAsyncLifetime
         Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Aspire AppHost started.");
 
         ApiClient = App.CreateHttpClient("api");
+        KafkaBootstrapServers = await App.GetConnectionStringAsync("kafka");
 
         // Attempt to resolve the Aspire-started frontend URL; fall back to env var.
         try
