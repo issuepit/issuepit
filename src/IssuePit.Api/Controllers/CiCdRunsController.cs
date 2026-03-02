@@ -215,6 +215,11 @@ public class CiCdRunsController(
             workspacePath = run.WorkspacePath,
             eventName = "push",
             keepContainerOnFailure = options?.KeepContainerOnFailure ?? false,
+            noDind = options?.NoDind ?? false,
+            noVolumeMounts = options?.NoVolumeMounts ?? false,
+            customImage = options?.CustomImage,
+            customEntrypoint = options?.CustomEntrypoint,
+            customArgs = options?.CustomArgs,
         });
 
         await producer.ProduceAsync("cicd-trigger", new Message<string, string>
@@ -279,7 +284,17 @@ public record RetryRunOptions(
     /// <summary>When true the Docker container is not removed after a failed run, for debugging.</summary>
     bool KeepContainerOnFailure = false,
     /// <summary>When true the retry proceeds even if another run for the same project is already in progress.</summary>
-    bool ForceRetry = false);
+    bool ForceRetry = false,
+    /// <summary>When true the Docker socket is NOT mounted (disables DinD).</summary>
+    bool NoDind = false,
+    /// <summary>When true no host volumes are mounted (workspace and docker socket omitted).</summary>
+    bool NoVolumeMounts = false,
+    /// <summary>Override the Docker image for this run.</summary>
+    string? CustomImage = null,
+    /// <summary>Override the container entrypoint.</summary>
+    string? CustomEntrypoint = null,
+    /// <summary>Additional CLI arguments appended to the act command.</summary>
+    string? CustomArgs = null);
 
 /// <summary>Request body for the external CI/CD sync endpoint.</summary>
 public record ExternalSyncRequest(

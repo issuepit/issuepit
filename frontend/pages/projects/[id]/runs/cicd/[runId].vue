@@ -85,7 +85,7 @@
       <!-- Retry options modal -->
       <Teleport to="body">
         <div v-if="showRetryModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @click.self="showRetryModal = false">
-          <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-xl p-6 w-full max-w-sm">
+          <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-xl p-6 w-full max-w-md">
             <h3 class="text-base font-semibold text-white mb-4">Retry Options</h3>
 
             <!-- Conflict warning -->
@@ -103,7 +103,7 @@
                 <span class="block text-xs text-gray-500 mt-0.5">The Docker container is not removed when the run fails, so you can inspect it (e.g. verify where <code class="text-gray-400">act</code> is installed).</span>
               </span>
             </label>
-            <label class="flex items-start gap-3 cursor-pointer mb-6">
+            <label class="flex items-start gap-3 cursor-pointer mb-4">
               <input
                 v-model="retryOptions.forceRetry"
                 type="checkbox"
@@ -113,6 +113,58 @@
                 <span class="block text-xs text-gray-500 mt-0.5">Retry even if another run for this project is already in progress.</span>
               </span>
             </label>
+
+            <!-- Advanced section -->
+            <details class="mb-4">
+              <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-300 select-none">Advanced</summary>
+              <div class="mt-3 space-y-3 pl-1">
+                <label class="flex items-start gap-3 cursor-pointer">
+                  <input
+                    v-model="retryOptions.noDind"
+                    type="checkbox"
+                    class="mt-0.5 rounded border-gray-600 bg-gray-800 text-brand-500 focus:ring-brand-500" />
+                  <span class="text-sm text-gray-300">
+                    No Docker-in-Docker
+                    <span class="block text-xs text-gray-500 mt-0.5">Do not mount <code class="text-gray-400">/var/run/docker.sock</code> into the container.</span>
+                  </span>
+                </label>
+                <label class="flex items-start gap-3 cursor-pointer">
+                  <input
+                    v-model="retryOptions.noVolumeMounts"
+                    type="checkbox"
+                    class="mt-0.5 rounded border-gray-600 bg-gray-800 text-brand-500 focus:ring-brand-500" />
+                  <span class="text-sm text-gray-300">
+                    No volume mounts
+                    <span class="block text-xs text-gray-500 mt-0.5">Run without any host volume mounts (workspace and docker socket are omitted).</span>
+                  </span>
+                </label>
+                <div>
+                  <label class="block text-xs text-gray-500 mb-1">Custom image</label>
+                  <input
+                    v-model="retryOptions.customImage"
+                    type="text"
+                    placeholder="e.g. ghcr.io/catthehacker/ubuntu:act-24.04"
+                    class="w-full bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-300 px-2.5 py-1.5 placeholder-gray-600 focus:outline-none focus:border-brand-500" />
+                </div>
+                <div>
+                  <label class="block text-xs text-gray-500 mb-1">Custom entrypoint</label>
+                  <input
+                    v-model="retryOptions.customEntrypoint"
+                    type="text"
+                    placeholder="e.g. /bin/sh"
+                    class="w-full bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-300 px-2.5 py-1.5 placeholder-gray-600 focus:outline-none focus:border-brand-500" />
+                </div>
+                <div>
+                  <label class="block text-xs text-gray-500 mb-1">Additional CLI args</label>
+                  <input
+                    v-model="retryOptions.customArgs"
+                    type="text"
+                    placeholder="e.g. --verbose --reuse"
+                    class="w-full bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-300 px-2.5 py-1.5 placeholder-gray-600 focus:outline-none focus:border-brand-500" />
+                </div>
+              </div>
+            </details>
+
             <div class="flex justify-end gap-2">
               <button
                 class="px-4 py-1.5 text-sm text-gray-400 hover:text-gray-200 transition-colors"
@@ -217,7 +269,15 @@ const store = useCiCdRunsStore()
 
 const retrying = ref(false)
 const showRetryModal = ref(false)
-const retryOptions = reactive({ keepContainerOnFailure: false, forceRetry: false })
+const retryOptions = reactive({
+  keepContainerOnFailure: false,
+  forceRetry: false,
+  noDind: false,
+  noVolumeMounts: false,
+  customImage: '',
+  customEntrypoint: '',
+  customArgs: '',
+})
 const retryConflict = ref<{ message: string; activeRunId: string } | null>(null)
 
 const sectionTabs = [
@@ -265,6 +325,11 @@ async function retryRunWithOptions() {
     await store.retryRun(runId, {
       keepContainerOnFailure: retryOptions.keepContainerOnFailure,
       forceRetry: retryOptions.forceRetry,
+      noDind: retryOptions.noDind,
+      noVolumeMounts: retryOptions.noVolumeMounts,
+      customImage: retryOptions.customImage.trim() || undefined,
+      customEntrypoint: retryOptions.customEntrypoint.trim() || undefined,
+      customArgs: retryOptions.customArgs.trim() || undefined,
     })
     retryOptions.forceRetry = false
     navigateTo(`/projects/${projectId}/runs`)
