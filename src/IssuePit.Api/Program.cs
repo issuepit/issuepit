@@ -161,5 +161,6 @@ app.MapControllers();
 app.MapHub<AgentOutputHub>("/hubs/agent-output");
 app.MapHub<KanbanHub>("/hubs/kanban");
 app.MapHub<CiCdOutputHub>("/hubs/cicd-output");
+app.MapHub<ProjectHub>("/hubs/project");
 
 app.Run();
