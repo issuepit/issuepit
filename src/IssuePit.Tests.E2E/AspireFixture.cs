@@ -102,14 +102,17 @@ public sealed class AspireFixture : IAsyncLifetime
                                 var reports = evt.Snapshot.HealthReports;
                                 if (reports.Length > 0)
                                 {
-                                    var failing = reports.Select(r => $"{r.Name}={r.Status}");
+                                    var failing = reports.Select(r => $"{r.Name}={r.Status};{r.Description};{r.ExceptionText}");
                                     details = " -> FailingChecks: " + string.Join(", ", failing);
                                 }
                             }
                             catch { /* best-effort; don't crash logging */ }
                         }
-
-                        Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] [{name}] -> {state}; {health}{details}");
+                        
+                        if(state != "unknown" && state != "NotStarted" /*&& state != ""*/)
+                        {
+                            Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] [{name}] -> {state}; {health}{details}");
+                        }
                         lastSeen[name] = (state, health);
                     }
                 }
