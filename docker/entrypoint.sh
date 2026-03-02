@@ -51,43 +51,64 @@ fi
 
 # ─── Step 4: DNS firewall / logging ───────────────────────────────────────────
 #
-# When DisableInternet=true the execution client points the container's DNS resolver
-# to a restricted DNS server via Docker's --dns flag.  That server blocks general
-# internet while keeping the following development domains reachable:
+# A local dnsmasq proxy is started to log every DNS query to stderr (visible via
+# `docker logs`) regardless of the DisableInternet setting.
+#
+# When DisableInternet=true dnsmasq also enforces an allowlist: all domains are
+# blocked by default (--address=/#/0.0.0.0) and only the following development
+# domains are forwarded to the upstream resolver:
 #
 #   github.com, *.github.com              — git clone, GitHub API
-#   registry.npmjs.org, *.npmjs.org       — npm registry
-#   api.nuget.org, *.nuget.org            — NuGet packages
-#   mcr.microsoft.com                     — .NET / Playwright images
+#   npmjs.org, *.npmjs.org                — npm registry
+#   nuget.org, *.nuget.org                — NuGet packages
+#   microsoft.com, *.microsoft.com        — .NET / Aspire docs, MCR images
 #   ghcr.io, *.ghcr.io                    — GitHub Container Registry
-#   registry-1.docker.io, *.docker.io    — Docker Hub
-#   learn.microsoft.com, aspire.microsoft.com — .NET / Aspire documentation
-#
-# We also start a local dnsmasq proxy (forwarding to the upstream resolver) so
-# that ALL DNS queries made during this run appear in the container's log output
-# (stderr → captured by `docker logs`).  This is available regardless of whether
-# DisableInternet is true or false.
+#   docker.io, *.docker.io                — Docker Hub
+#   aspire.dev, *.aspire.dev              — Aspire documentation
+
+# Domains allowed through when DisableInternet=true.
+ALLOWED_DOMAINS=(
+    github.com
+    npmjs.org
+    nuget.org
+    microsoft.com
+    ghcr.io
+    docker.io
+    aspire.dev
+)
 
 if command -v dnsmasq > /dev/null 2>&1; then
     UPSTREAM_DNS=$(grep '^nameserver' /etc/resolv.conf 2>/dev/null | head -1 | awk '{print $2}')
 
     # Only set up the proxy when there is a real upstream to forward to.
     if [[ -n "${UPSTREAM_DNS}" && "${UPSTREAM_DNS}" != "127.0.0.1" ]]; then
-        # Start dnsmasq as a local forwarding proxy that logs every DNS query to stderr.
-        dnsmasq \
-            --no-hosts \
-            --no-resolv \
-            --server="${UPSTREAM_DNS}" \
-            --log-queries \
-            --log-facility=- \
-            --listen-address=127.0.0.1 \
-            --bind-interfaces \
+        DNSMASQ_ARGS=(
+            --no-hosts
+            --no-resolv
+            --log-queries
+            --log-facility=-
+            --listen-address=127.0.0.1
+            --bind-interfaces
             --pid-file=/tmp/dnsmasq.pid
+        )
+
+        if [[ "${ISSUEPIT_DISABLE_INTERNET:-false}" == "true" ]]; then
+            # Block all domains by default, then allow the development allowlist.
+            DNSMASQ_ARGS+=(--address=/#/0.0.0.0)
+            for DOMAIN in "${ALLOWED_DOMAINS[@]}"; do
+                DNSMASQ_ARGS+=(--server=/"${DOMAIN}"/"${UPSTREAM_DNS}")
+            done
+        else
+            # Forward everything to the upstream resolver (logging only).
+            DNSMASQ_ARGS+=(--server="${UPSTREAM_DNS}")
+        fi
+
+        dnsmasq "${DNSMASQ_ARGS[@]}"
 
         # Route all container DNS lookups through the local logging proxy.
         echo "nameserver 127.0.0.1" > /etc/resolv.conf
 
-        echo "[entrypoint] DNS logging proxy started (upstream: ${UPSTREAM_DNS}, DisableInternet=${ISSUEPIT_DISABLE_INTERNET:-false})"
+        echo "[entrypoint] DNS proxy started (upstream: ${UPSTREAM_DNS}, DisableInternet=${ISSUEPIT_DISABLE_INTERNET:-false})"
     fi
 fi
 
