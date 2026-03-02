@@ -8,22 +8,6 @@ IssuePit is a self-hosted project management platform that combines issue tracki
 
 ---
 
-## Architecture
-
-```
-src/
-├── IssuePit.AppHost/          # .NET Aspire 9 orchestration host
-├── IssuePit.ServiceDefaults/  # Shared Aspire service defaults (OpenTelemetry, resilience)
-├── IssuePit.Core/             # Domain models, EF Core entities, DbContext
-├── IssuePit.Api/              # ASP.NET Core 10 Web API (REST endpoints)
-├── IssuePit.ExecutionClient/  # Worker: consumes Kafka, runs agents in Docker
-└── IssuePit.CiCdClient/       # Worker: consumes Kafka, triggers CI/CD via act
-
-frontend/                      # Vue 3 + Nuxt 3 + Pinia frontend
-```
-
----
-
 ## Features
 
 ### Issue Tracking
@@ -46,28 +30,11 @@ frontend/                      # Vue 3 + Nuxt 3 + Pinia frontend
 - Container runtimes: native, SSH, Docker, Hetzner+Terraform+SSH, OpenSandbox
 
 ### Execution Client
-- Consumes `issue-assigned` Kafka topic
-- Spawns work agents (opencode, codex, GitHub Copilot CLI) in Docker (DinD) with the agent mode configuration on demand
-- Copies agent logins to workspace containers
-- Supports spawning Hetzner machines for vibe-coding agents
+- Runs AI agents (opencode, codex, GitHub Copilot CLI) in containers on demand
+- Supports multiple container runtimes including Hetzner cloud VMs
 
 ### CI/CD Client
-- Consumes `cicd-trigger` Kafka topic
 - Runs GitHub Actions locally via [nektos/act](https://github.com/nektos/act)
-
----
-
-## Technology Stack
-
-| Layer | Technology |
-|---|---|
-| Backend | ASP.NET Core 10, C# |
-| Orchestration | .NET Aspire 13 |
-| Database | PostgreSQL 17 + EF Core 9 (Npgsql) |
-| Messaging | Apache Kafka (Confluent .NET client) |
-| Frontend | Vue 3, Nuxt 3, Pinia, TailwindCSS |
-| Containers | Docker, Docker-in-Docker |
-| Observability | OpenTelemetry (traces, metrics, logs) |
 
 ---
 
@@ -77,9 +44,17 @@ frontend/                      # Vue 3 + Nuxt 3 + Pinia frontend
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
 - [Node.js 22+](https://nodejs.org/)
-- [Docker](https://www.docker.com/) or better [Podman](https://podman.io/)
+- [Docker](https://www.docker.com/) or [Podman](https://podman.io/)
 
-### Run with Aspire
+### Run with Aspire (Development)
+
+> **Note:** Before starting Aspire, run `npm ci` in the `frontend` folder so the frontend can start correctly inside Aspire.
+
+```bash
+cd frontend && npm ci && cd ..
+```
+
+Then start Aspire:
 
 ```bash
 aspire run
@@ -90,61 +65,33 @@ cd src
 dotnet run --project IssuePit.AppHost
 ```
 
-The Aspire dashboard will start at `https://localhost:15888`. The API, PostgreSQL, and Kafka are provisioned automatically.
+The Aspire dashboard will start at `https://localhost:15888`. The API, PostgreSQL, Kafka, and frontend are provisioned automatically.
 
-### Frontend (dev)
+### Run with Podman Compose
 
 ```bash
-cd frontend
-npm install
-npm run dev
+podman compose up -d
 ```
 
-The frontend dev server runs at `http://localhost:3000` and proxies API calls to the Aspire-managed backend.
+Or with Docker:
+
+```bash
+docker compose up -d
+```
+
+Open your browser at `http://localhost:3000` once all services are healthy.
 
 ---
 
-## Development
+## Documentation
 
-See [agents.md](agents.md) for coding conventions, commit guidelines, and the Definition of Done used by both human developers and AI agents.
-
----
-
-## Project Structure — Backend
-
-### `IssuePit.Core`
-Domain models and EF Core `IssuePitDbContext`. All entity configuration is done via data annotations on the entity classes.
-
-Key entities: `Tenant`, `Organization`, `Project`, `Issue`, `IssueTask`, `Label`, `Milestone`, `Agent`, `McpServer`, `KanbanBoard`, `KanbanColumn`, `User`
-
-### `IssuePit.Api`
-Minimal API endpoints grouped by resource. Multi-tenant middleware resolves the current tenant from the `X-Tenant-Id` request header or the request hostname. Kafka producer publishes events when issues are created or assigned.
-
-### `IssuePit.ExecutionClient`
-Background worker that subscribes to the `issue-assigned` Kafka topic. Uses `Docker.DotNet` to spin up agent containers and stream results back.
-
-### `IssuePit.CiCdClient`
-Background worker that subscribes to the `cicd-trigger` Kafka topic and drives local CI runs via `act`.
-
-
-# Known issue:
-
-## aspire ssl outdated
-```bash
-dotnet dev-certs https --clean
-dotnet dev-certs https --trust
-```
-## aspire cli not found
-https://aspire.dev/get-started/install-cli/
-```bash
-export PATH="/c/Users/user/.aspire/bin:$PATH"
-```
-
-## frontend is not starting inside of aspire:
-```bash
-cd frontend
-npm ci
-```
+| Topic | Link |
+|-------|------|
+| User documentation | [issuepit.github.io/issuepit](https://issuepit.github.io/issuepit/) |
+| Architecture & tech stack | [docs/architecture.md](docs/architecture.md) |
+| Development & coding conventions | [agents.md](agents.md) |
+| Known issues | [docs/known-issues.md](docs/known-issues.md) |
+| FAQ | [docs/faq.md](docs/faq.md) |
 
 ---
 
