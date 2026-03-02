@@ -30,6 +30,8 @@ export PATH="/c/Users/user/.aspire/bin:$PATH"
 
 ## Frontend is not starting inside Aspire
 
+Aspire manages the frontend via `npm run dev`, but it requires dependencies to be installed first. Run this once before starting Aspire:
+
 ```bash
 cd frontend
 npm ci

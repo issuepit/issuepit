@@ -48,6 +48,14 @@ IssuePit is a self-hosted project management platform that combines issue tracki
 
 ### Run with Aspire (Development)
 
+> **Note:** Before starting Aspire, run `npm ci` in the `frontend` folder so the frontend can start correctly inside Aspire.
+
+```bash
+cd frontend && npm ci && cd ..
+```
+
+Then start Aspire:
+
 ```bash
 aspire run
 ```
@@ -57,24 +65,18 @@ cd src
 dotnet run --project IssuePit.AppHost
 ```
 
-The Aspire dashboard will start at `https://localhost:15888`. The API, PostgreSQL, and Kafka are provisioned automatically.
+The Aspire dashboard will start at `https://localhost:15888`. The API, PostgreSQL, Kafka, and frontend are provisioned automatically.
 
-#### Frontend (dev)
+### Run with Podman Compose
 
 ```bash
-cd frontend
-npm install
-npm run dev
+podman compose up -d
 ```
 
-The frontend dev server runs at `http://localhost:3000` and proxies API calls to the Aspire-managed backend.
-
-### Run with Docker Compose
+Or with Docker:
 
 ```bash
 docker compose up -d
-# or with Podman:
-podman compose up -d
 ```
 
 Open your browser at `http://localhost:3000` once all services are healthy.

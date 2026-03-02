@@ -15,10 +15,13 @@ This page describes the high-level structure of IssuePit, its technology stack, 
 
 ```
 src/
-├── IssuePit.AppHost/          # .NET Aspire 9 orchestration host
+├── IssuePit.AppHost/          # .NET Aspire orchestration host
 ├── IssuePit.ServiceDefaults/  # Shared Aspire service defaults (OpenTelemetry, resilience)
 ├── IssuePit.Core/             # Domain models, EF Core entities, DbContext
-├── IssuePit.Api/              # ASP.NET Core 10 Web API (REST endpoints)
+├── IssuePit.Api/              # ASP.NET Core Web API (REST endpoints)
+├── IssuePit.McpServer/        # MCP server exposing IssuePit tools to AI agents
+├── IssuePit.Migrator/         # EF Core database migrations runner
+├── IssuePit.KafkaInitializer/ # Kafka topic setup on startup
 ├── IssuePit.ExecutionClient/  # Worker: consumes Kafka, runs agents in Docker
 └── IssuePit.CiCdClient/       # Worker: consumes Kafka, triggers CI/CD via act
 
@@ -52,6 +55,18 @@ Key entities: `Tenant`, `Organization`, `Project`, `Issue`, `IssueTask`, `Label`
 ### `IssuePit.Api`
 
 Minimal API endpoints grouped by resource. Multi-tenant middleware resolves the current tenant from the `X-Tenant-Id` request header or the request hostname. Kafka producer publishes events when issues are created or assigned.
+
+### `IssuePit.McpServer`
+
+MCP (Model Context Protocol) server that exposes IssuePit tools (issue management, project queries, etc.) to AI agents. Referenced by the API for issue enhancement workflows.
+
+### `IssuePit.Migrator`
+
+Runs EF Core database migrations at startup. Aspire waits for it to complete before starting the API and other services.
+
+### `IssuePit.KafkaInitializer`
+
+Creates required Kafka topics at startup. Aspire waits for it to complete before starting consumers.
 
 ### `IssuePit.ExecutionClient`
 
