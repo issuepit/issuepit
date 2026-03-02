@@ -7,8 +7,9 @@ namespace IssuePit.Tests.E2E;
 /// E2E tests for the Vue/Nuxt frontend, launched against the running Aspire stack.
 /// The FRONTEND_URL environment variable overrides the Aspire-started frontend URL.
 /// </summary>
+[Collection("E2E")]
 [Trait("Category", "E2E")]
-public class FrontendSmokeTests : IClassFixture<AspireFixture>, IAsyncLifetime
+public class FrontendSmokeTests : IAsyncLifetime
 {
     private readonly AspireFixture _fixture;
     private readonly ITestOutputHelper _testOutputHelper;
