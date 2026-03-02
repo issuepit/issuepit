@@ -87,7 +87,8 @@ public sealed class AspireFixture : IAsyncLifetime
                 await foreach (var evt in notifications.WatchAsync(startCts.Token))
                 {
                     var state = evt.Snapshot.State?.Text ?? "unknown";
-                    Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] [{evt.Resource.Name}] -> {state}");
+                    var health = evt.Snapshot.HealthStatus;
+                    Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] [{evt.Resource.Name}] -> {state}; {health}");
                 }
             }
             catch (OperationCanceledException) { }
