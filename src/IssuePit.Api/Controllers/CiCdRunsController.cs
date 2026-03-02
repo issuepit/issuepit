@@ -1,16 +1,22 @@
 using Confluent.Kafka;
+using IssuePit.Api.Hubs;
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
 namespace IssuePit.Api.Controllers;
 
 [ApiController]
 [Route("api/cicd-runs")]
-public class CiCdRunsController(IssuePitDbContext db, TenantContext tenant, IProducer<string, string> producer) : ControllerBase
+public class CiCdRunsController(
+    IssuePitDbContext db,
+    TenantContext tenant,
+    IProducer<string, string> producer,
+    IHubContext<ProjectHub> projectHub) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetRuns([FromQuery] Guid? projectId)
@@ -159,6 +165,10 @@ public class CiCdRunsController(IssuePitDbContext db, TenantContext tenant, IPro
 
         await db.SaveChangesAsync();
 
+        await projectHub.Clients
+            .Group(ProjectHub.ProjectGroup(run.ProjectId.ToString()))
+            .SendAsync("RunsUpdated", new { runId = run.Id, status = run.Status, statusName = run.Status.ToString() });
+
         return Ok(new { run.Id, run.Status, StatusName = run.Status.ToString() });
     }
 
@@ -217,6 +227,10 @@ public class CiCdRunsController(IssuePitDbContext db, TenantContext tenant, IPro
             Key = run.Id.ToString(),
             Value = run.Id.ToString(),
         });
+
+        await projectHub.Clients
+            .Group(ProjectHub.ProjectGroup(run.ProjectId.ToString()))
+            .SendAsync("RunsUpdated", new { runId = run.Id, status = run.Status, statusName = run.Status.ToString() });
 
         return Ok(new { run.Id, run.Status, StatusName = run.Status.ToString() });
     }
