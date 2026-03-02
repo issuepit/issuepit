@@ -17,9 +17,11 @@ namespace IssuePit.CiCdClient.Runtimes;
 ///     (default: <c>ghcr.io/issuepit/issuepit-helper-act:latest</c>)</item>
 ///   <item><c>CiCd__ActBinaryPath</c> — path to <c>act</c> inside the container (default: <c>act</c>)</item>
 ///   <item><c>CiCd__DefaultWorkspacePath</c> — fallback host path to the repository workspace</item>
+///   <item><c>CiCd__ActImage</c> — runner image injected into <c>actrc</c> on first run to prevent
+///     the interactive image-selection prompt (default: <c>catthehacker/ubuntu:act-latest</c> — Medium)</item>
 /// </list>
 /// </summary>
-public class DockerCiCdRuntime(
+public partial class DockerCiCdRuntime(
     ILogger<DockerCiCdRuntime> logger,
     DockerClient dockerClient,
     IConfiguration configuration) : ICiCdRuntime
@@ -71,11 +73,17 @@ public class DockerCiCdRuntime(
         var cmd = actBinAndArgs;
         var containerName = BuildContainerName(run);
 
+        // Read the act runner image that is injected into actrc to prevent the interactive
+        // first-run prompt ("Please choose the default image") that causes EOF in non-interactive containers.
+        // Default is the Medium runner image (~500 MB, compatible with most actions).
+        var actRunnerImage = configuration["CiCd__ActImage"] ?? "catthehacker/ubuntu:act-latest";
+
         // Emit verbose diagnostics as the first log lines so they appear in the run's log output.
         await onLogLine($"[DEBUG] Runner machine : {Environment.MachineName}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Runtime        : Docker", LogStream.Stdout);
         await onLogLine($"[DEBUG] IssuePit ver   : {AppVersion}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Docker image   : {image}", LogStream.Stdout);
+        await onLogLine($"[DEBUG] Act runner img : {actRunnerImage}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Container name : {containerName}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Command        : {string.Join(' ', cmd)}", LogStream.Stdout);
         if (!trigger.NoVolumeMounts)
@@ -148,12 +156,16 @@ public class DockerCiCdRuntime(
         {
             Image = image,
             Name = containerName,
-            Cmd = cmd,
+            // Wrap act in a shell script that injects actrc (prevents the interactive first-run
+            // image-selection prompt that causes EOF in non-interactive containers).
+            // If a custom entrypoint is set, skip injection and let the caller control execution.
+            Cmd = !string.IsNullOrWhiteSpace(trigger.CustomEntrypoint)
+                ? cmd
+                : [BuildActrcInjectionScript(actRunnerImage, cmd)],
             WorkingDir = "/workspace",
-            // Note: entrypoint is split on spaces; quoted arguments with spaces are not supported.
             Entrypoint = !string.IsNullOrWhiteSpace(trigger.CustomEntrypoint)
                 ? trigger.CustomEntrypoint.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                : null,
+                : ["/bin/sh", "-c"],
             HostConfig = new HostConfig
             {
                 Binds = binds,
@@ -477,4 +489,51 @@ public class DockerCiCdRuntime(
         if (!string.IsNullOrEmpty(flushed))
             await onLogLine(flushed, lastTarget);
     }
+
+    /// <summary>
+    /// Builds a POSIX shell command that:
+    /// <list type="bullet">
+    ///   <item>Creates <c>/root/.config/act/actrc</c> with platform-image mappings if it does not already exist,
+    ///     preventing the interactive first-run prompt that causes EOF in non-interactive containers.</item>
+    ///   <item>Then <c>exec</c>s the <c>act</c> command so that the container process is replaced by <c>act</c>,
+    ///     ensuring signal forwarding and the correct exit code.</item>
+    /// </list>
+    /// </summary>
+    private static string BuildActrcInjectionScript(string actRunnerImage, IList<string> cmd)
+    {
+        // Build the actrc content: map common Ubuntu runner labels to the configured image.
+        var platforms = new[]
+        {
+            $"-P ubuntu-latest={actRunnerImage}",
+            $"-P ubuntu-24.04={actRunnerImage}",
+            $"-P ubuntu-22.04={actRunnerImage}",
+            $"-P ubuntu-20.04={actRunnerImage}",
+        };
+        // Use printf with \n to write each line reliably; single-quoted to avoid shell expansion.
+        var actrcBody = string.Join("\\n", platforms);
+
+        // exec replaces the shell with act so signals and exit codes propagate correctly.
+        var actCmd = "exec " + string.Join(" ", cmd.Select(ShellQuote));
+
+        return
+            "mkdir -p /root/.config/act && " +
+            $"[ ! -f /root/.config/act/actrc ] && " +
+            $"printf '{actrcBody}\\n' > /root/.config/act/actrc; " +
+            actCmd;
+    }
+
+    /// <summary>
+    /// Returns a POSIX single-quoted shell argument. Safe-quoting: wraps the argument in single quotes
+    /// and escapes embedded single quotes as <c>'\''</c>.
+    /// </summary>
+    private static string ShellQuote(string arg)
+    {
+        // If the arg only contains safe characters, return as-is.
+        if (SafeShellArgRegex().IsMatch(arg))
+            return arg;
+        return $"'{arg.Replace("'", "'\\''")}'";
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^[a-zA-Z0-9\-_./]+$")]
+    private static partial System.Text.RegularExpressions.Regex SafeShellArgRegex();
 }
