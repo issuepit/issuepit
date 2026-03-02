@@ -45,6 +45,12 @@
         <option v-for="t in types" :key="t.value" :value="t.value">{{ t.label }}</option>
       </select>
 
+      <select v-model="filterMilestone"
+        class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500">
+        <option value="">All Milestones</option>
+        <option v-for="m in milestonesStore.milestones" :key="m.id" :value="m.id">{{ m.title }}</option>
+      </select>
+
       <button v-if="hasFilters" @click="clearFilters"
         class="text-xs text-gray-400 hover:text-gray-200 px-2 py-1.5">Clear</button>
     </div>
@@ -164,16 +170,19 @@
 <script setup lang="ts">
 import { IssueStatus, IssuePriority, IssueType } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
+import { useMilestonesStore } from '~/stores/milestones'
 
 const route = useRoute()
 const id = route.params.id as string
 const store = useIssuesStore()
+const milestonesStore = useMilestonesStore()
 
 const showCreate = ref(false)
 const search = ref('')
 const filterStatus = ref<IssueStatus | ''>('')
 const filterPriority = ref<IssuePriority | ''>('')
 const filterType = ref<IssueType | ''>('')
+const filterMilestone = ref<string>('')
 
 const form = reactive({
   title: '',
@@ -208,24 +217,29 @@ const types = [
   { value: IssueType.Epic, label: '⚡ Epic' }
 ]
 
-const hasFilters = computed(() => search.value || filterStatus.value || filterPriority.value || filterType.value)
+const hasFilters = computed(() => search.value || filterStatus.value || filterPriority.value || filterType.value || filterMilestone.value)
 
-watch([search, filterStatus, filterPriority, filterType], () => {
+watch([search, filterStatus, filterPriority, filterType, filterMilestone], () => {
   store.setFilters({
     search: search.value || undefined,
     status: filterStatus.value || undefined,
     priority: filterPriority.value || undefined,
-    type: filterType.value || undefined
+    type: filterType.value || undefined,
+    milestoneId: filterMilestone.value || undefined,
   })
 })
 
-onMounted(() => store.fetchIssues(id))
+onMounted(() => {
+  store.fetchIssues(id)
+  milestonesStore.fetchMilestones(id)
+})
 
 function clearFilters() {
   search.value = ''
   filterStatus.value = ''
   filterPriority.value = ''
   filterType.value = ''
+  filterMilestone.value = ''
   store.clearFilters()
 }
 

@@ -8,6 +8,7 @@ interface IssueFilters {
   type?: IssueType
   assigneeId?: string
   labelId?: string
+  milestoneId?: string
   search?: string
 }
 
@@ -27,6 +28,7 @@ export const useIssuesStore = defineStore('issues', () => {
     if (filters.value.status) result = result.filter(i => i.status === filters.value.status)
     if (filters.value.priority) result = result.filter(i => i.priority === filters.value.priority)
     if (filters.value.type) result = result.filter(i => i.type === filters.value.type)
+    if (filters.value.milestoneId) result = result.filter(i => i.milestoneId === filters.value.milestoneId)
     if (filters.value.search) {
       const q = filters.value.search.toLowerCase()
       result = result.filter(i => i.title.toLowerCase().includes(q))
@@ -270,6 +272,20 @@ export const useIssuesStore = defineStore('issues', () => {
     }
   }
 
+  // --- Milestone on Issue ---
+
+  async function clearIssueMilestone(projectId: string, issueId: string) {
+    try {
+      const data = await api.put<Issue>(`/api/issues/${issueId}`, { clearMilestoneId: true })
+      const idx = issues.value.findIndex(i => i.id === issueId)
+      if (idx !== -1) issues.value[idx] = data
+      if (currentIssue.value?.id === issueId) currentIssue.value = { ...currentIssue.value, ...data }
+      return data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to clear milestone'
+    }
+  }
+
   function setFilters(f: IssueFilters) {
     filters.value = f
   }
@@ -307,6 +323,7 @@ export const useIssuesStore = defineStore('issues', () => {
     removeAssignee,
     addIssueLabel,
     removeIssueLabel,
+    clearIssueMilestone,
     setFilters,
     clearFilters
   }

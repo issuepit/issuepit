@@ -241,6 +241,22 @@
               </select>
             </div>
 
+            <!-- Milestone -->
+            <div>
+              <p class="text-xs text-gray-500 uppercase tracking-wide mb-1.5">Milestone</p>
+              <div v-if="store.currentIssue.milestoneId" class="flex items-center gap-1 mb-1.5">
+                <span class="text-xs text-indigo-300 bg-indigo-900/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  🏁 {{ milestonesStore.milestones.find(m => m.id === store.currentIssue!.milestoneId)?.title ?? 'Milestone' }}
+                  <button @click="updateMilestone(null)" class="hover:opacity-70 ml-0.5">×</button>
+                </span>
+              </div>
+              <select @change="onSetMilestone($event)"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-400 focus:outline-none focus:ring-1 focus:ring-brand-500">
+                <option value="">{{ store.currentIssue.milestoneId ? 'Change milestone' : '+ Set milestone' }}</option>
+                <option v-for="m in milestonesStore.milestones" :key="m.id" :value="m.id">{{ m.title }}</option>
+              </select>
+            </div>
+
             <!-- Labels -->
             <div>
               <p class="text-xs text-gray-500 uppercase tracking-wide mb-1.5">Labels</p>
@@ -325,6 +341,7 @@ import type { IssuePriority } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
 import { useLabelsStore } from '~/stores/labels'
 import { useAgentsStore } from '~/stores/agents'
+import { useMilestonesStore } from '~/stores/milestones'
 
 const route = useRoute()
 const router = useRouter()
@@ -333,6 +350,7 @@ const issueId = route.params.issueId as string
 const store = useIssuesStore()
 const labelsStore = useLabelsStore()
 const agentsStore = useAgentsStore()
+const milestonesStore = useMilestonesStore()
 const api = useApi()
 
 const editingTitle = ref(false)
@@ -389,6 +407,7 @@ onMounted(async () => {
     labelsStore.fetchLabels(id),
     agentsStore.fetchAgents(),
     fetchTenantUsers(),
+    milestonesStore.fetchMilestones(id),
   ])
 })
 
@@ -432,6 +451,20 @@ async function updatePriority(e: Event) {
 async function updateType(e: Event) {
   const val = (e.target as HTMLSelectElement).value as IssueType
   await store.updateIssue(id, issueId, { type: val })
+}
+
+async function updateMilestone(milestoneId: string | null) {
+  if (milestoneId) {
+    await store.updateIssue(id, issueId, { milestoneId })
+  } else {
+    await store.clearIssueMilestone(id, issueId)
+  }
+}
+
+async function onSetMilestone(e: Event) {
+  const val = (e.target as HTMLSelectElement).value
+  await updateMilestone(val || null)
+  ;(e.target as HTMLSelectElement).value = ''
 }
 
 async function deleteAndGoBack() {

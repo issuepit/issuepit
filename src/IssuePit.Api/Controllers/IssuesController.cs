@@ -138,7 +138,8 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         if (req.Priority.HasValue) issue.Priority = req.Priority.Value;
         if (req.Type.HasValue) issue.Type = req.Type.Value;
         if (req.GitBranch is not null) issue.GitBranch = req.GitBranch;
-        if (req.MilestoneId.HasValue) issue.MilestoneId = req.MilestoneId.Value;
+        if (req.ClearMilestoneId) issue.MilestoneId = null;
+        else if (req.MilestoneId.HasValue) issue.MilestoneId = req.MilestoneId.Value;
         issue.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
         return Ok(issue);
@@ -326,4 +327,5 @@ public record UpdateIssueRequest(
     IssuePriority? Priority,
     IssueType? Type,
     string? GitBranch,
-    Guid? MilestoneId);
+    Guid? MilestoneId,
+    bool ClearMilestoneId = false);
