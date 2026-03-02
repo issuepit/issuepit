@@ -70,7 +70,9 @@
           <button
             :disabled="retrying"
             class="flex items-center gap-1.5 text-sm text-brand-400 hover:text-brand-300 disabled:opacity-50 transition-colors"
-            @click="retryRun">
+            :title="'Click to retry · Shift+click for options'"
+            @click.exact="retryRun()"
+            @click.shift="showRetryModal = true">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -79,6 +81,38 @@
           </button>
         </div>
       </div>
+
+      <!-- Retry options modal -->
+      <Teleport to="body">
+        <div v-if="showRetryModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @click.self="showRetryModal = false">
+          <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-xl p-6 w-full max-w-sm">
+            <h3 class="text-base font-semibold text-white mb-4">Retry Options</h3>
+            <label class="flex items-start gap-3 cursor-pointer mb-6">
+              <input
+                v-model="retryOptions.keepContainerOnFailure"
+                type="checkbox"
+                class="mt-0.5 rounded border-gray-600 bg-gray-800 text-brand-500 focus:ring-brand-500" />
+              <span class="text-sm text-gray-300">
+                Keep container on failure
+                <span class="block text-xs text-gray-500 mt-0.5">The Docker container is not removed when the run fails, so you can inspect it (e.g. verify where <code class="text-gray-400">act</code> is installed).</span>
+              </span>
+            </label>
+            <div class="flex justify-end gap-2">
+              <button
+                class="px-4 py-1.5 text-sm text-gray-400 hover:text-gray-200 transition-colors"
+                @click="showRetryModal = false">
+                Cancel
+              </button>
+              <button
+                :disabled="retrying"
+                class="px-4 py-1.5 text-sm bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white rounded-md transition-colors"
+                @click="retryRunWithOptions">
+                {{ retrying ? 'Retrying…' : 'Retry Run' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Teleport>
 
       <!-- Logs / Details -->
       <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
@@ -166,6 +200,8 @@ const runId = route.params.runId as string
 const store = useCiCdRunsStore()
 
 const retrying = ref(false)
+const showRetryModal = ref(false)
+const retryOptions = reactive({ keepContainerOnFailure: false })
 
 const sectionTabs = [
   { label: 'Logs', value: 'logs' },
@@ -201,9 +237,14 @@ onMounted(async () => {
 })
 
 async function retryRun() {
+  await retryRunWithOptions()
+}
+
+async function retryRunWithOptions() {
   retrying.value = true
+  showRetryModal.value = false
   try {
-    await store.retryRun(runId)
+    await store.retryRun(runId, { keepContainerOnFailure: retryOptions.keepContainerOnFailure })
     navigateTo(`/projects/${projectId}/runs`)
   } finally {
     retrying.value = false

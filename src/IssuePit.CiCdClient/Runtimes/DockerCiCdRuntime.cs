@@ -67,6 +67,7 @@ public class DockerCiCdRuntime(
         }
 
         logger.LogInformation("Pulling Docker image {Image} for CI/CD run {RunId}", image, run.Id);
+        await onLogLine($"[DEBUG] Pulling image  : {image}", LogStream.Stdout);
         try
         {
             await dockerClient.Images.CreateImageAsync(
@@ -78,10 +79,13 @@ public class DockerCiCdRuntime(
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException)
         {
-            throw new InvalidOperationException(
-                $"Lost connection to the Docker daemon while pulling image '{image}'. " +
+            var msg = $"Lost connection to the Docker daemon while pulling image '{image}'. " +
                 "This can happen on Windows when Docker Desktop resets named-pipe connections. " +
-                "Try running the CI/CD run again.", ex);
+                "Try running the CI/CD run again.";
+            await onLogLine($"[ERROR] {msg}", LogStream.Stderr);
+            foreach (var line in ex.ToString().Split('\n'))
+                await onLogLine(line.TrimEnd('\r'), LogStream.Stderr);
+            throw new InvalidOperationException(msg, ex);
         }
 
         logger.LogInformation("Creating Docker container from image {Image} for CI/CD run {RunId}", image, run.Id);
@@ -111,6 +115,7 @@ public class DockerCiCdRuntime(
         var container = await dockerClient.Containers.CreateContainerAsync(createParams, cancellationToken);
         logger.LogInformation("Created Docker container {ContainerId} for CI/CD run {RunId}",
             container.ID, run.Id);
+        await onLogLine($"[DEBUG] Container ID   : {container.ID[..12]}", LogStream.Stdout);
 
         try
         {
@@ -127,6 +132,7 @@ public class DockerCiCdRuntime(
                 "with the correct path to the act binary inside the container.", ex);
         }
 
+        var succeeded = false;
         try
         {
             var logStreamTask = StreamContainerLogsAsync(container.ID, onLogLine, cancellationToken);
@@ -138,6 +144,8 @@ public class DockerCiCdRuntime(
                 throw new Exception(
                     $"act exited with code {waitResponse.StatusCode} " +
                     $"(image: {image}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
+
+            succeeded = true;
         }
         catch (OperationCanceledException)
         {
@@ -152,14 +160,27 @@ public class DockerCiCdRuntime(
         }
         finally
         {
-            try
+            var keepContainer = !succeeded && trigger.KeepContainerOnFailure;
+            if (keepContainer)
             {
-                await dockerClient.Containers.RemoveContainerAsync(
-                    container.ID,
-                    new ContainerRemoveParameters { Force = true },
-                    CancellationToken.None);
+                await onLogLine(
+                    $"[DEBUG] Container kept : {container.ID[..12]} (KeepContainerOnFailure=true — inspect to debug)",
+                    LogStream.Stdout);
+                logger.LogInformation(
+                    "Keeping Docker container {ContainerId} for failed CI/CD run {RunId} (KeepContainerOnFailure=true)",
+                    container.ID, run.Id);
             }
-            catch { /* best-effort */ }
+            else
+            {
+                try
+                {
+                    await dockerClient.Containers.RemoveContainerAsync(
+                        container.ID,
+                        new ContainerRemoveParameters { Force = true },
+                        CancellationToken.None);
+                }
+                catch { /* best-effort */ }
+            }
         }
     }
 

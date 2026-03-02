@@ -164,7 +164,7 @@ public class CiCdRunsController(IssuePitDbContext db, TenantContext tenant, IPro
     }
 
     [HttpPost("{id:guid}/retry")]
-    public async Task<IActionResult> RetryRun(Guid id)
+    public async Task<IActionResult> RetryRun(Guid id, [FromBody] RetryRunOptions? options = null)
     {
         var run = await db.CiCdRuns
             .Include(r => r.Project)
@@ -185,6 +185,7 @@ public class CiCdRunsController(IssuePitDbContext db, TenantContext tenant, IPro
             agentSessionId = run.AgentSessionId,
             workspacePath = run.WorkspacePath,
             eventName = "push",
+            keepContainerOnFailure = options?.KeepContainerOnFailure ?? false,
         });
 
         await producer.ProduceAsync("cicd-trigger", new Message<string, string>
@@ -236,6 +237,11 @@ public class CiCdRunsController(IssuePitDbContext db, TenantContext tenant, IPro
             _ => CiCdRunStatus.Pending,
         };
 }
+
+/// <summary>Options body for the retry run endpoint.</summary>
+public record RetryRunOptions(
+    /// <summary>When true the Docker container is not removed after a failed run, for debugging.</summary>
+    bool KeepContainerOnFailure = false);
 
 /// <summary>Request body for the external CI/CD sync endpoint.</summary>
 public record ExternalSyncRequest(

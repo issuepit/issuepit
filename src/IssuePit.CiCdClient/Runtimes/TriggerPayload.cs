@@ -8,4 +8,9 @@ public record TriggerPayload(
     string? Workflow,
     Guid? AgentSessionId,
     string? WorkspacePath,
-    string? EventName);
+    string? EventName,
+    /// <summary>
+    /// When true the Docker container is not removed after a failed run.
+    /// Useful for debugging: inspect the container to find where act or other tooling is installed.
+    /// </summary>
+    bool KeepContainerOnFailure = false);
