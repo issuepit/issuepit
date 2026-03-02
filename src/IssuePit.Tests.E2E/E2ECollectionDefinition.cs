@@ -1,3 +1,7 @@
+// Disable parallelism across the E2E test assembly so the shared AspireFixture is not
+// accessed concurrently from different collection runners.
+[assembly: CollectionBehavior(DisableTestParallelization = true)]
+
 namespace IssuePit.Tests.E2E;
 
 /// <summary>

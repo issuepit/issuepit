@@ -81,11 +81,14 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
         db.Projects.AddRange(frontendProject, backendProject);
         await db.SaveChangesAsync();
 
-        db.GitRepositories.AddRange(
-            new GitRepository { Id = Guid.NewGuid(), ProjectId = frontendProject.Id, RemoteUrl = frontendProject.GitHubRepo!, DefaultBranch = "main", CreatedAt = DateTime.UtcNow },
-            new GitRepository { Id = Guid.NewGuid(), ProjectId = backendProject.Id, RemoteUrl = backendProject.GitHubRepo!, DefaultBranch = "main", CreatedAt = DateTime.UtcNow }
-        );
-        await db.SaveChangesAsync();
+        // GitRepository rows are not seeded for demo projects — the fake GitHub URLs
+        // (acme/frontend, acme/backend) do not exist and background services polling
+        // them would cause network timeouts in CI.
+        // db.GitRepositories.AddRange(
+        //     new GitRepository { Id = Guid.NewGuid(), ProjectId = frontendProject.Id, RemoteUrl = frontendProject.GitHubRepo!, DefaultBranch = "main", CreatedAt = DateTime.UtcNow },
+        //     new GitRepository { Id = Guid.NewGuid(), ProjectId = backendProject.Id, RemoteUrl = backendProject.GitHubRepo!, DefaultBranch = "main", CreatedAt = DateTime.UtcNow }
+        // );
+        // await db.SaveChangesAsync();
 
         // --- Labels ---
         var labelBug = new Label { Id = Guid.NewGuid(), ProjectId = frontendProject.Id, Name = "bug", Color = "#e11d48" };
@@ -221,8 +224,10 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
         db.Projects.Add(issuePitProject);
         await db.SaveChangesAsync();
 
-        db.GitRepositories.Add(new GitRepository { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, RemoteUrl = issuePitProject.GitHubRepo!, DefaultBranch = "main", CreatedAt = DateTime.UtcNow });
-        await db.SaveChangesAsync();
+        // GitRepository row is not seeded — background services polling the remote URL
+        // would require a valid GitHub token and can cause network timeouts in CI.
+        // db.GitRepositories.Add(new GitRepository { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, RemoteUrl = issuePitProject.GitHubRepo!, DefaultBranch = "main", CreatedAt = DateTime.UtcNow });
+        // await db.SaveChangesAsync();
 
         var ipLabelBug = new Label { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Name = "bug", Color = "#e11d48" };
         var ipLabelFeature = new Label { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Name = "feature", Color = "#2563eb" };
