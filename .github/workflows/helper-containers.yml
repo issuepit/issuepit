@@ -5,7 +5,6 @@ on:
     branches: [main]
     tags: ['helper-containers-v*']
     paths:
-      - 'docker/Dockerfile.helper-*'
       - 'docker/helper-containers/**'
   merge_group:
   workflow_dispatch:
@@ -67,8 +66,8 @@ jobs:
         id: build
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: docker/Dockerfile.helper-base
+          context: docker/helper-containers
+          file: docker/helper-containers/Dockerfile.helper-base
           push: ${{ github.event_name != 'merge_group' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -122,8 +121,8 @@ jobs:
       - name: Build and push helper-act
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: docker/Dockerfile.helper-act
+          context: docker/helper-containers
+          file: docker/helper-containers/Dockerfile.helper-act
           push: ${{ github.event_name != 'merge_group' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -172,8 +171,8 @@ jobs:
       - name: Build and push helper-opencode
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: docker/Dockerfile.helper-opencode
+          context: docker/helper-containers
+          file: docker/helper-containers/Dockerfile.helper-opencode
           push: ${{ github.event_name != 'merge_group' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
