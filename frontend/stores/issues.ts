@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { Issue, IssuePriority, IssueType, IssueComment, IssueTask, IssueAssignee, Label, CodeReviewComment } from '~/types'
+import type { Issue, IssuePriority, IssueType, IssueComment, IssueTask, IssueAssignee, Label, CodeReviewComment, IssueLink, IssueLinkType } from '~/types'
 import { IssueStatus } from '~/types'
 
 interface IssueFilters {
@@ -18,6 +18,7 @@ export const useIssuesStore = defineStore('issues', () => {
   const currentComments = ref<IssueComment[]>([])
   const currentCodeReviewComments = ref<CodeReviewComment[]>([])
   const currentTasks = ref<IssueTask[]>([])
+  const currentLinks = ref<IssueLink[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
   const filters = ref<IssueFilters>({})
@@ -304,6 +305,36 @@ export const useIssuesStore = defineStore('issues', () => {
     }
   }
 
+  // --- Issue Links ---
+
+  async function fetchLinks(issueId: string) {
+    try {
+      const data = await api.get<IssueLink[]>(`/api/issues/${issueId}/links`)
+      currentLinks.value = data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to fetch links'
+    }
+  }
+
+  async function addLink(issueId: string, targetIssueId: string, linkType: IssueLinkType) {
+    try {
+      const data = await api.post<IssueLink>(`/api/issues/${issueId}/links`, { targetIssueId, linkType })
+      currentLinks.value.push(data)
+      return data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to add link'
+    }
+  }
+
+  async function removeLink(issueId: string, linkId: string) {
+    try {
+      await api.del(`/api/issues/${issueId}/links/${linkId}`)
+      currentLinks.value = currentLinks.value.filter(l => l.id !== linkId)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to remove link'
+    }
+  }
+
   // --- Milestone on Issue ---
 
   async function clearIssueMilestone(projectId: string, issueId: string) {
@@ -332,6 +363,7 @@ export const useIssuesStore = defineStore('issues', () => {
     currentComments,
     currentCodeReviewComments,
     currentTasks,
+    currentLinks,
     loading,
     error,
     filters,
@@ -359,6 +391,9 @@ export const useIssuesStore = defineStore('issues', () => {
     removeAssignee,
     addIssueLabel,
     removeIssueLabel,
+    fetchLinks,
+    addLink,
+    removeLink,
     clearIssueMilestone,
     setFilters,
     clearFilters
