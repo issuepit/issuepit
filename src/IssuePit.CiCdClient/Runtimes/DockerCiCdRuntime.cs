@@ -140,35 +140,35 @@ public class DockerCiCdRuntime(
             container.ID, run.Id);
         await onLogLine($"[DEBUG] Container ID   : {container.ID[..12]}", LogStream.Stdout);
 
-        try
-        {
-            await dockerClient.Containers.StartContainerAsync(
-                container.ID, new ContainerStartParameters(), cancellationToken);
-        }
-        catch (DockerApiException ex) when (
-            ex.StatusCode == System.Net.HttpStatusCode.BadRequest &&
-            ex.ResponseBody?.Contains("executable file not found") == true)
-        {
-            throw new InvalidOperationException(
-                $"The '{actBin}' binary was not found inside the Docker container. " +
-                $"Ensure the image '{image}' has 'act' installed, or override CiCd__ActBinaryPath " +
-                "with the correct path to the act binary inside the container.", ex);
-        }
-        catch (Exception ex) when (ex is HttpRequestException or IOException ||
-            (ex is OperationCanceledException oce && oce.CancellationToken != cancellationToken && !cancellationToken.IsCancellationRequested))
-        {
-            var msg = "Lost connection to the Docker daemon while starting the container. " +
-                "This can happen on Windows when Docker Desktop resets named-pipe connections. " +
-                "Try running the CI/CD run again.";
-            await onLogLine($"[ERROR] {msg}", LogStream.Stderr);
-            foreach (var line in ex.ToString().Split('\n'))
-                await onLogLine(line.TrimEnd('\r'), LogStream.Stderr);
-            throw new InvalidOperationException(msg, ex);
-        }
-
         var succeeded = false;
         try
         {
+            try
+            {
+                await dockerClient.Containers.StartContainerAsync(
+                    container.ID, new ContainerStartParameters(), cancellationToken);
+            }
+            catch (DockerApiException ex) when (
+                ex.StatusCode == System.Net.HttpStatusCode.BadRequest &&
+                ex.ResponseBody?.Contains("executable file not found") == true)
+            {
+                throw new InvalidOperationException(
+                    $"The '{actBin}' binary was not found inside the Docker container. " +
+                    $"Ensure the image '{image}' has 'act' installed, or override CiCd__ActBinaryPath " +
+                    "with the correct path to the act binary inside the container.", ex);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or IOException ||
+                (ex is OperationCanceledException oce && oce.CancellationToken != cancellationToken && !cancellationToken.IsCancellationRequested))
+            {
+                var startMsg = "Lost connection to the Docker daemon while starting the container. " +
+                    "This can happen on Windows when Docker Desktop resets named-pipe connections. " +
+                    "Try running the CI/CD run again.";
+                await onLogLine($"[ERROR] {startMsg}", LogStream.Stderr);
+                foreach (var line in ex.ToString().Split('\n'))
+                    await onLogLine(line.TrimEnd('\r'), LogStream.Stderr);
+                throw new InvalidOperationException(startMsg, ex);
+            }
+
             var logStreamTask = StreamContainerLogsAsync(container.ID, onLogLine, cancellationToken);
             var waitResponse = await dockerClient.Containers.WaitContainerAsync(container.ID, cancellationToken);
             // Drain any remaining log output before checking the exit code.
