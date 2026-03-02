@@ -154,8 +154,16 @@
 
         <!-- Agents -->
         <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
-          <h2 class="font-semibold text-white mb-1">Agents</h2>
-          <p class="text-sm text-gray-500 mb-4">Agents available to this project via linked MCP servers</p>
+          <div class="flex items-center justify-between mb-1">
+            <h2 class="font-semibold text-white">Agents</h2>
+            <button
+              class="text-xs text-brand-400 hover:text-brand-300 px-3 py-1.5 rounded-md border border-brand-900/30 hover:bg-brand-900/20 transition-colors"
+              @click="showLinkAgentModal = true"
+            >
+              Link Agent
+            </button>
+          </div>
+          <p class="text-sm text-gray-500 mb-4">Agents available to this project</p>
           <div v-if="loadingAgents" class="flex items-center justify-center py-6">
             <div class="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
           </div>
@@ -163,14 +171,73 @@
             <div v-for="agent in projectAgents" :key="agent.agentId"
               class="flex items-center justify-between bg-gray-800 rounded-lg px-3 py-2">
               <div>
-                <span class="text-sm text-white font-medium">{{ agent.agentName }}</span>
-                <span class="text-xs text-gray-500 ml-2">via {{ agent.mcpServerName }}</span>
+                <span class="text-sm text-white font-medium">{{ agent.name }}</span>
+                <span class="text-xs px-1.5 py-0.5 rounded-full ml-2"
+                  :class="agent.source === 'org' ? 'bg-purple-900/40 text-purple-400' : 'bg-indigo-900/40 text-indigo-400'">
+                  {{ agent.source === 'org' ? 'Via org' : 'Direct' }}
+                </span>
+                <span v-if="agent.isDisabled" class="text-xs text-red-400 ml-1">(disabled)</span>
               </div>
-              <NuxtLink to="/agents" class="text-xs text-brand-400 hover:text-brand-300">View</NuxtLink>
+              <div class="flex items-center gap-2">
+                <button
+                  @click="toggleProjectAgent(agent.agentId, agent.isDisabled)"
+                  :class="agent.isDisabled ? 'text-green-400 hover:text-green-300' : 'text-yellow-400 hover:text-yellow-300'"
+                  class="text-xs px-2 py-1 rounded border border-gray-700 hover:bg-gray-700 transition-colors"
+                >
+                  {{ agent.isDisabled ? 'Enable' : 'Disable' }}
+                </button>
+                <button v-if="agent.source === 'project'"
+                  @click="unlinkProjectAgent(agent.agentId)"
+                  class="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded border border-red-900/30 hover:bg-red-900/20 transition-colors"
+                >
+                  Unlink
+                </button>
+              </div>
             </div>
           </div>
           <div v-else class="text-sm text-gray-600 py-2">
-            No agents assigned. Link MCP servers to this project from
+            No agents assigned. Link agents directly or via
+            <NuxtLink to="/config/mcp-servers" class="text-brand-400 hover:text-brand-300">Configuration → MCP Servers</NuxtLink>
+            or manage org-level agents in the
+            <NuxtLink :to="`/orgs/${projectsStore.currentProject?.organizationId}`" class="text-brand-400 hover:text-brand-300">Organization</NuxtLink>.
+          </div>
+        </div>
+
+        <!-- MCP Servers -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <div class="flex items-center justify-between mb-1">
+            <h2 class="font-semibold text-white">MCP Servers</h2>
+            <button
+              class="text-xs text-brand-400 hover:text-brand-300 px-3 py-1.5 rounded-md border border-brand-900/30 hover:bg-brand-900/20 transition-colors"
+              @click="openCreateProjectMcp"
+            >
+              Add MCP Server
+            </button>
+          </div>
+          <p class="text-sm text-gray-500 mb-4">MCP servers linked to this project</p>
+          <div v-if="loadingProjectMcp" class="flex items-center justify-center py-6">
+            <div class="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+          <div v-else-if="projectMcpServers.length" class="space-y-3">
+            <div v-for="server in projectMcpServers" :key="server.mcpServerId"
+              class="bg-gray-800 rounded-lg px-3 py-3">
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-sm text-white font-medium">{{ server.name }}</span>
+                <span v-if="server.enabledAgents.length" class="text-xs text-indigo-400">
+                  {{ server.enabledAgents.length }} agent{{ server.enabledAgents.length !== 1 ? 's' : '' }} selected
+                </span>
+                <span v-else class="text-xs text-gray-500">All agents</span>
+              </div>
+              <p v-if="server.description" class="text-xs text-gray-500 mb-1">{{ server.description }}</p>
+              <code class="text-xs text-green-300 font-mono">{{ server.url }}</code>
+              <div v-if="server.enabledAgents.length" class="flex flex-wrap gap-1 mt-2">
+                <span v-for="agent in server.enabledAgents" :key="agent.agentId"
+                  class="text-xs bg-indigo-900/30 text-indigo-300 px-1.5 py-0.5 rounded">{{ agent.name }}</span>
+              </div>
+            </div>
+          </div>
+          <div v-else class="text-sm text-gray-600 py-2">
+            No MCP servers linked. Add one above or link from
             <NuxtLink to="/config/mcp-servers" class="text-brand-400 hover:text-brand-300">Configuration → MCP Servers</NuxtLink>.
           </div>
         </div>
@@ -246,6 +313,72 @@
     </div>
 
     <ToastError :error="projectsStore.error" />
+
+    <!-- Link Agent Modal -->
+    <div v-if="showLinkAgentModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md p-6 shadow-xl">
+        <h2 class="text-lg font-bold text-white mb-5">Link Agent to Project</h2>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Agent</label>
+            <select v-model="selectedLinkAgentId"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+              <option value="" disabled>Select agent…</option>
+              <option v-for="agent in availableAgentsToLink" :key="agent.id" :value="agent.id">{{ agent.name }}</option>
+            </select>
+          </div>
+        </div>
+        <div class="flex gap-3 mt-6">
+          <button :disabled="!selectedLinkAgentId || linkingAgent" @click="linkAgent"
+            class="flex-1 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors">
+            {{ linkingAgent ? 'Linking…' : 'Link Agent' }}
+          </button>
+          <button @click="showLinkAgentModal = false; selectedLinkAgentId = ''"
+            class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 rounded-lg transition-colors">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Create Project MCP Server Modal -->
+    <div v-if="showCreateMcpModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-lg p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+        <h2 class="text-lg font-bold text-white mb-5">Add MCP Server to Project</h2>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Name <span class="text-red-400">*</span></label>
+            <input v-model="mcpForm.name" type="text" required placeholder="e.g. GitHub MCP"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Description</label>
+            <input v-model="mcpForm.description" type="text" placeholder="Optional description"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">URL <span class="text-red-400">*</span></label>
+            <input v-model="mcpForm.url" type="text" required placeholder="https://mcp.example.com/sse"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Allowed Tools <span class="text-gray-500 font-normal">(comma-separated, empty = all)</span></label>
+            <input v-model="mcpForm.allowedTools" type="text" placeholder="read_file, write_file"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          </div>
+        </div>
+        <div class="flex gap-3 mt-6">
+          <button :disabled="!mcpForm.name || !mcpForm.url || savingMcp" @click="createProjectMcpServer"
+            class="flex-1 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors">
+            {{ savingMcp ? 'Creating…' : 'Create & Link' }}
+          </button>
+          <button @click="showCreateMcpModal = false"
+            class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 rounded-lg transition-colors">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -254,6 +387,9 @@ import { useProjectsStore } from '~/stores/projects'
 import { useProjectMembersStore } from '~/stores/projectMembers'
 import { useOrgsStore } from '~/stores/orgs'
 import { useGitStore } from '~/stores/git'
+import { useAgentsStore } from '~/stores/agents'
+import { useMcpServersStore } from '~/stores/mcp-servers'
+import type { AgentProject, ProjectMcpServer } from '~/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -263,6 +399,8 @@ const projectsStore = useProjectsStore()
 const membersStore = useProjectMembersStore()
 const orgsStore = useOrgsStore()
 const gitStore = useGitStore()
+const agentsStore = useAgentsStore()
+const mcpServersStore = useMcpServersStore()
 
 // ── General form ──────────────────────────────────────────────
 const form = reactive({ name: '', slug: '', description: '', gitHubRepo: '' })
@@ -289,9 +427,98 @@ const repoStatusClasses = computed(() => {
 })
 
 // ── Agents ───────────────────────────────────────────────────
-const api = useApi()
 const loadingAgents = ref(false)
-const projectAgents = ref<Array<{ agentId: string; agentName: string; mcpServerName: string }>>([])
+const projectAgents = ref<AgentProject[]>([])
+const showLinkAgentModal = ref(false)
+const selectedLinkAgentId = ref('')
+const linkingAgent = ref(false)
+
+const availableAgentsToLink = computed(() => {
+  const linked = new Set(projectAgents.value.map(a => a.agentId))
+  return agentsStore.agents.filter(a => !linked.has(a.id))
+})
+
+async function fetchProjectAgents() {
+  loadingAgents.value = true
+  try {
+    projectAgents.value = await agentsStore.fetchProjectAgents(id)
+  } finally {
+    loadingAgents.value = false
+  }
+}
+
+async function toggleProjectAgent(agentId: string, isCurrentlyDisabled: boolean) {
+  try {
+    await agentsStore.setProjectAgentActive(id, agentId, isCurrentlyDisabled)
+    await fetchProjectAgents()
+  } catch {
+    // silently ignore
+  }
+}
+
+async function unlinkProjectAgent(agentId: string) {
+  try {
+    await agentsStore.unlinkAgentFromProject(id, agentId)
+    await fetchProjectAgents()
+  } catch {
+    // silently ignore
+  }
+}
+
+async function linkAgent() {
+  if (!selectedLinkAgentId.value) return
+  linkingAgent.value = true
+  try {
+    await agentsStore.linkAgentToProject(id, selectedLinkAgentId.value)
+    selectedLinkAgentId.value = ''
+    showLinkAgentModal.value = false
+    await fetchProjectAgents()
+  } catch {
+    // silently ignore
+  } finally {
+    linkingAgent.value = false
+  }
+}
+
+// ── Project MCP Servers ───────────────────────────────────────
+const loadingProjectMcp = ref(false)
+const projectMcpServers = ref<ProjectMcpServer[]>([])
+const showCreateMcpModal = ref(false)
+const savingMcp = ref(false)
+const mcpForm = reactive({ name: '', description: '', url: '', configuration: '{}', allowedTools: '' })
+
+async function fetchProjectMcpServers() {
+  loadingProjectMcp.value = true
+  try {
+    projectMcpServers.value = await mcpServersStore.fetchProjectMcpServers(id)
+  } finally {
+    loadingProjectMcp.value = false
+  }
+}
+
+function openCreateProjectMcp() {
+  Object.assign(mcpForm, { name: '', description: '', url: '', configuration: '{}', allowedTools: '' })
+  showCreateMcpModal.value = true
+}
+
+async function createProjectMcpServer() {
+  if (!mcpForm.name || !mcpForm.url) return
+  savingMcp.value = true
+  try {
+    const allowedTools = mcpForm.allowedTools.split(',').map(t => t.trim()).filter(Boolean)
+    await mcpServersStore.createProjectMcpServer(id, {
+      name: mcpForm.name,
+      description: mcpForm.description || undefined,
+      url: mcpForm.url,
+      configuration: mcpForm.configuration || '{}',
+      allowedTools,
+    })
+    showCreateMcpModal.value = false
+    await fetchProjectMcpServers()
+  } finally {
+    savingMcp.value = false
+  }
+}
 
 // ── Move to org ───────────────────────────────────────────────
 const targetOrgId = ref('')
@@ -308,7 +535,9 @@ onMounted(async () => {
     membersStore.fetchMembers(id),
     orgsStore.fetchOrgs(),
     gitStore.fetchRepo(id),
+    agentsStore.fetchAgents(),
     fetchProjectAgents(),
+    fetchProjectMcpServers(),
   ])
 
   if (projectsStore.currentProject) {
@@ -325,34 +554,6 @@ onMounted(async () => {
     repoForm.defaultBranch = gitStore.repo.defaultBranch
   }
 })
-
-async function fetchProjectAgents() {
-  loadingAgents.value = true
-  try {
-    const servers = await api.get<Array<{
-      id: string; name: string;
-      linkedAgents: Array<{ agentId: string; name: string }>;
-      linkedProjects: Array<{ projectId: string; name: string }>;
-    }>>('/api/mcp-servers')
-
-    const result: typeof projectAgents.value = []
-    for (const server of servers) {
-      const linked = server.linkedProjects?.some(p => p.projectId === id)
-      if (linked) {
-        for (const agent of server.linkedAgents ?? []) {
-          if (!result.find(a => a.agentId === agent.agentId)) {
-            result.push({ agentId: agent.agentId, agentName: agent.name, mcpServerName: server.name })
-          }
-        }
-      }
-    }
-    projectAgents.value = result
-  } catch {
-    // silently ignore
-  } finally {
-    loadingAgents.value = false
-  }
-}
 
 async function saveGeneral() {
   savingGeneral.value = true

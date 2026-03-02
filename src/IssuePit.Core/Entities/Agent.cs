@@ -43,4 +43,6 @@ public class Agent
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public ICollection<AgentMcpServer> AgentMcpServers { get; set; } = [];
+    public ICollection<AgentProject> AgentProjects { get; set; } = [];
+    public ICollection<AgentOrg> AgentOrgs { get; set; } = [];
 }

@@ -216,6 +216,61 @@
           <p class="text-gray-400 font-medium">No projects yet</p>
         </div>
       </div>
+      <!-- Agents Tab -->
+      <div v-if="activeTab === 'agents'">
+        <div class="flex items-center justify-between mb-4">
+          <p class="text-gray-400 text-sm">Agents available to all projects in this organization</p>
+          <button
+            class="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
+            @click="showLinkOrgAgent = true"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            Link Agent
+          </button>
+        </div>
+
+        <div v-if="loadingOrgAgents" class="flex items-center justify-center py-12">
+          <div class="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+
+        <div v-else-if="orgAgents.length" class="rounded-xl border border-gray-800 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-900">
+              <tr>
+                <th class="text-left px-4 py-3 text-gray-400 font-medium">Agent</th>
+                <th class="text-left px-4 py-3 text-gray-400 font-medium">Status</th>
+                <th class="px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-800">
+              <tr v-for="agent in orgAgents" :key="agent.agentId" class="hover:bg-gray-900/50 transition-colors">
+                <td class="px-4 py-3 text-white font-medium">{{ agent.name }}</td>
+                <td class="px-4 py-3">
+                  <span :class="agent.isActive ? 'text-green-400' : 'text-gray-500'" class="text-xs">
+                    {{ agent.isActive ? 'Active' : 'Inactive' }}
+                  </span>
+                </td>
+                <td class="px-4 py-3 text-right">
+                  <button
+                    class="text-xs text-red-400 hover:text-red-300 px-3 py-1.5 rounded-md border border-red-900/30 hover:bg-red-900/20 transition-colors"
+                    @click="unlinkOrgAgent(agent.agentId)"
+                  >
+                    Unlink
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div v-else class="flex flex-col items-center justify-center py-16 text-center">
+          <p class="text-gray-400 font-medium">No agents linked to this organization</p>
+          <p class="text-gray-600 text-sm mt-1">Link agents to make them available to all projects</p>
+        </div>
+      </div>
+
       <!-- Settings Tab -->
       <div v-if="activeTab === 'settings'" class="max-w-2xl">
         <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
@@ -358,20 +413,50 @@
 
     <!-- Error toast for secondary operations (teams, members) -->
     <ToastError v-if="orgsStore.currentOrg" :error="orgsStore.error || teamsStore.error" />
+
+    <!-- Link Org Agent Modal -->
+    <div v-if="showLinkOrgAgent" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md p-6 shadow-xl">
+        <h2 class="text-lg font-bold text-white mb-5">Link Agent to Organization</h2>
+        <p class="text-sm text-gray-400 mb-4">This agent will be available to all projects in this organization.</p>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Agent</label>
+            <select v-model="selectedOrgAgentId"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+              <option value="" disabled>Select agent…</option>
+              <option v-for="agent in availableOrgAgents" :key="agent.id" :value="agent.id">{{ agent.name }}</option>
+            </select>
+          </div>
+        </div>
+        <div class="flex gap-3 mt-6">
+          <button :disabled="!selectedOrgAgentId || linkingOrgAgent" @click="linkOrgAgent"
+            class="flex-1 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors">
+            {{ linkingOrgAgent ? 'Linking…' : 'Link Agent' }}
+          </button>
+          <button @click="showLinkOrgAgent = false; selectedOrgAgentId = ''"
+            class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 rounded-lg transition-colors">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useOrgsStore } from '~/stores/orgs'
 import { useTeamsStore } from '~/stores/teams'
+import { useAgentsStore } from '~/stores/agents'
 import { OrgRole, OrgRoleLabels } from '~/types'
-import type { Team, User } from '~/types'
+import type { Team, User, AgentOrg } from '~/types'
 
 const route = useRoute()
 const orgId = route.params.id as string
 
 const orgsStore = useOrgsStore()
 const teamsStore = useTeamsStore()
+const agentsStore = useAgentsStore()
 
 const api = useApi()
 
@@ -379,6 +464,7 @@ const tabs = [
   { id: 'teams', label: 'Teams' },
   { id: 'members', label: 'Members' },
   { id: 'projects', label: 'Projects' },
+  { id: 'agents', label: 'Agents' },
   { id: 'settings', label: 'Settings' },
 ]
 const activeTab = ref('teams')
@@ -388,11 +474,57 @@ const runnerSettingsForm = reactive({ maxConcurrentRunners: 0 })
 const savingRunnerSettings = ref(false)
 const saveRunnerSettingsError = ref<string | null>(null)
 
+// --- Org Agents ---
+const loadingOrgAgents = ref(false)
+const orgAgents = ref<AgentOrg[]>([])
+const showLinkOrgAgent = ref(false)
+const selectedOrgAgentId = ref('')
+const linkingOrgAgent = ref(false)
+
+const availableOrgAgents = computed(() => {
+  const linked = new Set(orgAgents.value.map(a => a.agentId))
+  return agentsStore.agents.filter(a => !linked.has(a.id))
+})
+
+async function fetchOrgAgents() {
+  loadingOrgAgents.value = true
+  try {
+    orgAgents.value = await agentsStore.fetchOrgAgents(orgId)
+  } finally {
+    loadingOrgAgents.value = false
+  }
+}
+
+async function linkOrgAgent() {
+  if (!selectedOrgAgentId.value) return
+  linkingOrgAgent.value = true
+  try {
+    await agentsStore.linkAgentToOrg(orgId, selectedOrgAgentId.value)
+    selectedOrgAgentId.value = ''
+    showLinkOrgAgent.value = false
+    await fetchOrgAgents()
+  } catch {
+    // silently ignore
+  } finally {
+    linkingOrgAgent.value = false
+  }
+}
+
+async function unlinkOrgAgent(agentId: string) {
+  try {
+    await agentsStore.unlinkAgentFromOrg(orgId, agentId)
+    await fetchOrgAgents()
+  } catch {
+    // silently ignore
+  }
+}
+
 onMounted(async () => {
   await Promise.all([
     orgsStore.fetchOrg(orgId),
     teamsStore.fetchTeams(orgId),
     orgsStore.fetchMembers(orgId),
+    agentsStore.fetchAgents(),
   ])
   if (orgsStore.currentOrg) {
     runnerSettingsForm.maxConcurrentRunners = orgsStore.currentOrg.maxConcurrentRunners ?? 0
@@ -420,6 +552,7 @@ watch(activeTab, async (tab) => {
   if (tab === 'members') await orgsStore.fetchMembers(orgId)
   if (tab === 'teams') await teamsStore.fetchTeams(orgId)
   if (tab === 'projects') await orgsStore.fetchOrgProjects(orgId)
+  if (tab === 'agents') await fetchOrgAgents()
 })
 
 // --- Teams ---

@@ -142,6 +142,51 @@ public class OrganizationsController(IssuePitDbContext db, TenantContext ctx) : 
             .ToListAsync();
         return Ok(projects);
     }
+
+    // --- Org Agents ---
+
+    [HttpGet("{id:guid}/agents")]
+    public async Task<IActionResult> GetOrgAgents(Guid id)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var org = await db.Organizations
+            .FirstOrDefaultAsync(o => o.Id == id && o.TenantId == ctx.CurrentTenant.Id);
+        if (org is null) return NotFound();
+        var agents = await db.AgentOrgs
+            .Include(ao => ao.Agent)
+            .Where(ao => ao.OrgId == id)
+            .Select(ao => new { ao.AgentId, ao.Agent.Name, ao.Agent.IsActive })
+            .ToListAsync();
+        return Ok(agents);
+    }
+
+    [HttpPost("{id:guid}/agents/{agentId:guid}")]
+    public async Task<IActionResult> LinkAgent(Guid id, Guid agentId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var org = await db.Organizations
+            .FirstOrDefaultAsync(o => o.Id == id && o.TenantId == ctx.CurrentTenant.Id);
+        if (org is null) return NotFound();
+        var agentBelongsToTenant = await db.Agents
+            .AnyAsync(a => a.Id == agentId && db.Organizations.Any(o => o.Id == a.OrgId && o.TenantId == ctx.CurrentTenant.Id));
+        if (!agentBelongsToTenant) return NotFound();
+        var alreadyLinked = await db.AgentOrgs.AnyAsync(ao => ao.AgentId == agentId && ao.OrgId == id);
+        if (alreadyLinked) return Conflict();
+        db.AgentOrgs.Add(new AgentOrg { AgentId = agentId, OrgId = id });
+        await db.SaveChangesAsync();
+        return Created($"/api/orgs/{id}/agents/{agentId}", null);
+    }
+
+    [HttpDelete("{id:guid}/agents/{agentId:guid}")]
+    public async Task<IActionResult> UnlinkAgent(Guid id, Guid agentId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var link = await db.AgentOrgs.FindAsync(agentId, id);
+        if (link is null) return NotFound();
+        db.AgentOrgs.Remove(link);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
 }
 
 public record OrgMemberRequest(OrgRole Role);

@@ -201,10 +201,169 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
         await db.SaveChangesAsync();
         return NoContent();
     }
+
+    // --- Project Agents ---
+
+    [HttpGet("{id:guid}/agents")]
+    public async Task<IActionResult> GetProjectAgents(Guid id)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var project = await db.Projects
+            .Include(p => p.Organization)
+            .FirstOrDefaultAsync(p => p.Id == id && p.Organization.TenantId == ctx.CurrentTenant.Id);
+        if (project is null) return NotFound();
+
+        // Direct project links (keyed by agentId for fast lookup)
+        var directLinks = await db.AgentProjects
+            .Include(ap => ap.Agent)
+            .Where(ap => ap.ProjectId == id)
+            .Select(ap => new { ap.AgentId, ap.Agent.Name, ap.IsDisabled })
+            .ToListAsync();
+        var directDict = directLinks.ToDictionary(d => d.AgentId);
+
+        // Org-level links (agents available to all projects in the org)
+        var orgLinks = await db.AgentOrgs
+            .Include(ao => ao.Agent)
+            .Where(ao => ao.OrgId == project.OrgId)
+            .Select(ao => new { ao.AgentId, ao.Agent.Name })
+            .ToListAsync();
+        var orgIds = orgLinks.ToDictionary(o => o.AgentId);
+
+        var result = new List<object>();
+
+        // Add org-level agents (with project-level IsDisabled override if present)
+        foreach (var org in orgLinks)
+        {
+            var isDisabled = directDict.TryGetValue(org.AgentId, out var projectOverride) && projectOverride.IsDisabled;
+            result.Add(new { org.AgentId, org.Name, IsDisabled = isDisabled, Source = "org" });
+        }
+
+        // Add direct project-only links (agents linked directly but not via org)
+        foreach (var d in directLinks.Where(d => !orgIds.ContainsKey(d.AgentId)))
+        {
+            result.Add(new { d.AgentId, d.Name, d.IsDisabled, Source = "project" });
+        }
+
+        return Ok(result);
+    }
+
+    [HttpPost("{id:guid}/agents/{agentId:guid}")]
+    public async Task<IActionResult> LinkAgent(Guid id, Guid agentId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var project = await db.Projects
+            .Include(p => p.Organization)
+            .FirstOrDefaultAsync(p => p.Id == id && p.Organization.TenantId == ctx.CurrentTenant.Id);
+        if (project is null) return NotFound();
+        var agentBelongsToTenant = await db.Agents
+            .AnyAsync(a => a.Id == agentId && db.Organizations.Any(o => o.Id == a.OrgId && o.TenantId == ctx.CurrentTenant.Id));
+        if (!agentBelongsToTenant) return NotFound();
+        var alreadyLinked = await db.AgentProjects.AnyAsync(ap => ap.AgentId == agentId && ap.ProjectId == id);
+        if (alreadyLinked) return Conflict();
+        db.AgentProjects.Add(new AgentProject { AgentId = agentId, ProjectId = id, IsDisabled = false });
+        await db.SaveChangesAsync();
+        return Created($"/api/projects/{id}/agents/{agentId}", null);
+    }
+
+    [HttpDelete("{id:guid}/agents/{agentId:guid}")]
+    public async Task<IActionResult> UnlinkAgent(Guid id, Guid agentId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var link = await db.AgentProjects.FindAsync(agentId, id);
+        if (link is null) return NotFound();
+        db.AgentProjects.Remove(link);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpPatch("{id:guid}/agents/{agentId:guid}/active")]
+    public async Task<IActionResult> SetProjectAgentActive(Guid id, Guid agentId, [FromBody] SetProjectAgentActiveRequest request)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var project = await db.Projects
+            .Include(p => p.Organization)
+            .FirstOrDefaultAsync(p => p.Id == id && p.Organization.TenantId == ctx.CurrentTenant.Id);
+        if (project is null) return NotFound();
+
+        var link = await db.AgentProjects.FindAsync(agentId, id);
+        if (link is not null)
+        {
+            link.IsDisabled = !request.IsActive;
+            await db.SaveChangesAsync();
+            return Ok(new { agentId, isDisabled = link.IsDisabled });
+        }
+
+        // For org-level agents without an explicit project entry, create an override
+        var agentBelongsToTenant = await db.Agents
+            .AnyAsync(a => a.Id == agentId && db.Organizations.Any(o => o.Id == a.OrgId && o.TenantId == ctx.CurrentTenant.Id));
+        if (!agentBelongsToTenant) return NotFound();
+        var isOrgLinked = await db.AgentOrgs.AnyAsync(ao => ao.AgentId == agentId && ao.OrgId == project.OrgId);
+        if (!isOrgLinked) return NotFound();
+
+        var newLink = new AgentProject { AgentId = agentId, ProjectId = id, IsDisabled = !request.IsActive };
+        db.AgentProjects.Add(newLink);
+        await db.SaveChangesAsync();
+        return Ok(new { agentId, isDisabled = newLink.IsDisabled });
+    }
+
+    // --- Project MCP Servers ---
+
+    [HttpGet("{id:guid}/mcp-servers")]
+    public async Task<IActionResult> GetProjectMcpServers(Guid id)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var project = await db.Projects
+            .Include(p => p.Organization)
+            .FirstOrDefaultAsync(p => p.Id == id && p.Organization.TenantId == ctx.CurrentTenant.Id);
+        if (project is null) return NotFound();
+
+        var servers = await db.McpServerProjects
+            .Where(mp => mp.ProjectId == id)
+            .Select(mp => new
+            {
+                mp.McpServerId,
+                mp.McpServer.Name,
+                mp.McpServer.Description,
+                mp.McpServer.Url,
+                mp.McpServer.Configuration,
+                mp.McpServer.AllowedTools,
+                mp.McpServer.OrgId,
+                mp.McpServer.CreatedAt,
+                EnabledAgents = db.McpServerProjectAgents
+                    .Where(mpa => mpa.McpServerId == mp.McpServerId && mpa.ProjectId == id)
+                    .Select(mpa => new { mpa.AgentId, mpa.Agent.Name })
+                    .ToList(),
+            })
+            .ToListAsync();
+
+        return Ok(servers);
+    }
+
+    [HttpPost("{id:guid}/mcp-servers")]
+    public async Task<IActionResult> CreateProjectMcpServer(Guid id, [FromBody] McpServer server)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var project = await db.Projects
+            .Include(p => p.Organization)
+            .FirstOrDefaultAsync(p => p.Id == id && p.Organization.TenantId == ctx.CurrentTenant.Id);
+        if (project is null) return NotFound();
+
+        server.Id = Guid.NewGuid();
+        server.OrgId = project.OrgId;
+        server.CreatedAt = DateTime.UtcNow;
+        db.McpServers.Add(server);
+
+        var link = new McpServerProject { McpServerId = server.Id, ProjectId = id };
+        db.McpServerProjects.Add(link);
+
+        await db.SaveChangesAsync();
+        return Created($"/api/projects/{id}/mcp-servers/{server.Id}", new { server.Id, server.Name });
+    }
 }
 
 public record ProjectMemberRequest(Guid? UserId, Guid? TeamId, ProjectPermission Permissions);
 public record MoveProjectRequest(Guid OrgId);
+public record SetProjectAgentActiveRequest(bool IsActive);
 
 public record ProjectDto(
     Guid Id, Guid OrgId, string Name, string Slug,
