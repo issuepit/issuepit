@@ -1,8 +1,8 @@
 <template>
-  <aside class="w-60 bg-gray-900 border-r border-gray-800 flex flex-col shrink-0">
-    <!-- Logo -->
-    <div class="h-14 flex items-center px-4 border-b border-gray-800">
-      <div class="flex items-center gap-2">
+  <aside :class="['bg-gray-900 border-r border-gray-800 flex flex-col shrink-0 transition-all duration-200', sidebarCollapsed ? 'w-10' : 'w-60']">
+    <!-- Logo / Header -->
+    <div class="h-14 flex items-center border-b border-gray-800" :class="sidebarCollapsed ? 'justify-center px-0' : 'px-4'">
+      <div v-if="!sidebarCollapsed" class="flex items-center gap-2 flex-1">
         <div class="w-7 h-7 rounded-md bg-brand-600 flex items-center justify-center">
           <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
@@ -12,10 +12,20 @@ stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
         </div>
         <span class="font-bold text-white text-sm tracking-wide">IssuePit</span>
       </div>
+      <button
+        class="text-gray-500 hover:text-gray-300 transition-colors"
+        :class="sidebarCollapsed ? '' : 'ml-auto'"
+        :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+        @click="toggleSidebar"
+      >
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="sidebarCollapsed ? 'M9 5l7 7-7 7' : 'M15 19l-7-7 7-7'" />
+        </svg>
+      </button>
     </div>
 
     <!-- Nav -->
-    <nav class="flex-1 p-3 space-y-0.5 overflow-y-auto">
+    <nav v-if="!sidebarCollapsed" class="flex-1 p-3 space-y-0.5 overflow-y-auto">
       <SidebarNavLink to="/" icon="dashboard" label="Dashboard" />
       <SidebarNavLink to="/runs" icon="runs" label="Runs" />
 
@@ -109,7 +119,7 @@ stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
     </nav>
 
     <!-- Footer -->
-    <div class="p-3 border-t border-gray-800">
+    <div v-if="!sidebarCollapsed" class="p-3 border-t border-gray-800">
       <div v-if="auth.user" class="flex items-center gap-2 px-2 py-1.5 rounded-md">
         <NuxtLink to="/profile" class="flex items-center gap-2 flex-1 min-w-0 hover:opacity-80 transition-opacity">
           <div class="w-6 h-6 rounded-full bg-brand-600 flex items-center justify-center text-xs font-bold shrink-0">
@@ -147,6 +157,18 @@ const auth = useAuthStore()
 
 const displayName = computed(() => auth.user?.username ?? auth.user?.email?.split('@')[0] ?? 'User')
 const initials = computed(() => displayName.value.slice(0, 2).padEnd(2, displayName.value[0] ?? 'U').toUpperCase())
+
+// Sidebar collapse state
+const sidebarCollapsed = ref(
+  import.meta.client ? localStorage.getItem('sidebar-collapsed') === 'true' : false
+)
+
+function toggleSidebar() {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+  if (import.meta.client) {
+    localStorage.setItem('sidebar-collapsed', String(sidebarCollapsed.value))
+  }
+}
 
 // Lazy-loaded data
 const projects = ref<Project[]>([])
@@ -284,16 +306,24 @@ const SidebarSection = defineComponent({
     const isOpen = ref(stored !== null ? stored === 'true' : props.defaultOpen)
     const hasLoaded = ref(false)
 
+    function triggerLoad() {
+      if (props.lazy && !hasLoaded.value) {
+        hasLoaded.value = true
+        emit('open')
+      }
+    }
+
+    onMounted(() => {
+      if (isOpen.value) triggerLoad()
+    })
+
     function toggle() {
       isOpen.value = !isOpen.value
       if (import.meta.client) {
         sessionStorage.setItem(storageKey, String(isOpen.value))
         localStorage.setItem(storageKey, String(isOpen.value))
       }
-      if (isOpen.value && props.lazy && !hasLoaded.value) {
-        hasLoaded.value = true
-        emit('open')
-      }
+      if (isOpen.value) triggerLoad()
     }
 
     return () => h('div', { class: 'pt-1' }, [
