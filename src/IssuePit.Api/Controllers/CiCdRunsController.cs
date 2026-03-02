@@ -165,9 +165,7 @@ public class CiCdRunsController(
 
         await db.SaveChangesAsync();
 
-        await projectHub.Clients
-            .Group(ProjectHub.ProjectGroup(run.ProjectId.ToString()))
-            .SendAsync("RunsUpdated", new { runId = run.Id, status = run.Status, statusName = run.Status.ToString() });
+        await NotifyRunsUpdated(run);
 
         return Ok(new { run.Id, run.Status, StatusName = run.Status.ToString() });
     }
@@ -228,9 +226,7 @@ public class CiCdRunsController(
             Value = run.Id.ToString(),
         });
 
-        await projectHub.Clients
-            .Group(ProjectHub.ProjectGroup(run.ProjectId.ToString()))
-            .SendAsync("RunsUpdated", new { runId = run.Id, status = run.Status, statusName = run.Status.ToString() });
+        await NotifyRunsUpdated(run);
 
         return Ok(new { run.Id, run.Status, StatusName = run.Status.ToString() });
     }
@@ -248,6 +244,11 @@ public class CiCdRunsController(
             },
             _ => CiCdRunStatus.Pending,
         };
+
+    private Task NotifyRunsUpdated(CiCdRun run) =>
+        projectHub.Clients
+            .Group(ProjectHub.ProjectGroup(run.ProjectId.ToString()))
+            .SendAsync("RunsUpdated", new { runId = run.Id, status = run.Status, statusName = run.Status.ToString() });
 }
 
 /// <summary>Request body for the external CI/CD sync endpoint.</summary>

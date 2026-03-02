@@ -363,10 +363,10 @@ onMounted(async () => {
     runsStore.fetchAgentSessions(id),
     api.get<Milestone[]>(`/api/projects/${id}/milestones`)
       .then(data => { milestones.value = data })
-      .catch(() => {}),
+      .catch((e) => { console.warn(`Failed to load milestones for project ${id}`, e) }),
     api.get<{ mcpServerId: string }[]>(`/api/projects/${id}/mcp-servers`)
       .then(data => { mcpCount.value = data.length })
-      .catch(() => {}),
+      .catch((e) => { console.warn(`Failed to load MCP servers for project ${id}`, e) }),
     api.get<ProjectMetricSnapshot[]>(`/api/dashboard/projects/${id}/metric-history`)
       .then(data => { metricSnapshots.value = data })
       .catch((e) => { console.error(`Failed to load metric history for project ${id}`, e) }),
