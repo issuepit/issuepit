@@ -107,24 +107,29 @@
         </div>
       </div>
 
-      <!-- File list (table of contents) -->
-      <div v-if="store.diff.length" class="mb-4 bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-        <div v-for="file in store.diff" :key="file.newPath"
-          class="flex items-center gap-3 px-4 py-2 border-b border-gray-800 last:border-0 hover:bg-gray-800/50 cursor-pointer transition-colors text-sm"
-          @click="scrollToFile(file.newPath)">
-          <span :class="statusColor(file.status)" class="shrink-0 font-mono text-xs font-bold w-4 text-center">
-            {{ statusLetter(file.status) }}
-          </span>
-          <span class="flex-1 font-mono text-gray-300 truncate">{{ displayPath(file) }}</span>
-          <span v-if="file.isTooLarge" class="text-xs text-yellow-500">large</span>
-          <span v-else-if="file.isBinary" class="text-xs text-gray-500">binary</span>
-          <span v-else class="text-xs text-gray-500">
-            <span class="text-green-400">+{{ file.addedLines }}</span>
-            <span class="mx-0.5 text-gray-600">/</span>
-            <span class="text-red-400">-{{ file.removedLines }}</span>
-          </span>
+      <!-- Two-column layout: sidebar + main content -->
+      <div class="flex gap-4 items-start">
+        <!-- Changed files sidebar -->
+        <div v-if="store.diff.length" class="w-56 shrink-0 sticky top-4 self-start max-h-[calc(100vh-10rem)] overflow-y-auto" tabindex="0">
+          <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+            <div v-for="file in store.diff" :key="file.newPath"
+              class="flex items-center gap-2 px-3 py-2 border-b border-gray-800 last:border-0 hover:bg-gray-800/50 cursor-pointer transition-colors"
+              @click="scrollToFile(file.newPath)">
+              <span :class="statusColor(file.status)" class="shrink-0 font-mono text-xs font-bold w-4 text-center">
+                {{ statusLetter(file.status) }}
+              </span>
+              <span class="flex-1 font-mono text-gray-300 truncate text-xs">{{ displayPath(file) }}</span>
+              <span v-if="file.isTooLarge" class="text-xs text-yellow-500 shrink-0">large</span>
+              <span v-else-if="file.isBinary" class="text-xs text-gray-500 shrink-0">bin</span>
+              <span v-else class="text-xs text-gray-500 shrink-0">
+                <span class="text-green-400">+{{ file.addedLines }}</span><span class="mx-0.5 text-gray-600">/</span><span class="text-red-400">-{{ file.removedLines }}</span>
+              </span>
+            </div>
+          </div>
         </div>
-      </div>
+
+        <!-- Main diff content -->
+        <div class="flex-1 min-w-0">
 
       <!-- Diff files -->
       <div v-for="file in store.diff" :key="file.newPath" :id="`file-${fileId(file.newPath)}`" class="mb-4">
@@ -408,6 +413,8 @@
         class="py-12 text-center text-gray-500 text-sm">
         No differences found between <code class="text-gray-400">{{ baseBranch }}</code> and <code class="text-gray-400">{{ compareBranch }}</code>
       </div>
+        </div><!-- Main diff content -->
+      </div><!-- Two-column layout -->
     </template>
 
     <!-- Finish Review Modal -->
@@ -468,6 +475,7 @@ const compareBranch = ref('')
 const compareSha = ref('')  // SHA of the compare branch tip at load time
 const diffMode = ref<'unified' | 'split'>('unified')
 const comparedOnce = ref(false)
+const initialized = ref(false)
 const expandedFiles = ref(new Set<string>())
 const expandingFiles = ref(new Set<string>())
 const fullFileMode = ref(new Set<string>())
@@ -526,6 +534,14 @@ function clearReviewStorage() {
 }
 
 watch([reviewComments, generalComment, baseBranch, compareBranch], saveReviewToStorage, { deep: true })
+
+watch([baseBranch, compareBranch], ([newBase, newCompare]) => {
+  if (!initialized.value) return
+  if (store.loading) return
+  if (newBase && newCompare && newBase !== newCompare) {
+    loadDiff()
+  }
+})
 
 function removeGeneralComment(generalIdx: number) {
   const generals = reviewComments.value.filter(c => c.filePath === '(general)')
@@ -993,6 +1009,7 @@ onMounted(async () => {
       }
     }
   }
+  initialized.value = true
 })
 
 onUnmounted(() => store.reset())
