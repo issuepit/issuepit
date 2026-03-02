@@ -11,6 +11,7 @@ public class HetznerSshAgentRuntime(ILogger<HetznerSshAgentRuntime> logger) : IA
         Issue issue,
         IReadOnlyDictionary<string, string> credentials,
         RuntimeConfiguration? runtimeConfig,
+        GitRepository? gitRepository,
         CancellationToken cancellationToken)
     {
         logger.LogWarning(

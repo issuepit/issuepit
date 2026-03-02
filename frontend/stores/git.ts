@@ -145,6 +145,15 @@ export const useGitStore = defineStore('git', () => {
     }
   }
 
+  async function enableRepo(projectId: string) {
+    error.value = null
+    try {
+      repo.value = await api.post<GitRepository>(`/api/projects/${projectId}/git/repo/enable`, {})
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to enable repository'
+    }
+  }
+
   function reset() {
     repo.value = null
     branches.value = []
@@ -176,6 +185,7 @@ export const useGitStore = defineStore('git', () => {
     fetchDiff,
     triggerFetch,
     triggerClone,
+    enableRepo,
     reset
   }
 })

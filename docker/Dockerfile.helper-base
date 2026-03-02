@@ -11,13 +11,23 @@ FROM mcr.microsoft.com/playwright/dotnet:${PLAYWRIGHT_VERSION}-noble
 
 ARG NODE_MAJOR=24
 
-# Install Node.js via NodeSource and .NET Aspire workload
+# Install Node.js via NodeSource, git, dnsmasq, and .NET Aspire workload
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl gnupg && \
+    apt-get install -y --no-install-recommends curl gnupg git dnsmasq && \
     curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/* && \
     dotnet workload install aspire
+
+# Copy the entrypoint script that handles:
+#   1. git clone (using ISSUEPIT_GIT_REMOTE_URL env var)
+#   2. tool setup (npm install / dotnet restore)
+#   3. DNS logging proxy (dnsmasq forwarding to upstream, logs every query to stderr)
+#   4. exec the CLI agent tool
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # Expose version info as labels
 ARG PLAYWRIGHT_VERSION

@@ -178,6 +178,87 @@ public class McpServersController(IssuePitDbContext db, TenantContext ctx) : Con
         await db.SaveChangesAsync();
         return NoContent();
     }
+
+    // --- Agent links ---
+
+    [HttpPost("{id:guid}/agents/{agentId:guid}")]
+    public async Task<IActionResult> LinkAgent(Guid id, Guid agentId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var serverBelongsToTenant = await db.McpServers
+            .AnyAsync(m => m.Id == id && db.Organizations.Any(o => o.Id == m.OrgId && o.TenantId == ctx.CurrentTenant.Id));
+        if (!serverBelongsToTenant) return NotFound();
+        var agentBelongsToTenant = await db.Agents
+            .AnyAsync(a => a.Id == agentId && db.Organizations.Any(o => o.Id == a.OrgId && o.TenantId == ctx.CurrentTenant.Id));
+        if (!agentBelongsToTenant) return NotFound();
+        var alreadyLinked = await db.AgentMcpServers.AnyAsync(am => am.McpServerId == id && am.AgentId == agentId);
+        if (alreadyLinked) return Conflict();
+        var link = new AgentMcpServer { McpServerId = id, AgentId = agentId };
+        db.AgentMcpServers.Add(link);
+        await db.SaveChangesAsync();
+        return Created($"/api/mcp-servers/{id}/agents/{agentId}", link);
+    }
+
+    [HttpDelete("{id:guid}/agents/{agentId:guid}")]
+    public async Task<IActionResult> UnlinkAgent(Guid id, Guid agentId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var link = await db.AgentMcpServers
+            .Include(am => am.McpServer)
+            .FirstOrDefaultAsync(am => am.McpServerId == id && am.AgentId == agentId);
+        if (link is null) return NotFound();
+        var belongsToTenant = await db.Organizations
+            .AnyAsync(o => o.Id == link.McpServer.OrgId && o.TenantId == ctx.CurrentTenant.Id);
+        if (!belongsToTenant) return NotFound();
+        db.AgentMcpServers.Remove(link);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    // --- Per-project agent selection ---
+
+    [HttpGet("{id:guid}/projects/{projectId:guid}/agents")]
+    public async Task<IActionResult> GetProjectAgentSelection(Guid id, Guid projectId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var serverBelongsToTenant = await db.McpServers
+            .AnyAsync(m => m.Id == id && db.Organizations.Any(o => o.Id == m.OrgId && o.TenantId == ctx.CurrentTenant.Id));
+        if (!serverBelongsToTenant) return NotFound();
+        var agents = await db.McpServerProjectAgents
+            .Where(mpa => mpa.McpServerId == id && mpa.ProjectId == projectId)
+            .Select(mpa => new { mpa.AgentId, mpa.Agent.Name })
+            .ToListAsync();
+        return Ok(agents);
+    }
+
+    [HttpPost("{id:guid}/projects/{projectId:guid}/agents/{agentId:guid}")]
+    public async Task<IActionResult> EnableAgentForProject(Guid id, Guid projectId, Guid agentId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var serverBelongsToTenant = await db.McpServers
+            .AnyAsync(m => m.Id == id && db.Organizations.Any(o => o.Id == m.OrgId && o.TenantId == ctx.CurrentTenant.Id));
+        if (!serverBelongsToTenant) return NotFound();
+        var projectLinked = await db.McpServerProjects.AnyAsync(mp => mp.McpServerId == id && mp.ProjectId == projectId);
+        if (!projectLinked) return BadRequest("MCP server is not linked to this project.");
+        var alreadyExists = await db.McpServerProjectAgents
+            .AnyAsync(mpa => mpa.McpServerId == id && mpa.ProjectId == projectId && mpa.AgentId == agentId);
+        if (alreadyExists) return Conflict();
+        db.McpServerProjectAgents.Add(new McpServerProjectAgent { McpServerId = id, ProjectId = projectId, AgentId = agentId });
+        await db.SaveChangesAsync();
+        return Created($"/api/mcp-servers/{id}/projects/{projectId}/agents/{agentId}", null);
+    }
+
+    [HttpDelete("{id:guid}/projects/{projectId:guid}/agents/{agentId:guid}")]
+    public async Task<IActionResult> DisableAgentForProject(Guid id, Guid projectId, Guid agentId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var link = await db.McpServerProjectAgents
+            .FirstOrDefaultAsync(mpa => mpa.McpServerId == id && mpa.ProjectId == projectId && mpa.AgentId == agentId);
+        if (link is null) return NotFound();
+        db.McpServerProjectAgents.Remove(link);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
 }
 
 public record McpSecretRequest(string Key, string Value, string? Scope = null, Guid? ScopeId = null);

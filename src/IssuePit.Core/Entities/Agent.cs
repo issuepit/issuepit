@@ -36,7 +36,13 @@ public class Agent
 
     public bool IsActive { get; set; }
 
+    /// <summary>When true, the agent container runs with a restricted DNS-based firewall that blocks general internet access
+    /// while keeping development-related domains (GitHub, NuGet, npm, etc.) reachable.</summary>
+    public bool DisableInternet { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public ICollection<AgentMcpServer> AgentMcpServers { get; set; } = [];
+    public ICollection<AgentProject> AgentProjects { get; set; } = [];
+    public ICollection<AgentOrg> AgentOrgs { get; set; } = [];
 }

@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using IssuePit.Core.Enums;
 
 namespace IssuePit.Core.Entities;
 
@@ -42,4 +43,14 @@ public class GitRepository
     /// <summary>The last commit SHA on <see cref="DefaultBranch"/> for which a CI/CD run was triggered.</summary>
     [MaxLength(200)]
     public string? LastKnownCommitSha { get; set; }
+
+    /// <summary>Current polling/health status of this repository.</summary>
+    public GitRepoStatus Status { get; set; } = GitRepoStatus.Active;
+
+    /// <summary>Human-readable message describing why the repo was disabled or throttled.</summary>
+    [MaxLength(1000)]
+    public string? StatusMessage { get; set; }
+
+    /// <summary>When set, the repo will be skipped by the poller until this time (throttle window).</summary>
+    public DateTime? ThrottledUntil { get; set; }
 }

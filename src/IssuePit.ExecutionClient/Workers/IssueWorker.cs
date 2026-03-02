@@ -197,6 +197,11 @@ public class IssueWorker(
 
         var runtimeType = runtimeConfig?.Type ?? RuntimeType.Docker;
 
+        // Load the git repository for the project so the container can clone it on startup.
+        var gitRepository = await db.GitRepositories
+            .Where(r => r.ProjectId == issue.ProjectId)
+            .FirstOrDefaultAsync(cancellationToken);
+
         var session = new AgentSession
         {
             Id = Guid.NewGuid(),
@@ -218,7 +223,7 @@ public class IssueWorker(
         {
             var credentials = await LoadCredentialsAsync(agent.OrgId, db, sessionCts.Token);
             var runtime = runtimeFactory.Create(runtimeType);
-            var runtimeId = await runtime.LaunchAsync(session, agent, issue, credentials, runtimeConfig, sessionCts.Token);
+            var runtimeId = await runtime.LaunchAsync(session, agent, issue, credentials, runtimeConfig, gitRepository, sessionCts.Token);
 
             logger.LogInformation(
                 "Agent {AgentId} launched via {RuntimeType} with id '{RuntimeId}' for session {SessionId}",

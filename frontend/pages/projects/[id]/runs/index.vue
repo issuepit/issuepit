@@ -179,6 +179,7 @@ async function cancelRun(runId: string) {
 
 async function retryRun(runId: string) {
   await store.retryRun(runId)
+  await store.fetchRuns(id)
 }
 
 function formatDate(d: string) {
@@ -195,7 +196,7 @@ function duration(start: string, end?: string) {
   return `${Math.floor(m / 60)}h ${m % 60}m`
 }
 
-function statusClass(status: number) {
+function statusClass(status: CiCdRunStatus) {
   switch (status) {
     case CiCdRunStatus.Succeeded: return 'bg-green-900/30 text-green-400'
     case CiCdRunStatus.Running: return 'bg-blue-900/30 text-blue-400'
@@ -205,7 +206,7 @@ function statusClass(status: number) {
   }
 }
 
-function statusDot(status: number) {
+function statusDot(status: CiCdRunStatus) {
   switch (status) {
     case CiCdRunStatus.Succeeded: return 'bg-green-400'
     case CiCdRunStatus.Running: return 'bg-blue-400 animate-pulse'

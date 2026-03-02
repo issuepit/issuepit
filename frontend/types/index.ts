@@ -273,6 +273,31 @@ export interface Agent {
   updatedAt: string
 }
 
+export interface AgentProject {
+  agentId: string
+  name: string
+  isDisabled: boolean
+  source: 'project' | 'org'
+}
+
+export interface AgentOrg {
+  agentId: string
+  name: string
+  isActive: boolean
+}
+
+export interface ProjectMcpServer {
+  mcpServerId: string
+  name: string
+  description?: string
+  url: string
+  configuration: string
+  allowedTools: string
+  orgId: string
+  createdAt: string
+  enabledAgents: Array<{ agentId: string; name: string }>
+}
+
 export interface KanbanTransition {
   id: string
   boardId: string
@@ -386,6 +411,9 @@ export interface GitRepository {
   hasAuth: boolean
   createdAt: string
   lastFetchedAt?: string
+  status: 'Active' | 'Disabled' | 'Throttled'
+  statusMessage?: string
+  throttledUntil?: string
 }
 
 export interface GitBranch {
@@ -476,11 +504,11 @@ export interface TelegramBot {
 }
 
 export enum CiCdRunStatus {
-  Pending = 0,
-  Running = 1,
-  Succeeded = 2,
-  Failed = 3,
-  Cancelled = 4,
+  Pending = 'pending',
+  Running = 'running',
+  Succeeded = 'succeeded',
+  Failed = 'failed',
+  Cancelled = 'cancelled',
 }
 
 export const CiCdRunStatusLabels: Record<CiCdRunStatus, string> = {
@@ -545,7 +573,7 @@ export interface DashboardAgentSession extends AgentSession {
 export interface CiCdRunLog {
   id: string
   line: string
-  stream: number
+  stream: string
   streamName: string
   timestamp: string
 }

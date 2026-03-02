@@ -115,6 +115,80 @@ export const useAgentsStore = defineStore('agents', () => {
     }
   }
 
+  // --- Project agents ---
+
+  async function fetchProjectAgents(projectId: string) {
+    error.value = null
+    try {
+      return await api.get<import('~/types').AgentProject[]>(`/api/projects/${projectId}/agents`)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to fetch project agents'
+      return []
+    }
+  }
+
+  async function linkAgentToProject(projectId: string, agentId: string) {
+    error.value = null
+    try {
+      await api.post(`/api/projects/${projectId}/agents/${agentId}`, {})
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to link agent to project'
+      throw e
+    }
+  }
+
+  async function unlinkAgentFromProject(projectId: string, agentId: string) {
+    error.value = null
+    try {
+      await api.del(`/api/projects/${projectId}/agents/${agentId}`)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to unlink agent from project'
+      throw e
+    }
+  }
+
+  async function setProjectAgentActive(projectId: string, agentId: string, isActive: boolean) {
+    error.value = null
+    try {
+      await api.patch(`/api/projects/${projectId}/agents/${agentId}/active`, { isActive })
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to update agent status'
+      throw e
+    }
+  }
+
+  // --- Org agents ---
+
+  async function fetchOrgAgents(orgId: string) {
+    error.value = null
+    try {
+      return await api.get<import('~/types').AgentOrg[]>(`/api/orgs/${orgId}/agents`)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to fetch org agents'
+      return []
+    }
+  }
+
+  async function linkAgentToOrg(orgId: string, agentId: string) {
+    error.value = null
+    try {
+      await api.post(`/api/orgs/${orgId}/agents/${agentId}`, {})
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to link agent to org'
+      throw e
+    }
+  }
+
+  async function unlinkAgentFromOrg(orgId: string, agentId: string) {
+    error.value = null
+    try {
+      await api.del(`/api/orgs/${orgId}/agents/${agentId}`)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to unlink agent from org'
+      throw e
+    }
+  }
+
   return {
     agents,
     currentAgent,
@@ -128,5 +202,12 @@ export const useAgentsStore = defineStore('agents', () => {
     toggleAgent,
     linkMcpServer,
     unlinkMcpServer,
+    fetchProjectAgents,
+    linkAgentToProject,
+    unlinkAgentFromProject,
+    setProjectAgentActive,
+    fetchOrgAgents,
+    linkAgentToOrg,
+    unlinkAgentFromOrg,
   }
 })

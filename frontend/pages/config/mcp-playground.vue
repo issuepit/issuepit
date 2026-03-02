@@ -148,14 +148,33 @@ const mcpBase = config.public.mcpBase as string
 const mcpUrl = `${mcpBase}/mcp`
 
 let reqId = 1
+let sessionId: string | null = null
 
-async function mcpRequest(method: string, params: Record<string, unknown>) {
-  const body = JSON.stringify({ jsonrpc: '2.0', id: reqId++, method, params })
+async function mcpInitialize() {
+  const body = JSON.stringify({ jsonrpc: '2.0', id: reqId++, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'playground', version: '1.0' } } })
   const res = await fetch(mcpUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
     body,
   })
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`)
+  sessionId = res.headers.get('Mcp-Session-Id')
+  const ct = res.headers.get('content-type') ?? ''
+  if (ct.includes('text/event-stream')) {
+    const text = await res.text()
+    const dataLine = text.split('\n').find((l: string) => l.startsWith('data:'))
+    if (!dataLine) throw new Error('No data in SSE response')
+    return JSON.parse(dataLine.slice(5).trim())
+  }
+  return res.json()
+}
+
+async function mcpRequest(method: string, params: Record<string, unknown>) {
+  if (!sessionId) await mcpInitialize()
+  const body = JSON.stringify({ jsonrpc: '2.0', id: reqId++, method, params })
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }
+  if (sessionId) headers['Mcp-Session-Id'] = sessionId
+  const res = await fetch(mcpUrl, { method: 'POST', headers, body })
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`)
   const ct = res.headers.get('content-type') ?? ''
   if (ct.includes('text/event-stream')) {
@@ -191,6 +210,7 @@ const toolParams = computed<ToolParam[]>(() => {
 async function loadTools() {
   loadingTools.value = true
   toolsError.value = null
+  sessionId = null
   try {
     const rpc = await mcpRequest('tools/list', {})
     tools.value = rpc.result?.tools ?? []

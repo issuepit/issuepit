@@ -293,7 +293,7 @@ function duration(start: string, end?: string) {
   return `${Math.floor(m / 60)}h ${m % 60}m`
 }
 
-function runStatusClass(status: number) {
+function runStatusClass(status: CiCdRunStatus) {
   switch (status) {
     case CiCdRunStatus.Succeeded: return 'bg-green-900/30 text-green-400'
     case CiCdRunStatus.Running: return 'bg-blue-900/30 text-blue-400'
@@ -303,7 +303,7 @@ function runStatusClass(status: number) {
   }
 }
 
-function runStatusDot(status: number) {
+function runStatusDot(status: CiCdRunStatus) {
   switch (status) {
     case CiCdRunStatus.Succeeded: return 'bg-green-400'
     case CiCdRunStatus.Running: return 'bg-blue-400 animate-pulse'

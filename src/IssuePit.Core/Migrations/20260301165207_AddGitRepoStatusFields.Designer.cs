@@ -3,6 +3,7 @@ using System;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace IssuePit.Core.Migrations
 {
     [DbContext(typeof(IssuePitDbContext))]
-    partial class IssuePitDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260301165207_AddGitRepoStatusFields")]
+    partial class AddGitRepoStatusFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -34,9 +37,6 @@ namespace IssuePit.Core.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("DisableInternet")
-                        .HasColumnType("boolean");
 
                     b.Property<string>("DockerImage")
                         .IsRequired()
@@ -85,39 +85,6 @@ namespace IssuePit.Core.Migrations
                     b.HasIndex("McpServerId");
 
                     b.ToTable("agent_mcp_servers");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.AgentOrg", b =>
-                {
-                    b.Property<Guid>("AgentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("OrgId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("AgentId", "OrgId");
-
-                    b.HasIndex("OrgId");
-
-                    b.ToTable("agent_orgs");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.AgentProject", b =>
-                {
-                    b.Property<Guid>("AgentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("IsDisabled")
-                        .HasColumnType("boolean");
-
-                    b.HasKey("AgentId", "ProjectId");
-
-                    b.HasIndex("ProjectId");
-
-                    b.ToTable("agent_projects");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.AgentSession", b =>
@@ -762,26 +729,6 @@ namespace IssuePit.Core.Migrations
                     b.ToTable("mcp_server_projects");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.McpServerProjectAgent", b =>
-                {
-                    b.Property<Guid>("McpServerId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("AgentId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("McpServerId", "ProjectId", "AgentId");
-
-                    b.HasIndex("AgentId");
-
-                    b.HasIndex("ProjectId");
-
-                    b.ToTable("mcp_server_project_agents");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.McpServerSecret", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1229,44 +1176,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("McpServer");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.AgentOrg", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Agent", "Agent")
-                        .WithMany("AgentOrgs")
-                        .HasForeignKey("AgentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("IssuePit.Core.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrgId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Agent");
-
-                    b.Navigation("Organization");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.AgentProject", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Agent", "Agent")
-                        .WithMany("AgentProjects")
-                        .HasForeignKey("AgentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("IssuePit.Core.Entities.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Agent");
-
-                    b.Navigation("Project");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.AgentSession", b =>
                 {
                     b.HasOne("IssuePit.Core.Entities.Agent", "Agent")
@@ -1586,33 +1495,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("Project");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.McpServerProjectAgent", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Agent", "Agent")
-                        .WithMany()
-                        .HasForeignKey("AgentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("IssuePit.Core.Entities.McpServer", "McpServer")
-                        .WithMany()
-                        .HasForeignKey("McpServerId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("IssuePit.Core.Entities.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Agent");
-
-                    b.Navigation("McpServer");
-
-                    b.Navigation("Project");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.McpServerSecret", b =>
                 {
                     b.HasOne("IssuePit.Core.Entities.McpServer", "McpServer")
@@ -1795,10 +1677,6 @@ namespace IssuePit.Core.Migrations
             modelBuilder.Entity("IssuePit.Core.Entities.Agent", b =>
                 {
                     b.Navigation("AgentMcpServers");
-
-                    b.Navigation("AgentOrgs");
-
-                    b.Navigation("AgentProjects");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.AgentSession", b =>
