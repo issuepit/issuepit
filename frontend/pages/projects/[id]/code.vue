@@ -344,12 +344,15 @@ import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
 import { useGitStore } from '~/stores/git'
 import { useIssuesStore } from '~/stores/issues'
+import { useAuthStore } from '~/stores/auth'
 import { IssueType, IssuePriority, IssueStatus } from '~/types'
 
 const route = useRoute()
 const router = useRouter()
 const id = route.params.id as string
 const store = useGitStore()
+const issuesStore = useIssuesStore()
+const authStore = useAuthStore()
 
 const repoChecked = ref(false)
 const fetching = ref(false)
@@ -629,7 +632,6 @@ interface ReviewComment {
 
 const reviewComments = ref<ReviewComment[]>([])
 const savingReview = ref(false)
-const issuesStore = useIssuesStore()
 const reviewedFilesCount = computed(() => new Set(reviewComments.value.map(c => c.filePath)).size)
 
 function addReviewComment() {
@@ -662,14 +664,20 @@ async function finishReview() {
     }).join('\n\n---\n\n')
     const now = new Date()
     const title = `Code Review – ${selectedBranch.value} – ${now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-    await issuesStore.createIssue(id, {
+    const newIssue = await issuesStore.createIssue(id, {
       title,
       body,
       type: IssueType.Issue,
       priority: IssuePriority.Medium,
       status: IssueStatus.Backlog
     })
+    if (newIssue && authStore.user) {
+      await issuesStore.addAssignee(newIssue.id, { userId: authStore.user.id })
+    }
     reviewComments.value = []
+    if (newIssue) {
+      router.push(`/projects/${id}/issues/${newIssue.id}`)
+    }
   } finally {
     savingReview.value = false
   }

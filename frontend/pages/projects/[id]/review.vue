@@ -95,6 +95,16 @@
         <span>{{ store.diff.length }} file{{ store.diff.length !== 1 ? 's' : '' }} changed</span>
         <span class="text-green-400">+{{ totalAdded }}</span>
         <span class="text-red-400">-{{ totalRemoved }}</span>
+        <div class="ml-auto flex items-center gap-2">
+          <button v-if="collapsedFiles.size > 0" @click="collapsedFiles = new Set()"
+            class="text-xs text-gray-500 hover:text-gray-300 transition-colors">
+            Expand all
+          </button>
+          <button v-if="collapsedFiles.size < store.diff.length" @click="collapsedFiles = new Set(store.diff.map(f => f.newPath))"
+            class="text-xs text-gray-500 hover:text-gray-300 transition-colors">
+            Collapse all
+          </button>
+        </div>
       </div>
 
       <!-- File list (table of contents) -->
@@ -119,7 +129,14 @@
       <!-- Diff files -->
       <div v-for="file in store.diff" :key="file.newPath" :id="`file-${fileId(file.newPath)}`" class="mb-4">
         <!-- File header -->
-        <div class="flex items-center gap-2 bg-gray-900 border border-gray-800 rounded-t-xl px-4 py-2.5">
+        <div class="flex items-center gap-2 bg-gray-900 border border-gray-800 px-4 py-2.5 cursor-pointer"
+          :class="collapsedFiles.has(file.newPath) ? 'rounded-xl' : 'rounded-t-xl'"
+          @click="toggleFileCollapse(file.newPath)">
+          <svg class="w-3.5 h-3.5 text-gray-500 shrink-0 transition-transform"
+            :class="collapsedFiles.has(file.newPath) ? '-rotate-90' : ''"
+            fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
           <span :class="statusColor(file.status)" class="shrink-0 font-mono text-xs font-bold">
             {{ statusLetter(file.status) }}
           </span>
@@ -132,25 +149,25 @@
           </span>
           <!-- Toggle large/full file -->
           <button v-if="originallyTooLarge.has(file.newPath) && !expandedFiles.has(file.newPath)"
-            @click="expandFile(file)"
+            @click.stop="expandFile(file)"
             class="text-xs text-brand-400 hover:text-brand-300 ml-2 transition-colors">
             Load diff
           </button>
           <button v-if="!file.isTooLarge && !file.isBinary && file.hunks.length"
-            @click="toggleFullFile(file.newPath)"
+            @click.stop="toggleFullFile(file.newPath)"
             class="text-xs text-gray-500 hover:text-gray-300 ml-2 transition-colors">
             {{ fullFileMode.has(file.newPath) ? 'Show diff' : 'Show full file' }}
           </button>
         </div>
 
         <!-- Binary notice -->
-        <div v-if="file.isBinary"
+        <div v-if="!collapsedFiles.has(file.newPath) && file.isBinary"
           class="bg-gray-900/50 border border-t-0 border-gray-800 rounded-b-xl p-4 text-center text-sm text-gray-500">
           Binary file — preview not available
         </div>
 
         <!-- Too-large skeleton (not yet loaded) -->
-        <div v-else-if="originallyTooLarge.has(file.newPath) && !expandedFiles.has(file.newPath)"
+        <div v-else-if="!collapsedFiles.has(file.newPath) && originallyTooLarge.has(file.newPath) && !expandedFiles.has(file.newPath)"
           class="bg-gray-900/50 border border-t-0 border-gray-800 rounded-b-xl p-4">
           <div class="space-y-2">
             <div v-for="n in 6" :key="n" class="h-4 bg-gray-800 rounded animate-pulse"
@@ -162,13 +179,13 @@
         </div>
 
         <!-- Loading expanded file -->
-        <div v-else-if="expandingFiles.has(file.newPath)"
+        <div v-else-if="!collapsedFiles.has(file.newPath) && expandingFiles.has(file.newPath)"
           class="bg-gray-900/50 border border-t-0 border-gray-800 rounded-b-xl p-4 text-center text-sm text-gray-400">
           <div class="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
         </div>
 
         <!-- Diff hunks (unified) -->
-        <div v-else-if="diffMode === 'unified'"
+        <div v-else-if="!collapsedFiles.has(file.newPath) && diffMode === 'unified'"
           class="border border-t-0 border-gray-800 rounded-b-xl overflow-x-auto">
           <table class="w-full border-collapse text-xs font-mono">
             <tbody>
@@ -181,48 +198,49 @@
                   </td>
                 </tr>
                 <!-- Lines -->
-                <tr v-for="(line, lineIdx) in hunk.lines" :key="lineIdx"
-                  :class="lineRowClass(line.lineType)"
-                  class="group hover:brightness-125 transition-all">
-                  <!-- Old line number -->
-                  <td class="select-none text-right text-gray-600 pr-2 pl-2 w-10 border-r border-gray-800/40 align-top cursor-pointer"
-                    :class="{ 'hover:text-brand-400': line.lineType !== 'added' }"
-                    @click="onLineClick(file, hunk, line, 'old', $event)">
-                    {{ line.oldLineNumber ?? '' }}
-                  </td>
-                  <!-- New line number -->
-                  <td class="select-none text-right text-gray-600 pr-2 pl-2 w-10 border-r border-gray-800/40 align-top cursor-pointer"
-                    :class="{ 'hover:text-brand-400': line.lineType !== 'removed' }"
-                    @click="onLineClick(file, hunk, line, 'new', $event)">
-                    {{ line.newLineNumber ?? '' }}
-                  </td>
-                  <!-- Content -->
-                  <td class="pl-2 pr-3 whitespace-pre leading-relaxed"
-                    v-html="highlightLine(file.newPath, line)"></td>
-                </tr>
-                <!-- Inline comment inputs -->
-                <template v-for="(comment, ci) in inlineComments[file.newPath] ?? []" :key="`ic-${ci}`">
-                  <tr v-if="comment.hunkIdx === hunkIdx && comment.lineIdx === lineIdx">
-                    <td colspan="3" class="bg-gray-900 border-t border-b border-brand-800/40 p-3">
-                      <div class="flex items-start gap-2">
-                        <textarea v-model="comment.text" rows="2"
-                          placeholder="Add a comment… (Ctrl+Enter to submit)"
-                          class="flex-1 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white px-3 py-2 focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none"
-                          @keydown.ctrl.enter="submitInlineComment(file, hunk, line, comment, hunkIdx, lineIdx)"></textarea>
-                        <div class="flex flex-col gap-1.5">
-                          <button @click="submitInlineComment(file, hunk, line, comment, hunkIdx, lineIdx)"
-                            :disabled="!comment.text.trim()"
-                            class="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
-                            Add
-                          </button>
-                          <button @click="removeInlineComment(file.newPath, ci)"
-                            class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
+                <template v-for="(line, lineIdx) in hunk.lines" :key="lineIdx">
+                  <tr :class="lineRowClass(line.lineType)"
+                    class="group hover:brightness-125 transition-all">
+                    <!-- Old line number -->
+                    <td class="select-none text-right text-gray-600 pr-2 pl-2 w-10 border-r border-gray-800/40 align-top cursor-pointer"
+                      :class="{ 'hover:text-brand-400': line.lineType !== 'added' }"
+                      @click="onLineClick(file, hunk, line, 'old', $event)">
+                      {{ line.oldLineNumber ?? '' }}
                     </td>
+                    <!-- New line number -->
+                    <td class="select-none text-right text-gray-600 pr-2 pl-2 w-10 border-r border-gray-800/40 align-top cursor-pointer"
+                      :class="{ 'hover:text-brand-400': line.lineType !== 'removed' }"
+                      @click="onLineClick(file, hunk, line, 'new', $event)">
+                      {{ line.newLineNumber ?? '' }}
+                    </td>
+                    <!-- Content -->
+                    <td class="pl-2 pr-3 whitespace-pre leading-relaxed"
+                      v-html="highlightLine(file.newPath, line)"></td>
                   </tr>
+                  <!-- Inline comment inputs (scoped inside lines loop) -->
+                  <template v-for="(comment, ci) in inlineComments[file.newPath] ?? []" :key="`ic-${ci}`">
+                    <tr v-if="comment.hunkIdx === hunkIdx && comment.lineIdx === lineIdx">
+                      <td colspan="3" class="bg-gray-900 border-t border-b border-brand-800/40 p-3">
+                        <div class="flex items-start gap-2">
+                          <textarea v-model="comment.text" rows="2"
+                            placeholder="Add a comment… (Ctrl+Enter to submit)"
+                            class="flex-1 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white px-3 py-2 focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none"
+                            @keydown.ctrl.enter="submitInlineComment(file, hunk, line, comment, hunkIdx, lineIdx)"></textarea>
+                          <div class="flex flex-col gap-1.5">
+                            <button @click="submitInlineComment(file, hunk, line, comment, hunkIdx, lineIdx)"
+                              :disabled="!comment.text.trim()"
+                              class="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                              Add
+                            </button>
+                            <button @click="removeInlineComment(file.newPath, ci)"
+                              class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  </template>
                 </template>
               </template>
               <tr v-if="!getHunks(file).length">
@@ -233,7 +251,7 @@
         </div>
 
         <!-- Diff hunks (split) -->
-        <div v-else-if="diffMode === 'split'"
+        <div v-else-if="!collapsedFiles.has(file.newPath) && diffMode === 'split'"
           class="border border-t-0 border-gray-800 rounded-b-xl overflow-x-auto">
           <table class="w-full border-collapse text-xs font-mono table-fixed">
             <tbody>
@@ -254,7 +272,7 @@
                       @click="pair.left && onLineClick(file, hunk, pair.left, 'old', $event)">
                       {{ pair.left?.oldLineNumber ?? '' }}
                     </td>
-                    <td class="pl-2 pr-2 whitespace-pre leading-relaxed w-1/2 border-r border-gray-800/40 overflow-hidden"
+                    <td class="pl-2 pr-2 whitespace-pre-wrap break-all leading-relaxed w-1/2 border-r border-gray-800/40"
                       :class="pair.left ? lineRowClass(pair.left.lineType) : ''"
                       v-html="pair.left ? highlightLine(file.newPath, pair.left) : ''"></td>
                     <!-- Right (new) -->
@@ -263,7 +281,7 @@
                       @click="pair.right && onLineClick(file, hunk, pair.right, 'new', $event)">
                       {{ pair.right?.newLineNumber ?? '' }}
                     </td>
-                    <td class="pl-2 pr-2 whitespace-pre leading-relaxed w-1/2 overflow-hidden"
+                    <td class="pl-2 pr-2 whitespace-pre-wrap break-all leading-relaxed w-1/2"
                       :class="pair.right ? lineRowClass(pair.right.lineType) : ''"
                       v-html="pair.right ? highlightLine(file.newPath, pair.right) : ''"></td>
                   </tr>
@@ -375,13 +393,16 @@ import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
 import { useGitStore } from '~/stores/git'
 import { useIssuesStore } from '~/stores/issues'
+import { useAuthStore } from '~/stores/auth'
 import { IssueType, IssuePriority, IssueStatus } from '~/types'
 import type { GitDiffFile, GitDiffHunk, GitDiffLine } from '~/types'
 
 const route = useRoute()
+const router = useRouter()
 const id = route.params.id as string
 const store = useGitStore()
 const issuesStore = useIssuesStore()
+const authStore = useAuthStore()
 
 const repoChecked = ref(false)
 const baseBranch = ref('')
@@ -393,6 +414,10 @@ const expandingFiles = ref(new Set<string>())
 const fullFileMode = ref(new Set<string>())
 const fullFileCache = ref<Record<string, string[]>>({})
 const originallyTooLarge = ref(new Set<string>())
+const collapsedFiles = ref(new Set<string>())
+
+const COLLAPSE_THRESHOLD = 5
+const LS_KEY = computed(() => `issuepit-review-${id}`)
 
 // ── Review session ──────────────────────────────────────────
 interface ReviewComment {
@@ -411,6 +436,36 @@ const targetIssueId = ref('')
 
 const reviewedFilesCount = computed(() => new Set(reviewComments.value.map(c => c.filePath)).size)
 
+// ── localStorage persistence ────────────────────────────────
+function saveReviewToStorage() {
+  if (!import.meta.client) return
+  const data = {
+    reviewComments: reviewComments.value,
+    generalComment: generalComment.value,
+    baseBranch: baseBranch.value,
+    compareBranch: compareBranch.value,
+  }
+  localStorage.setItem(LS_KEY.value, JSON.stringify(data))
+}
+
+function loadReviewFromStorage(): { reviewComments: ReviewComment[]; generalComment: string; baseBranch: string; compareBranch: string } | null {
+  if (!import.meta.client) return null
+  try {
+    const raw = localStorage.getItem(LS_KEY.value)
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+function clearReviewStorage() {
+  if (!import.meta.client) return
+  localStorage.removeItem(LS_KEY.value)
+}
+
+watch([reviewComments, generalComment, baseBranch, compareBranch], saveReviewToStorage, { deep: true })
+
 function fileReviewComments(filePath: string) {
   return reviewComments.value.filter(c => c.filePath === filePath)
 }
@@ -425,6 +480,7 @@ function removeReviewComment(idx: number, filePath: string) {
 function discardReview() {
   reviewComments.value = []
   generalComment.value = ''
+  clearReviewStorage()
 }
 
 function addGeneralComment() {
@@ -500,22 +556,36 @@ async function finishReview() {
 
     if (targetIssueId.value.trim()) {
       // Add as a comment to an existing issue
-      await issuesStore.addComment(targetIssueId.value.trim(), body)
+      const existingIssueId = targetIssueId.value.trim()
+      await issuesStore.addComment(existingIssueId, body)
+      clearReviewStorage()
+      reviewComments.value = []
+      showFinishModal.value = false
+      reviewTitle.value = ''
+      targetIssueId.value = ''
+      router.push(`/projects/${id}/issues/${existingIssueId}`)
     } else {
-      // Create a new issue
+      // Create a new issue and auto-assign to the current user
       const title = reviewTitle.value.trim() || `Code Review: ${compareBranch.value} → ${baseBranch.value} (${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })})`
-      await issuesStore.createIssue(id, {
+      const newIssue = await issuesStore.createIssue(id, {
         title,
         body,
         type: IssueType.Issue,
         priority: IssuePriority.Medium,
         status: IssueStatus.InReview
       })
+      if (newIssue && authStore.user) {
+        await issuesStore.addAssignee(newIssue.id, { userId: authStore.user.id })
+      }
+      clearReviewStorage()
+      reviewComments.value = []
+      showFinishModal.value = false
+      reviewTitle.value = ''
+      targetIssueId.value = ''
+      if (newIssue) {
+        router.push(`/projects/${id}/issues/${newIssue.id}`)
+      }
     }
-    reviewComments.value = []
-    showFinishModal.value = false
-    reviewTitle.value = ''
-    targetIssueId.value = ''
   } finally {
     savingReview.value = false
   }
@@ -530,7 +600,23 @@ async function loadDiff() {
   fullFileCache.value = {}
   await store.fetchDiff(id, baseBranch.value, compareBranch.value)
   originallyTooLarge.value = new Set(store.diff.filter(f => f.isTooLarge).map(f => f.newPath))
+  // Collapse files when there are many — users can expand each on demand
+  if (store.diff.length > COLLAPSE_THRESHOLD) {
+    collapsedFiles.value = new Set(store.diff.map(f => f.newPath))
+  } else {
+    collapsedFiles.value = new Set()
+  }
   comparedOnce.value = true
+}
+
+function toggleFileCollapse(filePath: string) {
+  const next = new Set(collapsedFiles.value)
+  if (next.has(filePath)) {
+    next.delete(filePath)
+  } else {
+    next.add(filePath)
+  }
+  collapsedFiles.value = next
 }
 
 async function expandFile(file: GitDiffFile) {
@@ -723,11 +809,24 @@ onMounted(async () => {
       compareBranch.value = found.name
     }
 
-    // Pre-fill from query params if present
+    // Restore saved review from localStorage
+    const saved = loadReviewFromStorage()
+    if (saved) {
+      reviewComments.value = saved.reviewComments ?? []
+      generalComment.value = saved.generalComment ?? ''
+      if (saved.baseBranch) baseBranch.value = saved.baseBranch
+      if (saved.compareBranch) compareBranch.value = saved.compareBranch
+    }
+
+    // Pre-fill from query params (override saved state)
     const q = route.query
     if (q.base) baseBranch.value = String(q.base)
     if (q.compare) compareBranch.value = String(q.compare)
-    if (q.base && q.compare) await loadDiff()
+
+    // Auto-load diff if both branches are set (from storage or query params)
+    if (baseBranch.value && compareBranch.value && baseBranch.value !== compareBranch.value) {
+      await loadDiff()
+    }
   }
 })
 
