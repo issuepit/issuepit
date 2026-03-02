@@ -25,6 +25,8 @@ public sealed class AspireFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Building Aspire AppHost...");
+
         // Disable resource logging so Aspire does not relay child-process stdout/stderr through
         // ILogger — the librdkafka C library can emit verbose connection-error lines to stderr
         // during Kafka container startup/teardown, which would otherwise flood the test output.
@@ -70,7 +72,27 @@ public sealed class AspireFixture : IAsyncLifetime
         });
 
         App = await appHost.BuildAsync();
+
+        Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Starting Aspire AppHost (postgres, kafka, redis, api, frontend)...");
+
+        // Print a heartbeat every 5 seconds while StartAsync() is running so the
+        // --blame-hang-timeout collector never fires during silent container startup.
+        using var startCts = new CancellationTokenSource();
+        var heartbeat = Task.Run(async () =>
+        {
+            while (!startCts.Token.IsCancellationRequested)
+            {
+                await Task.Delay(5000, startCts.Token).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+                if (!startCts.Token.IsCancellationRequested)
+                    Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Waiting for Aspire startup...");
+            }
+        });
+
         await App.StartAsync();
+        await startCts.CancelAsync();
+        await heartbeat;
+
+        Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Aspire AppHost started.");
 
         ApiClient = App.CreateHttpClient("api");
 
@@ -115,6 +137,7 @@ public sealed class AspireFixture : IAsyncLifetime
                 if (response.IsSuccessStatusCode) return true;
             }
             catch { }
+            Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Waiting for frontend to become ready...");
             await Task.Delay(TimeSpan.FromSeconds(2));
         }
         return false;
