@@ -28,6 +28,11 @@ RUN if ! command -v act > /dev/null 2>&1; then \
     fi && \
     act --version
 
+# Pre-configure act with the medium image so the interactive first-run wizard is
+# skipped when the container starts without a TTY (which would cause EOF / exit 1).
+RUN mkdir -p /root/.config/act && \
+    printf -- '-P ubuntu-latest=catthehacker/ubuntu:act-latest\n' > /root/.config/act/actrc
+
 LABEL org.opencontainers.image.title="issuepit-helper-act" \
       org.opencontainers.image.description="IssuePit helper image for CI/CD runs: helper-base + Docker CLI + act" \
       issuepit.act.version="${ACT_VERSION}"
