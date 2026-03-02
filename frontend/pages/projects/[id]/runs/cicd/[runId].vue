@@ -80,21 +80,33 @@
       <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
         <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800">
           <h2 class="text-sm font-medium text-white">Logs</h2>
-          <div class="flex gap-1">
-            <button v-for="s in streamTabs" :key="s.value"
-              :class="[
-                'px-2.5 py-1 text-xs font-medium rounded-md transition-colors',
-                activeStream === s.value ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'
-              ]"
-              @click="activeStream = s.value">
-              {{ s.label }}
+          <div class="flex items-center gap-2">
+            <div class="flex gap-1">
+              <button v-for="s in streamTabs" :key="s.value ?? 'all'"
+                :class="[
+                  'px-2.5 py-1 text-xs font-medium rounded-md transition-colors',
+                  activeStream === s.value ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'
+                ]"
+                @click="activeStream = s.value">
+                {{ s.label }}
+              </button>
+            </div>
+            <button
+              v-if="store.currentRunLogs.length"
+              class="px-2.5 py-1 text-xs font-medium rounded-md text-gray-500 hover:text-gray-300 transition-colors"
+              title="Copy full log to clipboard"
+              @click="copyLogsToClipboard">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
             </button>
           </div>
         </div>
         <div v-if="filteredLogs.length" class="bg-gray-950 p-4 font-mono text-xs overflow-auto max-h-[600px]">
           <div v-for="log in filteredLogs" :key="log.id" class="flex gap-3 leading-5">
             <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
-            <span :class="log.stream === 2 ? 'text-red-400' : 'text-gray-300'" class="whitespace-pre-wrap break-all">{{ log.line }}</span>
+            <span :class="log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'" class="whitespace-pre-wrap break-all">{{ log.line }}</span>
           </div>
         </div>
         <div v-else class="py-10 text-center text-sm text-gray-500">No logs available</div>
@@ -123,10 +135,10 @@ const retrying = ref(false)
 
 const streamTabs = [
   { label: 'All', value: null },
-  { label: 'Stdout', value: 0 },
-  { label: 'Stderr', value: 1 },
+  { label: 'Stdout', value: 'stdout' },
+  { label: 'Stderr', value: 'stderr' },
 ]
-const activeStream = ref<number | null>(null)
+const activeStream = ref<string | null>(null)
 
 const filteredLogs = computed(() =>
   activeStream.value === null
@@ -145,6 +157,23 @@ async function retryRun() {
     navigateTo(`/projects/${projectId}/runs`)
   } finally {
     retrying.value = false
+  }
+}
+
+async function copyLogsToClipboard() {
+  const text = store.currentRunLogs.map(l => `${formatLogTime(l.timestamp)} ${l.line}`).join('\n')
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    // Fallback: create a temporary textarea for environments where clipboard API is unavailable
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    document.body.removeChild(ta)
   }
 }
 
@@ -167,7 +196,7 @@ function duration(start: string, end?: string) {
   return `${Math.floor(m / 60)}h ${m % 60}m`
 }
 
-function statusClass(status: number) {
+function statusClass(status: CiCdRunStatus) {
   switch (status) {
     case CiCdRunStatus.Succeeded: return 'bg-green-900/30 text-green-400'
     case CiCdRunStatus.Running: return 'bg-blue-900/30 text-blue-400'
@@ -177,7 +206,7 @@ function statusClass(status: number) {
   }
 }
 
-function statusDot(status: number) {
+function statusDot(status: CiCdRunStatus) {
   switch (status) {
     case CiCdRunStatus.Succeeded: return 'bg-green-400'
     case CiCdRunStatus.Running: return 'bg-blue-400 animate-pulse'
