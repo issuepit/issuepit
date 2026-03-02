@@ -11,7 +11,7 @@ public sealed class KafkaHealthCheck : IHealthCheck, IDisposable
     {
         var config = new AdminClientConfig { BootstrapServers = bootstrapServers };
         config.Set("log_level", "0");
-        _adminClient = new AdminClientBuilder(config).Build();
+        _adminClient = new AdminClientBuilder(config).SetLogHandler((_, _) => { }).Build();
     }
 
     public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
