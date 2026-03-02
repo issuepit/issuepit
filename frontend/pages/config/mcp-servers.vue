@@ -261,19 +261,38 @@
         <!-- Linked Agents tab -->
         <div v-if="detailTab === 'Linked Agents'">
           <p class="text-sm text-gray-400 mb-4">Agents that have this MCP server configured.</p>
-          <div v-if="detailServer.linkedAgents?.length" class="space-y-2">
+          <div v-if="detailServer.linkedAgents?.length" class="space-y-2 mb-4">
             <div v-for="a in detailServer.linkedAgents" :key="a.agentId"
-              class="flex items-center gap-3 bg-gray-800 rounded-lg px-3 py-2">
-              <div class="w-7 h-7 bg-indigo-900/40 rounded-md flex items-center justify-center shrink-0">
-                <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2" />
-                </svg>
+              class="flex items-center justify-between bg-gray-800 rounded-lg px-3 py-2">
+              <div class="flex items-center gap-3">
+                <div class="w-7 h-7 bg-indigo-900/40 rounded-md flex items-center justify-center shrink-0">
+                  <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2" />
+                  </svg>
+                </div>
+                <NuxtLink :to="`/agents/${a.agentId}`" class="text-sm text-white hover:text-brand-400 transition-colors" @click="detailServer = null">{{ a.name }}</NuxtLink>
               </div>
-              <span class="text-sm text-white">{{ a.name }}</span>
+              <button class="text-xs text-red-400 hover:text-red-300" @click="unlinkAgent(a.agentId)">Unlink</button>
             </div>
           </div>
-          <div v-else class="text-sm text-gray-600">No agents linked. Link agents from the Agents page.</div>
+          <div v-else class="text-sm text-gray-600 mb-4">No agents linked.</div>
+          <div class="flex gap-2">
+            <select v-model="selectedAgentId"
+              class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-500">
+              <option value="" disabled>Select an agent…</option>
+              <option
+                v-for="agent in availableAgents"
+                :key="agent.id"
+                :value="agent.id"
+              >{{ agent.name }}</option>
+            </select>
+            <button :disabled="!selectedAgentId || savingAgent"
+              class="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white text-sm rounded-lg transition-colors whitespace-nowrap"
+              @click="linkAgent">
+              {{ savingAgent ? '…' : 'Link' }}
+            </button>
+          </div>
         </div>
 
         <!-- Linked Projects tab -->
@@ -282,7 +301,7 @@
           <div v-if="detailServer.linkedProjects?.length" class="space-y-2 mb-4">
             <div v-for="p in detailServer.linkedProjects" :key="p.projectId"
               class="flex items-center justify-between bg-gray-800 rounded-lg px-3 py-2">
-              <span class="text-sm text-white">{{ p.name }}</span>
+              <NuxtLink :to="`/projects/${p.projectId}/settings`" class="text-sm text-white hover:text-brand-400 transition-colors" @click="detailServer = null">{{ p.name }}</NuxtLink>
               <button class="text-xs text-red-400 hover:text-red-300" @click="unlinkProject(p.projectId)">Unlink</button>
             </div>
           </div>
@@ -594,6 +613,32 @@ async function linkProject() {
 async function unlinkProject(projectId: string) {
   if (!detailServer.value) return
   await store.unlinkProject(detailServer.value.id, projectId)
+}
+
+// -- Agent links --
+
+const selectedAgentId = ref('')
+const savingAgent = ref(false)
+
+const availableAgents = computed(() => {
+  const linked = detailServer.value?.linkedAgents?.map(a => a.agentId) ?? []
+  return agentsStore.agents.filter(a => !linked.includes(a.id))
+})
+
+async function linkAgent() {
+  if (!detailServer.value || !selectedAgentId.value) return
+  savingAgent.value = true
+  try {
+    await store.linkAgent(detailServer.value.id, selectedAgentId.value)
+    selectedAgentId.value = ''
+  } finally {
+    savingAgent.value = false
+  }
+}
+
+async function unlinkAgent(agentId: string) {
+  if (!detailServer.value) return
+  await store.unlinkAgent(detailServer.value.id, agentId)
 }
 </script>
 

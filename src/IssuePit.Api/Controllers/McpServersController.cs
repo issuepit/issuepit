@@ -178,6 +178,42 @@ public class McpServersController(IssuePitDbContext db, TenantContext ctx) : Con
         await db.SaveChangesAsync();
         return NoContent();
     }
+
+    // --- Agent links ---
+
+    [HttpPost("{id:guid}/agents/{agentId:guid}")]
+    public async Task<IActionResult> LinkAgent(Guid id, Guid agentId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var serverBelongsToTenant = await db.McpServers
+            .AnyAsync(m => m.Id == id && db.Organizations.Any(o => o.Id == m.OrgId && o.TenantId == ctx.CurrentTenant.Id));
+        if (!serverBelongsToTenant) return NotFound();
+        var agentBelongsToTenant = await db.Agents
+            .AnyAsync(a => a.Id == agentId && db.Organizations.Any(o => o.Id == a.OrgId && o.TenantId == ctx.CurrentTenant.Id));
+        if (!agentBelongsToTenant) return NotFound();
+        var alreadyLinked = await db.AgentMcpServers.AnyAsync(am => am.McpServerId == id && am.AgentId == agentId);
+        if (alreadyLinked) return Conflict();
+        var link = new AgentMcpServer { McpServerId = id, AgentId = agentId };
+        db.AgentMcpServers.Add(link);
+        await db.SaveChangesAsync();
+        return Created($"/api/mcp-servers/{id}/agents/{agentId}", link);
+    }
+
+    [HttpDelete("{id:guid}/agents/{agentId:guid}")]
+    public async Task<IActionResult> UnlinkAgent(Guid id, Guid agentId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var link = await db.AgentMcpServers
+            .Include(am => am.McpServer)
+            .FirstOrDefaultAsync(am => am.McpServerId == id && am.AgentId == agentId);
+        if (link is null) return NotFound();
+        var belongsToTenant = await db.Organizations
+            .AnyAsync(o => o.Id == link.McpServer.OrgId && o.TenantId == ctx.CurrentTenant.Id);
+        if (!belongsToTenant) return NotFound();
+        db.AgentMcpServers.Remove(link);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
 }
 
 public record McpSecretRequest(string Key, string Value, string? Scope = null, Guid? ScopeId = null);
