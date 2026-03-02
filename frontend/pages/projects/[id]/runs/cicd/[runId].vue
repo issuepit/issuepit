@@ -80,11 +80,22 @@
         </div>
       </div>
 
-      <!-- Logs -->
+      <!-- Logs / Details -->
       <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
         <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800">
-          <h2 class="text-sm font-medium text-white">Logs</h2>
-          <div class="flex items-center gap-2">
+          <div class="flex gap-1">
+            <button v-for="t in sectionTabs" :key="t.value"
+              :class="[
+                'px-2.5 py-1 text-xs font-medium rounded-md transition-colors',
+                activeSection === t.value ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'
+              ]"
+              @click="activeSection = t.value">
+              {{ t.label }}
+            </button>
+          </div>
+
+          <!-- Log stream filter (only in Logs tab) -->
+          <div v-if="activeSection === 'logs'" class="flex items-center gap-2">
             <div class="flex gap-1">
               <button v-for="s in streamTabs" :key="s.value ?? 'all'"
                 :class="[
@@ -107,13 +118,32 @@
             </button>
           </div>
         </div>
-        <div v-if="filteredLogs.length" class="bg-gray-950 p-4 font-mono text-xs overflow-auto max-h-[600px]">
-          <div v-for="log in filteredLogs" :key="log.id" class="flex gap-3 leading-5">
-            <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
-            <span :class="log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'" class="whitespace-pre-wrap break-all">{{ log.line }}</span>
+
+        <!-- Logs tab -->
+        <template v-if="activeSection === 'logs'">
+          <div v-if="filteredLogs.length" class="bg-gray-950 p-4 font-mono text-xs overflow-auto max-h-[600px]">
+            <div v-for="log in filteredLogs" :key="log.id" class="flex gap-3 leading-5">
+              <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
+              <span :class="log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'" class="whitespace-pre-wrap break-all">{{ log.line }}</span>
+            </div>
           </div>
-        </div>
-        <div v-else class="py-10 text-center text-sm text-gray-500">No logs available</div>
+          <div v-else class="py-10 text-center text-sm text-gray-500">No logs available</div>
+        </template>
+
+        <!-- Details tab -->
+        <template v-else>
+          <div v-if="debugMetadata.length" class="p-4 font-mono text-xs">
+            <table class="w-full">
+              <tbody>
+                <tr v-for="(entry, i) in debugMetadata" :key="i" class="border-b border-gray-800 last:border-0">
+                  <td class="py-2 pr-6 text-gray-500 whitespace-nowrap align-top w-40">{{ entry.key }}</td>
+                  <td class="py-2 text-gray-300 break-all">{{ entry.value }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div v-else class="py-10 text-center text-sm text-gray-500">No details available</div>
+        </template>
       </div>
     </template>
 
@@ -137,6 +167,12 @@ const store = useCiCdRunsStore()
 
 const retrying = ref(false)
 
+const sectionTabs = [
+  { label: 'Logs', value: 'logs' },
+  { label: 'Details', value: 'details' },
+]
+const activeSection = ref<'logs' | 'details'>('logs')
+
 const streamTabs = [
   { label: 'All', value: null },
   { label: 'Stdout', value: 'stdout' },
@@ -149,6 +185,16 @@ const filteredLogs = computed(() =>
     ? store.currentRunLogs
     : store.currentRunLogs.filter(l => l.stream === activeStream.value)
 )
+
+const debugMetadata = computed(() => {
+  const entries: Array<{ key: string; value: string }> = []
+  for (const log of store.currentRunLogs) {
+    // Match lines like: [DEBUG] Key name   : value (space-colon-space separator)
+    const m = log.line.match(/^\[DEBUG\]\s+([^:]+?)\s+:\s(.+)$/)
+    if (m) entries.push({ key: m[1].trim(), value: m[2].trim() })
+  }
+  return entries
+})
 
 onMounted(async () => {
   await store.fetchRun(runId)

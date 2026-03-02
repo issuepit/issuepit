@@ -67,12 +67,22 @@ public class DockerCiCdRuntime(
         }
 
         logger.LogInformation("Pulling Docker image {Image} for CI/CD run {RunId}", image, run.Id);
-        await dockerClient.Images.CreateImageAsync(
-            new ImagesCreateParameters { FromImage = image },
-            null,
-            // Progress handler is required by the API but pull status is captured via container logs
-            new Progress<JSONMessage>(),
-            cancellationToken);
+        try
+        {
+            await dockerClient.Images.CreateImageAsync(
+                new ImagesCreateParameters { FromImage = image },
+                null,
+                // Progress handler is required by the API but pull status is captured via container logs
+                new Progress<JSONMessage>(),
+                cancellationToken);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException)
+        {
+            throw new InvalidOperationException(
+                $"Lost connection to the Docker daemon while pulling image '{image}'. " +
+                "This can happen on Windows when Docker Desktop resets named-pipe connections. " +
+                "Try running the CI/CD run again.", ex);
+        }
 
         logger.LogInformation("Creating Docker container from image {Image} for CI/CD run {RunId}", image, run.Id);
 
@@ -102,8 +112,20 @@ public class DockerCiCdRuntime(
         logger.LogInformation("Created Docker container {ContainerId} for CI/CD run {RunId}",
             container.ID, run.Id);
 
-        await dockerClient.Containers.StartContainerAsync(
-            container.ID, new ContainerStartParameters(), cancellationToken);
+        try
+        {
+            await dockerClient.Containers.StartContainerAsync(
+                container.ID, new ContainerStartParameters(), cancellationToken);
+        }
+        catch (DockerApiException ex) when (
+            ex.StatusCode == System.Net.HttpStatusCode.BadRequest &&
+            ex.ResponseBody?.Contains("executable file not found") == true)
+        {
+            throw new InvalidOperationException(
+                $"The '{actBin}' binary was not found inside the Docker container. " +
+                $"Ensure the image '{image}' has 'act' installed, or override CiCd__ActBinaryPath " +
+                "with the correct path to the act binary inside the container.", ex);
+        }
 
         try
         {
