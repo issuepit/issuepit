@@ -123,6 +123,27 @@ Do not modify unrelated files.
 
 ---
 
+## How the Execution Client Works
+
+When an agent mode is assigned to an issue, `IssuePit.ExecutionClient` handles the lifecycle:
+
+1. Consumes the `issue-assigned` Kafka topic.
+2. Spawns a work agent (e.g. `opencode`, `codex`, GitHub Copilot CLI) inside a Docker-in-Docker container with the agent mode configuration.
+3. Copies agent authentication logins into the workspace container.
+4. Streams results back to the platform.
+5. Supports provisioning Hetzner cloud VMs for resource-intensive (vibe-coding) agents.
+
+---
+
+## How the CI/CD Client Works
+
+`IssuePit.CiCdClient` integrates with local CI pipelines:
+
+1. Consumes the `cicd-trigger` Kafka topic.
+2. Runs GitHub Actions workflows locally via [nektos/act](https://github.com/nektos/act).
+
+---
+
 ## Next Steps
 
 - [API Keys and MCP Servers →](configuration)

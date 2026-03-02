@@ -53,3 +53,6 @@ nav_order: 1
 | [Agents](agents) | Configure agent modes (system prompt, MCP tools, auth keys) |
 | [Configuration](configuration) | API keys, MCP servers, and other settings |
 | [Releases](releases) | Release notes, changelog, and upgrade instructions |
+| [Architecture](architecture) | Project layout, tech stack, and backend services |
+| [Known Issues](known-issues) | Common setup problems and fixes |
+| [FAQ](faq) | Frequently asked questions |
