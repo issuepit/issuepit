@@ -57,6 +57,16 @@ public class IssueKafkaNotificationTests(AspireFixture fixture)
             .Build();
         consumer.Subscribe("issue-assigned");
 
+        // Wait for the consumer to receive its partition assignment before producing
+        // any message. Without this, a message produced while the assignment is still
+        // pending (rebalance in-flight) will have an offset earlier than the consumer's
+        // "latest" start position and will be silently skipped.
+        using var assignWait = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        while (consumer.Assignment.Count == 0 && !assignWait.Token.IsCancellationRequested)
+        {
+            consumer.Consume(TimeSpan.FromMilliseconds(200));
+        }
+
         // Create the issue
         const string issueTitle = "E2E Kafka Notification Issue";
         var issueResp = await client.PostAsJsonAsync("/api/issues",
