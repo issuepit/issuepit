@@ -199,17 +199,17 @@
                 </tr>
                 <!-- Lines -->
                 <template v-for="(line, lineIdx) in hunk.lines" :key="lineIdx">
-                  <tr :class="lineRowClass(line.lineType)"
+                  <tr :class="[lineRowClass(line.lineType), isLineInSelection(file.newPath, hunkIdx, lineIdx) ? 'bg-brand-950/30' : '']"
                     class="group hover:brightness-125 transition-all">
                     <!-- Old line number -->
                     <td class="select-none text-right text-gray-600 pr-2 pl-2 w-10 border-r border-gray-800/40 align-top cursor-pointer"
-                      :class="{ 'hover:text-brand-400': line.lineType !== 'added' }"
+                      :class="[{ 'hover:text-brand-400': line.lineType !== 'added' }, isLineInSelection(file.newPath, hunkIdx, lineIdx) ? 'ring-1 ring-brand-500/40' : '']"
                       @click="onLineClick(file, hunk, line, 'old', $event)">
                       {{ line.oldLineNumber ?? '' }}
                     </td>
                     <!-- New line number -->
                     <td class="select-none text-right text-gray-600 pr-2 pl-2 w-10 border-r border-gray-800/40 align-top cursor-pointer"
-                      :class="{ 'hover:text-brand-400': line.lineType !== 'removed' }"
+                      :class="[{ 'hover:text-brand-400': line.lineType !== 'removed' }, isLineInSelection(file.newPath, hunkIdx, lineIdx) ? 'ring-1 ring-brand-500/40' : '']"
                       @click="onLineClick(file, hunk, line, 'new', $event)">
                       {{ line.newLineNumber ?? '' }}
                     </td>
@@ -219,15 +219,19 @@
                   </tr>
                   <!-- Inline comment inputs (scoped inside lines loop) -->
                   <template v-for="(comment, ci) in inlineComments[file.newPath] ?? []" :key="`ic-${ci}`">
-                    <tr v-if="comment.hunkIdx === hunkIdx && comment.lineIdx === lineIdx">
+                    <tr v-if="comment.hunkIdx === hunkIdx && comment.endLineIdx === lineIdx">
                       <td colspan="3" class="bg-gray-900 border-t border-b border-brand-800/40 p-3">
+                        <p v-if="commentLineLabel(hunk, comment)" class="text-xs text-gray-500 mb-1.5">
+                          Commenting on
+                          <span class="text-brand-300">{{ commentLineLabel(hunk, comment) }}</span>
+                        </p>
                         <div class="flex items-start gap-2">
                           <textarea v-model="comment.text" rows="2"
                             placeholder="Add a comment… (Ctrl+Enter to submit)"
                             class="flex-1 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white px-3 py-2 focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none"
-                            @keydown.ctrl.enter="submitInlineComment(file, hunk, line, comment, hunkIdx, lineIdx)"></textarea>
+                            @keydown.ctrl.enter="submitInlineComment(file, hunk, comment, hunkIdx)"></textarea>
                           <div class="flex flex-col gap-1.5">
-                            <button @click="submitInlineComment(file, hunk, line, comment, hunkIdx, lineIdx)"
+                            <button @click="submitInlineComment(file, hunk, comment, hunkIdx)"
                               :disabled="!comment.text.trim()"
                               class="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
                               Add
@@ -254,6 +258,12 @@
         <div v-else-if="!collapsedFiles.has(file.newPath) && diffMode === 'split'"
           class="border border-t-0 border-gray-800 rounded-b-xl overflow-x-auto">
           <table class="w-full border-collapse text-xs font-mono table-fixed">
+            <colgroup>
+              <col class="w-10">
+              <col class="w-[calc(50%-2.5rem)]">
+              <col class="w-10">
+              <col class="w-[calc(50%-2.5rem)]">
+            </colgroup>
             <tbody>
               <template v-for="(hunk, hunkIdx) in getHunks(file)" :key="hunkIdx">
                 <!-- Hunk header -->
@@ -267,35 +277,39 @@
                 <template v-for="(pair, pairIdx) in splitLines(hunk.lines)" :key="pairIdx">
                   <tr class="group">
                     <!-- Left (old) -->
-                    <td class="select-none text-right text-gray-600 pr-2 pl-2 w-10 border-r border-gray-800/40 align-top cursor-pointer"
-                      :class="[pair.left ? lineRowClass(pair.left.lineType) : '', { 'hover:text-brand-400': !!pair.left }]"
+                    <td class="select-none text-right text-gray-600 pr-2 pl-2 border-r border-gray-800/40 align-top cursor-pointer"
+                      :class="[pair.left ? lineRowClass(pair.left.lineType) : '', { 'hover:text-brand-400': !!pair.left }, isLineInSelection(file.newPath, hunkIdx, pair.leftIdx) ? 'ring-1 ring-brand-500/40' : '']"
                       @click="pair.left && onLineClick(file, hunk, pair.left, 'old', $event)">
                       {{ pair.left?.oldLineNumber ?? '' }}
                     </td>
-                    <td class="pl-2 pr-2 whitespace-pre-wrap break-all leading-relaxed w-1/2 border-r border-gray-800/40"
-                      :class="pair.left ? lineRowClass(pair.left.lineType) : ''"
+                    <td class="pl-2 pr-2 whitespace-pre-wrap break-all leading-relaxed border-r border-gray-800/40"
+                      :class="[pair.left ? lineRowClass(pair.left.lineType) : '', isLineInSelection(file.newPath, hunkIdx, pair.leftIdx) ? 'bg-brand-950/30' : '']"
                       v-html="pair.left ? highlightLine(file.newPath, pair.left) : ''"></td>
                     <!-- Right (new) -->
-                    <td class="select-none text-right text-gray-600 pr-2 pl-2 w-10 border-r border-gray-800/40 align-top cursor-pointer"
-                      :class="[pair.right ? lineRowClass(pair.right.lineType) : '', { 'hover:text-brand-400': !!pair.right }]"
+                    <td class="select-none text-right text-gray-600 pr-2 pl-2 border-r border-gray-800/40 align-top cursor-pointer"
+                      :class="[pair.right ? lineRowClass(pair.right.lineType) : '', { 'hover:text-brand-400': !!pair.right }, isLineInSelection(file.newPath, hunkIdx, pair.rightIdx) ? 'ring-1 ring-brand-500/40' : '']"
                       @click="pair.right && onLineClick(file, hunk, pair.right, 'new', $event)">
                       {{ pair.right?.newLineNumber ?? '' }}
                     </td>
-                    <td class="pl-2 pr-2 whitespace-pre-wrap break-all leading-relaxed w-1/2"
-                      :class="pair.right ? lineRowClass(pair.right.lineType) : ''"
+                    <td class="pl-2 pr-2 whitespace-pre-wrap break-all leading-relaxed"
+                      :class="[pair.right ? lineRowClass(pair.right.lineType) : '', isLineInSelection(file.newPath, hunkIdx, pair.rightIdx) ? 'bg-brand-950/30' : '']"
                       v-html="pair.right ? highlightLine(file.newPath, pair.right) : ''"></td>
                   </tr>
                   <!-- Inline comment inputs (split) -->
                   <template v-for="(comment, ci) in inlineComments[file.newPath] ?? []" :key="`ic-split-${ci}`">
                     <tr v-if="comment.hunkIdx === hunkIdx && isCommentInPair(hunk, comment, pair)">
                       <td colspan="4" class="bg-gray-900 border-t border-b border-brand-800/40 p-3">
+                        <p v-if="commentLineLabel(hunk, comment)" class="text-xs text-gray-500 mb-1.5">
+                          Commenting on
+                          <span class="text-brand-300">{{ commentLineLabel(hunk, comment) }}</span>
+                        </p>
                         <div class="flex items-start gap-2">
                           <textarea v-model="comment.text" rows="2"
                             placeholder="Add a comment… (Ctrl+Enter to submit)"
                             class="flex-1 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white px-3 py-2 focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none"
-                            @keydown.ctrl.enter="submitInlineComment(file, hunk, hunk.lines[comment.lineIdx], comment, hunkIdx, comment.lineIdx)"></textarea>
+                            @keydown.ctrl.enter="submitInlineComment(file, hunk, comment, hunkIdx)"></textarea>
                           <div class="flex flex-col gap-1.5">
-                            <button @click="submitInlineComment(file, hunk, hunk.lines[comment.lineIdx], comment, hunkIdx, comment.lineIdx)"
+                            <button @click="submitInlineComment(file, hunk, comment, hunkIdx)"
                               :disabled="!comment.text.trim()"
                               class="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
                               Add
@@ -497,42 +511,95 @@ function addGeneralComment() {
 // ── Inline comment state ────────────────────────────────────
 interface InlineCommentState {
   hunkIdx: number
-  lineIdx: number
+  lineIdx: number    // start line index
+  endLineIdx: number // end line index (inclusive; same as lineIdx for single-line)
   text: string
 }
 
 const inlineComments = ref<Record<string, InlineCommentState[]>>({})
+// Per-file anchor for shift+click range selection: tracks the first clicked line
+const lineSelectionAnchor = ref<Record<string, { hunkIdx: number; lineIdx: number }>>({})
 
 function onLineClick(file: GitDiffFile, hunk: GitDiffHunk, line: GitDiffLine, side: 'old' | 'new', event: MouseEvent) {
-  if (event.shiftKey) return // reserved for future multi-line selection
   const fp = file.newPath
   if (!inlineComments.value[fp]) inlineComments.value[fp] = []
   const hunkIdx = getHunks(file).indexOf(hunk)
   const lineIdx = hunk.lines.indexOf(line)
-  // Toggle: remove if already present at same position
-  const existing = inlineComments.value[fp].findIndex(c => c.hunkIdx === hunkIdx && c.lineIdx === lineIdx)
-  if (existing !== -1) {
-    inlineComments.value[fp].splice(existing, 1)
+
+  const anchor = lineSelectionAnchor.value[fp]
+  if (event.shiftKey && anchor && anchor.hunkIdx === hunkIdx) {
+    // Extend range from anchor to current line
+    const startIdx = Math.min(anchor.lineIdx, lineIdx)
+    const endIdx = Math.max(anchor.lineIdx, lineIdx)
+    // Remove any existing single-line comment at anchor position
+    const anchorCommentIdx = inlineComments.value[fp].findIndex(
+      c => c.hunkIdx === hunkIdx && c.lineIdx === anchor.lineIdx && c.endLineIdx === anchor.lineIdx
+    )
+    if (anchorCommentIdx !== -1) inlineComments.value[fp].splice(anchorCommentIdx, 1)
+    // Add or toggle the range comment
+    const existingRange = inlineComments.value[fp].findIndex(
+      c => c.hunkIdx === hunkIdx && c.lineIdx === startIdx && c.endLineIdx === endIdx
+    )
+    if (existingRange !== -1) {
+      inlineComments.value[fp].splice(existingRange, 1)
+      delete lineSelectionAnchor.value[fp]
+    } else {
+      inlineComments.value[fp].push({ hunkIdx, lineIdx: startIdx, endLineIdx: endIdx, text: '' })
+    }
   } else {
-    inlineComments.value[fp].push({ hunkIdx, lineIdx, text: '' })
+    // Start a new single-line selection
+    lineSelectionAnchor.value[fp] = { hunkIdx, lineIdx }
+    const existing = inlineComments.value[fp].findIndex(
+      c => c.hunkIdx === hunkIdx && c.lineIdx === lineIdx && c.endLineIdx === lineIdx
+    )
+    if (existing !== -1) {
+      inlineComments.value[fp].splice(existing, 1)
+      delete lineSelectionAnchor.value[fp]
+    } else {
+      inlineComments.value[fp].push({ hunkIdx, lineIdx, endLineIdx: lineIdx, text: '' })
+    }
   }
+}
+
+function isLineInSelection(fp: string, hunkIdx: number, lineIdx: number): boolean {
+  if (lineIdx < 0) return false
+  return (inlineComments.value[fp] ?? []).some(
+    c => c.hunkIdx === hunkIdx && lineIdx >= c.lineIdx && lineIdx <= c.endLineIdx
+  )
+}
+
+function commentLineLabel(hunk: GitDiffHunk, comment: InlineCommentState): string | null {
+  const startLine = hunk.lines[comment.lineIdx]
+  const endLine = hunk.lines[comment.endLineIdx]
+  if (!startLine || !endLine) return 'unknown'
+  const startNum = startLine.newLineNumber ?? startLine.oldLineNumber
+  const endNum = endLine.newLineNumber ?? endLine.oldLineNumber
+  if (!startNum || !endNum) return 'unknown'
+  if (comment.lineIdx === comment.endLineIdx) return `line ${startNum}`
+  return `lines ${startNum}–${endNum}`
 }
 
 function removeInlineComment(filePath: string, idx: number) {
   inlineComments.value[filePath]?.splice(idx, 1)
 }
 
-function submitInlineComment(file: GitDiffFile, _hunk: GitDiffHunk, line: GitDiffLine, comment: InlineCommentState, _hunkIdx: number, _lineIdx: number) {
+function submitInlineComment(file: GitDiffFile, hunk: GitDiffHunk, comment: InlineCommentState, _hunkIdx: number) {
   if (!comment.text.trim()) return
-  const lineNum = line.newLineNumber ?? line.oldLineNumber ?? 0
-  const snippet = line.content
+  const startLine = hunk.lines[comment.lineIdx]
+  const endLine = hunk.lines[comment.endLineIdx]
+  const startNum = startLine ? (startLine.newLineNumber ?? startLine.oldLineNumber ?? 0) : 0
+  const endNum = endLine ? (endLine.newLineNumber ?? endLine.oldLineNumber ?? 0) : 0
+  const snippet = hunk.lines.slice(comment.lineIdx, comment.endLineIdx + 1).map(l => l.content).join('\n')
   reviewComments.value.push({
     filePath: file.newPath,
-    lines: { start: lineNum, end: lineNum },
+    lines: { start: startNum, end: endNum },
     comment: comment.text.trim(),
     snippet
   })
-  removeInlineComment(file.newPath, (inlineComments.value[file.newPath] ?? []).indexOf(comment))
+  const fp = file.newPath
+  const idx = (inlineComments.value[fp] ?? []).indexOf(comment)
+  removeInlineComment(fp, idx)
+  delete lineSelectionAnchor.value[fp]
 }
 
 // ── Finish review ────────────────────────────────────────────
@@ -715,7 +782,9 @@ function highlightLine(filePath: string, line: GitDiffLine): string {
 // ── Split diff helper ─────────────────────────────────────────
 interface SplitPair {
   left: GitDiffLine | null
+  leftIdx: number
   right: GitDiffLine | null
+  rightIdx: number
 }
 
 function splitLines(lines: GitDiffLine[]): SplitPair[] {
@@ -724,15 +793,15 @@ function splitLines(lines: GitDiffLine[]): SplitPair[] {
   while (i < lines.length) {
     const line = lines[i]
     if (line.lineType === 'context') {
-      pairs.push({ left: line, right: line })
+      pairs.push({ left: line, leftIdx: i, right: line, rightIdx: i })
       i++
     } else if (line.lineType === 'removed') {
       // Look ahead for a matching added line
       const nextAdded = lines[i + 1]?.lineType === 'added' ? lines[i + 1] : null
-      pairs.push({ left: line, right: nextAdded })
+      pairs.push({ left: line, leftIdx: i, right: nextAdded, rightIdx: nextAdded ? i + 1 : -1 })
       i += nextAdded ? 2 : 1
     } else if (line.lineType === 'added') {
-      pairs.push({ left: null, right: line })
+      pairs.push({ left: null, leftIdx: -1, right: line, rightIdx: i })
       i++
     } else {
       i++
@@ -742,8 +811,8 @@ function splitLines(lines: GitDiffLine[]): SplitPair[] {
 }
 
 function isCommentInPair(hunk: GitDiffHunk, comment: InlineCommentState, pair: SplitPair): boolean {
-  const line = hunk.lines[comment.lineIdx]
-  return line !== undefined && (line === pair.left || line === pair.right)
+  const endLine = hunk.lines[comment.endLineIdx]
+  return endLine !== undefined && (endLine === pair.left || endLine === pair.right)
 }
 
 // ── UI helpers ────────────────────────────────────────────────
