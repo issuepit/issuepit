@@ -220,7 +220,7 @@ async function submitModal() {
   if (!form.name) return
   const payload = {
     ...form,
-    allowedTools: toolsInput.value.split(',').map(t => t.trim()).filter(Boolean),
+    allowedTools: JSON.stringify(toolsInput.value.split(',').map(t => t.trim()).filter(Boolean)),
     runnerType: form.runnerType,
     model: form.model || undefined,
   }

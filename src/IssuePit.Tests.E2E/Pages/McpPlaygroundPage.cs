@@ -26,19 +26,21 @@ public class McpPlaygroundPage(IPage page)
     /// </summary>
     public async Task<int> GetLoadedToolCountAsync(int timeoutMs = 15_000)
     {
-        // Wait for either a tool list item, an empty-state message, or an error message.
-        await page.WaitForSelectorAsync(
-            "ul li, text=No tools available, text=Failed to connect",
-            new PageWaitForSelectorOptions { Timeout = timeoutMs });
-        return await page.Locator("ul li").CountAsync();
+        // Wait for one of three terminal states: tools loaded, empty, or error.
+        await page.Locator("[data-testid='mcp-tools-list'] li")
+            .Or(page.Locator("[data-testid='mcp-tools-empty']"))
+            .Or(page.Locator("[data-testid='mcp-tools-error']"))
+            .First.WaitForAsync(new LocatorWaitForOptions { Timeout = timeoutMs });
+        return await page.Locator("[data-testid='mcp-tools-list'] li").CountAsync();
     }
 
     /// <summary>Clicks the Reload Tools button and waits for the loading state to clear.</summary>
     public async Task ReloadToolsAsync()
     {
         await page.ClickAsync("button:has-text('Reload Tools')");
-        await page.WaitForSelectorAsync(
-            "ul li, text=No tools available, text=Failed to connect",
-            new PageWaitForSelectorOptions { Timeout = 15_000 });
+        await page.Locator("[data-testid='mcp-tools-list'] li")
+            .Or(page.Locator("[data-testid='mcp-tools-empty']"))
+            .Or(page.Locator("[data-testid='mcp-tools-error']"))
+            .First.WaitForAsync(new LocatorWaitForOptions { Timeout = 15_000 });
     }
 }

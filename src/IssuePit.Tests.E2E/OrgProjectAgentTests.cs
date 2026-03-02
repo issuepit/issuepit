@@ -131,7 +131,7 @@ public class OrgProjectAgentTests : IAsyncLifetime
                 orgId,
                 systemPrompt = "You are a test agent.",
                 dockerImage = "ghcr.io/test/agent:latest",
-                allowedTools = new[] { "read_file" },
+                allowedTools = "[\"read_file\"]",
                 isActive = false,
             });
 
@@ -171,12 +171,12 @@ public class OrgProjectAgentTests : IAsyncLifetime
         var orgId = Guid.Parse(org.GetProperty("id").GetString()!);
 
         var createResp = await client.PostAsJsonAsync("/api/agents",
-            new { name = "Original Agent", orgId, systemPrompt = "Original prompt", dockerImage = "img:v1", allowedTools = new[] { "tool1" }, isActive = false });
+            new { name = "Original Agent", orgId, systemPrompt = "Original prompt", dockerImage = "img:v1", allowedTools = "[\"tool1\"]", isActive = false });
         var created = await createResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
         var agentId = created.GetProperty("id").GetString()!;
 
         var updateResp = await client.PutAsJsonAsync($"/api/agents/{agentId}",
-            new { name = "Updated Agent", systemPrompt = "Updated prompt", dockerImage = "img:v2", allowedTools = new[] { "tool1", "tool2" }, isActive = true });
+            new { name = "Updated Agent", systemPrompt = "Updated prompt", dockerImage = "img:v2", allowedTools = "[\"tool1\",\"tool2\"]", isActive = true });
 
         Assert.Equal(HttpStatusCode.OK, updateResp.StatusCode);
         var updated = await updateResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
