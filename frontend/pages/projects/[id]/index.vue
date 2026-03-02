@@ -100,7 +100,7 @@
       </div>
 
       <!-- Quick Navigation -->
-      <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
         <NuxtLink :to="`/projects/${id}/code`"
           class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 flex items-center gap-3 transition-colors group">
           <div class="w-8 h-8 bg-orange-900/30 rounded-lg flex items-center justify-center shrink-0">
@@ -153,6 +153,17 @@
             </svg>
           </div>
           <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Review</span>
+        </NuxtLink>
+
+        <NuxtLink :to="`/projects/${id}/badges`"
+          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 flex items-center gap-3 transition-colors group">
+          <div class="w-8 h-8 bg-pink-900/30 rounded-lg flex items-center justify-center shrink-0">
+            <svg class="w-4 h-4 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+            </svg>
+          </div>
+          <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Badges</span>
         </NuxtLink>
       </div>
 
