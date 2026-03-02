@@ -8,4 +8,21 @@ public record TriggerPayload(
     string? Workflow,
     Guid? AgentSessionId,
     string? WorkspacePath,
-    string? EventName);
+    string? EventName,
+    /// <summary>
+    /// When true the Docker container is not removed after a failed run.
+    /// Useful for debugging: inspect the container to find where act or other tooling is installed.
+    /// </summary>
+    bool KeepContainerOnFailure = false,
+    /// <summary>When true the Docker socket is NOT mounted into the container (disables Docker-in-Docker).</summary>
+    bool NoDind = false,
+    /// <summary>When true no host volumes are mounted into the container (workspace and docker socket are omitted).</summary>
+    bool NoVolumeMounts = false,
+    /// <summary>Override the Docker image used for this run (empty = use configured default).</summary>
+    string? CustomImage = null,
+    /// <summary>Override the container entrypoint (empty = use image default).</summary>
+    string? CustomEntrypoint = null,
+    /// <summary>Additional CLI arguments appended to the act command (e.g. "--verbose --reuse").</summary>
+    string? CustomArgs = null,
+    /// <summary>When true the retry proceeds even if another run for the same project is already in progress.</summary>
+    bool ForceRetry = false);
