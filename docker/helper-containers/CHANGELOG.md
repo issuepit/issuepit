@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.2](https://github.com/issuepit/issuepit/compare/helper-containers-v1.1.1...helper-containers-v1.1.2) (2026-03-02)
+
+
+### Bug Fixes
+
+* update Playwright Docker image tag from non-existent v1.50.1 to v1.51.0 ([#258](https://github.com/issuepit/issuepit/issues/258)) ([98bc5fe](https://github.com/issuepit/issuepit/commit/98bc5fe92810ce5b714cd9ff707c16a73a79ef0f))
+
 ## [1.1.1](https://github.com/issuepit/issuepit/compare/helper-containers-v1.1.0...helper-containers-v1.1.1) (2026-03-02)
 
 
