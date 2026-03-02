@@ -30,6 +30,7 @@ public class OpenSandboxAgentRuntime(
         Issue issue,
         IReadOnlyDictionary<string, string> credentials,
         RuntimeConfiguration? runtimeConfig,
+        GitRepository? gitRepository,
         CancellationToken cancellationToken)
     {
         if (runtimeConfig is null)
@@ -42,7 +43,7 @@ public class OpenSandboxAgentRuntime(
         if (string.IsNullOrWhiteSpace(config.Endpoint))
             throw new InvalidOperationException("OpenSandbox RuntimeConfiguration missing 'Endpoint'.");
 
-        var sandboxId = await CreateSandboxAsync(session, agent, issue, credentials, config, cancellationToken);
+        var sandboxId = await CreateSandboxAsync(session, agent, issue, credentials, gitRepository, config, cancellationToken);
         return sandboxId;
     }
 
@@ -51,6 +52,7 @@ public class OpenSandboxAgentRuntime(
         Agent agent,
         Issue issue,
         IReadOnlyDictionary<string, string> credentials,
+        GitRepository? gitRepository,
         OpenSandboxConfig config,
         CancellationToken cancellationToken)
     {
@@ -59,7 +61,7 @@ public class OpenSandboxAgentRuntime(
         if (!string.IsNullOrWhiteSpace(config.ApiKey))
             http.DefaultRequestHeaders.Add("X-Api-Key", config.ApiKey);
 
-        var env = BuildEnvironment(session, agent, issue, credentials);
+        var env = BuildEnvironment(session, agent, issue, credentials, gitRepository);
 
         var requestBody = new
         {
@@ -95,7 +97,8 @@ public class OpenSandboxAgentRuntime(
         AgentSession session,
         Agent agent,
         Issue issue,
-        IReadOnlyDictionary<string, string> credentials)
+        IReadOnlyDictionary<string, string> credentials,
+        GitRepository? gitRepository)
     {
         var env = new Dictionary<string, string>
         {
@@ -109,6 +112,16 @@ public class OpenSandboxAgentRuntime(
 
         if (issue.GitBranch is not null)
             env["ISSUEPIT_GIT_BRANCH"] = issue.GitBranch;
+
+        if (gitRepository is not null)
+        {
+            env["ISSUEPIT_GIT_REMOTE_URL"] = gitRepository.RemoteUrl;
+            env["ISSUEPIT_GIT_DEFAULT_BRANCH"] = gitRepository.DefaultBranch;
+            if (!string.IsNullOrEmpty(gitRepository.AuthUsername))
+                env["ISSUEPIT_GIT_AUTH_USERNAME"] = gitRepository.AuthUsername;
+            if (!string.IsNullOrEmpty(gitRepository.AuthToken))
+                env["ISSUEPIT_GIT_AUTH_TOKEN"] = gitRepository.AuthToken;
+        }
 
         // Inject agent logins / API key credentials
         foreach (var (key, value) in credentials)

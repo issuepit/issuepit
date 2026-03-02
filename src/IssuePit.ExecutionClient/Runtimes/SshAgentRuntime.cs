@@ -28,6 +28,7 @@ public class SshAgentRuntime(ILogger<SshAgentRuntime> logger) : IAgentRuntime
         Issue issue,
         IReadOnlyDictionary<string, string> credentials,
         RuntimeConfiguration? runtimeConfig,
+        GitRepository? gitRepository,
         CancellationToken cancellationToken)
     {
         if (runtimeConfig is null)
@@ -44,7 +45,7 @@ public class SshAgentRuntime(ILogger<SshAgentRuntime> logger) : IAgentRuntime
         if (string.IsNullOrWhiteSpace(config.Command))
             throw new InvalidOperationException("SSH RuntimeConfiguration missing 'Command'.");
 
-        return await RunNativeOverSshAsync(session, agent, issue, credentials, config, cancellationToken);
+        return await RunNativeOverSshAsync(session, agent, issue, credentials, gitRepository, config, cancellationToken);
     }
 
     private async Task<string> RunNativeOverSshAsync(
@@ -52,6 +53,7 @@ public class SshAgentRuntime(ILogger<SshAgentRuntime> logger) : IAgentRuntime
         Agent agent,
         Issue issue,
         IReadOnlyDictionary<string, string> credentials,
+        GitRepository? gitRepository,
         SshNativeConfig config,
         CancellationToken cancellationToken)
     {
@@ -65,7 +67,7 @@ public class SshAgentRuntime(ILogger<SshAgentRuntime> logger) : IAgentRuntime
         try
         {
             // Run the agent command with env vars exported inline and nohup so it survives the SSH session
-            var remoteCmd = BuildNativeCommand(session, agent, issue, credentials, config.Command);
+            var remoteCmd = BuildNativeCommand(session, agent, issue, credentials, gitRepository, config.Command);
             logger.LogDebug("Running on {Host}: {Cmd}", config.Host, remoteCmd);
 
             using var cmd = client.CreateCommand(remoteCmd);
@@ -115,6 +117,7 @@ public class SshAgentRuntime(ILogger<SshAgentRuntime> logger) : IAgentRuntime
         Agent agent,
         Issue issue,
         IReadOnlyDictionary<string, string> credentials,
+        GitRepository? gitRepository,
         string command)
     {
         var envPrefix = new StringBuilder();
@@ -131,6 +134,16 @@ public class SshAgentRuntime(ILogger<SshAgentRuntime> logger) : IAgentRuntime
 
         if (issue.GitBranch is not null)
             AppendEnv("ISSUEPIT_GIT_BRANCH", issue.GitBranch);
+
+        if (gitRepository is not null)
+        {
+            AppendEnv("ISSUEPIT_GIT_REMOTE_URL", gitRepository.RemoteUrl);
+            AppendEnv("ISSUEPIT_GIT_DEFAULT_BRANCH", gitRepository.DefaultBranch);
+            if (!string.IsNullOrEmpty(gitRepository.AuthUsername))
+                AppendEnv("ISSUEPIT_GIT_AUTH_USERNAME", gitRepository.AuthUsername);
+            if (!string.IsNullOrEmpty(gitRepository.AuthToken))
+                AppendEnv("ISSUEPIT_GIT_AUTH_TOKEN", gitRepository.AuthToken);
+        }
 
         foreach (var (key, value) in credentials)
             AppendEnv(key, value);
