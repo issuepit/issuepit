@@ -193,6 +193,12 @@ export enum IssueLinkType {
   Causes = 'causes',
   CausedBy = 'caused_by',
   Solves = 'solves',
+  Duplicates = 'duplicates',
+  DuplicatedBy = 'duplicated_by',
+  Requires = 'requires',
+  RequiredBy = 'required_by',
+  Implements = 'implements',
+  ImplementedBy = 'implemented_by',
 }
 
 export const IssueLinkTypeLabels: Record<IssueLinkType, string> = {
@@ -202,6 +208,12 @@ export const IssueLinkTypeLabels: Record<IssueLinkType, string> = {
   [IssueLinkType.Causes]: 'causes',
   [IssueLinkType.CausedBy]: 'caused by',
   [IssueLinkType.Solves]: 'solves',
+  [IssueLinkType.Duplicates]: 'duplicates',
+  [IssueLinkType.DuplicatedBy]: 'duplicated by',
+  [IssueLinkType.Requires]: 'requires',
+  [IssueLinkType.RequiredBy]: 'required by',
+  [IssueLinkType.Implements]: 'implements',
+  [IssueLinkType.ImplementedBy]: 'implemented by',
 }
 
 export interface IssueLink {
