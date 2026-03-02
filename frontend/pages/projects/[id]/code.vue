@@ -221,6 +221,7 @@
               <table class="w-full border-collapse text-sm font-mono leading-relaxed">
                 <tbody>
                   <tr v-for="(line, idx) in fileLines" :key="idx"
+                    :id="`L${idx + 1}`"
                     :class="isLineInSelection(idx + 1) ? 'bg-brand-900/30' : ''">
                     <td class="select-none text-right text-gray-600 pr-3 pl-3 w-12 border-r border-gray-800/60 align-top cursor-pointer hover:text-brand-400 transition-colors"
                       @click="onLineNumberClick(idx + 1, $event)">
@@ -412,6 +413,13 @@ onMounted(async () => {
   repoChecked.value = true
   if (store.repo) {
     await initRepo()
+    // Scroll to line anchor if present in URL hash
+    if (import.meta.client && window.location.hash) {
+      nextTick(() => {
+        const el = document.getElementById(window.location.hash.slice(1))
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
+    }
   }
 })
 
@@ -607,6 +615,10 @@ function onLineNumberClick(lineNum: number, event: MouseEvent) {
     selectionEnd.value = lineNum
     showCommentPanel.value = false
     commentText.value = ''
+  }
+  // Update URL hash for permanent link (single line or start of range)
+  if (import.meta.client) {
+    window.location.hash = `L${lineNum}`
   }
 }
 

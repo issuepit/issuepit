@@ -199,7 +199,8 @@
                 </tr>
                 <!-- Lines -->
                 <template v-for="(line, lineIdx) in hunk.lines" :key="lineIdx">
-                  <tr :class="[lineRowClass(line.lineType), isLineInSelection(file.newPath, hunkIdx, lineIdx) ? 'bg-brand-950/30' : '']"
+                  <tr :id="lineAnchorId(file.newPath, line)"
+                    :class="[lineRowClass(line.lineType), isLineInSelection(file.newPath, hunkIdx, lineIdx) ? 'bg-brand-950/30' : '']"
                     class="group hover:brightness-125 transition-all">
                     <!-- Old line number -->
                     <td class="select-none text-right text-gray-600 pr-2 pl-2 w-10 border-r border-gray-800/40 align-top cursor-pointer"
@@ -275,30 +276,33 @@
                 </tr>
                 <!-- Split lines (paired) -->
                 <template v-for="(pair, pairIdx) in splitLines(hunk.lines)" :key="pairIdx">
-                  <tr class="group">
+                  <tr :id="pair.right?.newLineNumber ? lineAnchorId(file.newPath, pair.right) : pair.left ? lineAnchorId(file.newPath, pair.left, 'old') : undefined"
+                    class="group">
                     <!-- Left (old) -->
                     <td class="select-none text-right text-gray-600 pr-2 pl-2 border-r border-gray-800/40 align-top cursor-pointer"
-                      :class="[pair.left ? lineRowClass(pair.left.lineType) : '', { 'hover:text-brand-400': !!pair.left }, isLineInSelection(file.newPath, hunkIdx, pair.leftIdx) ? 'ring-1 ring-brand-500/40' : '']"
+                      :class="[pair.left ? lineRowClass(pair.left.lineType) : '', { 'hover:text-brand-400': !!pair.left }, isLineInSelection(file.newPath, hunkIdx, pair.leftIdx, 'old') ? 'ring-1 ring-brand-500/40' : '']"
                       @click="pair.left && onLineClick(file, hunk, pair.left, 'old', $event)">
                       {{ pair.left?.oldLineNumber ?? '' }}
                     </td>
                     <td class="pl-2 pr-2 whitespace-pre-wrap break-all leading-relaxed border-r border-gray-800/40"
-                      :class="[pair.left ? lineRowClass(pair.left.lineType) : '', isLineInSelection(file.newPath, hunkIdx, pair.leftIdx) ? 'bg-brand-950/30' : '']"
+                      :class="[pair.left ? lineRowClass(pair.left.lineType) : '', isLineInSelection(file.newPath, hunkIdx, pair.leftIdx, 'old') ? 'bg-brand-950/30' : '']"
                       v-html="pair.left ? highlightLine(file.newPath, pair.left) : ''"></td>
                     <!-- Right (new) -->
                     <td class="select-none text-right text-gray-600 pr-2 pl-2 border-r border-gray-800/40 align-top cursor-pointer"
-                      :class="[pair.right ? lineRowClass(pair.right.lineType) : '', { 'hover:text-brand-400': !!pair.right }, isLineInSelection(file.newPath, hunkIdx, pair.rightIdx) ? 'ring-1 ring-brand-500/40' : '']"
+                      :class="[pair.right ? lineRowClass(pair.right.lineType) : '', { 'hover:text-brand-400': !!pair.right }, isLineInSelection(file.newPath, hunkIdx, pair.rightIdx, 'new') ? 'ring-1 ring-brand-500/40' : '']"
                       @click="pair.right && onLineClick(file, hunk, pair.right, 'new', $event)">
                       {{ pair.right?.newLineNumber ?? '' }}
                     </td>
                     <td class="pl-2 pr-2 whitespace-pre-wrap break-all leading-relaxed"
-                      :class="[pair.right ? lineRowClass(pair.right.lineType) : '', isLineInSelection(file.newPath, hunkIdx, pair.rightIdx) ? 'bg-brand-950/30' : '']"
+                      :class="[pair.right ? lineRowClass(pair.right.lineType) : '', isLineInSelection(file.newPath, hunkIdx, pair.rightIdx, 'new') ? 'bg-brand-950/30' : '']"
                       v-html="pair.right ? highlightLine(file.newPath, pair.right) : ''"></td>
                   </tr>
-                  <!-- Inline comment inputs (split) -->
+                  <!-- Inline comment inputs (split) — shown under the clicked side only -->
                   <template v-for="(comment, ci) in inlineComments[file.newPath] ?? []" :key="`ic-split-${ci}`">
                     <tr v-if="comment.hunkIdx === hunkIdx && isCommentInPair(hunk, comment, pair)">
-                      <td colspan="4" class="bg-gray-900 border-t border-b border-brand-800/40 p-3">
+                      <!-- Left empty spacer when comment is on the right side -->
+                      <td v-if="comment.side === 'new'" colspan="2" class="bg-gray-900/30 border-b border-brand-800/20"></td>
+                      <td colspan="2" class="bg-gray-900 border-t border-b border-brand-800/40 p-3">
                         <p v-if="commentLineLabel(hunk, comment)" class="text-xs text-gray-500 mb-1.5">
                           Commenting on
                           <span class="text-brand-300">{{ commentLineLabel(hunk, comment) }}</span>
@@ -321,6 +325,8 @@
                           </div>
                         </div>
                       </td>
+                      <!-- Right empty spacer when comment is on the left side -->
+                      <td v-if="comment.side === 'old'" colspan="2" class="bg-gray-900/30 border-b border-brand-800/20"></td>
                     </tr>
                   </template>
                 </template>
@@ -348,13 +354,27 @@
       <!-- General comment on whole PR -->
       <div v-if="store.diff.length" class="mt-4 bg-gray-900 border border-gray-800 rounded-xl p-4">
         <h3 class="text-sm font-medium text-gray-300 mb-2">General comment on this diff</h3>
+        <!-- Pending general comments summary -->
+        <div v-if="generalReviewComments.length" class="mb-3 space-y-1.5">
+          <p class="text-xs text-gray-500">{{ generalReviewComments.length }} general comment{{ generalReviewComments.length !== 1 ? 's' : '' }} added to review:</p>
+          <div v-for="(gc, gi) in generalReviewComments" :key="gi"
+            class="flex items-start gap-2 bg-gray-800 rounded-lg px-3 py-2 text-xs text-gray-300">
+            <span class="flex-1 line-clamp-2">{{ gc.comment }}</span>
+            <button @click="removeGeneralComment(gi)"
+              class="text-gray-600 hover:text-red-400 transition-colors shrink-0">×</button>
+          </div>
+        </div>
         <textarea v-model="generalComment" rows="3"
           placeholder="Add an overall comment about this diff…"
           class="w-full bg-gray-800 border border-gray-700 rounded-lg text-sm text-white px-3 py-2 focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none mb-2"></textarea>
-        <div class="flex gap-2">
+        <div class="flex gap-2 flex-wrap">
           <button @click="addGeneralComment" :disabled="!generalComment.trim()"
-            class="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+            class="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
             Add to Review
+          </button>
+          <button @click="quickSubmitGeneralComment" :disabled="!generalComment.trim() && reviewComments.length === 0"
+            class="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+            {{ generalComment.trim() ? 'Submit Now' : 'Finish Review' }}
           </button>
         </div>
       </div>
@@ -448,7 +468,8 @@ const showFinishModal = ref(false)
 const reviewTitle = ref('')
 const targetIssueId = ref('')
 
-const reviewedFilesCount = computed(() => new Set(reviewComments.value.map(c => c.filePath)).size)
+const reviewedFilesCount = computed(() => new Set(reviewComments.value.filter(c => c.filePath !== '(general)').map(c => c.filePath)).size)
+const generalReviewComments = computed(() => reviewComments.value.filter(c => c.filePath === '(general)'))
 
 // ── localStorage persistence ────────────────────────────────
 function saveReviewToStorage() {
@@ -480,6 +501,15 @@ function clearReviewStorage() {
 
 watch([reviewComments, generalComment, baseBranch, compareBranch], saveReviewToStorage, { deep: true })
 
+function removeGeneralComment(generalIdx: number) {
+  const generals = reviewComments.value.filter(c => c.filePath === '(general)')
+  const target = generals[generalIdx]
+  if (target) {
+    const globalIdx = reviewComments.value.indexOf(target)
+    if (globalIdx !== -1) reviewComments.value.splice(globalIdx, 1)
+  }
+}
+
 function fileReviewComments(filePath: string) {
   return reviewComments.value.filter(c => c.filePath === filePath)
 }
@@ -508,11 +538,17 @@ function addGeneralComment() {
   generalComment.value = ''
 }
 
+function quickSubmitGeneralComment() {
+  if (generalComment.value.trim()) addGeneralComment()
+  showFinishModal.value = true
+}
+
 // ── Inline comment state ────────────────────────────────────
 interface InlineCommentState {
   hunkIdx: number
   lineIdx: number    // start line index
   endLineIdx: number // end line index (inclusive; same as lineIdx for single-line)
+  side: 'old' | 'new' // which side was clicked (for split view layout)
   text: string
 }
 
@@ -526,6 +562,12 @@ function onLineClick(file: GitDiffFile, hunk: GitDiffHunk, line: GitDiffLine, si
   const hunkIdx = getHunks(file).indexOf(hunk)
   const lineIdx = hunk.lines.indexOf(line)
 
+  // Update URL hash for permanent link
+  if (import.meta.client) {
+    const lineNum = side === 'new' ? (line.newLineNumber ?? line.oldLineNumber) : (line.oldLineNumber ?? line.newLineNumber)
+    if (lineNum) window.location.hash = `${fileId(fp)}-L${lineNum}`
+  }
+
   const anchor = lineSelectionAnchor.value[fp]
   if (event.shiftKey && anchor && anchor.hunkIdx === hunkIdx) {
     // Extend range from anchor to current line
@@ -533,38 +575,39 @@ function onLineClick(file: GitDiffFile, hunk: GitDiffHunk, line: GitDiffLine, si
     const endIdx = Math.max(anchor.lineIdx, lineIdx)
     // Remove any existing single-line comment at anchor position
     const anchorCommentIdx = inlineComments.value[fp].findIndex(
-      c => c.hunkIdx === hunkIdx && c.lineIdx === anchor.lineIdx && c.endLineIdx === anchor.lineIdx
+      c => c.hunkIdx === hunkIdx && c.lineIdx === anchor.lineIdx && c.endLineIdx === anchor.lineIdx && c.side === side
     )
     if (anchorCommentIdx !== -1) inlineComments.value[fp].splice(anchorCommentIdx, 1)
     // Add or toggle the range comment
     const existingRange = inlineComments.value[fp].findIndex(
-      c => c.hunkIdx === hunkIdx && c.lineIdx === startIdx && c.endLineIdx === endIdx
+      c => c.hunkIdx === hunkIdx && c.lineIdx === startIdx && c.endLineIdx === endIdx && c.side === side
     )
     if (existingRange !== -1) {
       inlineComments.value[fp].splice(existingRange, 1)
       delete lineSelectionAnchor.value[fp]
     } else {
-      inlineComments.value[fp].push({ hunkIdx, lineIdx: startIdx, endLineIdx: endIdx, text: '' })
+      inlineComments.value[fp].push({ hunkIdx, lineIdx: startIdx, endLineIdx: endIdx, side, text: '' })
     }
   } else {
     // Start a new single-line selection
     lineSelectionAnchor.value[fp] = { hunkIdx, lineIdx }
     const existing = inlineComments.value[fp].findIndex(
-      c => c.hunkIdx === hunkIdx && c.lineIdx === lineIdx && c.endLineIdx === lineIdx
+      c => c.hunkIdx === hunkIdx && c.lineIdx === lineIdx && c.endLineIdx === lineIdx && c.side === side
     )
     if (existing !== -1) {
       inlineComments.value[fp].splice(existing, 1)
       delete lineSelectionAnchor.value[fp]
     } else {
-      inlineComments.value[fp].push({ hunkIdx, lineIdx, endLineIdx: lineIdx, text: '' })
+      inlineComments.value[fp].push({ hunkIdx, lineIdx, endLineIdx: lineIdx, side, text: '' })
     }
   }
 }
 
-function isLineInSelection(fp: string, hunkIdx: number, lineIdx: number): boolean {
+function isLineInSelection(fp: string, hunkIdx: number, lineIdx: number, side?: 'old' | 'new'): boolean {
   if (lineIdx < 0) return false
   return (inlineComments.value[fp] ?? []).some(
     c => c.hunkIdx === hunkIdx && lineIdx >= c.lineIdx && lineIdx <= c.endLineIdx
+      && (side === undefined || c.side === side)
   )
 }
 
@@ -607,7 +650,10 @@ async function finishReview() {
   if (reviewComments.value.length === 0) return
   savingReview.value = true
   try {
-    const bodyLines: string[] = []
+    const diffRef = `\`${baseBranch.value}\` → \`${compareBranch.value}\``
+    const bodyLines: string[] = [
+      `> **Diff:** ${diffRef}\n`
+    ]
     for (const c of reviewComments.value) {
       if (c.filePath === '(general)') {
         bodyLines.push(c.comment)
@@ -616,7 +662,7 @@ async function finishReview() {
           ? `line ${c.lines.start}`
           : `lines ${c.lines.start}–${c.lines.end}`
         const ext = c.filePath.split('.').pop() ?? ''
-        bodyLines.push(`### \`${c.filePath}\` (${lineRange})\n\`\`\`${ext}\n${c.snippet}\n\`\`\`\n\n${c.comment}`)
+        bodyLines.push(`### \`${c.filePath}\` (${lineRange}) — ${compareBranch.value}\n\`\`\`${ext}\n${c.snippet}\n\`\`\`\n\n${c.comment}`)
       }
     }
     const body = bodyLines.join('\n\n---\n\n')
@@ -812,7 +858,9 @@ function splitLines(lines: GitDiffLine[]): SplitPair[] {
 
 function isCommentInPair(hunk: GitDiffHunk, comment: InlineCommentState, pair: SplitPair): boolean {
   const endLine = hunk.lines[comment.endLineIdx]
-  return endLine !== undefined && (endLine === pair.left || endLine === pair.right)
+  if (endLine === undefined) return false
+  if (comment.side === 'old') return endLine === pair.left
+  return endLine === pair.right
 }
 
 // ── UI helpers ────────────────────────────────────────────────
@@ -850,6 +898,13 @@ function displayPath(file: GitDiffFile) {
 
 function fileId(path: string) {
   return path.replace(/[^a-zA-Z0-9]/g, '-')
+}
+
+function lineAnchorId(filePath: string, line: { oldLineNumber: number | null; newLineNumber: number | null }, preferSide?: 'old' | 'new'): string | undefined {
+  const num = preferSide === 'old'
+    ? (line.oldLineNumber ?? line.newLineNumber)
+    : (line.newLineNumber ?? line.oldLineNumber)
+  return num ? `${fileId(filePath)}-L${num}` : undefined
 }
 
 function scrollToFile(path: string) {
@@ -895,6 +950,13 @@ onMounted(async () => {
     // Auto-load diff if both branches are set (from storage or query params)
     if (baseBranch.value && compareBranch.value && baseBranch.value !== compareBranch.value) {
       await loadDiff()
+      // Scroll to line anchor if present in URL hash
+      if (import.meta.client && window.location.hash) {
+        nextTick(() => {
+          const el = document.getElementById(window.location.hash.slice(1))
+          el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        })
+      }
     }
   }
 })
