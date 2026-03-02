@@ -2,10 +2,10 @@
 # Used as base for the act and opencode helper containers.
 #
 # Build args (override at build time):
-#   PLAYWRIGHT_VERSION   — Playwright .NET image tag (default: v1.50.1)
+#   PLAYWRIGHT_VERSION   — Playwright .NET image tag (default: v1.51.0)
 #   NODE_MAJOR           — Node.js major version to install (default: 24)
 
-ARG PLAYWRIGHT_VERSION=v1.50.1
+ARG PLAYWRIGHT_VERSION=v1.51.0
 
 FROM mcr.microsoft.com/playwright/dotnet:${PLAYWRIGHT_VERSION}-noble
 

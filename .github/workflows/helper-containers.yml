@@ -19,7 +19,7 @@ env:
   # .NET major version bundled in the Playwright image (update when changing PLAYWRIGHT_VERSION)
   DOTNET_MAJOR: "10"
   NODE_MAJOR: "24"
-  PLAYWRIGHT_VERSION: "v1.50.1"
+  PLAYWRIGHT_VERSION: "v1.51.0"
   ACT_VERSION: "0.2.74"
   OPENCODE_VERSION: "latest"
 
