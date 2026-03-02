@@ -17,8 +17,11 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<Agent> Agents => Set<Agent>();
     public DbSet<McpServer> McpServers => Set<McpServer>();
     public DbSet<AgentMcpServer> AgentMcpServers => Set<AgentMcpServer>();
+    public DbSet<AgentProject> AgentProjects => Set<AgentProject>();
+    public DbSet<AgentOrg> AgentOrgs => Set<AgentOrg>();
     public DbSet<McpServerSecret> McpServerSecrets => Set<McpServerSecret>();
     public DbSet<McpServerProject> McpServerProjects => Set<McpServerProject>();
+    public DbSet<McpServerProjectAgent> McpServerProjectAgents => Set<McpServerProjectAgent>();
     public DbSet<KanbanBoard> KanbanBoards => Set<KanbanBoard>();
     public DbSet<KanbanColumn> KanbanColumns => Set<KanbanColumn>();
     public DbSet<KanbanTransition> KanbanTransitions => Set<KanbanTransition>();
@@ -55,6 +58,50 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
             .HasOne(x => x.McpServer)
             .WithMany(m => m.AgentMcpServers)
             .HasForeignKey(x => x.McpServerId);
+
+        modelBuilder.Entity<AgentProject>()
+            .HasKey(x => new { x.AgentId, x.ProjectId });
+
+        modelBuilder.Entity<AgentProject>()
+            .HasOne(x => x.Agent)
+            .WithMany(a => a.AgentProjects)
+            .HasForeignKey(x => x.AgentId);
+
+        modelBuilder.Entity<AgentProject>()
+            .HasOne(x => x.Project)
+            .WithMany()
+            .HasForeignKey(x => x.ProjectId);
+
+        modelBuilder.Entity<AgentOrg>()
+            .HasKey(x => new { x.AgentId, x.OrgId });
+
+        modelBuilder.Entity<AgentOrg>()
+            .HasOne(x => x.Agent)
+            .WithMany(a => a.AgentOrgs)
+            .HasForeignKey(x => x.AgentId);
+
+        modelBuilder.Entity<AgentOrg>()
+            .HasOne(x => x.Organization)
+            .WithMany()
+            .HasForeignKey(x => x.OrgId);
+
+        modelBuilder.Entity<McpServerProjectAgent>()
+            .HasKey(x => new { x.McpServerId, x.ProjectId, x.AgentId });
+
+        modelBuilder.Entity<McpServerProjectAgent>()
+            .HasOne(x => x.McpServer)
+            .WithMany()
+            .HasForeignKey(x => x.McpServerId);
+
+        modelBuilder.Entity<McpServerProjectAgent>()
+            .HasOne(x => x.Project)
+            .WithMany()
+            .HasForeignKey(x => x.ProjectId);
+
+        modelBuilder.Entity<McpServerProjectAgent>()
+            .HasOne(x => x.Agent)
+            .WithMany()
+            .HasForeignKey(x => x.AgentId);
 
         modelBuilder.Entity<McpServerProject>()
             .HasKey(x => new { x.McpServerId, x.ProjectId });

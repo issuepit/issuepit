@@ -273,6 +273,31 @@ export interface Agent {
   updatedAt: string
 }
 
+export interface AgentProject {
+  agentId: string
+  name: string
+  isDisabled: boolean
+  source: 'project' | 'org'
+}
+
+export interface AgentOrg {
+  agentId: string
+  name: string
+  isActive: boolean
+}
+
+export interface ProjectMcpServer {
+  mcpServerId: string
+  name: string
+  description?: string
+  url: string
+  configuration: string
+  allowedTools: string
+  orgId: string
+  createdAt: string
+  enabledAgents: Array<{ agentId: string; name: string }>
+}
+
 export interface KanbanTransition {
   id: string
   boardId: string
