@@ -3,6 +3,7 @@ using Aspire.Hosting;
 using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using System.Linq;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 
@@ -93,7 +94,22 @@ public sealed class AspireFixture : IAsyncLifetime
 
                     if (!lastSeen.TryGetValue(name, out var prev) || prev.State != state || prev.Health != health)
                     {
-                        Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] [{name}] -> {state}; {health}");
+                        string details = string.Empty;
+                        if (health == HealthStatus.Unhealthy)
+                        {
+                            try
+                            {
+                                var reports = evt.Snapshot.HealthReports;
+                                if (reports.Length > 0)
+                                {
+                                    var failing = reports.Select(r => $"{r.Name}={r.Status}");
+                                    details = " -> FailingChecks: " + string.Join(", ", failing);
+                                }
+                            }
+                            catch { /* best-effort; don't crash logging */ }
+                        }
+
+                        Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] [{name}] -> {state}; {health}{details}");
                         lastSeen[name] = (state, health);
                     }
                 }
