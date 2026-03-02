@@ -52,6 +52,10 @@
             <p class="text-xs text-gray-500 mb-1">External Run ID</p>
             <p class="text-sm text-gray-300 font-mono text-xs">{{ store.currentRun.externalRunId }}</p>
           </div>
+          <div v-if="store.currentRun.workspacePath">
+            <p class="text-xs text-gray-500 mb-1">Workspace</p>
+            <p class="text-xs text-gray-400 font-mono truncate" :title="store.currentRun.workspacePath">{{ store.currentRun.workspacePath }}</p>
+          </div>
           <div>
             <p class="text-xs text-gray-500 mb-1">Started</p>
             <p class="text-sm text-gray-400">{{ formatDate(store.currentRun.startedAt) }}</p>

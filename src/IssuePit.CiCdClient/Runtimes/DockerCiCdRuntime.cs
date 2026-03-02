@@ -45,6 +45,27 @@ public class DockerCiCdRuntime(
         var actArgs = NativeCiCdRuntime.BuildActArgumentsList(trigger);
         var cmd = new[] { actBin }.Concat(actArgs).ToList();
 
+        // Emit verbose diagnostics as the first log lines so they appear in the run's log output.
+        await onLogLine($"[DEBUG] Runner machine : {Environment.MachineName}", LogStream.Stdout);
+        await onLogLine($"[DEBUG] Runtime        : Docker", LogStream.Stdout);
+        await onLogLine($"[DEBUG] Docker image   : {image}", LogStream.Stdout);
+        await onLogLine($"[DEBUG] Command        : {string.Join(' ', cmd)}", LogStream.Stdout);
+        await onLogLine($"[DEBUG] Mount          : {workspacePath}:/workspace", LogStream.Stdout);
+        await onLogLine($"[DEBUG] Mount          : /var/run/docker.sock:/var/run/docker.sock", LogStream.Stdout);
+        await onLogLine($"[DEBUG] Working dir    : /workspace", LogStream.Stdout);
+
+        // Verify Docker daemon is reachable before attempting heavier operations.
+        try
+        {
+            await dockerClient.System.PingAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                "Cannot connect to the Docker daemon. Ensure Docker is running and the socket is accessible " +
+                $"(inner: {ex.Message})", ex);
+        }
+
         logger.LogInformation("Pulling Docker image {Image} for CI/CD run {RunId}", image, run.Id);
         await dockerClient.Images.CreateImageAsync(
             new ImagesCreateParameters { FromImage = image },

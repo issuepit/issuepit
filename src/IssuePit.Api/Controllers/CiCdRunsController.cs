@@ -39,6 +39,7 @@ public class CiCdRunsController(IssuePitDbContext db, TenantContext tenant, IPro
                 r.EndedAt,
                 r.ExternalSource,
                 r.ExternalRunId,
+                r.WorkspacePath,
             })
             .Take(100)
             .ToListAsync();
@@ -66,6 +67,7 @@ public class CiCdRunsController(IssuePitDbContext db, TenantContext tenant, IPro
                 r.EndedAt,
                 r.ExternalSource,
                 r.ExternalRunId,
+                r.WorkspacePath,
             })
             .FirstOrDefaultAsync();
 
