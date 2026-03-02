@@ -640,11 +640,13 @@ interface ReviewComment {
   lines: { start: number; end: number }
   comment: string
   snippet: string
+  sha?: string
 }
 
 const reviewComments = ref<ReviewComment[]>([])
 const savingReview = ref(false)
 const reviewedFilesCount = computed(() => new Set(reviewComments.value.map(c => c.filePath)).size)
+const currentBranchSha = computed(() => localBranches.value.find(b => b.name === selectedBranch.value)?.sha ?? '')
 
 function addReviewComment() {
   if (!commentText.value.trim() || !selectedLines.value || !store.blob) return
@@ -654,7 +656,8 @@ function addReviewComment() {
     filePath: store.blob.path,
     lines: { ...selectedLines.value },
     comment: commentText.value.trim(),
-    snippet
+    snippet,
+    sha: currentBranchSha.value || undefined
   })
   clearSelection()
 }
@@ -667,24 +670,38 @@ async function finishReview() {
   if (reviewComments.value.length === 0) return
   savingReview.value = true
   try {
-    const body = reviewComments.value.map(c => {
-      const lineRange = c.lines.start === c.lines.end
-        ? `line ${c.lines.start}`
-        : `lines ${c.lines.start}–${c.lines.end}`
-      const ext = c.filePath.split('.').pop() ?? ''
-      return `### \`${c.filePath}\` (${lineRange})\n\`\`\`${ext}\n${c.snippet}\n\`\`\`\n\n${c.comment}`
-    }).join('\n\n---\n\n')
     const now = new Date()
     const title = `Code Review – ${selectedBranch.value} – ${now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+    const mainBody = `> **Branch:** \`${selectedBranch.value}\`${currentBranchSha.value ? ` @ \`${currentBranchSha.value.slice(0, 7)}\`` : ''}\n`
     const newIssue = await issuesStore.createIssue(id, {
       title,
-      body,
+      body: mainBody,
       type: IssueType.Issue,
       priority: IssuePriority.Medium,
       status: IssueStatus.Backlog
     })
     if (newIssue && authStore.user) {
       await issuesStore.addAssignee(newIssue.id, { userId: authStore.user.id })
+    }
+    if (newIssue) {
+      // Create sub-issues for each code comment
+      for (const c of reviewComments.value) {
+        const lineRange = c.lines.start === c.lines.end
+          ? `L${c.lines.start}`
+          : `L${c.lines.start}–${c.lines.end}`
+        const sha = c.sha || currentBranchSha.value
+        const ext = c.filePath.split('.').pop() ?? ''
+        const meta = JSON.stringify({ file: c.filePath, lines: c.lines, sha: sha || null }, null, 2)
+        const subBody = `\`\`\`json\n${meta}\n\`\`\`\n\n### \`${c.filePath}\` (${lineRange})${sha ? ` @ \`${sha.slice(0, 7)}\`` : ''}\n\`\`\`${ext}\n${c.snippet}\n\`\`\`\n\n${c.comment}`
+        await issuesStore.createIssue(id, {
+          title: `Review: \`${c.filePath}\` (${lineRange})`,
+          body: subBody,
+          type: IssueType.Issue,
+          priority: IssuePriority.Medium,
+          status: IssueStatus.Backlog,
+          parentIssueId: newIssue.id
+        })
+      }
     }
     reviewComments.value = []
     if (newIssue) {

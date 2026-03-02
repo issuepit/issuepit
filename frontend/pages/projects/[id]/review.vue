@@ -485,6 +485,7 @@ interface ReviewComment {
   lines: { start: number; end: number }
   comment: string
   snippet: string
+  sha?: string
 }
 
 const reviewComments = ref<ReviewComment[]>([])
@@ -666,7 +667,8 @@ function submitInlineComment(file: GitDiffFile, hunk: GitDiffHunk, comment: Inli
     filePath: file.newPath,
     lines: { start: startNum, end: endNum },
     comment: comment.text.trim(),
-    snippet
+    snippet,
+    sha: compareSha.value || undefined
   })
   // Mark as submitted in-place so it stays visible at its diff position
   comment.submitted = true
@@ -683,26 +685,48 @@ async function finishReview() {
     const versionRef = compareSha.value ? compareSha.value.slice(0, 7) : compareBranch.value
     const branchSuffix = !MAIN_BRANCHES.includes(compareBranch.value) ? ` (${compareBranch.value})` : ''
     const diffRef = `\`${baseBranch.value}\` → \`${versionRef}\`${branchSuffix}`
-    const bodyLines: string[] = [
+
+    // Build main body with overview and general comments only
+    const mainBodyLines: string[] = [
       `> **Diff:** ${diffRef}\n`
     ]
     for (const c of reviewComments.value) {
       if (c.filePath === '(general)') {
-        bodyLines.push(c.comment)
-      } else {
-        const lineRange = c.lines.start === c.lines.end
-          ? `line ${c.lines.start}`
-          : `lines ${c.lines.start}–${c.lines.end}`
-        const ext = c.filePath.split('.').pop() ?? ''
-        bodyLines.push(`### \`${c.filePath}\` (${lineRange}) @ \`${versionRef}\`\n\`\`\`${ext}\n${c.snippet}\n\`\`\`\n\n${c.comment}`)
+        mainBodyLines.push(c.comment)
       }
     }
-    const body = bodyLines.join('\n\n---\n\n')
+    const mainBody = mainBodyLines.join('\n\n---\n\n')
+
+    // Build sub-issue body for a code comment
+    function buildCodeCommentBody(c: ReviewComment): string {
+      const lineRange = c.lines.start === c.lines.end
+        ? `line ${c.lines.start}`
+        : `lines ${c.lines.start}–${c.lines.end}`
+      const sha = c.sha || compareSha.value
+      const ext = c.filePath.split('.').pop() ?? ''
+      const meta = JSON.stringify({ file: c.filePath, lines: c.lines, sha: sha || null }, null, 2)
+      return `\`\`\`json\n${meta}\n\`\`\`\n\n### \`${c.filePath}\` (${lineRange})${sha ? ` @ \`${sha.slice(0, 7)}\`` : ''}\n\`\`\`${ext}\n${c.snippet}\n\`\`\`\n\n${c.comment}`
+    }
+
+    const codeComments = reviewComments.value.filter(c => c.filePath !== '(general)')
 
     if (targetIssueId.value.trim()) {
-      // Add as a comment to an existing issue
+      // Add as a comment to an existing issue, then sub-issues for each code comment
       const existingIssueId = targetIssueId.value.trim()
-      await issuesStore.addComment(existingIssueId, body)
+      await issuesStore.addComment(existingIssueId, mainBody)
+      for (const c of codeComments) {
+        const lineRange = c.lines.start === c.lines.end
+          ? `L${c.lines.start}`
+          : `L${c.lines.start}–${c.lines.end}`
+        await issuesStore.createIssue(id, {
+          title: `Review: \`${c.filePath}\` (${lineRange})`,
+          body: buildCodeCommentBody(c),
+          type: IssueType.Issue,
+          priority: IssuePriority.Medium,
+          status: IssueStatus.InReview,
+          parentIssueId: existingIssueId
+        })
+      }
       clearReviewStorage()
       reviewComments.value = []
       showFinishModal.value = false
@@ -714,13 +738,29 @@ async function finishReview() {
       const title = reviewTitle.value.trim() || `Code Review: ${compareBranch.value} → ${baseBranch.value} (${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })})`
       const newIssue = await issuesStore.createIssue(id, {
         title,
-        body,
+        body: mainBody,
         type: IssueType.Issue,
         priority: IssuePriority.Medium,
         status: IssueStatus.InReview
       })
       if (newIssue && authStore.user) {
         await issuesStore.addAssignee(newIssue.id, { userId: authStore.user.id })
+      }
+      if (newIssue) {
+        // Create sub-issues for each code comment
+        for (const c of codeComments) {
+          const lineRange = c.lines.start === c.lines.end
+            ? `L${c.lines.start}`
+            : `L${c.lines.start}–${c.lines.end}`
+          await issuesStore.createIssue(id, {
+            title: `Review: \`${c.filePath}\` (${lineRange})`,
+            body: buildCodeCommentBody(c),
+            type: IssueType.Issue,
+            priority: IssuePriority.Medium,
+            status: IssueStatus.InReview,
+            parentIssueId: newIssue.id
+          })
+        }
       }
       clearReviewStorage()
       reviewComments.value = []
