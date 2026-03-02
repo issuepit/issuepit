@@ -185,14 +185,15 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
     }
 
     [HttpGet("diff")]
-    public async Task<IActionResult> GetDiff(Guid projectId, [FromQuery] string base_, [FromQuery] string compare, [FromQuery] int context = 3)
+    public async Task<IActionResult> GetDiff(Guid projectId, [FromQuery] string base_, [FromQuery] string compare, [FromQuery] int context = 3, [FromQuery] bool noLimit = false)
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
         var repo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == projectId);
         if (repo is null) return NotFound();
         try
         {
-            var diff = await Task.Run(() => gitService.GetDiff(repo, base_, compare, context));
+            var maxLines = noLimit ? 50_000 : 2000;
+            var diff = await Task.Run(() => gitService.GetDiff(repo, base_, compare, context, maxLines));
             return Ok(diff);
         }
         catch (Exception ex)

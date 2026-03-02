@@ -113,11 +113,12 @@ export const useGitStore = defineStore('git', () => {
     }
   }
 
-  async function fetchDiff(projectId: string, baseBranch: string, compareBranch: string, context = 3) {
+  async function fetchDiff(projectId: string, baseBranch: string, compareBranch: string, context = 3, noLimit = false) {
     loading.value = true
     error.value = null
     try {
       const params = new URLSearchParams({ base_: baseBranch, compare: compareBranch, context: String(context) })
+      if (noLimit) params.set('noLimit', 'true')
       diff.value = await api.get<GitDiffFile[]>(`/api/projects/${projectId}/git/diff?${params}`)
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Failed to fetch diff'
