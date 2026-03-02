@@ -26,7 +26,8 @@ public class DockerCiCdRuntime(
 {
     // Docker image used to run act. Uses the IssuePit helper-act image which includes
     // .NET SDK, Node.js, Playwright, Docker CLI, and act pre-installed.
-    private const string DefaultImage = "ghcr.io/issuepit/issuepit-helper-act:latest";
+    //private const string DefaultImage = "ghcr.io/issuepit/issuepit-helper-act:latest";
+    private const string DefaultImage = "ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24";
 
     private static string AppVersion =>
         Assembly.GetEntryAssembly()
