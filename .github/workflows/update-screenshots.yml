@@ -1,0 +1,81 @@
+name: Update Documentation Screenshots
+
+on:
+  workflow_dispatch:
+    inputs:
+      frontend_url:
+        description: "Frontend URL (leave blank to start stack from source)"
+        required: false
+      api_url:
+        description: "API URL (leave blank to start stack from source)"
+        required: false
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  screenshots:
+    name: Take Screenshots
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Start stack
+        if: ${{ !inputs.frontend_url }}
+        run: |
+          docker compose up -d --build --wait
+        timeout-minutes: 15
+
+      - name: Wait for stack to be healthy
+        if: ${{ !inputs.frontend_url }}
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:5000/health; then
+              echo "Backend healthy"
+              break
+            fi
+            echo "Waiting for backend... ($i)"
+            sleep 5
+          done
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Playwright
+        run: |
+          npm install playwright
+          npx playwright install chromium --with-deps
+
+      - name: Take screenshots
+        env:
+          FRONTEND_URL: ${{ inputs.frontend_url || 'http://localhost:3000' }}
+          API_URL: ${{ inputs.api_url || 'http://localhost:5000' }}
+        run: node scripts/take-screenshots.js docs/assets/screenshots
+
+      - name: Stop stack
+        if: ${{ !inputs.frontend_url && always() }}
+        run: docker compose down -v
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "docs: update screenshots"
+          branch: docs/update-screenshots
+          delete-branch: true
+          title: "docs: update documentation screenshots"
+          body: |
+            Automated screenshot update.
+
+            Triggered by: ${{ github.event_name }}${{ github.event_name == 'release' && format(' (release {0})', github.event.release.tag_name) || '' }}
+          labels: documentation
+          add-paths: docs/assets/screenshots/**
