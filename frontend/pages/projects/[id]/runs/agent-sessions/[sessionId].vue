@@ -12,6 +12,11 @@
           d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2" />
       </svg>
       <h1 class="text-xl font-bold text-white">Agent Session</h1>
+      <!-- Live indicator when session is active -->
+      <span v-if="isActive && isConnected" class="flex items-center gap-1 text-xs text-green-400 font-normal ml-1">
+        <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+        Live
+      </span>
     </div>
 
     <!-- Loading -->
@@ -220,8 +225,30 @@ const debugMetadata = computed(() => {
   return entries
 })
 
+// `now` is updated on each server-pushed event so the duration display stays live without a timer
+const now = ref(Date.now())
+
+// SignalR: connect to project hub to receive RunsUpdated events (updates the CI/CD runs table)
+const { connection, isConnected, connect } = useSignalR('/hubs/project')
+
+// Whether the session is still in an active (non-terminal) state
+const isActive = computed(() =>
+  store.currentSession?.statusName === 'Pending' ||
+  store.currentSession?.statusName === 'Running'
+)
+
 onMounted(async () => {
   await store.fetchAgentSession(sessionId)
+
+  // Connect to project hub so the session and its CI/CD runs table refresh in real time
+  await connect()
+  if (connection.value) {
+    await connection.value.invoke('JoinProject', projectId).catch((e: unknown) => { console.warn('Failed to join project group', e) })
+    connection.value.on('RunsUpdated', async () => {
+      now.value = Date.now()
+      if (store.currentSession) await store.fetchAgentSession(sessionId)
+    })
+  }
 })
 
 async function copyLogsToClipboard() {
@@ -251,7 +278,7 @@ function formatLogTime(d: string) {
 }
 
 function duration(start: string, end?: string) {
-  const ms = (end ? new Date(end).getTime() : Date.now()) - new Date(start).getTime()
+  const ms = (end ? new Date(end).getTime() : now.value) - new Date(start).getTime()
   if (ms < 0) return '—'
   const s = Math.floor(ms / 1000)
   if (s < 60) return `${s}s`
