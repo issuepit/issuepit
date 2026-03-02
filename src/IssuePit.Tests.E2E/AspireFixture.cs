@@ -1,7 +1,10 @@
+using System.Reflection;
 using Aspire.Hosting;
 using Aspire.Hosting.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
+
 
 namespace IssuePit.Tests.E2E;
 
@@ -22,26 +25,48 @@ public sealed class AspireFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // Disable resource logging so Aspire does not relay child-process stdout/stderr through
+        // ILogger — the librdkafka C library can emit verbose connection-error lines to stderr
+        // during Kafka container startup/teardown, which would otherwise flood the test output.
+        // Individual Kafka clients also set log_level=0 to prevent librdkafka from generating
+        // those messages in the first place.
         var appHost = await DistributedApplicationTestingBuilder
-            .CreateAsync<Projects.IssuePit_AppHost>();
+            .CreateAsync<Projects.IssuePit_AppHost>(
+                args: [],
+                configureBuilder: (opts, _) => { opts.EnableResourceLogging = false; });
 
         // Suppress log noise produced during E2E test runs:
-        //
-        // 1. MinLevel = Warning: silences INFO-level messages from Aspire orchestration and
-        //    application startup across all categories.
-        //
-        // 2. LogLevel.None on "IssuePit.AppHost.Resources": silences the Aspire resource-relay
-        //    category that captures stdout/stderr from child processes (execution-client,
-        //    cicd-client, api, etc.) and re-logs them at LogLevel.Error.
-        //    The librdkafka C library may still emit transient connection errors to stderr during
-        //    startup and teardown (e.g. before the KRaft container is fully ready, or when the
-        //    distributed app is disposed).  Aspire relays these as ILogger Error entries under
-        //    "IssuePit.AppHost.Resources.<resource-name>", bypassing the MinLevel filter above.
+        // MinLevel = Warning: silences INFO-level messages from Aspire orchestration and
+        // application startup across all categories.
         appHost.Services.Configure<LoggerFilterOptions>(opts =>
         {
             opts.MinLevel = LogLevel.Warning;
-            // Silence the Aspire resource-process stdout/stderr relay entirely; see comment above.
-            opts.Rules.Add(new LoggerFilterRule(null, "IssuePit.AppHost.Resources", LogLevel.None, null));
+        });
+
+        // Aspire.Hosting.Kafka registers a "kafka_check" health check whose ProducerConfig
+        // has no log suppression. The AppHost runs IN-PROCESS, so when the Kafka container
+        // stops during test teardown, librdkafka writes %3|…|ERROR| lines directly to fd 2
+        // of the test process — bypassing EnableResourceLogging=false and ILogger filters.
+        // Wrap the factory so the first-use ProducerConfig gets log_level=0.
+        appHost.Services.PostConfigure<HealthCheckServiceOptions>(opts =>
+        {
+            var reg = opts.Registrations.FirstOrDefault(r => r.Name == "kafka_check");
+            if (reg is null) return;
+            var original = reg.Factory;
+            opts.Registrations.Remove(reg);
+            opts.Registrations.Add(new HealthCheckRegistration("kafka_check", sp =>
+            {
+                var check = original(sp);
+                // Patch _options.Configuration.Set("log_level","0") via reflection so
+                // librdkafka never writes to stderr regardless of the log callback.
+                var hcOpts = check.GetType()
+                    .GetField("_options", BindingFlags.NonPublic | BindingFlags.Instance)
+                    ?.GetValue(check);
+                var cfg = hcOpts?.GetType().GetProperty("Configuration")?.GetValue(hcOpts);
+                cfg?.GetType().GetMethod("Set", [typeof(string), typeof(string)])
+                    ?.Invoke(cfg, ["log_level", "0"]);
+                return check;
+            }, reg.FailureStatus, reg.Tags, reg.Timeout));
         });
 
         App = await appHost.BuildAsync();
