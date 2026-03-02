@@ -1,3 +1,4 @@
+using IssuePit.Tests.E2E.Pages;
 using Microsoft.Playwright;
 using Xunit.Abstractions;
 
@@ -39,7 +40,7 @@ public class FrontendSmokeTests : IAsyncLifetime
             Headless = true,
             Channel = "chrome",
         });
-        _context = await _browser.NewContextAsync();
+        _context = await _browser.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
         await SetUpAuthAsync();
     }
 
@@ -55,12 +56,7 @@ public class FrontendSmokeTests : IAsyncLifetime
             var username = $"smoke{Guid.NewGuid():N}"[..12];
             const string password = "TestPass1!";
 
-            await page.GotoAsync($"{FrontendUrl}/login");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-            await page.ClickAsync("button:has-text('Create account')");
-            await page.FillAsync("input[autocomplete='username']", username);
-            await page.FillAsync("input[autocomplete='new-password']", password);
-            await page.ClickAsync("button[type='submit']");
+            await new LoginPage(page).RegisterAsync(username, password);
             await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
         }
         finally
@@ -92,7 +88,8 @@ public class FrontendSmokeTests : IAsyncLifetime
             }
         };
 
-        var response = await page.GotoAsync(FrontendUrl);
+        var dashboard = new DashboardPage(page);
+        var response = await dashboard.GotoAsync();
 
         Assert.NotNull(response);
         Assert.True(response.Ok, $"Expected 2xx, got {response.Status}");
@@ -103,10 +100,11 @@ public class FrontendSmokeTests : IAsyncLifetime
     public async Task Dashboard_ContainsIssuePitTitle()
     {
         var page = await _context!.NewPageAsync();
-        await page.GotoAsync(FrontendUrl);
-        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        var dashboard = new DashboardPage(page);
+        await dashboard.GotoAsync();
+        await dashboard.WaitForLoadAsync();
 
-        var content = await page.ContentAsync();
+        var content = await dashboard.GetContentAsync();
         Assert.Contains("IssuePit", content);
     }
 
@@ -114,43 +112,36 @@ public class FrontendSmokeTests : IAsyncLifetime
     public async Task Dashboard_StatCards_AreLinks()
     {
         var page = await _context!.NewPageAsync();
-        await page.GotoAsync(FrontendUrl);
-        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        var dashboard = new DashboardPage(page);
+        await dashboard.GotoAsync();
+        await dashboard.WaitForLoadAsync();
 
         // Projects stat card links to /projects
-        var projectsLink = page.Locator("a[href='/projects']:has-text('Projects')");
-        Assert.True(await projectsLink.CountAsync() > 0, "Projects stat card should be a link to /projects");
+        Assert.True(await dashboard.ProjectsStatCard.CountAsync() > 0, "Projects stat card should be a link to /projects");
 
         // Open Issues stat card links to the filtered issues page
-        var openIssuesLink = page.Locator("a[href='/issues?status=open']:has-text('Open Issues')");
-        Assert.True(await openIssuesLink.CountAsync() > 0, "Open Issues stat card should be a link to /issues?status=open");
+        Assert.True(await dashboard.OpenIssuesStatCard.CountAsync() > 0, "Open Issues stat card should be a link to /issues?status=open");
 
         // In Progress stat card links to the filtered issues page
-        var inProgressLink = page.Locator("a[href='/issues?status=in_progress']:has-text('In Progress')");
-        Assert.True(await inProgressLink.CountAsync() > 0, "In Progress stat card should be a link to /issues?status=in_progress");
+        Assert.True(await dashboard.InProgressStatCard.CountAsync() > 0, "In Progress stat card should be a link to /issues?status=in_progress");
 
         // Agents stat card links to /agents
-        var agentsLink = page.Locator("a[href='/agents']:has-text('Agents')");
-        Assert.True(await agentsLink.CountAsync() > 0, "Agents stat card should be a link to /agents");
+        Assert.True(await dashboard.AgentsStatCard.CountAsync() > 0, "Agents stat card should be a link to /agents");
     }
 
     [Fact]
     public async Task Dashboard_RecentIssues_ItemsAreLinks()
     {
         var page = await _context!.NewPageAsync();
-        await page.GotoAsync(FrontendUrl);
-        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        var dashboard = new DashboardPage(page);
+        await dashboard.GotoAsync();
+        await dashboard.WaitForLoadAsync();
 
         // Recent issues section should exist
-        var recentIssuesHeading = page.Locator("h2:has-text('Recent Issues')");
-        Assert.True(await recentIssuesHeading.CountAsync() > 0, "Recent Issues section should be present on the dashboard");
+        Assert.True(await dashboard.RecentIssuesHeading.CountAsync() > 0, "Recent Issues section should be present on the dashboard");
 
         // If any issues are present, they should be anchor elements linking to the issue detail page
-        var issueLinks = page.Locator("h2:has-text('Recent Issues') ~ div a[href*='/projects/']");
-        var count = await issueLinks.CountAsync();
-        // We can only assert links exist if there are issues; verify no plain div rows exist with cursor-pointer
-        // (i.e. all issue rows are now links)
-        var divRows = page.Locator("h2:has-text('Recent Issues') ~ div div.cursor-pointer");
-        Assert.Equal(0, await divRows.CountAsync());
+        // (i.e. all issue rows are now links, no plain div rows with cursor-pointer)
+        Assert.Equal(0, await dashboard.CursorPointerDivRows.CountAsync());
     }
 }

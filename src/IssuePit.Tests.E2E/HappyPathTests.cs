@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using IssuePit.Tests.E2E.Pages;
 using Microsoft.Playwright;
 
 namespace IssuePit.Tests.E2E;
@@ -155,29 +156,14 @@ public class HappyPathTests : IAsyncLifetime
             const string password = "TestPass1!";
 
             // 1. Register via the UI login/register form
-            await page.GotoAsync("/login");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-            await page.ClickAsync("button:has-text('Create account')");
-            await page.FillAsync("input[autocomplete='username']", username);
-            await page.FillAsync("input[autocomplete='new-password']", password);
-            await page.ClickAsync("button[type='submit']");
+            await new LoginPage(page).RegisterAsync(username, password);
             await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
 
             // 2. Create an organization via the Organizations page
-            await page.GotoAsync("/orgs");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-            await page.ClickAsync("button:has-text('New Organization')");
-
             var orgName = $"UI Org {Guid.NewGuid():N}"[..20];
-            await page.FillAsync("input[placeholder='Acme Corp']", orgName);
-            await page.ClickAsync("button[type='submit']");
-            // Wait for org to appear in the table
-            await page.WaitForSelectorAsync($"text={orgName}", new PageWaitForSelectorOptions { Timeout = 10_000 });
-
-            // Navigate into the org to capture its ID from the URL
-            await page.ClickAsync($"a:has-text('{orgName}')");
-            await page.WaitForURLAsync("**/orgs/**");
-            var orgId = Guid.Parse(page.Url.Split('/').Last());
+            var orgsPage = new OrgsPage(page);
+            await orgsPage.GotoAsync();
+            var orgId = await orgsPage.CreateOrgAndNavigateAsync(orgName);
 
             // 3. Create a project via the API (the frontend project-creation form currently lacks an org selector)
             var tenantId = await GetDefaultTenantIdAsync();
@@ -193,17 +179,10 @@ public class HappyPathTests : IAsyncLifetime
             var project = await projResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
             var projectId = project.GetProperty("id").GetString()!;
 
-            // 4. Navigate to the project's issues page in the browser
-            await page.GotoAsync($"/projects/{projectId}/issues");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-            await page.WaitForSelectorAsync("h1:has-text('Issues')", new PageWaitForSelectorOptions { Timeout = 10_000 });
-
-            // 5. Create an issue via the UI modal
-            await page.ClickAsync("button:has-text('New Issue')");
-            const string issueTitle = "UI E2E Test Issue";
-            await page.FillAsync("input[placeholder='Issue title']", issueTitle);
-            await page.ClickAsync("button:has-text('Create Issue')");
-            await page.WaitForSelectorAsync($"text={issueTitle}", new PageWaitForSelectorOptions { Timeout = 10_000 });
+            // 4. Navigate to the project's issues page and create an issue via the UI modal
+            var issuesPage = new IssuesPage(page);
+            await issuesPage.GotoAsync(projectId);
+            await issuesPage.CreateIssueAsync("UI E2E Test Issue");
         }
         finally
         {
@@ -318,47 +297,19 @@ public class HappyPathTests : IAsyncLifetime
         try
         {
             // Log in as owner
-            await page.GotoAsync("/login");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-            await page.FillAsync("input[autocomplete='username']", ownerUsername);
-            await page.FillAsync("input[autocomplete='current-password']", password);
-            await page.ClickAsync("button[type='submit']");
+            await new LoginPage(page).LoginAsync(ownerUsername, password);
             await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
 
-            // Navigate to orgs list first to ensure auth state is fully established,
-            // then use the SPA link to navigate to the specific org (avoids SSR hydration
-            // race conditions that can leave the org detail page in a loading/error state).
-            await page.GotoAsync("/orgs");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-            await page.WaitForSelectorAsync($"a[href*='{orgId}']", new PageWaitForSelectorOptions { Timeout = 20_000 });
-            await page.ClickAsync($"a[href*='{orgId}']");
-            await page.WaitForURLAsync($"**/orgs/{orgId}", new PageWaitForURLOptions { Timeout = 20_000, WaitUntil = WaitUntilState.Commit });
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            // Navigate to the org via the orgs list to avoid SSR hydration race conditions
+            var orgsPage = new OrgsPage(page);
+            await orgsPage.GotoAsync();
+            await orgsPage.NavigateToOrgAsync(orgId);
 
-            // Create a team via UI
-            await page.ClickAsync("button:has-text('New Team')");
-            const string teamName = "UI E2E Team";
-            await page.FillAsync("input[placeholder='Engineering']", teamName);
-            await page.ClickAsync("button[type='submit']");
-            await page.WaitForSelectorAsync($"text={teamName}", new PageWaitForSelectorOptions { Timeout = 10_000 });
-
-            // Switch to Members tab and add the second user with Admin role
-            await page.ClickAsync("button:has-text('Members')");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-
-            await page.ClickAsync("button:has-text('Add Member')");
-            await page.FillAsync("input[placeholder='Search by username…']", memberUsername);
-            await page.WaitForSelectorAsync($"text={memberUsername}", new PageWaitForSelectorOptions { Timeout = 8_000 });
-            await page.ClickAsync($"button:has-text('{memberUsername}')");
-
-            // Select Admin role
-            await page.SelectOptionAsync("select", new[] { "1" });
-            // Use button[type='submit'] to target only the form submit button, not the "Add Member"
-            // button that opens the modal (which has no type and is blocked by the modal backdrop).
-            await page.ClickAsync("button[type='submit']:has-text('Add Member')");
-
-            // Verify the member appears in the table
-            await page.WaitForSelectorAsync($"text={memberUsername}", new PageWaitForSelectorOptions { Timeout = 10_000 });
+            // Create a team and add the second user as a member with Admin role
+            var orgDetailPage = new OrgDetailPage(page);
+            await orgDetailPage.CreateTeamAsync("UI E2E Team");
+            await orgDetailPage.OpenMembersTabAsync();
+            await orgDetailPage.AddMemberAsync(memberUsername, role: "1");
         }
         finally
         {
@@ -471,26 +422,13 @@ public class HappyPathTests : IAsyncLifetime
         try
         {
             // Log in
-            await page.GotoAsync("/login");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-            await page.FillAsync("input[autocomplete='username']", username);
-            await page.FillAsync("input[autocomplete='current-password']", password);
-            await page.ClickAsync("button[type='submit']");
+            await new LoginPage(page).LoginAsync(username, password);
             await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
 
-            // Navigate to milestones page
-            await page.GotoAsync($"/projects/{projectId}/milestones");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-            await page.WaitForSelectorAsync("h1:has-text('Milestones')", new PageWaitForSelectorOptions { Timeout = 10_000 });
-
-            // Create a milestone
-            await page.ClickAsync("button:has-text('New Milestone')");
-            const string milestoneName = "UI E2E Sprint 1";
-            await page.FillAsync("input[placeholder='Milestone title']", milestoneName);
-            await page.ClickAsync("button:has-text('Create Milestone')");
-
-            // Verify milestone appears in the list
-            await page.WaitForSelectorAsync($"text={milestoneName}", new PageWaitForSelectorOptions { Timeout = 10_000 });
+            // Navigate to milestones page and create a milestone
+            var milestonesPage = new MilestonesPage(page);
+            await milestonesPage.GotoAsync(projectId);
+            await milestonesPage.CreateMilestoneAsync("UI E2E Sprint 1");
         }
         finally
         {
