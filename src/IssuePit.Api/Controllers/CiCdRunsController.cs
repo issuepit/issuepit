@@ -29,6 +29,7 @@ public class CiCdRunsController(IssuePitDbContext db, TenantContext tenant, IPro
             {
                 r.Id,
                 r.ProjectId,
+                ProjectName = r.Project.Name,
                 r.AgentSessionId,
                 r.CommitSha,
                 r.Branch,

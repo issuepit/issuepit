@@ -522,6 +522,7 @@ export const CiCdRunStatusLabels: Record<CiCdRunStatus, string> = {
 export interface CiCdRun {
   id: string
   projectId: string
+  projectName?: string
   agentSessionId?: string
   commitSha: string
   branch?: string
