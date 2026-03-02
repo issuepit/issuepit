@@ -65,17 +65,26 @@ public class IssueKafkaNotificationTests(AspireFixture fixture)
         var issue = await issueResp.Content.ReadFromJsonAsync<JsonElement>();
         var issueId = issue.GetProperty("id").GetString()!;
 
-        // Poll for the Kafka message with a timeout
+        // Poll for the Kafka message with a timeout.
+        // Swallow transient ConsumeException (e.g. "Unknown topic") during the first few polls
+        // in case the consumer's metadata cache hasn't refreshed yet after topic creation.
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         ConsumeResult<string, string>? result = null;
         while (!cts.Token.IsCancellationRequested)
         {
-            var msg = consumer.Consume(TimeSpan.FromSeconds(1));
-            if (msg is null) continue;
-            if (msg.Message.Key == issueId)
+            try
             {
-                result = msg;
-                break;
+                var msg = consumer.Consume(TimeSpan.FromSeconds(1));
+                if (msg is null) continue;
+                if (msg.Message.Key == issueId)
+                {
+                    result = msg;
+                    break;
+                }
+            }
+            catch (ConsumeException ex) when (ex.Error.Code == ErrorCode.UnknownTopicOrPart)
+            {
+                // Transient — topic metadata may not be visible yet; retry.
             }
         }
 
