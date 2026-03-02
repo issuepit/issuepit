@@ -8,8 +8,9 @@ namespace IssuePit.Tests.E2E;
 /// Happy path E2E tests verifying the full flow from registration to creating a project and issues.
 /// Uses the real Aspire stack (postgres, kafka, redis) started by <see cref="AspireFixture"/>.
 /// </summary>
+[Collection("E2E")]
 [Trait("Category", "E2E")]
-public class HappyPathTests : IClassFixture<AspireFixture>, IAsyncLifetime
+public class HappyPathTests : IAsyncLifetime
 {
     private readonly AspireFixture _fixture;
     private IPlaywright? _playwright;
@@ -145,9 +146,6 @@ public class HappyPathTests : IClassFixture<AspireFixture>, IAsyncLifetime
     [Fact]
     public async Task Ui_HappyPath_RegisterCreateOrgProjectAndIssue()
     {
-        if (FrontendUrl is null)
-            return; // Skip gracefully when no frontend is available
-
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
         var page = await context.NewPageAsync();
 
@@ -257,16 +255,17 @@ public class HappyPathTests : IClassFixture<AspireFixture>, IAsyncLifetime
         var members = await membersResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
         var addedMember = members.EnumerateArray().FirstOrDefault(m => m.GetProperty("userId").GetString() == memberId);
         Assert.NotEqual(default, addedMember);
-        Assert.Equal(1, addedMember.GetProperty("role").GetInt32());
+        // OrgRole is serialized as a snake_case string by the API's global JsonStringEnumConverter.
+        Assert.Equal("admin", addedMember.GetProperty("role").GetString());
 
         // 4. Update role to Member (role=0)
         var updateResp = await client.PutAsJsonAsync($"/api/orgs/{orgId}/members/{memberId}", new { role = 0 });
-        Assert.Equal(HttpStatusCode.NoContent, updateResp.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, updateResp.StatusCode);
 
         var membersAfterUpdate = await (await client.GetAsync($"/api/orgs/{orgId}/members"))
             .Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
         var updatedMember = membersAfterUpdate.EnumerateArray().FirstOrDefault(m => m.GetProperty("userId").GetString() == memberId);
-        Assert.Equal(0, updatedMember.GetProperty("role").GetInt32());
+        Assert.Equal("member", updatedMember.GetProperty("role").GetString());
 
         // 5. Create a team in the org
         var teamSlug = $"e2e-team-{Guid.NewGuid():N}"[..16];
@@ -292,9 +291,6 @@ public class HappyPathTests : IClassFixture<AspireFixture>, IAsyncLifetime
     [Fact]
     public async Task Ui_HappyPath_CreateTeamAndAddMemberWithRole()
     {
-        if (FrontendUrl is null)
-            return; // Skip gracefully when no frontend is available
-
         var tenantId = await GetDefaultTenantIdAsync();
         using var apiClient = CreateCookieClient();
         apiClient.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
@@ -329,8 +325,14 @@ public class HappyPathTests : IClassFixture<AspireFixture>, IAsyncLifetime
             await page.ClickAsync("button[type='submit']");
             await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
 
-            // Navigate to org page
-            await page.GotoAsync($"/orgs/{orgId}");
+            // Navigate to orgs list first to ensure auth state is fully established,
+            // then use the SPA link to navigate to the specific org (avoids SSR hydration
+            // race conditions that can leave the org detail page in a loading/error state).
+            await page.GotoAsync("/orgs");
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForSelectorAsync($"a[href*='{orgId}']", new PageWaitForSelectorOptions { Timeout = 10_000 });
+            await page.ClickAsync($"a[href*='{orgId}']");
+            await page.WaitForURLAsync($"**/orgs/{orgId}", new PageWaitForURLOptions { Timeout = 10_000 });
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
 
             // Create a team via UI
@@ -351,7 +353,9 @@ public class HappyPathTests : IClassFixture<AspireFixture>, IAsyncLifetime
 
             // Select Admin role
             await page.SelectOptionAsync("select", new[] { "1" });
-            await page.ClickAsync("button:has-text('Add Member')");
+            // Use button[type='submit'] to target only the form submit button, not the "Add Member"
+            // button that opens the modal (which has no type and is blocked by the modal backdrop).
+            await page.ClickAsync("button[type='submit']:has-text('Add Member')");
 
             // Verify the member appears in the table
             await page.WaitForSelectorAsync($"text={memberUsername}", new PageWaitForSelectorOptions { Timeout = 10_000 });

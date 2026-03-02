@@ -81,10 +81,13 @@ public static class ServiceDefaultsExtensions
         var bootstrapServers = builder.Configuration.GetConnectionString(connectionName)
             ?? throw new InvalidOperationException($"Kafka connection string '{connectionName}' is not configured.");
         builder.Services.AddSingleton<IProducer<string, string>>(_ =>
-            new ProducerBuilder<string, string>(new ProducerConfig
-            {
-                BootstrapServers = bootstrapServers
-            }).Build());
+        {
+            var config = new ProducerConfig { BootstrapServers = bootstrapServers };
+            //config.Set("log_level", "0");
+            return new ProducerBuilder<string, string>(config)
+            //    .SetLogHandler((_, _) => { })
+                .Build();
+        });
 
         return builder;
     }

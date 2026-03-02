@@ -65,7 +65,7 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
             Name = "Frontend",
             Slug = "frontend",
             Description = "Vue 3 / Nuxt 3 web application",
-            GitHubRepo = "https://github.com/acme/frontend",
+            //GitHubRepo = "https://github.com/acme/frontend", // disabled
             CreatedAt = DateTime.UtcNow,
         };
         var backendProject = new Project
@@ -75,16 +75,17 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
             Name = "Backend API",
             Slug = "backend-api",
             Description = "ASP.NET Core REST API",
-            GitHubRepo = "https://github.com/acme/backend",
+            //GitHubRepo = "https://github.com/acme/backend", // disabled
             CreatedAt = DateTime.UtcNow,
         };
         db.Projects.AddRange(frontendProject, backendProject);
         await db.SaveChangesAsync();
 
-        db.GitRepositories.AddRange(
-            new GitRepository { Id = Guid.NewGuid(), ProjectId = frontendProject.Id, RemoteUrl = frontendProject.GitHubRepo!, DefaultBranch = "main", CreatedAt = DateTime.UtcNow },
-            new GitRepository { Id = Guid.NewGuid(), ProjectId = backendProject.Id, RemoteUrl = backendProject.GitHubRepo!, DefaultBranch = "main", CreatedAt = DateTime.UtcNow }
-        );
+        // disabled since we have no real repo and do not want to timeout or get out errors
+        //db.GitRepositories.AddRange(
+        //    new GitRepository { Id = Guid.NewGuid(), ProjectId = frontendProject.Id, RemoteUrl = frontendProject.GitHubRepo!, DefaultBranch = "main", CreatedAt = DateTime.UtcNow },
+        //    new GitRepository { Id = Guid.NewGuid(), ProjectId = backendProject.Id, RemoteUrl = backendProject.GitHubRepo!, DefaultBranch = "main", CreatedAt = DateTime.UtcNow }
+        //);
         await db.SaveChangesAsync();
 
         // --- Labels ---
