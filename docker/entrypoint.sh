@@ -61,6 +61,7 @@ fi
 #   mcr.microsoft.com                     — .NET / Playwright images
 #   ghcr.io, *.ghcr.io                    — GitHub Container Registry
 #   registry-1.docker.io, *.docker.io    — Docker Hub
+#   learn.microsoft.com, aspire.microsoft.com — .NET / Aspire documentation
 #
 # We also start a local dnsmasq proxy (forwarding to the upstream resolver) so
 # that ALL DNS queries made during this run appear in the container's log output
