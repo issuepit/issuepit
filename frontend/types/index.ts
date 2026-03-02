@@ -479,11 +479,11 @@ export interface TelegramBot {
 }
 
 export enum CiCdRunStatus {
-  Pending = 0,
-  Running = 1,
-  Succeeded = 2,
-  Failed = 3,
-  Cancelled = 4,
+  Pending = 'pending',
+  Running = 'running',
+  Succeeded = 'succeeded',
+  Failed = 'failed',
+  Cancelled = 'cancelled',
 }
 
 export const CiCdRunStatusLabels: Record<CiCdRunStatus, string> = {
@@ -548,7 +548,7 @@ export interface DashboardAgentSession extends AgentSession {
 export interface CiCdRunLog {
   id: string
   line: string
-  stream: number
+  stream: string
   streamName: string
   timestamp: string
 }
