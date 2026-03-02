@@ -597,6 +597,14 @@ export interface CiCdRunLog {
   timestamp: string
 }
 
+export interface AgentSessionLog {
+  id: string
+  line: string
+  stream: string
+  streamName: string
+  timestamp: string
+}
+
 export interface AgentSessionDetail extends AgentSession {
   projectId: string
   projectName: string

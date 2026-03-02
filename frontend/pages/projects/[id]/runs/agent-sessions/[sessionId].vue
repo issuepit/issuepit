@@ -60,6 +60,72 @@
         </div>
       </div>
 
+      <!-- Logs / Details -->
+      <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden mb-6">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800">
+          <div class="flex gap-1">
+            <button v-for="t in sectionTabs" :key="t.value"
+              :class="[
+                'px-2.5 py-1 text-xs font-medium rounded-md transition-colors',
+                activeSection === t.value ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'
+              ]"
+              @click="activeSection = t.value">
+              {{ t.label }}
+            </button>
+          </div>
+
+          <!-- Log stream filter (only in Logs tab) -->
+          <div v-if="activeSection === 'logs'" class="flex items-center gap-2">
+            <div class="flex gap-1">
+              <button v-for="s in streamTabs" :key="s.value ?? 'all'"
+                :class="[
+                  'px-2.5 py-1 text-xs font-medium rounded-md transition-colors',
+                  activeStream === s.value ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'
+                ]"
+                @click="activeStream = s.value">
+                {{ s.label }}
+              </button>
+            </div>
+            <button
+              v-if="store.currentSessionLogs.length"
+              class="px-2.5 py-1 text-xs font-medium rounded-md text-gray-500 hover:text-gray-300 transition-colors"
+              title="Copy full log to clipboard"
+              @click="copyLogsToClipboard">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Logs tab -->
+        <template v-if="activeSection === 'logs'">
+          <div v-if="filteredLogs.length" class="bg-gray-950 p-4 font-mono text-xs overflow-auto max-h-[600px]">
+            <div v-for="log in filteredLogs" :key="log.id" class="flex gap-3 leading-5">
+              <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
+              <span :class="log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'" class="whitespace-pre-wrap break-all">{{ log.line }}</span>
+            </div>
+          </div>
+          <div v-else class="py-10 text-center text-sm text-gray-500">No logs available</div>
+        </template>
+
+        <!-- Details tab -->
+        <template v-else>
+          <div v-if="debugMetadata.length" class="p-4 font-mono text-xs">
+            <table class="w-full">
+              <tbody>
+                <tr v-for="(entry, i) in debugMetadata" :key="i" class="border-b border-gray-800 last:border-0">
+                  <td class="py-2 pr-6 text-gray-500 whitespace-nowrap align-top w-40">{{ entry.key }}</td>
+                  <td class="py-2 text-gray-300 break-all">{{ entry.value }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div v-else class="py-10 text-center text-sm text-gray-500">No details available</div>
+        </template>
+      </div>
+
       <!-- Associated CI/CD Runs -->
       <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
         <div class="px-5 py-3 border-b border-gray-800">
@@ -117,7 +183,7 @@
 
 <script setup lang="ts">
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
-import { CiCdRunStatus } from '~/types'
+import { CiCdRunStatus, AgentSessionStatus } from '~/types'
 
 const route = useRoute()
 const projectId = route.params.id as string
@@ -125,12 +191,63 @@ const sessionId = route.params.sessionId as string
 
 const store = useCiCdRunsStore()
 
+const sectionTabs = [
+  { label: 'Logs', value: 'logs' },
+  { label: 'Details', value: 'details' },
+]
+const activeSection = ref<'logs' | 'details'>('logs')
+
+const streamTabs = [
+  { label: 'All', value: null },
+  { label: 'Stdout', value: 'stdout' },
+  { label: 'Stderr', value: 'stderr' },
+]
+const activeStream = ref<string | null>(null)
+
+const filteredLogs = computed(() =>
+  activeStream.value === null
+    ? store.currentSessionLogs
+    : store.currentSessionLogs.filter(l => l.stream === activeStream.value)
+)
+
+const debugMetadata = computed(() => {
+  const entries: Array<{ key: string; value: string }> = []
+  for (const log of store.currentSessionLogs) {
+    // Match lines like: [DEBUG] Key name   : value (space-colon-space separator)
+    const m = log.line.match(/^\[DEBUG\]\s+([^:]+?)\s*:\s(.+)$/)
+    if (m) entries.push({ key: m[1].trim(), value: m[2].trim() })
+  }
+  return entries
+})
+
 onMounted(async () => {
   await store.fetchAgentSession(sessionId)
 })
 
+async function copyLogsToClipboard() {
+  const text = store.currentSessionLogs.map(l => `${formatLogTime(l.timestamp)} ${l.line}`).join('\n')
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    // Fallback: create a temporary textarea for environments where clipboard API is unavailable
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    document.body.removeChild(ta)
+  }
+}
+
 function formatDate(d: string) {
   return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+function formatLogTime(d: string) {
+  const dt = new Date(d)
+  return `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}:${String(dt.getSeconds()).padStart(2, '0')}`
 }
 
 function duration(start: string, end?: string) {
@@ -143,22 +260,30 @@ function duration(start: string, end?: string) {
   return `${Math.floor(m / 60)}h ${m % 60}m`
 }
 
-function statusClass(status: CiCdRunStatus) {
+function statusClass(status: CiCdRunStatus | AgentSessionStatus) {
   switch (status) {
-    case CiCdRunStatus.Succeeded: return 'bg-green-900/30 text-green-400'
-    case CiCdRunStatus.Running: return 'bg-blue-900/30 text-blue-400'
-    case CiCdRunStatus.Failed: return 'bg-red-900/30 text-red-400'
-    case CiCdRunStatus.Cancelled: return 'bg-gray-800 text-gray-400'
+    case CiCdRunStatus.Succeeded:
+    case AgentSessionStatus.Succeeded: return 'bg-green-900/30 text-green-400'
+    case CiCdRunStatus.Running:
+    case AgentSessionStatus.Running: return 'bg-blue-900/30 text-blue-400'
+    case CiCdRunStatus.Failed:
+    case AgentSessionStatus.Failed: return 'bg-red-900/30 text-red-400'
+    case CiCdRunStatus.Cancelled:
+    case AgentSessionStatus.Cancelled: return 'bg-gray-800 text-gray-400'
     default: return 'bg-yellow-900/30 text-yellow-400'
   }
 }
 
-function statusDot(status: CiCdRunStatus) {
+function statusDot(status: CiCdRunStatus | AgentSessionStatus) {
   switch (status) {
-    case CiCdRunStatus.Succeeded: return 'bg-green-400'
-    case CiCdRunStatus.Running: return 'bg-blue-400 animate-pulse'
-    case CiCdRunStatus.Failed: return 'bg-red-400'
-    case CiCdRunStatus.Cancelled: return 'bg-gray-500'
+    case CiCdRunStatus.Succeeded:
+    case AgentSessionStatus.Succeeded: return 'bg-green-400'
+    case CiCdRunStatus.Running:
+    case AgentSessionStatus.Running: return 'bg-blue-400 animate-pulse'
+    case CiCdRunStatus.Failed:
+    case AgentSessionStatus.Failed: return 'bg-red-400'
+    case CiCdRunStatus.Cancelled:
+    case AgentSessionStatus.Cancelled: return 'bg-gray-500'
     default: return 'bg-yellow-400'
   }
 }

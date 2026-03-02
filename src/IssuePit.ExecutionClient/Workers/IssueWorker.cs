@@ -223,7 +223,30 @@ public class IssueWorker(
         {
             var credentials = await LoadCredentialsAsync(agent.OrgId, db, sessionCts.Token);
             var runtime = runtimeFactory.Create(runtimeType);
-            var runtimeId = await runtime.LaunchAsync(session, agent, issue, credentials, runtimeConfig, gitRepository, sessionCts.Token);
+
+            // Collect log lines so they can be saved to the DB regardless of success or failure.
+            var logBuffer = new List<AgentSessionLog>();
+            Task onLogLine(string line, LogStream stream)
+            {
+                logBuffer.Add(new AgentSessionLog
+                {
+                    Id = Guid.NewGuid(),
+                    AgentSessionId = session.Id,
+                    Line = line,
+                    Stream = stream,
+                    Timestamp = DateTime.UtcNow,
+                });
+                return Task.CompletedTask;
+            }
+
+            var runtimeId = await runtime.LaunchAsync(session, agent, issue, credentials, runtimeConfig, gitRepository, onLogLine, sessionCts.Token);
+
+            if (logBuffer.Count > 0)
+            {
+                db.AgentSessionLogs.AddRange(logBuffer);
+                logBuffer.Clear();
+                await db.SaveChangesAsync(sessionCts.Token);
+            }
 
             logger.LogInformation(
                 "Agent {AgentId} launched via {RuntimeType} with id '{RuntimeId}' for session {SessionId}",
@@ -242,6 +265,26 @@ public class IssueWorker(
             logger.LogError(ex, "Failed to launch agent {AgentId} for session {SessionId}", agent.Id, session.Id);
             session.Status = AgentSessionStatus.Failed;
             session.EndedAt = DateTime.UtcNow;
+            // Store the error as a log line so it's visible in the session detail UI.
+            db.AgentSessionLogs.Add(new AgentSessionLog
+            {
+                Id = Guid.NewGuid(),
+                AgentSessionId = session.Id,
+                Line = $"[ERROR] {ex.Message}",
+                Stream = LogStream.Stderr,
+                Timestamp = DateTime.UtcNow,
+            });
+            if (ex.InnerException is not null)
+            {
+                db.AgentSessionLogs.Add(new AgentSessionLog
+                {
+                    Id = Guid.NewGuid(),
+                    AgentSessionId = session.Id,
+                    Line = $"[ERROR] Caused by: {ex.InnerException.Message}",
+                    Stream = LogStream.Stderr,
+                    Timestamp = DateTime.UtcNow,
+                });
+            }
             await db.SaveChangesAsync(cancellationToken);
         }
         finally

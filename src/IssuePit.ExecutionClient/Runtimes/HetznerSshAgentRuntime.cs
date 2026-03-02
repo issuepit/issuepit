@@ -1,4 +1,5 @@
 using IssuePit.Core.Entities;
+using IssuePit.Core.Enums;
 
 namespace IssuePit.ExecutionClient.Runtimes;
 
@@ -12,6 +13,7 @@ public class HetznerSshAgentRuntime(ILogger<HetznerSshAgentRuntime> logger) : IA
         IReadOnlyDictionary<string, string> credentials,
         RuntimeConfiguration? runtimeConfig,
         GitRepository? gitRepository,
+        Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {
         logger.LogWarning(

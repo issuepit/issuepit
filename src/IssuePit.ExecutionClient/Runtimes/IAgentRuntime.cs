@@ -1,4 +1,5 @@
 using IssuePit.Core.Entities;
+using IssuePit.Core.Enums;
 
 namespace IssuePit.ExecutionClient.Runtimes;
 
@@ -12,5 +13,6 @@ public interface IAgentRuntime
         IReadOnlyDictionary<string, string> credentials,
         RuntimeConfiguration? runtimeConfig,
         GitRepository? gitRepository,
+        Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken);
 }
