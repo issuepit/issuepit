@@ -8,8 +8,9 @@ namespace IssuePit.Tests.E2E;
 /// Happy path E2E tests verifying the full flow from registration to creating a project and issues.
 /// Uses the real Aspire stack (postgres, kafka, redis) started by <see cref="AspireFixture"/>.
 /// </summary>
+[Collection("E2E")]
 [Trait("Category", "E2E")]
-public class HappyPathTests : IClassFixture<AspireFixture>, IAsyncLifetime
+public class HappyPathTests : IAsyncLifetime
 {
     private readonly AspireFixture _fixture;
     private IPlaywright? _playwright;
