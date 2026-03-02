@@ -1,16 +1,22 @@
 using Confluent.Kafka;
+using IssuePit.Api.Hubs;
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
 namespace IssuePit.Api.Controllers;
 
 [ApiController]
 [Route("api/cicd-runs")]
-public class CiCdRunsController(IssuePitDbContext db, TenantContext tenant, IProducer<string, string> producer) : ControllerBase
+public class CiCdRunsController(
+    IssuePitDbContext db,
+    TenantContext tenant,
+    IProducer<string, string> producer,
+    IHubContext<ProjectHub> projectHub) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetRuns([FromQuery] Guid? projectId)
@@ -29,6 +35,7 @@ public class CiCdRunsController(IssuePitDbContext db, TenantContext tenant, IPro
             {
                 r.Id,
                 r.ProjectId,
+                ProjectName = r.Project.Name,
                 r.AgentSessionId,
                 r.CommitSha,
                 r.Branch,
@@ -160,6 +167,8 @@ public class CiCdRunsController(IssuePitDbContext db, TenantContext tenant, IPro
 
         await db.SaveChangesAsync();
 
+        await NotifyRunsUpdated(run);
+
         return Ok(new { run.Id, run.Status, StatusName = run.Status.ToString() });
     }
 
@@ -240,6 +249,8 @@ public class CiCdRunsController(IssuePitDbContext db, TenantContext tenant, IPro
             Value = run.Id.ToString(),
         });
 
+        await NotifyRunsUpdated(run);
+
         return Ok(new { run.Id, run.Status, StatusName = run.Status.ToString() });
     }
 
@@ -256,6 +267,11 @@ public class CiCdRunsController(IssuePitDbContext db, TenantContext tenant, IPro
             },
             _ => CiCdRunStatus.Pending,
         };
+
+    private Task NotifyRunsUpdated(CiCdRun run) =>
+        projectHub.Clients
+            .Group(ProjectHub.ProjectGroup(run.ProjectId.ToString()))
+            .SendAsync("RunsUpdated", new { runId = run.Id, status = run.Status, statusName = run.Status.ToString() });
 }
 
 /// <summary>Options body for the retry run endpoint.</summary>

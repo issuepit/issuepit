@@ -1,5 +1,68 @@
 # Changelog
 
+## [1.2.0](https://github.com/issuepit/issuepit/compare/v1.1.0...v1.2.0) (2026-03-01)
+
+
+### Features
+
+* add code review UI with side-by-side diff viewer and inline comments ([#161](https://github.com/issuepit/issuepit/issues/161)) ([bc2e800](https://github.com/issuepit/issuepit/commit/bc2e8004a02ea39441518dd86d87ad1799f5dbd9))
+* add MCP Servers and MCP Playground to sidebar; show auto-linked IssuePit MCP in agent detail ([#160](https://github.com/issuepit/issuepit/issues/160)) ([2a9175a](https://github.com/issuepit/issuepit/commit/2a9175a8f5b4c47fbfc9de4b950c2b3f986cffa0))
+* add pgAdmin, Kafka UI, and Redis Insight as manually-started Aspire containers ([#158](https://github.com/issuepit/issuepit/issues/158)) ([e790552](https://github.com/issuepit/issuepit/commit/e7905521af985478a8a296a725c0d29de0ffeb45))
+* auto-trigger CI/CD on git repo link, poll for new commits, and Kafka-based run cancellation ([#141](https://github.com/issuepit/issuepit/issues/141)) ([89041da](https://github.com/issuepit/issuepit/commit/89041da15f0051d931ffe1cc2b08249f568f494b))
+* CI/CD retry button and runner options per project/org ([#193](https://github.com/issuepit/issuepit/issues/193)) ([a01a153](https://github.com/issuepit/issuepit/commit/a01a1531bf406f6b53cad89980d7e06ea76b65d8))
+* clickable run detail pages for CI/CD runs and agent sessions ([#189](https://github.com/issuepit/issuepit/issues/189)) ([ec5b744](https://github.com/issuepit/issuepit/commit/ec5b7448a8ecc5108f9e2c3873e832ebf842229c))
+* code viewer — line numbers, markdown preview, and code review sessions ([#129](https://github.com/issuepit/issuepit/issues/129)) ([b2e6467](https://github.com/issuepit/issuepit/commit/b2e646716179aeacc43eb6c791483269ffc06d69))
+* enhance issues via OpenRouter LLM with MCP server proxy and scoped API keys ([#175](https://github.com/issuepit/issuepit/issues/175)) ([00f7021](https://github.com/issuepit/issuepit/commit/00f70213c06c38b25ae511bc712529aed0580249))
+* extend dashboard with cross-project data, runs section, and issue history chart ([#143](https://github.com/issuepit/issuepit/issues/143)) ([f3ae9b6](https://github.com/issuepit/issuepit/commit/f3ae9b6d05fed6af37c3e9d1629f27db5a4ee6e1))
+* extend issue detail page ([#138](https://github.com/issuepit/issuepit/issues/138)) ([af012fc](https://github.com/issuepit/issuepit/commit/af012fc121876f9fee48ba8f6fdf4e0041b9bbdb))
+* extend MCP server with non-destructive mode, agent mode, task tools, CI/CD tools, playground UI, and migration fixes ([#104](https://github.com/issuepit/issuepit/issues/104)) ([585f333](https://github.com/issuepit/issuepit/commit/585f3330777dc63744d6c5709ff5d0f099319412))
+* extend profile page with teams, GitHub SSO, and sidebar GitHub Identities link ([#111](https://github.com/issuepit/issuepit/issues/111)) ([b240046](https://github.com/issuepit/issuepit/commit/b2400465b1378591ac3f5790474c8ec9a37e82d4))
+* extend project page with settings, runs, and org transfer ([#114](https://github.com/issuepit/issuepit/issues/114)) ([0445c7a](https://github.com/issuepit/issuepit/commit/0445c7aa5bcdf34bd0cfaa6aabc85ed9a9772386))
+* fix agents page — add agent mode detail/edit page with MCP server linking ([#137](https://github.com/issuepit/issuepit/issues/137)) ([2efd7cf](https://github.com/issuepit/issuepit/commit/2efd7cf30353dd3585fd5afd9923877a59c266d3))
+* fix issue description partial-update validation errors and add markdown rendering ([#121](https://github.com/issuepit/issuepit/issues/121)) ([3e0ff1a](https://github.com/issuepit/issuepit/commit/3e0ff1abc9912426aa901e0706f3d7de9c04ea52))
+* git auth configuration with automatic repo disable/throttle on failure ([#196](https://github.com/issuepit/issuepit/issues/196)) ([2da02a7](https://github.com/issuepit/issuepit/commit/2da02a7b4e8b9a735eff2c78f34d1d38b46ed350))
+* git code manager ([#72](https://github.com/issuepit/issuepit/issues/72)) ([eb58ca4](https://github.com/issuepit/issuepit/commit/eb58ca44bdcde846af9066aaa76298291d40786f))
+* helper Docker containers for agent and CI/CD runs ([#152](https://github.com/issuepit/issuepit/issues/152)) ([32dfdc2](https://github.com/issuepit/issuepit/commit/32dfdc2fc7fc23b2043b9a4da23f1c892663786e))
+* hourly metric snapshots for projects (issues, agent runs, CI/CD runs) ([#150](https://github.com/issuepit/issuepit/issues/150)) ([a04ca8a](https://github.com/issuepit/issuepit/commit/a04ca8a69f0300b8b7346d93befe88a96f90199d))
+* improve MCP pages — native playground, padding fix, combined edit/manage, scoped secrets ([#166](https://github.com/issuepit/issuepit/issues/166)) ([83d9aa2](https://github.com/issuepit/issuepit/commit/83d9aa2f4fd7d90c1442b68704bf69c0446d55fd))
+* improve org management — user search, team details page, org projects ([#106](https://github.com/issuepit/issuepit/issues/106)) ([c3f6308](https://github.com/issuepit/issuepit/commit/c3f6308cb70fb58eb6bfb4d459cbe85b21f47fac))
+* improve sidebar with collapsible sections, lazy loading, and issue filters ([#116](https://github.com/issuepit/issuepit/issues/116)) ([c6dba92](https://github.com/issuepit/issuepit/commit/c6dba925b37c486e9deaeb6092c9b78072b812a4))
+* issue editor improvements ([#99](https://github.com/issuepit/issuepit/issues/99)) ([3f03561](https://github.com/issuepit/issuepit/commit/3f03561ee4059bfdd9277e8e6a82402dd30090bd))
+* match scrollbars to dark theme ([#171](https://github.com/issuepit/issuepit/issues/171)) ([4eec89b](https://github.com/issuepit/issuepit/commit/4eec89b79f0ec0a0d104be50ed0c1257b4b202b2))
+* push browser history on file/dir navigation in code view ([#182](https://github.com/issuepit/issuepit/issues/182)) ([e69783f](https://github.com/issuepit/issuepit/commit/e69783f4b4f9dfcb24183e0beff0a76f7e94dead))
+* replace admin/admin local login with Aspire dashboard magic-link command ([#93](https://github.com/issuepit/issuepit/issues/93)) ([bff1639](https://github.com/issuepit/issuepit/commit/bff1639bb813e7cd69b5f6cb2db67e5e37fbbb54))
+* searchable branch dropdown on code review page, include remote branches ([#184](https://github.com/issuepit/issuepit/issues/184)) ([b594aa8](https://github.com/issuepit/issuepit/commit/b594aa8097c00af4f9633a6495e287eda58f5efd))
+* syntax highlighting in code browser ([#146](https://github.com/issuepit/issuepit/issues/146)) ([760504d](https://github.com/issuepit/issuepit/commit/760504def901eaaaa3e8aa1db12483affea71bfe))
+* trigger agent run when agent is assigned to an existing issue ([#132](https://github.com/issuepit/issuepit/issues/132)) ([0c24368](https://github.com/issuepit/issuepit/commit/0c24368e70b38459bf40e8fdf5cc3baec3d9bb7d))
+* user profile page ([#97](https://github.com/issuepit/issuepit/issues/97)) ([ffe1e3a](https://github.com/issuepit/issuepit/commit/ffe1e3a6a4e1a74f9d64276c566152e3e1bf1570))
+* visual transition feedback during kanban issue drag ([#172](https://github.com/issuepit/issuepit/issues/172)) ([c6f7e09](https://github.com/issuepit/issuepit/commit/c6f7e098358a5f808d72a0f8f53d696d56209875))
+
+
+### Bug Fixes
+
+* add http/https launch profiles to execution-client and cicd-client ([#185](https://github.com/issuepit/issuepit/issues/185)) ([1bde183](https://github.com/issuepit/issuepit/commit/1bde1831224c3cbca9dd98f9ff469be35872e86d))
+* add missing migration and improve check-pending-migrations CI diagnostics ([#120](https://github.com/issuepit/issuepit/issues/120)) ([71675eb](https://github.com/issuepit/issuepit/commit/71675ebf9a147fe8bc8ac33c63d5271af8b214a2))
+* add missing references for execution-client and cicd-client to postgresDb ([#191](https://github.com/issuepit/issuepit/issues/191)) ([88c435f](https://github.com/issuepit/issuepit/commit/88c435fc191a007a840d58f62096e2b43efed7ab))
+* admin login redirect and SSR session persistence ([#119](https://github.com/issuepit/issuepit/issues/119)) ([ff32c01](https://github.com/issuepit/issuepit/commit/ff32c0182d472fbaec5a6700b5c9cca18018bc18))
+* agent activate/deactivate sends partial PUT payload causing 400 validation error ([#94](https://github.com/issuepit/issuepit/issues/94)) ([265332f](https://github.com/issuepit/issuepit/commit/265332ffcef91a29bbc25226bcdd006bd5538333))
+* code viewer page scroll + sticky dir tree + taller issue description editor ([#154](https://github.com/issuepit/issuepit/issues/154)) ([5eea0ed](https://github.com/issuepit/issuepit/commit/5eea0ed5c4e16469ff73b4ec3bd7def8fe167323))
+* compute issueCount and memberCount in project API responses ([#177](https://github.com/issuepit/issuepit/issues/177)) ([7b3121b](https://github.com/issuepit/issuepit/commit/7b3121b2393eda950e3924e2b26810aa777c3d80))
+* correct Kafka bootstrap servers for API and add Kafka health check ([#169](https://github.com/issuepit/issuepit/issues/169)) ([6eccc36](https://github.com/issuepit/issuepit/commit/6eccc36f44a15b8629b9bcaf193cd5854f9567f2))
+* declare missing `hasMoreCommits` ref in git store ([#112](https://github.com/issuepit/issuepit/issues/112)) ([ce13609](https://github.com/issuepit/issuepit/commit/ce136099c4a0587f49c00d84964385102abf76c4))
+* kanban lane reorder, transition-gated issue drops, and no-transition alert ([#102](https://github.com/issuepit/issuepit/issues/102)) ([6c3f8bc](https://github.com/issuepit/issuepit/commit/6c3f8bccc638f0891689cdb75e895428063ec057))
+* log full exception (inner exceptions + stack trace) in CI/CD run logs ([#192](https://github.com/issuepit/issuepit/issues/192)) ([23340d5](https://github.com/issuepit/issuepit/commit/23340d5e4947bccd8c13b3d2c1b04cddc2631c34))
+* make dashboard stat cards and recent issues clickable with pre-filtered navigation ([#117](https://github.com/issuepit/issuepit/issues/117)) ([feab512](https://github.com/issuepit/issuepit/commit/feab5126a73fafcd9ccd6c5865110bda60dc8e06))
+* MCP playground CORS error and config tabs wrapping ([#183](https://github.com/issuepit/issuepit/issues/183)) ([f13c418](https://github.com/issuepit/issuepit/commit/f13c418e582cc6f962770ca90d8d6104cb33dbf7))
+* migrator remove raw sql ([#125](https://github.com/issuepit/issuepit/issues/125)) ([fb95e70](https://github.com/issuepit/issuepit/commit/fb95e70b605a1c0853937b2e207f0b38b202c9ab))
+* org page role dropdown, project members autocomplete, seed demo users, org/team E2E tests ([#139](https://github.com/issuepit/issuepit/issues/139)) ([188dee6](https://github.com/issuepit/issuepit/commit/188dee6048a6d3e7a07fefbf814f26ad4eebcf10))
+* prevent duplicate lanes when creating kanban columns ([#91](https://github.com/issuepit/issuepit/issues/91)) ([ad59cad](https://github.com/issuepit/issuepit/commit/ad59cade07a37afd5a25084288597a4eb6ad4830))
+* remove duplicate task endpoints from IssuesController causing ambiguous route match ([#130](https://github.com/issuepit/issuepit/issues/130)) ([d42269d](https://github.com/issuepit/issuepit/commit/d42269de38af1284284381f1cb24cf2a8f8d2284))
+* replace Aspire command with frontend URL for admin magic login ([#108](https://github.com/issuepit/issuepit/issues/108)) ([3dc4cf9](https://github.com/issuepit/issuepit/commit/3dc4cf974c3a76393c0f4de1c6a93b5937839099))
+* resolve 400 "Project field is required" on kanban lane issue creation ([#100](https://github.com/issuepit/issuepit/issues/100)) ([5f2cc53](https://github.com/issuepit/issuepit/commit/5f2cc53d31e1420dddf4cdedfe0b8f435cbf2e3f))
+* serialize concurrent git operations per repository ([#127](https://github.com/issuepit/issuepit/issues/127)) ([199af9f](https://github.com/issuepit/issuepit/commit/199af9fb837c2f21dfd8c0937273dd3f7ad6e9d2))
+* show GitHub URL and git remote URL separately in project settings ([#134](https://github.com/issuepit/issuepit/issues/134)) ([e02d07a](https://github.com/issuepit/issuepit/commit/e02d07ab721c8deb65701d0c7f8933d4edd59884))
+* use Aspire-provided connection string for Kafka, refactor health checks to service defaults ([#181](https://github.com/issuepit/issuepit/issues/181)) ([0396831](https://github.com/issuepit/issuepit/commit/03968319125136624279b280e17d57568805a18d))
+
 ## [1.1.0](https://github.com/issuepit/issuepit/compare/v1.0.0...v1.1.0) (2026-03-01)
 
 

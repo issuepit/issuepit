@@ -1,21 +1,35 @@
 using Microsoft.Playwright;
+using Xunit.Abstractions;
 
 namespace IssuePit.Tests.E2E;
 
 /// <summary>
 /// E2E tests for the Vue/Nuxt frontend, launched against the running Aspire stack.
-/// Requires the frontend to be served separately (e.g. via docker-compose or nuxt build/preview).
-/// The FRONTEND_URL environment variable controls which URL is tested (defaults to http://localhost:3000).
+/// The FRONTEND_URL environment variable overrides the Aspire-started frontend URL.
 /// </summary>
+[Collection("E2E")]
 [Trait("Category", "E2E")]
 public class FrontendSmokeTests : IAsyncLifetime
 {
+    private readonly AspireFixture _fixture;
+    private readonly ITestOutputHelper _testOutputHelper;
     private IPlaywright? _playwright;
     private IBrowser? _browser;
     private IBrowserContext? _context;
 
-    private static string FrontendUrl =>
-        Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:3000";
+    // Only use an explicitly-configured URL; do NOT fall back to localhost:3000 because
+    // in CI the frontend is served by Aspire on a dynamic port (use HappyPathTests for that).
+
+    private string FrontendUrl =>
+        _fixture.FrontendUrl ??
+        Environment.GetEnvironmentVariable("FRONTEND_URL") ??
+        throw new InvalidOperationException("FRONTEND_URL environment variable must be set to run frontend smoke tests");
+
+    public FrontendSmokeTests(AspireFixture fixture, ITestOutputHelper testOutputHelper)
+    {
+        _fixture = fixture;
+        _testOutputHelper = testOutputHelper;
+    }
 
     public async Task InitializeAsync()
     {
@@ -26,6 +40,33 @@ public class FrontendSmokeTests : IAsyncLifetime
             Channel = "chrome",
         });
         _context = await _browser.NewContextAsync();
+        await SetUpAuthAsync();
+    }
+
+    /// <summary>
+    /// Registers a fresh test user via the UI and waits for the post-login redirect to the
+    /// dashboard, so that all subsequent pages opened in <see cref="_context"/> are authenticated.
+    /// </summary>
+    private async Task SetUpAuthAsync()
+    {
+        var page = await _context!.NewPageAsync();
+        try
+        {
+            var username = $"smoke{Guid.NewGuid():N}"[..12];
+            const string password = "TestPass1!";
+
+            await page.GotoAsync($"{FrontendUrl}/login");
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.ClickAsync("button:has-text('Create account')");
+            await page.FillAsync("input[autocomplete='username']", username);
+            await page.FillAsync("input[autocomplete='new-password']", password);
+            await page.ClickAsync("button[type='submit']");
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+        }
+        finally
+        {
+            await page.CloseAsync();
+        }
     }
 
     public async Task DisposeAsync()
@@ -40,10 +81,15 @@ public class FrontendSmokeTests : IAsyncLifetime
     {
         var page = await _context!.NewPageAsync();
 
-        var errors = new List<string>();
+        var errors = new List<IConsoleMessage>();
         page.Console += (_, e) =>
         {
-            if (e.Type == "error") errors.Add(e.Text);
+            if (e.Type == "error")
+            {
+                errors.Add(e);
+                // log error
+                _testOutputHelper.WriteLine($"Console error: {e.Text}");
+            }
         };
 
         var response = await page.GotoAsync(FrontendUrl);

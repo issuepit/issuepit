@@ -84,7 +84,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     loading.value = true
     error.value = null
     try {
-      dashboardSessions.value = await api.get<DashboardAgentSession[]>('/api/dashboard/agent-sessions')
+      dashboardSessions.value = await api.get<DashboardAgentSession[]>('/api/dashboard/agent-sessions?limit=100')
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Failed to fetch agent sessions'
     } finally {

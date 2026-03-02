@@ -2,7 +2,7 @@
   <div ref="containerRef" class="relative">
     <button
       type="button"
-      class="flex items-center gap-1.5 bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500 min-w-32 max-w-64 truncate"
+      class="flex items-center gap-1.5 bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500 min-w-28 max-w-[50ch] overflow-hidden"
       :class="{ 'ring-2 ring-brand-500': open }"
       :aria-expanded="open"
       @click="toggleOpen"
@@ -18,7 +18,7 @@
 
     <div
       v-if="open"
-      class="absolute z-50 mt-1 bg-gray-900 border border-gray-800 rounded-xl shadow-xl w-64 overflow-hidden"
+      class="absolute z-50 mt-1 bg-gray-900 border border-gray-800 rounded-xl shadow-xl min-w-full max-w-[50ch] overflow-hidden"
     >
       <!-- Search input -->
       <div class="p-2 border-b border-gray-800">

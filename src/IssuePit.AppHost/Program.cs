@@ -1,12 +1,20 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-var postgresServer = builder.AddPostgres("postgres");
+var postgresServer = builder.AddPostgres("postgres")
+    .WithImage("postgres", "17.6");
 var postgresDb = postgresServer.AddDatabase("issuepit-db");
 
 var kafka = builder.AddKafka("kafka")
-    .WithImage("confluentinc/confluent-local", "8.1.0"); // Confluent Platform 8.1.0 (Kafka 4.1.x, KRaft)
+    .WithImage("apache/kafka", "3.9.0") // Official Apache Kafka 3.9.0 (KRaft) - more stable than confluent-local in E2E tests
+    .WithEnvironment("KAFKA_NODE_ID", "1")
+    .WithEnvironment("KAFKA_PROCESS_ROLES", "broker,controller")
+    .WithEnvironment("KAFKA_CONTROLLER_QUORUM_VOTERS", "1@localhost:29093")
+    .WithEnvironment("KAFKA_CONTROLLER_LISTENER_NAMES", "CONTROLLER")
+    .WithEnvironment("KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR", "1")
+    .WithEnvironment("KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS", "0");
 
-var redis = builder.AddValkey("redis");
+var redis = builder.AddValkey("redis")
+    .WithImage("valkey/valkey", "9.0");
 
 // Management UI tools - set to explicit start so they are not auto-started in CI and require manual start from the Aspire dashboard
 postgresServer.WithPgAdmin(admin => admin.WithExplicitStart());
@@ -35,7 +43,7 @@ var api = builder.AddProject<Projects.IssuePit_Api>("api")
     .WaitForCompletion(migrator)
     .WaitFor(kafka)
     .WaitFor(redis)
-    .WithHttpHealthCheck("/health")
+    .WithHttpHealthCheck("/health", endpointName: "http")
     .WithEnvironment("AllowedOrigins", frontend.GetEndpoint("http"))
     .WithEnvironment("GitHub__OAuth__FrontendUrl", frontend.GetEndpoint("http"))
     .WithUrlForEndpoint("http", u =>
@@ -58,7 +66,7 @@ var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("exe
     .WithReference(kafka)
     .WaitForCompletion(migrator)
     .WaitFor(kafka)
-    .WithHttpHealthCheck("/health");
+    .WithHttpHealthCheck("/health", endpointName: "http");
 
 var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     .WithReference(postgresDb)
@@ -68,7 +76,7 @@ var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     .WaitForCompletion(migrator)
     .WaitFor(kafka)
     .WaitFor(redis)
-    .WithHttpHealthCheck("/health");
+    .WithHttpHealthCheck("/health", endpointName: "http");
 
 frontend
     .WithEnvironment("NUXT_PUBLIC_API_BASE", api.GetEndpoint("http"))

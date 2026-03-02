@@ -7,147 +7,276 @@
 
     <template v-else-if="store.currentProject">
       <!-- Header -->
-      <div class="flex items-center gap-3 mb-2">
-        <NuxtLink to="/projects" class="text-gray-500 hover:text-gray-300 transition-colors">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-          </svg>
-        </NuxtLink>
-        <div :style="{ background: store.currentProject.color || '#4c6ef5' }"
-          class="w-8 h-8 rounded-md flex items-center justify-center text-white font-bold">
-          {{ store.currentProject.name.charAt(0).toUpperCase() }}
-        </div>
-        <h1 class="text-2xl font-bold text-white">{{ store.currentProject.name }}</h1>
-        <span v-if="store.currentProject.isPrivate"
-          class="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">Private</span>
-      </div>
-      <p v-if="store.currentProject.description" class="text-gray-400 text-sm mb-8 ml-16">
-        {{ store.currentProject.description }}
-      </p>
-
-      <!-- Stats Row -->
-      <div class="grid grid-cols-3 gap-4 mb-8">
-        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
-          <p class="text-2xl font-bold text-white">{{ store.currentProject.issueCount }}</p>
-          <p class="text-xs text-gray-500 mt-0.5">Issues</p>
-        </div>
-        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
-          <p class="text-2xl font-bold text-white">{{ store.currentProject.memberCount }}</p>
-          <p class="text-xs text-gray-500 mt-0.5">Members</p>
-        </div>
-        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
-          <p class="text-xs text-gray-500">Created</p>
-          <p class="text-sm font-medium text-white mt-0.5">{{ formatDate(store.currentProject.createdAt) }}</p>
-        </div>
-      </div>
-
-      <!-- Quick Links -->
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-        <NuxtLink :to="`/projects/${id}/code`"
-          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 flex items-center gap-4 transition-colors group">
-          <div class="w-10 h-10 bg-orange-900/30 rounded-lg flex items-center justify-center">
-            <svg class="w-5 h-5 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+      <div class="flex items-center justify-between gap-3 mb-2">
+        <div class="flex items-center gap-3 min-w-0">
+          <NuxtLink to="/projects" class="text-gray-500 hover:text-gray-300 transition-colors shrink-0">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
             </svg>
+          </NuxtLink>
+          <div :style="{ background: store.currentProject.color || '#4c6ef5' }"
+            class="w-8 h-8 rounded-md flex items-center justify-center text-white font-bold shrink-0">
+            {{ store.currentProject.name.charAt(0).toUpperCase() }}
           </div>
-          <div>
-            <p class="font-semibold text-white group-hover:text-brand-300 transition-colors">Code</p>
-            <p class="text-xs text-gray-500">Browse repository</p>
-          </div>
-        </NuxtLink>
-
-        <NuxtLink :to="`/projects/${id}/issues`"
-          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 flex items-center gap-4 transition-colors group">
-          <div class="w-10 h-10 bg-blue-900/30 rounded-lg flex items-center justify-center">
-            <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-            </svg>
-          </div>
-          <div>
-            <p class="font-semibold text-white group-hover:text-brand-300 transition-colors">Issues</p>
-            <p class="text-xs text-gray-500">View all issues</p>
-          </div>
-        </NuxtLink>
-
-        <NuxtLink :to="`/projects/${id}/review`"
-          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 flex items-center gap-4 transition-colors group">
-          <div class="w-10 h-10 bg-teal-900/30 rounded-lg flex items-center justify-center">
-            <svg class="w-5 h-5 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-            </svg>
-          </div>
-          <div>
-            <p class="font-semibold text-white group-hover:text-brand-300 transition-colors">Review</p>
-            <p class="text-xs text-gray-500">Compare branches &amp; diff</p>
-          </div>
-        </NuxtLink>
-      </div>
-
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-        <NuxtLink :to="`/projects/${id}/kanban`"
-          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 flex items-center gap-4 transition-colors group">
-          <div class="w-10 h-10 bg-purple-900/30 rounded-lg flex items-center justify-center">
-            <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-            </svg>
-          </div>
-          <div>
-            <p class="font-semibold text-white group-hover:text-brand-300 transition-colors">Kanban</p>
-            <p class="text-xs text-gray-500">Board view</p>
-          </div>
-        </NuxtLink>
-      </div>
-
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <NuxtLink :to="`/projects/${id}/members`"
-          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 flex items-center gap-4 transition-colors group">
-          <div class="w-10 h-10 bg-green-900/30 rounded-lg flex items-center justify-center">
-            <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <h1 class="text-2xl font-bold text-white truncate">{{ store.currentProject.name }}</h1>
+          <span v-if="store.currentProject.isPrivate"
+            class="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full shrink-0">Private</span>
+        </div>
+        <!-- Header actions: Members + Settings -->
+        <div class="flex items-center gap-2 shrink-0">
+          <NuxtLink :to="`/projects/${id}/members`"
+            class="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-800 transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
-          </div>
-          <div>
-            <p class="font-semibold text-white group-hover:text-brand-300 transition-colors">Members</p>
-            <p class="text-xs text-gray-500">{{ store.currentProject.memberCount }} members</p>
-          </div>
-        </NuxtLink>
-
-        <NuxtLink :to="`/projects/${id}/runs`"
-          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 flex items-center gap-4 transition-colors group">
-          <div class="w-10 h-10 bg-yellow-900/30 rounded-lg flex items-center justify-center">
-            <svg class="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-          </div>
-          <div>
-            <p class="font-semibold text-white group-hover:text-brand-300 transition-colors">Runs</p>
-            <p class="text-xs text-gray-500">CI/CD &amp; agent runs</p>
-          </div>
-        </NuxtLink>
-
-        <NuxtLink :to="`/projects/${id}/settings`"
-          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 flex items-center gap-4 transition-colors group">
-          <div class="w-10 h-10 bg-gray-700/50 rounded-lg flex items-center justify-center">
-            <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            Members
+          </NuxtLink>
+          <NuxtLink :to="`/projects/${id}/settings`"
+            class="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-800 transition-colors"
+            title="Project Settings">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
+            Settings
+          </NuxtLink>
+        </div>
+      </div>
+      <p v-if="store.currentProject.description" class="text-gray-400 text-sm mb-6 ml-16">
+        {{ store.currentProject.description }}
+      </p>
+
+      <!-- Stats Row -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
+        <NuxtLink :to="`/projects/${id}/issues`"
+          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group">
+          <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
+            {{ store.currentProject.issueCount }}
+          </p>
+          <p class="text-xs text-gray-500 mt-0.5">Issues</p>
+        </NuxtLink>
+
+        <NuxtLink :to="`/projects/${id}/members`"
+          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group">
+          <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
+            {{ store.currentProject.memberCount }}
+          </p>
+          <p class="text-xs text-gray-500 mt-0.5">Members</p>
+        </NuxtLink>
+
+        <!-- Agent Runs with live indicator -->
+        <NuxtLink :to="`/projects/${id}/runs?tab=agent`"
+          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group relative">
+          <div class="flex items-center justify-center gap-1.5">
+            <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
+              {{ runsStore.agentSessions.length }}
+            </p>
+            <span v-if="isConnected" class="w-2 h-2 rounded-full bg-green-400 animate-pulse shrink-0" title="Live updates connected" />
+            <span v-else class="w-2 h-2 rounded-full bg-gray-600 shrink-0" title="Live updates disconnected" />
           </div>
-          <div>
-            <p class="font-semibold text-white group-hover:text-brand-300 transition-colors">Settings</p>
-            <p class="text-xs text-gray-500">Project configuration</p>
+          <p class="text-xs text-gray-500 mt-0.5">Agent Runs</p>
+        </NuxtLink>
+
+        <!-- CI/CD Runs with live indicator -->
+        <NuxtLink :to="`/projects/${id}/runs`"
+          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group">
+          <div class="flex items-center justify-center gap-1.5">
+            <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
+              {{ runsStore.runs.length }}
+            </p>
           </div>
+          <p class="text-xs text-gray-500 mt-0.5">CI/CD Runs</p>
+        </NuxtLink>
+
+        <!-- MCP Servers -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+          <p class="text-2xl font-bold text-white">{{ mcpCount }}</p>
+          <p class="text-xs text-gray-500 mt-0.5">MCP Servers</p>
+        </div>
+      </div>
+
+      <!-- Quick Navigation -->
+      <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
+        <NuxtLink :to="`/projects/${id}/code`"
+          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 flex items-center gap-3 transition-colors group">
+          <div class="w-8 h-8 bg-orange-900/30 rounded-lg flex items-center justify-center shrink-0">
+            <svg class="w-4 h-4 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+            </svg>
+          </div>
+          <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Code</span>
+        </NuxtLink>
+
+        <NuxtLink :to="`/projects/${id}/issues`"
+          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 flex items-center gap-3 transition-colors group">
+          <div class="w-8 h-8 bg-blue-900/30 rounded-lg flex items-center justify-center shrink-0">
+            <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+          </div>
+          <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Issues</span>
+        </NuxtLink>
+
+        <NuxtLink :to="`/projects/${id}/kanban`"
+          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 flex items-center gap-3 transition-colors group">
+          <div class="w-8 h-8 bg-purple-900/30 rounded-lg flex items-center justify-center shrink-0">
+            <svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+            </svg>
+          </div>
+          <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Kanban</span>
+        </NuxtLink>
+
+        <NuxtLink :to="`/projects/${id}/runs`"
+          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 flex items-center gap-3 transition-colors group">
+          <div class="w-8 h-8 bg-yellow-900/30 rounded-lg flex items-center justify-center shrink-0">
+            <svg class="w-4 h-4 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          </div>
+          <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Runs</span>
+        </NuxtLink>
+
+        <NuxtLink :to="`/projects/${id}/review`"
+          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 flex items-center gap-3 transition-colors group">
+          <div class="w-8 h-8 bg-teal-900/30 rounded-lg flex items-center justify-center shrink-0">
+            <svg class="w-4 h-4 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+            </svg>
+          </div>
+          <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Review</span>
         </NuxtLink>
       </div>
 
+      <!-- Milestones (shown if any exist) -->
+      <div v-if="openMilestones.length" class="mb-6">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-semibold text-white flex items-center gap-2">
+            <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
+            </svg>
+            Milestones
+          </h2>
+          <NuxtLink :to="`/projects/${id}/milestones`"
+            class="text-xs text-brand-400 hover:text-brand-300 transition-colors">
+            View all →
+          </NuxtLink>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <NuxtLink v-for="milestone in openMilestones" :key="milestone.id"
+            :to="`/projects/${id}/milestones/${milestone.id}`"
+            class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 transition-colors group">
+            <div class="flex items-start justify-between gap-2 mb-2">
+              <span class="text-sm font-medium text-white group-hover:text-brand-300 transition-colors truncate">
+                {{ milestone.title }}
+              </span>
+              <span class="text-xs bg-green-900/40 text-green-400 px-1.5 py-0.5 rounded-full shrink-0">Open</span>
+            </div>
+            <p v-if="milestone.description" class="text-xs text-gray-500 line-clamp-1 mb-2">
+              {{ milestone.description }}
+            </p>
+            <p v-if="milestone.dueDate" class="text-xs text-gray-500">
+              Due {{ formatDate(milestone.dueDate) }}
+            </p>
+          </NuxtLink>
+        </div>
+      </div>
+
+      <!-- Recent Runs -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <!-- Agent Runs -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="font-semibold text-white flex items-center gap-2">
+              <svg class="w-4 h-4 text-fuchsia-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2" />
+              </svg>
+              Recent Agent Runs
+              <!-- WS connection indicator -->
+              <span v-if="isConnected" class="flex items-center gap-1 text-xs text-green-400 font-normal">
+                <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                Live
+              </span>
+              <span v-else class="flex items-center gap-1 text-xs text-gray-600 font-normal">
+                <span class="w-1.5 h-1.5 rounded-full bg-gray-600" />
+                Offline
+              </span>
+            </h2>
+            <NuxtLink :to="`/projects/${id}/runs?tab=agent`"
+              class="text-xs text-brand-400 hover:text-brand-300 transition-colors">
+              View all →
+            </NuxtLink>
+          </div>
+          <div v-if="recentAgentSessions.length" class="space-y-2">
+            <div v-for="session in recentAgentSessions" :key="session.id"
+              class="flex items-center gap-3 py-2 border-b border-gray-800 last:border-0">
+              <span :class="agentStatusClass(session.status)"
+                class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium shrink-0">
+                <span :class="agentStatusDot(session.status)" class="w-1.5 h-1.5 rounded-full" />
+                {{ session.statusName }}
+              </span>
+              <div class="flex-1 min-w-0">
+                <NuxtLink :to="`/projects/${id}/issues/${session.issueId}`"
+                  class="text-sm text-gray-300 hover:text-brand-300 transition-colors truncate block">
+                  #{{ session.issueNumber }} {{ session.issueTitle }}
+                </NuxtLink>
+                <p class="text-xs text-gray-500 truncate">{{ session.agentName }}</p>
+              </div>
+              <span class="text-xs text-gray-600 shrink-0">{{ relativeTime(session.startedAt) }}</span>
+            </div>
+          </div>
+          <p v-else class="text-sm text-gray-600 py-4 text-center">No agent runs yet</p>
+        </div>
+
+        <!-- CI/CD Runs -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="font-semibold text-white flex items-center gap-2">
+              <svg class="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              Recent CI/CD Runs
+            </h2>
+            <NuxtLink :to="`/projects/${id}/runs`"
+              class="text-xs text-brand-400 hover:text-brand-300 transition-colors">
+              View all →
+            </NuxtLink>
+          </div>
+          <div v-if="recentCiCdRuns.length" class="space-y-2">
+            <div v-for="run in recentCiCdRuns" :key="run.id"
+              class="flex items-center gap-3 py-2 border-b border-gray-800 last:border-0 cursor-pointer"
+              @click="navigateTo(`/projects/${id}/runs/cicd/${run.id}`)">
+              <span :class="cicdStatusClass(run.status)"
+                class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium shrink-0">
+                <span :class="cicdStatusDot(run.status)" class="w-1.5 h-1.5 rounded-full" />
+                {{ run.statusName }}
+              </span>
+              <div class="flex-1 min-w-0">
+                <p class="text-sm text-gray-300 truncate">
+                  {{ run.workflow || run.branch || 'Run' }}
+                </p>
+                <p class="text-xs text-gray-500 font-mono truncate">
+                  {{ run.commitSha?.slice(0, 7) || '—' }}
+                  <span v-if="run.branch"> · {{ run.branch }}</span>
+                </p>
+              </div>
+              <span class="text-xs text-gray-600 shrink-0">{{ relativeTime(run.startedAt) }}</span>
+            </div>
+          </div>
+          <p v-else class="text-sm text-gray-600 py-4 text-center">No CI/CD runs yet</p>
+        </div>
+      </div>
+
       <!-- Metric History Chart -->
-      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mt-6">
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
         <h2 class="font-semibold text-white mb-4">Issue &amp; Run History (last 24 h)</h2>
         <div v-if="metricSnapshots.length" class="overflow-x-auto">
           <svg :viewBox="`0 0 ${chartWidth} ${chartHeight}`" class="w-full" style="min-width:500px">
@@ -206,25 +335,111 @@
 </template>
 
 <script setup lang="ts">
-import type { ProjectMetricSnapshot } from '~/types'
+import type { ProjectMetricSnapshot, Milestone } from '~/types'
+import { AgentSessionStatus, CiCdRunStatus } from '~/types'
 import { useProjectsStore } from '~/stores/projects'
+import { useCiCdRunsStore } from '~/stores/cicdRuns'
 
 const route = useRoute()
 const id = route.params.id as string
 const store = useProjectsStore()
+const runsStore = useCiCdRunsStore()
 const api = useApi()
 
 const metricSnapshots = ref<ProjectMetricSnapshot[]>([])
+const milestones = ref<Milestone[]>([])
+const mcpCount = ref(0)
+
+const { connection, isConnected, connect } = useSignalR('/hubs/project')
+
+const openMilestones = computed(() => milestones.value.filter(m => m.status === 'open').slice(0, 3))
+const recentAgentSessions = computed(() => runsStore.agentSessions.slice(0, 5))
+const recentCiCdRuns = computed(() => runsStore.runs.slice(0, 5))
 
 onMounted(async () => {
   await store.fetchProject(id)
-  api.get<ProjectMetricSnapshot[]>(`/api/dashboard/projects/${id}/metric-history`)
-    .then(data => { metricSnapshots.value = data })
-    .catch((e) => { console.error(`Failed to load metric history for project ${id}`, e) })
+  await Promise.all([
+    runsStore.fetchRuns(id),
+    runsStore.fetchAgentSessions(id),
+    api.get<Milestone[]>(`/api/projects/${id}/milestones`)
+      .then(data => { milestones.value = data })
+      .catch((e) => { console.warn(`Failed to load milestones for project ${id}`, e) }),
+    api.get<{ mcpServerId: string }[]>(`/api/projects/${id}/mcp-servers`)
+      .then(data => { mcpCount.value = data.length })
+      .catch((e) => { console.warn(`Failed to load MCP servers for project ${id}`, e) }),
+    api.get<ProjectMetricSnapshot[]>(`/api/dashboard/projects/${id}/metric-history`)
+      .then(data => { metricSnapshots.value = data })
+      .catch((e) => { console.error(`Failed to load metric history for project ${id}`, e) }),
+  ])
+
+  // Connect to SignalR for live run updates
+  await connect()
+  if (connection.value) {
+    await connection.value.invoke('JoinProject', id).catch(() => {})
+    connection.value.on('RunsUpdated', async () => {
+      await Promise.all([
+        runsStore.fetchRuns(id),
+        runsStore.fetchAgentSessions(id),
+      ])
+    })
+  }
 })
 
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function relativeTime(d: string) {
+  const ms = Date.now() - new Date(d).getTime()
+  const s = Math.floor(ms / 1000)
+  if (s < 60) return `${s}s ago`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  return `${Math.floor(h / 24)}d ago`
+}
+
+// Agent session status helpers
+function agentStatusClass(status: AgentSessionStatus) {
+  switch (status) {
+    case AgentSessionStatus.Succeeded: return 'bg-green-900/30 text-green-400'
+    case AgentSessionStatus.Running: return 'bg-blue-900/30 text-blue-400'
+    case AgentSessionStatus.Failed: return 'bg-red-900/30 text-red-400'
+    case AgentSessionStatus.Cancelled: return 'bg-gray-800 text-gray-400'
+    default: return 'bg-yellow-900/30 text-yellow-400'
+  }
+}
+
+function agentStatusDot(status: AgentSessionStatus) {
+  switch (status) {
+    case AgentSessionStatus.Succeeded: return 'bg-green-400'
+    case AgentSessionStatus.Running: return 'bg-blue-400 animate-pulse'
+    case AgentSessionStatus.Failed: return 'bg-red-400'
+    case AgentSessionStatus.Cancelled: return 'bg-gray-500'
+    default: return 'bg-yellow-400'
+  }
+}
+
+// CI/CD run status helpers
+function cicdStatusClass(status: CiCdRunStatus) {
+  switch (status) {
+    case CiCdRunStatus.Succeeded: return 'bg-green-900/30 text-green-400'
+    case CiCdRunStatus.Running: return 'bg-blue-900/30 text-blue-400'
+    case CiCdRunStatus.Failed: return 'bg-red-900/30 text-red-400'
+    case CiCdRunStatus.Cancelled: return 'bg-gray-800 text-gray-400'
+    default: return 'bg-yellow-900/30 text-yellow-400'
+  }
+}
+
+function cicdStatusDot(status: CiCdRunStatus) {
+  switch (status) {
+    case CiCdRunStatus.Succeeded: return 'bg-green-400'
+    case CiCdRunStatus.Running: return 'bg-blue-400 animate-pulse'
+    case CiCdRunStatus.Failed: return 'bg-red-400'
+    case CiCdRunStatus.Cancelled: return 'bg-gray-500'
+    default: return 'bg-yellow-400'
+  }
 }
 
 // Chart helpers
@@ -267,3 +482,4 @@ function shortTime(d: string) {
   return `${dt.getHours().toString().padStart(2, '0')}:00`
 }
 </script>
+
