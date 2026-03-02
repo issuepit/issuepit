@@ -278,13 +278,18 @@ const SidebarSection = defineComponent({
   emits: ['open'],
   setup(props, { slots, emit }) {
     const storageKey = `sidebar-section-${props.label.toLowerCase().replace(/\s+/g, '-')}`
-    const stored = import.meta.client ? sessionStorage.getItem(storageKey) : null
+    const stored = import.meta.client
+      ? (sessionStorage.getItem(storageKey) ?? localStorage.getItem(storageKey))
+      : null
     const isOpen = ref(stored !== null ? stored === 'true' : props.defaultOpen)
     const hasLoaded = ref(false)
 
     function toggle() {
       isOpen.value = !isOpen.value
-      if (import.meta.client) sessionStorage.setItem(storageKey, String(isOpen.value))
+      if (import.meta.client) {
+        sessionStorage.setItem(storageKey, String(isOpen.value))
+        localStorage.setItem(storageKey, String(isOpen.value))
+      }
       if (isOpen.value && props.lazy && !hasLoaded.value) {
         hasLoaded.value = true
         emit('open')
