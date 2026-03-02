@@ -134,8 +134,8 @@ async function main() {
   }
   await loginPage.waitForURL(`${FRONTEND_URL}/`, { timeout: 20_000 });
 
-  // Get tenant ID from API
-  const apiClient = await context.request.newContext({ baseURL: API_URL });
+  // Get tenant ID from API; context.request shares cookies with the browser context
+  const apiClient = context.request;
   const meRes = await apiClient.get(`${API_URL}/api/auth/me`);
   const me = await meRes.json();
   const tenantId = me.tenantId || me.tenant?.id;

@@ -22,6 +22,7 @@ this file descripes rules on how agenting coding tools work with this repository
 - Do not create MD files for task descriptions done in this session
 - **PRs that include UI changes must add screenshots** showing the new/changed UI in the PR description or as a PR comment
 - **New UI features must include basic positive E2E tests** covering the main flow (create, list, interact)
+- **Do not increase CI timeouts** as a workaround — if a job exceeds its timeout something is structurally wrong (wrong filters, missing pre-conditions, etc.). Investigate and fix the root cause. Flakiness may justify a small margin but long timeouts are not preferred.
 
 - Always run tests at the end of a session
 - Use conventional commits

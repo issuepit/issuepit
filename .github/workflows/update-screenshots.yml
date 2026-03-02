@@ -66,7 +66,7 @@ jobs:
 
       - name: Start Aspire AppHost
         if: ${{ !inputs.frontend_url }}
-        timeout-minutes: 20
+        timeout-minutes: 5
         env:
           DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
           ASPIRE_ALLOW_UNSECURED_TRANSPORT: "true"
@@ -81,12 +81,12 @@ jobs:
 
           # ── Step 1: Wait for Aspire to distribute all resources ────────────────
           echo "Waiting for Aspire to distribute resources..."
-          for i in $(seq 1 120); do
+          for i in $(seq 1 36); do
             if grep -q 'Distributed application started' /tmp/aspire.log 2>/dev/null; then
               echo "Aspire distributed (iteration $i)"
               break
             fi
-            if [ "$i" -eq 120 ]; then
+            if [ "$i" -eq 36 ]; then
               echo "::error::Timeout waiting for Aspire to distribute"
               cat /tmp/aspire.log
               exit 1
@@ -100,7 +100,7 @@ jobs:
           API_URL="http://localhost:5035"
           echo "Polling API health at $API_URL/health..."
           API_HEALTHY=false
-          for i in $(seq 1 180); do
+          for i in $(seq 1 24); do
             if curl -sf "$API_URL/health" > /dev/null 2>&1; then
               echo "API is healthy (iteration $i)"
               API_HEALTHY=true
@@ -120,7 +120,7 @@ jobs:
           # Read it from the node process environment via /proc.
           echo "Waiting for frontend (node/nuxt) process with NUXT_PORT..."
           FRONTEND_URL=""
-          for i in $(seq 1 60); do
+          for i in $(seq 1 12); do
             for pid_dir in /proc/[0-9]*; do
               port=$(cat "$pid_dir/environ" 2>/dev/null | tr '\0' '\n' | grep '^NUXT_PORT=' | cut -d= -f2)
               if [ -n "$port" ]; then
@@ -139,7 +139,7 @@ jobs:
 
           echo "Polling frontend at $FRONTEND_URL..."
           FRONTEND_READY=false
-          for i in $(seq 1 60); do
+          for i in $(seq 1 12); do
             if curl -sf "$FRONTEND_URL" > /dev/null 2>&1; then
               echo "Frontend is reachable (iteration $i)"
               FRONTEND_READY=true
