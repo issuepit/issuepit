@@ -246,7 +246,8 @@
                             <textarea v-model="comment.text" rows="2"
                               placeholder="Add a comment… (Ctrl+Enter to submit)"
                               class="flex-1 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white px-3 py-2 focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none"
-                              @keydown.ctrl.enter="submitInlineComment(file, hunk, comment, hunkIdx)"></textarea>
+                              @keydown.ctrl.enter="submitInlineComment(file, hunk, comment, hunkIdx)"
+                              @paste="e => handleImagePaste(e, md => comment.text += md)"></textarea>
                             <div class="flex flex-col gap-1.5">
                               <button @click="submitInlineComment(file, hunk, comment, hunkIdx)"
                                 :disabled="!comment.text.trim()"
@@ -339,7 +340,8 @@
                             <textarea v-model="comment.text" rows="2"
                               placeholder="Add a comment… (Ctrl+Enter to submit)"
                               class="flex-1 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white px-3 py-2 focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none"
-                              @keydown.ctrl.enter="submitInlineComment(file, hunk, comment, hunkIdx)"></textarea>
+                              @keydown.ctrl.enter="submitInlineComment(file, hunk, comment, hunkIdx)"
+                              @paste="e => handleImagePaste(e, md => comment.text += md)"></textarea>
                             <div class="flex flex-col gap-1.5">
                               <button @click="submitInlineComment(file, hunk, comment, hunkIdx)"
                                 :disabled="!comment.text.trim()"
@@ -395,7 +397,9 @@
         </div>
         <textarea v-model="generalComment" rows="3"
           placeholder="Add an overall comment about this diff…"
-          class="w-full bg-gray-800 border border-gray-700 rounded-lg text-sm text-white px-3 py-2 focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none mb-2"></textarea>
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg text-sm text-white px-3 py-2 focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none mb-2"
+          @paste="e => handleImagePaste(e, md => generalComment += md)"></textarea>
+        <p v-if="uploadingImage" class="text-xs text-gray-400 mb-2">Uploading image…</p>
         <div class="flex gap-2 flex-wrap">
           <button @click="addGeneralComment" :disabled="!generalComment.trim()"
             class="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
@@ -468,6 +472,8 @@ const id = route.params.id as string
 const store = useGitStore()
 const issuesStore = useIssuesStore()
 const authStore = useAuthStore()
+
+const { uploading: uploadingImage, handlePaste: handleImagePaste } = useImageUpload()
 
 const repoChecked = ref(false)
 const baseBranch = ref('')
