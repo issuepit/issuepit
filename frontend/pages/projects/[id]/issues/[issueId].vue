@@ -142,6 +142,54 @@
             </div>
           </div>
 
+          <!-- Linked Issues -->
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Linked Issues</h2>
+            <div v-if="store.currentLinks.length" class="space-y-1.5 mb-3">
+              <div v-for="link in store.currentLinks" :key="link.id"
+                class="flex items-center gap-2 group py-1 px-2 rounded-lg hover:bg-gray-800/60 transition-colors">
+                <span class="text-xs text-brand-400 shrink-0 min-w-[70px]">{{ IssueLinkTypeLabels[link.linkType] }}</span>
+                <NuxtLink :to="`/projects/${id}/issues/${link.targetIssueId}`"
+                  class="flex items-center gap-1.5 text-sm text-gray-300 hover:text-white flex-1 min-w-0">
+                  <span class="text-xs text-gray-600 shrink-0">#{{ link.targetIssue?.number }}</span>
+                  <span class="truncate">{{ link.targetIssue?.title }}</span>
+                </NuxtLink>
+                <button @click="store.removeLink(issueId, link.id)"
+                  class="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition-all">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div v-if="!addingLink">
+              <button @click="addingLink = true"
+                class="text-xs text-gray-500 hover:text-brand-400 transition-colors flex items-center gap-1">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+                Add link
+              </button>
+            </div>
+            <div v-else class="space-y-2">
+              <select v-model="linkType"
+                class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500">
+                <option v-for="(label, val) in IssueLinkTypeLabels" :key="val" :value="val">{{ label }}</option>
+              </select>
+              <select v-model="linkTargetIssueId"
+                class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500">
+                <option value="">Select issue...</option>
+                <option v-for="i in allProjectIssues" :key="i.id" :value="i.id">#{{ i.number }} {{ i.title }}</option>
+              </select>
+              <div class="flex gap-2">
+                <button @click="submitAddLink" :disabled="!linkTargetIssueId"
+                  class="text-xs bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-2.5 py-1.5 rounded transition-colors">Add</button>
+                <button @click="addingLink = false; linkTargetIssueId = ''"
+                  class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-2.5 py-1.5 rounded transition-colors">Cancel</button>
+              </div>
+            </div>
+          </div>
+
           <!-- Comments -->
           <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
             <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-4">
@@ -367,7 +415,7 @@
 <script setup lang="ts">
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { IssueStatus, IssueType } from '~/types'
+import { IssueStatus, IssueType, IssueLinkType, IssueLinkTypeLabels } from '~/types'
 import type { IssuePriority } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
 import { useLabelsStore } from '~/stores/labels'
@@ -395,6 +443,13 @@ const creatingSubIssue = ref(false)
 const newSubIssueTitle = ref('')
 const editingCommentId = ref<string | null>(null)
 const commentEdit = ref('')
+
+// Links
+const addingLink = ref(false)
+const linkTargetIssueId = ref('')
+const linkType = ref<IssueLinkType>(IssueLinkType.LinkedTo)
+const allProjectIssues = ref<Array<{ id: string; number: number; title: string }>>([])
+
 
 // All tenant users for assignee browsing
 const tenantUsers = ref<Array<{ id: string; username: string }>>([])
@@ -436,11 +491,19 @@ onMounted(async () => {
     store.fetchComments(issueId),
     store.fetchCodeReviewComments(issueId),
     store.fetchTasks(issueId),
+    store.fetchLinks(issueId),
     labelsStore.fetchLabels(id),
     agentsStore.fetchAgents(),
     fetchTenantUsers(),
     milestonesStore.fetchMilestones(id),
   ])
+  // Fetch all issues in this project for link target selection (excluding current)
+  try {
+    const data = await api.get<Array<{ id: string; number: number; title: string }>>('/api/issues', { params: { projectId: id } })
+    allProjectIssues.value = data.filter((i: { id: string }) => i.id !== issueId)
+  } catch (e) {
+    console.error('Failed to fetch project issues for link selector', e)
+  }
 })
 
 const availableLabels = computed(() => {
@@ -528,8 +591,15 @@ async function addTask() {
   newTaskTitle.value = ''
 }
 
-async function createSubIssue() {
-  if (!newSubIssueTitle.value.trim() || !store.currentIssue) return
+async function submitAddLink() {
+  if (!linkTargetIssueId.value) return
+  await store.addLink(issueId, linkTargetIssueId.value, linkType.value)
+  addingLink.value = false
+  linkTargetIssueId.value = ''
+  linkType.value = IssueLinkType.LinkedTo
+}
+
+async function createSubIssue() {  if (!newSubIssueTitle.value.trim() || !store.currentIssue) return
   await store.createIssue(id, {
     title: newSubIssueTitle.value.trim(),
     status: IssueStatus.Todo,

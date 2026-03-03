@@ -11,6 +11,15 @@
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
       </svg>
       <h1 class="text-xl font-bold text-white">CI/CD Run</h1>
+      <!-- WS connection indicator -->
+      <span v-if="isConnected" class="flex items-center gap-1 text-xs text-green-400 font-normal ml-1">
+        <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+        Live
+      </span>
+      <span v-else class="flex items-center gap-1 text-xs text-gray-600 font-normal ml-1">
+        <span class="w-1.5 h-1.5 rounded-full bg-gray-600" />
+        Offline
+      </span>
     </div>
 
     <!-- Loading -->
@@ -309,8 +318,50 @@ const debugMetadata = computed(() => {
   return entries
 })
 
+// `now` is updated on each server-pushed event so the duration display stays live without a timer
+const now = ref(Date.now())
+
+// SignalR connections
+const { connection: cicdConnection, isConnected, connect: connectCicd } = useSignalR('/hubs/cicd-output')
+const { connection: projectConnection, connect: connectProject } = useSignalR('/hubs/project')
+
 onMounted(async () => {
   await store.fetchRun(runId)
+
+  // Connect to the CiCd output hub to receive live log lines and run-completed events
+  await connectCicd()
+  if (cicdConnection.value) {
+    await cicdConnection.value.invoke('JoinRun', runId).catch((e: unknown) => { console.warn('Failed to join run group', e) })
+    cicdConnection.value.on('LogLine', (event: { runId: string; payload: string }) => {
+      try {
+        const data = JSON.parse(event.payload) as { event?: string; stream?: string; line?: string; timestamp?: string }
+        if (data.event === 'run-completed') {
+          now.value = Date.now()
+          // Refresh the run info (status, endedAt) now that the run is finished
+          store.fetchRun(runId)
+        } else if (data.event === 'run-heartbeat') {
+          now.value = Date.now()
+        } else if (data.line !== undefined) {
+          store.currentRunLogs.push({
+            id: crypto.randomUUID(),
+            line: data.line,
+            stream: data.stream ?? 'stdout',
+            streamName: data.stream ? (data.stream.charAt(0).toUpperCase() + data.stream.slice(1)) : 'Stdout',
+            timestamp: data.timestamp ?? new Date().toISOString(),
+          })
+        }
+      } catch (e) { console.warn('Failed to parse LogLine payload', e) }
+    })
+  }
+
+  // Also connect to project hub to receive status changes (cancel, external CI/CD, run-completed via relay)
+  await connectProject()
+  if (projectConnection.value) {
+    await projectConnection.value.invoke('JoinProject', projectId).catch((e: unknown) => { console.warn('Failed to join project group', e) })
+    projectConnection.value.on('RunsUpdated', (data: { runId: string }) => {
+      if (data.runId === runId) store.fetchRun(runId)
+    })
+  }
 })
 
 async function retryRun() {
@@ -378,7 +429,7 @@ function formatLogTime(d: string) {
 }
 
 function duration(start: string, end?: string) {
-  const ms = (end ? new Date(end).getTime() : Date.now()) - new Date(start).getTime()
+  const ms = (end ? new Date(end).getTime() : now.value) - new Date(start).getTime()
   if (ms < 0) return '—'
   const s = Math.floor(ms / 1000)
   if (s < 60) return `${s}s`

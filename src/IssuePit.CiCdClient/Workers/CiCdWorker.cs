@@ -129,6 +129,17 @@ public class CiCdWorker(
 
         if (trigger is null || trigger.ProjectId == Guid.Empty) return;
 
+        // Inject project-level ActEnv/ActSecrets if not already supplied by the caller.
+        var project = await db.Projects.FindAsync([trigger.ProjectId], stoppingToken);
+        if (project is not null)
+        {
+            trigger = trigger with
+            {
+                ActEnv = trigger.ActEnv ?? project.ActEnv,
+                ActSecrets = trigger.ActSecrets ?? project.ActSecrets,
+            };
+        }
+
         var run = new CiCdRun
         {
             Id = Guid.NewGuid(),
@@ -166,6 +177,11 @@ public class CiCdWorker(
             }
 
             var runtime = runtimeFactory.Create();
+
+            // Start a periodic heartbeat so connected clients can keep the duration display live
+            // without needing a client-side timer. The heartbeat is cancelled when the run finishes.
+            _ = PublishHeartbeatAsync(run.Id.ToString(), runCts.Token);
+
             await runtime.RunAsync(
                 run,
                 trigger,
@@ -252,6 +268,28 @@ public class CiCdWorker(
         return subscriber.PublishAsync(
             RedisChannel.Literal($"cicd-run:{runId}"),
             payload);
+    }
+
+    /// <summary>
+    /// Publishes a lightweight heartbeat event every 30 seconds for the duration of the run.
+    /// The relay service forwards it as <c>RunsUpdated</c> on the project hub so that connected
+    /// clients can refresh their duration display without any client-side timer.
+    /// </summary>
+    private async Task PublishHeartbeatAsync(string runId, CancellationToken ct)
+    {
+        try
+        {
+            var heartbeat = JsonSerializer.Serialize(new { @event = "run-heartbeat" });
+            while (!ct.IsCancellationRequested)
+            {
+                await PublishLogLineAsync(runId, heartbeat);
+                await Task.Delay(TimeSpan.FromSeconds(30), ct);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Run completed or was cancelled — stop heartbeat silently
+        }
     }
 }
 

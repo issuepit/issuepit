@@ -456,4 +456,68 @@ public class HappyPathTests : IAsyncLifetime
         }
         throw new InvalidOperationException("Default 'localhost' tenant not found. Ensure the migrator has run.");
     }
+
+    /// <summary>
+    /// API happy path for issue links: create two issues → link them → verify link is returned → remove link.
+    /// </summary>
+    [Fact]
+    public async Task Api_HappyPath_LinkIssues()
+    {
+        using var client = CreateCookieClient();
+
+        var tenantId = await GetDefaultTenantIdAsync();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"e2e{Guid.NewGuid():N}"[..12];
+        const string password = "TestPass1!";
+        await client.PostAsJsonAsync("/api/auth/register", new { username, password });
+
+        // Create org and project
+        var orgSlug = $"e2e-lnk-org-{Guid.NewGuid():N}"[..16];
+        var orgResp = await client.PostAsJsonAsync("/api/orgs", new { name = "E2E Link Org", slug = orgSlug });
+        var org = await orgResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var orgId = Guid.Parse(org.GetProperty("id").GetString()!);
+
+        var projectSlug = $"e2e-lnk-{Guid.NewGuid():N}"[..14];
+        var projResp = await client.PostAsJsonAsync("/api/projects", new { name = "Link Project", slug = projectSlug, orgId });
+        var project = await projResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var projectId = Guid.Parse(project.GetProperty("id").GetString()!);
+
+        // Create two issues
+        var issue1Resp = await client.PostAsJsonAsync("/api/issues", new { title = "Issue Alpha", projectId });
+        Assert.Equal(HttpStatusCode.Created, issue1Resp.StatusCode);
+        var issue1 = await issue1Resp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var issue1Id = issue1.GetProperty("id").GetString()!;
+
+        var issue2Resp = await client.PostAsJsonAsync("/api/issues", new { title = "Issue Beta", projectId });
+        Assert.Equal(HttpStatusCode.Created, issue2Resp.StatusCode);
+        var issue2 = await issue2Resp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var issue2Id = issue2.GetProperty("id").GetString()!;
+
+        // Link issue1 blocks issue2
+        var linkResp = await client.PostAsJsonAsync(
+            $"/api/issues/{issue1Id}/links",
+            new { targetIssueId = issue2Id, linkType = "blocks" });
+        Assert.Equal(HttpStatusCode.Created, linkResp.StatusCode);
+        var link = await linkResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var linkId = link.GetProperty("id").GetString()!;
+        Assert.Equal(issue2Id, link.GetProperty("targetIssueId").GetString());
+        Assert.Equal("blocks", link.GetProperty("linkType").GetString());
+
+        // Verify the link appears in GET
+        var linksResp = await client.GetAsync($"/api/issues/{issue1Id}/links");
+        Assert.Equal(HttpStatusCode.OK, linksResp.StatusCode);
+        var links = await linksResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal(1, links.GetArrayLength());
+        Assert.Equal("Issue Beta", links.EnumerateArray().First().GetProperty("targetIssue").GetProperty("title").GetString());
+
+        // Remove the link
+        var deleteResp = await client.DeleteAsync($"/api/issues/{issue1Id}/links/{linkId}");
+        Assert.Equal(HttpStatusCode.NoContent, deleteResp.StatusCode);
+
+        // Verify links are empty
+        var linksAfterDelete = await (await client.GetAsync($"/api/issues/{issue1Id}/links"))
+            .Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal(0, linksAfterDelete.GetArrayLength());
+    }
 }

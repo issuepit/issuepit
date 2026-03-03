@@ -30,5 +30,11 @@ public class Project
     /// <summary>Maximum number of concurrent CI/CD runners for this project. 0 means unlimited.</summary>
     public int MaxConcurrentRunners { get; set; } = 0;
 
+    /// <summary>Newline-separated KEY=VALUE pairs passed as <c>--env</c> arguments to <c>act</c> on each run.</summary>
+    public string? ActEnv { get; set; }
+
+    /// <summary>Newline-separated KEY=VALUE pairs passed as <c>--secret</c> arguments to <c>act</c> on each run.</summary>
+    public string? ActSecrets { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

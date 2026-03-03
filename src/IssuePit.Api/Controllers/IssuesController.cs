@@ -6,7 +6,6 @@ using IssuePit.Core.Enums;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
-
 namespace IssuePit.Api.Controllers;
 
 [ApiController]
@@ -365,12 +364,62 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         await db.SaveChangesAsync();
         return NoContent();
     }
+
+    // --- Issue Links ---
+
+    [HttpGet("{id:guid}/links")]
+    public async Task<IActionResult> GetLinks(Guid id)
+    {
+        var links = await db.IssueLinks
+            .Include(l => l.TargetIssue)
+            .Where(l => l.IssueId == id)
+            .OrderBy(l => l.CreatedAt)
+            .ToListAsync();
+        return Ok(links);
+    }
+
+    [HttpPost("{id:guid}/links")]
+    public async Task<IActionResult> AddLink(Guid id, [FromBody] IssueLinkRequest req)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var issue = await db.Issues.FindAsync(id);
+        if (issue is null) return NotFound();
+        var target = await db.Issues.FindAsync(req.TargetIssueId);
+        if (target is null) return NotFound("Target issue not found.");
+        if (id == req.TargetIssueId) return BadRequest("Cannot link an issue to itself.");
+        var exists = await db.IssueLinks.AnyAsync(l =>
+            l.IssueId == id && l.TargetIssueId == req.TargetIssueId && l.LinkType == req.LinkType);
+        if (exists) return Conflict();
+        var link = new IssueLink
+        {
+            Id = Guid.NewGuid(),
+            IssueId = id,
+            TargetIssueId = req.TargetIssueId,
+            LinkType = req.LinkType,
+            CreatedAt = DateTime.UtcNow,
+        };
+        db.IssueLinks.Add(link);
+        await db.SaveChangesAsync();
+        await db.Entry(link).Reference(l => l.TargetIssue).LoadAsync();
+        return Created($"/api/issues/{id}/links/{link.Id}", link);
+    }
+
+    [HttpDelete("{id:guid}/links/{linkId:guid}")]
+    public async Task<IActionResult> RemoveLink(Guid id, Guid linkId)
+    {
+        var link = await db.IssueLinks.FirstOrDefaultAsync(l => l.Id == linkId && l.IssueId == id);
+        if (link is null) return NotFound();
+        db.IssueLinks.Remove(link);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
 }
 
 public record CommentRequest(string Body, Guid? UserId);
 public record CodeReviewCommentRequest(string FilePath, int StartLine, int EndLine, string Sha, string? Snippet, string? ContextBefore, string? ContextAfter, string Body);
 public record AssigneeRequest(Guid? UserId, Guid? AgentId);
 public record LabelAssignRequest(Guid LabelId);
+public record IssueLinkRequest(Guid TargetIssueId, IssueLinkType LinkType);
 public record UpdateIssueRequest(
     string? Title,
     string? Body,

@@ -157,9 +157,9 @@ jobs:
           echo "Discovered API_URL=$API_URL"
           echo "Discovered FRONTEND_URL=$FRONTEND_URL"
 
-      - name: Install Playwright
+      - name: Install Playwright and image comparison tools
         run: |
-          npm install playwright
+          npm install playwright pngjs pixelmatch@5.3.0
           npx playwright install chromium --with-deps
 
       - name: Take screenshots
@@ -170,7 +170,19 @@ jobs:
           # These are public demo credentials seeded by IssuePit.Migrator's DemoDataSeeder.
           SCREENSHOT_USERNAME: ${{ !inputs.frontend_url && 'alice' || '' }}
           SCREENSHOT_PASSWORD: ${{ !inputs.frontend_url && 'alice' || '' }}
-        run: node scripts/take-screenshots.js docs/assets/screenshots
+        run: node scripts/take-screenshots.js /tmp/new-screenshots
+
+      - name: Compare screenshots and apply changes
+        id: similarity
+        run: |
+          node scripts/compare-screenshots.js \
+            /tmp/new-screenshots \
+            docs/assets/screenshots \
+            --apply \
+            --output=/tmp/similarity-report.md
+          echo 'report<<EOF' >> "$GITHUB_OUTPUT"
+          cat /tmp/similarity-report.md >> "$GITHUB_OUTPUT"
+          echo 'EOF' >> "$GITHUB_OUTPUT"
 
       - name: Create Pull Request
         if: ${{ github.event_name != 'pull_request' }}
@@ -185,5 +197,7 @@ jobs:
             Automated screenshot update.
 
             Triggered by: ${{ github.event_name }}${{ github.event_name == 'release' && format(' (release {0})', github.event.release.tag_name) || '' }}
+
+            ${{ steps.similarity.outputs.report }}
           labels: documentation
           add-paths: docs/assets/screenshots/**

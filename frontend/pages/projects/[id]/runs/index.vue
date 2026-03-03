@@ -177,11 +177,15 @@ const activeTab = ref<typeof tabs[number]>(route.query.tab === 'agent' ? 'Agent 
 
 const { connection, isConnected, connect } = useSignalR('/hubs/project')
 
+// `now` is updated on each server push so the duration column stays live without a client-side timer
+const now = ref(Date.now())
+
 async function refreshRunsData() {
   await Promise.all([
     store.fetchRuns(id),
     store.fetchAgentSessions(id),
   ])
+  now.value = Date.now()
 }
 
 onMounted(async () => {
@@ -209,7 +213,7 @@ function formatDate(d: string) {
 }
 
 function duration(start: string, end?: string) {
-  const ms = (end ? new Date(end).getTime() : Date.now()) - new Date(start).getTime()
+  const ms = (end ? new Date(end).getTime() : now.value) - new Date(start).getTime()
   if (ms < 0) return '—'
   const s = Math.floor(ms / 1000)
   if (s < 60) return `${s}s`

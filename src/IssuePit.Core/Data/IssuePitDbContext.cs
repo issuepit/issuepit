@@ -9,6 +9,7 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<Organization> Organizations => Set<Organization>();
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<Issue> Issues => Set<Issue>();
+    public DbSet<IssueLink> IssueLinks => Set<IssueLink>();
     public DbSet<IssueTask> IssueTasks => Set<IssueTask>();
     public DbSet<IssueAssignee> IssueAssignees => Set<IssueAssignee>();
     public DbSet<IssueComment> IssueComments => Set<IssueComment>();
@@ -140,6 +141,18 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
             .WithMany(i => i.SubIssues)
             .HasForeignKey(i => i.ParentIssueId)
             .IsRequired(false);
+
+        modelBuilder.Entity<Issue>()
+            .HasMany(i => i.Links)
+            .WithOne(l => l.Issue)
+            .HasForeignKey(l => l.IssueId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<IssueLink>()
+            .HasOne(l => l.TargetIssue)
+            .WithMany()
+            .HasForeignKey(l => l.TargetIssueId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<Issue>()
             .HasMany(i => i.Labels)

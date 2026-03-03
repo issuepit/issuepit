@@ -12,9 +12,6 @@ on:
       - 'docker/helper-containers/**'
       - '.github/workflows/helper-containers.yml'
   merge_group:
-    paths:
-      - 'docker/helper-containers/**'
-      - '.github/workflows/helper-containers.yml'
   workflow_dispatch:
     inputs:
       tag:

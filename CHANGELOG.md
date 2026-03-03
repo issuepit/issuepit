@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.3.0](https://github.com/issuepit/issuepit/compare/v1.2.0...v1.3.0) (2026-03-02)
+
+
+### Features
+
+* add public SVG status badge endpoint and project badges info page ([#259](https://github.com/issuepit/issuepit/issues/259)) ([0164978](https://github.com/issuepit/issuepit/commit/0164978c90c43570849026239632d80a1eb8a18d))
+* code review — changed files sidebar + auto-compare on branch change ([#240](https://github.com/issuepit/issuepit/issues/240)) ([01cb696](https://github.com/issuepit/issuepit/commit/01cb69627fc9feb83e6bd54a03c3a5b2929b2d52))
+* enhance code review comments data format with CodeReviewComment entity ([#235](https://github.com/issuepit/issuepit/issues/235)) ([efd578d](https://github.com/issuepit/issuepit/commit/efd578dc07ef7dadab7384583af623991f14a4e2))
+* global runs page for all agent and CI/CD runs across tenant ([#223](https://github.com/issuepit/issuepit/issues/223)) ([52045e3](https://github.com/issuepit/issuepit/commit/52045e34fc41a9ec23c1118200c1f585cd3f8dcd))
+* improve user docs — releases page, developer category, image lightbox, screenshot workflow ([#238](https://github.com/issuepit/issuepit/issues/238)) ([dd4573b](https://github.com/issuepit/issuepit/commit/dd4573be429bf7fa0da07dffa2da2a104e30cc94))
+* live sync for runs page via SignalR ([#247](https://github.com/issuepit/issuepit/issues/247)) ([50d183b](https://github.com/issuepit/issuepit/commit/50d183bdc8f17b54e7c91ce7e02cb722224c1c55))
+* milestones ([#224](https://github.com/issuepit/issuepit/issues/224)) ([86d0f7a](https://github.com/issuepit/issuepit/commit/86d0f7a7e4647df6ad022bb40bb2811b870a557b))
+* redesign project dashboard ([#229](https://github.com/issuepit/issuepit/issues/229)) ([2a70040](https://github.com/issuepit/issuepit/commit/2a70040752b424f47aaea785e5620bf7264807bc))
+* replace helper-act base image with Docker CLI + official act install script; set as default CI/CD container ([#244](https://github.com/issuepit/issuepit/issues/244)) ([4f91c3f](https://github.com/issuepit/issuepit/commit/4f91c3f987d6b1710a38e92c20a5169adda1c1e4))
+* screenshot similarity checker for docs auto-update workflow ([#262](https://github.com/issuepit/issuepit/issues/262)) ([dbb1aef](https://github.com/issuepit/issuepit/commit/dbb1aef8bb8f44257464b141af9817f3c0f57c9f))
+* sidebar section state persists per browser tab with cross-session fallback ([#231](https://github.com/issuepit/issuepit/issues/231)) ([d15cd05](https://github.com/issuepit/issuepit/commit/d15cd05822886e9103521c759cb05c8d4b95cd43))
+
+
+### Bug Fixes
+
+* add `workflows: write` permission to release-please workflow ([#243](https://github.com/issuepit/issuepit/issues/243)) ([b7f5d8a](https://github.com/issuepit/issuepit/commit/b7f5d8a34efba8bcf5a413f066f6d5c7cc05b4f4))
+* add verbose debug logging for agent session runs ([#248](https://github.com/issuepit/issuepit/issues/248)) ([7342b97](https://github.com/issuepit/issuepit/commit/7342b97e642a4a7b14774825be182aa6a0c8fc12))
+* code review page — split view overflow, line comments, large file lazy loading, localStorage persistence, issue workflow, multi-line comments, and UX improvements ([#213](https://github.com/issuepit/issuepit/issues/213)) ([35d1de7](https://github.com/issuepit/issuepit/commit/35d1de733da8e6ea19b8c5f37b59e51dfd506b82))
+* correct invalid GitHub Actions workflow syntax in release-please and helper-containers ([#246](https://github.com/issuepit/issuepit/issues/246)) ([efa4972](https://github.com/issuepit/issuepit/commit/efa4972e7e2050e5a4592c83109d4e0d031279f7))
+* flaky E2E test timeout on SPA navigation ([#245](https://github.com/issuepit/issuepit/issues/245)) ([e071878](https://github.com/issuepit/issuepit/commit/e0718780e760450dbe15846489ca7d0214b7b993))
+* image tag of docker act image ([998acd6](https://github.com/issuepit/issuepit/commit/998acd6cf53db349756587a8a2da974399cf585c))
+* move helper Dockerfiles into docker/helper-containers/ so release-please tracks them ([#252](https://github.com/issuepit/issuepit/issues/252)) ([0b628b8](https://github.com/issuepit/issuepit/commit/0b628b885c88c71e86427b3e0b728dd83d5a50b7))
+* preserve workspace path on CI/CD run retry, improve Docker diagnostics, and add advanced run options ([#219](https://github.com/issuepit/issuepit/issues/219)) ([51e1d50](https://github.com/issuepit/issuepit/commit/51e1d507647b25976955e67ba4b99e9fc849e099))
+* **sidebar:** load data for lazy sections restored as open; add collapsible sidebar ([#241](https://github.com/issuepit/issuepit/issues/241)) ([e6d3953](https://github.com/issuepit/issuepit/commit/e6d395354b781b182fdc27c33f5a0459343988e0))
+* update Playwright Docker image tag from non-existent v1.50.1 to v1.51.0 ([#258](https://github.com/issuepit/issuepit/issues/258)) ([98bc5fe](https://github.com/issuepit/issuepit/commit/98bc5fe92810ce5b714cd9ff707c16a73a79ef0f))
+
 ## [1.2.0](https://github.com/issuepit/issuepit/compare/v1.1.0...v1.2.0) (2026-03-01)
 
 
