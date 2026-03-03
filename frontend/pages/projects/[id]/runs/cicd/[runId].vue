@@ -416,6 +416,24 @@
                 <div v-else class="text-gray-500 text-center py-4">No logs for this job</div>
               </div>
             </div>
+
+            <!-- Unmatched log job IDs warning (logs arrived for job IDs not in the graph) -->
+            <div v-if="unmatchedLogJobIds.length" class="mt-4 rounded-lg bg-gray-800/60 border border-gray-700 p-3">
+              <div class="flex items-center gap-2 mb-2">
+                <svg class="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span class="text-xs font-medium text-gray-400">Unmatched log streams ({{ unmatchedLogJobIds.length }}) — logs arrived for job IDs not found in the workflow graph</span>
+              </div>
+              <div class="flex flex-wrap gap-1">
+                <span
+                  v-for="id in unmatchedLogJobIds"
+                  :key="id"
+                  class="text-[10px] font-mono bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 text-gray-500">
+                  {{ id }}
+                </span>
+              </div>
+            </div>
           </div>
           <div v-else class="py-10 text-center text-sm text-gray-500">No job data available — job info is extracted from act's JSON output</div>
         </template>
@@ -719,6 +737,9 @@ const graphJobIndexes = computed(() => {
   const byId = new Map<string, string>()   // lowercase_id → graph_id
   const byName = new Map<string, string>() // lowercase_name → graph_id
 
+  // Collect last-segment candidates to detect ambiguous names (same last segment across multiple nodes).
+  const lastSegCandidates = new Map<string, string[]>()
+
   for (const j of graphJobs) {
     byId.set(j.id.toLowerCase(), j.id)
     const nameKey = j.name.trim().toLowerCase()
@@ -726,13 +747,30 @@ const graphJobIndexes = computed(() => {
     // Also index name without spaces around slashes (act may omit spaces: "Backend/Build" vs "Backend / Build")
     const nameNoSpaces = nameKey.replace(/\s*\/\s*/g, '/')
     if (nameNoSpaces !== nameKey && !byName.has(nameNoSpaces)) byName.set(nameNoSpaces, j.id)
-    // Also index just the last segment of compound names ("Caller / Callee" → "callee")
+    // Index by workflowFileStem/lastJobNamePart so act's "stem/callee" format can resolve correctly
+    if (j.workflowFile) {
+      const stem = j.workflowFile.replace(/\.(yml|yaml)$/i, '').toLowerCase()
+      const lastJobNamePart = (j.name.split(/\s*\/\s*/).pop() || j.name).trim().toLowerCase()
+      const workflowKey = `${stem}/${lastJobNamePart}`
+      if (!byName.has(workflowKey)) byName.set(workflowKey, j.id)
+    }
+    // Collect last-segment candidates (used below to prevent ambiguous single-segment matching)
     const nameParts = j.name.split(/\s*\/\s*/)
     if (nameParts.length > 1) {
       const lastPart = nameParts[nameParts.length - 1].trim().toLowerCase()
-      if (!byName.has(lastPart)) byName.set(lastPart, j.id)
+      if (!lastSegCandidates.has(lastPart)) lastSegCandidates.set(lastPart, [])
+      lastSegCandidates.get(lastPart)!.push(j.id)
     }
   }
+
+  // Add last-segment entries only when there is exactly ONE candidate.
+  // Multiple candidates (e.g. "build" in both "backend/build" and "pages/build") are ambiguous:
+  // using last-segment for them would map logs from one workflow to the wrong graph node.
+  for (const [lastSeg, candidates] of lastSegCandidates) {
+    if (candidates.length === 1 && !byName.has(lastSeg))
+      byName.set(lastSeg, candidates[0])
+  }
+
   return { byId, byName }
 })
 
@@ -740,12 +778,12 @@ const graphJobIndexes = computed(() => {
  * Maps an act log job ID to the matching graph node ID.
  *
  * act uses display names (e.g. "Build & Push") rather than YAML keys ("build").
- * For matrix jobs it appends "-N" (e.g. "Build & Push-2").
+ * For matrix jobs it appends "-N" (e.g. "Build & Push-2") or "(value)" (e.g. "Build (ubuntu-latest)").
  * Reusable workflow calls prefix with the workflow/caller name ("Docker Build & Push/Build & Push").
  *
  * Matching order:
  *  1. Exact ID match (case-insensitive, handles file-prefixed IDs like "docker/build").
- *  2. Strip trailing matrix index "-N", retry exact ID.
+ *  2. Strip trailing matrix index "-N" or "(value)", retry exact ID.
  *  3. Display-name match (full or stripped).
  *  4. Last path segment of a compound "/" path, stripped of matrix index.
  *  5. No match → return original log ID (shows as standalone box).
@@ -758,8 +796,8 @@ function resolveLogJobId(logId: string): string {
   // 1. Exact ID match
   if (byId.has(norm)) return byId.get(norm)!
 
-  // 2. Strip trailing matrix index "-N" and retry
-  const stripped = norm.replace(/-\d+$/, '').trim()
+  // 2. Strip trailing matrix index "-N" or "(value)" and retry
+  const stripped = norm.replace(/-\d+$/, '').replace(/\s*\([^)]*\)\s*$/, '').trim()
   if (stripped !== norm && byId.has(stripped)) return byId.get(stripped)!
 
   // 3. Display-name match (full then stripped)
@@ -769,7 +807,13 @@ function resolveLogJobId(logId: string): string {
   // 4. Compound path — match last segment (e.g. "Docker Build & Push/Build & Push-2")
   const slashIdx = norm.lastIndexOf('/')
   if (slashIdx !== -1) {
-    const lastSeg = norm.slice(slashIdx + 1).trim().replace(/-\d+$/, '').trim()
+    const prefix = norm.slice(0, slashIdx)
+    const lastSeg = norm.slice(slashIdx + 1).trim().replace(/-\d+$/, '').replace(/\s*\([^)]*\)\s*$/, '').trim()
+    // Try workflowFileStem/lastSeg format first (avoids false last-segment matches)
+    const workflowQualified = `${prefix}/${lastSeg}`
+    if (byName.has(workflowQualified)) return byName.get(workflowQualified)!
+    if (byId.has(workflowQualified)) return byId.get(workflowQualified)!
+    // Fallback: bare last segment (only unambiguous entries are in byName for last segments)
     if (byName.has(lastSeg)) return byName.get(lastSeg)!
     if (byId.has(lastSeg)) return byId.get(lastSeg)!
   }
@@ -810,16 +854,41 @@ const jobLogsByStep = computed<StepGroup[]>(() => {
 const collapsedSteps = ref(new Set<string>())
 /** Tracks which step IDs have already been auto-collapsed so we don't re-collapse them after manual expand. */
 const seenStepIds = ref(new Set<string>())
+/** Tracks count of steps in the previous render to detect when a new step starts. */
+const prevStepCount = ref(0)
 
-// Auto-collapse any new named step that appears (default collapsed on first render).
+// Auto-collapse logic:
+// - A new step starts → collapse it unless it is the current (last) step or has failed.
+// - When a new step starts, the previously-current step (now second-to-last) is collapsed unless it failed.
+// - Failed steps are always kept open (even if previously collapsed).
 watch(jobLogsByStep, (groups) => {
-  for (const g of groups) {
+  const newSeen = new Set(seenStepIds.value)
+  const newCollapsed = new Set(collapsedSteps.value)
+
+  for (let i = 0; i < groups.length; i++) {
+    const g = groups[i]
     const key = g.stepId ?? '__setup__'
-    if (!seenStepIds.value.has(key)) {
-      seenStepIds.value = new Set([...seenStepIds.value, key])
-      collapsedSteps.value = new Set([...collapsedSteps.value, key])
+    const isLast = i === groups.length - 1
+    const hasFailed = g.logs.some(l => l.stream === 'stderr')
+
+    if (!newSeen.has(key)) {
+      // First time we see this step: auto-collapse unless it's current or failed.
+      newSeen.add(key)
+      if (!isLast && !hasFailed) newCollapsed.add(key)
+    } else if (!isLast && !hasFailed && groups.length > prevStepCount.value && i === groups.length - 2) {
+      // A new step just appeared (groups grew by 1). The step at position groups.length-2 is
+      // the one that was the last (current) step in the previous render — collapse it now that
+      // it has been superseded by the new last step.
+      newCollapsed.add(key)
     }
+
+    // Failed steps must always stay open regardless of previous state.
+    if (hasFailed) newCollapsed.delete(key)
   }
+
+  seenStepIds.value = newSeen
+  collapsedSteps.value = newCollapsed
+  prevStepCount.value = groups.length
 }, { immediate: true })
 
 function toggleStep(stepId: string) {
@@ -917,12 +986,13 @@ const runIsTerminal = computed(() => {
 // Graph nodes get their needs/name from the YAML; log-only jobs fall back to id as name.
 const enrichedJobs = computed<EnrichedJob[]>(() => {
   const BOX_W = 220
-  // Base height covers: name + workflow file + status badge + timing + log count + padding (~150px).
-  // Matrix instance rows add 30px per row (2 instances per row assumed).
-  const BASE_BOX_H = 150
-  const MATRIX_ROW_H = 30
+  // Estimated box height breakdown:
+  //   name(20) + statusBadge(22) + logCount(16) + padding-tb(24) + inner gaps(~16) ≈ 98px (no workflow/timing)
+  //   + workflowFile(16) + timing(16) = 130px for a started job with workflow file info
+  const BASE_BOX_H = 130
+  const MATRIX_ROW_H = 24
   const COL_GAP = 80
-  const ROW_GAP = 20
+  const ROW_GAP = 14
   const PAD = 16
 
   // Helper: compute box height for a job based on current log data (matrix instances).
@@ -1045,6 +1115,24 @@ const visibleJobs = computed<EnrichedJob[]>(() => {
 })
 
 /**
+ * Raw act job IDs from logs that could not be resolved to any graph node.
+ * These are log lines that arrived for a job the graph doesn't know about (no matching node by ID or name).
+ * Shown as a warning in the Jobs tab so users know some logs are not associated with a graph box.
+ */
+const unmatchedLogJobIds = computed<string[]>(() => {
+  if (!store.currentRunGraph) return []
+  const graphNodeIds = new Set(enrichedJobs.value.map(j => j.id))
+  const unmatched = new Set<string>()
+  for (const log of store.currentRunLogs) {
+    if (!log.jobId) continue
+    const resolved = resolveLogJobId(log.jobId)
+    // If resolved ID is NOT in the graph (i.e., act emitted it but we have no graph node), warn.
+    if (!graphNodeIds.has(resolved)) unmatched.add(log.jobId)
+  }
+  return Array.from(unmatched).sort()
+})
+
+/**
  * Set of job IDs connected to the currently selected job (all ancestors + descendants via edges).
  * Used for visual highlighting of related nodes.
  */
@@ -1121,6 +1209,7 @@ function toggleJobFilter(jobId: string) {
     // Reset collapsed steps so each job starts with all steps collapsed by default.
     collapsedSteps.value = new Set()
     seenStepIds.value = new Set()
+    prevStepCount.value = 0
   }
 }
 
@@ -1129,6 +1218,7 @@ function selectMatrixInstance(jobId: string, rawId: string) {
   selectedMatrixRawId.value = selectedMatrixRawId.value === rawId ? null : rawId
   collapsedSteps.value = new Set()
   seenStepIds.value = new Set()
+  prevStepCount.value = 0
 }
 
 function jobStatusDot(job: Pick<EnrichedJob, 'hasError' | 'isComplete' | 'hasStarted'>) {
