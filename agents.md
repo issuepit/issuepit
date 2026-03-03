@@ -22,6 +22,7 @@ this file descripes rules on how agenting coding tools work with this repository
 - Do not create MD files for task descriptions done in this session
 - **PRs that include UI changes must add screenshots** showing the new/changed UI in the PR description or as a PR comment
 - **New UI features must include basic positive E2E tests** covering the main flow (create, list, interact)
+- **E2E tests must use Page Object Model (POM)** — create or extend a page object in `src/IssuePit.Tests.E2E/Pages/` for each page under test; tests should interact with pages only through these page objects and avoid inline Playwright calls
 - **Do not increase CI timeouts** as a workaround — if a job exceeds its timeout something is structurally wrong (wrong filters, missing pre-conditions, etc.). Investigate and fix the root cause. Flakiness may justify a small margin but long timeouts are not preferred.
 
 - Always run tests at the end of a session
