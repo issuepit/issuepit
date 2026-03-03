@@ -579,6 +579,7 @@ import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useIssuesStore } from '~/stores/issues'
 import { CiCdRunStatus, type CiCdRunLog } from '~/types'
 import { parseAnsiToHtml, stripAnsiCodes } from '~/composables/useAnsiParser'
+import { buildGraphJobIndexes, resolveLogJobId as resolveLogJobIdFn, matrixLabel as matrixLabelFn } from '~/utils/cicdLogMapper'
 
 const route = useRoute()
 const projectId = route.params.id as string
@@ -732,93 +733,10 @@ const filteredLogs = computed(() =>
 // We need a fuzzy resolver to map log IDs → graph node IDs to avoid duplicate boxes.
 
 /** Pre-built lookup indexes so resolveLogJobId() runs in O(1) per call. */
-const graphJobIndexes = computed(() => {
-  const graphJobs = store.currentRunGraph?.jobs ?? []
-  const byId = new Map<string, string>()   // lowercase_id → graph_id
-  const byName = new Map<string, string>() // lowercase_name → graph_id
+const graphJobIndexes = computed(() => buildGraphJobIndexes(store.currentRunGraph?.jobs ?? []))
 
-  // Collect last-segment candidates to detect ambiguous names (same last segment across multiple nodes).
-  const lastSegCandidates = new Map<string, string[]>()
-
-  for (const j of graphJobs) {
-    byId.set(j.id.toLowerCase(), j.id)
-    const nameKey = j.name.trim().toLowerCase()
-    byName.set(nameKey, j.id)
-    // Also index name without spaces around slashes (act may omit spaces: "Backend/Build" vs "Backend / Build")
-    const nameNoSpaces = nameKey.replace(/\s*\/\s*/g, '/')
-    if (nameNoSpaces !== nameKey && !byName.has(nameNoSpaces)) byName.set(nameNoSpaces, j.id)
-    // Index by workflowFileStem/lastJobNamePart so act's "stem/callee" format can resolve correctly
-    if (j.workflowFile) {
-      const stem = j.workflowFile.replace(/\.(yml|yaml)$/i, '').toLowerCase()
-      const lastJobNamePart = (j.name.split(/\s*\/\s*/).pop() || j.name).trim().toLowerCase()
-      const workflowKey = `${stem}/${lastJobNamePart}`
-      if (!byName.has(workflowKey)) byName.set(workflowKey, j.id)
-    }
-    // Collect last-segment candidates (used below to prevent ambiguous single-segment matching)
-    const nameParts = j.name.split(/\s*\/\s*/)
-    if (nameParts.length > 1) {
-      const lastPart = nameParts[nameParts.length - 1].trim().toLowerCase()
-      if (!lastSegCandidates.has(lastPart)) lastSegCandidates.set(lastPart, [])
-      lastSegCandidates.get(lastPart)!.push(j.id)
-    }
-  }
-
-  // Add last-segment entries only when there is exactly ONE candidate.
-  // Multiple candidates (e.g. "build" in both "backend/build" and "pages/build") are ambiguous:
-  // using last-segment for them would map logs from one workflow to the wrong graph node.
-  for (const [lastSeg, candidates] of lastSegCandidates) {
-    if (candidates.length === 1 && !byName.has(lastSeg))
-      byName.set(lastSeg, candidates[0])
-  }
-
-  return { byId, byName }
-})
-
-/**
- * Maps an act log job ID to the matching graph node ID.
- *
- * act uses display names (e.g. "Build & Push") rather than YAML keys ("build").
- * For matrix jobs it appends "-N" (e.g. "Build & Push-2") or "(value)" (e.g. "Build (ubuntu-latest)").
- * Reusable workflow calls prefix with the workflow/caller name ("Docker Build & Push/Build & Push").
- *
- * Matching order:
- *  1. Exact ID match (case-insensitive, handles file-prefixed IDs like "docker/build").
- *  2. Strip trailing matrix index "-N" or "(value)", retry exact ID.
- *  3. Display-name match (full or stripped).
- *  4. Last path segment of a compound "/" path, stripped of matrix index.
- *  5. No match → return original log ID (shows as standalone box).
- */
 function resolveLogJobId(logId: string): string {
-  const { byId, byName } = graphJobIndexes.value
-  // Normalise backslashes (Windows paths emitted by act on Windows hosts) so matching works.
-  const norm = logId.trim().toLowerCase().replace(/\\/g, '/')
-
-  // 1. Exact ID match
-  if (byId.has(norm)) return byId.get(norm)!
-
-  // 2. Strip trailing matrix index "-N" or "(value)" and retry
-  const stripped = norm.replace(/-\d+$/, '').replace(/\s*\([^)]*\)\s*$/, '').trim()
-  if (stripped !== norm && byId.has(stripped)) return byId.get(stripped)!
-
-  // 3. Display-name match (full then stripped)
-  if (byName.has(norm)) return byName.get(norm)!
-  if (stripped !== norm && byName.has(stripped)) return byName.get(stripped)!
-
-  // 4. Compound path — match last segment (e.g. "Docker Build & Push/Build & Push-2")
-  const slashIdx = norm.lastIndexOf('/')
-  if (slashIdx !== -1) {
-    const prefix = norm.slice(0, slashIdx)
-    const lastSeg = norm.slice(slashIdx + 1).trim().replace(/-\d+$/, '').replace(/\s*\([^)]*\)\s*$/, '').trim()
-    // Try workflowFileStem/lastSeg format first (avoids false last-segment matches)
-    const workflowQualified = `${prefix}/${lastSeg}`
-    if (byName.has(workflowQualified)) return byName.get(workflowQualified)!
-    if (byId.has(workflowQualified)) return byId.get(workflowQualified)!
-    // Fallback: bare last segment (only unambiguous entries are in byName for last segments)
-    if (byName.has(lastSeg)) return byName.get(lastSeg)!
-    if (byId.has(lastSeg)) return byId.get(lastSeg)!
-  }
-
-  return logId // No match — use as-is
+  return resolveLogJobIdFn(logId, graphJobIndexes.value)
 }
 
 const jobFilteredLogs = computed(() => {
@@ -1253,20 +1171,12 @@ function jobDuration(start: string, end?: string) {
 
 /**
  * Returns a short display label for a matrix instance button.
- * Strips the job's leaf display name prefix from the rawId so only the matrix discriminator
- * is shown (e.g. "Build & Push-1" → "1", "Build (ubuntu-latest)" → "ubuntu-latest").
+ * For workflow-prefixed rawIds (e.g. "Deploy GitHub Pages/Build") returns the last
+ * segment of the prefix as discriminator (e.g. "Deploy GitHub Pages").
+ * For simple matrix rawIds (e.g. "Build-2") returns the numeric index ("2").
  */
 function matrixLabel(rawId: string, job: EnrichedJob): string {
-  // Use the last "/" segment (act prefixes reusable workflow calls with caller name)
-  const slashIdx = rawId.lastIndexOf('/')
-  const seg = slashIdx !== -1 ? rawId.slice(slashIdx + 1) : rawId
-  // Strip the job's leaf display name (last part of compound "Caller / Callee") from the segment
-  const leafName = (job.name.split(/\s*\/\s*/).pop() || job.name).trim()
-  const stripped = seg.replace(new RegExp(`^${leafName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[-\\s(]*`, 'i'), '').replace(/\)\s*$/, '').trim()
-  if (stripped) return stripped
-  // Fallback: strip job.id prefix
-  const byId = seg.replace(new RegExp(`^${job.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-?`, 'i'), '').trim()
-  return byId || seg
+  return matrixLabelFn(rawId, job.name)
 }
 
 // ── Create Issue from failed job ───────────────────────────────────────────────
