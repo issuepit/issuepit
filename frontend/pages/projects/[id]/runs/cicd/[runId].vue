@@ -282,7 +282,7 @@
               <pre v-for="(w, i) in store.currentRunGraph.warnings" :key="i" class="text-xs text-yellow-400/80 font-mono whitespace-pre-wrap">{{ w }}</pre>
             </div>
             <!-- Job graph with SVG dependency arrows -->
-            <div class="relative overflow-x-auto pb-2">
+            <div class="relative overflow-x-auto pb-2" @click.self="deselectJob()">
               <!-- SVG arrows layer (absolute, behind boxes) -->
               <svg
                 v-if="graphLayout.svgWidth && graphLayout.svgHeight"
@@ -311,7 +311,8 @@
               <!-- Job boxes layer -->
               <div
                 :style="{ position: 'relative', width: graphLayout.svgWidth + 'px', minHeight: graphLayout.svgHeight + 'px', zIndex: 1 }"
-                style="z-index: 1">
+                style="z-index: 1"
+                @click.self="deselectJob()">
                 <div
                   v-for="job in visibleJobs"
                   :key="job.id"
@@ -362,7 +363,8 @@
                       ]"
                       @click.stop="selectMatrixInstance(job.id, inst.rawId)">
                       <span :class="jobStatusDot(inst)" class="w-1.5 h-1.5 rounded-full shrink-0" />
-                      {{ inst.rawId.replace(new RegExp(`^${job.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-?`, 'i'), '') || inst.rawId }}
+                      {{ matrixLabel(inst.rawId, job) }}
+                      <span v-if="inst.startedAt" class="text-gray-600 ml-0.5">{{ jobDuration(inst.startedAt, inst.isComplete ? inst.endedAt : undefined) }}</span>
                     </button>
                   </div>
 
@@ -388,22 +390,21 @@
                   Showing logs for job: <span class="text-white font-mono">{{ visibleJobs.find(j => j.id === selectedJob)?.name ?? selectedJob }}</span>
                   <template v-if="selectedMatrixRawId"> · instance <span class="text-brand-300 font-mono">{{ selectedMatrixRawId }}</span></template>
                 </span>
-                <button class="text-xs text-gray-500 hover:text-gray-300 transition-colors" @click="selectedJob = null; selectedMatrixRawId = null">Clear filter</button>
+                <button class="text-xs text-gray-500 hover:text-gray-300 transition-colors" @click="deselectJob()">Clear filter</button>
               </div>
               <div class="bg-gray-950 rounded-lg p-4 font-mono text-xs overflow-auto max-h-[500px]">
                 <template v-if="jobLogsByStep.length">
                   <template v-for="(group, gi) in jobLogsByStep" :key="gi">
-                    <!-- Step header: collapsible, shows duration -->
+                    <!-- Step header: collapsible, shows duration. Null stepId → "Set up job" (step 0). -->
                     <div
-                      v-if="group.stepId"
                       class="flex items-center gap-2 mt-3 mb-1 first:mt-0 select-none cursor-pointer group"
-                      @click="toggleStep(group.stepId)">
-                      <span class="text-gray-600 transition-transform" :class="collapsedSteps.has(group.stepId) ? '' : 'rotate-90'">▶</span>
-                      <span class="text-xs font-semibold text-gray-400 tracking-wide uppercase group-hover:text-gray-200 transition-colors">{{ group.stepId }}</span>
+                      @click="toggleStep(group.stepId ?? '__setup__')">
+                      <span class="text-gray-600 transition-transform" :class="collapsedSteps.has(group.stepId ?? '__setup__') ? '' : 'rotate-90'">▶</span>
+                      <span class="text-xs font-semibold text-gray-400 tracking-wide uppercase group-hover:text-gray-200 transition-colors">{{ group.stepId ?? 'Set up job' }}</span>
                       <span v-if="stepDuration(group)" class="text-[10px] text-gray-600 font-mono">{{ stepDuration(group) }}</span>
                       <span class="flex-1 border-t border-gray-800" />
                     </div>
-                    <template v-if="!group.stepId || !collapsedSteps.has(group.stepId)">
+                    <template v-if="!collapsedSteps.has(group.stepId ?? '__setup__')">
                       <div v-for="log in group.logs" :key="log.id" class="flex gap-3 leading-5">
                         <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
                         <!-- eslint-disable-next-line vue/no-v-html -->
@@ -694,6 +695,11 @@ const selectedJob = ref<string | null>(null)
 /** When a specific matrix instance is selected (rawId from act), only show that instance's logs. */
 const selectedMatrixRawId = ref<string | null>(null)
 
+function deselectJob() {
+  selectedJob.value = null
+  selectedMatrixRawId.value = null
+}
+
 const filteredLogs = computed(() =>
   activeStream.value === null
     ? store.currentRunLogs
@@ -715,7 +721,11 @@ const graphJobIndexes = computed(() => {
 
   for (const j of graphJobs) {
     byId.set(j.id.toLowerCase(), j.id)
-    byName.set(j.name.trim().toLowerCase(), j.id)
+    const nameKey = j.name.trim().toLowerCase()
+    byName.set(nameKey, j.id)
+    // Also index name without spaces around slashes (act may omit spaces: "Backend/Build" vs "Backend / Build")
+    const nameNoSpaces = nameKey.replace(/\s*\/\s*/g, '/')
+    if (nameNoSpaces !== nameKey && !byName.has(nameNoSpaces)) byName.set(nameNoSpaces, j.id)
     // Also index just the last segment of compound names ("Caller / Callee" → "callee")
     const nameParts = j.name.split(/\s*\/\s*/)
     if (nameParts.length > 1) {
@@ -804,9 +814,10 @@ const seenStepIds = ref(new Set<string>())
 // Auto-collapse any new named step that appears (default collapsed on first render).
 watch(jobLogsByStep, (groups) => {
   for (const g of groups) {
-    if (g.stepId && !seenStepIds.value.has(g.stepId)) {
-      seenStepIds.value = new Set([...seenStepIds.value, g.stepId])
-      collapsedSteps.value = new Set([...collapsedSteps.value, g.stepId])
+    const key = g.stepId ?? '__setup__'
+    if (!seenStepIds.value.has(key)) {
+      seenStepIds.value = new Set([...seenStepIds.value, key])
+      collapsedSteps.value = new Set([...collapsedSteps.value, key])
     }
   }
 }, { immediate: true })
@@ -860,6 +871,7 @@ interface EnrichedJob {
   // layout
   x: number
   y: number
+  boxHeight: number
 }
 
 const jobLogMap = computed(() => {
@@ -905,12 +917,21 @@ const runIsTerminal = computed(() => {
 // Graph nodes get their needs/name from the YAML; log-only jobs fall back to id as name.
 const enrichedJobs = computed<EnrichedJob[]>(() => {
   const BOX_W = 220
-  // Generous box height to prevent overlaps: boxes can show name, file, status, timing, log count,
-  // and (for matrix jobs) a row of instance dots. 180 px covers all combinations without DOM measurement.
-  const BOX_H = 180
+  // Base height covers: name + workflow file + status badge + timing + log count + padding (~150px).
+  // Matrix instance rows add 30px per row (2 instances per row assumed).
+  const BASE_BOX_H = 150
+  const MATRIX_ROW_H = 30
   const COL_GAP = 80
   const ROW_GAP = 20
   const PAD = 16
+
+  // Helper: compute box height for a job based on current log data (matrix instances).
+  const computeBoxH = (id: string) => {
+    const instances = jobLogMap.value.get(id)?.instances
+    const instanceCount = instances ? instances.size : 0
+    const matrixRows = instanceCount > 1 ? Math.ceil(instanceCount / 2) : 0
+    return BASE_BOX_H + matrixRows * MATRIX_ROW_H
+  }
 
   // Collect all job IDs
   const graphJobs = store.currentRunGraph?.jobs ?? []
@@ -959,7 +980,7 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
     byCol.get(col)!.push(id)
   }
 
-  // Assign x/y positions
+  // Assign x/y positions using per-job heights for accurate spacing
   const posMap = new Map<string, { x: number; y: number }>()
   const sortedCols = Array.from(byCol.keys()).sort((a, b) => a - b)
   let x = PAD
@@ -968,7 +989,7 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
     let y = PAD
     for (const id of jobs) {
       posMap.set(id, { x, y })
-      y += BOX_H + ROW_GAP
+      y += computeBoxH(id) + ROW_GAP
     }
     x += BOX_W + COL_GAP
   }
@@ -1011,6 +1032,7 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
       endedAt: isComplete && !logs.endedAt ? (store.currentRun?.endedAt ?? logs.startedAt) : logs.endedAt,
       x: pos.x,
       y: pos.y,
+      boxHeight: computeBoxH(id),
     }
   })
 })
@@ -1058,13 +1080,12 @@ interface SvgEdge { path: string; highlighted: boolean }
 
 const graphLayout = computed<{ svgWidth: number; svgHeight: number; edges: SvgEdge[] }>(() => {
   const BOX_W = 220
-  const BOX_H = 180
   const PAD = 16
 
   if (!visibleJobs.value.length) return { svgWidth: 0, svgHeight: 0, edges: [] }
 
   const visibleIds = new Set(visibleJobs.value.map(j => j.id))
-  const posMap = new Map(visibleJobs.value.map(j => [j.id, { x: j.x, y: j.y }]))
+  const posMap = new Map(visibleJobs.value.map(j => [j.id, { x: j.x, y: j.y, boxHeight: j.boxHeight }]))
   const highlightedIds = connectedJobIds.value
   const sel = selectedJob.value
 
@@ -1076,9 +1097,9 @@ const graphLayout = computed<{ svgWidth: number; svgHeight: number; edges: SvgEd
     if (!from || !to) return null
 
     const x1 = from.x + BOX_W
-    const y1 = from.y + BOX_H / 2
+    const y1 = from.y + from.boxHeight / 2
     const x2 = to.x
-    const y2 = to.y + BOX_H / 2
+    const y2 = to.y + to.boxHeight / 2
     const cx = (x1 + x2) / 2
     const highlighted = sel !== null && (e.from === sel || e.to === sel || highlightedIds.has(e.from) || highlightedIds.has(e.to))
 
@@ -1086,15 +1107,14 @@ const graphLayout = computed<{ svgWidth: number; svgHeight: number; edges: SvgEd
   }).filter((e): e is SvgEdge => e !== null)
 
   const maxX = Math.max(...visibleJobs.value.map(j => j.x)) + BOX_W + PAD
-  const maxY = Math.max(...visibleJobs.value.map(j => j.y)) + BOX_H + PAD
+  const maxY = Math.max(...visibleJobs.value.map(j => j.y + j.boxHeight)) + PAD
 
   return { svgWidth: maxX, svgHeight: maxY, edges }
 })
 
 function toggleJobFilter(jobId: string) {
   if (selectedJob.value === jobId) {
-    selectedJob.value = null
-    selectedMatrixRawId.value = null
+    deselectJob()
   } else {
     selectedJob.value = jobId
     selectedMatrixRawId.value = null
@@ -1139,6 +1159,24 @@ function jobDuration(start: string, end?: string) {
   if (s < 60) return `${s}s`
   const m = Math.floor(s / 60)
   return `${m}m ${s % 60}s`
+}
+
+/**
+ * Returns a short display label for a matrix instance button.
+ * Strips the job's leaf display name prefix from the rawId so only the matrix discriminator
+ * is shown (e.g. "Build & Push-1" → "1", "Build (ubuntu-latest)" → "ubuntu-latest").
+ */
+function matrixLabel(rawId: string, job: EnrichedJob): string {
+  // Use the last "/" segment (act prefixes reusable workflow calls with caller name)
+  const slashIdx = rawId.lastIndexOf('/')
+  const seg = slashIdx !== -1 ? rawId.slice(slashIdx + 1) : rawId
+  // Strip the job's leaf display name (last part of compound "Caller / Callee") from the segment
+  const leafName = (job.name.split(/\s*\/\s*/).pop() || job.name).trim()
+  const stripped = seg.replace(new RegExp(`^${leafName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[-\\s(]*`, 'i'), '').replace(/\)\s*$/, '').trim()
+  if (stripped) return stripped
+  // Fallback: strip job.id prefix
+  const byId = seg.replace(new RegExp(`^${job.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-?`, 'i'), '').trim()
+  return byId || seg
 }
 
 // ── Create Issue from failed job ───────────────────────────────────────────────
@@ -1226,6 +1264,9 @@ const { connection: projectConnection, connect: connectProject } = useSignalR('/
 onMounted(async () => {
   await store.fetchRun(runId)
 
+  // Dismiss job selection on Escape key
+  window.addEventListener('keydown', handleEscapeKey)
+
   // Connect to the CiCd output hub to receive live log lines and run-completed events
   await connectCicd()
   if (cicdConnection.value) {
@@ -1262,6 +1303,16 @@ onMounted(async () => {
       if (data.runId === runId) store.fetchRunOnly(runId)
     })
   }
+})
+
+function handleEscapeKey(e: KeyboardEvent) {
+  if (e.key === 'Escape' && (selectedJob.value || selectedMatrixRawId.value)) {
+    deselectJob()
+  }
+}
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleEscapeKey)
 })
 
 async function retryRun() {
