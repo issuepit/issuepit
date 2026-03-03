@@ -7,14 +7,30 @@ namespace IssuePit.Tests.E2E.Pages;
 /// </summary>
 public class IssuesPage(IPage page)
 {
+    private const int NavigationMaxAttempts = 3;
+    private const int NavigationRetryDelayMs = 1_500;
+
     /// <summary>
     /// Navigates to the issues page for the given project and waits for the heading.
+    /// Retries on ERR_ABORTED, which can occur due to Nuxt SPA router races on the dev server.
     /// </summary>
     public async Task GotoAsync(string projectId)
     {
-        await page.GotoAsync($"/projects/{projectId}/issues");
-        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        await page.WaitForSelectorAsync("h1:has-text('Issues')", new PageWaitForSelectorOptions { Timeout = 10_000 });
+        for (var attempt = 0; attempt < NavigationMaxAttempts; attempt++)
+        {
+            try
+            {
+                await page.GotoAsync($"/projects/{projectId}/issues");
+                await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+                await page.WaitForSelectorAsync("h1:has-text('Issues')", new PageWaitForSelectorOptions { Timeout = 10_000 });
+                return;
+            }
+            catch (PlaywrightException ex) when (ex.Message.Contains("ERR_ABORTED"))
+            {
+                if (attempt == NavigationMaxAttempts - 1) throw;
+                await Task.Delay(NavigationRetryDelayMs);
+            }
+        }
     }
 
     /// <summary>

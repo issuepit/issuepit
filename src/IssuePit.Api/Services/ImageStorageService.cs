@@ -85,7 +85,6 @@ public class ImageStorageService(IOptions<ImageStorageOptions> options, ILogger<
             Key = key,
             InputStream = content,
             ContentType = contentType,
-            CannedACL = S3CannedACL.PublicRead,
         };
 
         await s3.PutObjectAsync(request, ct);
