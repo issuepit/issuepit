@@ -1,10 +1,11 @@
-using System.Net.Http.Json;
 using System.Text.RegularExpressions;
+using Telegram.Bot;
+using Telegram.Bot.Types.Enums;
 
 namespace IssuePit.Api.Services;
 
 /// <summary>
-/// Sends notifications to a Telegram chat via the Telegram Bot API
+/// Sends notifications to a Telegram chat via the <c>Telegram.Bot</c> NuGet library
 /// (<c>sendMessage</c> method, MarkdownV2 parse mode).
 /// </summary>
 public sealed partial class TelegramBotNotificationService(
@@ -12,8 +13,6 @@ public sealed partial class TelegramBotNotificationService(
     ILogger<TelegramBotNotificationService> logger)
     : IBotNotificationService
 {
-    private const string TelegramApiBase = "https://api.telegram.org";
-
     /// <inheritdoc/>
     public string Platform => "telegram";
 
@@ -22,31 +21,21 @@ public sealed partial class TelegramBotNotificationService(
     {
         var text = BuildMessageText(payload);
 
-        var client = httpClientFactory.CreateClient("telegram");
-        var url = $"{TelegramApiBase}/bot{token}/sendMessage";
-
-        var body = new
-        {
-            chat_id = chatId,
-            text,
-            parse_mode = "MarkdownV2",
-            disable_notification = silent,
-        };
-
         try
         {
-            var resp = await client.PostAsJsonAsync(url, body, ct);
-            if (!resp.IsSuccessStatusCode)
-            {
-                var content = await resp.Content.ReadAsStringAsync(ct);
-                logger.LogWarning(
-                    "Telegram sendMessage failed for chat {ChatId}: HTTP {StatusCode} — {Body}",
-                    chatId, (int)resp.StatusCode, content);
-            }
+            var httpClient = httpClientFactory.CreateClient("telegram");
+            var botClient = new TelegramBotClient(token, httpClient);
+
+            await botClient.SendMessage(
+                chatId: chatId,
+                text: text,
+                parseMode: ParseMode.MarkdownV2,
+                disableNotification: silent,
+                cancellationToken: ct);
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Telegram sendMessage threw for chat {ChatId}.", chatId);
+            logger.LogWarning(ex, "Telegram sendMessage failed for chat {ChatId}.", chatId);
         }
     }
 
