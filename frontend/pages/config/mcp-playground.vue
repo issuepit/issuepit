@@ -22,7 +22,7 @@
     </div>
 
     <!-- Error state -->
-    <div v-if="toolsError" class="mb-4 bg-red-900/20 border border-red-900/40 rounded-lg px-4 py-3 text-sm text-red-400">
+    <div v-if="toolsError" data-testid="mcp-tools-error" class="mb-4 bg-red-900/20 border border-red-900/40 rounded-lg px-4 py-3 text-sm text-red-400">
       {{ toolsError }}
     </div>
 
@@ -36,10 +36,10 @@
         <div v-if="loadingTools" class="space-y-2">
           <div v-for="i in 6" :key="i" class="h-9 bg-gray-800 rounded-lg animate-pulse" />
         </div>
-        <div v-else-if="!tools.length" class="text-sm text-gray-600">
+        <div v-else-if="!tools.length" data-testid="mcp-tools-empty" class="text-sm text-gray-600">
           No tools available. Make sure the MCP server is running.
         </div>
-        <ul v-else class="space-y-1 max-h-96 overflow-y-auto">
+        <ul v-else data-testid="mcp-tools-list" class="space-y-1 max-h-96 overflow-y-auto">
           <li
             v-for="tool in tools"
             :key="tool.name"
