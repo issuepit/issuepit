@@ -148,6 +148,7 @@ public class HappyPathTests : IAsyncLifetime
     public async Task Ui_HappyPath_RegisterCreateOrgProjectAndIssue()
     {
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
+        context.SetDefaultTimeout(10_000);
         var page = await context.NewPageAsync();
 
         try
@@ -292,6 +293,7 @@ public class HappyPathTests : IAsyncLifetime
         var orgId = org.GetProperty("id").GetString()!;
 
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
+        context.SetDefaultTimeout(10_000);
         var page = await context.NewPageAsync();
 
         try
@@ -417,6 +419,7 @@ public class HappyPathTests : IAsyncLifetime
         var projectId = project.GetProperty("id").GetString()!;
 
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
+        context.SetDefaultTimeout(10_000);
         var page = await context.NewPageAsync();
 
         try
