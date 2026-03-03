@@ -31,8 +31,8 @@ env:
 
 jobs:
   # Single sequential job: build all images locally, then push conditionally.
-  # Uses load: true on each build step to make locally-built images available
-  # to subsequent build steps without an intermediate registry push.
+  # Uses driver: docker so that locally-built images are available in the Docker
+  # daemon and can be referenced by subsequent build steps without a registry push.
   build:
     name: Build (and push) helper containers
     runs-on: ubuntu-latest
@@ -51,8 +51,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # The `docker` driver builds directly inside the Docker daemon, making
+      # locally-built images accessible to subsequent FROM instructions without
+      # any registry interaction. GHA layer cache is not supported by this driver,
+      # but the sequential build chain provides sufficient layer reuse within the job.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker
 
       - name: Extract metadata — helper-base
         id: meta-base
@@ -115,61 +121,49 @@ jobs:
         with:
           context: docker/helper-containers
           file: docker/helper-containers/Dockerfile.helper-base
-          load: true
           push: false
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-helper-base:local
+          tags: helper-base:local
           labels: ${{ steps.meta-base.outputs.labels }}
           build-args: |
             PLAYWRIGHT_VERSION=${{ env.PLAYWRIGHT_VERSION }}
             NODE_MAJOR=${{ env.NODE_MAJOR }}
-          cache-from: type=gha,scope=helper-base
-          cache-to: type=gha,mode=max,scope=helper-base
 
       - name: Build helper-act
         uses: docker/build-push-action@v6
         with:
           context: docker/helper-containers
           file: docker/helper-containers/Dockerfile.helper-act
-          load: true
           push: false
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-helper-act:local
+          tags: helper-act:local
           labels: ${{ steps.meta-act.outputs.labels }}
           build-args: |
-            BASE_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-helper-base:local
+            BASE_IMAGE=helper-base:local
             ACT_VERSION=${{ env.ACT_VERSION }}
             ACTIONLINT_VERSION=${{ env.ACTIONLINT_VERSION }}
-          cache-from: type=gha,scope=helper-act
-          cache-to: type=gha,mode=max,scope=helper-act
 
       - name: Build helper-opencode
         uses: docker/build-push-action@v6
         with:
           context: docker/helper-containers
           file: docker/helper-containers/Dockerfile.helper-opencode
-          load: true
           push: false
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-helper-opencode:local
+          tags: helper-opencode:local
           labels: ${{ steps.meta-opencode.outputs.labels }}
           build-args: |
-            BASE_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-helper-base:local
+            BASE_IMAGE=helper-base:local
             OPENCODE_VERSION=${{ env.OPENCODE_VERSION }}
-          cache-from: type=gha,scope=helper-opencode
-          cache-to: type=gha,mode=max,scope=helper-opencode
 
       - name: Build helper-opencode-act
         uses: docker/build-push-action@v6
         with:
           context: docker/helper-containers
           file: docker/helper-containers/Dockerfile.helper-opencode-act
-          load: true
           push: false
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-helper-opencode-act:local
+          tags: helper-opencode-act:local
           labels: ${{ steps.meta-opencode-act.outputs.labels }}
           build-args: |
-            BASE_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-helper-act:local
+            BASE_IMAGE=helper-act:local
             OPENCODE_VERSION=${{ env.OPENCODE_VERSION }}
-          cache-from: type=gha,scope=helper-opencode-act
-          cache-to: type=gha,mode=max,scope=helper-opencode-act
 
       - name: Push images to registry
         if: github.event_name != 'pull_request' && github.event_name != 'merge_group'
@@ -189,8 +183,7 @@ jobs:
               docker push "$tag"
             done <<< "$tags"
           }
-          IMAGE_PREFIX="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}"
-          push_image "${IMAGE_PREFIX}-helper-base:local"         "$BASE_TAGS"
-          push_image "${IMAGE_PREFIX}-helper-act:local"          "$ACT_TAGS"
-          push_image "${IMAGE_PREFIX}-helper-opencode:local"     "$OPENCODE_TAGS"
-          push_image "${IMAGE_PREFIX}-helper-opencode-act:local" "$OPENCODE_ACT_TAGS"
+          push_image "helper-base:local"         "$BASE_TAGS"
+          push_image "helper-act:local"          "$ACT_TAGS"
+          push_image "helper-opencode:local"     "$OPENCODE_TAGS"
+          push_image "helper-opencode-act:local" "$OPENCODE_ACT_TAGS"
