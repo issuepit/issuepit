@@ -65,6 +65,7 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
         project.ActEnv = updated.ActEnv;
         project.ActSecrets = updated.ActSecrets;
         project.IsAgenda = updated.IsAgenda;
+        project.ActRunnerImage = updated.ActRunnerImage;
         await db.SaveChangesAsync();
         return Ok(project);
     }
@@ -373,7 +374,8 @@ public record ProjectDto(
     string? Description, string? GitHubRepo, DateTime CreatedAt,
     int IssueCount, int MemberCount,
     bool MountRepositoryInDocker, int MaxConcurrentRunners,
-    string? ActEnv, string? ActSecrets, bool IsAgenda)
+    bool IsAgenda,
+    string? ActEnv, string? ActSecrets, string? ActRunnerImage)
 {
     public static Expression<Func<Project, ProjectDto>> Selector(IssuePitDbContext db) =>
         p => new ProjectDto(
@@ -381,5 +383,6 @@ public record ProjectDto(
             db.Issues.Count(i => i.ProjectId == p.Id),
             db.ProjectMembers.Count(m => m.ProjectId == p.Id),
             p.MountRepositoryInDocker, p.MaxConcurrentRunners,
-            p.ActEnv, p.ActSecrets, p.IsAgenda);
+            p.IsAgenda,
+            p.ActEnv, p.ActSecrets, p.ActRunnerImage);
 }

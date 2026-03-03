@@ -23,5 +23,14 @@ public class Organization
     /// <summary>Maximum number of concurrent CI/CD runners for this organization. 0 means unlimited.</summary>
     public int MaxConcurrentRunners { get; set; } = 0;
 
+    /// <summary>Docker runner image override for act. Null means use the global default.</summary>
+    public string? ActRunnerImage { get; set; }
+
+    /// <summary>Newline-separated KEY=VALUE pairs passed as <c>--env</c> arguments to <c>act</c> on each run.</summary>
+    public string? ActEnv { get; set; }
+
+    /// <summary>Newline-separated KEY=VALUE pairs passed as <c>--secret</c> arguments to <c>act</c> on each run.</summary>
+    public string? ActSecrets { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

@@ -38,6 +38,9 @@ public class Project
 
     /// <summary>Whether this project serves as the organization-wide common agenda (global goal tracker across all projects).</summary>
     public bool IsAgenda { get; set; } = false;
+  
+    /// <summary>Docker runner image override for act. Null means use the org or global default.</summary>
+    public string? ActRunnerImage { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

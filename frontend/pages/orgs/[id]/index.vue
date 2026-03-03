@@ -336,6 +336,73 @@
         </div>
       </div>
 
+      <!-- CI/CD Tab -->
+      <div v-if="activeTab === 'ci-cd'" class="max-w-2xl space-y-6">
+        <!-- Runner Image -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h2 class="font-semibold text-white mb-1">Runner Image</h2>
+          <p class="text-sm text-gray-500 mb-4">
+            Override the Docker runner image for all projects in this organization. Leave unset to inherit the global default.
+          </p>
+          <CiCdImageSelector v-model="ciCdForm.actRunnerImage" />
+          <p v-if="!ciCdForm.actRunnerImage" class="text-xs text-gray-500 mt-3">
+            No override set — inheriting from global default.
+          </p>
+          <p v-else class="text-xs text-gray-500 mt-3 font-mono">{{ ciCdForm.actRunnerImage }}</p>
+        </div>
+
+        <!-- Environment & Secrets -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h2 class="font-semibold text-white mb-1">Environment &amp; Secrets</h2>
+          <p class="text-sm text-gray-500 mb-4">
+            Values passed as <code class="text-gray-300 bg-gray-800 px-1 rounded">--env</code> and
+            <code class="text-gray-300 bg-gray-800 px-1 rounded">--secret</code> arguments to
+            <code class="text-gray-300 bg-gray-800 px-1 rounded">act</code> for all projects.
+            One <code class="text-gray-300 bg-gray-800 px-1 rounded">KEY=VALUE</code> per line. Project-level settings take priority.
+          </p>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">
+                Environment variables
+                <span class="text-gray-500 font-normal">(--env KEY=VALUE)</span>
+              </label>
+              <textarea
+                v-model="ciCdForm.actEnv"
+                rows="4"
+                placeholder="MY_VAR=my_value&#10;NODE_ENV=test"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">
+                Secrets
+                <span class="text-gray-500 font-normal">(--secret KEY=VALUE)</span>
+              </label>
+              <textarea
+                v-model="ciCdForm.actSecrets"
+                rows="4"
+                placeholder="MY_SECRET=value&#10;API_KEY=key"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y"
+              />
+              <p class="text-xs text-gray-500 mt-1">Secret values are stored as plain text — avoid committing sensitive credentials that can be rotated.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Save button -->
+        <div class="flex items-center gap-4">
+          <button
+            :disabled="savingCiCd"
+            class="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+            @click="saveCiCdSettings"
+          >
+            {{ savingCiCd ? 'Saving…' : 'Save CI/CD Config' }}
+          </button>
+          <p v-if="saveCiCdError" class="text-red-400 text-sm">{{ saveCiCdError }}</p>
+          <p v-if="savedCiCdOk" class="text-green-400 text-sm">Saved successfully</p>
+        </div>
+      </div>
+
       <!-- Settings Tab -->
       <div v-if="activeTab === 'settings'" class="max-w-2xl">
         <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
@@ -531,6 +598,7 @@ const tabs = [
   { id: 'projects', label: 'Projects' },
   { id: 'agenda', label: '🎯 Agenda' },
   { id: 'agents', label: 'Agents' },
+  { id: 'ci-cd', label: 'CI/CD' },
   { id: 'settings', label: 'Settings' },
 ]
 const activeTab = ref('teams')
@@ -539,6 +607,12 @@ const activeTab = ref('teams')
 const runnerSettingsForm = reactive({ maxConcurrentRunners: 0 })
 const savingRunnerSettings = ref(false)
 const saveRunnerSettingsError = ref<string | null>(null)
+
+// --- CI/CD Settings ---
+const ciCdForm = reactive({ actRunnerImage: null as string | null, actEnv: '', actSecrets: '' })
+const savingCiCd = ref(false)
+const saveCiCdError = ref<string | null>(null)
+const savedCiCdOk = ref(false)
 
 // --- Org Agents ---
 const loadingOrgAgents = ref(false)
@@ -643,6 +717,9 @@ onMounted(async () => {
   ])
   if (orgsStore.currentOrg) {
     runnerSettingsForm.maxConcurrentRunners = orgsStore.currentOrg.maxConcurrentRunners ?? 0
+    ciCdForm.actRunnerImage = orgsStore.currentOrg.actRunnerImage ?? null
+    ciCdForm.actEnv = orgsStore.currentOrg.actEnv || ''
+    ciCdForm.actSecrets = orgsStore.currentOrg.actSecrets || ''
   }
 })
 
@@ -660,6 +737,29 @@ async function saveRunnerSettings() {
     saveRunnerSettingsError.value = e instanceof Error ? e.message : 'Failed to save'
   } finally {
     savingRunnerSettings.value = false
+  }
+}
+
+async function saveCiCdSettings() {
+  if (!orgsStore.currentOrg) return
+  savingCiCd.value = true
+  saveCiCdError.value = null
+  savedCiCdOk.value = false
+  try {
+    await orgsStore.updateOrg(orgId, {
+      name: orgsStore.currentOrg.name,
+      slug: orgsStore.currentOrg.slug,
+      maxConcurrentRunners: orgsStore.currentOrg.maxConcurrentRunners,
+      actRunnerImage: ciCdForm.actRunnerImage,
+      actEnv: ciCdForm.actEnv || null,
+      actSecrets: ciCdForm.actSecrets || null,
+    })
+    savedCiCdOk.value = true
+    setTimeout(() => { savedCiCdOk.value = false }, 3000)
+  } catch (e: unknown) {
+    saveCiCdError.value = e instanceof Error ? e.message : 'Failed to save'
+  } finally {
+    savingCiCd.value = false
   }
 }
 
