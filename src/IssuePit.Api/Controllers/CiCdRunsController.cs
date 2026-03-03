@@ -107,9 +107,8 @@ public class CiCdRunsController(
 
     /// <summary>
     /// Returns the workflow job graph (nodes and dependency edges) for the given run.
-    /// The graph is built by parsing the workflow YAML found at the run's workspace path,
-    /// and is validated with <c>actionlint</c> when it is available on the host.
-    /// Returns 404 when the run has no workspace or when the workflow YAML file cannot be located.
+    /// First returns the pre-computed graph stored in the DB (if available), then falls back to
+    /// parsing the workflow YAML from the workspace. Returns 404 when no graph data can be found.
     /// </summary>
     [HttpGet("{id:guid}/graph")]
     public async Task<IActionResult> GetGraph(Guid id)
@@ -117,20 +116,64 @@ public class CiCdRunsController(
         var run = await db.CiCdRuns
             .Include(r => r.Project)
             .Where(r => r.Id == id && r.Project.Organization.TenantId == tenant.CurrentTenant!.Id)
-            .Select(r => new { r.WorkspacePath, r.Workflow })
+            .Select(r => new { r.WorkspacePath, r.Workflow, r.WorkflowGraphJson })
             .FirstOrDefaultAsync();
 
         if (run is null) return NotFound();
 
-        if (string.IsNullOrWhiteSpace(run.WorkspacePath) || string.IsNullOrWhiteSpace(run.Workflow))
+        // Return pre-computed graph if available (written by the worker at run start or exec step).
+        if (!string.IsNullOrWhiteSpace(run.WorkflowGraphJson))
+        {
+            try
+            {
+                var cached = System.Text.Json.JsonSerializer.Deserialize<WorkflowGraph>(
+                    run.WorkflowGraphJson,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (cached is not null)
+                    return Ok(cached);
+            }
+            catch { /* fall through to filesystem parse */ }
+        }
+
+        if (string.IsNullOrWhiteSpace(run.WorkspacePath))
             return NotFound(new { error = "This run has no local workspace. Graph data is only available for locally-triggered runs." });
 
-        var yamlPath = TryFindWorkflowYamlPath(run.WorkspacePath, run.Workflow);
+        // Auto-detect workflow file when the run doesn't have an explicit workflow path stored.
+        var workflow = run.Workflow;
+        if (string.IsNullOrWhiteSpace(workflow))
+        {
+            var workflowsDir = Path.Combine(run.WorkspacePath, ".github", "workflows");
+            if (Directory.Exists(workflowsDir))
+            {
+                workflow = Directory
+                    .EnumerateFiles(workflowsDir, "*.yml")
+                    .Concat(Directory.EnumerateFiles(workflowsDir, "*.yaml"))
+                    .Select(Path.GetFileName)
+                    .FirstOrDefault();
+            }
+
+            if (string.IsNullOrWhiteSpace(workflow))
+                return NotFound(new { error = "No workflow file found in workspace '.github/workflows/'." });
+        }
+
+        var yamlPath = TryFindWorkflowYamlPath(run.WorkspacePath, workflow);
 
         if (yamlPath is null)
-            return NotFound(new { error = $"Workflow file '{run.Workflow}' not found in workspace '{run.WorkspacePath}'." });
+            return NotFound(new { error = $"Workflow file '{workflow}' not found in workspace '{run.WorkspacePath}'." });
 
         var graph = await WorkflowGraphParser.ParseFileAsync(yamlPath, HttpContext.RequestAborted);
+
+        // Cache the parsed graph in the DB so future requests don't need the workspace.
+        try
+        {
+            var runToUpdate = await db.CiCdRuns.FindAsync(id);
+            if (runToUpdate is not null)
+            {
+                runToUpdate.WorkflowGraphJson = System.Text.Json.JsonSerializer.Serialize(graph);
+                await db.SaveChangesAsync(HttpContext.RequestAborted);
+            }
+        }
+        catch { /* best-effort — caching failure must not fail the response */ }
 
         return Ok(graph);
     }

@@ -3,6 +3,7 @@ using System;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace IssuePit.Core.Migrations
 {
     [DbContext(typeof(IssuePitDbContext))]
-    partial class IssuePitDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260303091920_AddCiCdRunWorkflowGraphJson")]
+    partial class AddCiCdRunWorkflowGraphJson
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -42,7 +45,6 @@ namespace IssuePit.Core.Migrations
                         .IsRequired()
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
-
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
@@ -310,10 +312,6 @@ namespace IssuePit.Core.Migrations
                     b.Property<Guid>("CiCdRunId")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("JobId")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
                     b.Property<string>("Line")
                         .IsRequired()
                         .HasColumnType("text");
@@ -467,7 +465,6 @@ namespace IssuePit.Core.Migrations
                     b.Property<string>("AuthToken")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
-
                     b.Property<string>("AuthUsername")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
@@ -490,7 +487,6 @@ namespace IssuePit.Core.Migrations
                     b.Property<string>("LocalPath")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
-
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uuid");
 
@@ -498,7 +494,6 @@ namespace IssuePit.Core.Migrations
                         .IsRequired()
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
-
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
@@ -559,7 +554,6 @@ namespace IssuePit.Core.Migrations
                         .IsRequired()
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
-
                     b.Property<int>("Type")
                         .HasColumnType("integer");
 
@@ -634,44 +628,6 @@ namespace IssuePit.Core.Migrations
                     b.ToTable("issue_comments");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.IssueEvent", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("ActorAgentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("ActorUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("EventType")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("IssueId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("NewValue")
-                        .HasColumnType("text");
-
-                    b.Property<string>("OldValue")
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ActorAgentId");
-
-                    b.HasIndex("ActorUserId");
-
-                    b.HasIndex("IssueId");
-
-                    b.ToTable("issue_events");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.IssueLink", b =>
                 {
                     b.Property<Guid>("Id")
@@ -727,7 +683,6 @@ namespace IssuePit.Core.Migrations
                         .IsRequired()
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
-
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1214,66 +1169,6 @@ namespace IssuePit.Core.Migrations
                     b.ToTable("runtime_configurations");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.Skill", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("text");
-
-                    b.Property<string>("GitAuthToken")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("GitAuthUsername")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("GitRepoUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("GitSubDir")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<DateTime?>("LastSyncedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<Guid>("OrgId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("SyncMessage")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<int>("SyncStatus")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrgId");
-
-                    b.ToTable("skills");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.Team", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1746,29 +1641,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.IssueEvent", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Agent", "ActorAgent")
-                        .WithMany()
-                        .HasForeignKey("ActorAgentId");
-
-                    b.HasOne("IssuePit.Core.Entities.User", "ActorUser")
-                        .WithMany()
-                        .HasForeignKey("ActorUserId");
-
-                    b.HasOne("IssuePit.Core.Entities.Issue", "Issue")
-                        .WithMany()
-                        .HasForeignKey("IssueId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ActorAgent");
-
-                    b.Navigation("ActorUser");
-
-                    b.Navigation("Issue");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.IssueLink", b =>
                 {
                     b.HasOne("IssuePit.Core.Entities.Issue", "Issue")
@@ -2015,17 +1887,6 @@ namespace IssuePit.Core.Migrations
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.RuntimeConfiguration", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrgId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Organization");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.Skill", b =>
                 {
                     b.HasOne("IssuePit.Core.Entities.Organization", "Organization")
                         .WithMany()

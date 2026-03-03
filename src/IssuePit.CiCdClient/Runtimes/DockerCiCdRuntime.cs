@@ -70,7 +70,6 @@ public partial class DockerCiCdRuntime(
                 actBinAndArgs.Add(a);
         }
 
-        var cmd = actBinAndArgs;
         var containerName = BuildContainerName(run);
 
         // Read the act runner image that is injected into actrc to prevent the interactive
@@ -78,14 +77,20 @@ public partial class DockerCiCdRuntime(
         // Default is the Medium runner image (~500 MB, compatible with most actions).
         var actRunnerImage = configuration["CiCd__ActImage"] ?? "catthehacker/ubuntu:act-latest";
 
+        // Build -P platform flags appended to the act command so the prompt is suppressed
+        // even if the actrc isn't read (stale image layer, wrong XDG_CONFIG_HOME, etc.).
+        var platformLabels = new[] { "ubuntu-latest", "ubuntu-24.04", "ubuntu-22.04", "ubuntu-20.04" };
+        var platformCmdArgs = platformLabels.SelectMany(label => new[] { "-P", $"{label}={actRunnerImage}" });
+        var actCmd = actBinAndArgs.Concat(platformCmdArgs).ToList();
+
         // Emit verbose diagnostics as the first log lines so they appear in the run's log output.
         await onLogLine($"[DEBUG] Runner machine : {Environment.MachineName}", LogStream.Stdout);
-        await onLogLine($"[DEBUG] Runtime        : Docker", LogStream.Stdout);
+        await onLogLine($"[DEBUG] Runtime        : Docker (exec model)", LogStream.Stdout);
         await onLogLine($"[DEBUG] IssuePit ver   : {AppVersion}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Docker image   : {image}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Act runner img : {actRunnerImage}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Container name : {containerName}", LogStream.Stdout);
-        await onLogLine($"[DEBUG] Command        : {string.Join(' ', cmd)}", LogStream.Stdout);
+        await onLogLine($"[DEBUG] Command        : {string.Join(' ', actCmd)}", LogStream.Stdout);
         if (!trigger.NoVolumeMounts)
         {
             await onLogLine($"[DEBUG] Mount          : {workspacePath}:/workspace", LogStream.Stdout);
@@ -152,19 +157,22 @@ public partial class DockerCiCdRuntime(
                 binds.Add("/var/run/docker.sock:/var/run/docker.sock");
         }
 
+        // When a custom entrypoint is set the caller controls execution; use their entrypoint+cmd directly.
+        // Otherwise use the exec model: start a long-running shell, then exec each step one by one.
+        var useExecModel = string.IsNullOrWhiteSpace(trigger.CustomEntrypoint);
+
         var createParams = new CreateContainerParameters
         {
             Image = image,
             Name = containerName,
-            // Wrap act in a shell script that injects actrc (prevents the interactive first-run
-            // image-selection prompt that causes EOF in non-interactive containers).
-            // If a custom entrypoint is set, skip injection and let the caller control execution.
-            Cmd = !string.IsNullOrWhiteSpace(trigger.CustomEntrypoint)
-                ? cmd
-                : [BuildActrcInjectionScript(actRunnerImage, cmd, trigger.Workflow)],
+            // Exec model: keep the container alive with a sleep shell so we can exec steps into it.
+            // Custom entrypoint: let the caller's cmd run directly.
+            Cmd = useExecModel
+                ? ["tail -f /dev/null"]
+                : actCmd,
             WorkingDir = "/workspace",
-            Entrypoint = !string.IsNullOrWhiteSpace(trigger.CustomEntrypoint)
-                ? trigger.CustomEntrypoint.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            Entrypoint = !useExecModel
+                ? trigger.CustomEntrypoint!.Split(' ', StringSplitOptions.RemoveEmptyEntries)
                 : ["/bin/sh", "-c"],
             HostConfig = new HostConfig
             {
@@ -229,15 +237,48 @@ public partial class DockerCiCdRuntime(
                 throw new InvalidOperationException(startMsg, ex);
             }
 
-            var logStreamTask = StreamContainerLogsAsync(container.ID, onLogLine, cancellationToken);
-            var waitResponse = await dockerClient.Containers.WaitContainerAsync(container.ID, cancellationToken);
-            // Drain any remaining log output before checking the exit code.
-            await logStreamTask;
+            if (useExecModel)
+            {
+                // ── Exec model: run each step inside the container sequentially ─────────────
 
-            if (waitResponse.StatusCode != 0)
-                throw new Exception(
-                    $"act exited with code {waitResponse.StatusCode} " +
-                    $"(image: {image}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
+                // Step 1: Write actrc to suppress the interactive image-selection prompt.
+                // Use 'printf %b' so that the leading '-P' in the content is not misinterpreted
+                // as a printf option by /bin/sh (dash).
+                await onLogLine("[DEBUG] Step 1/3: writing actrc", LogStream.Stdout);
+                await ExecShellAsync(container.ID, BuildActrcSetupScript(actRunnerImage), onLogLine, cancellationToken);
+
+                // Step 2: Validate the workflow with actionlint (best-effort).
+                if (!string.IsNullOrWhiteSpace(trigger.Workflow))
+                {
+                    await onLogLine("[DEBUG] Step 2/3: actionlint validation", LogStream.Stdout);
+                    await ExecShellAsync(container.ID, BuildActionlintExecScript(trigger.Workflow), onLogLine, cancellationToken);
+                }
+                else
+                {
+                    await onLogLine("[DEBUG] Step 2/3: actionlint skipped (no workflow set)", LogStream.Stdout);
+                }
+
+                // Step 3: Run act.
+                await onLogLine($"[DEBUG] Step 3/3: {string.Join(' ', actCmd)}", LogStream.Stdout);
+                var actExitCode = await ExecCommandAsync(container.ID, actCmd, onLogLine, cancellationToken);
+
+                if (actExitCode != 0)
+                    throw new Exception(
+                        $"act exited with code {actExitCode} " +
+                        $"(image: {image}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
+            }
+            else
+            {
+                // Custom entrypoint: stream container logs and wait for it to exit.
+                var logStreamTask = StreamContainerLogsAsync(container.ID, onLogLine, cancellationToken);
+                var waitResponse = await dockerClient.Containers.WaitContainerAsync(container.ID, cancellationToken);
+                await logStreamTask;
+
+                if (waitResponse.StatusCode != 0)
+                    throw new Exception(
+                        $"act exited with code {waitResponse.StatusCode} " +
+                        $"(image: {image}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
+            }
 
             succeeded = true;
         }
@@ -456,6 +497,72 @@ public partial class DockerCiCdRuntime(
         using var stream = await dockerClient.Containers.GetContainerLogsAsync(
             containerId, false, logsParams, cancellationToken);
 
+        await DrainMultiplexedStreamAsync(stream, onLogLine, cancellationToken);
+    }
+
+    /// <summary>
+    /// Executes a command inside a running container via Docker exec, streams its output through
+    /// <paramref name="onLogLine"/>, and returns the process exit code.
+    /// </summary>
+    private async Task<long> ExecCommandAsync(
+        string containerId,
+        IList<string> cmd,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        var execCreate = await dockerClient.Exec.ExecCreateContainerAsync(
+            containerId,
+            new ContainerExecCreateParameters
+            {
+                AttachStdout = true,
+                AttachStderr = true,
+                Cmd = cmd,
+                WorkingDir = "/workspace",
+            },
+            cancellationToken);
+
+        using var stream = await dockerClient.Exec.StartAndAttachContainerExecAsync(
+            execCreate.ID, tty: false, cancellationToken);
+
+        await DrainMultiplexedStreamAsync(stream, onLogLine, cancellationToken);
+
+        var inspect = await dockerClient.Exec.InspectContainerExecAsync(execCreate.ID, CancellationToken.None);
+        return inspect.ExitCode;
+    }
+
+    /// <summary>
+    /// Executes a shell command (<c>/bin/sh -c <paramref name="script"/></c>) inside the container.
+    /// Best-effort: errors are emitted as log lines but never propagated so they don't abort the run.
+    /// </summary>
+    private async Task ExecShellAsync(
+        string containerId,
+        string script,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await ExecCommandAsync(containerId, ["/bin/sh", "-c", script], onLogLine, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            await onLogLine($"[WARN] exec step error (non-fatal): {ex.Message}", LogStream.Stdout);
+        }
+    }
+
+    /// <summary>
+    /// Drains a <see cref="MultiplexedStream"/> (from container logs or exec attach), emitting each
+    /// complete line through <paramref name="onLogLine"/>. Handles interleaved stdout/stderr correctly.
+    /// </summary>
+    private static async Task DrainMultiplexedStreamAsync(
+        MultiplexedStream stream,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
         var buffer = new byte[81920];
         var remainder = string.Empty;
         var lastTarget = LogStream.Stdout;
@@ -491,68 +598,37 @@ public partial class DockerCiCdRuntime(
     }
 
     /// <summary>
-    /// Builds a POSIX shell command that:
-    /// <list type="bullet">
-    ///   <item>Always writes <c>/root/.config/act/actrc</c> with platform-image mappings,
-    ///     preventing the interactive first-run prompt that causes EOF in non-interactive containers.
-    ///     The file is unconditionally overwritten so that a pre-existing (possibly empty) file baked
-    ///     into the image does not prevent the platform configuration from taking effect.</item>
-    ///   <item>Passes <c>-P</c> platform flags directly on the <c>act</c> command line as an additional
-    ///     safeguard so that the prompt is suppressed even if the actrc is not found or parsed.</item>
-    ///   <item>Then <c>exec</c>s the <c>act</c> command so that the container process is replaced by <c>act</c>,
-    ///     ensuring signal forwarding and the correct exit code.</item>
-    /// </list>
+    /// Builds a shell script that writes the <c>actrc</c> platform mapping to prevent the interactive
+    /// first-run image-selection prompt. Uses <c>printf '%b'</c> so the leading <c>-P</c> in the actrc
+    /// content is not misinterpreted as a printf option by <c>/bin/sh</c> (dash).
     /// </summary>
-    private static string BuildActrcInjectionScript(string actRunnerImage, IList<string> cmd, string? workflow = null)
+    private static string BuildActrcSetupScript(string actRunnerImage)
     {
-        // Build the actrc content: map common Ubuntu runner labels to the configured image.
         var platformLabels = new[] { "ubuntu-latest", "ubuntu-24.04", "ubuntu-22.04", "ubuntu-20.04" };
-        var platforms = platformLabels.Select(label => $"-P {label}={actRunnerImage}").ToArray();
+        // actrcBody: each line is "-P ubuntu-latest=<image>" joined with \n escape sequences.
+        var actrcBody = string.Join("\\n", platformLabels.Select(label => $"-P {label}={actRunnerImage}"));
 
-        // Use printf with \n to write each line reliably; single-quoted to avoid shell expansion.
-        // The file is always overwritten (no [ ! -f ] guard) so a pre-existing empty actrc baked
-        // into the image does not silently skip the platform configuration.
-        var actrcBody = string.Join("\\n", platforms);
+        // Use printf '%b' so the actrc content ('-P ubuntu-latest=...\n...') is passed as an argument,
+        // not as the format string — preventing '/bin/sh: printf: Illegal option -P'.
+        return $"mkdir -p /root/.config/act && printf '%b' '{actrcBody}\\n' > /root/.config/act/actrc";
+    }
 
-        // Also pass -P flags directly on the command line so the first-run interactive
-        // image-selection prompt is suppressed even when the actrc is not read
-        // (e.g. wrong XDG_CONFIG_HOME, stale image layer, or non-root HOME directory).
-        var platformCmdArgs = platformLabels.SelectMany(label => new[] { "-P", $"{label}={actRunnerImage}" });
-        var fullCmd = cmd.Concat(platformCmdArgs).ToList();
-
-        // exec replaces the shell with act so signals and exit codes propagate correctly.
-        var actCmd = "exec " + string.Join(" ", fullCmd.Select(ShellQuote));
-
-        // Build a shell snippet that validates the workflow with actionlint before running act.
-        // The snippet:
-        //  1. Assigns the workflow file path to $_wf by checking two candidate locations.
-        //  2. Runs actionlint only when it is installed and a file was found.
-        //  3. Uses '|| true' so validation failures (exit 1 from actionlint) do not abort the run.
-        // This runs inside the container where the workspace is mounted at /workspace.
-        string actionlintStep;
-        if (!string.IsNullOrWhiteSpace(workflow))
-        {
-            var wfFileName = Path.GetFileName(workflow);
-            var workflowRelPath = workflow.TrimStart('/').TrimStart('\\').Replace('\\', '/');
-            // Try the canonical GitHub Actions location first, then the workflow path relative to workspace root.
-            var candidate1 = ShellQuote($"/workspace/.github/workflows/{wfFileName}");
-            var candidate2 = ShellQuote($"/workspace/{workflowRelPath}");
-            actionlintStep =
-                // Resolve workflow file: try .github/workflows/<name>, fall back to workspace-relative path.
-                $"_wf=''; [ -f {candidate1} ] && _wf={candidate1} || [ -f {candidate2} ] && _wf={candidate2}; " +
-                // Run actionlint when available and a file was resolved; '|| true' keeps the run alive on lint errors.
-                "command -v actionlint > /dev/null 2>&1 && [ -n \"$_wf\" ] && { echo '[ACTIONLINT] Validating workflow...'; actionlint -color=false \"$_wf\" 2>&1 || true; }; ";
-        }
-        else
-        {
-            actionlintStep = "";
-        }
-
+    /// <summary>
+    /// Builds a shell script that runs <c>actionlint</c> on the workflow file when available.
+    /// Tries two candidate locations inside the container workspace.
+    /// Silently skipped when actionlint is not installed; <c>|| true</c> prevents aborting the run on lint errors.
+    /// </summary>
+    private static string BuildActionlintExecScript(string workflow)
+    {
+        var wfFileName = Path.GetFileName(workflow);
+        var workflowRelPath = workflow.TrimStart('/').TrimStart('\\').Replace('\\', '/');
+        var candidate1 = ShellQuote($"/workspace/.github/workflows/{wfFileName}");
+        var candidate2 = ShellQuote($"/workspace/{workflowRelPath}");
         return
-            "mkdir -p /root/.config/act && " +
-            $"printf '{actrcBody}\\n' > /root/.config/act/actrc; " +
-            actionlintStep +
-            actCmd;
+            // Resolve workflow file inside the container
+            $"_wf=''; [ -f {candidate1} ] && _wf={candidate1} || [ -f {candidate2} ] && _wf={candidate2}; " +
+            // Run actionlint when available and file was found; '|| true' keeps run alive on lint errors
+            "command -v actionlint > /dev/null 2>&1 && [ -n \"$_wf\" ] && { echo '[ACTIONLINT] Validating workflow...'; actionlint -color=false \"$_wf\" 2>&1 || true; }";
     }
 
     /// <summary>

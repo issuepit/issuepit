@@ -548,6 +548,12 @@ const jobLogMap = computed(() => {
   return map
 })
 
+// When the overall run is done, all tracked jobs are also complete (they can't still be running).
+const runIsTerminal = computed(() => {
+  const s = store.currentRun?.status
+  return s === CiCdRunStatus.Succeeded || s === CiCdRunStatus.Failed || s === CiCdRunStatus.Cancelled
+})
+
 // Build the enriched job list by unioning graph nodes with log-observed jobs.
 // Graph nodes get their needs/name from the YAML; log-only jobs fall back to id as name.
 const enrichedJobs = computed<EnrichedJob[]>(() => {
@@ -622,15 +628,18 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
     const meta = jobMeta.get(id)
     const logs = jobLogMap.value.get(id) ?? { logCount: 0, hasError: false, isComplete: false }
     const pos = posMap.get(id) ?? { x: PAD, y: PAD }
+    // Mark job as complete if it logged "Job succeeded/failed" OR if the overall run has ended.
+    const isComplete = logs.isComplete || (logs.logCount > 0 && runIsTerminal.value)
     return {
       id,
       name: meta?.name ?? id,
       needs: meta?.needs ?? [],
       logCount: logs.logCount,
       hasError: logs.hasError,
-      isComplete: logs.isComplete,
+      isComplete,
       startedAt: logs.startedAt,
-      endedAt: logs.endedAt,
+      // When run ended but the job never emitted a final timestamp, use the run's end time.
+      endedAt: isComplete && !logs.endedAt ? (store.currentRun?.endedAt ?? logs.startedAt) : logs.endedAt,
       x: pos.x,
       y: pos.y,
     }
