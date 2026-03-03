@@ -4,9 +4,11 @@ on:
   push:
     paths:
       - 'skills/**'
+      - '.github/workflows/validate-skills.yml'
   pull_request:
     paths:
       - 'skills/**'
+      - '.github/workflows/validate-skills.yml'
   merge_group:
 
 jobs:
