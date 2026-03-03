@@ -62,8 +62,8 @@
           </div>
         </div>
 
-        <!-- Branch (sessions metric only) -->
-        <div v-if="metric === 'sessions'">
+        <!-- Branch (sessions and cicd metrics) -->
+        <div v-if="metric === 'sessions' || metric.startsWith('cicd-')">
           <label class="block text-sm font-medium text-gray-300 mb-1.5">Branch <span class="text-gray-500">(optional)</span></label>
           <input
             v-model="branch"
@@ -170,7 +170,7 @@
             </tr>
             <tr>
               <td class="py-2.5 pr-6 font-mono text-xs text-gray-300">metric</td>
-              <td class="py-2.5 pr-6 text-xs font-mono">agents · sessions · issues · health</td>
+              <td class="py-2.5 pr-6 text-xs font-mono">agents · sessions · issues · health · cicd-runs · cicd-failures · cicd-failure-rate</td>
               <td class="py-2.5 text-xs">Metric to display (default: <code class="font-mono">agents</code>)</td>
             </tr>
             <tr>
@@ -181,7 +181,7 @@
             <tr>
               <td class="py-2.5 pr-6 font-mono text-xs text-gray-300">branch</td>
               <td class="py-2.5 pr-6 text-xs">branch name</td>
-              <td class="py-2.5 text-xs">Filter sessions by git branch (only for <code class="font-mono">sessions</code> metric)</td>
+              <td class="py-2.5 text-xs">Filter by git branch (for <code class="font-mono">sessions</code>, <code class="font-mono">cicd-runs</code>, <code class="font-mono">cicd-failures</code>, and <code class="font-mono">cicd-failure-rate</code>)</td>
             </tr>
           </tbody>
         </table>
@@ -209,10 +209,13 @@ const branch = ref('')
 const copied = ref<string | null>(null)
 
 const metrics = [
-  { value: 'agents',   label: '🤖 Agents',   description: 'Number of currently active (Running) agent sessions' },
-  { value: 'sessions', label: '⏱ Sessions',  description: 'Agent sessions started in the last 24 h, optionally filtered by branch' },
-  { value: 'issues',   label: '📋 Issues',   description: 'Count of open (non-done, non-cancelled) issues' },
-  { value: 'health',   label: '❤️ Health',   description: 'Success rate of completed agent sessions over the last 7 days' },
+  { value: 'agents',            label: '🤖 Agents',            description: 'Number of currently active (Running) agent sessions' },
+  { value: 'sessions',          label: '⏱ Sessions',           description: 'Agent sessions started in the last 24 h, optionally filtered by branch' },
+  { value: 'issues',            label: '📋 Issues',            description: 'Count of open (non-done, non-cancelled) issues' },
+  { value: 'health',            label: '❤️ Health',            description: 'Success rate of completed agent sessions over the last 7 days' },
+  { value: 'cicd-runs',         label: '🔁 CI/CD Runs',        description: 'CI/CD pipeline runs triggered in the last 7 days, optionally filtered by branch' },
+  { value: 'cicd-failures',     label: '❌ CI/CD Failures',    description: 'Number of failed CI/CD runs in the last 7 days, optionally filtered by branch' },
+  { value: 'cicd-failure-rate', label: '📉 CI/CD Failure Rate', description: 'Percentage of failed CI/CD runs over the last 7 days, optionally filtered by branch' },
 ]
 
 const styles = [
@@ -224,7 +227,7 @@ const styles = [
 // --- computed URLs ---
 const badgeUrl = computed(() => {
   const params = new URLSearchParams({ project: id, metric: metric.value, style: style.value })
-  if (metric.value === 'sessions' && branch.value.trim())
+  if ((metric.value === 'sessions' || metric.value.startsWith('cicd-')) && branch.value.trim())
     params.set('branch', branch.value.trim())
   return `${apiBase}/api/badges?${params.toString()}`
 })

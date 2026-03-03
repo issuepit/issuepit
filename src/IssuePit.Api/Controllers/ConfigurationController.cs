@@ -83,6 +83,7 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
                 TypeName = r.Type.ToString(),
                 r.Configuration,
                 r.IsDefault,
+                r.MaxConcurrentAgents,
                 r.CreatedAt,
             })
             .ToListAsync();
@@ -109,6 +110,7 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
             Type = req.Type,
             Configuration = req.Configuration,
             IsDefault = req.IsDefault,
+            MaxConcurrentAgents = req.MaxConcurrentAgents,
         };
         db.RuntimeConfigurations.Add(runtime);
         await db.SaveChangesAsync();
@@ -133,6 +135,7 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
         runtime.Type = req.Type;
         runtime.Configuration = req.Configuration;
         runtime.IsDefault = req.IsDefault;
+        runtime.MaxConcurrentAgents = req.MaxConcurrentAgents;
         await db.SaveChangesAsync();
         return Ok(runtime);
     }
@@ -145,6 +148,94 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
         db.RuntimeConfigurations.Remove(runtime);
         await db.SaveChangesAsync();
         return NoContent();
+    }
+
+    /// <summary>
+    /// Returns the current pool status: how many agents/CI-CD runs are active or pending,
+    /// and the configured limit for each runtime and organization.
+    /// </summary>
+    [HttpGet("pool-status")]
+    public async Task<IActionResult> GetPoolStatus()
+    {
+        if (tenant.CurrentTenant is null) return Unauthorized();
+
+        // Agent sessions per runtime configuration
+        var agentSessions = await db.AgentSessions
+            .Where(s => s.Issue.Project!.Organization.TenantId == tenant.CurrentTenant.Id
+                        && (s.Status == AgentSessionStatus.Running || s.Status == AgentSessionStatus.Pending))
+            .GroupBy(s => s.RuntimeConfigId)
+            .Select(g => new
+            {
+                RuntimeConfigId = g.Key,
+                Running = g.Count(s => s.Status == AgentSessionStatus.Running),
+                Pending = g.Count(s => s.Status == AgentSessionStatus.Pending),
+            })
+            .ToListAsync();
+
+        var runtimeConfigs = await db.RuntimeConfigurations
+            .Where(r => r.Organization.TenantId == tenant.CurrentTenant.Id)
+            .Select(r => new { r.Id, r.Name, r.MaxConcurrentAgents })
+            .ToListAsync();
+
+        var agentPools = runtimeConfigs.Select(rc =>
+        {
+            var stats = agentSessions.FirstOrDefault(s => s.RuntimeConfigId == rc.Id);
+            return new
+            {
+                runtimeConfigId = (Guid?)rc.Id,
+                runtimeName = rc.Name,
+                maxConcurrentAgents = rc.MaxConcurrentAgents,
+                runningAgents = stats?.Running ?? 0,
+                pendingAgents = stats?.Pending ?? 0,
+            };
+        }).ToList();
+
+        // Also include unbound sessions (no runtime config = local Docker default)
+        var unboundStats = agentSessions.FirstOrDefault(s => s.RuntimeConfigId == null);
+        if (unboundStats is not null || !agentPools.Any())
+        {
+            agentPools.Insert(0, new
+            {
+                runtimeConfigId = (Guid?)null,
+                runtimeName = "Default (Docker)",
+                maxConcurrentAgents = 0,
+                runningAgents = unboundStats?.Running ?? 0,
+                pendingAgents = unboundStats?.Pending ?? 0,
+            });
+        }
+
+        // CI/CD runs per organization
+        var orgs = await db.Organizations
+            .Where(o => o.TenantId == tenant.CurrentTenant.Id)
+            .Select(o => new { o.Id, o.Name, o.MaxConcurrentRunners })
+            .ToListAsync();
+
+        var cicdRunsActive = await db.CiCdRuns
+            .Where(r => r.Project.Organization.TenantId == tenant.CurrentTenant.Id
+                        && (r.Status == CiCdRunStatus.Running || r.Status == CiCdRunStatus.Pending))
+            .GroupBy(r => r.Project.OrgId)
+            .Select(g => new
+            {
+                OrgId = g.Key,
+                Running = g.Count(r => r.Status == CiCdRunStatus.Running),
+                Pending = g.Count(r => r.Status == CiCdRunStatus.Pending),
+            })
+            .ToListAsync();
+
+        var cicdPools = orgs.Select(o =>
+        {
+            var stats = cicdRunsActive.FirstOrDefault(r => r.OrgId == o.Id);
+            return new
+            {
+                orgId = o.Id,
+                orgName = o.Name,
+                maxConcurrentRunners = o.MaxConcurrentRunners,
+                runningCiCdRuns = stats?.Running ?? 0,
+                pendingCiCdRuns = stats?.Pending ?? 0,
+            };
+        }).ToList();
+
+        return Ok(new { agentPools, cicdPools });
     }
 
     // --- Telegram Bots ---
@@ -233,5 +324,5 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
 }
 
 public record ApiKeyRequest(Guid OrgId, string Name, ApiKeyProvider Provider, string Value, DateTime? ExpiresAt, Guid? ProjectId = null, Guid? TeamId = null, Guid? UserId = null);
-public record RuntimeConfigRequest(Guid OrgId, string Name, RuntimeType Type, string Configuration, bool IsDefault);
+public record RuntimeConfigRequest(Guid OrgId, string Name, RuntimeType Type, string Configuration, bool IsDefault, int MaxConcurrentAgents = 0);
 public record TelegramBotRequest(string Name, string BotToken, string ChatId, int Events, bool IsSilent, DigestInterval DigestInterval, Guid? OrgId, Guid? ProjectId);

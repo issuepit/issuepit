@@ -194,4 +194,113 @@ public class BadgeEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var svg = await response.Content.ReadAsStringAsync();
         Assert.Contains("linearGradient", svg);
     }
+
+    [Fact]
+    public async Task GetBadge_CiCdRunsMetric_NoRuns_ReturnsZero()
+    {
+        var (_, projectId, _) = await SeedProjectAsync();
+
+        var response = await _client.GetAsync($"/api/badges?project={projectId}&metric=cicd-runs");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var svg = await response.Content.ReadAsStringAsync();
+        Assert.Contains("cicd runs", svg);
+        Assert.Contains("/ 7d", svg);
+    }
+
+    [Fact]
+    public async Task GetBadge_CiCdRunsMetric_WithRuns_ReturnsCount()
+    {
+        var (_, projectId, _) = await SeedProjectAsync();
+        await AddCiCdRunAsync(projectId, CiCdRunStatus.Succeeded);
+        await AddCiCdRunAsync(projectId, CiCdRunStatus.Failed);
+
+        var response = await _client.GetAsync($"/api/badges?project={projectId}&metric=cicd-runs");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var svg = await response.Content.ReadAsStringAsync();
+        Assert.Contains("2 / 7d", svg);
+    }
+
+    [Fact]
+    public async Task GetBadge_CiCdFailuresMetric_NoFailures_ShowsBrightGreen()
+    {
+        var (_, projectId, _) = await SeedProjectAsync();
+        await AddCiCdRunAsync(projectId, CiCdRunStatus.Succeeded);
+
+        var response = await _client.GetAsync($"/api/badges?project={projectId}&metric=cicd-failures");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var svg = await response.Content.ReadAsStringAsync();
+        Assert.Contains("cicd failures", svg);
+        Assert.Contains("0", svg);
+        Assert.Contains("#4c1", svg);
+    }
+
+    [Fact]
+    public async Task GetBadge_CiCdFailuresMetric_WithFailures_ShowsCount()
+    {
+        var (_, projectId, _) = await SeedProjectAsync();
+        await AddCiCdRunAsync(projectId, CiCdRunStatus.Failed);
+        await AddCiCdRunAsync(projectId, CiCdRunStatus.Failed);
+
+        var response = await _client.GetAsync($"/api/badges?project={projectId}&metric=cicd-failures");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var svg = await response.Content.ReadAsStringAsync();
+        Assert.Contains("cicd failures", svg);
+        Assert.Contains("2", svg);
+    }
+
+    [Fact]
+    public async Task GetBadge_CiCdFailureRateMetric_NoRuns_ShowsNoData()
+    {
+        var (_, projectId, _) = await SeedProjectAsync();
+
+        var response = await _client.GetAsync($"/api/badges?project={projectId}&metric=cicd-failure-rate");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var svg = await response.Content.ReadAsStringAsync();
+        Assert.Contains("cicd failure rate", svg);
+        Assert.Contains("no data", svg);
+    }
+
+    [Fact]
+    public async Task GetBadge_CiCdFailureRateMetric_WithRuns_ShowsPercentage()
+    {
+        var (_, projectId, _) = await SeedProjectAsync();
+        await AddCiCdRunAsync(projectId, CiCdRunStatus.Succeeded);
+        await AddCiCdRunAsync(projectId, CiCdRunStatus.Succeeded);
+        await AddCiCdRunAsync(projectId, CiCdRunStatus.Failed);
+
+        var response = await _client.GetAsync($"/api/badges?project={projectId}&metric=cicd-failure-rate");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var svg = await response.Content.ReadAsStringAsync();
+        Assert.Contains("cicd failure rate", svg);
+        Assert.Contains("%", svg);
+    }
+
+    [Fact]
+    public async Task GetBadge_CiCdRunsMetric_WithBranchFilter_ReturnsFilteredCount()
+    {
+        var (_, projectId, _) = await SeedProjectAsync();
+        await AddCiCdRunAsync(projectId, CiCdRunStatus.Succeeded, branch: "main");
+        await AddCiCdRunAsync(projectId, CiCdRunStatus.Succeeded, branch: "feature/x");
+
+        var response = await _client.GetAsync($"/api/badges?project={projectId}&metric=cicd-runs&branch=main");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var svg = await response.Content.ReadAsStringAsync();
+        Assert.Contains("1 / 7d", svg);
+    }
+
+    private async Task AddCiCdRunAsync(Guid projectId, CiCdRunStatus status, string? branch = null)
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+        db.CiCdRuns.Add(new Core.Entities.CiCdRun
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = projectId,
+            CommitSha = Guid.NewGuid().ToString("N"),
+            Branch = branch,
+            Status = status,
+            StartedAt = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync();
+    }
 }
