@@ -146,4 +146,61 @@ public class IssueLinkEndpointTests(ApiFactory factory) : IClassFixture<ApiFacto
 
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
     }
+
+    [Fact]
+    public async Task GetLinks_ReverseLinkVisibleOnTargetIssue()
+    {
+        var (tenantId, _, issueId1, issueId2) = await SeedTwoIssuesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        // Create link from issue1 → issue2 with type "blocks"
+        await _client.PostAsJsonAsync(
+            $"/api/issues/{issueId1}/links",
+            new { targetIssueId = issueId2, linkType = "blocks" });
+
+        // Issue2 should show the reverse link with inverted type "blocked_by"
+        var getResp = await _client.GetAsync($"/api/issues/{issueId2}/links");
+        Assert.Equal(HttpStatusCode.OK, getResp.StatusCode);
+        var links = await getResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal(1, links.GetArrayLength());
+        var first = links.EnumerateArray().First();
+        Assert.Equal("blocked_by", first.GetProperty("linkType").GetString());
+        Assert.Equal("Issue A", first.GetProperty("targetIssue").GetProperty("title").GetString());
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
+    public async Task RemoveLink_FromTargetIssue_RemovesOriginalLink()
+    {
+        var (tenantId, _, issueId1, issueId2) = await SeedTwoIssuesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        // Create link from issue1 → issue2
+        var addResp = await _client.PostAsJsonAsync(
+            $"/api/issues/{issueId1}/links",
+            new { targetIssueId = issueId2, linkType = "blocks" });
+        Assert.Equal(HttpStatusCode.Created, addResp.StatusCode);
+        var link = await addResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var linkId = link.GetProperty("id").GetString()!;
+
+        // Remove the link via issue2 (the target side)
+        var deleteResp = await _client.DeleteAsync($"/api/issues/{issueId2}/links/{linkId}");
+        Assert.Equal(HttpStatusCode.NoContent, deleteResp.StatusCode);
+
+        // Both sides should no longer show the link
+        var getResp1 = await _client.GetAsync($"/api/issues/{issueId1}/links");
+        var links1 = await getResp1.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal(0, links1.GetArrayLength());
+
+        var getResp2 = await _client.GetAsync($"/api/issues/{issueId2}/links");
+        var links2 = await getResp2.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal(0, links2.GetArrayLength());
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
 }

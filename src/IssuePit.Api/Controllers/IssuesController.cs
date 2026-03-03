@@ -159,6 +159,14 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
             events.Add(MakeEvent(id, IssueEventType.MilestoneSet, issue.MilestoneId?.ToString(), req.MilestoneId.Value.ToString()));
             issue.MilestoneId = req.MilestoneId.Value;
         }
+        if (req.ClearParentIssueId && issue.ParentIssueId.HasValue)
+        {
+            issue.ParentIssueId = null;
+        }
+        else if (req.ParentIssueId.HasValue && req.ParentIssueId != issue.ParentIssueId)
+        {
+            issue.ParentIssueId = req.ParentIssueId.Value;
+        }
         issue.UpdatedAt = DateTime.UtcNow;
         if (events.Count > 0) db.IssueEvents.AddRange(events);
         await db.SaveChangesAsync();
@@ -423,15 +431,44 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
 
     // --- Issue Links ---
 
+    private static IssueLinkType InverseLinkType(IssueLinkType type) => type switch
+    {
+        IssueLinkType.Blocks => IssueLinkType.BlockedBy,
+        IssueLinkType.BlockedBy => IssueLinkType.Blocks,
+        IssueLinkType.Causes => IssueLinkType.CausedBy,
+        IssueLinkType.CausedBy => IssueLinkType.Causes,
+        IssueLinkType.Duplicates => IssueLinkType.DuplicatedBy,
+        IssueLinkType.DuplicatedBy => IssueLinkType.Duplicates,
+        IssueLinkType.Requires => IssueLinkType.RequiredBy,
+        IssueLinkType.RequiredBy => IssueLinkType.Requires,
+        IssueLinkType.Implements => IssueLinkType.ImplementedBy,
+        IssueLinkType.ImplementedBy => IssueLinkType.Implements,
+        _ => type,
+    };
+
     [HttpGet("{id:guid}/links")]
     public async Task<IActionResult> GetLinks(Guid id)
     {
-        var links = await db.IssueLinks
+        var forwardLinks = await db.IssueLinks
             .Include(l => l.TargetIssue)
             .Where(l => l.IssueId == id)
             .OrderBy(l => l.CreatedAt)
             .ToListAsync();
-        return Ok(links);
+
+        // Also include links where this issue is the target (reverse links)
+        var reverseLinks = await db.IssueLinks
+            .Include(l => l.Issue)
+            .Where(l => l.TargetIssueId == id)
+            .OrderBy(l => l.CreatedAt)
+            .ToListAsync();
+
+        var result = forwardLinks
+            .Select(l => new IssueLinkDto(l.Id, l.IssueId, l.TargetIssueId, l.TargetIssue, l.LinkType, l.CreatedAt))
+            .Concat(reverseLinks.Select(l => new IssueLinkDto(l.Id, id, l.IssueId, l.Issue, InverseLinkType(l.LinkType), l.CreatedAt)))
+            .OrderBy(l => l.CreatedAt)
+            .ToList();
+
+        return Ok(result);
     }
 
     [HttpPost("{id:guid}/links")]
@@ -444,7 +481,8 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         if (target is null) return NotFound("Target issue not found.");
         if (id == req.TargetIssueId) return BadRequest("Cannot link an issue to itself.");
         var exists = await db.IssueLinks.AnyAsync(l =>
-            l.IssueId == id && l.TargetIssueId == req.TargetIssueId && l.LinkType == req.LinkType);
+            (l.IssueId == id && l.TargetIssueId == req.TargetIssueId && l.LinkType == req.LinkType) ||
+            (l.IssueId == req.TargetIssueId && l.TargetIssueId == id && l.LinkType == InverseLinkType(req.LinkType)));
         if (exists) return Conflict();
         var link = new IssueLink
         {
@@ -457,13 +495,14 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         db.IssueLinks.Add(link);
         await db.SaveChangesAsync();
         await db.Entry(link).Reference(l => l.TargetIssue).LoadAsync();
-        return Created($"/api/issues/{id}/links/{link.Id}", link);
+        return Created($"/api/issues/{id}/links/{link.Id}", new IssueLinkDto(link.Id, link.IssueId, link.TargetIssueId, link.TargetIssue, link.LinkType, link.CreatedAt));
     }
 
     [HttpDelete("{id:guid}/links/{linkId:guid}")]
     public async Task<IActionResult> RemoveLink(Guid id, Guid linkId)
     {
-        var link = await db.IssueLinks.FirstOrDefaultAsync(l => l.Id == linkId && l.IssueId == id);
+        // Handle both forward links (IssueId == id) and reverse links (TargetIssueId == id)
+        var link = await db.IssueLinks.FirstOrDefaultAsync(l => l.Id == linkId && (l.IssueId == id || l.TargetIssueId == id));
         if (link is null) return NotFound();
         db.IssueLinks.Remove(link);
         await db.SaveChangesAsync();
@@ -479,6 +518,7 @@ public record CodeReviewCommentRequest(string FilePath, int StartLine, int EndLi
 public record AssigneeRequest(Guid? UserId, Guid? AgentId);
 public record LabelAssignRequest(Guid LabelId);
 public record IssueLinkRequest(Guid TargetIssueId, IssueLinkType LinkType);
+public record IssueLinkDto(Guid Id, Guid IssueId, Guid TargetIssueId, Issue? TargetIssue, IssueLinkType LinkType, DateTime CreatedAt);
 public record UpdateIssueRequest(
     string? Title,
     string? Body,
@@ -487,4 +527,6 @@ public record UpdateIssueRequest(
     IssueType? Type,
     string? GitBranch,
     Guid? MilestoneId,
-    bool ClearMilestoneId = false);
+    bool ClearMilestoneId = false,
+    Guid? ParentIssueId = null,
+    bool ClearParentIssueId = false);
