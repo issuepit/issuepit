@@ -78,7 +78,10 @@ public partial class DockerCiCdRuntime(
         // Read the act runner image that is injected into actrc to prevent the interactive
         // first-run prompt ("Please choose the default image") that causes EOF in non-interactive containers.
         // Default is the Medium runner image (~500 MB, compatible with most actions).
-        var actRunnerImage = configuration["CiCd__ActImage"] ?? "catthehacker/ubuntu:act-latest";
+        // Priority: trigger (project/org override) → CiCd__ActImage config → hardcoded default.
+        var actRunnerImage = !string.IsNullOrWhiteSpace(trigger.ActRunnerImage)
+            ? trigger.ActRunnerImage
+            : configuration["CiCd__ActImage"] ?? "catthehacker/ubuntu:act-latest";
 
         // Build -P platform flags appended to the act command so the prompt is suppressed
         // even if the actrc isn't read (stale image layer, wrong XDG_CONFIG_HOME, etc.).

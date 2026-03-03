@@ -390,6 +390,7 @@ public class CiCdRunsController(
             customImage = options?.CustomImage,
             customEntrypoint = options?.CustomEntrypoint,
             customArgs = options?.CustomArgs,
+            actRunnerImage = options?.ActRunnerImage,
         });
 
         await producer.ProduceAsync("cicd-trigger", new Message<string, string>
@@ -455,16 +456,18 @@ public record RetryRunOptions(
     bool KeepContainerOnFailure = false,
     /// <summary>When true the retry proceeds even if another run for the same project is already in progress.</summary>
     bool ForceRetry = false,
-    /// <summary>When true the Docker socket is NOT mounted (disables DinD).</summary>
+    /// <summary>When true the Docker socket is NOT mounted into the container (disables Docker-in-Docker).</summary>
     bool NoDind = false,
-    /// <summary>When true no host volumes are mounted (workspace and docker socket omitted).</summary>
+    /// <summary>When true no host volumes are mounted into the container (workspace and docker socket are omitted).</summary>
     bool NoVolumeMounts = false,
-    /// <summary>Override the Docker image for this run.</summary>
+    /// <summary>Override the Docker image used for the CI/CD container (the container that runs act). Null or empty = use configured default.</summary>
     string? CustomImage = null,
     /// <summary>Override the container entrypoint.</summary>
     string? CustomEntrypoint = null,
     /// <summary>Additional CLI arguments appended to the act command.</summary>
-    string? CustomArgs = null);
+    string? CustomArgs = null,
+    /// <summary>Override the act runner image used by act for platform mapping (e.g. ubuntu-latest). Null or empty = use project/org/global default.</summary>
+    string? ActRunnerImage = null);
 
 /// <summary>Request body for the external CI/CD sync endpoint.</summary>
 public record ExternalSyncRequest(
