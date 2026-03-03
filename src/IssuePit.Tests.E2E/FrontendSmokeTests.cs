@@ -167,4 +167,35 @@ public class FrontendSmokeTests : IAsyncLifetime
         await ciCd.WaitForLoadAsync();
         Assert.True(await ciCd.IsImageSelectedAsync("Runner"), "Runner image selection should persist after page reload");
     }
+
+    [Fact]
+    public async Task CiCdConfig_RunnerImage_TagVersionCanBeSelected()
+    {
+        var page = await _context!.NewPageAsync();
+        var ciCd = new CiCdConfigPage(page);
+        await ciCd.GotoAsync();
+        await ciCd.WaitForLoadAsync();
+
+        // Select the "Act (medium)" group first
+        await ciCd.SelectRunnerImageAsync("Act (medium)");
+        Assert.True(await ciCd.IsImageSelectedAsync("Act (medium)"), "Act group should show as selected");
+
+        // The version picker should now be visible — switch to 22.04
+        await ciCd.SelectTagVersionAsync("22.04");
+        var version = await ciCd.GetSelectedTagVersionAsync();
+        Assert.Equal("22.04", version);
+    }
+
+    [Fact]
+    public async Task CiCdConfig_RunnerImage_CustomImageCanBeSet()
+    {
+        var page = await _context!.NewPageAsync();
+        var ciCd = new CiCdConfigPage(page);
+        await ciCd.GotoAsync();
+        await ciCd.WaitForLoadAsync();
+
+        // Activate custom image and type a value
+        await ciCd.SetCustomImageAsync("my-registry.example.com/runner:v2");
+        Assert.True(await ciCd.IsCustomImageSelectedAsync(), "Custom image card should show as selected");
+    }
 }
