@@ -7,7 +7,7 @@
       :class="[
         selectedGroupId === group.id
           ? 'border-brand-500 bg-brand-950/40 ring-1 ring-brand-500/50'
-          : group.isDefault && !selectedGroupId && !isCustomImage
+          : group.isDefault && !selectedGroupId && !customImageSelected
             ? 'border-brand-700 bg-brand-950/30'
             : 'border-gray-800 bg-gray-900/20 hover:border-gray-700'
       ]"
@@ -19,7 +19,7 @@
           <div class="flex items-center gap-2 flex-wrap mb-1">
             <span class="font-medium text-white">{{ group.label }}</span>
             <span
-              v-if="group.isDefault && !selectedGroupId && !isCustomImage"
+              v-if="group.isDefault && !selectedGroupId && !customImageSelected"
               class="px-1.5 py-0.5 rounded text-xs font-medium bg-brand-900/60 text-brand-300 border border-brand-800"
             >
               Default
@@ -40,7 +40,7 @@
               class="text-xs font-mono px-2 py-0.5 rounded border"
               :class="props.modelValue === tag
                 ? 'bg-brand-950/60 border-brand-800 text-brand-300'
-                : group.isDefault && !selectedGroupId && !isCustomImage && tag === group.tags[0]
+                : group.isDefault && !selectedGroupId && !customImageSelected && tag === group.tags[0]
                   ? 'bg-brand-950/60 border-brand-800 text-brand-300'
                   : 'bg-gray-950/60 border-gray-700 text-gray-400'"
             >{{ tag }}</code>
@@ -83,7 +83,7 @@
     <div
       class="rounded-lg border p-4 transition-colors cursor-pointer"
       :class="[
-        isCustomImage
+        customImageSelected
           ? 'border-brand-500 bg-brand-950/40 ring-1 ring-brand-500/50'
           : 'border-gray-800 bg-gray-900/20 hover:border-gray-700'
       ]"
@@ -95,14 +95,14 @@
           <div class="flex items-center gap-2 flex-wrap mb-1">
             <span class="font-medium text-white">Custom image</span>
             <span
-              v-if="isCustomImage"
+              v-if="customImageSelected"
               class="px-1.5 py-0.5 rounded text-xs font-medium bg-brand-700/80 text-white border border-brand-600"
             >
               Selected
             </span>
           </div>
           <p class="text-sm text-gray-400 mb-2">Enter any full Docker image reference.</p>
-          <div v-if="isCustomImage" class="mt-2" @click.stop>
+          <div v-if="customImageSelected" class="mt-2" @click.stop>
             <input
               ref="customInputRef"
               v-model="customImageInput"
@@ -116,7 +116,7 @@
         <!-- Selected indicator -->
         <div class="shrink-0 mt-0.5">
           <div
-            v-if="isCustomImage"
+            v-if="customImageSelected"
             class="w-5 h-5 rounded-full bg-brand-600 flex items-center justify-center"
           >
             <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -309,6 +309,14 @@ const isCustomImage = computed(() => {
   return !findGroupForTag(props.modelValue)
 })
 
+// Tracks whether the user has manually activated the custom image card,
+// even before they have typed anything (model value may still be null at that point).
+const customImageActive = ref(false)
+
+// Combine: show the custom card as active when explicitly activated OR when
+// the stored model value is a custom image string.
+const customImageSelected = computed(() => customImageActive.value || isCustomImage.value)
+
 // Buffer for the custom image input field
 const customImageInput = ref('')
 
@@ -339,6 +347,7 @@ function tagVersionLabel(tag: string): string {
 function selectGroup(id: string) {
   const group = imageGroups.find(g => g.id === id)
   if (!group) return
+  customImageActive.value = false
   if (selectedGroupId.value === id) {
     // Deselect (revert to default/inherit)
     emit('update:modelValue', null)
@@ -351,9 +360,10 @@ function selectGroup(id: string) {
 const customInputRef = ref<HTMLInputElement | null>(null)
 
 function activateCustomImage() {
-  // Always emit so the card activates; if already active, also focus the input
-  if (!isCustomImage.value) {
-    emit('update:modelValue', customImageInput.value || null)
+  customImageActive.value = true
+  // If there's already a typed value, emit it; otherwise keep model as-is until typing starts
+  if (customImageInput.value) {
+    emit('update:modelValue', customImageInput.value)
   }
   nextTick(() => {
     customInputRef.value?.focus()
