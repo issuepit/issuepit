@@ -1,13 +1,15 @@
-# Helper act image: helper-base + Docker CLI (DinD support) + nektos/act (local GitHub Actions runner)
+# Helper act image: helper-base + Docker CLI (DinD support) + nektos/act (local GitHub Actions runner) + actionlint
 #
 # Build args (override at build time):
-#   BASE_IMAGE   — fully-qualified helper-base image reference
-#   ACT_VERSION  — nektos/act release version to install (default: 0.2.74)
+#   BASE_IMAGE          — fully-qualified helper-base image reference
+#   ACT_VERSION         — nektos/act release version to install (default: 0.2.74)
+#   ACTIONLINT_VERSION  — rhysd/actionlint release version to install (default: 1.7.11)
 
 ARG BASE_IMAGE=ghcr.io/issuepit/issuepit-helper-base:latest
 FROM ${BASE_IMAGE}
 
 ARG ACT_VERSION=0.2.74
+ARG ACTIONLINT_VERSION=1.7.11
 
 # Install Docker CLI for DinD (Docker-in-Docker via mounted /var/run/docker.sock) support.
 # curl and gnupg are already present in the base image.
@@ -28,6 +30,12 @@ RUN if ! command -v act > /dev/null 2>&1; then \
     fi && \
     act --version
 
+# Install actionlint using the official download script.
+RUN bash <(curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) \
+        "${ACTIONLINT_VERSION}" /usr/local/bin && \
+    actionlint --version
+
 LABEL org.opencontainers.image.title="issuepit-helper-act" \
-      org.opencontainers.image.description="IssuePit helper image for CI/CD runs: helper-base + Docker CLI + act" \
-      issuepit.act.version="${ACT_VERSION}"
+      org.opencontainers.image.description="IssuePit helper image for CI/CD runs: helper-base + Docker CLI + act + actionlint" \
+      issuepit.act.version="${ACT_VERSION}" \
+      issuepit.actionlint.version="${ACTIONLINT_VERSION}"

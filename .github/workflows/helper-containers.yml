@@ -26,6 +26,7 @@ env:
   NODE_MAJOR: "24"
   PLAYWRIGHT_VERSION: "v1.51.0"
   ACT_VERSION: "0.2.74"
+  ACTIONLINT_VERSION: "1.7.11"
   OPENCODE_VERSION: "latest"
 
 jobs:
@@ -64,9 +65,12 @@ jobs:
           context: docker/helper-containers
           file: docker/helper-containers/Dockerfile.helper-act
           push: false
+          # Tag is required so helper-opencode-act can reference it as BASE_IMAGE below.
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-helper-act:pr-build
           build-args: |
             BASE_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-helper-base:pr-build
             ACT_VERSION=${{ env.ACT_VERSION }}
+            ACTIONLINT_VERSION=${{ env.ACTIONLINT_VERSION }}
 
       - name: Build helper-opencode
         uses: docker/build-push-action@v6
@@ -76,6 +80,16 @@ jobs:
           push: false
           build-args: |
             BASE_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-helper-base:pr-build
+            OPENCODE_VERSION=${{ env.OPENCODE_VERSION }}
+
+      - name: Build helper-opencode-act
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/helper-containers
+          file: docker/helper-containers/Dockerfile.helper-opencode-act
+          push: false
+          build-args: |
+            BASE_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-helper-act:pr-build
             OPENCODE_VERSION=${{ env.OPENCODE_VERSION }}
 
   build-base:
@@ -144,6 +158,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      # Pass the primary image reference to dependent jobs so they can FROM it directly.
+      act-image: ${{ steps.act-ref.outputs.image }}
 
     steps:
       - uses: actions/checkout@v4
@@ -173,6 +190,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build and push helper-act
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: docker/helper-containers
@@ -183,8 +201,14 @@ jobs:
           build-args: |
             BASE_IMAGE=${{ needs.build-base.outputs.base-image }}
             ACT_VERSION=${{ env.ACT_VERSION }}
+            ACTIONLINT_VERSION=${{ env.ACTIONLINT_VERSION }}
           cache-from: type=gha,scope=helper-act
           cache-to: type=gha,mode=max,scope=helper-act
+
+      - name: Set act image output
+        id: act-ref
+        run: |
+          echo "image=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-helper-act@${{ steps.build.outputs.digest }}" >> "$GITHUB_OUTPUT"
 
   build-opencode:
     name: Build & Push helper-opencode
@@ -235,3 +259,53 @@ jobs:
             OPENCODE_VERSION=${{ env.OPENCODE_VERSION }}
           cache-from: type=gha,scope=helper-opencode
           cache-to: type=gha,mode=max,scope=helper-opencode
+
+  build-opencode-act:
+    name: Build & Push helper-opencode-act
+    needs: build-act
+    if: github.event_name != 'pull_request' && github.event_name != 'merge_group'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-helper-opencode-act
+          tags: |
+            type=ref,event=branch,suffix=-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }}
+            type=semver,pattern={{version}},suffix=-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }},event=tag
+            type=semver,pattern={{major}}.{{minor}},suffix=-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }},event=tag
+            type=sha,prefix=sha-,format=short
+            type=raw,value=dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/helper-containers-v') }}
+            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push helper-opencode-act
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/helper-containers
+          file: docker/helper-containers/Dockerfile.helper-opencode-act
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BASE_IMAGE=${{ needs.build-act.outputs.act-image }}
+            OPENCODE_VERSION=${{ env.OPENCODE_VERSION }}
+          cache-from: type=gha,scope=helper-opencode-act
+          cache-to: type=gha,mode=max,scope=helper-opencode-act
