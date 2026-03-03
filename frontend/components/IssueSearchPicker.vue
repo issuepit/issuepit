@@ -66,13 +66,13 @@ interface OrgIssue {
   projectName?: string
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   modelValue: string
   issues: OrgIssue[]
   currentProjectId: string
   placeholder?: string
   showAll?: boolean
-}>()
+}>(), { showAll: false, placeholder: 'Search issues...' })
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]

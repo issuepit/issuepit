@@ -165,6 +165,8 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         }
         else if (req.ParentIssueId.HasValue && req.ParentIssueId != issue.ParentIssueId)
         {
+            if (req.ParentIssueId.Value == id)
+                return BadRequest("An issue cannot be its own parent.");
             issue.ParentIssueId = req.ParentIssueId.Value;
         }
         issue.UpdatedAt = DateTime.UtcNow;
