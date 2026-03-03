@@ -46,6 +46,11 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<ProjectMetricSnapshot> ProjectMetricSnapshots => Set<ProjectMetricSnapshot>();
     public DbSet<IssueEvent> IssueEvents => Set<IssueEvent>();
     public DbSet<Skill> Skills => Set<Skill>();
+    public DbSet<TodoBoard> TodoBoards => Set<TodoBoard>();
+    public DbSet<TodoCategory> TodoCategories => Set<TodoCategory>();
+    public DbSet<Todo> Todos => Set<Todo>();
+    public DbSet<TodoBoardMembership> TodoBoardMemberships => Set<TodoBoardMembership>();
+    public DbSet<TodoCategoryMembership> TodoCategoryMemberships => Set<TodoCategoryMembership>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -247,5 +252,31 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
             .HasOne(x => x.Organization)
             .WithMany()
             .HasForeignKey(x => x.OrgId);
+
+        modelBuilder.Entity<TodoBoardMembership>()
+            .HasKey(x => new { x.TodoId, x.BoardId });
+
+        modelBuilder.Entity<TodoBoardMembership>()
+            .HasOne(x => x.Todo)
+            .WithMany(t => t.BoardMemberships)
+            .HasForeignKey(x => x.TodoId);
+
+        modelBuilder.Entity<TodoBoardMembership>()
+            .HasOne(x => x.Board)
+            .WithMany()
+            .HasForeignKey(x => x.BoardId);
+
+        modelBuilder.Entity<TodoCategoryMembership>()
+            .HasKey(x => new { x.TodoId, x.CategoryId });
+
+        modelBuilder.Entity<TodoCategoryMembership>()
+            .HasOne(x => x.Todo)
+            .WithMany(t => t.CategoryMemberships)
+            .HasForeignKey(x => x.TodoId);
+
+        modelBuilder.Entity<TodoCategoryMembership>()
+            .HasOne(x => x.Category)
+            .WithMany()
+            .HasForeignKey(x => x.CategoryId);
     }
 }
