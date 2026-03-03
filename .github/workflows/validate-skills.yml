@@ -2,6 +2,7 @@ name: Validate Skills
 
 on:
   push:
+    branches: [main]
     paths:
       - 'skills/**'
       - '.github/workflows/validate-skills.yml'
