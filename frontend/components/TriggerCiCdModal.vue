@@ -13,11 +13,20 @@
 
       <!-- Body -->
       <div class="px-5 py-4 space-y-4">
-        <!-- Commit info -->
-        <div class="flex items-center gap-2 text-sm">
-          <span class="text-gray-400">Commit:</span>
-          <code class="text-gray-200 font-mono bg-gray-800 px-2 py-0.5 rounded">{{ commitSha.slice(0, 7) }}</code>
-          <span v-if="branch" class="text-gray-500 text-xs">on {{ branch }}</span>
+        <!-- Commit SHA (shown as info when provided, editable when empty) -->
+        <div v-if="commitSha">
+          <div class="flex items-center gap-2 text-sm">
+            <span class="text-gray-400">Commit:</span>
+            <code class="text-gray-200 font-mono bg-gray-800 px-2 py-0.5 rounded">{{ commitSha.slice(0, 7) }}</code>
+            <span v-if="branch" class="text-gray-500 text-xs">on {{ branch }}</span>
+          </div>
+        </div>
+        <div v-else>
+          <label class="block text-sm font-medium text-gray-300 mb-1">
+            Commit SHA <span class="text-red-400">*</span>
+          </label>
+          <input v-model="manualCommitSha" type="text" placeholder="e.g. abc123def456…"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-brand-500" />
         </div>
 
         <!-- Event type selector -->
@@ -103,7 +112,8 @@ import { useCiCdRunsStore } from '~/stores/cicdRuns'
 
 const props = defineProps<{
   projectId: string
-  commitSha: string
+  /** When provided, the SHA is shown as read-only; when empty the user must type it. */
+  commitSha?: string
   branch?: string
 }>()
 
@@ -125,6 +135,7 @@ const eventOptions = [
 
 const selectedEvent = ref('push')
 const selectedWorkflow = ref('')
+const manualCommitSha = ref('')
 const inputValues = ref<Record<string, string>>({})
 const inputBooleans = ref<Record<string, boolean>>({})
 const triggering = ref(false)
@@ -173,6 +184,11 @@ onMounted(async () => {
 
 async function triggerRun() {
   triggerError.value = null
+  const sha = props.commitSha || manualCommitSha.value.trim()
+  if (!sha) {
+    triggerError.value = 'Commit SHA is required'
+    return
+  }
   triggering.value = true
   try {
     // Build inputs dict (only for workflow_dispatch)
@@ -186,14 +202,13 @@ async function triggerRun() {
 
     await cicdStore.triggerRun({
       projectId: props.projectId,
-      commitSha: props.commitSha,
+      commitSha: sha,
       eventName: selectedEvent.value,
       branch: props.branch,
       workflow: selectedWorkflow.value || undefined,
       inputs,
     })
     emit('triggered')
-    emit('close')
   } catch (e: unknown) {
     triggerError.value = e instanceof Error ? e.message : 'Failed to trigger run'
   } finally {

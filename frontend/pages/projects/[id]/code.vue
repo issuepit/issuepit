@@ -400,7 +400,6 @@ function openTriggerModal(sha: string) {
 
 function onRunTriggered() {
   triggerModal.open = false
-  // Navigate to the runs page so the user can see their triggered run
   router.push(`/projects/${id}/runs`)
 }
 

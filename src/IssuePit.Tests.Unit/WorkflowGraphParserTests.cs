@@ -386,7 +386,7 @@ public class WorkflowGraphParserTests
     }
 
     [Fact]
-    public void ParseWorkflowDispatchInputs_NoPushTrigger_ReturnsEmpty()
+    public void ParseWorkflowDispatchInputs_NoWorkflowDispatchTrigger_ReturnsEmpty()
     {
         const string yaml = """
             on:

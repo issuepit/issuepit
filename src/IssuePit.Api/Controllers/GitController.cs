@@ -180,7 +180,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
 
         var localPath = gitService.GetLocalPath(repo);
         if (string.IsNullOrWhiteSpace(localPath))
-            return Ok(Array.Empty<object>());
+            return Ok(Array.Empty<WorkflowInfo>());
 
         var workflowsDir = Path.Combine(localPath, ".github", "workflows");
         var infos = await WorkflowGraphParser.ParseWorkflowInfosAsync(workflowsDir, HttpContext.RequestAborted);
