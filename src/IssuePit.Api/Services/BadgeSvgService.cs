@@ -60,8 +60,12 @@ public static class BadgeSvgService
             _ => color.StartsWith('#') ? color : "#" + color,
         };
 
-        var labelWidthTenths = MeasureText(label) + 100; // 10px padding on each side
-        var valueWidthTenths = MeasureText(value) + 100;
+        // Text-only widths (in tenths of a pixel) — used as SVG textLength
+        var labelTextWidth = MeasureText(label);
+        var valueTextWidth = MeasureText(value);
+
+        var labelWidthTenths = labelTextWidth + 100; // 10px padding on each side
+        var valueWidthTenths = valueTextWidth + 100;
         var totalWidthTenths = labelWidthTenths + valueWidthTenths;
 
         // Convert tenths to actual pixel values
@@ -74,9 +78,9 @@ public static class BadgeSvgService
 
         return style switch
         {
-            BadgeStyle.FlatSquare => RenderFlatSquare(label, value, colorHex, labelWidth, valueWidth, totalWidth, labelCenter, valueCenter, labelWidthTenths, valueWidthTenths),
-            BadgeStyle.Plastic => RenderPlastic(label, value, colorHex, labelWidth, valueWidth, totalWidth, labelCenter, valueCenter, labelWidthTenths, valueWidthTenths),
-            _ => RenderFlat(label, value, colorHex, labelWidth, valueWidth, totalWidth, labelCenter, valueCenter, labelWidthTenths, valueWidthTenths),
+            BadgeStyle.FlatSquare => RenderFlatSquare(label, value, colorHex, labelWidth, valueWidth, totalWidth, labelCenter, valueCenter, labelTextWidth, valueTextWidth),
+            BadgeStyle.Plastic => RenderPlastic(label, value, colorHex, labelWidth, valueWidth, totalWidth, labelCenter, valueCenter, labelTextWidth, valueTextWidth),
+            _ => RenderFlat(label, value, colorHex, labelWidth, valueWidth, totalWidth, labelCenter, valueCenter, labelTextWidth, valueTextWidth),
         };
     }
 
