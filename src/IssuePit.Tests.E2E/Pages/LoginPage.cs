@@ -18,11 +18,10 @@ public class LoginPage(IPage page)
         await GotoAsync();
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
         await page.ClickAsync("button:has-text('Create account')");
-        // Wait for the register form to be active before filling.
-        // Without this, FillAsync("input[autocomplete='username']") could match the login
-        // form's username field (still in the DOM during Vue hydration), leaving the tab
-        // never switched and the new-password field never appearing.
+      
+        await page.WaitForSelectorAsync("input[autocomplete='email']");
         await page.WaitForSelectorAsync("input[autocomplete='new-password']");
+      
         await page.FillAsync("input[autocomplete='username']", username);
         await page.FillAsync("input[autocomplete='new-password']", password);
         await page.ClickAsync("button[type='submit']");
