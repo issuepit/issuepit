@@ -232,15 +232,27 @@
 
         <!-- Jobs tab -->
         <template v-if="activeSection === 'jobs'">
-          <!-- Graph not available (no workspace for this run) -->
-          <div v-if="store.currentRunGraphError && !enrichedJobs.length" class="py-8 px-6 flex flex-col items-center gap-2 text-center">
-            <svg class="w-8 h-8 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          <!-- Graph not available — show as yellow warning box -->
+          <div v-if="store.currentRunGraphError && !enrichedJobs.length" class="m-4 rounded-lg bg-yellow-900/40 border border-yellow-700/50 p-4 flex items-start gap-3">
+            <svg class="w-5 h-5 text-yellow-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
             </svg>
-            <p class="text-sm text-gray-400">{{ store.currentRunGraphError }}</p>
-            <p class="text-xs text-gray-600">Job boxes are available for locally-triggered runs with a workspace.</p>
+            <div>
+              <p class="text-sm font-medium text-yellow-300">Workflow graph unavailable</p>
+              <p class="text-xs text-yellow-400/80 mt-0.5">{{ store.currentRunGraphError }}</p>
+            </div>
           </div>
           <div v-else-if="enrichedJobs.length" class="p-4">
+            <!-- Actionlint warnings from graph validation -->
+            <div v-if="store.currentRunGraph?.warnings?.length" class="mb-4 rounded-lg bg-yellow-900/40 border border-yellow-700/50 p-3">
+              <div class="flex items-center gap-2 mb-2">
+                <svg class="w-4 h-4 text-yellow-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                </svg>
+                <span class="text-xs font-medium text-yellow-300">Workflow validation warnings (actionlint)</span>
+              </div>
+              <pre v-for="(w, i) in store.currentRunGraph.warnings" :key="i" class="text-xs text-yellow-400/80 font-mono whitespace-pre-wrap">{{ w }}</pre>
+            </div>
             <!-- Job graph with SVG dependency arrows -->
             <div class="relative overflow-x-auto pb-2">
               <!-- SVG arrows layer (absolute, behind boxes) -->

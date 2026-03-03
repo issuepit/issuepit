@@ -161,7 +161,7 @@ public partial class DockerCiCdRuntime(
             // If a custom entrypoint is set, skip injection and let the caller control execution.
             Cmd = !string.IsNullOrWhiteSpace(trigger.CustomEntrypoint)
                 ? cmd
-                : [BuildActrcInjectionScript(actRunnerImage, cmd)],
+                : [BuildActrcInjectionScript(actRunnerImage, cmd, trigger.Workflow)],
             WorkingDir = "/workspace",
             Entrypoint = !string.IsNullOrWhiteSpace(trigger.CustomEntrypoint)
                 ? trigger.CustomEntrypoint.Split(' ', StringSplitOptions.RemoveEmptyEntries)
@@ -503,7 +503,7 @@ public partial class DockerCiCdRuntime(
     ///     ensuring signal forwarding and the correct exit code.</item>
     /// </list>
     /// </summary>
-    private static string BuildActrcInjectionScript(string actRunnerImage, IList<string> cmd)
+    private static string BuildActrcInjectionScript(string actRunnerImage, IList<string> cmd, string? workflow = null)
     {
         // Build the actrc content: map common Ubuntu runner labels to the configured image.
         var platformLabels = new[] { "ubuntu-latest", "ubuntu-24.04", "ubuntu-22.04", "ubuntu-20.04" };
@@ -523,9 +523,35 @@ public partial class DockerCiCdRuntime(
         // exec replaces the shell with act so signals and exit codes propagate correctly.
         var actCmd = "exec " + string.Join(" ", fullCmd.Select(ShellQuote));
 
+        // Build a shell snippet that validates the workflow with actionlint before running act.
+        // The snippet:
+        //  1. Assigns the workflow file path to $_wf by checking two candidate locations.
+        //  2. Runs actionlint only when it is installed and a file was found.
+        //  3. Uses '|| true' so validation failures (exit 1 from actionlint) do not abort the run.
+        // This runs inside the container where the workspace is mounted at /workspace.
+        string actionlintStep;
+        if (!string.IsNullOrWhiteSpace(workflow))
+        {
+            var wfFileName = Path.GetFileName(workflow);
+            var workflowRelPath = workflow.TrimStart('/').TrimStart('\\').Replace('\\', '/');
+            // Try the canonical GitHub Actions location first, then the workflow path relative to workspace root.
+            var candidate1 = ShellQuote($"/workspace/.github/workflows/{wfFileName}");
+            var candidate2 = ShellQuote($"/workspace/{workflowRelPath}");
+            actionlintStep =
+                // Resolve workflow file: try .github/workflows/<name>, fall back to workspace-relative path.
+                $"_wf=''; [ -f {candidate1} ] && _wf={candidate1} || [ -f {candidate2} ] && _wf={candidate2}; " +
+                // Run actionlint when available and a file was resolved; '|| true' keeps the run alive on lint errors.
+                "command -v actionlint > /dev/null 2>&1 && [ -n \"$_wf\" ] && { echo '[ACTIONLINT] Validating workflow...'; actionlint -color=false \"$_wf\" 2>&1 || true; }; ";
+        }
+        else
+        {
+            actionlintStep = "";
+        }
+
         return
             "mkdir -p /root/.config/act && " +
             $"printf '{actrcBody}\\n' > /root/.config/act/actrc; " +
+            actionlintStep +
             actCmd;
     }
 

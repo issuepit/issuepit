@@ -29,6 +29,9 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
                 $"Workspace path '{workspacePath}' is not configured or does not exist. " +
                 "Set CiCd__DefaultWorkspacePath to the repository workspace.");
 
+        // Validate the workflow with actionlint before running act (best-effort — silently skipped if not installed).
+        await TryRunActionlintAsync(workspacePath, trigger.Workflow, onLogLine, cancellationToken);
+
         var args = BuildActArguments(trigger);
 
         logger.LogInformation("Running act (native) for run {RunId}: {ActBin} {Args}", run.Id, actBin, args);
@@ -64,6 +67,73 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
             throw new Exception(
                 $"act exited with code {process.ExitCode} " +
                 $"(workspace: {workspacePath}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
+    }
+
+    /// <summary>
+    /// Tries to run <c>actionlint</c> on the workflow file before starting <c>act</c>.
+    /// Results are emitted as log lines. Best-effort: silently skipped when actionlint is not installed
+    /// or the workflow file cannot be found. Never throws.
+    /// </summary>
+    internal static async Task TryRunActionlintAsync(
+        string workspacePath,
+        string? workflow,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            string? workflowPath = null;
+            if (!string.IsNullOrWhiteSpace(workflow))
+            {
+                var wfFileName = Path.GetFileName(workflow);
+                var candidate1 = Path.Combine(workspacePath, ".github", "workflows", wfFileName);
+                var candidate2 = Path.Combine(workspacePath, workflow.TrimStart('/').TrimStart('\\').Replace('/', Path.DirectorySeparatorChar));
+                workflowPath = File.Exists(candidate1) ? candidate1 : (File.Exists(candidate2) ? candidate2 : null);
+            }
+
+            if (workflowPath is null)
+                return;
+
+            // Use ArgumentList to avoid any argument-splitting or injection risks from paths with spaces.
+            var psi = new ProcessStartInfo("actionlint")
+            {
+                WorkingDirectory = workspacePath,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            psi.ArgumentList.Add("-color=false");
+            psi.ArgumentList.Add(workflowPath);
+
+            using var process = new Process { StartInfo = psi };
+            if (!process.Start())
+            {
+                await onLogLine("[ACTIONLINT] Could not start actionlint process.", LogStream.Stdout);
+                return;
+            }
+
+            await onLogLine("[ACTIONLINT] Validating workflow...", LogStream.Stdout);
+
+            var stdoutTask = StreamOutputAsync(process.StandardOutput, LogStream.Stdout, onLogLine, cancellationToken);
+            var stderrTask = StreamOutputAsync(process.StandardError, LogStream.Stderr, onLogLine, cancellationToken);
+
+            await Task.WhenAll(stdoutTask, stderrTask);
+            await process.WaitForExitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or FileNotFoundException)
+        {
+            // actionlint binary not found on PATH — silently skip without polluting the log.
+        }
+        catch (Exception ex)
+        {
+            // Unexpected error (e.g. I/O failure) — emit a debug note but don't abort the run.
+            await onLogLine($"[ACTIONLINT] Skipped: {ex.Message}", LogStream.Stdout);
+        }
     }
 
     private static async Task StreamOutputAsync(
