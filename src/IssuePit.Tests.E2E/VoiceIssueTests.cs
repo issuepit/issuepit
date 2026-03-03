@@ -156,10 +156,15 @@ public class VoiceIssueTests : IAsyncLifetime
 
     private async Task<string> GetDefaultTenantIdAsync()
     {
-        var resp = await _fixture.ApiClient!.GetAsync("/api/tenants");
+        var resp = await _fixture.ApiClient!.GetAsync("/api/admin/tenants");
         resp.EnsureSuccessStatusCode();
         var tenants = await resp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
-        return tenants.EnumerateArray().First().GetProperty("id").GetString()!;
+        foreach (var tenant in tenants.EnumerateArray())
+        {
+            if (tenant.GetProperty("hostname").GetString() == "localhost")
+                return tenant.GetProperty("id").GetString()!;
+        }
+        throw new InvalidOperationException("Default 'localhost' tenant not found. Ensure the migrator has run.");
     }
 
     /// <summary>Builds a minimal PCM 16-bit WAV file filled with silence.</summary>
