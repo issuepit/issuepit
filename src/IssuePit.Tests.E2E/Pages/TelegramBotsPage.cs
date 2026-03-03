@@ -7,6 +7,9 @@ namespace IssuePit.Tests.E2E.Pages;
 /// </summary>
 public class TelegramBotsPage(IPage page)
 {
+    // Short wait before retrying a navigation that may have been redirected by Vue SSR hydration.
+    private const int VueHydrationRetryTimeoutMs = 5_000;
+
     /// <summary>
     /// Navigates to the Telegram Bots config page and waits for the heading.
     /// </summary>
@@ -14,7 +17,19 @@ public class TelegramBotsPage(IPage page)
     {
         await page.GotoAsync("/config/telegram-bots");
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        await page.WaitForSelectorAsync("h2:has-text('Telegram Bots')", new PageWaitForSelectorOptions { Timeout = 10_000 });
+
+        // Retry once in case the heading was not yet visible due to a Vue SSR hydration race.
+        try
+        {
+            await page.WaitForSelectorAsync("h2:has-text('Telegram Bots')",
+                new PageWaitForSelectorOptions { Timeout = VueHydrationRetryTimeoutMs });
+        }
+        catch (TimeoutException)
+        {
+            await page.GotoAsync("/config/telegram-bots");
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForSelectorAsync("h2:has-text('Telegram Bots')");
+        }
     }
 
     /// <summary>
