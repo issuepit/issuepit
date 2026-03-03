@@ -176,15 +176,19 @@ public partial class DockerCiCdRuntime(
         {
             Image = image,
             Name = containerName,
-            // Exec model: keep the container alive with a sleep shell so we can exec steps into it.
+            // Exec model: keep the container alive with an interactive shell so we can docker-exec
+            // steps into it (-it style). Tty+OpenStdin keeps the shell running without a process
+            // that might not exist in minimal images.
             // Custom entrypoint: let the caller's cmd run directly.
             Cmd = useExecModel
-                ? ["tail -f /dev/null"]
+                ? ["/bin/sh"]
                 : actCmd,
             WorkingDir = "/workspace",
             Entrypoint = !useExecModel
                 ? trigger.CustomEntrypoint!.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                : ["/bin/sh", "-c"],
+                : [],  // clear image entrypoint so /bin/sh runs directly as PID 1
+            Tty = useExecModel,       // allocate pseudo-TTY (-t) so the shell stays alive
+            OpenStdin = useExecModel, // keep stdin open (-i) so the shell doesn't exit
             HostConfig = new HostConfig
             {
                 Binds = binds,
@@ -587,13 +591,15 @@ public partial class DockerCiCdRuntime(
             {
                 AttachStdout = true,
                 AttachStderr = true,
+                AttachStdin = true,  // -i: keep stdin open
+                Tty = true,          // -t: allocate pseudo-TTY (exec -it)
                 Cmd = cmd,
                 WorkingDir = "/workspace",
             },
             cancellationToken);
 
         using var stream = await dockerClient.Exec.StartAndAttachContainerExecAsync(
-            execCreate.ID, tty: false, cancellationToken);
+            execCreate.ID, tty: true, cancellationToken);
 
         await DrainMultiplexedStreamAsync(stream, onLogLine, cancellationToken);
 
