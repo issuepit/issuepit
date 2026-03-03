@@ -338,8 +338,23 @@
                     </template>
                   </span>
                   <span class="text-xs text-gray-600">{{ job.logCount }} log line{{ job.logCount === 1 ? '' : 's' }}</span>
-                  <!-- Matrix jobs: show instance count -->
-                  <span v-if="job.matrixCount > 1" class="text-xs text-brand-400/70 font-mono">{{ job.matrixCount }}× matrix</span>
+                  <!-- Matrix jobs: show per-instance status dots instead of "Nx matrix" label -->
+                  <div v-if="job.matrixInstances.length > 1" class="flex flex-wrap gap-1 mt-1 w-full">
+                    <button
+                      v-for="inst in job.matrixInstances"
+                      :key="inst.rawId"
+                      :title="inst.rawId"
+                      :class="[
+                        'flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono border transition-colors',
+                        selectedMatrixRawId === inst.rawId
+                          ? 'border-brand-500 bg-brand-950/40 text-brand-300'
+                          : 'border-gray-700 bg-gray-900/50 text-gray-500 hover:border-gray-600',
+                      ]"
+                      @click.stop="selectMatrixInstance(job.id, inst.rawId)">
+                      <span :class="jobStatusDot(inst)" class="w-1.5 h-1.5 rounded-full shrink-0" />
+                      {{ inst.rawId.replace(new RegExp(`^${job.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-?`, 'i'), '') || inst.rawId }}
+                    </button>
+                  </div>
 
                   <!-- Create issue button for failed jobs -->
                   <button
@@ -359,23 +374,32 @@
             <!-- Logs filtered to selected job, grouped by step -->
             <div v-if="selectedJob" class="mt-4">
               <div class="flex items-center gap-2 mb-2">
-                <span class="text-xs text-gray-400">Showing logs for job: <span class="text-white font-mono">{{ visibleJobs.find(j => j.id === selectedJob)?.name ?? selectedJob }}</span></span>
-                <button class="text-xs text-gray-500 hover:text-gray-300 transition-colors" @click="selectedJob = null">Clear filter</button>
+                <span class="text-xs text-gray-400">
+                  Showing logs for job: <span class="text-white font-mono">{{ visibleJobs.find(j => j.id === selectedJob)?.name ?? selectedJob }}</span>
+                  <template v-if="selectedMatrixRawId"> · instance <span class="text-brand-300 font-mono">{{ selectedMatrixRawId }}</span></template>
+                </span>
+                <button class="text-xs text-gray-500 hover:text-gray-300 transition-colors" @click="selectedJob = null; selectedMatrixRawId = null">Clear filter</button>
               </div>
               <div class="bg-gray-950 rounded-lg p-4 font-mono text-xs overflow-auto max-h-[500px]">
                 <template v-if="jobLogsByStep.length">
                   <template v-for="(group, gi) in jobLogsByStep" :key="gi">
-                    <!-- Step separator -->
-                    <div v-if="group.stepId" class="flex items-center gap-2 mt-3 mb-1 first:mt-0 select-none">
-                      <span class="text-gray-600">▶</span>
-                      <span class="text-xs font-semibold text-gray-400 tracking-wide uppercase">{{ group.stepId }}</span>
+                    <!-- Step header: collapsible, shows duration -->
+                    <div
+                      v-if="group.stepId"
+                      class="flex items-center gap-2 mt-3 mb-1 first:mt-0 select-none cursor-pointer group"
+                      @click="toggleStep(group.stepId)">
+                      <span class="text-gray-600 transition-transform" :class="collapsedSteps.has(group.stepId) ? '' : 'rotate-90'">▶</span>
+                      <span class="text-xs font-semibold text-gray-400 tracking-wide uppercase group-hover:text-gray-200 transition-colors">{{ group.stepId }}</span>
+                      <span v-if="stepDuration(group)" class="text-[10px] text-gray-600 font-mono">{{ stepDuration(group) }}</span>
                       <span class="flex-1 border-t border-gray-800" />
                     </div>
-                    <div v-for="log in group.logs" :key="log.id" class="flex gap-3 leading-5">
-                      <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
-                      <!-- eslint-disable-next-line vue/no-v-html -->
-                      <span :class="log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'" class="whitespace-pre-wrap break-all" v-html="renderLogLine(log.line)" />
-                    </div>
+                    <template v-if="!group.stepId || !collapsedSteps.has(group.stepId)">
+                      <div v-for="log in group.logs" :key="log.id" class="flex gap-3 leading-5">
+                        <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
+                        <!-- eslint-disable-next-line vue/no-v-html -->
+                        <span :class="log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'" class="whitespace-pre-wrap break-all" v-html="renderLogLine(log.line)" />
+                      </div>
+                    </template>
                   </template>
                 </template>
                 <div v-else class="text-gray-500 text-center py-4">No logs for this job</div>
@@ -388,6 +412,18 @@
         <!-- Logs tab -->
         <template v-else-if="activeSection === 'logs'">
           <div v-if="filteredLogs.length" class="bg-gray-950 p-4 font-mono text-xs overflow-auto max-h-[600px]">
+            <!-- Create issue button for error logs -->
+            <div v-if="store.currentRunLogs.some(l => l.stream === 'stderr')" class="mb-3 flex justify-end">
+              <button
+                class="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 transition-colors"
+                title="Create an issue from the run logs"
+                @click="openCreateIssueModal('')">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                </svg>
+                Create Issue from Logs
+              </button>
+            </div>
             <div v-for="log in filteredLogs" :key="log.id" class="flex gap-3 leading-5">
               <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
               <!-- eslint-disable-next-line vue/no-v-html -->
@@ -424,8 +460,9 @@
     <Teleport to="body">
       <div v-if="showCreateIssueModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @click.self="showCreateIssueModal = false">
         <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-xl p-6 w-full max-w-lg">
-          <h3 class="text-base font-semibold text-white mb-1">Create Issue from Failed Job</h3>
-          <p class="text-xs text-gray-500 mb-4">Job: <span class="font-mono text-gray-300">{{ createIssueJobId }}</span></p>
+          <h3 class="text-base font-semibold text-white mb-1">Create Issue from {{ createIssueJobId ? 'Failed Job' : 'Run Logs' }}</h3>
+          <p v-if="createIssueJobId" class="text-xs text-gray-500 mb-4">Job: <span class="font-mono text-gray-300">{{ createIssueJobId }}</span></p>
+          <p v-else class="text-xs text-gray-500 mb-4">Run: <span class="font-mono text-gray-300">{{ runId.slice(0, 8) }}</span></p>
 
           <div class="mb-3">
             <label class="block text-xs text-gray-500 mb-1">Title</label>
@@ -611,8 +648,8 @@ const allAvailableTriggers = computed<string[]>(() => {
 const runWorkflowTriggers = computed<string[]>(() => {
   const triggers = store.currentRunGraph?.workflowTriggers
   if (!store.currentRun?.workflow || !triggers) return []
-  // Normalise to just the filename (run.workflow may be a full path like ".github/workflows/ci.yml")
-  const workflowFile = store.currentRun.workflow.split('/').pop() ?? store.currentRun.workflow
+  // Normalise backslashes (Windows-style paths) before extracting the filename.
+  const workflowFile = store.currentRun.workflow.replace(/\\/g, '/').split('/').pop() ?? store.currentRun.workflow
   return triggers[workflowFile] ?? []
 })
 
@@ -643,6 +680,8 @@ function clearTriggerFilters() {
 }
 
 const selectedJob = ref<string | null>(null)
+/** When a specific matrix instance is selected (rawId from act), only show that instance's logs. */
+const selectedMatrixRawId = ref<string | null>(null)
 
 const filteredLogs = computed(() =>
   activeStream.value === null
@@ -692,7 +731,8 @@ const graphJobIndexes = computed(() => {
  */
 function resolveLogJobId(logId: string): string {
   const { byId, byName } = graphJobIndexes.value
-  const norm = logId.trim().toLowerCase()
+  // Normalise backslashes (Windows paths emitted by act on Windows hosts) so matching works.
+  const norm = logId.trim().toLowerCase().replace(/\\/g, '/')
 
   // 1. Exact ID match
   if (byId.has(norm)) return byId.get(norm)!
@@ -718,6 +758,9 @@ function resolveLogJobId(logId: string): string {
 
 const jobFilteredLogs = computed(() => {
   if (!selectedJob.value) return []
+  // If a specific matrix instance is selected, filter to only that raw job ID.
+  if (selectedMatrixRawId.value)
+    return store.currentRunLogs.filter(l => l.jobId === selectedMatrixRawId.value)
   const entry = jobLogMap.value.get(selectedJob.value)
   const rawIds = entry?.rawJobIds
   if (rawIds && rawIds.size > 0)
@@ -726,24 +769,66 @@ const jobFilteredLogs = computed(() => {
 })
 
 /** Groups job-filtered logs by step, preserving order. Each group has a stepId (null = no step) and its log lines. */
-interface StepGroup { stepId: string | null; logs: CiCdRunLog[] }
+interface StepGroup { stepId: string | null; logs: CiCdRunLog[]; startTs?: string; endTs?: string }
 
 const jobLogsByStep = computed<StepGroup[]>(() => {
   const groups: StepGroup[] = []
   let current: StepGroup | null = null
   for (const log of jobFilteredLogs.value) {
     if (current === null || log.stepId !== current.stepId) {
-      current = { stepId: log.stepId ?? null, logs: [] }
+      current = { stepId: log.stepId ?? null, logs: [], startTs: log.timestamp }
       groups.push(current)
     }
     current.logs.push(log)
+    current.endTs = log.timestamp
   }
   return groups
 })
 
+/** Set of collapsed step IDs (default: all named steps collapsed). */
+const collapsedSteps = ref(new Set<string>())
+/** Tracks which step IDs have already been auto-collapsed so we don't re-collapse them after manual expand. */
+const seenStepIds = ref(new Set<string>())
+
+// Auto-collapse any new named step that appears (default collapsed on first render).
+watch(jobLogsByStep, (groups) => {
+  for (const g of groups) {
+    if (g.stepId && !seenStepIds.value.has(g.stepId)) {
+      seenStepIds.value = new Set([...seenStepIds.value, g.stepId])
+      collapsedSteps.value = new Set([...collapsedSteps.value, g.stepId])
+    }
+  }
+}, { immediate: true })
+
+function toggleStep(stepId: string) {
+  const s = new Set(collapsedSteps.value)
+  if (s.has(stepId)) s.delete(stepId)
+  else s.add(stepId)
+  collapsedSteps.value = s
+}
+
+function stepDuration(group: StepGroup): string | null {
+  if (!group.startTs || !group.endTs || group.startTs === group.endTs) return null
+  const ms = new Date(group.endTs).getTime() - new Date(group.startTs).getTime()
+  // Sub-second or out-of-order timestamps are treated as unmeasurable — show nothing.
+  if (ms <= 0) return null
+  const s = Math.floor(ms / 1000)
+  if (s < 60) return `${s}s`
+  return `${Math.floor(s / 60)}m ${s % 60}s`
+}
+
 // ── Job enrichment ─────────────────────────────────────────────────────────────
 // Merges graph data (from YAML) with live log data to produce a unified list of
 // job nodes with status, log counts, and layout coordinates.
+
+interface MatrixInstance {
+  rawId: string
+  hasError: boolean
+  isComplete: boolean
+  hasStarted: boolean
+  startedAt?: string
+  endedAt?: string
+}
 
 interface EnrichedJob {
   id: string
@@ -759,18 +844,26 @@ interface EnrichedJob {
   endedAt?: string
   /** Number of distinct act job IDs (log streams) that map to this graph node. >1 means matrix job. */
   matrixCount: number
+  /** Per-instance matrix data when matrixCount > 1. */
+  matrixInstances: MatrixInstance[]
   // layout
   x: number
   y: number
 }
 
 const jobLogMap = computed(() => {
-  const map = new Map<string, { logCount: number; hasError: boolean; isComplete: boolean; startedAt?: string; endedAt?: string; rawJobIds: Set<string> }>()
+  type InstanceEntry = { logCount: number; hasError: boolean; isComplete: boolean; startedAt?: string; endedAt?: string }
+  const makeEntry = (): InstanceEntry => ({ logCount: 0, hasError: false, isComplete: false })
+  const map = new Map<string, {
+    logCount: number; hasError: boolean; isComplete: boolean; startedAt?: string; endedAt?: string; rawJobIds: Set<string>
+    // Per-instance tracking for matrix jobs
+    instances: Map<string, InstanceEntry>
+  }>()
   for (const log of store.currentRunLogs) {
     if (!log.jobId) continue
     // Resolve the act job ID to the matching graph node ID (fuzzy: display names, matrix suffix, compound path).
     const resolvedId = resolveLogJobId(log.jobId)
-    if (!map.has(resolvedId)) map.set(resolvedId, { logCount: 0, hasError: false, isComplete: false, rawJobIds: new Set() })
+    if (!map.has(resolvedId)) map.set(resolvedId, { ...makeEntry(), rawJobIds: new Set(), instances: new Map() })
     const entry = map.get(resolvedId)!
     entry.logCount++
     entry.rawJobIds.add(log.jobId)
@@ -779,6 +872,14 @@ const jobLogMap = computed(() => {
     if (!entry.startedAt) entry.startedAt = log.timestamp
     entry.endedAt = log.timestamp
     if (log.line === 'Job succeeded' || log.line === 'Job failed') entry.isComplete = true
+    // Per-instance tracking
+    if (!entry.instances.has(log.jobId)) entry.instances.set(log.jobId, makeEntry())
+    const inst = entry.instances.get(log.jobId)!
+    inst.logCount++
+    if (log.stream === 'stderr') inst.hasError = true
+    if (!inst.startedAt) inst.startedAt = log.timestamp
+    inst.endedAt = log.timestamp
+    if (log.line === 'Job succeeded' || log.line === 'Job failed') inst.isComplete = true
   }
   return map
 })
@@ -793,7 +894,9 @@ const runIsTerminal = computed(() => {
 // Graph nodes get their needs/name from the YAML; log-only jobs fall back to id as name.
 const enrichedJobs = computed<EnrichedJob[]>(() => {
   const BOX_W = 220
-  const BOX_H = 130
+  // Generous box height to prevent overlaps: boxes can show name, file, status, timing, log count,
+  // and (for matrix jobs) a row of instance dots. 180 px covers all combinations without DOM measurement.
+  const BOX_H = 180
   const COL_GAP = 80
   const ROW_GAP = 20
   const PAD = 16
@@ -861,11 +964,25 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
 
   return Array.from(allIds).map(id => {
     const meta = jobMeta.get(id)
-    const logs = jobLogMap.value.get(id) ?? { logCount: 0, hasError: false, isComplete: false }
+    const logs = jobLogMap.value.get(id) ?? { logCount: 0, hasError: false, isComplete: false, instances: new Map() }
     const pos = posMap.get(id) ?? { x: PAD, y: PAD }
     const hasStarted = logs.logCount > 0
     // Mark job as complete if it logged "Job succeeded/failed" OR if the overall run has ended.
     const isComplete = logs.isComplete || (hasStarted && runIsTerminal.value)
+    const matrixCount = logs.rawJobIds?.size ?? (hasStarted ? 1 : 0)
+
+    // Build per-instance matrix data for the grouped display.
+    const matrixInstances: MatrixInstance[] = matrixCount > 1
+      ? Array.from(logs.instances.entries()).map(([rawId, inst]) => ({
+          rawId,
+          hasError: inst.hasError,
+          isComplete: inst.isComplete || (inst.logCount > 0 && runIsTerminal.value),
+          hasStarted: inst.logCount > 0,
+          startedAt: inst.startedAt,
+          endedAt: inst.endedAt,
+        }))
+      : []
+
     return {
       id,
       name: meta?.name ?? id,
@@ -876,7 +993,8 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
       isComplete,
       workflowFile: meta?.workflowFile,
       callerWorkflowFile: meta?.callerWorkflowFile,
-      matrixCount: logs.rawJobIds?.size ?? (hasStarted ? 1 : 0),
+      matrixCount,
+      matrixInstances,
       startedAt: logs.startedAt,
       // When run ended but the job never emitted a final timestamp, use the run's end time.
       endedAt: isComplete && !logs.endedAt ? (store.currentRun?.endedAt ?? logs.startedAt) : logs.endedAt,
@@ -929,7 +1047,7 @@ interface SvgEdge { path: string; highlighted: boolean }
 
 const graphLayout = computed<{ svgWidth: number; svgHeight: number; edges: SvgEdge[] }>(() => {
   const BOX_W = 220
-  const BOX_H = 130
+  const BOX_H = 180
   const PAD = 16
 
   if (!visibleJobs.value.length) return { svgWidth: 0, svgHeight: 0, edges: [] }
@@ -963,7 +1081,23 @@ const graphLayout = computed<{ svgWidth: number; svgHeight: number; edges: SvgEd
 })
 
 function toggleJobFilter(jobId: string) {
-  selectedJob.value = selectedJob.value === jobId ? null : jobId
+  if (selectedJob.value === jobId) {
+    selectedJob.value = null
+    selectedMatrixRawId.value = null
+  } else {
+    selectedJob.value = jobId
+    selectedMatrixRawId.value = null
+    // Reset collapsed steps so each job starts with all steps collapsed by default.
+    collapsedSteps.value = new Set()
+    seenStepIds.value = new Set()
+  }
+}
+
+function selectMatrixInstance(jobId: string, rawId: string) {
+  selectedJob.value = jobId
+  selectedMatrixRawId.value = selectedMatrixRawId.value === rawId ? null : rawId
+  collapsedSteps.value = new Set()
+  seenStepIds.value = new Set()
 }
 
 function jobStatusDot(job: Pick<EnrichedJob, 'hasError' | 'isComplete' | 'hasStarted'>) {
@@ -999,6 +1133,7 @@ function jobDuration(start: string, end?: string) {
 // ── Create Issue from failed job ───────────────────────────────────────────────
 
 const showCreateIssueModal = ref(false)
+/** Job ID to filter logs for the create-issue modal. Empty string means all run logs (logs tab). */
 const createIssueJobId = ref<string>('')
 const createIssueTitle = ref('')
 const createIssueLogScope = ref<'full' | 'tail' | 'errors'>('errors')
@@ -1012,16 +1147,21 @@ const logScopeOptions = [
 ]
 
 const createIssuePreviewLines = computed(() => {
-  const jobLogs = store.currentRunLogs.filter(l => l.jobId === createIssueJobId.value)
-  if (createIssueLogScope.value === 'errors') return jobLogs.filter(l => l.stream === 'stderr').map(l => l.line)
-  if (createIssueLogScope.value === 'tail') return jobLogs.slice(-50).map(l => l.line)
-  return jobLogs.map(l => l.line)
+  // When jobId is empty, use all run logs (launched from the Logs tab).
+  const sourceLogs = createIssueJobId.value
+    ? store.currentRunLogs.filter(l => l.jobId === createIssueJobId.value)
+    : store.currentRunLogs
+  if (createIssueLogScope.value === 'errors') return sourceLogs.filter(l => l.stream === 'stderr').map(l => l.line)
+  if (createIssueLogScope.value === 'tail') return sourceLogs.slice(-50).map(l => l.line)
+  return sourceLogs.map(l => l.line)
 })
 
 function openCreateIssueModal(jobId: string) {
   createIssueJobId.value = jobId
   const workflow = store.currentRun?.workflow ? ` (${store.currentRun.workflow})` : ''
-  createIssueTitle.value = `CI/CD job "${jobId}" failed${workflow}`
+  createIssueTitle.value = jobId
+    ? `CI/CD job "${jobId}" failed${workflow}`
+    : `CI/CD run failed${workflow}`
   createIssueLogScope.value = 'errors'
   createIssueError.value = null
   showCreateIssueModal.value = true
@@ -1036,7 +1176,10 @@ async function submitCreateIssue() {
     const logText = logLines.length
       ? `\n\n**Failed job logs** (scope: ${createIssueLogScope.value}):\n\`\`\`\n${logLines.join('\n')}\n\`\`\``
       : ''
-    const description = `CI/CD run **${runId.slice(0, 8)}** failed at job **${createIssueJobId.value}**.${logText}`
+    const context = createIssueJobId.value
+      ? `CI/CD run **${runId.slice(0, 8)}** failed at job **${createIssueJobId.value}**.`
+      : `CI/CD run **${runId.slice(0, 8)}** failed.`
+    const description = `${context}${logText}`
 
     await issuesStore.createIssue(projectId, {
       title: createIssueTitle.value.trim(),
