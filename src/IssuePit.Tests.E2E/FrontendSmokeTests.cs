@@ -144,4 +144,27 @@ public class FrontendSmokeTests : IAsyncLifetime
         // (i.e. all issue rows are now links, no plain div rows with cursor-pointer)
         Assert.Equal(0, await dashboard.CursorPointerDivRows.CountAsync());
     }
+
+    [Fact]
+    public async Task CiCdConfig_RunnerImage_CanBeSelectedAndSaved()
+    {
+        var page = await _context!.NewPageAsync();
+        var ciCd = new CiCdConfigPage(page);
+        await ciCd.GotoAsync();
+        await ciCd.WaitForLoadAsync();
+
+        // Select the "Runner" image (not the default "Act (medium)")
+        await ciCd.SelectRunnerImageAsync("Runner");
+
+        // Verify it shows as selected
+        Assert.True(await ciCd.IsImageSelectedAsync("Runner"), "Runner image should show as selected after click");
+
+        // Save the selection
+        await ciCd.SaveAsync();
+
+        // Reload and verify the selection persists via localStorage
+        await page.ReloadAsync();
+        await ciCd.WaitForLoadAsync();
+        Assert.True(await ciCd.IsImageSelectedAsync("Runner"), "Runner image selection should persist after page reload");
+    }
 }
