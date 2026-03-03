@@ -107,8 +107,9 @@ public class CiCdRunsController(
 
     /// <summary>
     /// Returns the workflow job graph (nodes and dependency edges) for the given run.
-    /// The graph is built by parsing the workflow YAML found at the run's workspace path.
-    /// Falls back to a log-derived graph when the YAML cannot be read (e.g. external runs).
+    /// The graph is built by parsing the workflow YAML found at the run's workspace path,
+    /// and is validated with <c>actionlint</c> when it is available on the host.
+    /// Returns 404 when the run has no workspace or when the workflow YAML file cannot be located.
     /// </summary>
     [HttpGet("{id:guid}/graph")]
     public async Task<IActionResult> GetGraph(Guid id)
@@ -121,19 +122,15 @@ public class CiCdRunsController(
 
         if (run is null) return NotFound();
 
-        WorkflowGraph graph;
+        if (string.IsNullOrWhiteSpace(run.WorkspacePath) || string.IsNullOrWhiteSpace(run.Workflow))
+            return NotFound(new { error = "This run has no local workspace. Graph data is only available for locally-triggered runs." });
 
-        if (!string.IsNullOrWhiteSpace(run.WorkspacePath) && !string.IsNullOrWhiteSpace(run.Workflow))
-        {
-            // Try to locate the workflow YAML file.
-            // act accepts a path relative to the workspace; also look under .github/workflows/.
-            var yamlContent = TryReadWorkflowYaml(run.WorkspacePath, run.Workflow);
-            graph = WorkflowGraphParser.Parse(yamlContent);
-        }
-        else
-        {
-            graph = new WorkflowGraph([], []);
-        }
+        var yamlPath = TryFindWorkflowYamlPath(run.WorkspacePath, run.Workflow);
+
+        if (yamlPath is null)
+            return NotFound(new { error = $"Workflow file '{run.Workflow}' not found in workspace '{run.WorkspacePath}'." });
+
+        var graph = await WorkflowGraphParser.ParseFileAsync(yamlPath, HttpContext.RequestAborted);
 
         return Ok(graph);
     }
@@ -164,7 +161,7 @@ public class CiCdRunsController(
         return Ok(logs);
     }
 
-    private static string? TryReadWorkflowYaml(string workspacePath, string workflow)
+    private static string? TryFindWorkflowYamlPath(string workspacePath, string workflow)
     {
         // Resolve the workspace to a canonical path so we can detect path traversal attempts.
         var canonicalWorkspace = Path.GetFullPath(workspacePath);
@@ -197,7 +194,7 @@ public class CiCdRunsController(
                     continue;
 
                 if (System.IO.File.Exists(resolvedPath))
-                    return System.IO.File.ReadAllText(resolvedPath);
+                    return resolvedPath;
             }
             catch
             {

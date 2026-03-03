@@ -522,7 +522,7 @@ public class HappyPathTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// API happy path for CI/CD run job graph: create a run → fetch graph (empty when no workspace) → fetch job logs endpoint.
+    /// API happy path for CI/CD run job graph: create a run → fetch graph (404 when no workspace) → fetch job logs endpoint.
     /// </summary>
     [Fact]
     public async Task Api_HappyPath_CiCdRunGraphAndJobLogs()
@@ -548,7 +548,7 @@ public class HappyPathTests : IAsyncLifetime
         var project = await projResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
         var projectId = project.GetProperty("id").GetString()!;
 
-        // Create a run via external-sync
+        // Create a run via external-sync (no workspacePath)
         var runResp = await client.PostAsJsonAsync("/api/cicd-runs/external-sync", new
         {
             projectId = Guid.Parse(projectId),
@@ -564,12 +564,9 @@ public class HappyPathTests : IAsyncLifetime
         var run = await runResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
         var runId = run.GetProperty("id").GetString()!;
 
-        // Fetch graph — run has no workspacePath so expect empty graph
+        // Fetch graph — run has no workspacePath so expect 404 (not empty graph)
         var graphResp = await client.GetAsync($"/api/cicd-runs/{runId}/graph");
-        Assert.Equal(HttpStatusCode.OK, graphResp.StatusCode);
-        var graph = await graphResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
-        Assert.Equal(0, graph.GetProperty("jobs").GetArrayLength());
-        Assert.Equal(0, graph.GetProperty("edges").GetArrayLength());
+        Assert.Equal(HttpStatusCode.NotFound, graphResp.StatusCode);
 
         // Fetch job logs for a job that doesn't exist — should return empty list
         var jobLogsResp = await client.GetAsync($"/api/cicd-runs/{runId}/jobs/build/logs");

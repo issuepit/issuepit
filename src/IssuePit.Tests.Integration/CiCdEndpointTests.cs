@@ -204,7 +204,7 @@ public class CiCdEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
-    public async Task GetGraph_WithNoWorkspace_Returns_EmptyGraph()
+    public async Task GetGraph_WithNoWorkspace_Returns_NotFound()
     {
         var (tenantId, _, projectId) = await SeedProjectAsync();
 
@@ -225,12 +225,9 @@ public class CiCdEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var syncBody = await syncResponse.Content.ReadFromJsonAsync<SyncResult>();
         Assert.NotNull(syncBody);
 
+        // External runs have no workspace — expect 404
         var graphResponse = await _client.GetAsync($"/api/cicd-runs/{syncBody.id}/graph");
-        Assert.Equal(HttpStatusCode.OK, graphResponse.StatusCode);
-        var graph = await graphResponse.Content.ReadFromJsonAsync<GraphResult>();
-        Assert.NotNull(graph);
-        Assert.Empty(graph.jobs);
-        Assert.Empty(graph.edges);
+        Assert.Equal(HttpStatusCode.NotFound, graphResponse.StatusCode);
 
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
     }
@@ -269,6 +266,5 @@ public class CiCdEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
     }
 
-    private sealed record GraphResult(List<object> jobs, List<object> edges);
     private sealed record LogEntry(string id, string line, string streamName, string? jobId, DateTime timestamp);
 }

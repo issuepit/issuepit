@@ -232,7 +232,15 @@
 
         <!-- Jobs tab -->
         <template v-if="activeSection === 'jobs'">
-          <div v-if="enrichedJobs.length" class="p-4">
+          <!-- Graph not available (no workspace for this run) -->
+          <div v-if="store.currentRunGraphError && !enrichedJobs.length" class="py-8 px-6 flex flex-col items-center gap-2 text-center">
+            <svg class="w-8 h-8 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p class="text-sm text-gray-400">{{ store.currentRunGraphError }}</p>
+            <p class="text-xs text-gray-600">Job boxes are available for locally-triggered runs with a workspace.</p>
+          </div>
+          <div v-else-if="enrichedJobs.length" class="p-4">
             <!-- Job graph with SVG dependency arrows -->
             <div class="relative overflow-x-auto pb-2">
               <!-- SVG arrows layer (absolute, behind boxes) -->
@@ -264,7 +272,7 @@
                 <div
                   v-for="job in enrichedJobs"
                   :key="job.id"
-                  :style="{ position: 'absolute', left: job.x + 'px', top: job.y + 'px', width: '160px' }"
+                  :style="{ position: 'absolute', left: job.x + 'px', top: job.y + 'px', width: '220px' }"
                   :class="[
                     'flex flex-col items-start gap-1 px-4 py-3 rounded-xl border transition-all text-left cursor-pointer',
                     selectedJob === job.id
@@ -274,12 +282,21 @@
                   @click="toggleJobFilter(job.id)">
                   <span class="flex items-center gap-1.5 w-full">
                     <span :class="jobStatusDot(job)" class="w-2 h-2 rounded-full shrink-0" />
-                    <span class="text-sm font-medium text-white truncate">{{ job.name }}</span>
+                    <span class="text-sm font-medium text-white break-words leading-tight">{{ job.name }}</span>
                   </span>
                   <span :class="jobStatusClass(job)" class="text-xs px-1.5 py-0.5 rounded-full font-medium">
                     {{ jobStatusLabel(job) }}
                   </span>
-                  <span class="text-xs text-gray-500 mt-0.5">{{ job.logCount }} log line{{ job.logCount === 1 ? '' : 's' }}</span>
+                  <!-- Timing: show elapsed time while running, total time when complete -->
+                  <span v-if="job.startedAt" class="text-xs text-gray-500 font-mono mt-0.5">
+                    <template v-if="job.isComplete && job.endedAt">
+                      {{ jobDuration(job.startedAt, job.endedAt) }} total
+                    </template>
+                    <template v-else-if="job.startedAt">
+                      {{ jobDuration(job.startedAt) }} elapsed
+                    </template>
+                  </span>
+                  <span class="text-xs text-gray-600">{{ job.logCount }} log line{{ job.logCount === 1 ? '' : 's' }}</span>
 
                   <!-- Create issue button for failed jobs -->
                   <button
@@ -496,19 +513,24 @@ interface EnrichedJob {
   logCount: number
   hasError: boolean
   isComplete: boolean
+  startedAt?: string
+  endedAt?: string
   // layout
   x: number
   y: number
 }
 
 const jobLogMap = computed(() => {
-  const map = new Map<string, { logCount: number; hasError: boolean; isComplete: boolean }>()
+  const map = new Map<string, { logCount: number; hasError: boolean; isComplete: boolean; startedAt?: string; endedAt?: string }>()
   for (const log of store.currentRunLogs) {
     if (!log.jobId) continue
     if (!map.has(log.jobId)) map.set(log.jobId, { logCount: 0, hasError: false, isComplete: false })
     const entry = map.get(log.jobId)!
     entry.logCount++
     if (log.stream === 'stderr') entry.hasError = true
+    // Track first and last log timestamps as job start/end
+    if (!entry.startedAt) entry.startedAt = log.timestamp
+    entry.endedAt = log.timestamp
     if (log.line === 'Job succeeded' || log.line === 'Job failed') entry.isComplete = true
   }
   return map
@@ -517,8 +539,8 @@ const jobLogMap = computed(() => {
 // Build the enriched job list by unioning graph nodes with log-observed jobs.
 // Graph nodes get their needs/name from the YAML; log-only jobs fall back to id as name.
 const enrichedJobs = computed<EnrichedJob[]>(() => {
-  const BOX_W = 160
-  const BOX_H = 110
+  const BOX_W = 220
+  const BOX_H = 130
   const COL_GAP = 80
   const ROW_GAP = 20
   const PAD = 16
@@ -595,6 +617,8 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
       logCount: logs.logCount,
       hasError: logs.hasError,
       isComplete: logs.isComplete,
+      startedAt: logs.startedAt,
+      endedAt: logs.endedAt,
       x: pos.x,
       y: pos.y,
     }
@@ -606,8 +630,8 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
 interface SvgEdge { path: string }
 
 const graphLayout = computed<{ svgWidth: number; svgHeight: number; edges: SvgEdge[] }>(() => {
-  const BOX_W = 160
-  const BOX_H = 110
+  const BOX_W = 220
+  const BOX_H = 130
   const PAD = 16
 
   if (!enrichedJobs.value.length) return { svgWidth: 0, svgHeight: 0, edges: [] }
@@ -654,6 +678,15 @@ function jobStatusLabel(job: Pick<EnrichedJob, 'hasError' | 'isComplete'>) {
   if (job.hasError) return 'Failed'
   if (!job.isComplete) return 'Running'
   return 'Succeeded'
+}
+
+function jobDuration(start: string, end?: string) {
+  const ms = (end ? new Date(end).getTime() : now.value) - new Date(start).getTime()
+  if (ms < 0) return '—'
+  const s = Math.floor(ms / 1000)
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  return `${m}m ${s % 60}s`
 }
 
 // ── Create Issue from failed job ───────────────────────────────────────────────
