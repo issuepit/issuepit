@@ -10,8 +10,10 @@ builder.AddKafkaHealthCheck();
 builder.AddNpgsqlDbContext<IssuePitDbContext>("issuepit-db");
 builder.AddRedisClient("redis");
 
-// Register Docker client (used by DockerCiCdRuntime)
-builder.Services.AddSingleton(_ => new DockerClientConfiguration().CreateClient());
+// Register Docker client with a 30-second timeout so failed operations (e.g. StartContainer
+// on Windows named-pipe resets) surface quickly instead of blocking for minutes.
+builder.Services.AddSingleton(_ => new DockerClientConfiguration(
+    defaultTimeout: TimeSpan.FromSeconds(30)).CreateClient());
 
 // Register CI/CD runtime implementations
 builder.Services.AddSingleton<DockerCiCdRuntime>();

@@ -38,9 +38,10 @@ public partial class DockerCiCdRuntime(
         ?? "unknown";
 
 
-    // Builds a stable, human-readable Docker container name for a CI/CD run.
-    private static string BuildContainerName(CiCdRun run) =>
-        $"issuepit-cicd-{run.Id:N}"[..24]; // e.g. "issuepit-cicd-ab12cd34ef56"
+    // Builds a unique Docker container name for each CI/CD run attempt.
+    // Uses Guid.NewGuid() so no collision occurs even if a previous attempt left a container behind.
+    private static string BuildContainerName() =>
+        $"issuepit-cicd-{Guid.NewGuid():N}"[..28]; // 14-char prefix + 14 random hex chars = 28 total
 
 
     public async Task RunAsync(
@@ -75,7 +76,7 @@ public partial class DockerCiCdRuntime(
                 actBinAndArgs.Add(a);
         }
 
-        var containerName = BuildContainerName(run);
+        var containerName = BuildContainerName();
 
         // Read the act runner image that is injected into actrc to prevent the interactive
         // first-run prompt ("Please choose the default image") that causes EOF in non-interactive containers.
@@ -205,17 +206,14 @@ public partial class DockerCiCdRuntime(
         CreateContainerResponse container;
         try
         {
-            container = await CreateContainerWithRetryAsync(createParams, containerName, onLogLine, cancellationToken);
+            container = await dockerClient.Containers.CreateContainerAsync(createParams, cancellationToken);
         }
-        catch (Exception ex) when (ex is HttpRequestException or IOException ||
-            (ex is OperationCanceledException oce && oce.CancellationToken != cancellationToken && !cancellationToken.IsCancellationRequested))
+        catch (Exception ex)
         {
-            var msg = "Lost connection to the Docker daemon while creating the container. " +
-                "This can happen on Windows when Docker Desktop resets named-pipe connections. " +
-                "Try running the CI/CD run again.";
+            var msg = $"Failed to create Docker container '{containerName}'. " +
+                "Ensure Docker is running and accessible. " +
+                $"(inner: {ex.Message})";
             await onLogLine($"[ERROR] {msg}", LogStream.Stderr);
-            foreach (var line in ex.ToString().Split('\n'))
-                await onLogLine(line.TrimEnd('\r'), LogStream.Stderr);
             throw new InvalidOperationException(msg, ex);
         }
 
@@ -226,7 +224,20 @@ public partial class DockerCiCdRuntime(
         var succeeded = false;
         try
         {
-            await StartContainerWithRetryAsync(container.ID, actBin, image, containerName, onLogLine, cancellationToken);
+            try
+            {
+                await dockerClient.Containers.StartContainerAsync(
+                    container.ID, new ContainerStartParameters(), cancellationToken);
+            }
+            catch (DockerApiException ex) when (
+                ex.StatusCode == System.Net.HttpStatusCode.BadRequest &&
+                ex.ResponseBody?.Contains("executable file not found") == true)
+            {
+                throw new InvalidOperationException(
+                    $"The '{actBin}' binary was not found inside the Docker container. " +
+                    $"Ensure the image '{image}' has 'act' installed, or override CiCd__ActBinaryPath " +
+                    "with the correct path to the act binary inside the container.", ex);
+            }
 
             if (useExecModel)
             {
@@ -324,166 +335,6 @@ public partial class DockerCiCdRuntime(
                         CancellationToken.None);
                 }
                 catch { /* best-effort */ }
-            }
-        }
-    }
-
-    /// <summary>
-    /// Creates a Docker container with retry logic that handles both connection-reset errors and
-    /// name-conflict (409) errors. A name conflict occurs when a previous attempt succeeded on
-    /// the Docker daemon side but the HTTP response was lost (named-pipe reset on Windows):
-    /// the container was created but we never received its ID, so on retry the same name is
-    /// rejected. The fix is to forcibly remove any existing container with the target name
-    /// before each retry attempt.
-    /// </summary>
-    private async Task<CreateContainerResponse> CreateContainerWithRetryAsync(
-        CreateContainerParameters createParams,
-        string containerName,
-        Func<string, LogStream, Task> onLogLine,
-        CancellationToken cancellationToken,
-        int maxAttempts = 3)
-    {
-        // Loop exits via 'return' on success, or when the exception filter (attempt < maxAttempts)
-        // evaluates to false on the final attempt — allowing the exception to propagate naturally.
-        for (var attempt = 1; ; attempt++)
-        {
-            try
-            {
-                return await dockerClient.Containers.CreateContainerAsync(createParams, cancellationToken);
-            }
-            catch (Exception ex) when (
-                attempt < maxAttempts &&
-                !cancellationToken.IsCancellationRequested &&
-                (ex is HttpRequestException or IOException ||
-                 (ex is OperationCanceledException oce && oce.CancellationToken != cancellationToken) ||
-                 (ex is DockerApiException dex && dex.StatusCode == System.Net.HttpStatusCode.Conflict)))
-            {
-                var reason = ex is DockerApiException ? "name conflict (container may have been created during a previous connection reset)" : "connection reset";
-                await onLogLine(
-                    $"[WARN] CreateContainer: {reason} (attempt {attempt}/{maxAttempts}), cleaning up and retrying in 2s…",
-                    LogStream.Stderr);
-
-                // Remove any existing container with the same name before retrying.
-                // This handles the case where the daemon created the container but the response was lost.
-                try
-                {
-                    await dockerClient.Containers.RemoveContainerAsync(
-                        containerName,
-                        new ContainerRemoveParameters { Force = true },
-                        CancellationToken.None);
-                }
-                catch { /* best-effort: container may not exist */ }
-
-                await Task.Delay(2000, cancellationToken);
-                // Verify daemon is still reachable before retrying.
-                await dockerClient.System.PingAsync(cancellationToken);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Starts a container with retry/inspect logic that handles connection-reset errors.
-    /// After a transient error, inspects the container state:
-    /// if it is already "running", the start succeeded (response was lost); otherwise retries.
-    /// On hard failures (e.g. missing binary) the method throws immediately.
-    /// </summary>
-    private async Task StartContainerWithRetryAsync(
-        string containerId,
-        string actBin,
-        string image,
-        string containerName,
-        Func<string, LogStream, Task> onLogLine,
-        CancellationToken cancellationToken,
-        int maxAttempts = 3)
-    {
-        for (var attempt = 1; ; attempt++)
-        {
-            try
-            {
-                await dockerClient.Containers.StartContainerAsync(
-                    containerId, new ContainerStartParameters(), cancellationToken);
-                // StartContainerAsync succeeded — container is starting.
-                return;
-            }
-            catch (DockerApiException ex) when (
-                ex.StatusCode == System.Net.HttpStatusCode.BadRequest &&
-                ex.ResponseBody?.Contains("executable file not found") == true)
-            {
-                throw new InvalidOperationException(
-                    $"The '{actBin}' binary was not found inside the Docker container. " +
-                    $"Ensure the image '{image}' has 'act' installed, or override CiCd__ActBinaryPath " +
-                    "with the correct path to the act binary inside the container.", ex);
-            }
-            catch (Exception ex) when (
-                !cancellationToken.IsCancellationRequested &&
-                (ex is HttpRequestException or IOException ||
-                 (ex is OperationCanceledException oce && oce.CancellationToken != cancellationToken)))
-            {
-                // Connection reset or internal HTTP timeout. Inspect the container to determine
-                // whether Docker actually started it (response was lost) or not.
-                try
-                {
-                    var inspect = await dockerClient.Containers.InspectContainerAsync(
-                        containerId, CancellationToken.None);
-                    if (inspect.State?.Running == true || inspect.State?.Status == "running")
-                    {
-                        await onLogLine(
-                            $"[WARN] StartContainer: connection reset but container is running — proceeding",
-                            LogStream.Stdout);
-                        return;
-                    }
-                }
-                catch { /* inspection failed — fall through to retry */ }
-
-                if (attempt >= maxAttempts)
-                {
-                    var startMsg = "Lost connection to the Docker daemon while starting the container. " +
-                        $"The container '{containerName}' (ID {containerId[..12]}) may be in Created state. " +
-                        $"You can start it manually: `docker start {containerName}`, then inspect with `docker exec -it {containerName} sh`. " +
-                        "Or retry the run.";
-                    await onLogLine($"[ERROR] {startMsg}", LogStream.Stderr);
-                    foreach (var line in ex.ToString().Split('\n'))
-                        await onLogLine(line.TrimEnd('\r'), LogStream.Stderr);
-                    throw new InvalidOperationException(startMsg, ex);
-                }
-
-                await onLogLine(
-                    $"[WARN] StartContainer: connection reset (attempt {attempt}/{maxAttempts}), retrying in 2s…",
-                    LogStream.Stderr);
-                await Task.Delay(2000, cancellationToken);
-                await dockerClient.System.PingAsync(cancellationToken);
-            }
-        }
-    }
-
-
-    private async Task<T> RetryDockerAsync<T>(
-        Func<Task<T>> operation,
-        string context,
-        Func<string, LogStream, Task> onLogLine,
-        CancellationToken cancellationToken,
-        int maxAttempts = 3)
-    {
-        // Loop exits via 'return' on success, or when the exception filter (attempt < maxAttempts)
-        // evaluates to false on the final attempt — allowing the exception to propagate naturally.
-        for (var attempt = 1; ; attempt++)
-        {
-            try
-            {
-                return await operation();
-            }
-            catch (Exception ex) when (
-                attempt < maxAttempts &&
-                !cancellationToken.IsCancellationRequested &&
-                (ex is HttpRequestException or IOException ||
-                 (ex is OperationCanceledException oce && oce.CancellationToken != cancellationToken)))
-            {
-                await onLogLine(
-                    $"[WARN] {context}: connection reset (attempt {attempt}/{maxAttempts}), retrying in 2s…",
-                    LogStream.Stderr);
-                await Task.Delay(2000, cancellationToken);
-                // Verify daemon is still reachable before retrying.
-                await dockerClient.System.PingAsync(cancellationToken);
             }
         }
     }
