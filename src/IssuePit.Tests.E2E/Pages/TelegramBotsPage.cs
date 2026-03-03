@@ -21,7 +21,7 @@ public class TelegramBotsPage(IPage page)
     /// Opens the "Add Bot" modal, fills in the required fields, and submits the form.
     /// Waits for the bot name to appear in the table.
     /// </summary>
-    public async Task AddBotAsync(string name, string botToken, string chatId)
+    public async Task AddBotAsync(string name, string botToken, string chatId, string? orgId = null)
     {
         // Click the header "Add Bot" button to open the modal.
         await page.ClickAsync("button:has-text('Add Bot')");
@@ -30,6 +30,8 @@ public class TelegramBotsPage(IPage page)
         await page.FillAsync("input[placeholder='e.g. Team Alerts']", name);
         await page.FillAsync("#bot-token", botToken);
         await page.FillAsync("#chat-id", chatId);
+        if (orgId is not null)
+            await page.FillAsync("#org-id", orgId);
 
         // Click the submit button inside the form (type="submit").
         await page.ClickAsync("form button[type='submit']");

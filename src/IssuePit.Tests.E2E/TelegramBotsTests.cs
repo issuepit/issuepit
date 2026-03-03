@@ -126,7 +126,7 @@ public class TelegramBotsTests : IAsyncLifetime
             await telegramBotsPage.GotoAsync();
 
             const string botName = "UI E2E Bot";
-            await telegramBotsPage.AddBotAsync(botName, "9876543210:ZZZYYY", "-1009876543210");
+            await telegramBotsPage.AddBotAsync(botName, "9876543210:ZZZYYY", "-1009876543210", orgId);
 
             Assert.True(await telegramBotsPage.BotExistsAsync(botName));
 
