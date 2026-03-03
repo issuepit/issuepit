@@ -70,6 +70,7 @@ public class UsersController(IssuePitDbContext db, TenantContext ctx) : Controll
             Username = req.Username,
             Email = req.Email ?? $"{req.Username}@localhost",
             IsAdmin = req.IsAdmin,
+            Description = req.Description,
             CreatedAt = DateTime.UtcNow,
         };
 
@@ -112,6 +113,8 @@ public class UsersController(IssuePitDbContext db, TenantContext ctx) : Controll
             user.Email = req.Email;
         if (req.IsAdmin.HasValue)
             user.IsAdmin = req.IsAdmin.Value;
+        if (req.Description is not null)
+            user.Description = req.Description;
         if (!string.IsNullOrEmpty(req.Password))
             user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password);
 
@@ -148,5 +151,5 @@ public class UsersController(IssuePitDbContext db, TenantContext ctx) : Controll
     }
 }
 
-public record CreateUserRequest(string Username, string? Email, string? Password, bool IsAdmin = false);
-public record UpdateUserRequest(string? Username, string? Email, string? Password, bool? IsAdmin);
+public record CreateUserRequest(string Username, string? Email, string? Password, bool IsAdmin = false, string? Description = null);
+public record UpdateUserRequest(string? Username, string? Email, string? Password, bool? IsAdmin, string? Description = null);

@@ -14,5 +14,10 @@ public enum IssuePriority
     [JsonStringEnumMemberName("medium")]
     Medium,
     [JsonStringEnumMemberName("low")]
-    Low
+    Low,
+    // VeryHigh and Unknown are appended at the end to preserve integer DB values for existing entries
+    [JsonStringEnumMemberName("very_high")]
+    VeryHigh,
+    [JsonStringEnumMemberName("unknown")]
+    Unknown
 }

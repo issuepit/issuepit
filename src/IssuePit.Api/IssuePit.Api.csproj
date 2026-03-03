@@ -7,6 +7,7 @@
   <ItemGroup>
     <PackageReference Include="Aspire.Npgsql.EntityFrameworkCore.PostgreSQL" Version="13.1.2" />
     <PackageReference Include="Aspire.StackExchange.Redis" Version="13.1.2" />
+    <PackageReference Include="AWSSDK.S3" Version="4.0.18.7" />
     <PackageReference Include="LibGit2Sharp" Version="0.30.0" />
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" Version="10.0.3" />
@@ -20,6 +21,7 @@
     <PackageReference Include="ModelContextProtocol" Version="1.0.0" />
     <PackageReference Include="Scalar.AspNetCore" Version="2.12.50" />
     <PackageReference Include="YamlDotNet" Version="16.3.0" />
+    <PackageReference Include="Telegram.Bot" Version="22.9.5" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\IssuePit.Core\IssuePit.Core.csproj" />

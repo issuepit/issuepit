@@ -48,6 +48,7 @@ public class TeamsController(IssuePitDbContext db, TenantContext ctx) : Controll
             OrgId = orgId,
             Name = req.Name,
             Slug = req.Slug,
+            Description = req.Description,
             CreatedAt = DateTime.UtcNow
         };
         db.Teams.Add(team);
@@ -67,6 +68,8 @@ public class TeamsController(IssuePitDbContext db, TenantContext ctx) : Controll
         if (team is null) return NotFound();
         team.Name = req.Name;
         team.Slug = req.Slug;
+        if (req.Description is not null)
+            team.Description = req.Description;
         await db.SaveChangesAsync();
         return Ok(team);
     }
@@ -153,4 +156,4 @@ public class TeamsController(IssuePitDbContext db, TenantContext ctx) : Controll
     }
 }
 
-public record CreateTeamRequest(string Name, string Slug);
+public record CreateTeamRequest(string Name, string Slug, string? Description = null);

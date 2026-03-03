@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { ApiKey, RuntimeConfiguration, ApiKeyProvider, RuntimeType, TelegramBot, PoolStatus } from '~/types'
+import type { ApiKey, RuntimeConfiguration, ApiKeyProvider, RuntimeType, TelegramBot, DigestInterval, PoolStatus } from '~/types'
 
 export const useConfigStore = defineStore('config', () => {
   const { get, post, put, del } = useApi()
@@ -84,13 +84,13 @@ export const useConfigStore = defineStore('config', () => {
     }
   }
 
-  async function createTelegramBot(payload: { name: string; botToken: string; chatId: string; events: number; isSilent: boolean; orgId?: string; projectId?: string }) {
+  async function createTelegramBot(payload: { name: string; botToken: string; chatId: string; events: number; isSilent: boolean; digestInterval: DigestInterval; orgId?: string; projectId?: string }) {
     const created = await post<TelegramBot>('/api/config/telegram-bots', payload)
     await fetchTelegramBots()
     return created
   }
 
-  async function updateTelegramBot(id: string, payload: { name: string; botToken: string; chatId: string; events: number; isSilent: boolean; orgId?: string; projectId?: string }) {
+  async function updateTelegramBot(id: string, payload: { name: string; botToken: string; chatId: string; events: number; isSilent: boolean; digestInterval: DigestInterval; orgId?: string; projectId?: string }) {
     const updated = await put<TelegramBot>(`/api/config/telegram-bots/${id}`, payload)
     await fetchTelegramBots()
     return updated

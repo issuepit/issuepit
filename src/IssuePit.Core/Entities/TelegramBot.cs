@@ -37,5 +37,8 @@ public class TelegramBot
 
     public bool IsSilent { get; set; }
 
+    /// <summary>Controls how frequently notifications are sent (immediate, hourly digest, or daily digest).</summary>
+    public DigestInterval DigestInterval { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

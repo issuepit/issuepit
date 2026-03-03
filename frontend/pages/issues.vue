@@ -89,7 +89,8 @@
 </template>
 
 <script setup lang="ts">
-import { IssueStatus, IssuePriority } from '~/types'
+import { IssueStatus } from '~/types'
+import type { IssuePriority } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
 import { useProjectsStore } from '~/stores/projects'
 
@@ -234,14 +235,8 @@ function statusLabel(status: IssueStatus) {
   return map[status] ?? status
 }
 
+const { priorityIcon, priorityLabel: priorityText } = usePriority()
 function priorityLabel(priority: IssuePriority) {
-  const map: Record<IssuePriority, string> = {
-    [IssuePriority.Urgent]: '🔴 Urgent',
-    [IssuePriority.High]: '🟠 High',
-    [IssuePriority.Medium]: '🟡 Medium',
-    [IssuePriority.Low]: '🔵 Low',
-    [IssuePriority.NoPriority]: '⚪ None'
-  }
-  return map[priority] ?? priority
+  return `${priorityIcon(priority)} ${priorityText(priority)}`
 }
 </script>

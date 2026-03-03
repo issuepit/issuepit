@@ -31,7 +31,7 @@
             <th class="text-left px-4 py-3 text-gray-400 font-medium">Chat ID</th>
             <th class="text-left px-4 py-3 text-gray-400 font-medium">Scope</th>
             <th class="text-left px-4 py-3 text-gray-400 font-medium">Events</th>
-            <th class="text-left px-4 py-3 text-gray-400 font-medium">Silent</th>
+            <th class="text-left px-4 py-3 text-gray-400 font-medium">Notifications</th>
             <th class="text-left px-4 py-3 text-gray-400 font-medium">Created</th>
             <th class="px-4 py-3" />
           </tr>
@@ -53,7 +53,9 @@
                 <span v-if="!activeEvents(bot.events).length" class="text-gray-600 text-xs">None</span>
               </div>
             </td>
-            <td class="px-4 py-3 text-gray-400 text-xs">{{ bot.isSilent ? 'Yes' : 'No' }}</td>
+            <td class="px-4 py-3 text-gray-400 text-xs">
+              {{ DigestIntervalLabels[bot.digestInterval] }}{{ bot.isSilent ? ' · Silent' : '' }}
+            </td>
             <td class="px-4 py-3 text-gray-400">{{ formatDate(bot.createdAt) }}</td>
             <td class="px-4 py-3 text-right space-x-3">
               <button class="text-gray-500 hover:text-brand-400 transition-colors text-xs" @click="openEdit(bot)">Edit</button>
@@ -112,6 +114,17 @@
               </label>
             </div>
           </div>
+          <div>
+            <label for="digest-interval" class="block text-sm text-gray-400 mb-1">Notification frequency</label>
+            <select
+              id="digest-interval"
+              v-model.number="form.digestInterval"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-500"
+            >
+              <option v-for="(label, val) in DigestIntervalLabels" :key="val" :value="Number(val)">{{ label }}</option>
+            </select>
+            <p class="text-xs text-gray-600 mt-1">Hourly and daily digests batch multiple events into a single message.</p>
+          </div>
           <div class="flex items-center gap-3 rounded-lg bg-gray-800/50 border border-gray-700 p-3">
             <input
               id="is-silent"
@@ -140,7 +153,7 @@
 </template>
 
 <script setup lang="ts">
-import { TelegramNotificationEvent, TelegramNotificationEventLabels } from '~/types'
+import { TelegramNotificationEvent, TelegramNotificationEventLabels, DigestInterval, DigestIntervalLabels } from '~/types'
 import type { TelegramBot } from '~/types'
 import { useConfigStore } from '~/stores/config'
 
@@ -160,11 +173,12 @@ const form = reactive({
   projectId: '',
   events: 0,
   isSilent: false,
+  digestInterval: DigestInterval.Immediate,
 })
 
 function openCreate() {
   editingId.value = null
-  Object.assign(form, { name: '', botToken: '', chatId: '', orgId: '', projectId: '', events: 0, isSilent: false })
+  Object.assign(form, { name: '', botToken: '', chatId: '', orgId: '', projectId: '', events: 0, isSilent: false, digestInterval: DigestInterval.Immediate })
   showForm.value = true
 }
 
@@ -178,6 +192,7 @@ function openEdit(bot: TelegramBot) {
     projectId: bot.projectId ?? '',
     events: bot.events,
     isSilent: bot.isSilent,
+    digestInterval: bot.digestInterval,
   })
   showForm.value = true
 }
@@ -223,6 +238,7 @@ async function handleSubmit() {
       chatId: form.chatId,
       events: form.events,
       isSilent: form.isSilent,
+      digestInterval: form.digestInterval,
       orgId: form.orgId || undefined,
       projectId: form.projectId || undefined,
     }

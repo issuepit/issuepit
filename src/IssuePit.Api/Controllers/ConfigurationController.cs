@@ -256,6 +256,7 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
                 b.ChatId,
                 b.Events,
                 b.IsSilent,
+                b.DigestInterval,
                 b.CreatedAt,
                 // Never return the encrypted token
             })
@@ -277,10 +278,11 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
             ChatId = req.ChatId,
             Events = req.Events,
             IsSilent = req.IsSilent,
+            DigestInterval = req.DigestInterval,
         };
         db.TelegramBots.Add(bot);
         await db.SaveChangesAsync();
-        return Created($"/api/config/telegram-bots/{bot.Id}", new { bot.Id, bot.Name, bot.OrgId, bot.ProjectId, bot.ChatId, bot.Events, bot.IsSilent, bot.CreatedAt });
+        return Created($"/api/config/telegram-bots/{bot.Id}", new { bot.Id, bot.Name, bot.OrgId, bot.ProjectId, bot.ChatId, bot.Events, bot.IsSilent, bot.DigestInterval, bot.CreatedAt });
     }
 
     [HttpPut("telegram-bots/{id:guid}")]
@@ -299,10 +301,11 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
         bot.ChatId = req.ChatId;
         bot.Events = req.Events;
         bot.IsSilent = req.IsSilent;
+        bot.DigestInterval = req.DigestInterval;
         if (!string.IsNullOrEmpty(req.BotToken))
             bot.EncryptedBotToken = $"plain:{req.BotToken}";
         await db.SaveChangesAsync();
-        return Ok(new { bot.Id, bot.Name, bot.OrgId, bot.ProjectId, bot.ChatId, bot.Events, bot.IsSilent, bot.CreatedAt });
+        return Ok(new { bot.Id, bot.Name, bot.OrgId, bot.ProjectId, bot.ChatId, bot.Events, bot.IsSilent, bot.DigestInterval, bot.CreatedAt });
     }
 
     [HttpDelete("telegram-bots/{id:guid}")]
@@ -322,4 +325,4 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
 
 public record ApiKeyRequest(Guid OrgId, string Name, ApiKeyProvider Provider, string Value, DateTime? ExpiresAt, Guid? ProjectId = null, Guid? TeamId = null, Guid? UserId = null);
 public record RuntimeConfigRequest(Guid OrgId, string Name, RuntimeType Type, string Configuration, bool IsDefault, int MaxConcurrentAgents = 0);
-public record TelegramBotRequest(string Name, string BotToken, string ChatId, int Events, bool IsSilent, Guid? OrgId, Guid? ProjectId);
+public record TelegramBotRequest(string Name, string BotToken, string ChatId, int Events, bool IsSilent, DigestInterval DigestInterval, Guid? OrgId, Guid? ProjectId);

@@ -12,12 +12,47 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
     {
         await SeedDemoUsersAsync(tenantId);
         await SeedDemoDataAsync(tenantId);
+        await SeedEvilCorpAsync(tenantId);
     }
 
     private async Task SeedDemoUsersAsync(Guid tenantId)
     {
-        var demoUsers = new[] { ("alice", "alice@localhost"), ("bob", "bob@localhost") };
-        foreach (var (username, email) in demoUsers)
+        var demoUsers = new[]
+        {
+            // Honest / generic participants (cryptographic naming convention)
+            ("alice",   "alice@localhost",   "The sender who initiates communication."),
+            ("bob",     "bob@localhost",     "The intended recipient."),
+            ("carol",   "carol@localhost",   "A third honest participant."),
+            ("caesar",  "caesar@localhost",  "Named after the Caesar cipher; an early cryptographer."),
+            ("dave",    "dave@localhost",    "A fourth participant, sometimes called Dan."),
+            ("erin",    "erin@localhost",    "Occasionally used as an additional honest participant."),
+            ("frank",   "frank@localhost",   "Another generic participant."),
+            ("grace",   "grace@localhost",   "Sometimes used as an additional user."),
+            ("heidi",   "heidi@localhost",   "Common extra participant in protocol examples."),
+            ("ivan",    "ivan@localhost",    "Additional honest participant."),
+            ("judy",    "judy@localhost",    "A judge or dispute resolver."),
+            ("joe",     "joe@localhost",     "Generic user in examples."),
+            ("niaj",    "niaj@localhost",    "Generic participant (used in RFC examples)."),
+            ("olivia",  "olivia@localhost",  "Honest participant (contrast with Oscar)."),
+            ("peggy",   "peggy@localhost",   "The Prover in zero-knowledge proofs."),
+            ("rupert",  "rupert@localhost",  "Occasionally used as another participant."),
+            ("sybil",   "sybil@localhost",   "Used both as participant and attacker (Sybil attack)."),
+            ("trent",   "trent@localhost",   "Trusted third party / authority."),
+            ("victor",  "victor@localhost",  "The Verifier in zero-knowledge proofs."),
+            ("walter",  "walter@localhost",  "The Warden monitoring communication."),
+            // Attackers
+            ("eve",       "eve@localhost",       "Passive eavesdropper."),
+            ("mallory",   "mallory@localhost",   "Active malicious attacker (MITM)."),
+            ("malice",    "malice@localhost",    "Personification of malicious intent."),
+            ("trudy",     "trudy@localhost",     "Active intruder (similar to Mallory)."),
+            ("oscar",     "oscar@localhost",     "Opponent / outsider."),
+            ("hackerman", "hackerman@localhost",  "Generic attacker label (less formal)."),
+            // Theoretical / proof-system participants
+            ("arthur",  "arthur@localhost",  "Polynomial-time verifier in interactive proofs."),
+            ("merlin",  "merlin@localhost",  "All-powerful prover in complexity theory."),
+            ("zeke",    "zeke@localhost",    "Occasionally used in academic protocol examples."),
+        };
+        foreach (var (username, email, description) in demoUsers)
         {
             if (!await db.Users.AnyAsync(u => u.Username == username && u.TenantId == tenantId))
             {
@@ -27,6 +62,7 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
                     TenantId = tenantId,
                     Username = username,
                     Email = email,
+                    Description = description,
                     CreatedAt = DateTime.UtcNow,
                 };
                 user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(username);
@@ -114,7 +150,26 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
             DueDate = DateTime.UtcNow.AddDays(30),
             CreatedAt = DateTime.UtcNow,
         };
-        db.Milestones.Add(milestone);
+        var beMilestone1 = new Milestone
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = backendProject.Id,
+            Title = "API Hardening",
+            Description = "Rate limiting, input validation, and security hardening",
+            DueDate = DateTime.UtcNow.AddDays(14),
+            CreatedAt = DateTime.UtcNow.AddDays(-7),
+        };
+        var beMilestone2 = new Milestone
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = backendProject.Id,
+            Title = "Observability",
+            Description = "Structured logging, health checks, and correlation IDs",
+            DueDate = DateTime.UtcNow.AddDays(45),
+            Status = MilestoneStatus.Open,
+            CreatedAt = DateTime.UtcNow.AddDays(-3),
+        };
+        db.Milestones.AddRange(milestone, beMilestone1, beMilestone2);
         await db.SaveChangesAsync();
 
         // --- Kanban boards ---
@@ -144,33 +199,45 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
         await db.SaveChangesAsync();
 
         // --- Issues (frontend project) — dates spread across the last 14 days ---
-        var issues = new[]
-        {
-            CreateDemoIssue(frontendProject.Id, 1, "Dark mode flicker on page load", "The page briefly shows light mode before switching to dark mode.", IssueStatus.Todo, IssuePriority.High, IssueType.Bug, createdDaysAgo: 13, updatedDaysAgo: 13),
-            CreateDemoIssue(frontendProject.Id, 2, "Add keyboard shortcuts for common actions", "Users should be able to navigate and perform actions without a mouse.", IssueStatus.InProgress, IssuePriority.Medium, IssueType.Feature, createdDaysAgo: 11, updatedDaysAgo: 9),
-            CreateDemoIssue(frontendProject.Id, 3, "Improve mobile responsiveness on issue detail page", "On small screens, the sidebar overlaps the content area.", IssueStatus.Backlog, IssuePriority.Low, IssueType.Bug, createdDaysAgo: 10, updatedDaysAgo: 10),
-            CreateDemoIssue(frontendProject.Id, 4, "Kanban board drag-and-drop support", "Allow dragging issue cards between kanban columns.", IssueStatus.Done, IssuePriority.NoPriority, IssueType.Feature, createdDaysAgo: 14, updatedDaysAgo: 5),
-            CreateDemoIssue(frontendProject.Id, 5, "Rich text editor for issue descriptions", "Replace the plain textarea with a Markdown-capable rich text editor.", IssueStatus.InReview, IssuePriority.Medium, IssueType.Feature, createdDaysAgo: 7, updatedDaysAgo: 2),
-            // backend project
-            CreateDemoIssue(backendProject.Id, 1, "Add rate limiting to public API endpoints", "Prevent abuse by limiting requests per IP address.", IssueStatus.Todo, IssuePriority.Urgent, IssueType.Feature, createdDaysAgo: 12, updatedDaysAgo: 12),
-            CreateDemoIssue(backendProject.Id, 2, "Slow query on issue list with many labels", "N+1 query detected when loading issues with labels. Add `.Include()` and index.", IssueStatus.InProgress, IssuePriority.High, IssueType.Bug, createdDaysAgo: 8, updatedDaysAgo: 6),
-            CreateDemoIssue(backendProject.Id, 3, "Webhook support for issue state changes", "Allow external systems to subscribe to issue lifecycle events.", IssueStatus.Backlog, IssuePriority.Low, IssueType.Feature, createdDaysAgo: 14, updatedDaysAgo: 14),
-        };
+        var feIssue1 = CreateDemoIssue(frontendProject.Id, 1, "Dark mode flicker on page load", "The page briefly shows light mode before switching to dark mode.", IssueStatus.Todo, IssuePriority.High, IssueType.Bug, createdDaysAgo: 13, updatedDaysAgo: 13);
+        var feIssue2 = CreateDemoIssue(frontendProject.Id, 2, "Add keyboard shortcuts for common actions", "Users should be able to navigate and perform actions without a mouse.", IssueStatus.InProgress, IssuePriority.Medium, IssueType.Feature, createdDaysAgo: 11, updatedDaysAgo: 9);
+        var feIssue3 = CreateDemoIssue(frontendProject.Id, 3, "Improve mobile responsiveness on issue detail page", "On small screens, the sidebar overlaps the content area.", IssueStatus.Backlog, IssuePriority.Low, IssueType.Bug, createdDaysAgo: 10, updatedDaysAgo: 10);
+        var feIssue4 = CreateDemoIssue(frontendProject.Id, 4, "Kanban board drag-and-drop support", "Allow dragging issue cards between kanban columns.", IssueStatus.Done, IssuePriority.NoPriority, IssueType.Feature, createdDaysAgo: 14, updatedDaysAgo: 5);
+        var feIssue5 = CreateDemoIssue(frontendProject.Id, 5, "Rich text editor for issue descriptions", "Replace the plain textarea with a Markdown-capable rich text editor.", IssueStatus.InReview, IssuePriority.Medium, IssueType.Feature, createdDaysAgo: 7, updatedDaysAgo: 2);
+        var feIssue6 = CreateDemoIssue(frontendProject.Id, 6, "Add pagination to issue list", "The issue list loads all issues at once. Add server-side pagination to handle large projects.", IssueStatus.Backlog, IssuePriority.Medium, IssueType.Feature, createdDaysAgo: 9, updatedDaysAgo: 9);
+        var feIssue7 = CreateDemoIssue(frontendProject.Id, 7, "Tooltip for truncated issue titles", "Long titles get cut off in the list view without any way to read the full text.", IssueStatus.Backlog, IssuePriority.Low, IssueType.Bug, createdDaysAgo: 6, updatedDaysAgo: 6);
+        var feIssue8 = CreateDemoIssue(frontendProject.Id, 8, "Loading skeleton for issue cards", "Replace the spinner with a proper skeleton screen while issues load.", IssueStatus.Todo, IssuePriority.Low, IssueType.Feature, createdDaysAgo: 4, updatedDaysAgo: 4);
+        var issues = new[] { feIssue1, feIssue2, feIssue3, feIssue4, feIssue5, feIssue6, feIssue7, feIssue8 };
+
+        // --- Issues (backend project) ---
+        var beIssue1 = CreateDemoIssue(backendProject.Id, 1, "Add rate limiting to public API endpoints", "Prevent abuse by limiting requests per IP address.", IssueStatus.Todo, IssuePriority.Urgent, IssueType.Feature, createdDaysAgo: 12, updatedDaysAgo: 12);
+        var beIssue2 = CreateDemoIssue(backendProject.Id, 2, "Slow query on issue list with many labels", "N+1 query detected when loading issues with labels. Add `.Include()` and index.", IssueStatus.InProgress, IssuePriority.High, IssueType.Bug, createdDaysAgo: 8, updatedDaysAgo: 6);
+        var beIssue3 = CreateDemoIssue(backendProject.Id, 3, "Webhook support for issue state changes", "Allow external systems to subscribe to issue lifecycle events.", IssueStatus.Backlog, IssuePriority.Low, IssueType.Feature, createdDaysAgo: 14, updatedDaysAgo: 14);
+        var beIssue4 = CreateDemoIssue(backendProject.Id, 4, "Add OpenAPI / Swagger documentation", "Generate interactive API docs from controller attributes.", IssueStatus.Todo, IssuePriority.Medium, IssueType.Feature, createdDaysAgo: 11, updatedDaysAgo: 11);
+        var beIssue5 = CreateDemoIssue(backendProject.Id, 5, "Health-check endpoint for k8s probes", "Expose `/healthz` for liveness and `/readyz` for readiness probes.", IssueStatus.Done, IssuePriority.Medium, IssueType.Feature, createdDaysAgo: 13, updatedDaysAgo: 7);
+        var beIssue6 = CreateDemoIssue(backendProject.Id, 6, "Structured logging with correlation IDs", "Add request correlation IDs to all log entries to aid debugging.", IssueStatus.Backlog, IssuePriority.Low, IssueType.Task, createdDaysAgo: 5, updatedDaysAgo: 5);
+        var beIssue7 = CreateDemoIssue(backendProject.Id, 7, "Validate input DTOs with FluentValidation", "Replace manual validation checks with a consistent FluentValidation pipeline.", IssueStatus.Backlog, IssuePriority.Low, IssueType.Task, createdDaysAgo: 3, updatedDaysAgo: 3);
+        var beIssues = new[] { beIssue1, beIssue2, beIssue3, beIssue4, beIssue5, beIssue6, beIssue7 };
         db.Issues.AddRange(issues);
+        db.Issues.AddRange(beIssues);
         await db.SaveChangesAsync();
 
         // Attach labels to frontend/backend issues
-        issues[0].Labels.Add(labelBug);
-        issues[1].Labels.Add(labelFeature);
-        issues[1].Labels.Add(labelUx);
-        issues[2].Labels.Add(labelBug);
-        issues[2].Labels.Add(labelUx);
-        issues[3].Labels.Add(labelFeature);
-        issues[4].Labels.Add(labelFeature);
-        issues[5].Labels.Add(labelBackend);
-        issues[6].Labels.Add(labelBackend);
-        issues[6].Labels.Add(labelPerf);
-        issues[7].Labels.Add(labelBackend);
+        feIssue1.Labels.Add(labelBug);
+        feIssue2.Labels.Add(labelFeature);
+        feIssue2.Labels.Add(labelUx);
+        feIssue3.Labels.Add(labelBug);
+        feIssue3.Labels.Add(labelUx);
+        feIssue4.Labels.Add(labelFeature);
+        feIssue5.Labels.Add(labelFeature);
+        feIssue6.Labels.Add(labelFeature);
+        feIssue8.Labels.Add(labelUx);
+        beIssue1.Labels.Add(labelBackend);
+        beIssue2.Labels.Add(labelBackend);
+        beIssue2.Labels.Add(labelPerf);
+        beIssue3.Labels.Add(labelBackend);
+        beIssue4.Labels.Add(labelBackend);
+        beIssue5.Labels.Add(labelBackend);
         await db.SaveChangesAsync();
 
         // --- Agents + MCP Servers (delegated to DemoAgentSeeder) ---
@@ -212,13 +279,40 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
         );
         await db.SaveChangesAsync();
 
+        // --- IssuePit milestones ---
+        db.Milestones.AddRange(
+            new Milestone
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = issuePitProject.Id,
+                Title = "v0.1 Private Beta",
+                Description = "Core issue tracking, kanban, and agent sessions working end-to-end",
+                DueDate = DateTime.UtcNow.AddDays(-7),
+                Status = MilestoneStatus.Closed,
+                CreatedAt = DateTime.UtcNow.AddDays(-30),
+            },
+            new Milestone
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = issuePitProject.Id,
+                Title = "v0.2 CI/CD & Code Review",
+                Description = "CI/CD run tracking, code review comments, and GitHub integration",
+                DueDate = DateTime.UtcNow.AddDays(21),
+                CreatedAt = DateTime.UtcNow.AddDays(-14),
+            }
+        );
+        await db.SaveChangesAsync();
+
         // IssuePit issues — dates spread across 14 days
         var ipIssue1 = CreateDemoIssue(issuePitProject.Id, 1, "feat: issue editor improvements", "Make the issue page use more screen real estate, add comments, label manager, type changing, assign to user/agent, create sub-issues and tasks.", IssueStatus.InProgress, IssuePriority.High, IssueType.Feature, createdDaysAgo: 13, updatedDaysAgo: 3);
         var ipIssue2 = CreateDemoIssue(issuePitProject.Id, 2, "feat: kanban board drag-and-drop", "Allow dragging issue cards between kanban columns to change their status.", IssueStatus.Todo, IssuePriority.Medium, IssueType.Feature, createdDaysAgo: 11, updatedDaysAgo: 11);
         var ipIssue3 = CreateDemoIssue(issuePitProject.Id, 3, "fix: agent session logs not streaming", "Agent session logs are not streaming in real time via SignalR — only show after completion.", IssueStatus.InProgress, IssuePriority.Urgent, IssueType.Bug, createdDaysAgo: 4, updatedDaysAgo: 1);
         var ipIssue4 = CreateDemoIssue(issuePitProject.Id, 4, "feat: GitHub webhook integration", "Sync issues and PRs from GitHub repositories via webhooks.", IssueStatus.Backlog, IssuePriority.Low, IssueType.Feature, createdDaysAgo: 14, updatedDaysAgo: 14);
         var ipIssue5 = CreateDemoIssue(issuePitProject.Id, 5, "chore: extend seed data", "Add richer seed data including the issuepit/issuepit project itself.", IssueStatus.Done, IssuePriority.NoPriority, IssueType.Task, createdDaysAgo: 7, updatedDaysAgo: 5);
-        db.Issues.AddRange(ipIssue1, ipIssue2, ipIssue3, ipIssue4, ipIssue5);
+        var ipIssue6 = CreateDemoIssue(issuePitProject.Id, 6, "fix: data seeding and priority colors", "Seed most issues with medium/low priority, change priority color scheme, add milestones and CI/CD log examples.", IssueStatus.InProgress, IssuePriority.Medium, IssueType.Bug, createdDaysAgo: 2, updatedDaysAgo: 1);
+        var ipIssue7 = CreateDemoIssue(issuePitProject.Id, 7, "feat: CI/CD log color rules", "Allow users to define regex patterns that colorize specific log lines (e.g. errors in red, warnings in yellow).", IssueStatus.Backlog, IssuePriority.Low, IssueType.Feature, createdDaysAgo: 6, updatedDaysAgo: 6);
+        var ipIssue8 = CreateDemoIssue(issuePitProject.Id, 8, "chore: improve E2E test coverage", "Add E2E tests for kanban board, issue creation, and agent session flows.", IssueStatus.Todo, IssuePriority.Low, IssueType.Task, createdDaysAgo: 5, updatedDaysAgo: 5);
+        db.Issues.AddRange(ipIssue1, ipIssue2, ipIssue3, ipIssue4, ipIssue5, ipIssue6, ipIssue7, ipIssue8);
         await db.SaveChangesAsync();
 
         // Attach labels to some issues
@@ -227,6 +321,9 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
         ipIssue3.Labels.Add(ipLabelBug);
         ipIssue4.Labels.Add(ipLabelFeature);
         ipIssue5.Labels.Add(ipLabelDocs);
+        ipIssue6.Labels.Add(ipLabelBug);
+        ipIssue7.Labels.Add(ipLabelFeature);
+        ipIssue8.Labels.Add(ipLabelDocs);
         await db.SaveChangesAsync();
 
         // Add tasks to ipIssue1
@@ -288,10 +385,14 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
         agendaIssue5.Labels.Add(agendaLabelSecurity);
         await db.SaveChangesAsync();
 
-        // Cross-project links: agenda issue 1 → linked to IssuePit project issue; agenda issue 2 → linked to backend issue
+        // Cross-project links: agenda issue 1 → linked to IssuePit and frontend; agenda issue 2 → linked to backend and IssuePit issues
         db.IssueLinks.AddRange(
             new IssueLink { Id = Guid.NewGuid(), IssueId = agendaIssue1.Id, TargetIssueId = ipIssue1.Id, LinkType = IssueLinkType.LinkedTo, CreatedAt = DateTime.UtcNow },
-            new IssueLink { Id = Guid.NewGuid(), IssueId = agendaIssue2.Id, TargetIssueId = issues[5].Id, LinkType = IssueLinkType.LinkedTo, CreatedAt = DateTime.UtcNow }
+            new IssueLink { Id = Guid.NewGuid(), IssueId = agendaIssue1.Id, TargetIssueId = feIssue1.Id, LinkType = IssueLinkType.LinkedTo, CreatedAt = DateTime.UtcNow },
+            new IssueLink { Id = Guid.NewGuid(), IssueId = agendaIssue2.Id, TargetIssueId = beIssue1.Id, LinkType = IssueLinkType.LinkedTo, CreatedAt = DateTime.UtcNow },
+            new IssueLink { Id = Guid.NewGuid(), IssueId = agendaIssue2.Id, TargetIssueId = ipIssue3.Id, LinkType = IssueLinkType.LinkedTo, CreatedAt = DateTime.UtcNow },
+            new IssueLink { Id = Guid.NewGuid(), IssueId = agendaIssue3.Id, TargetIssueId = beIssue6.Id, LinkType = IssueLinkType.LinkedTo, CreatedAt = DateTime.UtcNow },
+            new IssueLink { Id = Guid.NewGuid(), IssueId = agendaIssue4.Id, TargetIssueId = feIssue3.Id, LinkType = IssueLinkType.LinkedTo, CreatedAt = DateTime.UtcNow }
         );
         await db.SaveChangesAsync();
 
@@ -305,15 +406,15 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
             {
                 assignees.Add(new IssueAssignee { Id = Guid.NewGuid(), IssueId = ipIssue1.Id, UserId = adminUser.Id });
                 assignees.Add(new IssueAssignee { Id = Guid.NewGuid(), IssueId = ipIssue3.Id, UserId = adminUser.Id });
-                assignees.Add(new IssueAssignee { Id = Guid.NewGuid(), IssueId = issues[1].Id, UserId = adminUser.Id }); // FE keyboard shortcuts
+                assignees.Add(new IssueAssignee { Id = Guid.NewGuid(), IssueId = feIssue2.Id, UserId = adminUser.Id }); // FE keyboard shortcuts
                 assignees.Add(new IssueAssignee { Id = Guid.NewGuid(), IssueId = agendaIssue1.Id, UserId = adminUser.Id });
             }
 
             // Alice assigned to frontend and agenda issues
             if (aliceUser is not null)
             {
-                assignees.Add(new IssueAssignee { Id = Guid.NewGuid(), IssueId = issues[0].Id, UserId = aliceUser.Id }); // dark mode flicker
-                assignees.Add(new IssueAssignee { Id = Guid.NewGuid(), IssueId = issues[4].Id, UserId = aliceUser.Id }); // rich text editor
+                assignees.Add(new IssueAssignee { Id = Guid.NewGuid(), IssueId = feIssue1.Id, UserId = aliceUser.Id }); // dark mode flicker
+                assignees.Add(new IssueAssignee { Id = Guid.NewGuid(), IssueId = feIssue5.Id, UserId = aliceUser.Id }); // rich text editor
                 assignees.Add(new IssueAssignee { Id = Guid.NewGuid(), IssueId = ipIssue2.Id, UserId = aliceUser.Id });
                 assignees.Add(new IssueAssignee { Id = Guid.NewGuid(), IssueId = agendaIssue2.Id, UserId = aliceUser.Id });
             }
@@ -321,8 +422,8 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
             // Bob assigned to backend and remaining issues
             if (bobUser is not null)
             {
-                assignees.Add(new IssueAssignee { Id = Guid.NewGuid(), IssueId = issues[5].Id, UserId = bobUser.Id }); // BE rate limiting
-                assignees.Add(new IssueAssignee { Id = Guid.NewGuid(), IssueId = issues[6].Id, UserId = bobUser.Id }); // slow query
+                assignees.Add(new IssueAssignee { Id = Guid.NewGuid(), IssueId = beIssue1.Id, UserId = bobUser.Id }); // BE rate limiting
+                assignees.Add(new IssueAssignee { Id = Guid.NewGuid(), IssueId = beIssue2.Id, UserId = bobUser.Id }); // slow query
                 assignees.Add(new IssueAssignee { Id = Guid.NewGuid(), IssueId = ipIssue4.Id, UserId = bobUser.Id });
                 assignees.Add(new IssueAssignee { Id = Guid.NewGuid(), IssueId = agendaIssue3.Id, UserId = bobUser.Id });
             }
@@ -336,17 +437,17 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
 
         if (aliceUser is not null)
         {
-            comments.Add(new IssueComment { Id = Guid.NewGuid(), IssueId = issues[0].Id, UserId = aliceUser.Id, Body = "Reproduced on Safari 17. The flash happens because the theme class is applied after hydration. We should apply it server-side via a cookie check.", CreatedAt = DateTime.UtcNow.AddDays(-12) });
-            comments.Add(new IssueComment { Id = Guid.NewGuid(), IssueId = issues[6].Id, UserId = aliceUser.Id, Body = "The N+1 is in `IssueListQueryHandler`. We need `.Include(i => i.Labels)` and a composite index on `(project_id, status)`.", CreatedAt = DateTime.UtcNow.AddDays(-7) });
+            comments.Add(new IssueComment { Id = Guid.NewGuid(), IssueId = feIssue1.Id, UserId = aliceUser.Id, Body = "Reproduced on Safari 17. The flash happens because the theme class is applied after hydration. We should apply it server-side via a cookie check.", CreatedAt = DateTime.UtcNow.AddDays(-12) });
+            comments.Add(new IssueComment { Id = Guid.NewGuid(), IssueId = beIssue2.Id, UserId = aliceUser.Id, Body = "The N+1 is in `IssueListQueryHandler`. We need `.Include(i => i.Labels)` and a composite index on `(project_id, status)`.", CreatedAt = DateTime.UtcNow.AddDays(-7) });
             comments.Add(new IssueComment { Id = Guid.NewGuid(), IssueId = ipIssue1.Id, UserId = aliceUser.Id, Body = "I've started on the redesign task. Going with a 3-column layout: nav / issue content / metadata sidebar. Should work well on 1280px+.", CreatedAt = DateTime.UtcNow.AddDays(-2) });
             comments.Add(new IssueComment { Id = Guid.NewGuid(), IssueId = agendaIssue1.Id, UserId = aliceUser.Id, Body = "We already have opencode set up for IssuePit itself. I can use that config as a template for the other repos.", CreatedAt = DateTime.UtcNow.AddDays(-3) });
         }
 
         if (bobUser is not null)
         {
-            comments.Add(new IssueComment { Id = Guid.NewGuid(), IssueId = issues[0].Id, UserId = bobUser.Id, Body = "Agree with Alice. Alternatively we could use a `<script>` block in `<head>` that reads localStorage and applies the class before React/Vue mounts.", CreatedAt = DateTime.UtcNow.AddDays(-11) });
-            comments.Add(new IssueComment { Id = Guid.NewGuid(), IssueId = issues[5].Id, UserId = bobUser.Id, Body = "I'll implement this using a token bucket algorithm. The rate limits will be configurable via environment variables.", CreatedAt = DateTime.UtcNow.AddDays(-11) });
-            comments.Add(new IssueComment { Id = Guid.NewGuid(), IssueId = issues[6].Id, UserId = bobUser.Id, Body = "Fixed the N+1. Added `.Include()` calls and a migration with the composite index. Tests pass locally. Ready for review.", CreatedAt = DateTime.UtcNow.AddDays(-5) });
+            comments.Add(new IssueComment { Id = Guid.NewGuid(), IssueId = feIssue1.Id, UserId = bobUser.Id, Body = "Agree with Alice. Alternatively we could use a `<script>` block in `<head>` that reads localStorage and applies the class before React/Vue mounts.", CreatedAt = DateTime.UtcNow.AddDays(-11) });
+            comments.Add(new IssueComment { Id = Guid.NewGuid(), IssueId = beIssue1.Id, UserId = bobUser.Id, Body = "I'll implement this using a token bucket algorithm. The rate limits will be configurable via environment variables.", CreatedAt = DateTime.UtcNow.AddDays(-11) });
+            comments.Add(new IssueComment { Id = Guid.NewGuid(), IssueId = beIssue2.Id, UserId = bobUser.Id, Body = "Fixed the N+1. Added `.Include()` calls and a migration with the composite index. Tests pass locally. Ready for review.", CreatedAt = DateTime.UtcNow.AddDays(-5) });
             comments.Add(new IssueComment { Id = Guid.NewGuid(), IssueId = ipIssue3.Id, UserId = bobUser.Id, Body = "The root cause is that the SignalR group name was using the session ID before it was persisted. Moving `AddToGroupAsync` after `SaveChangesAsync` should fix it.", CreatedAt = DateTime.UtcNow.AddDays(-1) });
         }
 
@@ -355,7 +456,7 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
             comments.Add(new IssueComment { Id = Guid.NewGuid(), IssueId = ipIssue1.Id, UserId = adminUser.Id, Body = "The comment section should support Markdown rendering. Check how the issue body renderer works and reuse it.", CreatedAt = DateTime.UtcNow.AddDays(-1) });
             comments.Add(new IssueComment { Id = Guid.NewGuid(), IssueId = ipIssue3.Id, UserId = adminUser.Id, Body = "This is blocking our demo — marking as urgent. @bob please prioritize.", CreatedAt = DateTime.UtcNow.AddDays(-2) });
             comments.Add(new IssueComment { Id = Guid.NewGuid(), IssueId = agendaIssue2.Id, UserId = adminUser.Id, Body = "CodeQL is already set up for issuepit/issuepit. We should copy the workflow to the other repos as a starting point.", CreatedAt = DateTime.UtcNow.AddDays(-8) });
-            comments.Add(new IssueComment { Id = Guid.NewGuid(), IssueId = issues[5].Id, UserId = adminUser.Id, Body = "Make sure the rate limit headers (`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`) are included in the response.", CreatedAt = DateTime.UtcNow.AddDays(-10) });
+            comments.Add(new IssueComment { Id = Guid.NewGuid(), IssueId = beIssue1.Id, UserId = adminUser.Id, Body = "Make sure the rate limit headers (`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`) are included in the response.", CreatedAt = DateTime.UtcNow.AddDays(-10) });
         }
 
         if (comments.Count > 0)
@@ -373,7 +474,7 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
             new CodeReviewComment
             {
                 Id = Guid.NewGuid(),
-                IssueId = issues[6].Id, // slow query fix
+                IssueId = beIssue2.Id, // slow query fix
                 FilePath = "src/IssuePit.Api/QueryHandlers/IssueListQueryHandler.cs",
                 StartLine = 42, EndLine = 44,
                 Sha = demoSha1,
@@ -386,7 +487,7 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
             new CodeReviewComment
             {
                 Id = Guid.NewGuid(),
-                IssueId = issues[6].Id,
+                IssueId = beIssue2.Id,
                 FilePath = "src/IssuePit.Core/Migrations/20260210_AddLabelIndex.cs",
                 StartLine = 12, EndLine = 14,
                 Sha = demoSha1,
@@ -440,7 +541,129 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
         db.ProjectMetricSnapshots.AddRange(metricSnapshots);
         await db.SaveChangesAsync();
 
-        logger.LogInformation("Demo data seeded: org 'Acme Corp', 4 projects (Frontend, Backend API, IssuePit, Common Agenda), 18 issues, 4 agents, 2 MCP servers, assignees, comments, code review comments, metric snapshots.");
+        // --- Demo CI/CD Run with sample log lines (color regex example) ---
+        // Shows various log patterns: info, warnings, errors, steps — useful for testing log colorization features
+        const string cicdSha = "deadbeef1234567890abcdef1234567890abcdef";
+        var demoCicdRun = new CiCdRun
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = issuePitProject.Id,
+            CommitSha = cicdSha,
+            Branch = "main",
+            Workflow = "ci.yml",
+            Status = CiCdRunStatus.Succeeded,
+            StartedAt = DateTime.UtcNow.AddHours(-2),
+            EndedAt = DateTime.UtcNow.AddHours(-1).AddMinutes(-47),
+        };
+        db.CiCdRuns.Add(demoCicdRun);
+        await db.SaveChangesAsync();
+
+        var logBase = demoCicdRun.StartedAt;
+        db.CiCdRunLogs.AddRange(
+            new CiCdRunLog { Id = Guid.NewGuid(), CiCdRunId = demoCicdRun.Id, Stream = LogStream.Stdout, Line = "[INFO]  Starting CI pipeline for branch 'main'", Timestamp = logBase.AddSeconds(1) },
+            new CiCdRunLog { Id = Guid.NewGuid(), CiCdRunId = demoCicdRun.Id, Stream = LogStream.Stdout, Line = "[INFO]  Checking out commit deadbeef...", Timestamp = logBase.AddSeconds(2) },
+            new CiCdRunLog { Id = Guid.NewGuid(), CiCdRunId = demoCicdRun.Id, Stream = LogStream.Stdout, Line = "✔ Checkout complete", Timestamp = logBase.AddSeconds(4) },
+            new CiCdRunLog { Id = Guid.NewGuid(), CiCdRunId = demoCicdRun.Id, Stream = LogStream.Stdout, Line = "[INFO]  Restoring .NET packages...", Timestamp = logBase.AddSeconds(5) },
+            new CiCdRunLog { Id = Guid.NewGuid(), CiCdRunId = demoCicdRun.Id, Stream = LogStream.Stdout, Line = "✔ Package restore succeeded (12.3s)", Timestamp = logBase.AddSeconds(18) },
+            new CiCdRunLog { Id = Guid.NewGuid(), CiCdRunId = demoCicdRun.Id, Stream = LogStream.Stdout, Line = "[INFO]  Building solution...", Timestamp = logBase.AddSeconds(19) },
+            new CiCdRunLog { Id = Guid.NewGuid(), CiCdRunId = demoCicdRun.Id, Stream = LogStream.Stderr, Line = "[WARNING] CS0618: 'OldMethod' is obsolete: 'Use NewMethod instead'", Timestamp = logBase.AddSeconds(35) },
+            new CiCdRunLog { Id = Guid.NewGuid(), CiCdRunId = demoCicdRun.Id, Stream = LogStream.Stdout, Line = "✔ Build succeeded — 0 error(s), 1 warning(s) (28.4s)", Timestamp = logBase.AddSeconds(48) },
+            new CiCdRunLog { Id = Guid.NewGuid(), CiCdRunId = demoCicdRun.Id, Stream = LogStream.Stdout, Line = "[INFO]  Running unit tests...", Timestamp = logBase.AddSeconds(49) },
+            new CiCdRunLog { Id = Guid.NewGuid(), CiCdRunId = demoCicdRun.Id, Stream = LogStream.Stdout, Line = "✔ IssuePit.Tests.Unit  — 84 passed, 0 failed (6.1s)", Timestamp = logBase.AddSeconds(56) },
+            new CiCdRunLog { Id = Guid.NewGuid(), CiCdRunId = demoCicdRun.Id, Stream = LogStream.Stdout, Line = "[INFO]  Running integration tests...", Timestamp = logBase.AddSeconds(57) },
+            new CiCdRunLog { Id = Guid.NewGuid(), CiCdRunId = demoCicdRun.Id, Stream = LogStream.Stdout, Line = "✔ IssuePit.Tests.Integration — 31 passed, 0 failed (22.7s)", Timestamp = logBase.AddSeconds(80) },
+            new CiCdRunLog { Id = Guid.NewGuid(), CiCdRunId = demoCicdRun.Id, Stream = LogStream.Stdout, Line = "[INFO]  Installing frontend dependencies...", Timestamp = logBase.AddSeconds(81) },
+            new CiCdRunLog { Id = Guid.NewGuid(), CiCdRunId = demoCicdRun.Id, Stream = LogStream.Stderr, Line = "[WARNING] 3 moderate severity vulnerabilities found in dependencies", Timestamp = logBase.AddSeconds(95) },
+            new CiCdRunLog { Id = Guid.NewGuid(), CiCdRunId = demoCicdRun.Id, Stream = LogStream.Stdout, Line = "✔ npm install complete (14.2s)", Timestamp = logBase.AddSeconds(96) },
+            new CiCdRunLog { Id = Guid.NewGuid(), CiCdRunId = demoCicdRun.Id, Stream = LogStream.Stdout, Line = "[INFO]  Building frontend...", Timestamp = logBase.AddSeconds(97) },
+            new CiCdRunLog { Id = Guid.NewGuid(), CiCdRunId = demoCicdRun.Id, Stream = LogStream.Stdout, Line = "✔ Nuxt build succeeded (41.8s)", Timestamp = logBase.AddSeconds(140) },
+            new CiCdRunLog { Id = Guid.NewGuid(), CiCdRunId = demoCicdRun.Id, Stream = LogStream.Stdout, Line = "[INFO]  Running linter...", Timestamp = logBase.AddSeconds(141) },
+            new CiCdRunLog { Id = Guid.NewGuid(), CiCdRunId = demoCicdRun.Id, Stream = LogStream.Stdout, Line = "✔ ESLint — no issues found (3.2s)", Timestamp = logBase.AddSeconds(145) },
+            new CiCdRunLog { Id = Guid.NewGuid(), CiCdRunId = demoCicdRun.Id, Stream = LogStream.Stdout, Line = "[INFO]  Publishing Docker image...", Timestamp = logBase.AddSeconds(146) },
+            new CiCdRunLog { Id = Guid.NewGuid(), CiCdRunId = demoCicdRun.Id, Stream = LogStream.Stdout, Line = "✔ Image pushed: ghcr.io/issuepit/issuepit:deadbeef (8.3s)", Timestamp = logBase.AddSeconds(155) },
+            new CiCdRunLog { Id = Guid.NewGuid(), CiCdRunId = demoCicdRun.Id, Stream = LogStream.Stdout, Line = "✔ Pipeline completed successfully in 2m 35s", Timestamp = logBase.AddSeconds(156) }
+        );
+        await db.SaveChangesAsync();
+
+        logger.LogInformation("Demo data seeded: org 'Acme Corp', 4 projects (Frontend, Backend API, IssuePit, Common Agenda), 28 issues, 4 agents, 2 MCP servers, milestones, assignees, comments, code review comments, CI/CD run, metric snapshots.");
+    }
+
+    private async Task SeedEvilCorpAsync(Guid tenantId)
+    {
+        // Guard: only seed once
+        if (await db.Organizations.AnyAsync(o => o.TenantId == tenantId && o.Slug == "evilcorp"))
+            return;
+
+        logger.LogInformation("Seeding EvilCorp organization with thematic teams...");
+
+        var evilCorpOrg = new Organization
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            Name = "EvilCorp",
+            Slug = "evilcorp",
+            CreatedAt = DateTime.UtcNow,
+        };
+        db.Organizations.Add(evilCorpOrg);
+        await db.SaveChangesAsync();
+
+        // Resolve users by username
+        User? GetUser(string username) =>
+            db.Users.Local.FirstOrDefault(u => u.Username == username && u.TenantId == tenantId)
+            ?? db.Users.FirstOrDefault(u => u.Username == username && u.TenantId == tenantId);
+
+        // --- Teams ---
+        var teamHonest = new Team
+        {
+            Id = Guid.NewGuid(),
+            OrgId = evilCorpOrg.Id,
+            Name = "Honest Participants",
+            Slug = "honest",
+            Description = "Generic participants used in cryptographic protocol examples: the senders, receivers, and trusted parties.",
+            CreatedAt = DateTime.UtcNow,
+        };
+        var teamAttackers = new Team
+        {
+            Id = Guid.NewGuid(),
+            OrgId = evilCorpOrg.Id,
+            Name = "Attackers",
+            Slug = "attackers",
+            Description = "Adversarial actors — eavesdroppers, MITM attackers, intruders, and Sybil identities.",
+            CreatedAt = DateTime.UtcNow,
+        };
+        var teamTheorists = new Team
+        {
+            Id = Guid.NewGuid(),
+            OrgId = evilCorpOrg.Id,
+            Name = "Theorists",
+            Slug = "theorists",
+            Description = "Participants from formal proof systems: Arthur/Merlin complexity classes and zero-knowledge proof roles.",
+            CreatedAt = DateTime.UtcNow,
+        };
+        db.Teams.AddRange(teamHonest, teamAttackers, teamTheorists);
+        await db.SaveChangesAsync();
+
+        // Add org members and team memberships; track added org members to avoid duplicates
+        var addedOrgMembers = new HashSet<Guid>();
+        void AddMember(Team team, string username)
+        {
+            var user = GetUser(username);
+            if (user is null) return;
+            if (addedOrgMembers.Add(user.Id))
+                db.OrganizationMembers.Add(new OrganizationMember { OrgId = evilCorpOrg.Id, UserId = user.Id });
+            db.TeamMembers.Add(new TeamMember { TeamId = team.Id, UserId = user.Id });
+        }
+
+        var honestUsernames = new[] { "alice", "bob", "carol", "caesar", "dave", "erin", "frank", "grace", "heidi", "ivan", "judy", "joe", "niaj", "olivia", "peggy", "rupert", "sybil", "trent", "victor", "walter" };
+        var attackerUsernames = new[] { "eve", "mallory", "malice", "trudy", "oscar", "sybil", "hackerman" };
+        var theoristUsernames = new[] { "arthur", "merlin", "zeke", "victor", "peggy" };
+
+        foreach (var u in honestUsernames) AddMember(teamHonest, u);
+        foreach (var u in attackerUsernames) AddMember(teamAttackers, u);
+        foreach (var u in theoristUsernames) AddMember(teamTheorists, u);
+
+        await db.SaveChangesAsync();
+        logger.LogInformation("EvilCorp seeded: 3 thematic teams (Honest Participants, Attackers, Theorists) with {Count} org members.", addedOrgMembers.Count);
     }
 
     private static Issue CreateDemoIssue(Guid projectId, int number, string title, string body, IssueStatus status, IssuePriority priority, IssueType type, int createdDaysAgo, int updatedDaysAgo) =>

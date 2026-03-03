@@ -7,6 +7,9 @@ namespace IssuePit.Tests.E2E.Pages;
 /// </summary>
 public class OrgsPage(IPage page)
 {
+    // Short wait before retrying a navigation that may have been redirected by Vue SSR hydration.
+    private const int VueHydrationRetryTimeoutMs = 5_000;
+
     public async Task GotoAsync()
     {
         await page.GotoAsync("/orgs");
@@ -19,6 +22,18 @@ public class OrgsPage(IPage page)
     /// </summary>
     public async Task<Guid> CreateOrgAndNavigateAsync(string orgName)
     {
+        // Retry once in case the button was not yet visible due to a Vue SSR hydration race.
+        try
+        {
+            await page.WaitForSelectorAsync("button:has-text('New Organization')",
+                new PageWaitForSelectorOptions { Timeout = VueHydrationRetryTimeoutMs });
+        }
+        catch (TimeoutException)
+        {
+            await GotoAsync();
+            await page.WaitForSelectorAsync("button:has-text('New Organization')");
+        }
+
         await page.ClickAsync("button:has-text('New Organization')");
         await page.FillAsync("input[placeholder='Acme Corp']", orgName);
         await page.ClickAsync("button[type='submit']");
