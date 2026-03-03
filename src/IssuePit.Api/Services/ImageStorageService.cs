@@ -137,6 +137,7 @@ public class ImageStorageService(IOptions<ImageStorageOptions> options, ILogger<
             {
                 BucketName = _opts.BucketName,
                 UseClientRegion = true,
+                ObjectOwnership = ObjectOwnership.ObjectWriter, // Allow CannedACL on objects (LocalStack 4.x and AWS S3 default to BucketOwnerEnforced which disables ACLs)
             }, ct);
             logger.LogInformation("Created S3 bucket '{Bucket}'", _opts.BucketName);
         }
