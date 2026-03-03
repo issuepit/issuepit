@@ -1,5 +1,44 @@
 # Changelog
 
+## [1.4.0](https://github.com/issuepit/issuepit/compare/v1.3.0...v1.4.0) (2026-03-03)
+
+
+### Features
+
+* add actionlint to helper-act and create helper-opencode-act combined image ([#288](https://github.com/issuepit/issuepit/issues/288)) ([0731fde](https://github.com/issuepit/issuepit/commit/0731fded4322296ed6705185960a2baf66dbe814))
+* add CI/CD config pages for orgs and projects; fix runner image selection ([#282](https://github.com/issuepit/issuepit/issues/282)) ([00cc054](https://github.com/issuepit/issuepit/commit/00cc0544e3e79e42869d3e3be8fc20b82cf856bc))
+* add multi-tab view to issue detail page ([#319](https://github.com/issuepit/issuepit/issues/319)) ([139a2c5](https://github.com/issuepit/issuepit/commit/139a2c52947d19a6a56b8914a16272f5dfb4861d))
+* add tag selection and custom image option to CiCdImageSelector ([#303](https://github.com/issuepit/issuepit/issues/303)) ([6a325ba](https://github.com/issuepit/issuepit/commit/6a325ba84a4102b4ea2d2550ce7286338d89f6a1))
+* common agenda — org-wide goal tracker with cross-project issue linking ([#285](https://github.com/issuepit/issuepit/issues/285)) ([f9c43e2](https://github.com/issuepit/issuepit/commit/f9c43e2951b4402c48d4ec79630a259c1cfa4b95))
+* image paste support in issue descriptions/comments with S3/LocalStack backend ([#317](https://github.com/issuepit/issuepit/issues/317)) ([0b89731](https://github.com/issuepit/issuepit/commit/0b89731a5dc3785662a51d11f23a61d94a134de2))
+* implement IBotNotificationService interface with Telegram and Kafka dispatch ([#297](https://github.com/issuepit/issuepit/issues/297)) ([e8f2be9](https://github.com/issuepit/issuepit/commit/e8f2be9723cefe2eadc0b08b01d045ae2a91ca64))
+* improve act output in UI — job tracking, JSON parsing, scroll fix ([#300](https://github.com/issuepit/issuepit/issues/300)) ([667b521](https://github.com/issuepit/issuepit/commit/667b521800f65f0fa066718deb4843cdd8b7e7a8))
+* issue history tracking ([#295](https://github.com/issuepit/issuepit/issues/295)) ([5a6ead5](https://github.com/issuepit/issuepit/commit/5a6ead55e1ef1af768b76d390d397d6134ae23dd))
+* issue linking (blocks, blocked by, causes, caused by, solves, linked to, duplicates, requires, implements) ([#274](https://github.com/issuepit/issuepit/issues/274)) ([b65c2ce](https://github.com/issuepit/issuepit/commit/b65c2ce50f4d90c63277d7a566b6180d8c8ccd66))
+* live updates for run detail pages + server-side duration push ([#267](https://github.com/issuepit/issuepit/issues/267)) ([ec93194](https://github.com/issuepit/issuepit/commit/ec931943781fb50e4acddf22068fa644280818ae))
+* pass env, secrets and other inputs to act in cicd ([#276](https://github.com/issuepit/issuepit/issues/276)) ([9a2ac4d](https://github.com/issuepit/issuepit/commit/9a2ac4d0992af4b981de7f9072a5312d39d51768))
+* per-runtime container pool limits with live status UI ([#302](https://github.com/issuepit/issuepit/issues/302)) ([913c4b0](https://github.com/issuepit/issuepit/commit/913c4b017f2c2162293ed89253571972eecd603b))
+* **projects,agents,e2e:** add org selector to create forms and comprehensive E2E tests with page object model ([#264](https://github.com/issuepit/issuepit/issues/264)) ([425856b](https://github.com/issuepit/issuepit/commit/425856b1948ac55c4026a812a2d45c2cfe4806fd))
+* skills management infrastructure ([#293](https://github.com/issuepit/issuepit/issues/293)) ([e70dfd6](https://github.com/issuepit/issuepit/commit/e70dfd6155c63d4cb214d102b66b983bbeb71e87))
+* todo tracker with board/calendar views, iCal export, and MCP support ([#325](https://github.com/issuepit/issuepit/issues/325)) ([3a4d438](https://github.com/issuepit/issuepit/commit/3a4d4388f46ecbf627d2ef795f01388fec348a76))
+
+
+### Bug Fixes
+
+* act runner image not propagated from org/project settings; split image fields in retry ([#332](https://github.com/issuepit/issuepit/issues/332)) ([6b867c1](https://github.com/issuepit/issuepit/commit/6b867c1443087f1670a631b836a23e7f0def9bc2))
+* add Vue SSR hydration retry to TelegramBotsPage.GotoAsync ([#330](https://github.com/issuepit/issuepit/issues/330)) ([ca5453e](https://github.com/issuepit/issuepit/commit/ca5453e332e8dbc57c5ddf38e537b0a078ab91d9))
+* **badges:** correct SVG text sizing and add CI/CD metrics ([#304](https://github.com/issuepit/issuepit/issues/304)) ([448e4c7](https://github.com/issuepit/issuepit/commit/448e4c71ca2ed6b0cc47d75bbafd700ecdda7ee3))
+* ci/cd run view — steps, matrix jobs, log matching, box layout, create-issue ([#331](https://github.com/issuepit/issuepit/issues/331)) ([e2cd194](https://github.com/issuepit/issuepit/commit/e2cd19495659e0a591b407352f5acd21c24b9ec3))
+* data seeding, priority colors, and demo users/teams ([#315](https://github.com/issuepit/issuepit/issues/315)) ([8126210](https://github.com/issuepit/issuepit/commit/812621022ad189ecb9837b301d33970ec4b63baa))
+* eliminate flaky E2E login tab-click via hydration-aware retry ([#314](https://github.com/issuepit/issuepit/issues/314)) ([6504227](https://github.com/issuepit/issuepit/commit/65042279d049e4712e79885348ed9de21ecb0173))
+* improve seeded data ([#290](https://github.com/issuepit/issuepit/issues/290)) ([3f96ba7](https://github.com/issuepit/issuepit/commit/3f96ba7ad4f0817179f37dd7a48789f79519e77b))
+* inject actrc on container start to prevent interactive EOF crash ([#271](https://github.com/issuepit/issuepit/issues/271)) ([3c7a089](https://github.com/issuepit/issuepit/commit/3c7a089c1cc143e8011ebe49fc70296adccb851c))
+* prevent flaky E2E login retry from hitting register submit button ([#316](https://github.com/issuepit/issuepit/issues/316)) ([3b11460](https://github.com/issuepit/issuepit/commit/3b1146051eb504ef9b3fccc3ffe3b768bedc7ca8))
+* prevent race condition in E2E login registration flow ([#283](https://github.com/issuepit/issuepit/issues/283)) ([e9e49ac](https://github.com/issuepit/issuepit/commit/e9e49acbb4861d24867111f40cea21475cafe7e5))
+* remove unsupported `paths` filter from `merge_group` trigger ([#265](https://github.com/issuepit/issuepit/issues/265)) ([9b9d0fd](https://github.com/issuepit/issuepit/commit/9b9d0fdd4795d17874679f991b69e6389ae1cfb2))
+* resolve flaky Ui_CreateAgent_AppearsInList E2E test ([#334](https://github.com/issuepit/issuepit/issues/334)) ([e7abe9b](https://github.com/issuepit/issuepit/commit/e7abe9b560fd69d640402172ff28bc53cb5bf2e2))
+* suppress act first-run prompt by always writing actrc and passing -P flags directly ([#277](https://github.com/issuepit/issuepit/issues/277)) ([fe0ee5e](https://github.com/issuepit/issuepit/commit/fe0ee5ebb9503d078d94bbb94db89ec3c6fe5929))
+
 ## [1.3.0](https://github.com/issuepit/issuepit/compare/v1.2.0...v1.3.0) (2026-03-02)
 
 
