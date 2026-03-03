@@ -36,4 +36,11 @@ public record TriggerPayload(
     /// When set, the container clones this Git repository URL to <c>/workspace</c> before running act.
     /// This allows running CI/CD without a host volume mount.
     /// </summary>
-    string? GitRepoUrl = null);
+    string? GitRepoUrl = null,
+    /// <summary>
+    /// Host path for the act artifact server. When set, act is started with
+    /// <c>--artifact-server-path</c> so that <c>actions/upload-artifact</c> and
+    /// <c>actions/download-artifact</c> work without a real GitHub token.
+    /// The worker reads parsed test results from this directory after the run.
+    /// </summary>
+    string? ArtifactServerPath = null);

@@ -106,6 +106,52 @@ public class CiCdRunsController(
     }
 
     /// <summary>
+    /// Returns parsed test results (test suites and individual test cases) for the given run.
+    /// Test results are collected automatically from artifact <c>.trx</c> files after the run completes.
+    /// </summary>
+    [HttpGet("{id:guid}/test-results")]
+    public async Task<IActionResult> GetTestResults(Guid id)
+    {
+        var runExists = await db.CiCdRuns
+            .AnyAsync(r => r.Id == id && r.Project.Organization.TenantId == tenant.CurrentTenant!.Id);
+
+        if (!runExists) return NotFound();
+
+        var suites = await db.CiCdTestSuites
+            .Where(s => s.CiCdRunId == id)
+            .OrderBy(s => s.CreatedAt)
+            .Select(s => new
+            {
+                s.Id,
+                s.ArtifactName,
+                s.TotalTests,
+                s.PassedTests,
+                s.FailedTests,
+                s.SkippedTests,
+                s.DurationMs,
+                s.CreatedAt,
+                TestCases = s.TestCases
+                    .OrderBy(tc => tc.FullName)
+                    .Select(tc => new
+                    {
+                        tc.Id,
+                        tc.FullName,
+                        tc.ClassName,
+                        tc.MethodName,
+                        tc.Outcome,
+                        OutcomeName = tc.Outcome.ToString(),
+                        tc.DurationMs,
+                        tc.ErrorMessage,
+                        tc.StackTrace,
+                    })
+                    .ToList(),
+            })
+            .ToListAsync();
+
+        return Ok(suites);
+    }
+
+    /// <summary>
     /// Returns the workflow job graph (nodes and dependency edges) for the given run.
     /// First returns the pre-computed graph stored in the DB (if available), then falls back to
     /// parsing the workflow YAML from the workspace. Returns 404 when no graph data can be found.

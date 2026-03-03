@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using Confluent.Kafka;
 using IssuePit.CiCdClient.Runtimes;
+using IssuePit.CiCdClient.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
@@ -166,6 +167,13 @@ public class CiCdWorker(
             StartedAt = DateTime.UtcNow,
         };
 
+        // Prepare a host-side artifact directory so act's built-in artifact server can serve
+        // actions/upload-artifact and actions/download-artifact without a real GitHub token.
+        // The directory is cleaned up after test results have been collected.
+        var artifactDir = Path.Combine(Path.GetTempPath(), $"issuepit-artifacts-{run.Id:N}");
+        Directory.CreateDirectory(artifactDir);
+        trigger = trigger with { ArtifactServerPath = artifactDir };
+
         db.CiCdRuns.Add(run);
         await db.SaveChangesAsync(stoppingToken);
 
@@ -252,9 +260,55 @@ public class CiCdWorker(
             run.EndedAt = DateTime.UtcNow;
             await db.SaveChangesAsync(stoppingToken);
 
+            // Collect and store test results from any .trx files produced during the run.
+            await ParseAndStoreTestResultsAsync(run.Id, artifactDir, db, stoppingToken);
+
+            // Clean up the artifact directory now that results have been collected.
+            try { Directory.Delete(artifactDir, recursive: true); } catch { /* best-effort */ }
+
             // Notify clients that the run has completed
             await PublishLogLineAsync(run.Id.ToString(),
                 JsonSerializer.Serialize(new { @event = "run-completed", status = run.Status.ToString() }));
+        }
+    }
+
+    /// <summary>
+    /// Scans <paramref name="artifactDir"/> for <c>.trx</c> files, parses each one, and
+    /// persists the results as <see cref="CiCdTestSuite"/> rows linked to the given run.
+    /// Best-effort: errors are logged but never propagated.
+    /// </summary>
+    private async Task ParseAndStoreTestResultsAsync(
+        Guid runId,
+        string artifactDir,
+        IssuePitDbContext db,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var trxFiles = TrxParser.FindTrxFiles(artifactDir).ToList();
+            if (trxFiles.Count == 0) return;
+
+            logger.LogInformation("Found {Count} TRX file(s) for run {RunId}; parsing test results", trxFiles.Count, runId);
+
+            foreach (var trxFile in trxFiles)
+            {
+                var suite = TrxParser.Parse(trxFile);
+                if (suite is null)
+                {
+                    logger.LogWarning("Failed to parse TRX file {TrxFile} for run {RunId}", trxFile, runId);
+                    continue;
+                }
+
+                suite.CiCdRunId = runId;
+                db.CiCdTestSuites.Add(suite);
+            }
+
+            await db.SaveChangesAsync(cancellationToken);
+            logger.LogInformation("Stored test results for run {RunId}", runId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to collect test results for run {RunId}", runId);
         }
     }
 

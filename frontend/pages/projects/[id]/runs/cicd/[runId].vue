@@ -443,6 +443,56 @@
           <div v-else class="py-10 text-center text-sm text-gray-500">No logs available</div>
         </template>
 
+        <!-- Tests tab -->
+        <template v-else-if="activeSection === 'tests'">
+          <div v-if="store.currentRunTestSuites.length" class="p-4 space-y-4">
+            <div
+              v-for="suite in store.currentRunTestSuites"
+              :key="suite.id"
+              class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+              <!-- Suite header -->
+              <div class="flex items-center gap-4 p-3 border-b border-gray-800 bg-gray-800/40">
+                <span class="text-sm font-medium text-gray-300 truncate flex-1">{{ suite.artifactName }}</span>
+                <span class="flex items-center gap-1 text-xs text-green-400">
+                  <span class="w-1.5 h-1.5 rounded-full bg-green-400" />
+                  {{ suite.passedTests }} passed
+                </span>
+                <span v-if="suite.failedTests" class="flex items-center gap-1 text-xs text-red-400">
+                  <span class="w-1.5 h-1.5 rounded-full bg-red-400" />
+                  {{ suite.failedTests }} failed
+                </span>
+                <span v-if="suite.skippedTests" class="flex items-center gap-1 text-xs text-yellow-500">
+                  <span class="w-1.5 h-1.5 rounded-full bg-yellow-500" />
+                  {{ suite.skippedTests }} skipped
+                </span>
+                <span class="text-xs text-gray-500">{{ formatTestDuration(suite.durationMs) }}</span>
+              </div>
+              <!-- Test cases -->
+              <div class="divide-y divide-gray-800">
+                <div
+                  v-for="tc in suite.testCases"
+                  :key="tc.id"
+                  class="px-3 py-2">
+                  <div class="flex items-center gap-2">
+                    <!-- outcome icon -->
+                    <span v-if="tc.outcomeName === 'Passed'" class="text-green-400 shrink-0">✓</span>
+                    <span v-else-if="tc.outcomeName === 'Failed'" class="text-red-400 shrink-0">✗</span>
+                    <span v-else class="text-yellow-500 shrink-0">–</span>
+                    <span class="text-xs text-gray-300 font-mono truncate flex-1" :title="tc.fullName">{{ tc.methodName || tc.fullName }}</span>
+                    <span class="text-xs text-gray-600 shrink-0">{{ formatTestDuration(tc.durationMs) }}</span>
+                  </div>
+                  <!-- Error details (collapsed by default) -->
+                  <div v-if="tc.errorMessage" class="mt-1.5 ml-5 text-xs text-red-400 font-mono whitespace-pre-wrap break-all">{{ tc.errorMessage }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-else class="py-10 text-center text-sm text-gray-500">
+            No test results available.<br>
+            <span class="text-xs text-gray-600">Test results are collected automatically from <code>.trx</code> artifact files after the run completes.</span>
+          </div>
+        </template>
+
         <!-- Details tab -->
         <template v-else>
           <div v-if="debugMetadata.length" class="p-4 font-mono text-xs">
@@ -618,9 +668,10 @@ const retryConflict = ref<{ message: string; activeRunId: string } | null>(null)
 const sectionTabs = [
   { label: 'Jobs', value: 'jobs' },
   { label: 'Logs', value: 'logs' },
+  { label: 'Tests', value: 'tests' },
   { label: 'Details', value: 'details' },
 ]
-const activeSection = ref<'jobs' | 'logs' | 'details'>('jobs')
+const activeSection = ref<'jobs' | 'logs' | 'tests' | 'details'>('jobs')
 
 const streamTabs = [
   { label: 'All', value: null },
@@ -1225,6 +1276,7 @@ const { connection: projectConnection, connect: connectProject } = useSignalR('/
 
 onMounted(async () => {
   await store.fetchRun(runId)
+  await store.fetchTestResults(runId)
 
   // Connect to the CiCd output hub to receive live log lines and run-completed events
   await connectCicd()
@@ -1237,6 +1289,8 @@ onMounted(async () => {
           now.value = Date.now()
           // Refresh only run metadata (status, endedAt) — do NOT re-fetch logs to avoid losing scroll position
           store.fetchRunOnly(runId)
+          // Fetch test results now that the run has completed
+          store.fetchTestResults(runId)
         } else if (data.event === 'run-heartbeat') {
           now.value = Date.now()
         } else if (data.line !== undefined) {
@@ -1327,6 +1381,14 @@ function formatDate(d: string) {
 function formatLogTime(d: string) {
   const dt = new Date(d)
   return `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}:${String(dt.getSeconds()).padStart(2, '0')}`
+}
+
+function formatTestDuration(ms: number) {
+  if (ms < 1) return '<1ms'
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  const s = ms / 1000
+  if (s < 60) return `${s.toFixed(1)}s`
+  return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`
 }
 
 function duration(start: string, end?: string) {

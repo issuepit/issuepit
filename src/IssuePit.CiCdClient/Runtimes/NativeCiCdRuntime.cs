@@ -178,6 +178,14 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
             list.Add(pair);
         }
 
+        // Enable act's built-in artifact server so actions/upload-artifact and
+        // actions/download-artifact work without a real GitHub token.
+        if (!string.IsNullOrWhiteSpace(trigger.ArtifactServerPath))
+        {
+            list.Add("--artifact-server-path");
+            list.Add(trigger.ArtifactServerPath);
+        }
+
         return list;
     }
 

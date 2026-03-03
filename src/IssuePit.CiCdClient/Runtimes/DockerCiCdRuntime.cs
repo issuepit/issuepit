@@ -65,6 +65,17 @@ public partial class DockerCiCdRuntime(
         var actArgs = NativeCiCdRuntime.BuildActArgumentsList(trigger);
         var actBinAndArgs = new[] { actBin }.Concat(actArgs).ToList();
 
+        // For the Docker runtime the artifact server path in trigger is a host path.
+        // Replace it with the container-internal path so act stores artifacts inside the container
+        // (which is mounted from the host directory, making files accessible on both sides).
+        const string ContainerArtifactPath = "/artifacts";
+        if (!string.IsNullOrWhiteSpace(trigger.ArtifactServerPath))
+        {
+            var idx = actBinAndArgs.IndexOf(trigger.ArtifactServerPath);
+            if (idx >= 0)
+                actBinAndArgs[idx] = ContainerArtifactPath;
+        }
+
         // Append custom CLI args if provided (e.g. "--verbose --reuse").
         // Note: args are split on spaces; quoted arguments with spaces are not supported.
         if (!string.IsNullOrWhiteSpace(trigger.CustomArgs))
@@ -169,6 +180,14 @@ public partial class DockerCiCdRuntime(
         {
             // Git-clone mode: still mount Docker socket for DinD even though workspace is cloned inside.
             binds.Add("/var/run/docker.sock:/var/run/docker.sock");
+        }
+
+        // Mount the artifact server directory from the host so artifacts are accessible after the run.
+        if (!string.IsNullOrWhiteSpace(trigger.ArtifactServerPath))
+        {
+            Directory.CreateDirectory(trigger.ArtifactServerPath);
+            binds.Add($"{trigger.ArtifactServerPath}:{ContainerArtifactPath}");
+            await onLogLine($"[DEBUG] Artifact mount : {trigger.ArtifactServerPath}:{ContainerArtifactPath}", LogStream.Stdout);
         }
 
         // When a custom entrypoint is set the caller controls execution; use their entrypoint+cmd directly.
