@@ -37,36 +37,41 @@ public class CiCdConfigPage(IPage page)
 
     /// <summary>
     /// Selects a specific tag version (e.g. "latest", "24.04", "22.04") by clicking the
-    /// corresponding tag label inside the currently-selected group.
+    /// corresponding tag label directly in the image group.
     /// </summary>
     public async Task SelectTagVersionAsync(string versionLabel)
     {
-        // Tag labels are now clickable code elements; their text ends with "-{versionLabel}"
-        await page.ClickAsync($"code:text-matches('-{versionLabel}$')");
-    }
-
-    /// <summary>
-    /// Returns the version suffix of the currently highlighted (active) tag code element.
-    /// </summary>
-    public async Task<string?> GetSelectedTagVersionAsync()
-    {
-        // Active tag code elements have text-brand-300 styling
-        var codes = await page.QuerySelectorAllAsync("code.text-brand-300");
+        // Tags are shown as full image references (e.g. "ghcr.io/catthehacker/ubuntu:act-latest").
+        // Click the code element whose text ends with the version label (after the last dash).
+        var codes = await page.QuerySelectorAllAsync("code");
         foreach (var code in codes)
         {
             var text = (await code.InnerTextAsync()).Trim();
-            // Extract the version suffix after the last '-' in the colon-part
-            // e.g. "ghcr.io/catthehacker/ubuntu:act-latest" → "latest"
-            var colonIdx = text.LastIndexOf(':');
-            if (colonIdx >= 0)
+            if (text.EndsWith($"-{versionLabel}") || text.EndsWith($":{versionLabel}"))
             {
-                var afterColon = text[(colonIdx + 1)..];
-                var dashIdx = afterColon.LastIndexOf('-');
-                if (dashIdx >= 0)
-                    return afterColon[(dashIdx + 1)..];
+                await code.ClickAsync();
+                return;
             }
         }
-        return null;
+        throw new InvalidOperationException($"Tag version '{versionLabel}' not found in image selector.");
+    }
+
+    /// <summary>
+    /// Returns the currently selected tag text (full image reference) or null if nothing is selected.
+    /// </summary>
+    public async Task<string?> GetSelectedTagVersionAsync()
+    {
+        // Selected tag code elements have text-brand-300 styling (distinct from default unselected tags)
+        var codes = await page.QuerySelectorAllAsync("code.text-brand-300");
+        if (codes.Count == 0) return null;
+        var text = (await codes[0].InnerTextAsync()).Trim();
+        // Extract the version suffix after the last '-' in the colon-part
+        // e.g. "ghcr.io/catthehacker/ubuntu:act-latest" → "latest"
+        var colonIdx = text.LastIndexOf(':');
+        if (colonIdx < 0) return text;
+        var afterColon = text[(colonIdx + 1)..];
+        var dashIdx = afterColon.LastIndexOf('-');
+        return dashIdx >= 0 ? afterColon[(dashIdx + 1)..] : afterColon;
     }
 
     /// <summary>

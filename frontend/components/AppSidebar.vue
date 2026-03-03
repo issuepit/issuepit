@@ -262,6 +262,7 @@ const SidebarNavLink = defineComponent({
     icon: { type: String, required: true },
     label: { type: String, required: true },
     color: { type: String, default: null },
+    // When true, only highlight this link for an exact path match (no prefix matching)
     exact: { type: Boolean, default: false },
   },
   setup(props) {

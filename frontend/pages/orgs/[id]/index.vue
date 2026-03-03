@@ -603,7 +603,8 @@ const tabs = [
   { id: 'settings', label: 'Settings' },
 ]
 const validTabIds = tabs.map(t => t.id)
-const activeTab = ref((validTabIds.includes(route.query.tab as string) ? route.query.tab : 'teams') as string)
+const queryTab = route.query.tab
+const activeTab = ref(validTabIds.includes(queryTab as string) ? (queryTab as string) : 'teams')
 
 function setTab(id: string) {
   activeTab.value = id
