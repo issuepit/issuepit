@@ -81,37 +81,41 @@ stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
         </template>
       </SidebarSection>
 
-      <!-- Agent Modes section (lazy loaded) -->
-      <SidebarSection label="Agent Modes" icon="agents" :lazy="true" @open="loadAgents">
-        <div v-if="agentsLoading" class="px-2 py-1">
-          <div class="h-3 bg-gray-800 rounded animate-pulse w-3/4 mb-1.5"/>
-          <div class="h-3 bg-gray-800 rounded animate-pulse w-1/2"/>
-        </div>
-        <template v-else>
-          <SidebarNavLink
-            v-for="agent in agents"
-            :key="agent.id"
-            :to="`/agents/${agent.id}`"
-            icon="agent-item"
-            :label="agent.name"
-          />
-          <div v-if="agents.length === 0" class="px-2 py-1 text-xs text-gray-600">No agents</div>
-          <NuxtLink to="/agents" class="flex items-center gap-2 px-2 py-1 text-xs text-gray-500 hover:text-gray-400 rounded transition-colors">
-            All agents →
-          </NuxtLink>
-        </template>
+      <!-- Agents section -->
+      <SidebarSection label="Agents" icon="agents" :default-open="false">
+        <!-- Modes sub-section (lazy loaded) -->
+        <SidebarSection label="Modes" icon="agent-item" :lazy="true" @open="loadAgents">
+          <div v-if="agentsLoading" class="px-2 py-1">
+            <div class="h-3 bg-gray-800 rounded animate-pulse w-3/4 mb-1.5"/>
+            <div class="h-3 bg-gray-800 rounded animate-pulse w-1/2"/>
+          </div>
+          <template v-else>
+            <SidebarNavLink
+              v-for="agent in agents"
+              :key="agent.id"
+              :to="`/agents/${agent.id}`"
+              icon="agent-item"
+              :label="agent.name"
+            />
+            <div v-if="agents.length === 0" class="px-2 py-1 text-xs text-gray-600">No agents</div>
+            <NuxtLink to="/agents" class="flex items-center gap-2 px-2 py-1 text-xs text-gray-500 hover:text-gray-400 rounded transition-colors">
+              All agents →
+            </NuxtLink>
+          </template>
+        </SidebarSection>
+        <SidebarNavLink to="/skills" icon="skills" label="Skills" />
+        <SidebarNavLink to="/config/mcp-servers" icon="mcp" label="MCP Servers" />
+        <SidebarNavLink to="/config/runtimes" icon="config" label="Runtimes" />
       </SidebarSection>
-
-      <!-- Skills section -->
-      <SidebarNavLink to="/skills" icon="skills" label="Skills" />
 
       <!-- System section -->
       <SidebarSection label="System" icon="config" :default-open="false">
-        <SidebarNavLink to="/config/keys" icon="config" label="Configuration" />
-        <SidebarNavLink to="/config/mcp-servers" icon="mcp" label="MCP Servers" />
-        <SidebarNavLink to="/config/mcp-playground" icon="mcp-playground" label="MCP Playground" />
+        <SidebarNavLink to="/config/keys" icon="config" label="API Keys" />
         <SidebarNavLink to="/config/github-identities" icon="github" label="GitHub Identities" />
-        <SidebarNavLink to="/settings" icon="settings" label="Settings" />
+        <SidebarNavLink to="/config/telegram-bots" icon="config" label="Telegram Bots" />
+        <SidebarNavLink to="/config/ci-cd" icon="runs" label="CI/CD" />
+        <SidebarNavLink to="/settings" icon="settings" label="Visuals" />
+        <SidebarNavLink to="/about" icon="tenants" label="About" />
       </SidebarSection>
 
       <!-- Admin section -->
@@ -264,7 +268,7 @@ const SidebarNavLink = defineComponent({
     const route = useRoute()
     const isActive = computed(() => {
       if (props.to === '/') return route.path === '/'
-      if (props.to === '/config/keys') return route.path.startsWith('/config') && !route.path.startsWith('/config/mcp-')
+      if (props.exact) return route.path === props.to
       // For routes with query params (e.g. /issues?filter=my), match both path and query
       const qIdx = props.to.indexOf('?')
       if (qIdx !== -1) {

@@ -30,7 +30,7 @@
               ? 'text-white border-brand-500'
               : 'text-gray-400 hover:text-gray-200 border-transparent'
           ]"
-          @click="activeTab = tab.id"
+          @click="setTab(tab.id)"
         >
           {{ tab.label }}
         </button>
@@ -584,6 +584,7 @@ import { OrgRole, OrgRoleLabels } from '~/types'
 import type { Team, User, AgentOrg, Project, Issue } from '~/types'
 
 const route = useRoute()
+const router = useRouter()
 const orgId = route.params.id as string
 
 const orgsStore = useOrgsStore()
@@ -601,7 +602,13 @@ const tabs = [
   { id: 'ci-cd', label: 'CI/CD' },
   { id: 'settings', label: 'Settings' },
 ]
-const activeTab = ref('teams')
+const validTabIds = tabs.map(t => t.id)
+const activeTab = ref((validTabIds.includes(route.query.tab as string) ? route.query.tab : 'teams') as string)
+
+function setTab(id: string) {
+  activeTab.value = id
+  router.replace({ query: { ...route.query, tab: id } })
+}
 
 // --- Runner Settings ---
 const runnerSettingsForm = reactive({ maxConcurrentRunners: 0 })

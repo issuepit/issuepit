@@ -36,24 +36,37 @@ public class CiCdConfigPage(IPage page)
     }
 
     /// <summary>
-    /// Selects a specific tag version button (e.g. "latest", "24.04", "22.04") inside the
-    /// currently-selected group's version picker.
+    /// Selects a specific tag version (e.g. "latest", "24.04", "22.04") by clicking the
+    /// corresponding tag label inside the currently-selected group.
     /// </summary>
     public async Task SelectTagVersionAsync(string versionLabel)
     {
-        // Scope to the container that holds the "Select version:" label to avoid matching
-        // buttons from other sections of the page.
-        await page.ClickAsync($"div:has(> p:has-text('Select version:')) button:has-text('{versionLabel}')");
+        // Tag labels are now clickable code elements; their text ends with "-{versionLabel}"
+        await page.ClickAsync($"code:text-matches('-{versionLabel}$')");
     }
 
     /// <summary>
-    /// Returns the version label of the highlighted (active) tag button inside the selected group.
+    /// Returns the version suffix of the currently highlighted (active) tag code element.
     /// </summary>
     public async Task<string?> GetSelectedTagVersionAsync()
     {
-        // Active tag buttons carry bg-brand-700 styling
-        var btn = await page.QuerySelectorAsync("button.bg-brand-700");
-        return btn is null ? null : (await btn.InnerTextAsync()).Trim();
+        // Active tag code elements have text-brand-300 styling
+        var codes = await page.QuerySelectorAllAsync("code.text-brand-300");
+        foreach (var code in codes)
+        {
+            var text = (await code.InnerTextAsync()).Trim();
+            // Extract the version suffix after the last '-' in the colon-part
+            // e.g. "ghcr.io/catthehacker/ubuntu:act-latest" → "latest"
+            var colonIdx = text.LastIndexOf(':');
+            if (colonIdx >= 0)
+            {
+                var afterColon = text[(colonIdx + 1)..];
+                var dashIdx = afterColon.LastIndexOf('-');
+                if (dashIdx >= 0)
+                    return afterColon[(dashIdx + 1)..];
+            }
+        }
+        return null;
     }
 
     /// <summary>
