@@ -152,6 +152,49 @@
           </form>
         </div>
 
+        <!-- CI/CD Environment & Secrets -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h2 class="font-semibold text-white mb-1">CI/CD Environment &amp; Secrets</h2>
+          <p class="text-sm text-gray-500 mb-4">
+            Values passed as <code class="text-gray-300 bg-gray-800 px-1 rounded">--env</code> and
+            <code class="text-gray-300 bg-gray-800 px-1 rounded">--secret</code> arguments to
+            <code class="text-gray-300 bg-gray-800 px-1 rounded">act</code> on every run.
+            One <code class="text-gray-300 bg-gray-800 px-1 rounded">KEY=VALUE</code> per line.
+          </p>
+          <form class="space-y-4" @submit.prevent="saveCiCdEnv">
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">
+                Environment variables
+                <span class="text-gray-500 font-normal">(--env KEY=VALUE)</span>
+              </label>
+              <textarea
+                v-model="ciCdEnvForm.actEnv"
+                rows="4"
+                placeholder="MY_VAR=my_value&#10;NODE_ENV=test"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">
+                Secrets
+                <span class="text-gray-500 font-normal">(--secret KEY=VALUE)</span>
+              </label>
+              <textarea
+                v-model="ciCdEnvForm.actSecrets"
+                rows="4"
+                placeholder="MY_SECRET=value&#10;API_KEY=key"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y"
+              />
+              <p class="text-xs text-gray-500 mt-1">Secret values are stored as plain text — avoid committing sensitive credentials that can be rotated.</p>
+            </div>
+            <p v-if="saveCiCdEnvError" class="text-red-400 text-sm">{{ saveCiCdEnvError }}</p>
+            <button type="submit" :disabled="savingCiCdEnv"
+              class="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+              {{ savingCiCdEnv ? 'Saving…' : 'Save Environment & Secrets' }}
+            </button>
+          </form>
+        </div>
+
         <!-- Agents -->
         <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
           <div class="flex items-center justify-between mb-1">
@@ -412,6 +455,11 @@ const runnerForm = reactive({ mountRepositoryInDocker: true, maxConcurrentRunner
 const savingRunner = ref(false)
 const saveRunnerError = ref<string | null>(null)
 
+// ── CI/CD Environment & Secrets form ─────────────────────────
+const ciCdEnvForm = reactive({ actEnv: '', actSecrets: '' })
+const savingCiCdEnv = ref(false)
+const saveCiCdEnvError = ref<string | null>(null)
+
 // ── Repo form ─────────────────────────────────────────────────
 const repoForm = reactive({ remoteUrl: '', defaultBranch: 'main', authUsername: '', authToken: '' })
 
@@ -547,6 +595,8 @@ onMounted(async () => {
     form.gitHubRepo = projectsStore.currentProject.gitHubRepo || ''
     runnerForm.mountRepositoryInDocker = projectsStore.currentProject.mountRepositoryInDocker ?? true
     runnerForm.maxConcurrentRunners = projectsStore.currentProject.maxConcurrentRunners ?? 0
+    ciCdEnvForm.actEnv = projectsStore.currentProject.actEnv || ''
+    ciCdEnvForm.actSecrets = projectsStore.currentProject.actSecrets || ''
   }
 
   if (gitStore.repo) {
@@ -588,6 +638,25 @@ async function saveRunnerOptions() {
     saveRunnerError.value = e instanceof Error ? e.message : 'Failed to save runner options'
   } finally {
     savingRunner.value = false
+  }
+}
+
+async function saveCiCdEnv() {
+  savingCiCdEnv.value = true
+  saveCiCdEnvError.value = null
+  try {
+    await projectsStore.updateProject(id, {
+      name: form.name,
+      slug: form.slug,
+      description: form.description,
+      gitHubRepo: form.gitHubRepo.trim() || undefined,
+      actEnv: ciCdEnvForm.actEnv || undefined,
+      actSecrets: ciCdEnvForm.actSecrets || undefined,
+    })
+  } catch (e: unknown) {
+    saveCiCdEnvError.value = e instanceof Error ? e.message : 'Failed to save environment & secrets'
+  } finally {
+    savingCiCdEnv.value = false
   }
 }
 
