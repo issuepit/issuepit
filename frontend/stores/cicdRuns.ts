@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { CiCdRun, CiCdRunLog, AgentSession, AgentSessionDetail, AgentSessionLog, DashboardAgentSession } from '~/types'
+import type { CiCdRun, CiCdRunLog, AgentSession, AgentSessionDetail, AgentSessionLog, DashboardAgentSession, WorkflowGraph } from '~/types'
 
 export const useCiCdRunsStore = defineStore('cicdRuns', () => {
   const runs = ref<CiCdRun[]>([])
@@ -7,6 +7,8 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
   const dashboardSessions = ref<DashboardAgentSession[]>([])
   const currentRun = ref<CiCdRun | null>(null)
   const currentRunLogs = ref<CiCdRunLog[]>([])
+  const currentRunGraph = ref<WorkflowGraph | null>(null)
+  const currentRunGraphError = ref<string | null>(null)
   const currentSession = ref<AgentSessionDetail | null>(null)
   const currentSessionLogs = ref<AgentSessionLog[]>([])
   const loading = ref(false)
@@ -33,6 +35,22 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     try {
       currentRun.value = await api.get<CiCdRun>(`/api/cicd-runs/${runId}`)
       currentRunLogs.value = await api.get<CiCdRunLog[]>(`/api/cicd-runs/${runId}/logs`)
+      currentRunGraph.value = null
+      currentRunGraphError.value = null
+      try {
+        currentRunGraph.value = await api.get<WorkflowGraph>(`/api/cicd-runs/${runId}/graph`)
+      } catch (e: unknown) {
+        currentRunGraph.value = null
+        // Preserve error message so the Jobs tab can show a meaningful message.
+        // 404 means no workspace is available; other errors are unexpected.
+        interface FetchError { status?: number; data?: { error?: string } }
+        const fe = e as FetchError
+        if (fe?.status === 404) {
+          currentRunGraphError.value = fe.data?.error ?? 'Graph not available (no local workspace for this run).'
+        } else {
+          currentRunGraphError.value = e instanceof Error ? e.message : 'Failed to load workflow graph.'
+        }
+      }
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Failed to fetch CI/CD run'
     } finally {
@@ -117,6 +135,8 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     dashboardSessions,
     currentRun,
     currentRunLogs,
+    currentRunGraph,
+    currentRunGraphError,
     currentSession,
     currentSessionLogs,
     loading,

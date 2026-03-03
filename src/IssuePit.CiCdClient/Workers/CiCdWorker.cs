@@ -279,9 +279,10 @@ public class CiCdWorker(
         CancellationToken cancellationToken)
     {
         // Try to parse act's JSON log format (enabled by --json flag).
-        // act uses logrus JSON format: {"level":"info","msg":"...","job":"build","time":"..."}
+        // act uses logrus JSON format: {"level":"info","msg":"...","job":"build","stage":"Set up job","time":"..."}
         var displayLine = line;
         var jobId = (string?)null;
+        var stepId = (string?)null;
         var actualStream = stream;
         if (line.Length > 0 && line[0] == '{')
         {
@@ -294,6 +295,9 @@ public class CiCdWorker(
                     displayLine = msgEl.GetString() ?? line;
                     if (root.TryGetProperty("job", out var jobEl))
                         jobId = jobEl.GetString();
+                    // Extract step name from the 'stage' field (e.g. "Set up job", "Main actions/checkout@v4").
+                    if (root.TryGetProperty("stage", out var stageEl))
+                        stepId = stageEl.GetString();
                     // Remap stream from act JSON level only if the original stream was stdout;
                     // if the container already routed the line to stderr, trust that.
                     if (stream == LogStream.Stdout &&
@@ -318,6 +322,7 @@ public class CiCdWorker(
             Line = displayLine,
             Stream = actualStream,
             JobId = jobId,
+            StepId = stepId,
             Timestamp = DateTime.UtcNow,
         };
 
@@ -330,6 +335,7 @@ public class CiCdWorker(
             stream = actualStream.ToString().ToLowerInvariant(),
             line = displayLine,
             jobId,
+            stepId,
             timestamp = log.Timestamp,
         });
         await PublishLogLineAsync(runId.ToString(), payload);
