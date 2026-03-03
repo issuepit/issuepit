@@ -130,19 +130,30 @@ public class ImageStorageService(IOptions<ImageStorageOptions> options, ILogger<
 
     private async Task EnsureBucketExistsAsync(IAmazonS3 s3, CancellationToken ct)
     {
-        try
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            await s3.PutBucketAsync(new PutBucketRequest
+            try
             {
-                BucketName = _opts.BucketName,
-                UseClientRegion = true,
-                ObjectOwnership = ObjectOwnership.ObjectWriter, // Allow CannedACL on objects (LocalStack 4.x and AWS S3 default to BucketOwnerEnforced which disables ACLs)
-            }, ct);
-            logger.LogInformation("Created S3 bucket '{Bucket}'", _opts.BucketName);
-        }
-        catch (AmazonS3Exception ex) when (ex.ErrorCode is "BucketAlreadyOwnedByYou" or "BucketAlreadyExists")
-        {
-            // Bucket already exists — nothing to do
+                await s3.PutBucketAsync(new PutBucketRequest
+                {
+                    BucketName = _opts.BucketName,
+                    UseClientRegion = true,
+                    ObjectOwnership = ObjectOwnership.ObjectWriter, // Allow CannedACL on objects (LocalStack 4.x and AWS S3 default to BucketOwnerEnforced which disables ACLs)
+                }, ct);
+                logger.LogInformation("Created S3 bucket '{Bucket}'", _opts.BucketName);
+                return;
+            }
+            catch (AmazonS3Exception ex) when (ex.ErrorCode is "BucketAlreadyOwnedByYou" or "BucketAlreadyExists")
+            {
+                // Bucket already exists — nothing to do
+                return;
+            }
+            catch (Exception ex) when (attempt < 2)
+            {
+                var delay = TimeSpan.FromSeconds(attempt + 1);
+                logger.LogWarning(ex, "S3 bucket creation attempt {Attempt}/3 failed, retrying in {Delay}s", attempt + 1, delay.TotalSeconds);
+                await Task.Delay(delay, ct);
+            }
         }
     }
 

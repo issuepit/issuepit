@@ -7,29 +7,32 @@ namespace IssuePit.Tests.E2E.Pages;
 /// </summary>
 public class IssuesPage(IPage page)
 {
-    private const int NavigationMaxAttempts = 3;
+    // Short wait before retrying a navigation that may have been aborted or slow to render.
+    private const int NavigationFirstAttemptTimeoutMs = 5_000;
     private const int NavigationRetryDelayMs = 1_500;
 
     /// <summary>
     /// Navigates to the issues page for the given project and waits for the heading.
-    /// Retries on ERR_ABORTED, which can occur due to Nuxt SPA router races on the dev server.
+    /// Retries once on ERR_ABORTED (Nuxt SPA router race) or TimeoutException (slow first render).
     /// </summary>
     public async Task GotoAsync(string projectId)
     {
-        for (var attempt = 0; attempt < NavigationMaxAttempts; attempt++)
+        await page.GotoAsync($"/projects/{projectId}/issues");
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+
+        // Retry once in case the heading was not yet visible due to a Vue SSR hydration race
+        // or the SPA navigation was aborted mid-flight.
+        try
         {
-            try
-            {
-                await page.GotoAsync($"/projects/{projectId}/issues");
-                await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-                await page.WaitForSelectorAsync("h1:has-text('Issues')", new PageWaitForSelectorOptions { Timeout = 10_000 });
-                return;
-            }
-            catch (PlaywrightException ex) when (ex.Message.Contains("ERR_ABORTED"))
-            {
-                if (attempt == NavigationMaxAttempts - 1) throw;
-                await Task.Delay(NavigationRetryDelayMs);
-            }
+            await page.WaitForSelectorAsync("h1:has-text('Issues')",
+                new PageWaitForSelectorOptions { Timeout = NavigationFirstAttemptTimeoutMs });
+        }
+        catch (Exception ex) when (ex is TimeoutException || (ex is PlaywrightException pe && pe.Message.Contains("ERR_ABORTED")))
+        {
+            await Task.Delay(NavigationRetryDelayMs);
+            await page.GotoAsync($"/projects/{projectId}/issues");
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForSelectorAsync("h1:has-text('Issues')");
         }
     }
 
