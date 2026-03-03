@@ -154,6 +154,16 @@
                     type="text"
                     placeholder="e.g. ghcr.io/catthehacker/ubuntu:act-24.04"
                     class="w-full bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-300 px-2.5 py-1.5 placeholder-gray-600 focus:outline-none focus:border-brand-500" />
+                  <p class="text-xs text-gray-600 mt-1">Outer Docker image for the container that executes the act tool itself.</p>
+                </div>
+                <div>
+                  <label class="block text-xs text-gray-500 mb-1">Act runner image</label>
+                  <input
+                    v-model="retryOptions.actRunnerImage"
+                    type="text"
+                    placeholder="e.g. ghcr.io/catthehacker/ubuntu:act-latest"
+                    class="w-full bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-300 px-2.5 py-1.5 placeholder-gray-600 focus:outline-none focus:border-brand-500" />
+                  <p class="text-xs text-gray-600 mt-1">Runner image used by act for platform mapping (overrides project/org setting).</p>
                 </div>
                 <div>
                   <label class="block text-xs text-gray-500 mb-1">Custom entrypoint</label>
@@ -564,6 +574,7 @@ const retryOptions = reactive({
   customImage: '',
   customEntrypoint: '',
   customArgs: '',
+  actRunnerImage: '',
 })
 const retryConflict = ref<{ message: string; activeRunId: string } | null>(null)
 
@@ -1127,6 +1138,7 @@ async function retryRunWithOptions() {
       customImage: retryOptions.customImage.trim() || undefined,
       customEntrypoint: retryOptions.customEntrypoint.trim() || undefined,
       customArgs: retryOptions.customArgs.trim() || undefined,
+      actRunnerImage: retryOptions.actRunnerImage.trim() || undefined,
     })
     retryOptions.forceRetry = false
     navigateTo(`/projects/${projectId}/runs`)
