@@ -7,7 +7,7 @@
       :class="[
         selectedGroupId === group.id
           ? 'border-brand-500 bg-brand-950/40 ring-1 ring-brand-500/50'
-          : group.isDefault && !selectedGroupId
+          : group.isDefault && !selectedGroupId && !customImageSelected
             ? 'border-brand-700 bg-brand-950/30'
             : 'border-gray-800 bg-gray-900/20 hover:border-gray-700'
       ]"
@@ -19,7 +19,7 @@
           <div class="flex items-center gap-2 flex-wrap mb-1">
             <span class="font-medium text-white">{{ group.label }}</span>
             <span
-              v-if="group.isDefault && !selectedGroupId"
+              v-if="group.isDefault && !selectedGroupId && !customImageSelected"
               class="px-1.5 py-0.5 rounded text-xs font-medium bg-brand-900/60 text-brand-300 border border-brand-800"
             >
               Default
@@ -38,18 +38,85 @@
               v-for="tag in group.tags"
               :key="tag"
               class="text-xs font-mono px-2 py-0.5 rounded border"
-              :class="selectedGroupId === group.id && tag.endsWith(':act-latest')
+              :class="props.modelValue === tag
                 ? 'bg-brand-950/60 border-brand-800 text-brand-300'
-                : group.isDefault && !selectedGroupId && tag.endsWith(':act-latest')
+                : group.isDefault && !selectedGroupId && !customImageSelected && tag === group.tags[0]
                   ? 'bg-brand-950/60 border-brand-800 text-brand-300'
                   : 'bg-gray-950/60 border-gray-700 text-gray-400'"
             >{{ tag }}</code>
+          </div>
+          <!-- Tag selector shown when this group is active -->
+          <div v-if="selectedGroupId === group.id" class="mt-3 pt-3 border-t border-gray-700/60" @click.stop>
+            <p class="text-xs text-gray-400 mb-2">Select version:</p>
+            <div class="flex flex-wrap gap-2">
+              <button
+                v-for="tag in group.tags"
+                :key="tag"
+                type="button"
+                class="text-xs font-mono px-2.5 py-1 rounded border transition-colors"
+                :class="props.modelValue === tag
+                  ? 'bg-brand-700 border-brand-500 text-white'
+                  : 'bg-gray-800 border-gray-600 text-gray-300 hover:border-gray-400 hover:text-white'"
+                @click.stop="emit('update:modelValue', tag)"
+              >
+                {{ tagVersionLabel(tag) }}
+              </button>
+            </div>
           </div>
         </div>
         <!-- Selected indicator -->
         <div class="shrink-0 mt-0.5">
           <div
             v-if="selectedGroupId === group.id"
+            class="w-5 h-5 rounded-full bg-brand-600 flex items-center justify-center"
+          >
+            <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <div v-else class="w-5 h-5 rounded-full border-2 border-gray-700" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Custom image option -->
+    <div
+      class="rounded-lg border p-4 transition-colors cursor-pointer"
+      :class="[
+        customImageSelected
+          ? 'border-brand-500 bg-brand-950/40 ring-1 ring-brand-500/50'
+          : 'border-gray-800 bg-gray-900/20 hover:border-gray-700'
+      ]"
+      @click="activateCustomImage"
+    >
+      <div class="flex items-start gap-3">
+        <div class="mt-0.5 text-lg">📦</div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap mb-1">
+            <span class="font-medium text-white">Custom image</span>
+            <span
+              v-if="customImageSelected"
+              class="px-1.5 py-0.5 rounded text-xs font-medium bg-brand-700/80 text-white border border-brand-600"
+            >
+              Selected
+            </span>
+          </div>
+          <p class="text-sm text-gray-400 mb-2">Enter any full Docker image reference.</p>
+          <div v-if="customImageSelected" class="mt-2" @click.stop>
+            <input
+              ref="customInputRef"
+              v-model="customImageInput"
+              type="text"
+              placeholder="e.g. ghcr.io/my-org/my-runner:latest"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              @input="onCustomImageInput"
+            />
+          </div>
+        </div>
+        <!-- Selected indicator -->
+        <div class="shrink-0 mt-0.5">
+          <div
+            v-if="customImageSelected"
             class="w-5 h-5 rounded-full bg-brand-600 flex items-center justify-center"
           >
             <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -236,9 +303,51 @@ const selectedGroupId = computed(() => {
   return findGroupForTag(props.modelValue)?.id ?? null
 })
 
+// True when the current value is set but doesn't belong to any known group
+const isCustomImage = computed(() => {
+  if (!props.modelValue) return false
+  return !findGroupForTag(props.modelValue)
+})
+
+// Tracks whether the user has manually activated the custom image card,
+// even before they have typed anything (model value may still be null at that point).
+const customImageActive = ref(false)
+
+// Combine: show the custom card as active when explicitly activated OR when
+// the stored model value is a custom image string.
+const customImageSelected = computed(() => customImageActive.value || isCustomImage.value)
+
+// Buffer for the custom image input field
+const customImageInput = ref('')
+
+// Keep the custom image input in sync when the model value changes externally.
+// Clear the buffer when switching back to a known group.
+watch(
+  () => props.modelValue,
+  (val) => {
+    if (val && !findGroupForTag(val)) {
+      customImageInput.value = val
+    } else if (!val || findGroupForTag(val)) {
+      customImageInput.value = ''
+    }
+  },
+  { immediate: true },
+)
+
+// Extract a human-readable version label from a full tag string.
+// Only called for known group tags (e.g. "ghcr.io/catthehacker/ubuntu:act-latest").
+// e.g. "ghcr.io/catthehacker/ubuntu:act-latest" → "latest"
+//      "ghcr.io/catthehacker/ubuntu:act-24.04"   → "24.04"
+function tagVersionLabel(tag: string): string {
+  const colonPart = tag.split(':')[1] ?? tag
+  const parts = colonPart.split('-')
+  return parts[parts.length - 1]
+}
+
 function selectGroup(id: string) {
   const group = imageGroups.find(g => g.id === id)
   if (!group) return
+  customImageActive.value = false
   if (selectedGroupId.value === id) {
     // Deselect (revert to default/inherit)
     emit('update:modelValue', null)
@@ -246,5 +355,22 @@ function selectGroup(id: string) {
   }
   // Use the first tag (latest) as the representative image
   emit('update:modelValue', group.tags[0])
+}
+
+const customInputRef = ref<HTMLInputElement | null>(null)
+
+function activateCustomImage() {
+  customImageActive.value = true
+  // If there's already a typed value, emit it; otherwise keep model as-is until typing starts
+  if (customImageInput.value) {
+    emit('update:modelValue', customImageInput.value)
+  }
+  nextTick(() => {
+    customInputRef.value?.focus()
+  })
+}
+
+function onCustomImageInput() {
+  emit('update:modelValue', customImageInput.value || null)
 }
 </script>
