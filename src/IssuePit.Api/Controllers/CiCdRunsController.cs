@@ -138,30 +138,29 @@ public class CiCdRunsController(
         if (string.IsNullOrWhiteSpace(run.WorkspacePath))
             return NotFound(new { error = "This run has no local workspace. Graph data is only available for locally-triggered runs." });
 
-        // Auto-detect workflow file when the run doesn't have an explicit workflow path stored.
-        var workflow = run.Workflow;
-        if (string.IsNullOrWhiteSpace(workflow))
+        var workflowsDir = Path.Combine(run.WorkspacePath, ".github", "workflows");
+
+        WorkflowGraph graph;
+        if (!string.IsNullOrWhiteSpace(run.Workflow))
         {
-            var workflowsDir = Path.Combine(run.WorkspacePath, ".github", "workflows");
-            if (Directory.Exists(workflowsDir))
-            {
-                workflow = Directory
-                    .EnumerateFiles(workflowsDir, "*.yml")
-                    .Concat(Directory.EnumerateFiles(workflowsDir, "*.yaml"))
-                    .Select(Path.GetFileName)
-                    .FirstOrDefault();
-            }
+            // Run was triggered for a specific workflow file — parse only that file.
+            var yamlPath = TryFindWorkflowYamlPath(run.WorkspacePath, run.Workflow);
+            if (yamlPath is null)
+                return NotFound(new { error = $"Workflow file '{run.Workflow}' not found in workspace '{run.WorkspacePath}'." });
 
-            if (string.IsNullOrWhiteSpace(workflow))
-                return NotFound(new { error = "No workflow file found in workspace '.github/workflows/'." });
+            graph = await WorkflowGraphParser.ParseFileAsync(yamlPath, HttpContext.RequestAborted);
         }
-
-        var yamlPath = TryFindWorkflowYamlPath(run.WorkspacePath, workflow);
-
-        if (yamlPath is null)
-            return NotFound(new { error = $"Workflow file '{workflow}' not found in workspace '{run.WorkspacePath}'." });
-
-        var graph = await WorkflowGraphParser.ParseFileAsync(yamlPath, HttpContext.RequestAborted);
+        else if (Directory.Exists(workflowsDir))
+        {
+            // No specific workflow — merge all workflow files in .github/workflows/.
+            graph = await WorkflowGraphParser.ParseDirectoryAsync(workflowsDir, HttpContext.RequestAborted);
+            if (graph.Jobs.Count == 0)
+                return NotFound(new { error = "No workflow files with jobs found in workspace '.github/workflows/'." });
+        }
+        else
+        {
+            return NotFound(new { error = "No '.github/workflows/' directory found in workspace." });
+        }
 
         // Cache the parsed graph in the DB so future requests don't need the workspace.
         try

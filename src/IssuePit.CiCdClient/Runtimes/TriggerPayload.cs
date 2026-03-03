@@ -29,4 +29,9 @@ public record TriggerPayload(
     /// <summary>Newline-separated KEY=VALUE pairs passed as <c>--env</c> arguments to <c>act</c>.</summary>
     string? ActEnv = null,
     /// <summary>Newline-separated KEY=VALUE pairs passed as <c>--secret</c> arguments to <c>act</c>.</summary>
-    string? ActSecrets = null);
+    string? ActSecrets = null,
+    /// <summary>
+    /// When set, the container clones this Git repository URL to <c>/workspace</c> before running act.
+    /// This allows running CI/CD without a host volume mount.
+    /// </summary>
+    string? GitRepoUrl = null);

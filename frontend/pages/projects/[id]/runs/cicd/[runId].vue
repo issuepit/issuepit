@@ -296,6 +296,7 @@
                     <span :class="jobStatusDot(job)" class="w-2 h-2 rounded-full shrink-0" />
                     <span class="text-sm font-medium text-white break-words leading-tight">{{ job.name }}</span>
                   </span>
+                  <span v-if="job.workflowFile" class="text-xs text-gray-500 font-mono">{{ job.workflowFile }}</span>
                   <span :class="jobStatusClass(job)" class="text-xs px-1.5 py-0.5 rounded-full font-medium">
                     {{ jobStatusLabel(job) }}
                   </span>
@@ -525,6 +526,8 @@ interface EnrichedJob {
   logCount: number
   hasError: boolean
   isComplete: boolean
+  hasStarted: boolean
+  workflowFile?: string
   startedAt?: string
   endedAt?: string
   // layout
@@ -569,7 +572,7 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
   const allIds = new Set([...graphJobs.map(j => j.id), ...logJobIds])
 
   // Build a map of job metadata
-  const jobMeta = new Map(graphJobs.map(j => [j.id, { name: j.name, needs: j.needs }]))
+  const jobMeta = new Map(graphJobs.map(j => [j.id, { name: j.name, needs: j.needs, workflowFile: j.workflowFile }]))
 
   // Assign columns via BFS from roots (no needs)
   const colMap = new Map<string, number>()
@@ -628,15 +631,18 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
     const meta = jobMeta.get(id)
     const logs = jobLogMap.value.get(id) ?? { logCount: 0, hasError: false, isComplete: false }
     const pos = posMap.get(id) ?? { x: PAD, y: PAD }
+    const hasStarted = logs.logCount > 0
     // Mark job as complete if it logged "Job succeeded/failed" OR if the overall run has ended.
-    const isComplete = logs.isComplete || (logs.logCount > 0 && runIsTerminal.value)
+    const isComplete = logs.isComplete || (hasStarted && runIsTerminal.value)
     return {
       id,
       name: meta?.name ?? id,
       needs: meta?.needs ?? [],
       logCount: logs.logCount,
       hasError: logs.hasError,
+      hasStarted,
       isComplete,
+      workflowFile: meta?.workflowFile,
       startedAt: logs.startedAt,
       // When run ended but the job never emitted a final timestamp, use the run's end time.
       endedAt: isComplete && !logs.endedAt ? (store.currentRun?.endedAt ?? logs.startedAt) : logs.endedAt,
@@ -683,19 +689,22 @@ function toggleJobFilter(jobId: string) {
   selectedJob.value = selectedJob.value === jobId ? null : jobId
 }
 
-function jobStatusDot(job: Pick<EnrichedJob, 'hasError' | 'isComplete'>) {
+function jobStatusDot(job: Pick<EnrichedJob, 'hasError' | 'isComplete' | 'hasStarted'>) {
+  if (!job.hasStarted) return runIsTerminal.value ? 'bg-gray-500' : 'bg-gray-600 animate-pulse'
   if (job.hasError) return 'bg-red-400'
   if (!job.isComplete) return 'bg-blue-400 animate-pulse'
   return 'bg-green-400'
 }
 
-function jobStatusClass(job: Pick<EnrichedJob, 'hasError' | 'isComplete'>) {
+function jobStatusClass(job: Pick<EnrichedJob, 'hasError' | 'isComplete' | 'hasStarted'>) {
+  if (!job.hasStarted) return 'bg-gray-800/50 text-gray-500'
   if (job.hasError) return 'bg-red-900/30 text-red-400'
   if (!job.isComplete) return 'bg-blue-900/30 text-blue-400'
   return 'bg-green-900/30 text-green-400'
 }
 
-function jobStatusLabel(job: Pick<EnrichedJob, 'hasError' | 'isComplete'>) {
+function jobStatusLabel(job: Pick<EnrichedJob, 'hasError' | 'isComplete' | 'hasStarted'>) {
+  if (!job.hasStarted) return runIsTerminal.value ? 'Cancelled' : 'Waiting'
   if (job.hasError) return 'Failed'
   if (!job.isComplete) return 'Running'
   return 'Succeeded'

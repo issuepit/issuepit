@@ -53,11 +53,14 @@ public partial class DockerCiCdRuntime(
         var actBin = configuration["CiCd__ActBinaryPath"] ?? "act";
         var workspacePath = trigger.WorkspacePath ?? configuration["CiCd__DefaultWorkspacePath"];
 
-        // Workspace validation is skipped when volume mounts are disabled (the path is not mounted).
-        if (!trigger.NoVolumeMounts && (string.IsNullOrWhiteSpace(workspacePath) || !Directory.Exists(workspacePath)))
+        // Workspace path is required unless volume mounts are disabled OR a git repo URL is set
+        // (in which case the repo is cloned inside the container — no host path needed).
+        var hasGitRepo = !string.IsNullOrWhiteSpace(trigger.GitRepoUrl);
+        if (!trigger.NoVolumeMounts && !hasGitRepo &&
+            (string.IsNullOrWhiteSpace(workspacePath) || !Directory.Exists(workspacePath)))
             throw new InvalidOperationException(
                 $"Workspace path '{workspacePath}' is not configured or does not exist. " +
-                "Set CiCd__DefaultWorkspacePath to the repository workspace.");
+                "Set CiCd__DefaultWorkspacePath to the repository workspace, or supply a GitRepoUrl.");
 
         var actArgs = NativeCiCdRuntime.BuildActArgumentsList(trigger);
         var actBinAndArgs = new[] { actBin }.Concat(actArgs).ToList();
@@ -91,7 +94,9 @@ public partial class DockerCiCdRuntime(
         await onLogLine($"[DEBUG] Act runner img : {actRunnerImage}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Container name : {containerName}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Command        : {string.Join(' ', actCmd)}", LogStream.Stdout);
-        if (!trigger.NoVolumeMounts)
+        if (hasGitRepo)
+            await onLogLine($"[DEBUG] Git repo URL   : {trigger.GitRepoUrl}", LogStream.Stdout);
+        if (!trigger.NoVolumeMounts && !hasGitRepo)
         {
             await onLogLine($"[DEBUG] Mount          : {workspacePath}:/workspace", LogStream.Stdout);
             if (!trigger.NoDind)
@@ -148,13 +153,19 @@ public partial class DockerCiCdRuntime(
         logger.LogInformation("Creating Docker container from image {Image} for CI/CD run {RunId}", image, run.Id);
 
         // Build bind mounts based on trigger options.
+        // When a git repo URL is set the workspace is cloned inside the container, so no host volume is needed.
         var binds = new List<string>();
-        if (!trigger.NoVolumeMounts)
+        if (!trigger.NoVolumeMounts && !hasGitRepo)
         {
             binds.Add($"{workspacePath}:/workspace");
             if (!trigger.NoDind)
                 // Mount Docker socket so act can spin up runner containers (DinD)
                 binds.Add("/var/run/docker.sock:/var/run/docker.sock");
+        }
+        else if (!trigger.NoVolumeMounts && !trigger.NoDind)
+        {
+            // Git-clone mode: still mount Docker socket for DinD even though workspace is cloned inside.
+            binds.Add("/var/run/docker.sock:/var/run/docker.sock");
         }
 
         // When a custom entrypoint is set the caller controls execution; use their entrypoint+cmd directly.
@@ -210,56 +221,45 @@ public partial class DockerCiCdRuntime(
         var succeeded = false;
         try
         {
-            try
-            {
-                await dockerClient.Containers.StartContainerAsync(
-                    container.ID, new ContainerStartParameters(), cancellationToken);
-            }
-            catch (DockerApiException ex) when (
-                ex.StatusCode == System.Net.HttpStatusCode.BadRequest &&
-                ex.ResponseBody?.Contains("executable file not found") == true)
-            {
-                throw new InvalidOperationException(
-                    $"The '{actBin}' binary was not found inside the Docker container. " +
-                    $"Ensure the image '{image}' has 'act' installed, or override CiCd__ActBinaryPath " +
-                    "with the correct path to the act binary inside the container.", ex);
-            }
-            catch (Exception ex) when (ex is HttpRequestException or IOException ||
-                (ex is OperationCanceledException oce && oce.CancellationToken != cancellationToken && !cancellationToken.IsCancellationRequested))
-            {
-                var startMsg = "Lost connection to the Docker daemon while starting the container. " +
-                    $"The container '{containerName}' (ID {container.ID[..12]}) may be in Created state. " +
-                    $"You can start it manually: `docker start {containerName}`, then inspect with `docker exec -it {containerName} sh`. " +
-                    "Or retry the run.";
-                await onLogLine($"[ERROR] {startMsg}", LogStream.Stderr);
-                foreach (var line in ex.ToString().Split('\n'))
-                    await onLogLine(line.TrimEnd('\r'), LogStream.Stderr);
-                throw new InvalidOperationException(startMsg, ex);
-            }
+            await StartContainerWithRetryAsync(container.ID, actBin, image, containerName, onLogLine, cancellationToken);
 
             if (useExecModel)
             {
                 // ── Exec model: run each step inside the container sequentially ─────────────
 
-                // Step 1: Write actrc to suppress the interactive image-selection prompt.
+                // Dynamically compute the number of steps so the [N/M] prefix is always correct.
+                var totalSteps = 2 + (hasGitRepo ? 1 : 0) + (!string.IsNullOrWhiteSpace(trigger.Workflow) ? 1 : 0);
+                var stepNum = 0;
+
+                // Step: git clone (when a repo URL is provided instead of a volume mount).
+                if (hasGitRepo)
+                {
+                    await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: git clone {trigger.GitRepoUrl}", LogStream.Stdout);
+                    var cloneExitCode = await ExecCommandAsync(
+                        container.ID,
+                        // Clone into /workspace so act can find the repo at its expected path.
+                        ["git", "clone", "--depth=1", trigger.GitRepoUrl!, "/workspace"],
+                        onLogLine,
+                        cancellationToken);
+                    if (cloneExitCode != 0)
+                        throw new Exception($"git clone failed with exit code {cloneExitCode} for URL '{trigger.GitRepoUrl}'");
+                }
+
+                // Step: Write actrc to suppress the interactive image-selection prompt.
                 // Use 'printf %b' so that the leading '-P' in the content is not misinterpreted
                 // as a printf option by /bin/sh (dash).
-                await onLogLine("[DEBUG] Step 1/3: writing actrc", LogStream.Stdout);
+                await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: writing actrc", LogStream.Stdout);
                 await ExecShellAsync(container.ID, BuildActrcSetupScript(actRunnerImage), onLogLine, cancellationToken);
 
-                // Step 2: Validate the workflow with actionlint (best-effort).
+                // Step: Validate the workflow with actionlint (best-effort — never aborts the run).
                 if (!string.IsNullOrWhiteSpace(trigger.Workflow))
                 {
-                    await onLogLine("[DEBUG] Step 2/3: actionlint validation", LogStream.Stdout);
+                    await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: actionlint validation", LogStream.Stdout);
                     await ExecShellAsync(container.ID, BuildActionlintExecScript(trigger.Workflow), onLogLine, cancellationToken);
                 }
-                else
-                {
-                    await onLogLine("[DEBUG] Step 2/3: actionlint skipped (no workflow set)", LogStream.Stdout);
-                }
 
-                // Step 3: Run act.
-                await onLogLine($"[DEBUG] Step 3/3: {string.Join(' ', actCmd)}", LogStream.Stdout);
+                // Step: Run act.
+                await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: {string.Join(' ', actCmd)}", LogStream.Stdout);
                 var actExitCode = await ExecCommandAsync(container.ID, actCmd, onLogLine, cancellationToken);
 
                 if (actExitCode != 0)
@@ -377,10 +377,81 @@ public partial class DockerCiCdRuntime(
     }
 
     /// <summary>
-    /// Retries a Docker API operation on connection-reset errors (HttpRequestException, IOException,
-    /// or an OperationCanceledException not caused by <paramref name="cancellationToken"/>).
-    /// Each retry is preceded by a 2-second delay and a connectivity ping to confirm the daemon is back.
+    /// Starts a container with retry/inspect logic that handles connection-reset errors.
+    /// After a transient error, inspects the container state:
+    /// if it is already "running", the start succeeded (response was lost); otherwise retries.
+    /// On hard failures (e.g. missing binary) the method throws immediately.
     /// </summary>
+    private async Task StartContainerWithRetryAsync(
+        string containerId,
+        string actBin,
+        string image,
+        string containerName,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken,
+        int maxAttempts = 3)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await dockerClient.Containers.StartContainerAsync(
+                    containerId, new ContainerStartParameters(), cancellationToken);
+                // StartContainerAsync succeeded — container is starting.
+                return;
+            }
+            catch (DockerApiException ex) when (
+                ex.StatusCode == System.Net.HttpStatusCode.BadRequest &&
+                ex.ResponseBody?.Contains("executable file not found") == true)
+            {
+                throw new InvalidOperationException(
+                    $"The '{actBin}' binary was not found inside the Docker container. " +
+                    $"Ensure the image '{image}' has 'act' installed, or override CiCd__ActBinaryPath " +
+                    "with the correct path to the act binary inside the container.", ex);
+            }
+            catch (Exception ex) when (
+                !cancellationToken.IsCancellationRequested &&
+                (ex is HttpRequestException or IOException ||
+                 (ex is OperationCanceledException oce && oce.CancellationToken != cancellationToken)))
+            {
+                // Connection reset or internal HTTP timeout. Inspect the container to determine
+                // whether Docker actually started it (response was lost) or not.
+                try
+                {
+                    var inspect = await dockerClient.Containers.InspectContainerAsync(
+                        containerId, CancellationToken.None);
+                    if (inspect.State?.Running == true || inspect.State?.Status == "running")
+                    {
+                        await onLogLine(
+                            $"[WARN] StartContainer: connection reset but container is running — proceeding",
+                            LogStream.Stdout);
+                        return;
+                    }
+                }
+                catch { /* inspection failed — fall through to retry */ }
+
+                if (attempt >= maxAttempts)
+                {
+                    var startMsg = "Lost connection to the Docker daemon while starting the container. " +
+                        $"The container '{containerName}' (ID {containerId[..12]}) may be in Created state. " +
+                        $"You can start it manually: `docker start {containerName}`, then inspect with `docker exec -it {containerName} sh`. " +
+                        "Or retry the run.";
+                    await onLogLine($"[ERROR] {startMsg}", LogStream.Stderr);
+                    foreach (var line in ex.ToString().Split('\n'))
+                        await onLogLine(line.TrimEnd('\r'), LogStream.Stderr);
+                    throw new InvalidOperationException(startMsg, ex);
+                }
+
+                await onLogLine(
+                    $"[WARN] StartContainer: connection reset (attempt {attempt}/{maxAttempts}), retrying in 2s…",
+                    LogStream.Stderr);
+                await Task.Delay(2000, cancellationToken);
+                await dockerClient.System.PingAsync(cancellationToken);
+            }
+        }
+    }
+
+
     private async Task<T> RetryDockerAsync<T>(
         Func<Task<T>> operation,
         string context,

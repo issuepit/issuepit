@@ -8,7 +8,9 @@ public record WorkflowJobNode(
     string Id,
     string Name,
     string? RunsOn,
-    IReadOnlyList<string> Needs);
+    IReadOnlyList<string> Needs,
+    /// <summary>Workflow filename (e.g. <c>backend.yml</c>) — set only when the graph merges multiple files.</summary>
+    string? WorkflowFile = null);
 
 /// <summary>A directed edge from one job to another (dependency: <see cref="From"/> must complete before <see cref="To"/>).</summary>
 public record WorkflowEdge(string From, string To);
@@ -46,6 +48,71 @@ public static class WorkflowGraphParser
         var warnings = await TryRunActionlintAsync(filePath, cancellationToken);
 
         return graph with { Warnings = warnings };
+    }
+
+    /// <summary>
+    /// Parses all <c>*.yml</c> / <c>*.yaml</c> files found in <paramref name="workflowsDir"/> and
+    /// merges them into a single <see cref="WorkflowGraph"/>.
+    /// <para>
+    /// When only one file exists the result is identical to calling <see cref="ParseFileAsync"/>
+    /// for that file (job IDs unchanged). When multiple files exist every job ID is prefixed with
+    /// the file's name stem (e.g. <c>backend/build</c>, <c>frontend/build</c>) so that jobs with
+    /// the same ID in different files remain distinct. The <see cref="WorkflowJobNode.WorkflowFile"/>
+    /// property is set for every node in the multi-file case.
+    /// </para>
+    /// </summary>
+    public static async Task<WorkflowGraph> ParseDirectoryAsync(string workflowsDir, CancellationToken cancellationToken = default)
+    {
+        var files = Directory
+            .EnumerateFiles(workflowsDir, "*.yml")
+            .Concat(Directory.EnumerateFiles(workflowsDir, "*.yaml"))
+            .OrderBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (files.Count == 0)
+            return new WorkflowGraph([], [], []);
+
+        // Single file — behave exactly as ParseFileAsync.
+        if (files.Count == 1)
+            return await ParseFileAsync(files[0], cancellationToken);
+
+        // Multiple files — parse each and merge with prefixed job IDs.
+        var allJobs = new List<WorkflowJobNode>();
+        var allEdges = new List<WorkflowEdge>();
+        var allWarnings = new List<string>();
+
+        foreach (var filePath in files)
+        {
+            var yamlContent = await System.IO.File.ReadAllTextAsync(filePath, cancellationToken);
+            var fileGraph = ParseYaml(yamlContent);
+            var stem = Path.GetFileName(filePath); // e.g. "backend.yml"
+            var prefix = Path.GetFileNameWithoutExtension(filePath); // e.g. "backend"
+
+            // Build a lookup so we can rewrite 'needs' references within this file.
+            var fileJobIds = new HashSet<string>(fileGraph.Jobs.Select(j => j.Id), StringComparer.OrdinalIgnoreCase);
+
+            foreach (var job in fileGraph.Jobs)
+            {
+                var prefixedId = $"{prefix}/{job.Id}";
+                var prefixedNeeds = job.Needs
+                    .Select(n => fileJobIds.Contains(n) ? $"{prefix}/{n}" : n)
+                    .ToList();
+                allJobs.Add(job with { Id = prefixedId, Needs = prefixedNeeds, WorkflowFile = stem });
+            }
+
+            foreach (var edge in fileGraph.Edges)
+            {
+                var from = fileJobIds.Contains(edge.From) ? $"{prefix}/{edge.From}" : edge.From;
+                var to   = fileJobIds.Contains(edge.To)   ? $"{prefix}/{edge.To}"   : edge.To;
+                allEdges.Add(new WorkflowEdge(from, to));
+            }
+
+            var fileWarnings = await TryRunActionlintAsync(filePath, cancellationToken);
+            foreach (var w in fileWarnings)
+                allWarnings.Add(w);
+        }
+
+        return new WorkflowGraph(allJobs, allEdges, allWarnings);
     }
 
     /// <summary>
