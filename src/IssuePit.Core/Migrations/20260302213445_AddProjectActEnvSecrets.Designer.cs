@@ -3,6 +3,7 @@ using System;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace IssuePit.Core.Migrations
 {
     [DbContext(typeof(IssuePitDbContext))]
-    partial class IssuePitDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260302213445_AddProjectActEnvSecrets")]
+    partial class AddProjectActEnvSecrets
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -625,33 +628,6 @@ namespace IssuePit.Core.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("issue_comments");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.IssueLink", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("IssueId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("LinkType")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("TargetIssueId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IssueId");
-
-                    b.HasIndex("TargetIssueId");
-
-                    b.ToTable("issue_links");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.IssueTask", b =>
@@ -1623,25 +1599,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.IssueLink", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Issue", "Issue")
-                        .WithMany("Links")
-                        .HasForeignKey("IssueId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("IssuePit.Core.Entities.Issue", "TargetIssue")
-                        .WithMany()
-                        .HasForeignKey("TargetIssueId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Issue");
-
-                    b.Navigation("TargetIssue");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.IssueTask", b =>
                 {
                     b.HasOne("IssuePit.Core.Entities.User", "Assignee")
@@ -1981,8 +1938,6 @@ namespace IssuePit.Core.Migrations
             modelBuilder.Entity("IssuePit.Core.Entities.Issue", b =>
                 {
                     b.Navigation("Assignees");
-
-                    b.Navigation("Links");
 
                     b.Navigation("SubIssues");
                 });

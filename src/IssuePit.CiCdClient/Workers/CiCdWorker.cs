@@ -129,6 +129,17 @@ public class CiCdWorker(
 
         if (trigger is null || trigger.ProjectId == Guid.Empty) return;
 
+        // Inject project-level ActEnv/ActSecrets if not already supplied by the caller.
+        var project = await db.Projects.FindAsync([trigger.ProjectId], stoppingToken);
+        if (project is not null)
+        {
+            trigger = trigger with
+            {
+                ActEnv = trigger.ActEnv ?? project.ActEnv,
+                ActSecrets = trigger.ActSecrets ?? project.ActSecrets,
+            };
+        }
+
         var run = new CiCdRun
         {
             Id = Guid.NewGuid(),

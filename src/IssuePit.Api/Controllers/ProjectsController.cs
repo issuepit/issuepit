@@ -62,6 +62,8 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
         project.GitHubRepo = updated.GitHubRepo;
         project.MountRepositoryInDocker = updated.MountRepositoryInDocker;
         project.MaxConcurrentRunners = updated.MaxConcurrentRunners;
+        project.ActEnv = updated.ActEnv;
+        project.ActSecrets = updated.ActSecrets;
         await db.SaveChangesAsync();
         return Ok(project);
     }
@@ -369,12 +371,14 @@ public record ProjectDto(
     Guid Id, Guid OrgId, string Name, string Slug,
     string? Description, string? GitHubRepo, DateTime CreatedAt,
     int IssueCount, int MemberCount,
-    bool MountRepositoryInDocker, int MaxConcurrentRunners)
+    bool MountRepositoryInDocker, int MaxConcurrentRunners,
+    string? ActEnv, string? ActSecrets)
 {
     public static Expression<Func<Project, ProjectDto>> Selector(IssuePitDbContext db) =>
         p => new ProjectDto(
             p.Id, p.OrgId, p.Name, p.Slug, p.Description, p.GitHubRepo, p.CreatedAt,
             db.Issues.Count(i => i.ProjectId == p.Id),
             db.ProjectMembers.Count(m => m.ProjectId == p.Id),
-            p.MountRepositoryInDocker, p.MaxConcurrentRunners);
+            p.MountRepositoryInDocker, p.MaxConcurrentRunners,
+            p.ActEnv, p.ActSecrets);
 }

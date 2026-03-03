@@ -25,4 +25,8 @@ public record TriggerPayload(
     /// <summary>Additional CLI arguments appended to the act command (e.g. "--verbose --reuse").</summary>
     string? CustomArgs = null,
     /// <summary>When true the retry proceeds even if another run for the same project is already in progress.</summary>
-    bool ForceRetry = false);
+    bool ForceRetry = false,
+    /// <summary>Newline-separated KEY=VALUE pairs passed as <c>--env</c> arguments to <c>act</c>.</summary>
+    string? ActEnv = null,
+    /// <summary>Newline-separated KEY=VALUE pairs passed as <c>--secret</c> arguments to <c>act</c>.</summary>
+    string? ActSecrets = null);
