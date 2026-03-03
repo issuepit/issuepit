@@ -18,10 +18,10 @@ public class LoginPage(IPage page)
         await GotoAsync();
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
         await page.ClickAsync("button:has-text('Create account')");
-        // Wait for the register form to be visible before interacting with it.
-        // The email field is unique to the register form; waiting for it ensures the
-        // tab switch has completed and the correct form is in the DOM before we fill fields.
+      
         await page.WaitForSelectorAsync("input[autocomplete='email']");
+        await page.WaitForSelectorAsync("input[autocomplete='new-password']");
+      
         await page.FillAsync("input[autocomplete='username']", username);
         await page.FillAsync("input[autocomplete='new-password']", password);
         await page.ClickAsync("button[type='submit']");
