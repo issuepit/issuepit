@@ -58,7 +58,8 @@
               </div>
               <textarea v-if="descTab === 'write'" v-model="bodyEdit" rows="15" autofocus
                 class="w-full bg-transparent text-sm text-gray-300 focus:outline-none resize-y font-mono min-h-[15rem]"
-                placeholder="Describe this issue... (Markdown supported)"></textarea>
+                placeholder="Describe this issue... (Markdown supported)"
+                @paste="e => handleImagePaste(e, md => bodyEdit += md)"></textarea>
               <div v-else class="prose prose-invert prose-sm max-w-none min-h-16 text-sm"
                 v-html="renderedBodyEdit"></div>
               <div class="flex gap-2 mt-3">
@@ -298,8 +299,11 @@
             <!-- Add comment -->
             <div class="border border-gray-700 rounded-lg overflow-hidden">
               <textarea v-model="newComment" rows="3" placeholder="Leave a comment..."
-                class="w-full bg-gray-800 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none resize-none" />
+                class="w-full bg-gray-800 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none resize-none"
+                @paste="e => handleImagePaste(e, md => newComment += md)" />
               <div class="flex justify-end bg-gray-800/50 px-3 py-2 border-t border-gray-700">
+                <p v-if="uploadingImage" class="text-xs text-gray-400 mr-auto self-center">Uploading image…</p>
+                <p v-else-if="uploadImageError" class="text-xs text-red-400 mr-auto self-center">{{ uploadImageError }}</p>
                 <button @click="submitComment" :disabled="!newComment.trim()"
                   class="text-xs bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-3 py-1.5 rounded transition-colors">
                   Comment
@@ -466,6 +470,7 @@ const agentsStore = useAgentsStore()
 const milestonesStore = useMilestonesStore()
 const projectsStore = useProjectsStore()
 const api = useApi()
+const { uploading: uploadingImage, uploadError: uploadImageError, handlePaste: handleImagePaste } = useImageUpload()
 
 const editingTitle = ref(false)
 const editingBody = ref(false)
