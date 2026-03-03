@@ -671,3 +671,36 @@ export interface ProjectMetricSnapshot {
   totalAgentRuns: number
   totalCiCdRuns: number
 }
+
+export enum SkillSyncStatus {
+  None = 0,
+  Synced = 1,
+  Ahead = 2,
+  Behind = 3,
+  Error = 4,
+}
+
+export const SkillSyncStatusLabels: Record<SkillSyncStatus, string> = {
+  [SkillSyncStatus.None]: 'No Repo',
+  [SkillSyncStatus.Synced]: 'Synced',
+  [SkillSyncStatus.Ahead]: 'Ahead',
+  [SkillSyncStatus.Behind]: 'Behind',
+  [SkillSyncStatus.Error]: 'Error',
+}
+
+export interface Skill {
+  id: string
+  orgId: string
+  name: string
+  description?: string
+  content?: string
+  gitRepoUrl?: string
+  gitSubDir?: string
+  gitAuthUsername?: string
+  syncStatus: SkillSyncStatus
+  syncStatusName: string
+  syncMessage?: string
+  lastSyncedAt?: string
+  createdAt: string
+  updatedAt: string
+}
