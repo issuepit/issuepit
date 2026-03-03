@@ -672,6 +672,7 @@ export interface WorkflowJobNode {
   runsOn?: string
   needs: string[]
   workflowFile?: string
+  callerWorkflowFile?: string
 }
 
 export interface WorkflowEdge {
@@ -683,6 +684,7 @@ export interface WorkflowGraph {
   jobs: WorkflowJobNode[]
   edges: WorkflowEdge[]
   warnings: string[]
+  workflowTriggers?: Record<string, string[]>
 }
 
 export interface AgentSessionLog {

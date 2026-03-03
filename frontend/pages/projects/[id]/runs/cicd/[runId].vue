@@ -228,6 +228,24 @@
               </svg>
             </button>
           </div>
+
+          <!-- Jobs tab controls -->
+          <div v-else-if="activeSection === 'jobs' && hasMultipleWorkflowFiles" class="flex items-center gap-2">
+            <button
+              :class="[
+                'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md transition-colors',
+                selectedTriggerFilters.size > 0 ? 'bg-brand-700 text-white' : 'text-gray-500 hover:text-gray-300'
+              ]"
+              title="Filter workflows by trigger event"
+              @click="showTriggerFilterModal = true">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+              </svg>
+              Filter triggers
+              <span v-if="selectedTriggerFilters.size > 0" class="ml-0.5 bg-brand-500 text-white rounded-full px-1 text-[10px] leading-4">{{ selectedTriggerFilters.size }}</span>
+            </button>
+          </div>
         </div>
 
         <!-- Jobs tab -->
@@ -266,15 +284,18 @@
                   <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
                     <path d="M0,0 L0,6 L8,3 z" fill="#4b5563" />
                   </marker>
+                  <marker id="arrow-hi" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                    <path d="M0,0 L0,6 L8,3 z" fill="#6366f1" />
+                  </marker>
                 </defs>
                 <path
                   v-for="(edge, i) in graphLayout.edges"
                   :key="i"
                   :d="edge.path"
                   fill="none"
-                  stroke="#4b5563"
-                  stroke-width="1.5"
-                  marker-end="url(#arrow)" />
+                  :stroke="edge.highlighted ? '#6366f1' : '#4b5563'"
+                  :stroke-width="edge.highlighted ? 2 : 1.5"
+                  :marker-end="edge.highlighted ? 'url(#arrow-hi)' : 'url(#arrow)'" />
               </svg>
 
               <!-- Job boxes layer -->
@@ -282,21 +303,28 @@
                 :style="{ position: 'relative', width: graphLayout.svgWidth + 'px', minHeight: graphLayout.svgHeight + 'px', zIndex: 1 }"
                 style="z-index: 1">
                 <div
-                  v-for="job in enrichedJobs"
+                  v-for="job in visibleJobs"
                   :key="job.id"
                   :style="{ position: 'absolute', left: job.x + 'px', top: job.y + 'px', width: '220px' }"
                   :class="[
                     'flex flex-col items-start gap-1 px-4 py-3 rounded-xl border transition-all text-left cursor-pointer',
                     selectedJob === job.id
                       ? 'border-brand-500 bg-brand-950/30 ring-1 ring-brand-500/40'
-                      : 'border-gray-700 bg-gray-800/80 hover:border-gray-600',
+                      : connectedJobIds.has(job.id)
+                        ? 'border-brand-700/60 bg-brand-950/10 ring-1 ring-brand-700/30'
+                        : selectedJob
+                          ? 'border-gray-800 bg-gray-800/40 opacity-50'
+                          : 'border-gray-700 bg-gray-800/80 hover:border-gray-600',
                   ]"
                   @click="toggleJobFilter(job.id)">
                   <span class="flex items-center gap-1.5 w-full">
                     <span :class="jobStatusDot(job)" class="w-2 h-2 rounded-full shrink-0" />
                     <span class="text-sm font-medium text-white break-words leading-tight">{{ job.name }}</span>
                   </span>
-                  <span v-if="job.workflowFile" class="text-xs text-gray-500 font-mono">{{ job.workflowFile }}</span>
+                  <span v-if="job.callerWorkflowFile || job.workflowFile" class="text-xs text-gray-500 font-mono">
+                    <template v-if="job.callerWorkflowFile">{{ job.callerWorkflowFile }} / {{ job.workflowFile }}</template>
+                    <template v-else>{{ job.workflowFile }}</template>
+                  </span>
                   <span :class="jobStatusClass(job)" class="text-xs px-1.5 py-0.5 rounded-full font-medium">
                     {{ jobStatusLabel(job) }}
                   </span>
@@ -310,6 +338,8 @@
                     </template>
                   </span>
                   <span class="text-xs text-gray-600">{{ job.logCount }} log line{{ job.logCount === 1 ? '' : 's' }}</span>
+                  <!-- Matrix jobs: show instance count -->
+                  <span v-if="job.matrixCount > 1" class="text-xs text-brand-400/70 font-mono">{{ job.matrixCount }}× matrix</span>
 
                   <!-- Create issue button for failed jobs -->
                   <button
@@ -329,7 +359,7 @@
             <!-- Logs filtered to selected job, grouped by step -->
             <div v-if="selectedJob" class="mt-4">
               <div class="flex items-center gap-2 mb-2">
-                <span class="text-xs text-gray-400">Showing logs for job: <span class="text-white font-mono">{{ selectedJob }}</span></span>
+                <span class="text-xs text-gray-400">Showing logs for job: <span class="text-white font-mono">{{ visibleJobs.find(j => j.id === selectedJob)?.name ?? selectedJob }}</span></span>
                 <button class="text-xs text-gray-500 hover:text-gray-300 transition-colors" @click="selectedJob = null">Clear filter</button>
               </div>
               <div class="bg-gray-950 rounded-lg p-4 font-mono text-xs overflow-auto max-h-[500px]">
@@ -435,6 +465,46 @@
         </div>
       </div>
     </Teleport>
+
+    <!-- Trigger filter modal -->
+    <Teleport to="body">
+      <div v-if="showTriggerFilterModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @click.self="showTriggerFilterModal = false">
+        <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-xl p-6 w-full max-w-sm">
+          <h3 class="text-base font-semibold text-white mb-1">Filter workflows by trigger</h3>
+          <p class="text-xs text-gray-500 mb-4">Show only workflows that are triggered by the selected events. Events matching this run's triggers are marked below.</p>
+
+          <div class="space-y-2 mb-5">
+            <label
+              v-for="evt in allAvailableTriggers"
+              :key="evt"
+              class="flex items-center gap-3 cursor-pointer group">
+              <input
+                type="checkbox"
+                :checked="selectedTriggerFilters.has(evt)"
+                :aria-label="runWorkflowTriggers.includes(evt) ? `${evt} (used by this run)` : evt"
+                class="rounded border-gray-600 bg-gray-800 text-brand-500 focus:ring-brand-500"
+                @change="toggleTriggerFilter(evt)" />
+              <span class="text-sm text-gray-300 group-hover:text-white transition-colors font-mono">{{ evt }}</span>
+              <span v-if="runWorkflowTriggers.includes(evt)" class="ml-auto text-xs text-brand-400 font-medium">this run</span>
+            </label>
+            <div v-if="!allAvailableTriggers.length" class="text-xs text-gray-500">No trigger information available for these workflows.</div>
+          </div>
+
+          <div class="flex justify-between items-center">
+            <button
+              class="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+              @click="clearTriggerFilters">
+              Clear all
+            </button>
+            <button
+              class="px-4 py-1.5 text-sm bg-brand-600 hover:bg-brand-500 text-white rounded-md transition-colors"
+              @click="showTriggerFilterModal = false">
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -511,6 +581,67 @@ const streamTabs = [
 ]
 const activeStream = ref<string | null>(null)
 
+// ── Workflow trigger filter modal ─────────────────────────────────────────────
+
+/** Whether the trigger filter modal is open. */
+const showTriggerFilterModal = ref(false)
+
+/** The set of trigger event names the user has selected for filtering (empty = show all). */
+const selectedTriggerFilters = ref(new Set<string>())
+
+/** True when the graph contains jobs from more than one workflow file (filter is relevant). */
+const hasMultipleWorkflowFiles = computed(() => {
+  const files = new Set(
+    (store.currentRunGraph?.jobs ?? []).map(j => j.workflowFile).filter(Boolean),
+  )
+  return files.size > 1
+})
+
+/** Sorted list of all unique trigger event names across all workflow files in the graph. */
+const allAvailableTriggers = computed<string[]>(() => {
+  const triggers = store.currentRunGraph?.workflowTriggers
+  if (!triggers) return []
+  const all = new Set<string>()
+  for (const evts of Object.values(triggers))
+    for (const evt of evts) all.add(evt)
+  return Array.from(all).sort()
+})
+
+/** Triggers of the workflow that triggered this run (extracted from workflowTriggers). */
+const runWorkflowTriggers = computed<string[]>(() => {
+  const triggers = store.currentRunGraph?.workflowTriggers
+  if (!store.currentRun?.workflow || !triggers) return []
+  // Normalise to just the filename (run.workflow may be a full path like ".github/workflows/ci.yml")
+  const workflowFile = store.currentRun.workflow.split('/').pop() ?? store.currentRun.workflow
+  return triggers[workflowFile] ?? []
+})
+
+/** Set of workflow filenames whose triggers overlap with the selected filter events. Empty = show all. */
+const triggerVisibleFiles = computed<Set<string>>(() => {
+  if (selectedTriggerFilters.value.size === 0) return new Set()
+  const allTriggers = store.currentRunGraph?.workflowTriggers
+  if (!allTriggers) return new Set()
+
+  const visible = new Set<string>()
+  for (const [file, fileTriggers] of Object.entries(allTriggers)) {
+    if (fileTriggers.some(t => selectedTriggerFilters.value.has(t))) {
+      visible.add(file)
+    }
+  }
+  return visible
+})
+
+function toggleTriggerFilter(evt: string) {
+  const s = new Set(selectedTriggerFilters.value)
+  if (s.has(evt)) s.delete(evt)
+  else s.add(evt)
+  selectedTriggerFilters.value = s
+}
+
+function clearTriggerFilters() {
+  selectedTriggerFilters.value = new Set()
+}
+
 const selectedJob = ref<string | null>(null)
 
 const filteredLogs = computed(() =>
@@ -519,11 +650,80 @@ const filteredLogs = computed(() =>
     : store.currentRunLogs.filter(l => l.stream === activeStream.value)
 )
 
-const jobFilteredLogs = computed(() =>
-  selectedJob.value
-    ? store.currentRunLogs.filter(l => l.jobId === selectedJob.value)
-    : []
-)
+// ── Log job ID ↔ graph node ID resolution ──────────────────────────────────────
+// `act` emits job identifiers in its JSON logs using the job's display name (from
+// the `name:` YAML field), not the YAML key. For matrix jobs it appends `-N`.
+// Reusable workflow calls may prepend the workflow or caller job name with a `/`.
+// Our graph node IDs use the file-stem / yaml-key format (e.g. "docker/build").
+// We need a fuzzy resolver to map log IDs → graph node IDs to avoid duplicate boxes.
+
+/** Pre-built lookup indexes so resolveLogJobId() runs in O(1) per call. */
+const graphJobIndexes = computed(() => {
+  const graphJobs = store.currentRunGraph?.jobs ?? []
+  const byId = new Map<string, string>()   // lowercase_id → graph_id
+  const byName = new Map<string, string>() // lowercase_name → graph_id
+
+  for (const j of graphJobs) {
+    byId.set(j.id.toLowerCase(), j.id)
+    byName.set(j.name.trim().toLowerCase(), j.id)
+    // Also index just the last segment of compound names ("Caller / Callee" → "callee")
+    const nameParts = j.name.split(/\s*\/\s*/)
+    if (nameParts.length > 1) {
+      const lastPart = nameParts[nameParts.length - 1].trim().toLowerCase()
+      if (!byName.has(lastPart)) byName.set(lastPart, j.id)
+    }
+  }
+  return { byId, byName }
+})
+
+/**
+ * Maps an act log job ID to the matching graph node ID.
+ *
+ * act uses display names (e.g. "Build & Push") rather than YAML keys ("build").
+ * For matrix jobs it appends "-N" (e.g. "Build & Push-2").
+ * Reusable workflow calls prefix with the workflow/caller name ("Docker Build & Push/Build & Push").
+ *
+ * Matching order:
+ *  1. Exact ID match (case-insensitive, handles file-prefixed IDs like "docker/build").
+ *  2. Strip trailing matrix index "-N", retry exact ID.
+ *  3. Display-name match (full or stripped).
+ *  4. Last path segment of a compound "/" path, stripped of matrix index.
+ *  5. No match → return original log ID (shows as standalone box).
+ */
+function resolveLogJobId(logId: string): string {
+  const { byId, byName } = graphJobIndexes.value
+  const norm = logId.trim().toLowerCase()
+
+  // 1. Exact ID match
+  if (byId.has(norm)) return byId.get(norm)!
+
+  // 2. Strip trailing matrix index "-N" and retry
+  const stripped = norm.replace(/-\d+$/, '').trim()
+  if (stripped !== norm && byId.has(stripped)) return byId.get(stripped)!
+
+  // 3. Display-name match (full then stripped)
+  if (byName.has(norm)) return byName.get(norm)!
+  if (stripped !== norm && byName.has(stripped)) return byName.get(stripped)!
+
+  // 4. Compound path — match last segment (e.g. "Docker Build & Push/Build & Push-2")
+  const slashIdx = norm.lastIndexOf('/')
+  if (slashIdx !== -1) {
+    const lastSeg = norm.slice(slashIdx + 1).trim().replace(/-\d+$/, '').trim()
+    if (byName.has(lastSeg)) return byName.get(lastSeg)!
+    if (byId.has(lastSeg)) return byId.get(lastSeg)!
+  }
+
+  return logId // No match — use as-is
+}
+
+const jobFilteredLogs = computed(() => {
+  if (!selectedJob.value) return []
+  const entry = jobLogMap.value.get(selectedJob.value)
+  const rawIds = entry?.rawJobIds
+  if (rawIds && rawIds.size > 0)
+    return store.currentRunLogs.filter(l => !!l.jobId && rawIds.has(l.jobId))
+  return store.currentRunLogs.filter(l => l.jobId === selectedJob.value)
+})
 
 /** Groups job-filtered logs by step, preserving order. Each group has a stepId (null = no step) and its log lines. */
 interface StepGroup { stepId: string | null; logs: CiCdRunLog[] }
@@ -554,20 +754,26 @@ interface EnrichedJob {
   isComplete: boolean
   hasStarted: boolean
   workflowFile?: string
+  callerWorkflowFile?: string
   startedAt?: string
   endedAt?: string
+  /** Number of distinct act job IDs (log streams) that map to this graph node. >1 means matrix job. */
+  matrixCount: number
   // layout
   x: number
   y: number
 }
 
 const jobLogMap = computed(() => {
-  const map = new Map<string, { logCount: number; hasError: boolean; isComplete: boolean; startedAt?: string; endedAt?: string }>()
+  const map = new Map<string, { logCount: number; hasError: boolean; isComplete: boolean; startedAt?: string; endedAt?: string; rawJobIds: Set<string> }>()
   for (const log of store.currentRunLogs) {
     if (!log.jobId) continue
-    if (!map.has(log.jobId)) map.set(log.jobId, { logCount: 0, hasError: false, isComplete: false })
-    const entry = map.get(log.jobId)!
+    // Resolve the act job ID to the matching graph node ID (fuzzy: display names, matrix suffix, compound path).
+    const resolvedId = resolveLogJobId(log.jobId)
+    if (!map.has(resolvedId)) map.set(resolvedId, { logCount: 0, hasError: false, isComplete: false, rawJobIds: new Set() })
+    const entry = map.get(resolvedId)!
     entry.logCount++
+    entry.rawJobIds.add(log.jobId)
     if (log.stream === 'stderr') entry.hasError = true
     // Track first and last log timestamps as job start/end
     if (!entry.startedAt) entry.startedAt = log.timestamp
@@ -598,7 +804,7 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
   const allIds = new Set([...graphJobs.map(j => j.id), ...logJobIds])
 
   // Build a map of job metadata
-  const jobMeta = new Map(graphJobs.map(j => [j.id, { name: j.name, needs: j.needs, workflowFile: j.workflowFile }]))
+  const jobMeta = new Map(graphJobs.map(j => [j.id, { name: j.name, needs: j.needs, workflowFile: j.workflowFile, callerWorkflowFile: j.callerWorkflowFile }]))
 
   // Assign columns via BFS from roots (no needs)
   const colMap = new Map<string, number>()
@@ -669,6 +875,8 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
       hasStarted,
       isComplete,
       workflowFile: meta?.workflowFile,
+      callerWorkflowFile: meta?.callerWorkflowFile,
+      matrixCount: logs.rawJobIds?.size ?? (hasStarted ? 1 : 0),
       startedAt: logs.startedAt,
       // When run ended but the job never emitted a final timestamp, use the run's end time.
       endedAt: isComplete && !logs.endedAt ? (store.currentRun?.endedAt ?? logs.startedAt) : logs.endedAt,
@@ -678,20 +886,62 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
   })
 })
 
+/** Jobs visible after applying the workflow trigger filter. */
+const visibleJobs = computed<EnrichedJob[]>(() => {
+  if (selectedTriggerFilters.value.size === 0 || triggerVisibleFiles.value.size === 0)
+    return enrichedJobs.value
+  return enrichedJobs.value.filter(j => !j.workflowFile || triggerVisibleFiles.value.has(j.workflowFile))
+})
+
+/**
+ * Set of job IDs connected to the currently selected job (all ancestors + descendants via edges).
+ * Used for visual highlighting of related nodes.
+ */
+const connectedJobIds = computed<Set<string>>(() => {
+  if (!selectedJob.value) return new Set()
+  const edges = store.currentRunGraph?.edges ?? []
+  const connected = new Set<string>()
+
+  // BFS forward (downstream) and backward (upstream)
+  const queue = [selectedJob.value]
+  const visited = new Set([selectedJob.value])
+  while (queue.length) {
+    const id = queue.shift()!
+    for (const e of edges) {
+      if (e.from === id && !visited.has(e.to)) {
+        visited.add(e.to)
+        connected.add(e.to)
+        queue.push(e.to)
+      }
+      if (e.to === id && !visited.has(e.from)) {
+        visited.add(e.from)
+        connected.add(e.from)
+        queue.push(e.from)
+      }
+    }
+  }
+  return connected
+})
+
 // ── SVG graph layout ───────────────────────────────────────────────────────────
 
-interface SvgEdge { path: string }
+interface SvgEdge { path: string; highlighted: boolean }
 
 const graphLayout = computed<{ svgWidth: number; svgHeight: number; edges: SvgEdge[] }>(() => {
   const BOX_W = 220
   const BOX_H = 130
   const PAD = 16
 
-  if (!enrichedJobs.value.length) return { svgWidth: 0, svgHeight: 0, edges: [] }
+  if (!visibleJobs.value.length) return { svgWidth: 0, svgHeight: 0, edges: [] }
 
-  const posMap = new Map(enrichedJobs.value.map(j => [j.id, { x: j.x, y: j.y }]))
+  const visibleIds = new Set(visibleJobs.value.map(j => j.id))
+  const posMap = new Map(visibleJobs.value.map(j => [j.id, { x: j.x, y: j.y }]))
+  const highlightedIds = connectedJobIds.value
+  const sel = selectedJob.value
 
-  const edges = (store.currentRunGraph?.edges ?? []).map(e => {
+  const edges = (store.currentRunGraph?.edges ?? [])
+    .filter(e => visibleIds.has(e.from) && visibleIds.has(e.to))
+    .map(e => {
     const from = posMap.get(e.from)
     const to = posMap.get(e.to)
     if (!from || !to) return null
@@ -701,12 +951,13 @@ const graphLayout = computed<{ svgWidth: number; svgHeight: number; edges: SvgEd
     const x2 = to.x
     const y2 = to.y + BOX_H / 2
     const cx = (x1 + x2) / 2
+    const highlighted = sel !== null && (e.from === sel || e.to === sel || highlightedIds.has(e.from) || highlightedIds.has(e.to))
 
-    return { path: `M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}` }
+    return { path: `M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}`, highlighted }
   }).filter((e): e is SvgEdge => e !== null)
 
-  const maxX = Math.max(...enrichedJobs.value.map(j => j.x)) + BOX_W + PAD
-  const maxY = Math.max(...enrichedJobs.value.map(j => j.y)) + BOX_H + PAD
+  const maxX = Math.max(...visibleJobs.value.map(j => j.x)) + BOX_W + PAD
+  const maxY = Math.max(...visibleJobs.value.map(j => j.y)) + BOX_H + PAD
 
   return { svgWidth: maxX, svgHeight: maxY, edges }
 })
