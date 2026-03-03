@@ -201,7 +201,7 @@ const statuses = [
   { value: IssueStatus.Cancelled, label: 'Cancelled' }
 ]
 
-const { priorityIcon, priorityColor, priorities } = usePriority()
+const { priorities } = usePriority()
 
 const types = [
   { value: IssueType.Issue, label: '📋 Issue' },

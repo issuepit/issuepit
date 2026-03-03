@@ -12,12 +12,47 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
     {
         await SeedDemoUsersAsync(tenantId);
         await SeedDemoDataAsync(tenantId);
+        await SeedEvilCorpAsync(tenantId);
     }
 
     private async Task SeedDemoUsersAsync(Guid tenantId)
     {
-        var demoUsers = new[] { ("alice", "alice@localhost"), ("bob", "bob@localhost") };
-        foreach (var (username, email) in demoUsers)
+        var demoUsers = new[]
+        {
+            // Honest / generic participants (cryptographic naming convention)
+            ("alice",   "alice@localhost",   "The sender who initiates communication."),
+            ("bob",     "bob@localhost",     "The intended recipient."),
+            ("carol",   "carol@localhost",   "A third honest participant."),
+            ("caesar",  "caesar@localhost",  "Named after the Caesar cipher; an early cryptographer."),
+            ("dave",    "dave@localhost",    "A fourth participant, sometimes called Dan."),
+            ("erin",    "erin@localhost",    "Occasionally used as an additional honest participant."),
+            ("frank",   "frank@localhost",   "Another generic participant."),
+            ("grace",   "grace@localhost",   "Sometimes used as an additional user."),
+            ("heidi",   "heidi@localhost",   "Common extra participant in protocol examples."),
+            ("ivan",    "ivan@localhost",    "Additional honest participant."),
+            ("judy",    "judy@localhost",    "A judge or dispute resolver."),
+            ("joe",     "joe@localhost",     "Generic user in examples."),
+            ("niaj",    "niaj@localhost",    "Generic participant (used in RFC examples)."),
+            ("olivia",  "olivia@localhost",  "Honest participant (contrast with Oscar)."),
+            ("peggy",   "peggy@localhost",   "The Prover in zero-knowledge proofs."),
+            ("rupert",  "rupert@localhost",  "Occasionally used as another participant."),
+            ("sybil",   "sybil@localhost",   "Used both as participant and attacker (Sybil attack)."),
+            ("trent",   "trent@localhost",   "Trusted third party / authority."),
+            ("victor",  "victor@localhost",  "The Verifier in zero-knowledge proofs."),
+            ("walter",  "walter@localhost",  "The Warden monitoring communication."),
+            // Attackers
+            ("eve",       "eve@localhost",       "Passive eavesdropper."),
+            ("mallory",   "mallory@localhost",   "Active malicious attacker (MITM)."),
+            ("malice",    "malice@localhost",    "Personification of malicious intent."),
+            ("trudy",     "trudy@localhost",     "Active intruder (similar to Mallory)."),
+            ("oscar",     "oscar@localhost",     "Opponent / outsider."),
+            ("hackerman", "hackerman@localhost",  "Generic attacker label (less formal)."),
+            // Theoretical / proof-system participants
+            ("arthur",  "arthur@localhost",  "Polynomial-time verifier in interactive proofs."),
+            ("merlin",  "merlin@localhost",  "All-powerful prover in complexity theory."),
+            ("zeke",    "zeke@localhost",    "Occasionally used in academic protocol examples."),
+        };
+        foreach (var (username, email, description) in demoUsers)
         {
             if (!await db.Users.AnyAsync(u => u.Username == username && u.TenantId == tenantId))
             {
@@ -27,6 +62,7 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
                     TenantId = tenantId,
                     Username = username,
                     Email = email,
+                    Description = description,
                     CreatedAt = DateTime.UtcNow,
                 };
                 user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(username);
@@ -548,6 +584,84 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
         await db.SaveChangesAsync();
 
         logger.LogInformation("Demo data seeded: org 'Acme Corp', 4 projects (Frontend, Backend API, IssuePit, Common Agenda), 28 issues, 4 agents, 2 MCP servers, milestones, assignees, comments, code review comments, CI/CD run, metric snapshots.");
+    }
+
+    private async Task SeedEvilCorpAsync(Guid tenantId)
+    {
+        // Guard: only seed once
+        if (await db.Organizations.AnyAsync(o => o.TenantId == tenantId && o.Slug == "evilcorp"))
+            return;
+
+        logger.LogInformation("Seeding EvilCorp organization with thematic teams...");
+
+        var evilCorpOrg = new Organization
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            Name = "EvilCorp",
+            Slug = "evilcorp",
+            CreatedAt = DateTime.UtcNow,
+        };
+        db.Organizations.Add(evilCorpOrg);
+        await db.SaveChangesAsync();
+
+        // Resolve users by username
+        User? GetUser(string username) =>
+            db.Users.Local.FirstOrDefault(u => u.Username == username && u.TenantId == tenantId)
+            ?? db.Users.FirstOrDefault(u => u.Username == username && u.TenantId == tenantId);
+
+        // --- Teams ---
+        var teamHonest = new Team
+        {
+            Id = Guid.NewGuid(),
+            OrgId = evilCorpOrg.Id,
+            Name = "Honest Participants",
+            Slug = "honest",
+            Description = "Generic participants used in cryptographic protocol examples: the senders, receivers, and trusted parties.",
+            CreatedAt = DateTime.UtcNow,
+        };
+        var teamAttackers = new Team
+        {
+            Id = Guid.NewGuid(),
+            OrgId = evilCorpOrg.Id,
+            Name = "Attackers",
+            Slug = "attackers",
+            Description = "Adversarial actors — eavesdroppers, MITM attackers, intruders, and Sybil identities.",
+            CreatedAt = DateTime.UtcNow,
+        };
+        var teamTheorists = new Team
+        {
+            Id = Guid.NewGuid(),
+            OrgId = evilCorpOrg.Id,
+            Name = "Theorists",
+            Slug = "theorists",
+            Description = "Participants from formal proof systems: Arthur/Merlin complexity classes and zero-knowledge proof roles.",
+            CreatedAt = DateTime.UtcNow,
+        };
+        db.Teams.AddRange(teamHonest, teamAttackers, teamTheorists);
+        await db.SaveChangesAsync();
+
+        // Add org members and team memberships; track added org members to avoid duplicates
+        var addedOrgMembers = new HashSet<Guid>();
+        void AddMember(Team team, string username)
+        {
+            var user = GetUser(username);
+            if (user is null) return;
+            if (addedOrgMembers.Add(user.Id))
+                db.OrganizationMembers.Add(new OrganizationMember { OrgId = evilCorpOrg.Id, UserId = user.Id });
+            db.TeamMembers.Add(new TeamMember { TeamId = team.Id, UserId = user.Id });
+        }
+
+        var honestUsernames = new[] { "alice", "bob", "carol", "caesar", "dave", "erin", "frank", "grace", "heidi", "ivan", "judy", "joe", "niaj", "olivia", "peggy", "rupert", "sybil", "trent", "victor", "walter" };
+        var attackerUsernames = new[] { "eve", "mallory", "malice", "trudy", "oscar", "sybil", "hackerman" };
+        var theoristUsernames = new[] { "arthur", "merlin", "zeke", "victor", "peggy" };
+
+        foreach (var u in honestUsernames) AddMember(teamHonest, u);
+        foreach (var u in attackerUsernames) AddMember(teamAttackers, u);
+        foreach (var u in theoristUsernames) AddMember(teamTheorists, u);
+
+        await db.SaveChangesAsync();
+        logger.LogInformation("EvilCorp seeded: 3 thematic teams (Honest Participants, Attackers, Theorists) with {Count} org members.", addedOrgMembers.Count);
     }
 
     private static Issue CreateDemoIssue(Guid projectId, int number, string title, string body, IssueStatus status, IssuePriority priority, IssueType type, int createdDaysAgo, int updatedDaysAgo) =>
