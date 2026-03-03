@@ -183,6 +183,8 @@ public partial class DockerCiCdRuntime(
         }
 
         // Mount the artifact server directory from the host so artifacts are accessible after the run.
+        // ArtifactServerPath is always an absolute temp-directory path set by the CiCdWorker
+        // (Path.Combine(Path.GetTempPath(), "issuepit-artifacts-{runId}")), so it is safe to use directly.
         if (!string.IsNullOrWhiteSpace(trigger.ArtifactServerPath))
         {
             Directory.CreateDirectory(trigger.ArtifactServerPath);

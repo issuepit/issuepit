@@ -264,7 +264,8 @@ public class CiCdWorker(
             await ParseAndStoreTestResultsAsync(run.Id, artifactDir, db, stoppingToken);
 
             // Clean up the artifact directory now that results have been collected.
-            try { Directory.Delete(artifactDir, recursive: true); } catch { /* best-effort */ }
+            try { Directory.Delete(artifactDir, recursive: true); }
+            catch (Exception ex) { logger.LogDebug(ex, "Could not clean up artifact directory {Dir} for run {RunId}", artifactDir, run.Id); }
 
             // Notify clients that the run has completed
             await PublishLogLineAsync(run.Id.ToString(),

@@ -32,11 +32,13 @@ public static class TrxParser
             var total = ParseAttrInt(countersNode, "total");
             var passed = ParseAttrInt(countersNode, "passed");
             var failed = ParseAttrInt(countersNode, "failed");
-            // TRX uses "total - executed" or "notExecuted"/"inconclusive" for skipped; use the difference.
+            // TRX does not have a dedicated "skipped" counter. "notExecuted" covers tests that were
+            // excluded at runtime (e.g. [Ignore]) and "inconclusive" covers tests without assertions.
+            // When total > passed + failed (some tests left unaccounted), treat the remainder as skipped.
+            // Otherwise fall back to notExecuted + inconclusive as the skipped count.
             var notExecuted = ParseAttrInt(countersNode, "notExecuted") + ParseAttrInt(countersNode, "inconclusive");
-            var skipped = total - passed - failed - notExecuted > 0
-                ? total - passed - failed
-                : notExecuted;
+            var remainder = total - passed - failed;
+            var skipped = remainder > notExecuted ? remainder : notExecuted;
 
             // --- Duration from ResultSummary times or individual test times ---
             var durationMs = 0.0;
