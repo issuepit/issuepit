@@ -18,10 +18,10 @@ var redis = builder.AddValkey("redis")
 
 // LocalStack provides local AWS services (S3 for image uploads).
 // Open source (Apache 2.0). S3 endpoint: http://localstack:4566
-var localstack = builder.AddContainer("localstack", "localstack/localstack", "4.3")
+var storage = builder.AddContainer("localstack", "localstack/localstack", "4.3")
     .WithEnvironment("SERVICES", "s3")
-    .WithHttpEndpoint(targetPort: 4566, name: "http")
-    .WithExplicitStart(); // not started in CI; configure real S3/B2 via ImageStorage settings
+    .WithHttpEndpoint(targetPort: 4566, name: "http");
+    //.WithExplicitStart(); // not started in CI; configure real S3/B2 via ImageStorage settings; we need it in ci/cd for e2e tests which could upload data
 
 // Management UI tools - set to explicit start so they are not auto-started in CI and require manual start from the Aspire dashboard
 postgresServer.WithPgAdmin(admin => admin.WithExplicitStart());
@@ -58,7 +58,7 @@ var api = builder.AddProject<Projects.IssuePit_Api>("api")
     .WithHttpHealthCheck("/health", endpointName: "http")
     .WithEnvironment("AllowedOrigins", frontend.GetEndpoint("http"))
     .WithEnvironment("GitHub__OAuth__FrontendUrl", frontend.GetEndpoint("http"))
-    .WithEnvironment("ImageStorage__ServiceUrl", localstack.GetEndpoint("http"))
+    .WithEnvironment("ImageStorage__ServiceUrl", storage.GetEndpoint("http"))
     .WithUrlForEndpoint("http", u =>
     {
         u.DisplayText = "Scalar API Reference";
