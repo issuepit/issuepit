@@ -18,22 +18,7 @@ public class SkillsController(IssuePitDbContext db, TenantContext ctx) : Control
         var skills = await db.Skills
             .Include(s => s.Organization)
             .Where(s => s.Organization.TenantId == ctx.CurrentTenant.Id)
-            .Select(s => new
-            {
-                s.Id,
-                s.OrgId,
-                s.Name,
-                s.Description,
-                s.GitRepoUrl,
-                s.GitSubDir,
-                s.GitAuthUsername,
-                s.SyncStatus,
-                SyncStatusName = s.SyncStatus.ToString(),
-                s.SyncMessage,
-                s.LastSyncedAt,
-                s.CreatedAt,
-                s.UpdatedAt,
-            })
+            .Select(s => new SkillSummaryDto(s.Id, s.OrgId, s.Name, s.Description, s.GitRepoUrl, s.GitSubDir, s.GitAuthUsername, s.SyncStatus, s.SyncStatus.ToString(), s.SyncMessage, s.LastSyncedAt, s.CreatedAt, s.UpdatedAt))
             .ToListAsync();
         return Ok(skills);
     }
@@ -45,25 +30,8 @@ public class SkillsController(IssuePitDbContext db, TenantContext ctx) : Control
         var skill = await db.Skills
             .Include(s => s.Organization)
             .Where(s => s.Id == id && s.Organization.TenantId == ctx.CurrentTenant.Id)
-            .Select(s => new
-            {
-                s.Id,
-                s.OrgId,
-                s.Name,
-                s.Description,
-                s.Content,
-                s.GitRepoUrl,
-                s.GitSubDir,
-                s.GitAuthUsername,
-                s.SyncStatus,
-                SyncStatusName = s.SyncStatus.ToString(),
-                s.SyncMessage,
-                s.LastSyncedAt,
-                s.CreatedAt,
-                s.UpdatedAt,
-            })
             .FirstOrDefaultAsync();
-        return skill is null ? NotFound() : Ok(skill);
+        return skill is null ? NotFound() : Ok(ToDetailDto(skill));
     }
 
     [HttpPost]
@@ -81,13 +49,13 @@ public class SkillsController(IssuePitDbContext db, TenantContext ctx) : Control
             GitSubDir = request.GitSubDir,
             GitAuthUsername = request.GitAuthUsername,
             GitAuthToken = request.GitAuthToken,
-            SyncStatus = string.IsNullOrWhiteSpace(request.GitRepoUrl) ? SkillSyncStatus.None : SkillSyncStatus.Synced,
+            SyncStatus = SkillSyncStatus.None,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
         };
         db.Skills.Add(skill);
         await db.SaveChangesAsync();
-        return Created($"/api/skills/{skill.Id}", new { skill.Id, skill.OrgId, skill.Name, skill.Description, skill.GitRepoUrl, skill.GitSubDir, skill.GitAuthUsername, skill.SyncStatus, SyncStatusName = skill.SyncStatus.ToString(), skill.SyncMessage, skill.LastSyncedAt, skill.CreatedAt, skill.UpdatedAt });
+        return Created($"/api/skills/{skill.Id}", ToDetailDto(skill));
     }
 
     [HttpPut("{id:guid}")]
@@ -111,7 +79,7 @@ public class SkillsController(IssuePitDbContext db, TenantContext ctx) : Control
             skill.SyncStatus = SkillSyncStatus.None;
         skill.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
-        return Ok(new { skill.Id, skill.OrgId, skill.Name, skill.Description, skill.Content, skill.GitRepoUrl, skill.GitSubDir, skill.GitAuthUsername, skill.SyncStatus, SyncStatusName = skill.SyncStatus.ToString(), skill.SyncMessage, skill.LastSyncedAt, skill.CreatedAt, skill.UpdatedAt });
+        return Ok(ToDetailDto(skill));
     }
 
     [HttpDelete("{id:guid}")]
@@ -126,7 +94,40 @@ public class SkillsController(IssuePitDbContext db, TenantContext ctx) : Control
         await db.SaveChangesAsync();
         return NoContent();
     }
+
+    private static object ToDetailDto(Skill s) => new
+    {
+        s.Id,
+        s.OrgId,
+        s.Name,
+        s.Description,
+        s.Content,
+        s.GitRepoUrl,
+        s.GitSubDir,
+        s.GitAuthUsername,
+        s.SyncStatus,
+        SyncStatusName = s.SyncStatus.ToString(),
+        s.SyncMessage,
+        s.LastSyncedAt,
+        s.CreatedAt,
+        s.UpdatedAt,
+    };
 }
+
+public sealed record SkillSummaryDto(
+    Guid Id,
+    Guid OrgId,
+    string Name,
+    string? Description,
+    string? GitRepoUrl,
+    string? GitSubDir,
+    string? GitAuthUsername,
+    SkillSyncStatus SyncStatus,
+    string SyncStatusName,
+    string? SyncMessage,
+    DateTime? LastSyncedAt,
+    DateTime CreatedAt,
+    DateTime UpdatedAt);
 
 public sealed record CreateSkillRequest(
     Guid OrgId,

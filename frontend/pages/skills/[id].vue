@@ -184,9 +184,9 @@ async function saveSettings() {
       name: form.value.name,
       description: form.value.description || undefined,
       content: form.value.content,
-      gitRepoUrl: store.currentSkill.gitRepoUrl,
-      gitSubDir: store.currentSkill.gitSubDir,
-      gitAuthUsername: store.currentSkill.gitAuthUsername,
+      gitRepoUrl: form.value.gitRepoUrl || undefined,
+      gitSubDir: form.value.gitSubDir || undefined,
+      gitAuthUsername: form.value.gitAuthUsername || undefined,
     })
   } finally {
     saving.value = false
