@@ -18,9 +18,10 @@ public class LoginPage(IPage page)
         await GotoAsync();
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
         await page.ClickAsync("button:has-text('Create account')");
-        // Wait for the register form to render before filling fields.
-        // Both forms share input[autocomplete='username'], so we must wait for the register-only
-        // field (new-password) to appear to avoid a race condition with Vue's DOM update.
+        // Wait for the register form to be active before filling.
+        // Without this, FillAsync("input[autocomplete='username']") could match the login
+        // form's username field (still in the DOM during Vue hydration), leaving the tab
+        // never switched and the new-password field never appearing.
         await page.WaitForSelectorAsync("input[autocomplete='new-password']");
         await page.FillAsync("input[autocomplete='username']", username);
         await page.FillAsync("input[autocomplete='new-password']", password);

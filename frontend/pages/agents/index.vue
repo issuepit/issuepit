@@ -113,6 +113,14 @@
         <div class="space-y-4">
           <div class="grid grid-cols-2 gap-3">
             <div class="col-span-2">
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">Organization</label>
+              <select v-model="form.orgId" data-testid="org-select"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option value="" disabled selected>Select an organization</option>
+                <option v-for="org in orgsStore.orgs" :key="org.id" :value="org.id">{{ org.name }}</option>
+              </select>
+            </div>
+            <div class="col-span-2">
               <label class="block text-sm font-medium text-gray-300 mb-1.5">Name</label>
               <input v-model="form.name" type="text" placeholder="Agent name"
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
@@ -172,10 +180,12 @@
 
 <script setup lang="ts">
 import { useAgentsStore } from '~/stores/agents'
+import { useOrgsStore } from '~/stores/orgs'
 import type { RunnerType } from '~/types'
 import { RunnerTypeLabels } from '~/types'
 
 const store = useAgentsStore()
+const orgsStore = useOrgsStore()
 const showModal = ref(false)
 const editingId = ref<string | null>(null)
 const toolsInput = ref('')
@@ -188,6 +198,7 @@ const form = reactive({
   isActive: true,
   runnerType: null as RunnerType | null,
   model: '',
+  orgId: '',
 })
 
 const runnerOptions = [
@@ -195,7 +206,9 @@ const runnerOptions = [
   ...Object.entries(RunnerTypeLabels).map(([k, v]) => ({ value: Number(k) as RunnerType, label: v }))
 ]
 
-onMounted(() => store.fetchAgents())
+onMounted(async () => {
+  await Promise.all([store.fetchAgents(), orgsStore.fetchOrgs()])
+})
 
 function openCreate() {
   editingId.value = null
@@ -207,7 +220,7 @@ async function submitModal() {
   if (!form.name) return
   const payload = {
     ...form,
-    allowedTools: toolsInput.value.split(',').map(t => t.trim()).filter(Boolean),
+    allowedTools: JSON.stringify(toolsInput.value.split(',').map(t => t.trim()).filter(Boolean)),
     runnerType: form.runnerType,
     model: form.model || undefined,
   }
@@ -229,6 +242,7 @@ function resetForm() {
   form.isActive = true
   form.runnerType = null
   form.model = ''
+  form.orgId = ''
   toolsInput.value = ''
 }
 </script>
