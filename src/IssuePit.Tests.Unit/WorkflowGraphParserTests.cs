@@ -333,4 +333,144 @@ public class WorkflowGraphParserTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    [Fact]
+    public void ParseWorkflowDispatchInputs_WithInputs_Returns_AllFields()
+    {
+        const string yaml = """
+            on:
+              workflow_dispatch:
+                inputs:
+                  environment:
+                    description: 'Target environment'
+                    required: true
+                    type: choice
+                    options:
+                      - staging
+                      - production
+                  version:
+                    description: 'Release version'
+                    required: false
+                    default: 'latest'
+                    type: string
+                  dry_run:
+                    description: 'Dry run mode'
+                    type: boolean
+                    default: 'false'
+            jobs:
+              deploy:
+                runs-on: ubuntu-latest
+                steps:
+                  - run: echo deploy
+            """;
+
+        var inputs = WorkflowGraphParser.ParseWorkflowDispatchInputs(yaml);
+
+        Assert.Equal(3, inputs.Count);
+
+        var env = inputs.First(i => i.Name == "environment");
+        Assert.Equal("Target environment", env.Description);
+        Assert.True(env.Required);
+        Assert.Equal("choice", env.Type);
+        Assert.NotNull(env.Options);
+        Assert.Contains("staging", env.Options!);
+        Assert.Contains("production", env.Options!);
+
+        var ver = inputs.First(i => i.Name == "version");
+        Assert.Equal("latest", ver.Default);
+        Assert.False(ver.Required);
+        Assert.Equal("string", ver.Type);
+
+        var dryRun = inputs.First(i => i.Name == "dry_run");
+        Assert.Equal("boolean", dryRun.Type);
+    }
+
+    [Fact]
+    public void ParseWorkflowDispatchInputs_NoPushTrigger_ReturnsEmpty()
+    {
+        const string yaml = """
+            on:
+              push:
+                branches: [main]
+            jobs:
+              build:
+                runs-on: ubuntu-latest
+                steps:
+                  - run: echo build
+            """;
+
+        var inputs = WorkflowGraphParser.ParseWorkflowDispatchInputs(yaml);
+        Assert.Empty(inputs);
+    }
+
+    [Fact]
+    public void ParseWorkflowDispatchInputs_EmptyInputsSection_ReturnsEmpty()
+    {
+        const string yaml = """
+            on:
+              workflow_dispatch:
+            jobs:
+              build:
+                runs-on: ubuntu-latest
+                steps:
+                  - run: echo build
+            """;
+
+        var inputs = WorkflowGraphParser.ParseWorkflowDispatchInputs(yaml);
+        Assert.Empty(inputs);
+    }
+
+    [Fact]
+    public async Task ParseWorkflowInfosAsync_Returns_FileNamesTriggersAndInputs()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"wf-infos-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(dir, "ci.yml"), """
+                on:
+                  push:
+                    branches: [main]
+                  workflow_dispatch:
+                    inputs:
+                      debug:
+                        type: boolean
+                        description: 'Enable debug'
+                        default: 'false'
+                jobs:
+                  build:
+                    runs-on: ubuntu-latest
+                    steps:
+                      - run: echo build
+                """);
+
+            await File.WriteAllTextAsync(Path.Combine(dir, "pr.yml"), """
+                on:
+                  pull_request:
+                jobs:
+                  lint:
+                    runs-on: ubuntu-latest
+                    steps:
+                      - run: echo lint
+                """);
+
+            var infos = await WorkflowGraphParser.ParseWorkflowInfosAsync(dir);
+
+            Assert.Equal(2, infos.Count);
+
+            var ci = infos.First(i => i.FileName == "ci.yml");
+            Assert.Contains("push", ci.Triggers);
+            Assert.Contains("workflow_dispatch", ci.Triggers);
+            Assert.Single(ci.DispatchInputs);
+            Assert.Equal("debug", ci.DispatchInputs[0].Name);
+
+            var pr = infos.First(i => i.FileName == "pr.yml");
+            Assert.Contains("pull_request", pr.Triggers);
+            Assert.Empty(pr.DispatchInputs);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }
