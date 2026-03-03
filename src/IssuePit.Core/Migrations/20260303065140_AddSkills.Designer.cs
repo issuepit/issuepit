@@ -3,6 +3,7 @@ using System;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace IssuePit.Core.Migrations
 {
     [DbContext(typeof(IssuePitDbContext))]
-    partial class IssuePitDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260303065140_AddSkills")]
+    partial class AddSkills
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -625,44 +628,6 @@ namespace IssuePit.Core.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("issue_comments");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.IssueEvent", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("ActorAgentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("ActorUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("EventType")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("IssueId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("NewValue")
-                        .HasColumnType("text");
-
-                    b.Property<string>("OldValue")
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ActorAgentId");
-
-                    b.HasIndex("ActorUserId");
-
-                    b.HasIndex("IssueId");
-
-                    b.ToTable("issue_events");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.IssueLink", b =>
@@ -1734,29 +1699,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("Issue");
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.IssueEvent", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Agent", "ActorAgent")
-                        .WithMany()
-                        .HasForeignKey("ActorAgentId");
-
-                    b.HasOne("IssuePit.Core.Entities.User", "ActorUser")
-                        .WithMany()
-                        .HasForeignKey("ActorUserId");
-
-                    b.HasOne("IssuePit.Core.Entities.Issue", "Issue")
-                        .WithMany()
-                        .HasForeignKey("IssueId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ActorAgent");
-
-                    b.Navigation("ActorUser");
-
-                    b.Navigation("Issue");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.IssueLink", b =>

@@ -1,0 +1,18 @@
+# Helper opencode-act image: helper-act + opencode CLI
+# Combines CI/CD tooling (Docker CLI, act, actionlint) with the opencode agent.
+#
+# Build args (override at build time):
+#   BASE_IMAGE         — fully-qualified helper-act image reference
+#   OPENCODE_VERSION   — npm package version to install (default: latest)
+
+ARG BASE_IMAGE=ghcr.io/issuepit/issuepit-helper-act:latest
+FROM ${BASE_IMAGE}
+
+ARG OPENCODE_VERSION=latest
+
+RUN npm install -g opencode-ai@${OPENCODE_VERSION} && \
+    opencode --version
+
+LABEL org.opencontainers.image.title="issuepit-helper-opencode-act" \
+      org.opencontainers.image.description="IssuePit helper image for agent runs with CI/CD support: helper-act + opencode CLI" \
+      issuepit.opencode.version="${OPENCODE_VERSION}"
