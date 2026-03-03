@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { ApiKey, RuntimeConfiguration, ApiKeyProvider, RuntimeType, TelegramBot } from '~/types'
+import type { ApiKey, RuntimeConfiguration, ApiKeyProvider, RuntimeType, TelegramBot, PoolStatus } from '~/types'
 
 export const useConfigStore = defineStore('config', () => {
   const { get, post, put, del } = useApi()
@@ -41,13 +41,13 @@ export const useConfigStore = defineStore('config', () => {
     }
   }
 
-  async function createRuntime(payload: { orgId: string; name: string; type: RuntimeType; configuration: string; isDefault: boolean }) {
+  async function createRuntime(payload: { orgId: string; name: string; type: RuntimeType; configuration: string; isDefault: boolean; maxConcurrentAgents: number }) {
     const created = await post<RuntimeConfiguration>('/api/config/runtimes', payload)
     await fetchRuntimes()
     return created
   }
 
-  async function updateRuntime(id: string, payload: { orgId: string; name: string; type: RuntimeType; configuration: string; isDefault: boolean }) {
+  async function updateRuntime(id: string, payload: { orgId: string; name: string; type: RuntimeType; configuration: string; isDefault: boolean; maxConcurrentAgents: number }) {
     const updated = await put<RuntimeConfiguration>(`/api/config/runtimes/${id}`, payload)
     await fetchRuntimes()
     return updated
@@ -56,6 +56,19 @@ export const useConfigStore = defineStore('config', () => {
   async function deleteRuntime(id: string) {
     await del(`/api/config/runtimes/${id}`)
     runtimes.value = runtimes.value.filter(r => r.id !== id)
+  }
+
+  // --- Pool Status ---
+  const poolStatus = ref<PoolStatus | null>(null)
+  const poolStatusLoading = ref(false)
+
+  async function fetchPoolStatus() {
+    poolStatusLoading.value = true
+    try {
+      poolStatus.value = await get<PoolStatus>('/api/config/pool-status')
+    } finally {
+      poolStatusLoading.value = false
+    }
   }
 
   // --- Telegram Bots ---
@@ -91,6 +104,7 @@ export const useConfigStore = defineStore('config', () => {
   return {
     apiKeys, keysLoading, fetchApiKeys, createApiKey, deleteApiKey,
     runtimes, runtimesLoading, fetchRuntimes, createRuntime, updateRuntime, deleteRuntime,
+    poolStatus, poolStatusLoading, fetchPoolStatus,
     telegramBots, telegramBotsLoading, fetchTelegramBots, createTelegramBot, updateTelegramBot, deleteTelegramBot,
   }
 })

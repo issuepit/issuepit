@@ -13,6 +13,95 @@
       </button>
     </div>
 
+    <!-- Pool Status -->
+    <div class="rounded-xl border border-gray-800 bg-gray-900/40 p-5 mb-6">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-medium text-white">Pool Status</h3>
+        <button
+          class="text-xs text-gray-400 hover:text-gray-200 transition-colors"
+          :disabled="store.poolStatusLoading"
+          @click="store.fetchPoolStatus()"
+        >
+          {{ store.poolStatusLoading ? 'Refreshing…' : '↺ Refresh' }}
+        </button>
+      </div>
+
+      <div v-if="store.poolStatus">
+        <!-- Agent Pools -->
+        <p class="text-xs text-gray-500 uppercase tracking-wide mb-2">Agent Pools</p>
+        <div class="space-y-2 mb-4">
+          <div
+            v-for="pool in store.poolStatus.agentPools"
+            :key="pool.runtimeConfigId ?? 'default'"
+            class="flex items-center gap-3 p-3 rounded-lg bg-gray-900 border border-gray-800"
+          >
+            <div class="flex-1 min-w-0">
+              <span class="text-sm text-white font-medium">{{ pool.runtimeName }}</span>
+            </div>
+            <div class="flex items-center gap-4 text-xs text-gray-400">
+              <span class="flex items-center gap-1">
+                <span class="w-2 h-2 rounded-full bg-green-500 inline-block" />
+                {{ pool.runningAgents }} running
+              </span>
+              <span v-if="pool.pendingAgents > 0" class="flex items-center gap-1">
+                <span class="w-2 h-2 rounded-full bg-yellow-500 inline-block" />
+                {{ pool.pendingAgents }} pending
+              </span>
+              <span class="text-gray-600">
+                limit: {{ pool.maxConcurrentAgents === 0 ? '∞' : pool.maxConcurrentAgents }}
+              </span>
+            </div>
+            <!-- Utilisation bar -->
+            <div v-if="pool.maxConcurrentAgents > 0" class="w-24 h-1.5 rounded-full bg-gray-800">
+              <div
+                class="h-full rounded-full transition-all"
+                :class="poolBarColor(pool.runningAgents, pool.maxConcurrentAgents)"
+                :style="{ width: poolBarWidth(pool.runningAgents, pool.maxConcurrentAgents) }"
+              />
+            </div>
+          </div>
+          <p v-if="!store.poolStatus.agentPools.length" class="text-xs text-gray-600">No agent pool data.</p>
+        </div>
+
+        <!-- CI/CD Pools -->
+        <p class="text-xs text-gray-500 uppercase tracking-wide mb-2">CI/CD Pools</p>
+        <div class="space-y-2">
+          <div
+            v-for="pool in store.poolStatus.cicdPools"
+            :key="pool.orgId"
+            class="flex items-center gap-3 p-3 rounded-lg bg-gray-900 border border-gray-800"
+          >
+            <div class="flex-1 min-w-0">
+              <span class="text-sm text-white font-medium">{{ pool.orgName }}</span>
+            </div>
+            <div class="flex items-center gap-4 text-xs text-gray-400">
+              <span class="flex items-center gap-1">
+                <span class="w-2 h-2 rounded-full bg-green-500 inline-block" />
+                {{ pool.runningCiCdRuns }} running
+              </span>
+              <span v-if="pool.pendingCiCdRuns > 0" class="flex items-center gap-1">
+                <span class="w-2 h-2 rounded-full bg-yellow-500 inline-block" />
+                {{ pool.pendingCiCdRuns }} pending
+              </span>
+              <span class="text-gray-600">
+                limit: {{ pool.maxConcurrentRunners === 0 ? '∞' : pool.maxConcurrentRunners }}
+              </span>
+            </div>
+            <div v-if="pool.maxConcurrentRunners > 0" class="w-24 h-1.5 rounded-full bg-gray-800">
+              <div
+                class="h-full rounded-full transition-all"
+                :class="poolBarColor(pool.runningCiCdRuns, pool.maxConcurrentRunners)"
+                :style="{ width: poolBarWidth(pool.runningCiCdRuns, pool.maxConcurrentRunners) }"
+              />
+            </div>
+          </div>
+          <p v-if="!store.poolStatus.cicdPools.length" class="text-xs text-gray-600">No CI/CD pool data.</p>
+        </div>
+      </div>
+      <p v-else-if="!store.poolStatusLoading" class="text-xs text-gray-600">Click Refresh to load pool status.</p>
+      <p v-else class="text-xs text-gray-500">Loading…</p>
+    </div>
+
     <!-- Loading -->
     <div v-if="store.runtimesLoading" class="text-gray-500 text-sm">Loading…</div>
 
@@ -41,6 +130,10 @@
             <span v-if="rt.isDefault"
               class="px-1.5 py-0.5 rounded text-xs font-medium bg-brand-900/60 text-brand-300 border border-brand-800">
               Default
+            </span>
+            <span v-if="rt.maxConcurrentAgents > 0"
+              class="px-1.5 py-0.5 rounded text-xs font-medium bg-gray-800 text-gray-400 border border-gray-700">
+              max {{ rt.maxConcurrentAgents }} agents
             </span>
           </div>
           <p class="text-sm text-gray-400 mt-0.5">{{ rt.typeName }}</p>
@@ -95,6 +188,16 @@
               :placeholder="configPlaceholder" />
           </div>
 
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">
+              Max Concurrent Agents
+              <span class="text-gray-600 ml-1">— 0 = unlimited</span>
+            </label>
+            <input v-model.number="form.maxConcurrentAgents" type="number" min="0"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-500"
+              placeholder="0" />
+          </div>
+
           <div class="flex items-center gap-2">
             <input id="isDefault" v-model="form.isDefault" type="checkbox"
               class="w-4 h-4 rounded border-gray-600 bg-gray-800 text-brand-600" />
@@ -123,7 +226,10 @@ import { useConfigStore } from '~/stores/config'
 
 const store = useConfigStore()
 
-onMounted(() => store.fetchRuntimes())
+onMounted(() => {
+  store.fetchRuntimes()
+  store.fetchPoolStatus()
+})
 
 const showForm = ref(false)
 const saving = ref(false)
@@ -135,6 +241,7 @@ const form = reactive({
   configuration: '{}',
   isDefault: false,
   orgId: '',
+  maxConcurrentAgents: 0,
 })
 
 const runtimeTypeOptions = computed(() =>
@@ -189,15 +296,28 @@ function runtimeIconBg(type: RuntimeType): string {
   return map[type] ?? 'bg-gray-800'
 }
 
+function poolBarWidth(active: number, max: number): string {
+  if (max <= 0) return '0%'
+  return `${Math.min(100, Math.round((active / max) * 100))}%`
+}
+
+function poolBarColor(active: number, max: number): string {
+  if (max <= 0) return 'bg-gray-600'
+  const pct = active / max
+  if (pct >= 1) return 'bg-red-500'
+  if (pct >= 0.75) return 'bg-yellow-500'
+  return 'bg-green-500'
+}
+
 function openCreate() {
   editing.value = null
-  Object.assign(form, { name: '', type: RuntimeType.Docker, configuration: configPlaceholder.value, isDefault: false, orgId: '' })
+  Object.assign(form, { name: '', type: RuntimeType.Docker, configuration: configPlaceholder.value, isDefault: false, orgId: '', maxConcurrentAgents: 0 })
   showForm.value = true
 }
 
 function openEdit(rt: RuntimeConfiguration) {
   editing.value = rt
-  Object.assign(form, { name: rt.name, type: rt.type, configuration: rt.configuration, isDefault: rt.isDefault, orgId: rt.orgId })
+  Object.assign(form, { name: rt.name, type: rt.type, configuration: rt.configuration, isDefault: rt.isDefault, orgId: rt.orgId, maxConcurrentAgents: rt.maxConcurrentAgents })
   showForm.value = true
 }
 

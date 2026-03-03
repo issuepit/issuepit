@@ -44,6 +44,7 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<GitRepository> GitRepositories => Set<GitRepository>();
     public DbSet<TelegramBot> TelegramBots => Set<TelegramBot>();
     public DbSet<ProjectMetricSnapshot> ProjectMetricSnapshots => Set<ProjectMetricSnapshot>();
+    public DbSet<IssueEvent> IssueEvents => Set<IssueEvent>();
     public DbSet<Skill> Skills => Set<Skill>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -148,6 +149,24 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
             .WithOne(l => l.Issue)
             .HasForeignKey(l => l.IssueId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<IssueEvent>()
+            .HasOne(e => e.Issue)
+            .WithMany()
+            .HasForeignKey(e => e.IssueId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<IssueEvent>()
+            .HasOne(e => e.ActorUser)
+            .WithMany()
+            .HasForeignKey(e => e.ActorUserId)
+            .IsRequired(false);
+
+        modelBuilder.Entity<IssueEvent>()
+            .HasOne(e => e.ActorAgent)
+            .WithMany()
+            .HasForeignKey(e => e.ActorAgentId)
+            .IsRequired(false);
 
         modelBuilder.Entity<IssueLink>()
             .HasOne(l => l.TargetIssue)

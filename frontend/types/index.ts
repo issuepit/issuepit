@@ -462,7 +462,29 @@ export interface RuntimeConfiguration {
   typeName: string
   configuration: string
   isDefault: boolean
+  maxConcurrentAgents: number
   createdAt: string
+}
+
+export interface AgentPoolStatus {
+  runtimeConfigId: string | null
+  runtimeName: string
+  maxConcurrentAgents: number
+  runningAgents: number
+  pendingAgents: number
+}
+
+export interface CiCdPoolStatus {
+  orgId: string
+  orgName: string
+  maxConcurrentRunners: number
+  runningCiCdRuns: number
+  pendingCiCdRuns: number
+}
+
+export interface PoolStatus {
+  agentPools: AgentPoolStatus[]
+  cicdPools: CiCdPoolStatus[]
 }
 
 export interface GitRepository {
@@ -662,6 +684,49 @@ export interface IssueHistoryEntry {
   open: number
   inProgress: number
   done: number
+}
+
+export enum IssueEventType {
+  Created = 'created',
+  TitleChanged = 'title_changed',
+  DescriptionChanged = 'description_changed',
+  StatusChanged = 'status_changed',
+  PriorityChanged = 'priority_changed',
+  TypeChanged = 'type_changed',
+  LabelAdded = 'label_added',
+  LabelRemoved = 'label_removed',
+  AssigneeAdded = 'assignee_added',
+  AssigneeRemoved = 'assignee_removed',
+  MilestoneSet = 'milestone_set',
+  MilestoneCleared = 'milestone_cleared',
+}
+
+export const IssueEventTypeLabels: Record<IssueEventType, string> = {
+  [IssueEventType.Created]: 'created',
+  [IssueEventType.TitleChanged]: 'changed title',
+  [IssueEventType.DescriptionChanged]: 'updated description',
+  [IssueEventType.StatusChanged]: 'changed status',
+  [IssueEventType.PriorityChanged]: 'changed priority',
+  [IssueEventType.TypeChanged]: 'changed type',
+  [IssueEventType.LabelAdded]: 'added label',
+  [IssueEventType.LabelRemoved]: 'removed label',
+  [IssueEventType.AssigneeAdded]: 'assigned',
+  [IssueEventType.AssigneeRemoved]: 'unassigned',
+  [IssueEventType.MilestoneSet]: 'set milestone',
+  [IssueEventType.MilestoneCleared]: 'cleared milestone',
+}
+
+export interface IssueEvent {
+  id: string
+  issueId: string
+  eventType: IssueEventType
+  oldValue?: string
+  newValue?: string
+  actorUserId?: string
+  actorUser?: User
+  actorAgentId?: string
+  actorAgent?: Agent
+  createdAt: string
 }
 
 export interface ProjectMetricSnapshot {
