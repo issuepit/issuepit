@@ -663,6 +663,49 @@ export interface IssueHistoryEntry {
   done: number
 }
 
+export enum IssueEventType {
+  Created = 'created',
+  TitleChanged = 'title_changed',
+  DescriptionChanged = 'description_changed',
+  StatusChanged = 'status_changed',
+  PriorityChanged = 'priority_changed',
+  TypeChanged = 'type_changed',
+  LabelAdded = 'label_added',
+  LabelRemoved = 'label_removed',
+  AssigneeAdded = 'assignee_added',
+  AssigneeRemoved = 'assignee_removed',
+  MilestoneSet = 'milestone_set',
+  MilestoneCleared = 'milestone_cleared',
+}
+
+export const IssueEventTypeLabels: Record<IssueEventType, string> = {
+  [IssueEventType.Created]: 'created',
+  [IssueEventType.TitleChanged]: 'changed title',
+  [IssueEventType.DescriptionChanged]: 'updated description',
+  [IssueEventType.StatusChanged]: 'changed status',
+  [IssueEventType.PriorityChanged]: 'changed priority',
+  [IssueEventType.TypeChanged]: 'changed type',
+  [IssueEventType.LabelAdded]: 'added label',
+  [IssueEventType.LabelRemoved]: 'removed label',
+  [IssueEventType.AssigneeAdded]: 'assigned',
+  [IssueEventType.AssigneeRemoved]: 'unassigned',
+  [IssueEventType.MilestoneSet]: 'set milestone',
+  [IssueEventType.MilestoneCleared]: 'cleared milestone',
+}
+
+export interface IssueEvent {
+  id: string
+  issueId: string
+  eventType: IssueEventType
+  oldValue?: string
+  newValue?: string
+  actorUserId?: string
+  actorUser?: User
+  actorAgentId?: string
+  actorAgent?: Agent
+  createdAt: string
+}
+
 export interface ProjectMetricSnapshot {
   recordedAt: string
   openIssues: number
@@ -670,4 +713,37 @@ export interface ProjectMetricSnapshot {
   doneIssues: number
   totalAgentRuns: number
   totalCiCdRuns: number
+}
+
+export enum SkillSyncStatus {
+  None = 0,
+  Synced = 1,
+  Ahead = 2,
+  Behind = 3,
+  Error = 4,
+}
+
+export const SkillSyncStatusLabels: Record<SkillSyncStatus, string> = {
+  [SkillSyncStatus.None]: 'No Repo',
+  [SkillSyncStatus.Synced]: 'Synced',
+  [SkillSyncStatus.Ahead]: 'Ahead',
+  [SkillSyncStatus.Behind]: 'Behind',
+  [SkillSyncStatus.Error]: 'Error',
+}
+
+export interface Skill {
+  id: string
+  orgId: string
+  name: string
+  description?: string
+  content?: string
+  gitRepoUrl?: string
+  gitSubDir?: string
+  gitAuthUsername?: string
+  syncStatus: SkillSyncStatus
+  syncStatusName: string
+  syncMessage?: string
+  lastSyncedAt?: string
+  createdAt: string
+  updatedAt: string
 }

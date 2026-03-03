@@ -191,6 +191,38 @@
             </div>
           </div>
 
+          <!-- History -->
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">History</h2>
+            <div v-if="store.currentHistory.length" class="relative">
+              <div class="absolute left-2 top-0 bottom-0 w-px bg-gray-800"></div>
+              <div class="space-y-3 pl-7">
+                <div v-for="event in store.currentHistory" :key="event.id" class="relative">
+                  <span class="absolute -left-5 top-1.5 w-2 h-2 rounded-full bg-gray-700 border border-gray-600"></span>
+                  <div class="flex items-start gap-1.5 flex-wrap">
+                    <span class="text-xs font-medium text-gray-300">
+                      {{ event.actorUser?.username ?? event.actorAgent?.name ?? 'System' }}
+                    </span>
+                    <span class="text-xs text-gray-500">{{ IssueEventTypeLabels[event.eventType] }}</span>
+                    <template v-if="event.oldValue && event.newValue">
+                      <span class="text-xs text-gray-600 line-through">{{ event.oldValue }}</span>
+                      <span class="text-xs text-gray-500">→</span>
+                      <span class="text-xs text-gray-300">{{ event.newValue }}</span>
+                    </template>
+                    <template v-else-if="event.newValue">
+                      <span class="text-xs text-brand-400 font-medium">{{ event.newValue }}</span>
+                    </template>
+                    <template v-else-if="event.oldValue">
+                      <span class="text-xs text-gray-600 line-through">{{ event.oldValue }}</span>
+                    </template>
+                    <span class="text-xs text-gray-600 ml-auto shrink-0">{{ formatDate(event.createdAt) }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p v-else class="text-xs text-gray-600">No history yet.</p>
+          </div>
+
           <!-- Comments -->
           <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
             <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-4">
@@ -416,7 +448,7 @@
 <script setup lang="ts">
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { IssueStatus, IssueType, IssueLinkType, IssueLinkTypeLabels } from '~/types'
+import { IssueStatus, IssueType, IssueLinkType, IssueLinkTypeLabels, IssueEventTypeLabels } from '~/types'
 import type { IssuePriority } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
 import { useLabelsStore } from '~/stores/labels'
@@ -494,6 +526,7 @@ onMounted(async () => {
     store.fetchCodeReviewComments(issueId),
     store.fetchTasks(issueId),
     store.fetchLinks(issueId),
+    store.fetchHistory(issueId),
     labelsStore.fetchLabels(id),
     agentsStore.fetchAgents(),
     fetchTenantUsers(),
