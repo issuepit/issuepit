@@ -576,6 +576,18 @@ export const TelegramNotificationEventLabels: Record<TelegramNotificationEvent, 
   [TelegramNotificationEvent.AgentFailed]: 'Agent Failed',
 }
 
+export enum DigestInterval {
+  Immediate = 0,
+  Hourly = 1,
+  Daily = 2,
+}
+
+export const DigestIntervalLabels: Record<DigestInterval, string> = {
+  [DigestInterval.Immediate]: 'Immediate',
+  [DigestInterval.Hourly]: 'Hourly digest',
+  [DigestInterval.Daily]: 'Daily digest',
+}
+
 export interface TelegramBot {
   id: string
   orgId?: string
@@ -584,6 +596,7 @@ export interface TelegramBot {
   chatId: string
   events: number
   isSilent: boolean
+  digestInterval: DigestInterval
   createdAt: string
 }
 
