@@ -303,6 +303,7 @@
                 @paste="e => handleImagePaste(e, md => newComment += md)" />
               <div class="flex justify-end bg-gray-800/50 px-3 py-2 border-t border-gray-700">
                 <p v-if="uploadingImage" class="text-xs text-gray-400 mr-auto self-center">Uploading image…</p>
+                <p v-else-if="uploadImageError" class="text-xs text-red-400 mr-auto self-center">{{ uploadImageError }}</p>
                 <button @click="submitComment" :disabled="!newComment.trim()"
                   class="text-xs bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-3 py-1.5 rounded transition-colors">
                   Comment
@@ -469,7 +470,7 @@ const agentsStore = useAgentsStore()
 const milestonesStore = useMilestonesStore()
 const projectsStore = useProjectsStore()
 const api = useApi()
-const { uploading: uploadingImage, handlePaste: handleImagePaste } = useImageUpload()
+const { uploading: uploadingImage, uploadError: uploadImageError, handlePaste: handleImagePaste } = useImageUpload()
 
 const editingTitle = ref(false)
 const editingBody = ref(false)

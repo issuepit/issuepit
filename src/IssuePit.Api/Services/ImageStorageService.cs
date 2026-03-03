@@ -39,6 +39,7 @@ public class ImageStorageOptions
 public class ImageStorageService(IOptions<ImageStorageOptions> options, ILogger<ImageStorageService> logger)
 {
     private readonly ImageStorageOptions _opts = options.Value;
+    private volatile bool _bucketEnsured;
 
     private IAmazonS3 CreateClient()
     {
@@ -62,10 +63,22 @@ public class ImageStorageService(IOptions<ImageStorageOptions> options, ILogger<
     /// </summary>
     public async Task<string> UploadImageAsync(Stream content, string fileName, string contentType, CancellationToken ct = default)
     {
-        var key = $"images/{Guid.NewGuid():N}/{fileName}";
+        // Derive a safe key: use only the original file extension (user-supplied name is not trusted)
+        var extension = Path.GetExtension(fileName);
+        if (!string.IsNullOrEmpty(extension))
+        {
+            // Allow only safe extension characters
+            extension = new string(extension.Where(c => char.IsLetterOrDigit(c) || c == '.').ToArray());
+        }
+        var key = $"images/{Guid.NewGuid():N}{extension}";
+
         using var s3 = CreateClient();
 
-        await EnsureBucketExistsAsync(s3, ct);
+        if (!_bucketEnsured)
+        {
+            await EnsureBucketExistsAsync(s3, ct);
+            _bucketEnsured = true;
+        }
 
         var request = new PutObjectRequest
         {

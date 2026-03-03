@@ -400,6 +400,7 @@
           class="w-full bg-gray-800 border border-gray-700 rounded-lg text-sm text-white px-3 py-2 focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none mb-2"
           @paste="e => handleImagePaste(e, md => generalComment += md)"></textarea>
         <p v-if="uploadingImage" class="text-xs text-gray-400 mb-2">Uploading image…</p>
+        <p v-if="uploadImageError" class="text-xs text-red-400 mb-2">{{ uploadImageError }}</p>
         <div class="flex gap-2 flex-wrap">
           <button @click="addGeneralComment" :disabled="!generalComment.trim()"
             class="text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
@@ -473,7 +474,7 @@ const store = useGitStore()
 const issuesStore = useIssuesStore()
 const authStore = useAuthStore()
 
-const { uploading: uploadingImage, handlePaste: handleImagePaste } = useImageUpload()
+const { uploading: uploadingImage, uploadError: uploadImageError, handlePaste: handleImagePaste } = useImageUpload()
 
 const repoChecked = ref(false)
 const baseBranch = ref('')

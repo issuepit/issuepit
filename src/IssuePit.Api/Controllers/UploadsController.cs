@@ -24,9 +24,8 @@ public class UploadsController(ImageStorageService imageStorage, TenantContext t
         if (!AllowedContentTypes.Contains(file.ContentType, StringComparer.OrdinalIgnoreCase))
             return BadRequest(new { error = "Only JPEG, PNG, GIF and WebP images are allowed." });
 
-        var fileName = Path.GetFileName(file.FileName);
         await using var stream = file.OpenReadStream();
-        var url = await imageStorage.UploadImageAsync(stream, fileName, file.ContentType, ct);
+        var url = await imageStorage.UploadImageAsync(stream, file.FileName, file.ContentType, ct);
 
         return Ok(new { url });
     }

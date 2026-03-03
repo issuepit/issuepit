@@ -37,7 +37,7 @@ export const useImageUpload = () => {
             body,
             credentials: 'include',
           })
-          insertText(`![image](${result.url})`)
+          insertText(`![${file.name}](${result.url})`)
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : 'Upload failed'
           uploadError.value = msg
