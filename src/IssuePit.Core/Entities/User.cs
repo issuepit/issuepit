@@ -26,5 +26,9 @@ public class User
     /// <summary>Whether this user has system-wide admin privileges.</summary>
     public bool IsAdmin { get; set; }
 
+    /// <summary>Short bio or description shown on the user's profile.</summary>
+    [MaxLength(500)]
+    public string? Description { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

@@ -20,6 +20,10 @@ public class Team
     [Required, MaxLength(100)]
     public string Slug { get; set; } = string.Empty;
 
+    /// <summary>Short description of the team's purpose or membership.</summary>
+    [MaxLength(500)]
+    public string? Description { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public List<TeamMember> Members { get; set; } = [];

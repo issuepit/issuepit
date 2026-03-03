@@ -201,13 +201,7 @@ const statuses = [
   { value: IssueStatus.Cancelled, label: 'Cancelled' }
 ]
 
-const priorities = [
-  { value: IssuePriority.Urgent, label: '🔴 Urgent' },
-  { value: IssuePriority.High, label: '🟠 High' },
-  { value: IssuePriority.Medium, label: '🟡 Medium' },
-  { value: IssuePriority.Low, label: '🔵 Low' },
-  { value: IssuePriority.NoPriority, label: '⚪ No Priority' }
-]
+const { priorities } = usePriority()
 
 const types = [
   { value: IssueType.Issue, label: '📋 Issue' },
@@ -291,14 +285,9 @@ const StatusBadge = defineComponent({
 const PriorityBadge = defineComponent({
   props: { priority: String },
   setup(props) {
-    const icons: Record<string, string> = {
-      urgent: '🔴', high: '🟠', medium: '🟡', low: '🔵', no_priority: '⚪'
-    }
-    const labels: Record<string, string> = {
-      urgent: 'Urgent', high: 'High', medium: 'Medium', low: 'Low', no_priority: 'None'
-    }
+    const { priorityIcon, priorityLabel } = usePriority()
     return () => h('span', { class: 'text-xs text-gray-400' },
-      `${icons[props.priority!] ?? ''} ${labels[props.priority!] ?? props.priority}`
+      `${priorityIcon(props.priority ?? '')} ${priorityLabel(props.priority ?? '')}`
     )
   }
 })

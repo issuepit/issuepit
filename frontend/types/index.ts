@@ -14,7 +14,9 @@ export enum IssuePriority {
   Urgent = 'urgent',
   High = 'high',
   Medium = 'medium',
-  Low = 'low'
+  Low = 'low',
+  VeryHigh = 'very_high',
+  Unknown = 'unknown'
 }
 
 export enum IssueType {

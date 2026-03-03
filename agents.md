@@ -31,6 +31,7 @@ this file descripes rules on how agenting coding tools work with this repository
 - Keep changes minimal and focused
 - Do not create MD files describing your task if not asked to
 - Do not create tests without value (e.g., simple property getters, string comparisons, basic configuration checks)
+- **Always run `npm run lint` (or `node_modules/.bin/eslint .`) on the frontend before closing a session** — fix all lint *errors* (unused vars, type-only imports, etc.); warnings from pre-existing code do not need to be resolved
 - Prefer strict types (enums, strongly-typed classes) over strings and primitives where appropriate
 - One class per file (except for small private nested classes used only within the parent class)
 - EF Core properties should be defined as attributes and not in `DbContext.OnModelCreating`
