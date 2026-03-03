@@ -70,8 +70,28 @@
             </div>
           </div>
 
+          <!-- Tab Bar -->
+          <div class="flex flex-wrap gap-0.5 border-b border-gray-800 pb-0">
+            <button
+              v-for="tab in allTabs"
+              :key="tab.id"
+              @click="toggleTab(tab.id, $event)"
+              class="flex items-center gap-1.5 text-xs px-3 py-2 rounded-t-md transition-colors border-b-2 -mb-px"
+              :class="isTabActive(tab.id)
+                ? 'text-white border-brand-500 bg-gray-900'
+                : 'text-gray-500 border-transparent hover:text-gray-300 hover:bg-gray-800/50'"
+            >
+              {{ tab.label }}
+              <span v-if="tab.count > 0"
+                class="rounded-full px-1.5 py-0.5 text-xs leading-none"
+                :class="isTabActive(tab.id) ? 'bg-brand-600 text-white' : 'bg-gray-700 text-gray-400'">
+                {{ tab.count }}
+              </span>
+            </button>
+          </div>
+
           <!-- Tasks -->
-          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <div v-show="isTabActive('tasks')" class="bg-gray-900 border border-gray-800 rounded-xl p-5">
             <div class="flex items-center justify-between mb-3">
               <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide">
                 Tasks
@@ -110,7 +130,7 @@
           </div>
 
           <!-- Sub-Issues -->
-          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <div v-show="isTabActive('subissues')" class="bg-gray-900 border border-gray-800 rounded-xl p-5">
             <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Sub-Issues</h2>
             <div v-if="store.currentIssue.subIssues?.length" class="space-y-1.5 mb-3">
               <NuxtLink v-for="sub in store.currentIssue.subIssues" :key="sub.id"
@@ -143,7 +163,7 @@
           </div>
 
           <!-- Linked Issues -->
-          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <div v-show="isTabActive('linked')" class="bg-gray-900 border border-gray-800 rounded-xl p-5">
             <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Linked Issues</h2>
             <div v-if="store.currentLinks.length" class="space-y-1.5 mb-3">
               <div v-for="link in store.currentLinks" :key="link.id"
@@ -192,7 +212,7 @@
           </div>
 
           <!-- History -->
-          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <div v-show="isTabActive('history')" class="bg-gray-900 border border-gray-800 rounded-xl p-5">
             <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">History</h2>
             <div v-if="store.currentHistory.length" class="relative">
               <div class="absolute left-2 top-0 bottom-0 w-px bg-gray-800"></div>
@@ -224,7 +244,7 @@
           </div>
 
           <!-- Comments -->
-          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <div v-show="isTabActive('comments')" class="bg-gray-900 border border-gray-800 rounded-xl p-5">
             <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-4">
               Comments
               <span v-if="store.currentComments.length" class="ml-1 text-gray-600">{{ store.currentComments.length }}</span>
@@ -478,6 +498,61 @@ const creatingSubIssue = ref(false)
 const newSubIssueTitle = ref('')
 const editingCommentId = ref<string | null>(null)
 const commentEdit = ref('')
+
+// Issue view tabs
+type IssueTab = 'tasks' | 'subissues' | 'linked' | 'history' | 'comments'
+const TABS_STORAGE_KEY = 'issue-view-tabs'
+const DEFAULT_TABS: IssueTab[] = ['comments']
+
+function loadTabsFromStorage(): IssueTab[] {
+  if (!import.meta.client) return DEFAULT_TABS
+  try {
+    const stored = localStorage.getItem(TABS_STORAGE_KEY)
+    if (stored) {
+      const parsed = JSON.parse(stored) as unknown
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed as IssueTab[]
+    }
+  } catch {}
+  return DEFAULT_TABS
+}
+
+const activeTabs = ref<IssueTab[]>(loadTabsFromStorage())
+
+function isTabActive(tab: IssueTab): boolean {
+  return activeTabs.value.includes(tab)
+}
+
+function toggleTab(tab: IssueTab, event: MouseEvent): void {
+  if (event.ctrlKey || event.metaKey) {
+    const idx = activeTabs.value.indexOf(tab)
+    if (idx >= 0) {
+      // Only deselect if more than one tab is active
+      if (activeTabs.value.length > 1) {
+        activeTabs.value = activeTabs.value.filter(t => t !== tab)
+      }
+    } else {
+      activeTabs.value = [...activeTabs.value, tab]
+    }
+  } else {
+    activeTabs.value = [tab]
+  }
+  if (import.meta.client) {
+    localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(activeTabs.value))
+  }
+}
+
+const allTabs = computed(() => [
+  { id: 'tasks' as IssueTab, label: 'Tasks', count: store.currentTasks.length },
+  { id: 'subissues' as IssueTab, label: 'Sub-Issues', count: store.currentIssue?.subIssues?.length ?? 0 },
+  { id: 'linked' as IssueTab, label: 'Linked Issues', count: store.currentLinks.length },
+  { id: 'history' as IssueTab, label: 'History', count: store.currentHistory.length },
+  { id: 'comments' as IssueTab, label: 'Comments', count: totalCommentsCount.value },
+])
+
+// Total comments includes regular and code review comments
+const totalCommentsCount = computed(() =>
+  store.currentComments.length + store.currentCodeReviewComments.length
+)
 
 // Links
 const addingLink = ref(false)
