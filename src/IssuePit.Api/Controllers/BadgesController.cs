@@ -24,12 +24,15 @@ public class BadgesController(IssuePitDbContext db) : ControllerBase
     /// <param name="metric">
     ///   Metric to display: <c>agents</c> (active agent sessions),
     ///   <c>sessions</c> (sessions in the last 24 h), <c>issues</c> (open issue count),
-    ///   or <c>health</c> (success rate of recent sessions).
+    ///   <c>health</c> (success rate of recent sessions),
+    ///   <c>cicd-runs</c> (CI/CD runs in the last 7 days),
+    ///   <c>cicd-failures</c> (failed CI/CD runs in the last 7 days),
+    ///   or <c>cicd-failure-rate</c> (CI/CD failure percentage over the last 7 days).
     /// </param>
     /// <param name="style">
     ///   Visual style: <c>flat</c> (default), <c>flat-square</c>, or <c>plastic</c>.
     /// </param>
-    /// <param name="branch">Optional git branch filter (applies to <c>sessions</c> metric).</param>
+    /// <param name="branch">Optional git branch filter (applies to <c>sessions</c>, <c>cicd-runs</c>, <c>cicd-failures</c>, and <c>cicd-failure-rate</c> metrics).</param>
     [HttpGet]
     [ResponseCache(Duration = 30, Location = ResponseCacheLocation.Any, NoStore = false)]
     public async Task<IActionResult> GetBadge(
@@ -54,10 +57,13 @@ public class BadgesController(IssuePitDbContext db) : ControllerBase
 
         var svg = metric switch
         {
-            "sessions"  => await SessionsBadgeAsync(project, badgeStyle, branch),
-            "issues"    => await IssuesBadgeAsync(project, badgeStyle),
-            "health"    => await HealthBadgeAsync(project, badgeStyle),
-            _           => await AgentsBadgeAsync(project, badgeStyle),
+            "sessions"          => await SessionsBadgeAsync(project, badgeStyle, branch),
+            "issues"            => await IssuesBadgeAsync(project, badgeStyle),
+            "health"            => await HealthBadgeAsync(project, badgeStyle),
+            "cicd-runs"         => await CiCdRunsBadgeAsync(project, badgeStyle, branch),
+            "cicd-failures"     => await CiCdFailuresBadgeAsync(project, badgeStyle, branch),
+            "cicd-failure-rate" => await CiCdFailureRateBadgeAsync(project, badgeStyle, branch),
+            _                   => await AgentsBadgeAsync(project, badgeStyle),
         };
 
         return BadgeSvg(svg);
@@ -132,6 +138,65 @@ public class BadgesController(IssuePitDbContext db) : ControllerBase
         };
 
         return BadgeSvgService.Generate("health", value, color, style);
+    }
+
+    private async Task<string> CiCdRunsBadgeAsync(Guid projectId, BadgeStyle style, string? branch)
+    {
+        var since = DateTime.UtcNow.AddDays(-7);
+        var query = db.CiCdRuns
+            .AsNoTracking()
+            .Where(r => r.ProjectId == projectId && r.StartedAt >= since);
+
+        if (!string.IsNullOrWhiteSpace(branch))
+            query = query.Where(r => r.Branch == branch);
+
+        var count = await query.CountAsync();
+        return BadgeSvgService.Generate("cicd runs", $"{count} / 7d", "blue", style);
+    }
+
+    private async Task<string> CiCdFailuresBadgeAsync(Guid projectId, BadgeStyle style, string? branch)
+    {
+        var since = DateTime.UtcNow.AddDays(-7);
+        var query = db.CiCdRuns
+            .AsNoTracking()
+            .Where(r => r.ProjectId == projectId && r.StartedAt >= since
+                     && r.Status == CiCdRunStatus.Failed);
+
+        if (!string.IsNullOrWhiteSpace(branch))
+            query = query.Where(r => r.Branch == branch);
+
+        var count = await query.CountAsync();
+        var color = count == 0 ? "brightgreen" : "red";
+        return BadgeSvgService.Generate("cicd failures", count.ToString(), color, style);
+    }
+
+    private async Task<string> CiCdFailureRateBadgeAsync(Guid projectId, BadgeStyle style, string? branch)
+    {
+        var since = DateTime.UtcNow.AddDays(-7);
+        var query = db.CiCdRuns
+            .AsNoTracking()
+            .Where(r => r.ProjectId == projectId && r.StartedAt >= since
+                     && (r.Status == CiCdRunStatus.Succeeded || r.Status == CiCdRunStatus.Failed));
+
+        if (!string.IsNullOrWhiteSpace(branch))
+            query = query.Where(r => r.Branch == branch);
+
+        var runs = await query.Select(r => r.Status).ToListAsync();
+
+        if (runs.Count == 0)
+            return BadgeSvgService.Generate("cicd failure rate", "no data", "lightgrey", style);
+
+        var failureRate = (double)runs.Count(s => s == CiCdRunStatus.Failed) / runs.Count * 100;
+
+        var (value, color) = failureRate switch
+        {
+            0           => ("0%", "brightgreen"),
+            <= 10       => ($"{failureRate:F0}%", "green"),
+            <= 30       => ($"{failureRate:F0}%", "yellow"),
+            _           => ($"{failureRate:F0}%", "red"),
+        };
+
+        return BadgeSvgService.Generate("cicd failure rate", value, color, style);
     }
 
     // --- Helpers ---
