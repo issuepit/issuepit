@@ -191,7 +191,7 @@
         </div>
       </Teleport>
 
-      <!-- Logs / Details -->
+      <!-- Logs / Details / Jobs -->
       <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
         <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800">
           <div class="flex gap-1">
@@ -230,8 +230,51 @@
           </div>
         </div>
 
+        <!-- Jobs tab -->
+        <template v-if="activeSection === 'jobs'">
+          <div v-if="jobSummaries.length" class="p-4">
+            <div class="flex flex-wrap gap-3">
+              <button
+                v-for="job in jobSummaries"
+                :key="job.name"
+                :class="[
+                  'flex flex-col items-start gap-1 px-4 py-3 rounded-xl border transition-all text-left min-w-[140px]',
+                  selectedJob === job.name
+                    ? 'border-brand-500 bg-brand-950/30 ring-1 ring-brand-500/40'
+                    : 'border-gray-700 bg-gray-800/50 hover:border-gray-600',
+                ]"
+                @click="toggleJobFilter(job.name)">
+                <span class="flex items-center gap-1.5">
+                  <span :class="jobStatusDot(job)" class="w-2 h-2 rounded-full shrink-0" />
+                  <span class="text-sm font-medium text-white">{{ job.name }}</span>
+                </span>
+                <span :class="jobStatusClass(job)" class="text-xs px-1.5 py-0.5 rounded-full font-medium">
+                  {{ jobStatusLabel(job) }}
+                </span>
+                <span class="text-xs text-gray-500 mt-0.5">{{ job.logCount }} log line{{ job.logCount === 1 ? '' : 's' }}</span>
+              </button>
+            </div>
+
+            <!-- Logs filtered to selected job -->
+            <div v-if="selectedJob" class="mt-4">
+              <div class="flex items-center gap-2 mb-2">
+                <span class="text-xs text-gray-400">Showing logs for job: <span class="text-white font-mono">{{ selectedJob }}</span></span>
+                <button class="text-xs text-gray-500 hover:text-gray-300 transition-colors" @click="selectedJob = null">Clear filter</button>
+              </div>
+              <div class="bg-gray-950 rounded-lg p-4 font-mono text-xs overflow-auto max-h-[500px]">
+                <div v-for="log in jobFilteredLogs" :key="log.id" class="flex gap-3 leading-5">
+                  <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
+                  <span :class="log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'" class="whitespace-pre-wrap break-all">{{ log.line }}</span>
+                </div>
+                <div v-if="!jobFilteredLogs.length" class="text-gray-500 text-center py-4">No logs for this job</div>
+              </div>
+            </div>
+          </div>
+          <div v-else class="py-10 text-center text-sm text-gray-500">No job data available — job info is extracted from act's JSON output</div>
+        </template>
+
         <!-- Logs tab -->
-        <template v-if="activeSection === 'logs'">
+        <template v-else-if="activeSection === 'logs'">
           <div v-if="filteredLogs.length" class="bg-gray-950 p-4 font-mono text-xs overflow-auto max-h-[600px]">
             <div v-for="log in filteredLogs" :key="log.id" class="flex gap-3 leading-5">
               <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
@@ -290,10 +333,11 @@ const retryOptions = reactive({
 const retryConflict = ref<{ message: string; activeRunId: string } | null>(null)
 
 const sectionTabs = [
+  { label: 'Jobs', value: 'jobs' },
   { label: 'Logs', value: 'logs' },
   { label: 'Details', value: 'details' },
 ]
-const activeSection = ref<'logs' | 'details'>('logs')
+const activeSection = ref<'jobs' | 'logs' | 'details'>('jobs')
 
 const streamTabs = [
   { label: 'All', value: null },
@@ -302,11 +346,64 @@ const streamTabs = [
 ]
 const activeStream = ref<string | null>(null)
 
+const selectedJob = ref<string | null>(null)
+
 const filteredLogs = computed(() =>
   activeStream.value === null
     ? store.currentRunLogs
     : store.currentRunLogs.filter(l => l.stream === activeStream.value)
 )
+
+const jobFilteredLogs = computed(() =>
+  selectedJob.value
+    ? store.currentRunLogs.filter(l => l.jobId === selectedJob.value)
+    : []
+)
+
+interface JobSummary {
+  name: string
+  logCount: number
+  hasError: boolean
+  isComplete: boolean
+}
+
+const jobSummaries = computed<JobSummary[]>(() => {
+  const map = new Map<string, JobSummary>()
+  for (const log of store.currentRunLogs) {
+    if (!log.jobId) continue
+    if (!map.has(log.jobId)) {
+      map.set(log.jobId, { name: log.jobId, logCount: 0, hasError: false, isComplete: false })
+    }
+    const summary = map.get(log.jobId)!
+    summary.logCount++
+    if (log.stream === 'stderr') summary.hasError = true
+    // Act emits these terminal messages to mark a job as done
+    if (log.line === 'Job succeeded' || log.line === 'Job failed') summary.isComplete = true
+  }
+  return Array.from(map.values())
+})
+
+function toggleJobFilter(jobName: string) {
+  selectedJob.value = selectedJob.value === jobName ? null : jobName
+}
+
+function jobStatusDot(job: JobSummary) {
+  if (job.hasError) return 'bg-red-400'
+  if (!job.isComplete) return 'bg-blue-400 animate-pulse'
+  return 'bg-green-400'
+}
+
+function jobStatusClass(job: JobSummary) {
+  if (job.hasError) return 'bg-red-900/30 text-red-400'
+  if (!job.isComplete) return 'bg-blue-900/30 text-blue-400'
+  return 'bg-green-900/30 text-green-400'
+}
+
+function jobStatusLabel(job: JobSummary) {
+  if (job.hasError) return 'Failed'
+  if (!job.isComplete) return 'Running'
+  return 'Succeeded'
+}
 
 const debugMetadata = computed(() => {
   const entries: Array<{ key: string; value: string }> = []
@@ -334,11 +431,11 @@ onMounted(async () => {
     await cicdConnection.value.invoke('JoinRun', runId).catch((e: unknown) => { console.warn('Failed to join run group', e) })
     cicdConnection.value.on('LogLine', (event: { runId: string; payload: string }) => {
       try {
-        const data = JSON.parse(event.payload) as { event?: string; stream?: string; line?: string; timestamp?: string }
+        const data = JSON.parse(event.payload) as { event?: string; stream?: string; line?: string; jobId?: string; timestamp?: string }
         if (data.event === 'run-completed') {
           now.value = Date.now()
-          // Refresh the run info (status, endedAt) now that the run is finished
-          store.fetchRun(runId)
+          // Refresh only run metadata (status, endedAt) — do NOT re-fetch logs to avoid losing scroll position
+          store.fetchRunOnly(runId)
         } else if (data.event === 'run-heartbeat') {
           now.value = Date.now()
         } else if (data.line !== undefined) {
@@ -347,6 +444,7 @@ onMounted(async () => {
             line: data.line,
             stream: data.stream ?? 'stdout',
             streamName: data.stream ? (data.stream.charAt(0).toUpperCase() + data.stream.slice(1)) : 'Stdout',
+            jobId: data.jobId,
             timestamp: data.timestamp ?? new Date().toISOString(),
           })
         }
@@ -359,7 +457,7 @@ onMounted(async () => {
   if (projectConnection.value) {
     await projectConnection.value.invoke('JoinProject', projectId).catch((e: unknown) => { console.warn('Failed to join project group', e) })
     projectConnection.value.on('RunsUpdated', (data: { runId: string }) => {
-      if (data.runId === runId) store.fetchRun(runId)
+      if (data.runId === runId) store.fetchRunOnly(runId)
     })
   }
 })

@@ -40,6 +40,15 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     }
   }
 
+  /** Refreshes only the run metadata (status, endedAt) without replacing logs or causing a loading flash. */
+  async function fetchRunOnly(runId: string) {
+    try {
+      currentRun.value = await api.get<CiCdRun>(`/api/cicd-runs/${runId}`)
+    } catch {
+      // best-effort
+    }
+  }
+
   async function fetchAgentSessions(projectId: string) {
     loading.value = true
     error.value = null
@@ -114,6 +123,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     error,
     fetchRuns,
     fetchRun,
+    fetchRunOnly,
     fetchAgentSessions,
     fetchAgentSession,
     retryRun,

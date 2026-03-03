@@ -87,6 +87,9 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
     {
         var list = new List<string> { trigger.EventName ?? "push" };
 
+        // Output logs as JSON so the worker can extract job/step info for the UI.
+        list.Add("--json");
+
         if (!string.IsNullOrWhiteSpace(trigger.Workflow))
         {
             list.Add("-W");

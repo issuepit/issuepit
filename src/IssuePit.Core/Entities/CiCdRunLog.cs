@@ -21,5 +21,9 @@ public class CiCdRunLog
 
     public LogStream Stream { get; set; } = LogStream.Stdout;
 
+    /// <summary>Job name extracted from act's JSON output (e.g. "build", "test"). Null for non-JSON log lines.</summary>
+    [MaxLength(200)]
+    public string? JobId { get; set; }
+
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
 }

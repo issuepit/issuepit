@@ -99,7 +99,7 @@ public class CiCdRunsController(
             query = query.Where(l => l.Stream == stream.Value);
 
         var logs = await query
-            .Select(l => new { l.Id, l.Line, l.Stream, StreamName = l.Stream.ToString(), l.Timestamp })
+            .Select(l => new { l.Id, l.Line, l.Stream, StreamName = l.Stream.ToString(), l.JobId, l.Timestamp })
             .ToListAsync();
 
         return Ok(logs);
