@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { Issue, IssuePriority, IssueType, IssueComment, IssueTask, IssueAssignee, Label, CodeReviewComment, IssueLink, IssueLinkType } from '~/types'
+import type { Issue, IssuePriority, IssueType, IssueComment, IssueTask, IssueAssignee, Label, CodeReviewComment, IssueLink, IssueLinkType, IssueEvent } from '~/types'
 import { IssueStatus } from '~/types'
 
 interface IssueFilters {
@@ -19,6 +19,7 @@ export const useIssuesStore = defineStore('issues', () => {
   const currentCodeReviewComments = ref<CodeReviewComment[]>([])
   const currentTasks = ref<IssueTask[]>([])
   const currentLinks = ref<IssueLink[]>([])
+  const currentHistory = ref<IssueEvent[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
   const filters = ref<IssueFilters>({})
@@ -335,6 +336,17 @@ export const useIssuesStore = defineStore('issues', () => {
     }
   }
 
+  // --- History ---
+
+  async function fetchHistory(issueId: string) {
+    try {
+      const data = await api.get<IssueEvent[]>(`/api/issues/${issueId}/history`)
+      currentHistory.value = data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to fetch history'
+    }
+  }
+
   // --- Milestone on Issue ---
 
   async function clearIssueMilestone(projectId: string, issueId: string) {
@@ -364,6 +376,7 @@ export const useIssuesStore = defineStore('issues', () => {
     currentCodeReviewComments,
     currentTasks,
     currentLinks,
+    currentHistory,
     loading,
     error,
     filters,
@@ -394,6 +407,7 @@ export const useIssuesStore = defineStore('issues', () => {
     fetchLinks,
     addLink,
     removeLink,
+    fetchHistory,
     clearIssueMilestone,
     setFilters,
     clearFilters
