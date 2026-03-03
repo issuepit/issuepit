@@ -20,8 +20,8 @@ var redis = builder.AddValkey("redis")
 // Open source (Apache 2.0). S3 endpoint: http://localstack:4566
 var storage = builder.AddContainer("localstack", "localstack/localstack", "4.3")
     .WithEnvironment("SERVICES", "s3")
-    .WithHttpEndpoint(targetPort: 4566, name: "http");
-    //.WithExplicitStart(); // not started in CI; configure real S3/B2 via ImageStorage settings; we need it in ci/cd for e2e tests which could upload data
+    .WithHttpEndpoint(targetPort: 4566, name: "http")
+    .WithHttpHealthCheck("/_localstack/health");
 
 // Management UI tools - set to explicit start so they are not auto-started in CI and require manual start from the Aspire dashboard
 postgresServer.WithPgAdmin(admin => admin.WithExplicitStart());
@@ -55,6 +55,7 @@ var api = builder.AddProject<Projects.IssuePit_Api>("api")
     .WaitForCompletion(kafkaInitializer)
     .WaitFor(kafka)
     .WaitFor(redis)
+    .WaitFor(storage)
     .WithHttpHealthCheck("/health", endpointName: "http")
     .WithEnvironment("AllowedOrigins", frontend.GetEndpoint("http"))
     .WithEnvironment("GitHub__OAuth__FrontendUrl", frontend.GetEndpoint("http"))

@@ -39,7 +39,7 @@ public class UploadsController(ImageStorageService imageStorage, VoiceTranscript
     [HttpPost("voice")]
     public async Task<IActionResult> UploadVoice(IFormFile file, CancellationToken ct)
     {
-        if (tenantContext.CurrentTenant is null) return Unauthorized();
+        if (tenantContext.CurrentTenant is null || tenantContext.CurrentUser is null) return Unauthorized();
 
         if (file is null || file.Length == 0)
             return BadRequest(new { error = "No file provided." });
