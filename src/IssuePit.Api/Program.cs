@@ -47,6 +47,10 @@ builder.Services.Configure<IssuePit.Api.Services.ImageStorageOptions>(
     builder.Configuration.GetSection(IssuePit.Api.Services.ImageStorageOptions.SectionName));
 builder.Services.AddSingleton<IssuePit.Api.Services.ImageStorageService>();
 
+builder.Services.Configure<IssuePit.Api.Services.VoiceTranscriptionOptions>(
+    builder.Configuration.GetSection(IssuePit.Api.Services.VoiceTranscriptionOptions.SectionName));
+builder.Services.AddSingleton<IssuePit.Api.Services.VoiceTranscriptionService>();
+
 builder.Services.AddSingleton<IBotNotificationService, TelegramBotNotificationService>();
 
 builder.Services.AddHttpClient("openrouter");
@@ -106,8 +110,8 @@ builder.Services.AddControllers(options =>
         opts.JsonSerializerOptions.Converters.Add(
             new JsonStringEnumConverter(System.Text.Json.JsonNamingPolicy.SnakeCaseLower));
     });
-// Allow image uploads up to 10 MB
-builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o => o.MultipartBodyLengthLimit = 10 * 1024 * 1024);
+// Allow image uploads up to 10 MB and voice uploads up to 25 MB
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o => o.MultipartBodyLengthLimit = 25 * 1024 * 1024);
 builder.Services.AddMemoryCache();
 builder.Services.AddOpenApi();
 

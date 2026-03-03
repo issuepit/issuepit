@@ -59,6 +59,41 @@ public class ImageStorageService(IOptions<ImageStorageOptions> options, ILogger<
     }
 
     /// <summary>
+    /// Uploads any file to the given <paramref name="subfolder"/> and returns its public URL.
+    /// </summary>
+    public async Task<string> UploadFileAsync(Stream content, string fileName, string contentType, string subfolder, CancellationToken ct = default)
+    {
+        var extension = Path.GetExtension(fileName);
+        if (!string.IsNullOrEmpty(extension))
+        {
+            extension = new string(extension.Where(c => char.IsLetterOrDigit(c) || c == '.').ToArray());
+        }
+        var safeSubfolder = new string(subfolder.Where(c => char.IsLetterOrDigit(c) || c == '/').ToArray()).Trim('/');
+        var key = $"{safeSubfolder}/{Guid.NewGuid():N}{extension}";
+
+        using var s3 = CreateClient();
+
+        if (!_bucketEnsured)
+        {
+            await EnsureBucketExistsAsync(s3, ct);
+            _bucketEnsured = true;
+        }
+
+        var request = new PutObjectRequest
+        {
+            BucketName = _opts.BucketName,
+            Key = key,
+            InputStream = content,
+            ContentType = contentType,
+            CannedACL = S3CannedACL.PublicRead,
+        };
+
+        await s3.PutObjectAsync(request, ct);
+
+        return BuildPublicUrl(key);
+    }
+
+    /// <summary>
     /// Uploads an image and returns its public URL.
     /// </summary>
     public async Task<string> UploadImageAsync(Stream content, string fileName, string contentType, CancellationToken ct = default)

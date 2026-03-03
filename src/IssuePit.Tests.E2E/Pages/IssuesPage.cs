@@ -27,4 +27,27 @@ public class IssuesPage(IPage page)
         await page.ClickAsync("button:has-text('Create Issue')");
         await page.WaitForSelectorAsync($"text={title}", new PageWaitForSelectorOptions { Timeout = 10_000 });
     }
+
+    /// <summary>
+    /// Verifies the Voice button is visible and opens the voice recording modal.
+    /// </summary>
+    public async Task OpenVoiceModalAsync()
+    {
+        await page.ClickAsync("button:has-text('Voice')");
+        await page.WaitForSelectorAsync("text=Create Issue from Voice", new PageWaitForSelectorOptions { Timeout = 5_000 });
+    }
+
+    /// <summary>
+    /// Closes the voice recording modal via the Cancel button.
+    /// </summary>
+    public async Task CloseVoiceModalAsync()
+    {
+        // The modal has its own Cancel button (unique when voice modal is open)
+        await page.ClickAsync("button:has-text('Cancel')");
+        await page.WaitForSelectorAsync("text=Create Issue from Voice", new PageWaitForSelectorOptions
+        {
+            State = WaitForSelectorState.Hidden,
+            Timeout = 5_000
+        });
+    }
 }
