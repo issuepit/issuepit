@@ -20,6 +20,10 @@ public class CiCdWorker(
     // Tracks CancellationTokenSources for in-flight runs so they can be cancelled on demand.
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _activeRuns = new();
 
+    // Semaphore pool keyed by organization ID. Enforces MaxConcurrentRunners per org.
+    // A limit of 0 means unlimited (no semaphore).
+    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _orgSemaphores = new();
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // Run the cancel-signal consumer in parallel with the trigger consumer.
@@ -136,13 +140,17 @@ public class CiCdWorker(
             .FirstOrDefaultAsync(p => p.Id == trigger.ProjectId, stoppingToken);
         if (project is not null)
         {
-            var org = project.Organization;
+            var orgSettings = project.Organization;
             trigger = trigger with
             {
-                ActEnv = trigger.ActEnv ?? project.ActEnv ?? org?.ActEnv,
-                ActSecrets = trigger.ActSecrets ?? project.ActSecrets ?? org?.ActSecrets,
+                ActEnv = trigger.ActEnv ?? project.ActEnv ?? orgSettings?.ActEnv,
+                ActSecrets = trigger.ActSecrets ?? project.ActSecrets ?? orgSettings?.ActSecrets,
             };
         }
+
+        // Determine org-level concurrency limit.
+        var org = project?.Organization;
+        var semaphore = GetOrgSemaphore(org);
 
         var run = new CiCdRun
         {
@@ -153,7 +161,7 @@ public class CiCdWorker(
             Branch = trigger.Branch,
             Workflow = trigger.Workflow,
             WorkspacePath = trigger.WorkspacePath,
-            Status = CiCdRunStatus.Running,
+            Status = semaphore is not null ? CiCdRunStatus.Pending : CiCdRunStatus.Running,
             StartedAt = DateTime.UtcNow,
         };
 
@@ -165,6 +173,17 @@ public class CiCdWorker(
         // Create a per-run CTS linked to the host stoppingToken so we can cancel this run independently.
         using var runCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         _activeRuns[run.Id] = runCts;
+
+        // Acquire a slot from the org's concurrency pool if a limit is configured.
+        if (semaphore is not null && org is not null)
+        {
+            logger.LogInformation(
+                "Waiting for available slot in org pool (org={OrgId}, limit={Limit}) for run {RunId}",
+                org.Id, org.MaxConcurrentRunners, run.Id);
+            await semaphore.WaitAsync(runCts.Token);
+            run.Status = CiCdRunStatus.Running;
+            await db.SaveChangesAsync(stoppingToken);
+        }
 
         try
         {
@@ -227,6 +246,7 @@ public class CiCdWorker(
         }
         finally
         {
+            semaphore?.Release();
             _activeRuns.TryRemove(run.Id, out _);
             run.EndedAt = DateTime.UtcNow;
             await db.SaveChangesAsync(stoppingToken);
@@ -235,6 +255,20 @@ public class CiCdWorker(
             await PublishLogLineAsync(run.Id.ToString(),
                 JsonSerializer.Serialize(new { @event = "run-completed", status = run.Status.ToString() }));
         }
+    }
+
+    /// <summary>
+    /// Returns the semaphore for the given organization, creating it on first use.
+    /// Returns null when no limit is configured (MaxConcurrentRunners == 0).
+    /// </summary>
+    private SemaphoreSlim? GetOrgSemaphore(Organization? org)
+    {
+        if (org is null || org.MaxConcurrentRunners <= 0)
+            return null;
+
+        return _orgSemaphores.GetOrAdd(
+            org.Id,
+            _ => new SemaphoreSlim(org.MaxConcurrentRunners, org.MaxConcurrentRunners));
     }
 
     private async Task AppendLogAsync(

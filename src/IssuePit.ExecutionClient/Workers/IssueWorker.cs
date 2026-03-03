@@ -18,6 +18,10 @@ public class IssueWorker(
     // Tracks CancellationTokenSources for in-flight agent launches so they can be cancelled on demand.
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _activeSessions = new();
 
+    // Semaphore pool keyed by runtime configuration ID (or Guid.Empty for the default/unbound pool).
+    // Enforces MaxConcurrentAgents per runtime host. A limit of 0 means unlimited (no semaphore).
+    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _runtimeSemaphores = new();
+
     private string KafkaBootstrapServers => configuration.GetConnectionString("kafka")
         ?? throw new InvalidOperationException("Kafka connection string 'kafka' is not configured.");
 
@@ -212,12 +216,28 @@ public class IssueWorker(
             StartedAt = DateTime.UtcNow,
         };
 
+        // If the runtime has a concurrency limit, record the session as Pending until a slot is available.
+        if (runtimeConfig is { MaxConcurrentAgents: > 0 })
+            session.Status = AgentSessionStatus.Pending;
+
         db.AgentSessions.Add(session);
         await db.SaveChangesAsync(cancellationToken);
 
         // Create a per-session CTS linked to the host stoppingToken so we can cancel this launch independently.
         using var sessionCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _activeSessions[session.Id] = sessionCts;
+
+        // Acquire a slot from the runtime's concurrency pool if a limit is configured.
+        var semaphore = GetRuntimeSemaphore(runtimeConfig);
+        if (semaphore is not null)
+        {
+            logger.LogInformation(
+                "Waiting for available slot in runtime pool (runtime={RuntimeId}, limit={Limit}) for session {SessionId}",
+                runtimeConfig!.Id, runtimeConfig.MaxConcurrentAgents, session.Id);
+            await semaphore.WaitAsync(sessionCts.Token);
+            session.Status = AgentSessionStatus.Running;
+            await db.SaveChangesAsync(sessionCts.Token);
+        }
 
         try
         {
@@ -289,8 +309,23 @@ public class IssueWorker(
         }
         finally
         {
+            semaphore?.Release();
             _activeSessions.TryRemove(session.Id, out _);
         }
+    }
+
+    /// <summary>
+    /// Returns the semaphore for the given runtime configuration, creating it on first use.
+    /// Returns null when no limit is configured (MaxConcurrentAgents == 0).
+    /// </summary>
+    private SemaphoreSlim? GetRuntimeSemaphore(RuntimeConfiguration? runtimeConfig)
+    {
+        if (runtimeConfig is null || runtimeConfig.MaxConcurrentAgents <= 0)
+            return null;
+
+        return _runtimeSemaphores.GetOrAdd(
+            runtimeConfig.Id,
+            _ => new SemaphoreSlim(runtimeConfig.MaxConcurrentAgents, runtimeConfig.MaxConcurrentAgents));
     }
 
     /// <summary>Loads API credentials for the org and maps them to environment variable names.</summary>
