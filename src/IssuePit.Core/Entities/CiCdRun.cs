@@ -49,5 +49,13 @@ public class CiCdRun
     [MaxLength(500)]
     public string? WorkspacePath { get; set; }
 
+    /// <summary>
+    /// JSON-serialised workflow graph (<c>{ jobs, edges, warnings }</c>) pre-computed when the run starts.
+    /// Populated by the CI/CD worker so the graph API can return data even when the workspace is no longer
+    /// accessible on the host (e.g. after the workspace is cleaned up or for Docker exec runs without a
+    /// local volume mount). Null for runs where no workspace or workflow was available at start time.
+    /// </summary>
+    public string? WorkflowGraphJson { get; set; }
+
     public ICollection<CiCdRunLog> Logs { get; set; } = [];
 }

@@ -676,7 +676,30 @@ export interface CiCdRunLog {
   line: string
   stream: string
   streamName: string
+  jobId?: string
+  stepId?: string
   timestamp: string
+}
+
+export interface WorkflowJobNode {
+  id: string
+  name: string
+  runsOn?: string
+  needs: string[]
+  workflowFile?: string
+  callerWorkflowFile?: string
+}
+
+export interface WorkflowEdge {
+  from: string
+  to: string
+}
+
+export interface WorkflowGraph {
+  jobs: WorkflowJobNode[]
+  edges: WorkflowEdge[]
+  warnings: string[]
+  workflowTriggers?: Record<string, string[]>
 }
 
 export interface AgentSessionLog {
@@ -783,4 +806,81 @@ export interface Skill {
   lastSyncedAt?: string
   createdAt: string
   updatedAt: string
+}
+
+export enum TodoPriority {
+  NoPriority = 'noPriority',
+  Low = 'low',
+  Medium = 'medium',
+  High = 'high',
+  Urgent = 'urgent',
+}
+
+export const TodoPriorityLabels: Record<TodoPriority, string> = {
+  [TodoPriority.NoPriority]: 'No Priority',
+  [TodoPriority.Low]: 'Low',
+  [TodoPriority.Medium]: 'Medium',
+  [TodoPriority.High]: 'High',
+  [TodoPriority.Urgent]: 'Urgent',
+}
+
+export enum TodoRecurringInterval {
+  None = 'none',
+  Daily = 'daily',
+  Weekly = 'weekly',
+  Monthly = 'monthly',
+  Yearly = 'yearly',
+}
+
+export const TodoRecurringIntervalLabels: Record<TodoRecurringInterval, string> = {
+  [TodoRecurringInterval.None]: 'No Repeat',
+  [TodoRecurringInterval.Daily]: 'Daily',
+  [TodoRecurringInterval.Weekly]: 'Weekly',
+  [TodoRecurringInterval.Monthly]: 'Monthly',
+  [TodoRecurringInterval.Yearly]: 'Yearly',
+}
+
+export interface TodoCategory {
+  id: string
+  boardId: string
+  name: string
+  color: string
+  position: number
+}
+
+export interface TodoBoard {
+  id: string
+  tenantId: string
+  name: string
+  description?: string
+  createdAt: string
+  categories: TodoCategory[]
+}
+
+export interface TodoBoardMembership {
+  todoId: string
+  boardId: string
+  board: TodoBoard
+}
+
+export interface TodoCategoryMembership {
+  todoId: string
+  categoryId: string
+  category: TodoCategory
+}
+
+export interface Todo {
+  id: string
+  tenantId: string
+  title: string
+  body?: string
+  isCompleted: boolean
+  priority: TodoPriority
+  dueDate?: string
+  startDate?: string
+  recurringInterval: TodoRecurringInterval
+  createdAt: string
+  updatedAt: string
+  boardMemberships: TodoBoardMembership[]
+  categoryMemberships: TodoCategoryMembership[]
 }

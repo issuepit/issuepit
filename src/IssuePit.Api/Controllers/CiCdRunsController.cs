@@ -99,10 +99,180 @@ public class CiCdRunsController(
             query = query.Where(l => l.Stream == stream.Value);
 
         var logs = await query
-            .Select(l => new { l.Id, l.Line, l.Stream, StreamName = l.Stream.ToString(), l.Timestamp })
+            .Select(l => new { l.Id, l.Line, l.Stream, StreamName = l.Stream.ToString(), l.JobId, l.StepId, l.Timestamp })
             .ToListAsync();
 
         return Ok(logs);
+    }
+
+    /// <summary>
+    /// Returns the workflow job graph (nodes and dependency edges) for the given run.
+    /// First returns the pre-computed graph stored in the DB (if available), then falls back to
+    /// parsing the workflow YAML from the workspace. Returns 404 when no graph data can be found.
+    /// </summary>
+    [HttpGet("{id:guid}/graph")]
+    public async Task<IActionResult> GetGraph(Guid id)
+    {
+        var run = await db.CiCdRuns
+            .Include(r => r.Project)
+            .Where(r => r.Id == id && r.Project.Organization.TenantId == tenant.CurrentTenant!.Id)
+            .Select(r => new { r.WorkspacePath, r.Workflow, r.WorkflowGraphJson })
+            .FirstOrDefaultAsync();
+
+        if (run is null) return NotFound();
+
+        // Return pre-computed graph if available (written by the worker at run start or exec step).
+        if (!string.IsNullOrWhiteSpace(run.WorkflowGraphJson))
+        {
+            try
+            {
+                var cached = System.Text.Json.JsonSerializer.Deserialize<WorkflowGraph>(
+                    run.WorkflowGraphJson,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (cached is not null)
+                    return Ok(cached);
+            }
+            catch { /* fall through to filesystem parse */ }
+        }
+
+        if (string.IsNullOrWhiteSpace(run.WorkspacePath))
+            return NotFound(new { error = "This run has no local workspace. Graph data is only available for locally-triggered runs." });
+
+        var workflowsDir = Path.Combine(run.WorkspacePath, ".github", "workflows");
+
+        WorkflowGraph graph;
+        if (!string.IsNullOrWhiteSpace(run.Workflow))
+        {
+            // Run was triggered for a specific workflow file — parse only that file.
+            var yamlPath = TryFindWorkflowYamlPath(run.WorkspacePath, run.Workflow);
+            if (yamlPath is null)
+                return NotFound(new { error = $"Workflow file '{run.Workflow}' not found in workspace '{run.WorkspacePath}'." });
+
+            graph = await WorkflowGraphParser.ParseFileAsync(yamlPath, HttpContext.RequestAborted);
+        }
+        else if (Directory.Exists(workflowsDir))
+        {
+            // No specific workflow — merge all workflow files in .github/workflows/.
+            graph = await WorkflowGraphParser.ParseDirectoryAsync(workflowsDir, HttpContext.RequestAborted);
+            if (graph.Jobs.Count == 0)
+                return NotFound(new { error = "No workflow files with jobs found in workspace '.github/workflows/'." });
+        }
+        else
+        {
+            return NotFound(new { error = "No '.github/workflows/' directory found in workspace." });
+        }
+
+        // Cache the parsed graph in the DB so future requests don't need the workspace.
+        try
+        {
+            var runToUpdate = await db.CiCdRuns.FindAsync(id);
+            if (runToUpdate is not null)
+            {
+                runToUpdate.WorkflowGraphJson = System.Text.Json.JsonSerializer.Serialize(graph);
+                await db.SaveChangesAsync(HttpContext.RequestAborted);
+            }
+        }
+        catch { /* best-effort — caching failure must not fail the response */ }
+
+        return Ok(graph);
+    }
+
+    /// <summary>
+    /// Returns logs for a specific job within a run, identified by job name/id.
+    /// Optionally filtered by stream and/or step name.
+    /// </summary>
+    [HttpGet("{id:guid}/jobs/{jobId}/logs")]
+    public async Task<IActionResult> GetJobLogs(Guid id, string jobId, [FromQuery] LogStream? stream, [FromQuery] string? step)
+    {
+        var runExists = await db.CiCdRuns
+            .AnyAsync(r => r.Id == id && r.Project.Organization.TenantId == tenant.CurrentTenant!.Id);
+
+        if (!runExists) return NotFound();
+
+        var query = db.CiCdRunLogs
+            .Where(l => l.CiCdRunId == id && l.JobId == jobId)
+            .OrderBy(l => l.Timestamp)
+            .AsQueryable();
+
+        if (stream.HasValue)
+            query = query.Where(l => l.Stream == stream.Value);
+
+        if (!string.IsNullOrEmpty(step))
+            query = query.Where(l => l.StepId == step);
+
+        var logs = await query
+            .Select(l => new { l.Id, l.Line, l.Stream, StreamName = l.Stream.ToString(), l.JobId, l.StepId, l.Timestamp })
+            .ToListAsync();
+
+        return Ok(logs);
+    }
+
+    /// <summary>
+    /// Returns the distinct step names (act <c>stage</c> values) for a specific job within a run,
+    /// in the order they first appeared.
+    /// </summary>
+    [HttpGet("{id:guid}/jobs/{jobId}/steps")]
+    public async Task<IActionResult> GetJobSteps(Guid id, string jobId)
+    {
+        var runExists = await db.CiCdRuns
+            .AnyAsync(r => r.Id == id && r.Project.Organization.TenantId == tenant.CurrentTenant!.Id);
+
+        if (!runExists) return NotFound();
+
+        // Return steps in the order they first appeared, excluding null step IDs.
+        var steps = await db.CiCdRunLogs
+            .Where(l => l.CiCdRunId == id && l.JobId == jobId && l.StepId != null)
+            .GroupBy(l => l.StepId!)
+            .Select(g => new { StepId = g.Key, FirstSeen = g.Min(l => l.Timestamp) })
+            .OrderBy(s => s.FirstSeen)
+            .Select(s => s.StepId)
+            .ToListAsync();
+
+        return Ok(steps);
+    }
+
+    private static string? TryFindWorkflowYamlPath(string workspacePath, string workflow)
+    {
+        // Resolve the workspace to a canonical path so we can detect path traversal attempts.
+        var canonicalWorkspace = Path.GetFullPath(workspacePath);
+
+        // Build candidates using only the filename component to prevent path traversal via
+        // the workflow value (e.g. "../../etc/passwd" stored by a user or external source).
+        var workflowFileName = Path.GetFileName(workflow);
+
+        // Also allow a well-known relative sub-path: ".github/workflows/<filename>"
+        // Only use the workflow value as-is when it is a simple filename (no directory separators),
+        // or when it resolves to a path still within the workspace.
+        var candidates = new List<string>
+        {
+            Path.Combine(canonicalWorkspace, ".github", "workflows", workflowFileName),
+        };
+
+        // If workflow has no directory component (just a filename), also try directly under workspace.
+        if (workflowFileName == workflow || workflowFileName == Path.GetFileName(workflow.Replace('/', Path.DirectorySeparatorChar)))
+        {
+            candidates.Insert(0, Path.Combine(canonicalWorkspace, workflow.TrimStart('/').TrimStart('\\').Replace('/', Path.DirectorySeparatorChar)));
+        }
+
+        foreach (var path in candidates)
+        {
+            try
+            {
+                // Safety check: ensure the resolved path is still under the workspace root.
+                var resolvedPath = Path.GetFullPath(path);
+                if (!resolvedPath.StartsWith(canonicalWorkspace, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (System.IO.File.Exists(resolvedPath))
+                    return resolvedPath;
+            }
+            catch
+            {
+                // best-effort
+            }
+        }
+
+        return null;
     }
 
     // Accepts state updates pushed by external CI/CD systems (e.g. GitHub Actions webhooks).
@@ -220,6 +390,7 @@ public class CiCdRunsController(
             customImage = options?.CustomImage,
             customEntrypoint = options?.CustomEntrypoint,
             customArgs = options?.CustomArgs,
+            actRunnerImage = options?.ActRunnerImage,
         });
 
         await producer.ProduceAsync("cicd-trigger", new Message<string, string>
@@ -285,16 +456,18 @@ public record RetryRunOptions(
     bool KeepContainerOnFailure = false,
     /// <summary>When true the retry proceeds even if another run for the same project is already in progress.</summary>
     bool ForceRetry = false,
-    /// <summary>When true the Docker socket is NOT mounted (disables DinD).</summary>
+    /// <summary>When true the Docker socket is NOT mounted into the container (disables Docker-in-Docker).</summary>
     bool NoDind = false,
-    /// <summary>When true no host volumes are mounted (workspace and docker socket omitted).</summary>
+    /// <summary>When true no host volumes are mounted into the container (workspace and docker socket are omitted).</summary>
     bool NoVolumeMounts = false,
-    /// <summary>Override the Docker image for this run.</summary>
+    /// <summary>Override the Docker image used for the CI/CD container (the container that runs act). Null or empty = use configured default.</summary>
     string? CustomImage = null,
     /// <summary>Override the container entrypoint.</summary>
     string? CustomEntrypoint = null,
     /// <summary>Additional CLI arguments appended to the act command.</summary>
-    string? CustomArgs = null);
+    string? CustomArgs = null,
+    /// <summary>Override the act runner image used by act for platform mapping (e.g. ubuntu-latest). Null or empty = use project/org/global default.</summary>
+    string? ActRunnerImage = null);
 
 /// <summary>Request body for the external CI/CD sync endpoint.</summary>
 public record ExternalSyncRequest(

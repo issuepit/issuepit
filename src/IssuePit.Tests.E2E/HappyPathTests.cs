@@ -520,4 +520,58 @@ public class HappyPathTests : IAsyncLifetime
             .Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
         Assert.Equal(0, linksAfterDelete.GetArrayLength());
     }
+
+    /// <summary>
+    /// API happy path for CI/CD run job graph: create a run → fetch graph (404 when no workspace) → fetch job logs endpoint.
+    /// </summary>
+    [Fact]
+    public async Task Api_HappyPath_CiCdRunGraphAndJobLogs()
+    {
+        using var client = CreateCookieClient();
+
+        var tenantId = await GetDefaultTenantIdAsync();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"e2e{Guid.NewGuid():N}"[..12];
+        const string password = "TestPass1!";
+        await client.PostAsJsonAsync("/api/auth/register", new { username, password });
+
+        // Create org and project
+        var orgSlug = $"e2e-graph-{Guid.NewGuid():N}"[..16];
+        var orgResp = await client.PostAsJsonAsync("/api/orgs", new { name = "Graph Org", slug = orgSlug });
+        var org = await orgResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var orgId = Guid.Parse(org.GetProperty("id").GetString()!);
+
+        var projectSlug = $"e2e-gph-{Guid.NewGuid():N}"[..14];
+        var projResp = await client.PostAsJsonAsync("/api/projects", new { name = "Graph Project", slug = projectSlug, orgId });
+        Assert.Equal(HttpStatusCode.Created, projResp.StatusCode);
+        var project = await projResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var projectId = project.GetProperty("id").GetString()!;
+
+        // Create a run via external-sync (no workspacePath)
+        var runResp = await client.PostAsJsonAsync("/api/cicd-runs/external-sync", new
+        {
+            projectId = Guid.Parse(projectId),
+            externalSource = "github",
+            externalRunId = $"graph-test-{Guid.NewGuid()}",
+            commitSha = "abc123",
+            branch = "main",
+            workflow = "ci.yml",
+            status = "completed",
+            conclusion = "success",
+        });
+        Assert.Equal(HttpStatusCode.OK, runResp.StatusCode);
+        var run = await runResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var runId = run.GetProperty("id").GetString()!;
+
+        // Fetch graph — run has no workspacePath so expect 404 (not empty graph)
+        var graphResp = await client.GetAsync($"/api/cicd-runs/{runId}/graph");
+        Assert.Equal(HttpStatusCode.NotFound, graphResp.StatusCode);
+
+        // Fetch job logs for a job that doesn't exist — should return empty list
+        var jobLogsResp = await client.GetAsync($"/api/cicd-runs/{runId}/jobs/build/logs");
+        Assert.Equal(HttpStatusCode.OK, jobLogsResp.StatusCode);
+        var jobLogs = await jobLogsResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal(0, jobLogs.GetArrayLength());
+    }
 }

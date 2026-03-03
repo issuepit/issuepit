@@ -7,6 +7,9 @@ namespace IssuePit.Tests.E2E.Pages;
 /// </summary>
 public class AgentsPage(IPage page)
 {
+    // Short wait before retrying a navigation that may have been redirected by Vue SSR hydration.
+    private const int VueHydrationRetryTimeoutMs = 5_000;
+
     public async Task GotoAsync()
     {
         await page.GotoAsync("/agents");
@@ -18,6 +21,18 @@ public class AgentsPage(IPage page)
     /// </summary>
     public async Task CreateAgentAsync(string name, string orgId, string? dockerImage = null, string? systemPrompt = null)
     {
+        // Retry once in case the button was not yet interactive due to a Vue SSR hydration race.
+        try
+        {
+            await page.WaitForSelectorAsync("button:has-text('New Agent Mode')",
+                new PageWaitForSelectorOptions { Timeout = VueHydrationRetryTimeoutMs });
+        }
+        catch (TimeoutException)
+        {
+            await GotoAsync();
+            await page.WaitForSelectorAsync("button:has-text('New Agent Mode')");
+        }
+
         await page.ClickAsync("button:has-text('New Agent Mode')");
         await page.WaitForSelectorAsync("[data-testid='org-select']");
         await page.SelectOptionAsync("[data-testid='org-select']", orgId);

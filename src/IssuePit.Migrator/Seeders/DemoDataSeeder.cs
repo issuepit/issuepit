@@ -93,6 +93,8 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
             TenantId = tenantId,
             Name = "Acme Corp",
             Slug = "acme",
+            // Use the custom runner image built for this environment.
+            ActRunnerImage = "ghcr.io/catthehacker/ubuntu:custom-24.04",
             CreatedAt = DateTime.UtcNow,
         };
         db.Organizations.Add(org);
