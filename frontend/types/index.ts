@@ -676,7 +676,30 @@ export interface CiCdRunLog {
   line: string
   stream: string
   streamName: string
+  jobId?: string
+  stepId?: string
   timestamp: string
+}
+
+export interface WorkflowJobNode {
+  id: string
+  name: string
+  runsOn?: string
+  needs: string[]
+  workflowFile?: string
+  callerWorkflowFile?: string
+}
+
+export interface WorkflowEdge {
+  from: string
+  to: string
+}
+
+export interface WorkflowGraph {
+  jobs: WorkflowJobNode[]
+  edges: WorkflowEdge[]
+  warnings: string[]
+  workflowTriggers?: Record<string, string[]>
 }
 
 export interface AgentSessionLog {

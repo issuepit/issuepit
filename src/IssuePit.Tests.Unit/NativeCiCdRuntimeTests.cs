@@ -120,6 +120,25 @@ public class NativeCiCdRuntimeTests
     }
 
     [Fact]
+    public void BuildActArgumentsList_AlwaysIncludesJsonFlag()
+    {
+        var args = NativeCiCdRuntime.BuildActArgumentsList(Trigger());
+        Assert.Contains("--json", args);
+    }
+
+    [Fact]
+    public void BuildActArgumentsList_JsonFlagBeforeWorkflowFlag()
+    {
+        var args = NativeCiCdRuntime.BuildActArgumentsList(Trigger(workflow: "ci.yml"));
+        var list = args.ToList();
+        var jsonIdx = list.IndexOf("--json");
+        var wIdx = list.IndexOf("-W");
+        Assert.True(jsonIdx >= 0);
+        Assert.True(wIdx >= 0);
+        Assert.True(jsonIdx < wIdx);
+    }
+
+    [Fact]
     public void ParseKeyValuePairs_NullInput_ReturnsEmpty()
     {
         Assert.Empty(NativeCiCdRuntime.ParseKeyValuePairs(null));

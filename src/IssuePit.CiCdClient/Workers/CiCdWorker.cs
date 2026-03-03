@@ -278,12 +278,51 @@ public class CiCdWorker(
         IssuePitDbContext db,
         CancellationToken cancellationToken)
     {
+        // Try to parse act's JSON log format (enabled by --json flag).
+        // act uses logrus JSON format: {"level":"info","msg":"...","job":"build","stage":"Set up job","time":"..."}
+        var displayLine = line;
+        var jobId = (string?)null;
+        var stepId = (string?)null;
+        var actualStream = stream;
+        if (line.Length > 0 && line[0] == '{')
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(line);
+                var root = doc.RootElement;
+                if (root.TryGetProperty("msg", out var msgEl))
+                {
+                    displayLine = msgEl.GetString() ?? line;
+                    if (root.TryGetProperty("job", out var jobEl))
+                        jobId = jobEl.GetString();
+                    // Extract step name from the 'stage' field (e.g. "Set up job", "Main actions/checkout@v4").
+                    if (root.TryGetProperty("stage", out var stageEl))
+                        stepId = stageEl.GetString();
+                    // Remap stream from act JSON level only if the original stream was stdout;
+                    // if the container already routed the line to stderr, trust that.
+                    if (stream == LogStream.Stdout &&
+                        root.TryGetProperty("level", out var lvlEl))
+                    {
+                        var level = lvlEl.GetString();
+                        if (level is "error" or "fatal")
+                            actualStream = LogStream.Stderr;
+                    }
+                }
+            }
+            catch (JsonException)
+            {
+                // Not JSON — use raw line as-is
+            }
+        }
+
         var log = new CiCdRunLog
         {
             Id = Guid.NewGuid(),
             CiCdRunId = runId,
-            Line = line,
-            Stream = stream,
+            Line = displayLine,
+            Stream = actualStream,
+            JobId = jobId,
+            StepId = stepId,
             Timestamp = DateTime.UtcNow,
         };
 
@@ -293,8 +332,10 @@ public class CiCdWorker(
         // Publish to Redis so the API relay pushes it to SignalR clients
         var payload = JsonSerializer.Serialize(new
         {
-            stream = stream.ToString().ToLowerInvariant(),
-            line,
+            stream = actualStream.ToString().ToLowerInvariant(),
+            line = displayLine,
+            jobId,
+            stepId,
             timestamp = log.Timestamp,
         });
         await PublishLogLineAsync(runId.ToString(), payload);
