@@ -232,27 +232,68 @@
 
         <!-- Jobs tab -->
         <template v-if="activeSection === 'jobs'">
-          <div v-if="jobSummaries.length" class="p-4">
-            <div class="flex flex-wrap gap-3">
-              <button
-                v-for="job in jobSummaries"
-                :key="job.name"
-                :class="[
-                  'flex flex-col items-start gap-1 px-4 py-3 rounded-xl border transition-all text-left min-w-[140px]',
-                  selectedJob === job.name
-                    ? 'border-brand-500 bg-brand-950/30 ring-1 ring-brand-500/40'
-                    : 'border-gray-700 bg-gray-800/50 hover:border-gray-600',
-                ]"
-                @click="toggleJobFilter(job.name)">
-                <span class="flex items-center gap-1.5">
-                  <span :class="jobStatusDot(job)" class="w-2 h-2 rounded-full shrink-0" />
-                  <span class="text-sm font-medium text-white">{{ job.name }}</span>
-                </span>
-                <span :class="jobStatusClass(job)" class="text-xs px-1.5 py-0.5 rounded-full font-medium">
-                  {{ jobStatusLabel(job) }}
-                </span>
-                <span class="text-xs text-gray-500 mt-0.5">{{ job.logCount }} log line{{ job.logCount === 1 ? '' : 's' }}</span>
-              </button>
+          <div v-if="enrichedJobs.length" class="p-4">
+            <!-- Job graph with SVG dependency arrows -->
+            <div class="relative overflow-x-auto pb-2">
+              <!-- SVG arrows layer (absolute, behind boxes) -->
+              <svg
+                v-if="graphLayout.svgWidth && graphLayout.svgHeight"
+                class="absolute top-0 left-0 pointer-events-none"
+                :width="graphLayout.svgWidth"
+                :height="graphLayout.svgHeight"
+                style="z-index: 0">
+                <defs>
+                  <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                    <path d="M0,0 L0,6 L8,3 z" fill="#4b5563" />
+                  </marker>
+                </defs>
+                <path
+                  v-for="(edge, i) in graphLayout.edges"
+                  :key="i"
+                  :d="edge.path"
+                  fill="none"
+                  stroke="#4b5563"
+                  stroke-width="1.5"
+                  marker-end="url(#arrow)" />
+              </svg>
+
+              <!-- Job boxes layer -->
+              <div
+                :style="{ position: 'relative', width: graphLayout.svgWidth + 'px', minHeight: graphLayout.svgHeight + 'px', zIndex: 1 }"
+                style="z-index: 1">
+                <div
+                  v-for="job in enrichedJobs"
+                  :key="job.id"
+                  :style="{ position: 'absolute', left: job.x + 'px', top: job.y + 'px', width: '160px' }"
+                  :class="[
+                    'flex flex-col items-start gap-1 px-4 py-3 rounded-xl border transition-all text-left cursor-pointer',
+                    selectedJob === job.id
+                      ? 'border-brand-500 bg-brand-950/30 ring-1 ring-brand-500/40'
+                      : 'border-gray-700 bg-gray-800/80 hover:border-gray-600',
+                  ]"
+                  @click="toggleJobFilter(job.id)">
+                  <span class="flex items-center gap-1.5 w-full">
+                    <span :class="jobStatusDot(job)" class="w-2 h-2 rounded-full shrink-0" />
+                    <span class="text-sm font-medium text-white truncate">{{ job.name }}</span>
+                  </span>
+                  <span :class="jobStatusClass(job)" class="text-xs px-1.5 py-0.5 rounded-full font-medium">
+                    {{ jobStatusLabel(job) }}
+                  </span>
+                  <span class="text-xs text-gray-500 mt-0.5">{{ job.logCount }} log line{{ job.logCount === 1 ? '' : 's' }}</span>
+
+                  <!-- Create issue button for failed jobs -->
+                  <button
+                    v-if="job.hasError && job.isComplete"
+                    class="mt-1 flex items-center gap-1 text-xs text-red-400 hover:text-red-300 transition-colors"
+                    title="Create an issue from this failed job"
+                    @click.stop="openCreateIssueModal(job.id)">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                    </svg>
+                    Create Issue
+                  </button>
+                </div>
+              </div>
             </div>
 
             <!-- Logs filtered to selected job -->
@@ -306,11 +347,58 @@
     </div>
 
     <ErrorBox :error="store.error" />
+
+    <!-- Create Issue from failed job modal -->
+    <Teleport to="body">
+      <div v-if="showCreateIssueModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @click.self="showCreateIssueModal = false">
+        <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-xl p-6 w-full max-w-lg">
+          <h3 class="text-base font-semibold text-white mb-1">Create Issue from Failed Job</h3>
+          <p class="text-xs text-gray-500 mb-4">Job: <span class="font-mono text-gray-300">{{ createIssueJobId }}</span></p>
+
+          <div class="mb-3">
+            <label class="block text-xs text-gray-500 mb-1">Title</label>
+            <input
+              v-model="createIssueTitle"
+              type="text"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md text-sm text-gray-300 px-3 py-2 focus:outline-none focus:border-brand-500" />
+          </div>
+
+          <div class="mb-3">
+            <label class="block text-xs text-gray-500 mb-1">Log scope</label>
+            <div class="flex gap-2">
+              <button v-for="scope in logScopeOptions" :key="scope.value"
+                :class="['px-3 py-1 text-xs rounded-md border transition-colors', createIssueLogScope === scope.value ? 'border-brand-500 bg-brand-950/30 text-brand-300' : 'border-gray-700 text-gray-500 hover:border-gray-600']"
+                @click="createIssueLogScope = scope.value">
+                {{ scope.label }}
+              </button>
+            </div>
+          </div>
+
+          <div class="mb-4 bg-gray-950 rounded-lg p-3 font-mono text-xs overflow-auto max-h-[200px]">
+            <div v-for="(line, i) in createIssuePreviewLines" :key="i" class="text-gray-400 leading-5 whitespace-pre-wrap break-all">{{ line }}</div>
+            <div v-if="!createIssuePreviewLines.length" class="text-gray-600">No log lines for this job</div>
+          </div>
+
+          <div v-if="createIssueError" class="mb-3 text-xs text-red-400">{{ createIssueError }}</div>
+
+          <div class="flex justify-end gap-2">
+            <button class="px-4 py-1.5 text-sm text-gray-400 hover:text-gray-200 transition-colors" @click="showCreateIssueModal = false">Cancel</button>
+            <button
+              :disabled="creatingIssue || !createIssueTitle.trim()"
+              class="px-4 py-1.5 text-sm bg-red-700 hover:bg-red-600 disabled:opacity-50 text-white rounded-md transition-colors"
+              @click="submitCreateIssue">
+              {{ creatingIssue ? 'Creating…' : 'Create Issue' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
+import { useIssuesStore } from '~/stores/issues'
 import { CiCdRunStatus } from '~/types'
 
 const route = useRoute()
@@ -318,6 +406,7 @@ const projectId = route.params.id as string
 const runId = route.params.runId as string
 
 const store = useCiCdRunsStore()
+const issuesStore = useIssuesStore()
 
 const retrying = ref(false)
 const showRetryModal = ref(false)
@@ -360,50 +449,232 @@ const jobFilteredLogs = computed(() =>
     : []
 )
 
-interface JobSummary {
+// ── Job enrichment ─────────────────────────────────────────────────────────────
+// Merges graph data (from YAML) with live log data to produce a unified list of
+// job nodes with status, log counts, and layout coordinates.
+
+interface EnrichedJob {
+  id: string
   name: string
+  needs: string[]
   logCount: number
   hasError: boolean
   isComplete: boolean
+  // layout
+  x: number
+  y: number
 }
 
-const jobSummaries = computed<JobSummary[]>(() => {
-  const map = new Map<string, JobSummary>()
+const jobLogMap = computed(() => {
+  const map = new Map<string, { logCount: number; hasError: boolean; isComplete: boolean }>()
   for (const log of store.currentRunLogs) {
     if (!log.jobId) continue
-    if (!map.has(log.jobId)) {
-      map.set(log.jobId, { name: log.jobId, logCount: 0, hasError: false, isComplete: false })
-    }
-    const summary = map.get(log.jobId)!
-    summary.logCount++
-    if (log.stream === 'stderr') summary.hasError = true
-    // Act emits these terminal messages to mark a job as done
-    if (log.line === 'Job succeeded' || log.line === 'Job failed') summary.isComplete = true
+    if (!map.has(log.jobId)) map.set(log.jobId, { logCount: 0, hasError: false, isComplete: false })
+    const entry = map.get(log.jobId)!
+    entry.logCount++
+    if (log.stream === 'stderr') entry.hasError = true
+    if (log.line === 'Job succeeded' || log.line === 'Job failed') entry.isComplete = true
   }
-  return Array.from(map.values())
+  return map
 })
 
-function toggleJobFilter(jobName: string) {
-  selectedJob.value = selectedJob.value === jobName ? null : jobName
+// Build the enriched job list by unioning graph nodes with log-observed jobs.
+// Graph nodes get their needs/name from the YAML; log-only jobs fall back to id as name.
+const enrichedJobs = computed<EnrichedJob[]>(() => {
+  const BOX_W = 160
+  const BOX_H = 110
+  const COL_GAP = 80
+  const ROW_GAP = 20
+  const PAD = 16
+
+  // Collect all job IDs
+  const graphJobs = store.currentRunGraph?.jobs ?? []
+  const logJobIds = Array.from(jobLogMap.value.keys())
+  const allIds = new Set([...graphJobs.map(j => j.id), ...logJobIds])
+
+  // Build a map of job metadata
+  const jobMeta = new Map(graphJobs.map(j => [j.id, { name: j.name, needs: j.needs }]))
+
+  // Assign columns via BFS from roots (no needs)
+  const colMap = new Map<string, number>()
+  const inDegree = new Map<string, number>()
+  const edges = store.currentRunGraph?.edges ?? []
+
+  for (const id of allIds) {
+    if (!inDegree.has(id)) inDegree.set(id, 0)
+  }
+  for (const e of edges) {
+    if (allIds.has(e.to)) inDegree.set(e.to, (inDegree.get(e.to) ?? 0) + 1)
+  }
+
+  const queue: string[] = []
+  for (const [id, deg] of inDegree) {
+    if (deg === 0) queue.push(id)
+  }
+
+  while (queue.length) {
+    const id = queue.shift()!
+    const col = colMap.get(id) ?? 0
+    for (const e of edges) {
+      if (e.from === id) {
+        const nextCol = Math.max(colMap.get(e.to) ?? 0, col + 1)
+        colMap.set(e.to, nextCol)
+        const newDeg = (inDegree.get(e.to) ?? 1) - 1
+        inDegree.set(e.to, newDeg)
+        if (newDeg === 0) queue.push(e.to)
+      }
+    }
+  }
+
+  // Group by column
+  const byCol = new Map<number, string[]>()
+  for (const id of allIds) {
+    const col = colMap.get(id) ?? 0
+    if (!byCol.has(col)) byCol.set(col, [])
+    byCol.get(col)!.push(id)
+  }
+
+  // Assign x/y positions
+  const posMap = new Map<string, { x: number; y: number }>()
+  const sortedCols = Array.from(byCol.keys()).sort((a, b) => a - b)
+  let x = PAD
+  for (const col of sortedCols) {
+    const jobs = byCol.get(col)!
+    let y = PAD
+    for (const id of jobs) {
+      posMap.set(id, { x, y })
+      y += BOX_H + ROW_GAP
+    }
+    x += BOX_W + COL_GAP
+  }
+
+  return Array.from(allIds).map(id => {
+    const meta = jobMeta.get(id)
+    const logs = jobLogMap.value.get(id) ?? { logCount: 0, hasError: false, isComplete: false }
+    const pos = posMap.get(id) ?? { x: PAD, y: PAD }
+    return {
+      id,
+      name: meta?.name ?? id,
+      needs: meta?.needs ?? [],
+      logCount: logs.logCount,
+      hasError: logs.hasError,
+      isComplete: logs.isComplete,
+      x: pos.x,
+      y: pos.y,
+    }
+  })
+})
+
+// ── SVG graph layout ───────────────────────────────────────────────────────────
+
+interface SvgEdge { path: string }
+
+const graphLayout = computed<{ svgWidth: number; svgHeight: number; edges: SvgEdge[] }>(() => {
+  const BOX_W = 160
+  const BOX_H = 110
+  const PAD = 16
+
+  if (!enrichedJobs.value.length) return { svgWidth: 0, svgHeight: 0, edges: [] }
+
+  const posMap = new Map(enrichedJobs.value.map(j => [j.id, { x: j.x, y: j.y }]))
+
+  const edges = (store.currentRunGraph?.edges ?? []).map(e => {
+    const from = posMap.get(e.from)
+    const to = posMap.get(e.to)
+    if (!from || !to) return null
+
+    const x1 = from.x + BOX_W
+    const y1 = from.y + BOX_H / 2
+    const x2 = to.x
+    const y2 = to.y + BOX_H / 2
+    const cx = (x1 + x2) / 2
+
+    return { path: `M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}` }
+  }).filter((e): e is SvgEdge => e !== null)
+
+  const maxX = Math.max(...enrichedJobs.value.map(j => j.x)) + BOX_W + PAD
+  const maxY = Math.max(...enrichedJobs.value.map(j => j.y)) + BOX_H + PAD
+
+  return { svgWidth: maxX, svgHeight: maxY, edges }
+})
+
+function toggleJobFilter(jobId: string) {
+  selectedJob.value = selectedJob.value === jobId ? null : jobId
 }
 
-function jobStatusDot(job: JobSummary) {
+function jobStatusDot(job: Pick<EnrichedJob, 'hasError' | 'isComplete'>) {
   if (job.hasError) return 'bg-red-400'
   if (!job.isComplete) return 'bg-blue-400 animate-pulse'
   return 'bg-green-400'
 }
 
-function jobStatusClass(job: JobSummary) {
+function jobStatusClass(job: Pick<EnrichedJob, 'hasError' | 'isComplete'>) {
   if (job.hasError) return 'bg-red-900/30 text-red-400'
   if (!job.isComplete) return 'bg-blue-900/30 text-blue-400'
   return 'bg-green-900/30 text-green-400'
 }
 
-function jobStatusLabel(job: JobSummary) {
+function jobStatusLabel(job: Pick<EnrichedJob, 'hasError' | 'isComplete'>) {
   if (job.hasError) return 'Failed'
   if (!job.isComplete) return 'Running'
   return 'Succeeded'
 }
+
+// ── Create Issue from failed job ───────────────────────────────────────────────
+
+const showCreateIssueModal = ref(false)
+const createIssueJobId = ref<string>('')
+const createIssueTitle = ref('')
+const createIssueLogScope = ref<'full' | 'tail' | 'errors'>('errors')
+const creatingIssue = ref(false)
+const createIssueError = ref<string | null>(null)
+
+const logScopeOptions = [
+  { label: 'Errors only', value: 'errors' as const },
+  { label: 'Last 50 lines', value: 'tail' as const },
+  { label: 'Full log', value: 'full' as const },
+]
+
+const createIssuePreviewLines = computed(() => {
+  const jobLogs = store.currentRunLogs.filter(l => l.jobId === createIssueJobId.value)
+  if (createIssueLogScope.value === 'errors') return jobLogs.filter(l => l.stream === 'stderr').map(l => l.line)
+  if (createIssueLogScope.value === 'tail') return jobLogs.slice(-50).map(l => l.line)
+  return jobLogs.map(l => l.line)
+})
+
+function openCreateIssueModal(jobId: string) {
+  createIssueJobId.value = jobId
+  const workflow = store.currentRun?.workflow ? ` (${store.currentRun.workflow})` : ''
+  createIssueTitle.value = `CI/CD job "${jobId}" failed${workflow}`
+  createIssueLogScope.value = 'errors'
+  createIssueError.value = null
+  showCreateIssueModal.value = true
+}
+
+async function submitCreateIssue() {
+  if (!createIssueTitle.value.trim()) return
+  creatingIssue.value = true
+  createIssueError.value = null
+  try {
+    const logLines = createIssuePreviewLines.value
+    const logText = logLines.length
+      ? `\n\n**Failed job logs** (scope: ${createIssueLogScope.value}):\n\`\`\`\n${logLines.join('\n')}\n\`\`\``
+      : ''
+    const description = `CI/CD run **${runId.slice(0, 8)}** failed at job **${createIssueJobId.value}**.${logText}`
+
+    await issuesStore.createIssue(projectId, {
+      title: createIssueTitle.value.trim(),
+      description,
+    })
+    showCreateIssueModal.value = false
+  } catch (e: unknown) {
+    createIssueError.value = e instanceof Error ? e.message : 'Failed to create issue'
+  } finally {
+    creatingIssue.value = false
+  }
+}
+
+// ── Debug metadata ─────────────────────────────────────────────────────────────
 
 const debugMetadata = computed(() => {
   const entries: Array<{ key: string; value: string }> = []

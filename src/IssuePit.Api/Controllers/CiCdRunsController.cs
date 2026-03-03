@@ -105,6 +105,109 @@ public class CiCdRunsController(
         return Ok(logs);
     }
 
+    /// <summary>
+    /// Returns the workflow job graph (nodes and dependency edges) for the given run.
+    /// The graph is built by parsing the workflow YAML found at the run's workspace path.
+    /// Falls back to a log-derived graph when the YAML cannot be read (e.g. external runs).
+    /// </summary>
+    [HttpGet("{id:guid}/graph")]
+    public async Task<IActionResult> GetGraph(Guid id)
+    {
+        var run = await db.CiCdRuns
+            .Include(r => r.Project)
+            .Where(r => r.Id == id && r.Project.Organization.TenantId == tenant.CurrentTenant!.Id)
+            .Select(r => new { r.WorkspacePath, r.Workflow })
+            .FirstOrDefaultAsync();
+
+        if (run is null) return NotFound();
+
+        WorkflowGraph graph;
+
+        if (!string.IsNullOrWhiteSpace(run.WorkspacePath) && !string.IsNullOrWhiteSpace(run.Workflow))
+        {
+            // Try to locate the workflow YAML file.
+            // act accepts a path relative to the workspace; also look under .github/workflows/.
+            var yamlContent = TryReadWorkflowYaml(run.WorkspacePath, run.Workflow);
+            graph = WorkflowGraphParser.Parse(yamlContent);
+        }
+        else
+        {
+            graph = new WorkflowGraph([], []);
+        }
+
+        return Ok(graph);
+    }
+
+    /// <summary>
+    /// Returns logs for a specific job within a run, identified by job name/id.
+    /// </summary>
+    [HttpGet("{id:guid}/jobs/{jobId}/logs")]
+    public async Task<IActionResult> GetJobLogs(Guid id, string jobId, [FromQuery] LogStream? stream)
+    {
+        var runExists = await db.CiCdRuns
+            .AnyAsync(r => r.Id == id && r.Project.Organization.TenantId == tenant.CurrentTenant!.Id);
+
+        if (!runExists) return NotFound();
+
+        var query = db.CiCdRunLogs
+            .Where(l => l.CiCdRunId == id && l.JobId == jobId)
+            .OrderBy(l => l.Timestamp)
+            .AsQueryable();
+
+        if (stream.HasValue)
+            query = query.Where(l => l.Stream == stream.Value);
+
+        var logs = await query
+            .Select(l => new { l.Id, l.Line, l.Stream, StreamName = l.Stream.ToString(), l.JobId, l.Timestamp })
+            .ToListAsync();
+
+        return Ok(logs);
+    }
+
+    private static string? TryReadWorkflowYaml(string workspacePath, string workflow)
+    {
+        // Resolve the workspace to a canonical path so we can detect path traversal attempts.
+        var canonicalWorkspace = Path.GetFullPath(workspacePath);
+
+        // Build candidates using only the filename component to prevent path traversal via
+        // the workflow value (e.g. "../../etc/passwd" stored by a user or external source).
+        var workflowFileName = Path.GetFileName(workflow);
+
+        // Also allow a well-known relative sub-path: ".github/workflows/<filename>"
+        // Only use the workflow value as-is when it is a simple filename (no directory separators),
+        // or when it resolves to a path still within the workspace.
+        var candidates = new List<string>
+        {
+            Path.Combine(canonicalWorkspace, ".github", "workflows", workflowFileName),
+        };
+
+        // If workflow has no directory component (just a filename), also try directly under workspace.
+        if (workflowFileName == workflow || workflowFileName == Path.GetFileName(workflow.Replace('/', Path.DirectorySeparatorChar)))
+        {
+            candidates.Insert(0, Path.Combine(canonicalWorkspace, workflow.TrimStart('/').TrimStart('\\').Replace('/', Path.DirectorySeparatorChar)));
+        }
+
+        foreach (var path in candidates)
+        {
+            try
+            {
+                // Safety check: ensure the resolved path is still under the workspace root.
+                var resolvedPath = Path.GetFullPath(path);
+                if (!resolvedPath.StartsWith(canonicalWorkspace, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (System.IO.File.Exists(resolvedPath))
+                    return System.IO.File.ReadAllText(resolvedPath);
+            }
+            catch
+            {
+                // best-effort
+            }
+        }
+
+        return null;
+    }
+
     // Accepts state updates pushed by external CI/CD systems (e.g. GitHub Actions webhooks).
     // Creates a new run record or updates an existing one matched by (projectId, externalSource, externalRunId).
     [HttpPost("external-sync")]

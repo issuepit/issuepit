@@ -202,4 +202,73 @@ public class CiCdEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
     }
+
+    [Fact]
+    public async Task GetGraph_WithNoWorkspace_Returns_EmptyGraph()
+    {
+        var (tenantId, _, projectId) = await SeedProjectAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        // Create a run with no workspace (external sync, no workspacePath)
+        var syncResponse = await _client.PostAsJsonAsync("/api/cicd-runs/external-sync", new
+        {
+            projectId,
+            externalSource = "github",
+            externalRunId = $"graph-test-{Guid.NewGuid()}",
+            commitSha = "abc123",
+            status = "completed",
+            conclusion = "success",
+        });
+        Assert.Equal(HttpStatusCode.OK, syncResponse.StatusCode);
+        var syncBody = await syncResponse.Content.ReadFromJsonAsync<SyncResult>();
+        Assert.NotNull(syncBody);
+
+        var graphResponse = await _client.GetAsync($"/api/cicd-runs/{syncBody.id}/graph");
+        Assert.Equal(HttpStatusCode.OK, graphResponse.StatusCode);
+        var graph = await graphResponse.Content.ReadFromJsonAsync<GraphResult>();
+        Assert.NotNull(graph);
+        Assert.Empty(graph.jobs);
+        Assert.Empty(graph.edges);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
+    public async Task GetJobLogs_WithJobId_Returns_FilteredLogs()
+    {
+        var (tenantId, _, projectId) = await SeedProjectAsync();
+
+        // Seed a run and some logs directly in the DB
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+        var runId = Guid.NewGuid();
+        db.CiCdRuns.Add(new IssuePit.Core.Entities.CiCdRun
+        {
+            Id = runId,
+            ProjectId = projectId,
+            CommitSha = "abc",
+            Status = IssuePit.Core.Enums.CiCdRunStatus.Succeeded,
+            StartedAt = DateTime.UtcNow,
+        });
+        db.CiCdRunLogs.Add(new IssuePit.Core.Entities.CiCdRunLog { Id = Guid.NewGuid(), CiCdRunId = runId, Line = "build output", JobId = "build", Stream = IssuePit.Core.Enums.LogStream.Stdout, Timestamp = DateTime.UtcNow });
+        db.CiCdRunLogs.Add(new IssuePit.Core.Entities.CiCdRunLog { Id = Guid.NewGuid(), CiCdRunId = runId, Line = "test output", JobId = "test", Stream = IssuePit.Core.Enums.LogStream.Stdout, Timestamp = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var response = await _client.GetAsync($"/api/cicd-runs/{runId}/jobs/build/logs");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var logs = await response.Content.ReadFromJsonAsync<List<LogEntry>>();
+        Assert.NotNull(logs);
+        Assert.Single(logs);
+        Assert.Equal("build output", logs[0].line);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    private sealed record GraphResult(List<object> jobs, List<object> edges);
+    private sealed record LogEntry(string id, string line, string streamName, string? jobId, DateTime timestamp);
 }

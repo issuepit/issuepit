@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { CiCdRun, CiCdRunLog, AgentSession, AgentSessionDetail, AgentSessionLog, DashboardAgentSession } from '~/types'
+import type { CiCdRun, CiCdRunLog, AgentSession, AgentSessionDetail, AgentSessionLog, DashboardAgentSession, WorkflowGraph } from '~/types'
 
 export const useCiCdRunsStore = defineStore('cicdRuns', () => {
   const runs = ref<CiCdRun[]>([])
@@ -7,6 +7,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
   const dashboardSessions = ref<DashboardAgentSession[]>([])
   const currentRun = ref<CiCdRun | null>(null)
   const currentRunLogs = ref<CiCdRunLog[]>([])
+  const currentRunGraph = ref<WorkflowGraph | null>(null)
   const currentSession = ref<AgentSessionDetail | null>(null)
   const currentSessionLogs = ref<AgentSessionLog[]>([])
   const loading = ref(false)
@@ -33,6 +34,11 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     try {
       currentRun.value = await api.get<CiCdRun>(`/api/cicd-runs/${runId}`)
       currentRunLogs.value = await api.get<CiCdRunLog[]>(`/api/cicd-runs/${runId}/logs`)
+      try {
+        currentRunGraph.value = await api.get<WorkflowGraph>(`/api/cicd-runs/${runId}/graph`)
+      } catch {
+        currentRunGraph.value = null
+      }
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Failed to fetch CI/CD run'
     } finally {
@@ -117,6 +123,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     dashboardSessions,
     currentRun,
     currentRunLogs,
+    currentRunGraph,
     currentSession,
     currentSessionLogs,
     loading,

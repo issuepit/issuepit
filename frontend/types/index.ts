@@ -643,6 +643,23 @@ export interface CiCdRunLog {
   timestamp: string
 }
 
+export interface WorkflowJobNode {
+  id: string
+  name: string
+  runsOn?: string
+  needs: string[]
+}
+
+export interface WorkflowEdge {
+  from: string
+  to: string
+}
+
+export interface WorkflowGraph {
+  jobs: WorkflowJobNode[]
+  edges: WorkflowEdge[]
+}
+
 export interface AgentSessionLog {
   id: string
   line: string
