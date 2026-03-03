@@ -153,7 +153,7 @@
               <option value="urgent">🔴 Urgent</option>
               <option value="high">🟠 High</option>
               <option value="medium">🟡 Medium</option>
-              <option value="low">🔵 Low</option>
+              <option value="low">🟢 Low</option>
             </select>
           </div>
         </div>
@@ -600,7 +600,7 @@ function priorityIcon(p: IssuePriority) {
     [IssuePriority.Urgent]: '🔴',
     [IssuePriority.High]: '🟠',
     [IssuePriority.Medium]: '🟡',
-    [IssuePriority.Low]: '🔵',
+    [IssuePriority.Low]: '🟢',
     [IssuePriority.NoPriority]: ''
   }
   return map[p] ?? ''

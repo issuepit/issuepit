@@ -239,7 +239,7 @@ function priorityLabel(priority: IssuePriority) {
     [IssuePriority.Urgent]: '🔴 Urgent',
     [IssuePriority.High]: '🟠 High',
     [IssuePriority.Medium]: '🟡 Medium',
-    [IssuePriority.Low]: '🔵 Low',
+    [IssuePriority.Low]: '🟢 Low',
     [IssuePriority.NoPriority]: '⚪ None'
   }
   return map[priority] ?? priority

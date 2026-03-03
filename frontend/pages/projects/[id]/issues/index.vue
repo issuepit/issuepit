@@ -205,7 +205,7 @@ const priorities = [
   { value: IssuePriority.Urgent, label: '🔴 Urgent' },
   { value: IssuePriority.High, label: '🟠 High' },
   { value: IssuePriority.Medium, label: '🟡 Medium' },
-  { value: IssuePriority.Low, label: '🔵 Low' },
+  { value: IssuePriority.Low, label: '🟢 Low' },
   { value: IssuePriority.NoPriority, label: '⚪ No Priority' }
 ]
 
@@ -292,7 +292,7 @@ const PriorityBadge = defineComponent({
   props: { priority: String },
   setup(props) {
     const icons: Record<string, string> = {
-      urgent: '🔴', high: '🟠', medium: '🟡', low: '🔵', no_priority: '⚪'
+      urgent: '🔴', high: '🟠', medium: '🟡', low: '🟢', no_priority: '⚪'
     }
     const labels: Record<string, string> = {
       urgent: 'Urgent', high: 'High', medium: 'Medium', low: 'Low', no_priority: 'None'

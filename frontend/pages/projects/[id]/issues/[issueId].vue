@@ -335,7 +335,7 @@
                 <option value="urgent">🔴 Urgent</option>
                 <option value="high">🟠 High</option>
                 <option value="medium">🟡 Medium</option>
-                <option value="low">🔵 Low</option>
+                <option value="low">🟢 Low</option>
                 <option value="no_priority">⚪ No Priority</option>
               </select>
             </div>
