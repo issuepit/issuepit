@@ -672,6 +672,7 @@ export interface WorkflowJobNode {
   runsOn?: string
   needs: string[]
   workflowFile?: string
+  callerWorkflowFile?: string
 }
 
 export interface WorkflowEdge {

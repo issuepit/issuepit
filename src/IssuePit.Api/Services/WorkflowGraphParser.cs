@@ -16,7 +16,13 @@ public record WorkflowJobNode(
     /// Set only for jobs that call a reusable local workflow. After substitution in
     /// <see cref="WorkflowGraphParser.ParseDirectoryAsync"/> these jobs are removed from the graph.
     /// </summary>
-    string? UsesWorkflow = null);
+    string? UsesWorkflow = null,
+    /// <summary>
+    /// Workflow filename of the caller job that introduced this job via a <c>uses:</c> reference
+    /// (e.g. <c>ci.yml</c> when a job in <c>ci.yml</c> used <c>./.github/workflows/backend.yml</c>).
+    /// Set on callee jobs during substitution. Null for jobs that were not substituted.
+    /// </summary>
+    string? CallerWorkflowFile = null);
 
 /// <summary>A directed edge from one job to another (dependency: <see cref="From"/> must complete before <see cref="To"/>).</summary>
 public record WorkflowEdge(string From, string To);
@@ -377,6 +383,11 @@ public static class WorkflowGraphParser
     /// <list type="bullet">
     ///   <item>The calling job is removed from the graph.</item>
     ///   <item>
+    ///     Each callee job gets its <see cref="WorkflowJobNode.Name"/> prefixed with the caller's
+    ///     name (e.g. <c>"Backend / Build Backend"</c>) and its
+    ///     <see cref="WorkflowJobNode.CallerWorkflowFile"/> set to the caller's workflow file.
+    ///   </item>
+    ///   <item>
     ///     Jobs that depended on the caller are re-wired to depend on the <em>leaf</em> jobs of the
     ///     called workflow (jobs inside the called workflow that no other job within that workflow
     ///     depends on as input).
@@ -423,11 +434,30 @@ public static class WorkflowGraphParser
 
         var callerIds = callerToLeaves.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        // Remove caller jobs and update Needs on remaining jobs.
+        // Build a lookup: callee file → caller metadata, so each callee job gets the right name prefix
+        // and CallerWorkflowFile set. Keyed by the callee's WorkflowFile (UsesWorkflow of the caller).
+        var calleeFileToCallerMeta = new Dictionary<string, (string CallerName, string? CallerWorkflowFile)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var callerJob in allJobs.Where(j => callerIds.Contains(j.Id) && j.UsesWorkflow is not null))
+        {
+            calleeFileToCallerMeta[callerJob.UsesWorkflow!] = (callerJob.Name, callerJob.WorkflowFile);
+        }
+
+        // Remove caller jobs; annotate callee jobs with combined names and caller file.
+        // Also re-wire Needs on jobs that depended on a caller.
         var updatedJobs = allJobs
             .Where(j => !callerIds.Contains(j.Id))
             .Select(j =>
             {
+                // Annotate callee jobs: prefix name with caller name and record caller workflow file.
+                if (j.WorkflowFile is not null && calleeFileToCallerMeta.TryGetValue(j.WorkflowFile, out var callerInfo))
+                {
+                    j = j with
+                    {
+                        Name = $"{callerInfo.CallerName} / {j.Name}",
+                        CallerWorkflowFile = callerInfo.CallerWorkflowFile,
+                    };
+                }
+
                 if (!j.Needs.Any(n => callerIds.Contains(n))) return j;
                 var newNeeds = j.Needs
                     .SelectMany(n => callerToLeaves.GetValueOrDefault(n) ?? [n])

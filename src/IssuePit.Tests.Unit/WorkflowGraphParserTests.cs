@@ -275,10 +275,10 @@ public class WorkflowGraphParserTests
             Assert.DoesNotContain(graph.Jobs, j => j.Id == "ci/backend");
             Assert.DoesNotContain(graph.Jobs, j => j.Id == "ci/frontend");
 
-            // Callee jobs must be present.
-            Assert.Contains(graph.Jobs, j => j.Id == "backend/build");
-            Assert.Contains(graph.Jobs, j => j.Id == "backend/test");
-            Assert.Contains(graph.Jobs, j => j.Id == "frontend/lint");
+            // Callee jobs must be present with combined names and CallerWorkflowFile set.
+            Assert.Contains(graph.Jobs, j => j.Id == "backend/build" && j.Name == "Backend / Build Backend" && j.CallerWorkflowFile == "ci.yml");
+            Assert.Contains(graph.Jobs, j => j.Id == "backend/test" && j.Name == "Backend / Test Backend" && j.CallerWorkflowFile == "ci.yml");
+            Assert.Contains(graph.Jobs, j => j.Id == "frontend/lint" && j.Name == "Frontend / Lint Frontend" && j.CallerWorkflowFile == "ci.yml");
 
             // report job must still be present.
             Assert.Contains(graph.Jobs, j => j.Id == "ci/report");
