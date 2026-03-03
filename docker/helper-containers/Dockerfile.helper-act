@@ -31,8 +31,12 @@ RUN if ! command -v act > /dev/null 2>&1; then \
     act --version
 
 # Install actionlint using the official download script.
-RUN bash <(curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) \
-        "${ACTIONLINT_VERSION}" /usr/local/bin && \
+# Download to a temp file first since bash process substitution (<()) is not available in /bin/sh.
+RUN curl --proto '=https' --tlsv1.2 -fsSL \
+        https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash \
+        -o /tmp/download-actionlint.bash && \
+    bash /tmp/download-actionlint.bash "${ACTIONLINT_VERSION}" /usr/local/bin && \
+    rm /tmp/download-actionlint.bash && \
     actionlint --version
 
 LABEL org.opencontainers.image.title="issuepit-helper-act" \
