@@ -2,11 +2,14 @@ name: Validate Skills
 
 on:
   push:
+    branches: [main]
     paths:
       - 'skills/**'
+      - '.github/workflows/validate-skills.yml'
   pull_request:
     paths:
       - 'skills/**'
+      - '.github/workflows/validate-skills.yml'
   merge_group:
 
 jobs:
@@ -30,7 +33,7 @@ jobs:
           for skill_dir in skills/*/; do
             if [ -f "$skill_dir/SKILL.md" ]; then
               echo "Validating $skill_dir..."
-              if ! skills-ref validate "$skill_dir"; then
+              if ! agentskills validate "$skill_dir"; then
                 failed=1
               fi
             fi
