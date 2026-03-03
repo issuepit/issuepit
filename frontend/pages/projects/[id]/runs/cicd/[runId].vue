@@ -264,7 +264,8 @@
               <div class="bg-gray-950 rounded-lg p-4 font-mono text-xs overflow-auto max-h-[500px]">
                 <div v-for="log in jobFilteredLogs" :key="log.id" class="flex gap-3 leading-5">
                   <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
-                  <span :class="log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'" class="whitespace-pre-wrap break-all">{{ log.line }}</span>
+                  <!-- eslint-disable-next-line vue/no-v-html -->
+                  <span :class="log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'" class="whitespace-pre-wrap break-all" v-html="renderLogLine(log.line)" />
                 </div>
                 <div v-if="!jobFilteredLogs.length" class="text-gray-500 text-center py-4">No logs for this job</div>
               </div>
@@ -278,7 +279,8 @@
           <div v-if="filteredLogs.length" class="bg-gray-950 p-4 font-mono text-xs overflow-auto max-h-[600px]">
             <div v-for="log in filteredLogs" :key="log.id" class="flex gap-3 leading-5">
               <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
-              <span :class="log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'" class="whitespace-pre-wrap break-all">{{ log.line }}</span>
+              <!-- eslint-disable-next-line vue/no-v-html -->
+              <span :class="log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'" class="whitespace-pre-wrap break-all" v-html="renderLogLine(log.line)" />
             </div>
           </div>
           <div v-else class="py-10 text-center text-sm text-gray-500">No logs available</div>
@@ -312,12 +314,46 @@
 <script setup lang="ts">
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { CiCdRunStatus } from '~/types'
+import { parseAnsiToHtml, stripAnsiCodes } from '~/composables/useAnsiParser'
 
 const route = useRoute()
 const projectId = route.params.id as string
 const runId = route.params.runId as string
 
 const store = useCiCdRunsStore()
+const { prefs } = useUserPreferences()
+
+/**
+ * Pre-compiled regex cache for log color rules. Rebuilt whenever the rules list changes.
+ * Maps rule id → compiled RegExp (or null if the pattern is invalid).
+ */
+const compiledColorRules = computed(() =>
+  prefs.value.logColorRules.map((rule) => {
+    try { return { rule, re: new RegExp(rule.pattern) } } catch { return null }
+  }).filter((r): r is { rule: typeof prefs.value.logColorRules[0]; re: RegExp } => r !== null),
+)
+
+/**
+ * Renders a log line as HTML, applying ANSI color codes and custom regex color rules.
+ * Always strips raw ANSI codes — when ansiColors is enabled they become colored spans,
+ * otherwise they are simply removed so no `[90m` artifacts are shown.
+ */
+function renderLogLine(line: string): string {
+  let html = prefs.value.ansiColors ? parseAnsiToHtml(line) : stripAnsiCodes(line)
+
+  // Apply the first matching regex color rule (line-level text color override).
+  // The plain text (ANSI-stripped) version is computed once and shared across all rules.
+  if (compiledColorRules.value.length) {
+    const plain = stripAnsiCodes(line)
+    for (const { rule, re } of compiledColorRules.value) {
+      if (re.test(plain)) {
+        html = `<span style="color:${rule.color}">${html}</span>`
+        break
+      }
+    }
+  }
+  return html
+}
 
 const retrying = ref(false)
 const showRetryModal = ref(false)
