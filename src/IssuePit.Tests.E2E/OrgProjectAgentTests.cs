@@ -193,6 +193,7 @@ public class OrgProjectAgentTests : IAsyncLifetime
     public async Task Ui_CreateOrg_AppearsInList()
     {
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
+        context.SetDefaultTimeout(10_000);
         var page = await context.NewPageAsync();
 
         try
@@ -222,6 +223,7 @@ public class OrgProjectAgentTests : IAsyncLifetime
     public async Task Ui_CreateProject_AppearsInList()
     {
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
+        context.SetDefaultTimeout(10_000);
         var page = await context.NewPageAsync();
 
         try
@@ -256,6 +258,7 @@ public class OrgProjectAgentTests : IAsyncLifetime
     public async Task Ui_CreateAgent_AppearsInList()
     {
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
+        context.SetDefaultTimeout(10_000);
         var page = await context.NewPageAsync();
 
         try
