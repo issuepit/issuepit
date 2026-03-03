@@ -21,7 +21,7 @@ var redis = builder.AddValkey("redis")
 var storage = builder.AddContainer("localstack", "localstack/localstack", "4.3")
     .WithEnvironment("SERVICES", "s3")
     .WithHttpEndpoint(targetPort: 4566, name: "http")
-    .WithHttpHealthCheck("/_localstack/health");
+    .WithHttpHealthCheck("/_localstack/init/ready");
 
 // Management UI tools - set to explicit start so they are not auto-started in CI and require manual start from the Aspire dashboard
 postgresServer.WithPgAdmin(admin => admin.WithExplicitStart());
