@@ -85,6 +85,14 @@
               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
           </div>
           <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Organization</label>
+            <select v-model="form.orgId" data-testid="org-select"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+              <option value="" disabled selected>Select an organization</option>
+              <option v-for="org in orgsStore.orgs" :key="org.id" :value="org.id">{{ org.name }}</option>
+            </select>
+          </div>
+          <div>
             <label class="block text-sm font-medium text-gray-300 mb-1.5">Description</label>
             <textarea v-model="form.description" rows="3" placeholder="Optional description..."
               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"></textarea>
@@ -107,19 +115,23 @@
 
 <script setup lang="ts">
 import { useProjectsStore } from '~/stores/projects'
+import { useOrgsStore } from '~/stores/orgs'
 
 const store = useProjectsStore()
+const orgsStore = useOrgsStore()
 const showCreate = ref(false)
-const form = reactive({ name: '', slug: '', description: '' })
+const form = reactive({ name: '', slug: '', description: '', orgId: '' })
 
 watch(() => form.name, (val) => {
   form.slug = val.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
 })
 
-onMounted(() => store.fetchProjects())
+onMounted(async () => {
+  await Promise.all([store.fetchProjects(), orgsStore.fetchOrgs()])
+})
 
 async function submitCreate() {
-  if (!form.name) return
+  if (!form.name || !form.orgId) return
   await store.createProject(form)
   showCreate.value = false
   resetForm()
@@ -129,5 +141,6 @@ function resetForm() {
   form.name = ''
   form.slug = ''
   form.description = ''
+  form.orgId = ''
 }
 </script>
