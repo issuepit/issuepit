@@ -462,7 +462,29 @@ export interface RuntimeConfiguration {
   typeName: string
   configuration: string
   isDefault: boolean
+  maxConcurrentAgents: number
   createdAt: string
+}
+
+export interface AgentPoolStatus {
+  runtimeConfigId: string | null
+  runtimeName: string
+  maxConcurrentAgents: number
+  runningAgents: number
+  pendingAgents: number
+}
+
+export interface CiCdPoolStatus {
+  orgId: string
+  orgName: string
+  maxConcurrentRunners: number
+  runningCiCdRuns: number
+  pendingCiCdRuns: number
+}
+
+export interface PoolStatus {
+  agentPools: AgentPoolStatus[]
+  cicdPools: CiCdPoolStatus[]
 }
 
 export interface GitRepository {

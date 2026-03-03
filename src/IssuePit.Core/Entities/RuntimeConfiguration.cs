@@ -26,5 +26,8 @@ public class RuntimeConfiguration
 
     public bool IsDefault { get; set; }
 
+    /// <summary>Maximum number of concurrently running containers/agents for this runtime. 0 means unlimited.</summary>
+    public int MaxConcurrentAgents { get; set; } = 0;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
