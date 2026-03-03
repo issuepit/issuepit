@@ -32,6 +32,15 @@
             </svg>
             Members
           </NuxtLink>
+          <NuxtLink :to="`/projects/${id}/ci-cd`"
+            class="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-800 transition-colors"
+            title="CI/CD Config">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+            </svg>
+            CI/CD
+          </NuxtLink>
           <NuxtLink :to="`/projects/${id}/settings`"
             class="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-800 transition-colors"
             title="Project Settings">

@@ -129,14 +129,18 @@ public class CiCdWorker(
 
         if (trigger is null || trigger.ProjectId == Guid.Empty) return;
 
-        // Inject project-level ActEnv/ActSecrets if not already supplied by the caller.
-        var project = await db.Projects.FindAsync([trigger.ProjectId], stoppingToken);
+        // Inject project-level ActEnv/ActSecrets/ActRunnerImage if not already supplied by the caller.
+        // Falls back to org-level settings if project-level is unset.
+        var project = await db.Projects
+            .Include(p => p.Organization)
+            .FirstOrDefaultAsync(p => p.Id == trigger.ProjectId, stoppingToken);
         if (project is not null)
         {
+            var org = project.Organization;
             trigger = trigger with
             {
-                ActEnv = trigger.ActEnv ?? project.ActEnv,
-                ActSecrets = trigger.ActSecrets ?? project.ActSecrets,
+                ActEnv = trigger.ActEnv ?? project.ActEnv ?? org?.ActEnv,
+                ActSecrets = trigger.ActSecrets ?? project.ActSecrets ?? org?.ActSecrets,
             };
         }
 

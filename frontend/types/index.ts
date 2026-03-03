@@ -40,6 +40,9 @@ export interface Organization {
   slug: string
   description?: string
   maxConcurrentRunners: number
+  actRunnerImage?: string
+  actEnv?: string
+  actSecrets?: string
   createdAt: string
   updatedAt: string
 }
@@ -175,6 +178,7 @@ export interface Project {
   maxConcurrentRunners: number
   actEnv?: string
   actSecrets?: string
+  actRunnerImage?: string
   createdAt: string
   updatedAt: string
 }

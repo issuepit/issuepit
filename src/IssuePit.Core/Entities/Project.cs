@@ -36,5 +36,8 @@ public class Project
     /// <summary>Newline-separated KEY=VALUE pairs passed as <c>--secret</c> arguments to <c>act</c> on each run.</summary>
     public string? ActSecrets { get; set; }
 
+    /// <summary>Docker runner image override for act. Null means use the org or global default.</summary>
+    public string? ActRunnerImage { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
