@@ -7,6 +7,9 @@ namespace IssuePit.Tests.E2E.Pages;
 /// </summary>
 public class LoginPage(IPage page)
 {
+    // Short wait before retrying a tab click that may have been lost to Vue SSR hydration.
+    private const int VueHydrationRetryTimeoutMs = 5_000;
+
     public async Task GotoAsync() => await page.GotoAsync("/login");
 
     /// <summary>
@@ -18,10 +21,19 @@ public class LoginPage(IPage page)
         await GotoAsync();
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
         await page.ClickAsync("button:has-text('Create account')");
-      
-        await page.WaitForSelectorAsync("input[autocomplete='email']");
-        await page.WaitForSelectorAsync("input[autocomplete='new-password']");
-      
+
+        // Retry the click once in case it was lost to a Vue SSR hydration race condition.
+        try
+        {
+            await page.WaitForSelectorAsync("input[autocomplete='new-password']",
+                new PageWaitForSelectorOptions { Timeout = VueHydrationRetryTimeoutMs });
+        }
+        catch (TimeoutException)
+        {
+            await page.ClickAsync("button:has-text('Create account')");
+            await page.WaitForSelectorAsync("input[autocomplete='new-password']");
+        }
+
         await page.FillAsync("input[autocomplete='username']", username);
         await page.FillAsync("input[autocomplete='new-password']", password);
         await page.ClickAsync("button[type='submit']");
