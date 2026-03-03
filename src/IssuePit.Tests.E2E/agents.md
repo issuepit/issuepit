@@ -12,7 +12,6 @@ IssuePit.Tests.E2E/
 ├── AspireFixture.cs             # Boots the Aspire AppHost; exposes ApiClient, KafkaBootstrapServers, FrontendUrl
 ├── ApiSmokeTests.cs             # Lightweight API reachability checks (health, alive, OpenAPI)
 ├── FrontendSmokeTests.cs        # Playwright tests against the Vue dashboard (logged-in context)
-├── HappyPathTests.cs            # Full API + UI happy-path flows (register → org → project → issue)
 ├── IssueKafkaNotificationTests.cs # Kafka message assertions after issue creation
 └── Pages/                       # Page Object Model classes for Playwright
     ├── LoginPage.cs
@@ -22,6 +21,8 @@ IssuePit.Tests.E2E/
     ├── IssuesPage.cs
     └── MilestonesPage.cs
 ```
+
+New test files must be named after the feature domain they cover, e.g. `IssueCreationTests.cs`, `ProjectManagementTests.cs`. Do **not** name test files or classes after the test quality level (e.g. `HappyPathTests.cs` is an anti-pattern — it says nothing about what is being tested).
 
 ---
 
@@ -115,13 +116,39 @@ Add a new page object class whenever a test needs to interact with a page not ye
 
 ## Naming Conventions
 
-| Pattern | Example |
-|---------|---------|
-| API happy-path | `Api_HappyPath_<Scenario>` |
-| UI happy-path | `Ui_HappyPath_<Scenario>` |
-| Smoke / infra check | `Api_<Resource>Endpoint_<Expectation>` |
-| Kafka / event check | `<Action>_Publishes<Event>_<Expectation>` |
-| Resource slugs/usernames | `Guid`-based, truncated to avoid DB length limits |
+### What is a happy path test?
+
+A **happy path test** is a positive end-to-end test that exercises the full successful flow of a feature — valid input, no errors, every step completes as expected. It is the most important test for any feature because it proves the core use case works end-to-end against the real stack.
+
+Examples of what a happy path test covers for issue creation:
+- Register a user, log in, create an org, create a project, create an issue
+- Assert the issue appears in the list with the correct title
+- Assert any side-effects (e.g. a Kafka event is published)
+
+### Naming rules
+
+Name test **files and classes** after the feature domain — never after the quality level:
+
+```
+// Good — class describes what is being tested
+IssueCreationTests.cs
+ProjectManagementTests.cs
+MilestoneTests.cs
+
+// Bad — class says nothing about what is tested
+HappyPathTests.cs       ← anti-pattern
+PositiveTests.cs        ← anti-pattern
+```
+
+Name test **methods** with the quality level and action:
+
+| Type | Pattern | Example |
+|------|---------|---------|
+| API positive full-flow | `Api_HappyPath_<Action>` | `Api_HappyPath_CreateIssue` |
+| UI positive full-flow | `Ui_HappyPath_<Action>` | `Ui_HappyPath_CreateMilestone` |
+| Smoke / infra check | `Api_<Resource>Endpoint_<Expectation>` | `Api_HealthEndpoint_ReturnsOk` |
+| Kafka / event check | `<Action>_Publishes<Event>_<Expectation>` | `CreateIssue_PublishesKafkaNotification_WithCorrectPayload` |
+| Resource slugs/usernames | `Guid`-based, truncated to avoid DB length limits | |
 
 ---
 

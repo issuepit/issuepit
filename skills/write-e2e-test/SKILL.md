@@ -16,7 +16,6 @@ src/IssuePit.Tests.E2E/
 ├── AspireFixture.cs                 # Boots Aspire AppHost; exposes ApiClient, KafkaBootstrapServers, FrontendUrl
 ├── ApiSmokeTests.cs                 # Health/alive/OpenAPI reachability checks
 ├── FrontendSmokeTests.cs            # Playwright smoke tests (logged-in shared context)
-├── HappyPathTests.cs                # Full API + UI happy-path flows
 ├── IssueKafkaNotificationTests.cs   # Kafka event assertions
 └── Pages/                           # Page Object Model classes
     ├── LoginPage.cs
@@ -27,15 +26,47 @@ src/IssuePit.Tests.E2E/
     └── MilestonesPage.cs
 ```
 
+**Test file naming:** name files and classes after the feature domain, not the quality level. `IssueCreationTests.cs` is correct; `HappyPathTests.cs` is an anti-pattern — it says nothing about what is being tested.
+
+## What is a happy path test?
+
+A **happy path test** is a positive end-to-end test that exercises the full successful flow of a feature — valid input, no errors, every step completes as expected. It is the most important test for any feature because it proves the core use case works against the real stack.
+
+Example for issue creation:
+- Register a user → log in → create an org → create a project → create an issue
+- Assert the issue appears in the list with the correct title and fields
+- Assert any side-effects (e.g. a Kafka event is published)
+
+Name test **files and classes** after the feature domain — never after the quality level:
+```
+// Good
+IssueCreationTests.cs
+ProjectManagementTests.cs
+
+// Bad — says nothing about what is tested
+HappyPathTests.cs   ← anti-pattern
+```
+
+Name test **methods** with the quality level and action:
+
+| Type | Pattern | Example |
+|------|---------|---------|
+| API positive full-flow | `Api_HappyPath_<Action>` | `Api_HappyPath_CreateIssue` |
+| UI positive full-flow | `Ui_HappyPath_<Action>` | `Ui_HappyPath_CreateMilestone` |
+| Smoke check | `Api_<Resource>Endpoint_<Expectation>` | `Api_HealthEndpoint_ReturnsOk` |
+| Kafka event | `<Action>_Publishes<Event>_<Expectation>` | `CreateIssue_PublishesKafkaNotification_WithCorrectPayload` |
+
+---
+
 ## Step-by-Step: Adding an API E2E Test
 
-1. **Choose the right file.** Add API happy-path tests to `HappyPathTests.cs`. Add smoke/health tests to `ApiSmokeTests.cs`. Add Kafka event tests to `IssueKafkaNotificationTests.cs`.
+1. **Choose or create the right file.** Group tests by feature domain: issue-related tests go in `IssueCreationTests.cs`, project management tests in `ProjectManagementTests.cs`, etc. Add smoke/health tests to `ApiSmokeTests.cs`. Add Kafka event tests to `IssueKafkaNotificationTests.cs`.
 
 2. **Declare the test class membership.**
    ```csharp
    [Collection("E2E")]
    [Trait("Category", "E2E")]
-   public class HappyPathTests(AspireFixture fixture) { ... }
+   public class IssueCreationTests(AspireFixture fixture) { ... }
    ```
 
 3. **Create an isolated HTTP client per test.** Always dispose it with `using`:
@@ -78,14 +109,7 @@ src/IssuePit.Tests.E2E/
    Assert.Equal(HttpStatusCode.Created, resp.StatusCode);
    ```
 
-7. **Name the test** following the established pattern:
-
-   | Type | Pattern | Example |
-   |------|---------|---------|
-   | API happy-path | `Api_HappyPath_<Scenario>` | `Api_HappyPath_CreateBoardAndLane` |
-   | UI happy-path | `Ui_HappyPath_<Scenario>` | `Ui_HappyPath_CreateMilestone` |
-   | Smoke check | `Api_<Resource>Endpoint_<Expectation>` | `Api_HealthEndpoint_ReturnsOk` |
-   | Kafka event | `<Action>_Publishes<Event>_<Expectation>` | `CreateIssue_PublishesKafkaNotification_WithCorrectPayload` |
+7. **Name the test method** using the quality level and action (see the naming table above), e.g. `Api_HappyPath_CreateIssue`.
 
 ## Step-by-Step: Adding a UI (Playwright) E2E Test
 

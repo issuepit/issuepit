@@ -1,0 +1,37 @@
+name: Validate Skills
+
+on:
+  push:
+    paths:
+      - 'skills/**'
+  pull_request:
+    paths:
+      - 'skills/**'
+
+jobs:
+  validate:
+    name: Validate Agent Skills
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install skills-ref
+        run: pip install skills-ref==0.1.1
+
+      - name: Validate skills
+        run: |
+          failed=0
+          for skill_dir in skills/*/; do
+            if [ -f "$skill_dir/SKILL.md" ]; then
+              echo "Validating $skill_dir..."
+              if ! skills-ref validate "$skill_dir"; then
+                failed=1
+              fi
+            fi
+          done
+          exit $failed
