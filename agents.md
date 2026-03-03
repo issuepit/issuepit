@@ -54,6 +54,7 @@ this file descripes rules on how agenting coding tools work with this repository
     - good: https://private-user-images.githubusercontent.com/122795841/518943158-75803498-1b92-4fce-9b8e-75e68400169c.png?jwt=...token... # gets replaced from former link
 - PR title should follow conventional commit style
 - includes a list of what tasks had to be done and check which are already done
+- branches should contain the PR/issue number like `copilot/123-fix-of-xyz`
 
 ## Ending a Task / Conversation / Session
 
