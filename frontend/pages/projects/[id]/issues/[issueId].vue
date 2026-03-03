@@ -502,17 +502,15 @@ const commentEdit = ref('')
 // Issue view tabs
 type IssueTab = 'tasks' | 'subissues' | 'linked' | 'history' | 'comments'
 const TABS_STORAGE_KEY = 'issue-view-tabs'
-const DEFAULT_TABS: IssueTab[] = ['comments']
+const DEFAULT_TABS: IssueTab[] = ['tasks', 'comments']
 
 function loadTabsFromStorage(): IssueTab[] {
   if (!import.meta.client) return DEFAULT_TABS
-  try {
-    const stored = localStorage.getItem(TABS_STORAGE_KEY)
-    if (stored) {
-      const parsed = JSON.parse(stored) as unknown
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed as IssueTab[]
-    }
-  } catch {}
+  const stored = sessionStorage.getItem(TABS_STORAGE_KEY) ?? localStorage.getItem(TABS_STORAGE_KEY)
+  if (stored) {
+    const parsed = JSON.parse(stored) as unknown
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed as IssueTab[]
+  }
   return DEFAULT_TABS
 }
 
@@ -537,6 +535,7 @@ function toggleTab(tab: IssueTab, event: MouseEvent): void {
     activeTabs.value = [tab]
   }
   if (import.meta.client) {
+    sessionStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(activeTabs.value))
     localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(activeTabs.value))
   }
 }

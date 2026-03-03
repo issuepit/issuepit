@@ -126,25 +126,24 @@ public class IssueViewTabsTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Comments tab is active by default (no prior localStorage state).
+    /// Tasks and Comments tabs are active by default (no prior storage state).
     /// </summary>
     [Fact]
-    public async Task IssueDetail_TabBar_DefaultsToCommentsTab()
+    public async Task IssueDetail_TabBar_DefaultsToTasksAndCommentsTabs()
     {
         var (context, page, issueDetailUrl) = await SetUpAsync();
         try
         {
-            await page.AddInitScriptAsync("window.addEventListener('DOMContentLoaded', () => localStorage.removeItem('issue-view-tabs'))");
-
             await page.GotoAsync(issueDetailUrl);
-            await page.EvaluateAsync("localStorage.removeItem('issue-view-tabs')");
+            await page.EvaluateAsync("sessionStorage.removeItem('issue-view-tabs'); localStorage.removeItem('issue-view-tabs')");
             await page.ReloadAsync();
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
 
             var detail = new IssueDetailPage(page);
 
             Assert.True(await detail.IsTabActiveAsync("Comments"), "Comments tab should be active by default");
-            Assert.False(await detail.IsTabActiveAsync("Tasks"), "Tasks tab should not be active by default");
+            Assert.True(await detail.IsTabActiveAsync("Tasks"), "Tasks tab should be active by default");
+            Assert.False(await detail.IsTabActiveAsync("History"), "History tab should not be active by default");
         }
         finally
         {
@@ -162,16 +161,16 @@ public class IssueViewTabsTests : IAsyncLifetime
         try
         {
             await page.GotoAsync(issueDetailUrl);
-            await page.EvaluateAsync("localStorage.removeItem('issue-view-tabs')");
+            await page.EvaluateAsync("sessionStorage.removeItem('issue-view-tabs'); localStorage.removeItem('issue-view-tabs')");
             await page.ReloadAsync();
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
 
             var detail = new IssueDetailPage(page);
 
-            await detail.ClickTabAsync("Tasks");
+            await detail.ClickTabAsync("History");
 
-            Assert.True(await detail.IsTabActiveAsync("Tasks"), "Tasks tab should be active after clicking it");
-            Assert.False(await detail.IsTabActiveAsync("Comments"), "Comments tab should not be active after clicking Tasks");
+            Assert.True(await detail.IsTabActiveAsync("History"), "History tab should be active after clicking it");
+            Assert.False(await detail.IsTabActiveAsync("Comments"), "Comments tab should not be active after single-clicking History");
         }
         finally
         {
@@ -189,20 +188,20 @@ public class IssueViewTabsTests : IAsyncLifetime
         try
         {
             await page.GotoAsync(issueDetailUrl);
-            await page.EvaluateAsync("localStorage.removeItem('issue-view-tabs')");
+            await page.EvaluateAsync("sessionStorage.removeItem('issue-view-tabs'); localStorage.removeItem('issue-view-tabs')");
             await page.ReloadAsync();
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
 
             var detail = new IssueDetailPage(page);
 
-            // Verify Comments is active first
-            Assert.True(await detail.IsTabActiveAsync("Comments"), "Pre-condition: Comments should be active");
+            // Default is Tasks + Comments; Ctrl+click History to add it
+            Assert.True(await detail.IsTabActiveAsync("Tasks"), "Pre-condition: Tasks should be active by default");
 
-            // Ctrl+click Tasks to add it
-            await detail.CtrlClickTabAsync("Tasks");
+            // Ctrl+click History to add it
+            await detail.CtrlClickTabAsync("History");
 
-            Assert.True(await detail.IsTabActiveAsync("Comments"), "Comments should still be active after Ctrl+click Tasks");
-            Assert.True(await detail.IsTabActiveAsync("Tasks"), "Tasks should also be active after Ctrl+click");
+            Assert.True(await detail.IsTabActiveAsync("Tasks"), "Tasks should still be active after Ctrl+click History");
+            Assert.True(await detail.IsTabActiveAsync("History"), "History should also be active after Ctrl+click");
         }
         finally
         {
