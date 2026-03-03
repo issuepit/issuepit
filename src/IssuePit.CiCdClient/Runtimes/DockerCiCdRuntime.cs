@@ -37,9 +37,11 @@ public partial class DockerCiCdRuntime(
             ?.InformationalVersion
         ?? "unknown";
 
+
     // Builds a stable, human-readable Docker container name for a CI/CD run.
     private static string BuildContainerName(CiCdRun run) =>
         $"issuepit-cicd-{run.Id:N}"[..24]; // e.g. "issuepit-cicd-ab12cd34ef56"
+
 
     public async Task RunAsync(
         CiCdRun run,
@@ -158,12 +160,11 @@ public partial class DockerCiCdRuntime(
         if (!trigger.NoVolumeMounts && !hasGitRepo)
         {
             binds.Add($"{workspacePath}:/workspace");
-            if (!trigger.NoDind)
-                // Mount Docker socket so act can spin up runner containers (DinD)
-                binds.Add("/var/run/docker.sock:/var/run/docker.sock");
         }
-        else if (hasGitRepo && !trigger.NoDind)
+
+        if (!trigger.NoDind)
         {
+            // Mount Docker socket so act can spin up runner containers (DinD)
             // Git-clone mode: still mount Docker socket for DinD even though workspace is cloned inside.
             binds.Add("/var/run/docker.sock:/var/run/docker.sock");
         }
