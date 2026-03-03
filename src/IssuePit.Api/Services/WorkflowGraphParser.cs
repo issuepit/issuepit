@@ -10,7 +10,13 @@ public record WorkflowJobNode(
     string? RunsOn,
     IReadOnlyList<string> Needs,
     /// <summary>Workflow filename (e.g. <c>backend.yml</c>) — set only when the graph merges multiple files.</summary>
-    string? WorkflowFile = null);
+    string? WorkflowFile = null,
+    /// <summary>
+    /// Local workflow filename referenced by a <c>uses:</c> field (e.g. <c>backend.yml</c>).
+    /// Set only for jobs that call a reusable local workflow. After substitution in
+    /// <see cref="WorkflowGraphParser.ParseDirectoryAsync"/> these jobs are removed from the graph.
+    /// </summary>
+    string? UsesWorkflow = null);
 
 /// <summary>A directed edge from one job to another (dependency: <see cref="From"/> must complete before <see cref="To"/>).</summary>
 public record WorkflowEdge(string From, string To);
@@ -20,7 +26,12 @@ public record WorkflowGraph(
     IReadOnlyList<WorkflowJobNode> Jobs,
     IReadOnlyList<WorkflowEdge> Edges,
     /// <summary>Lint warnings emitted by actionlint, if available. Empty when actionlint is not installed.</summary>
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings,
+    /// <summary>
+    /// Maps each workflow filename (e.g. <c>ci.yml</c>) to the list of GitHub event names that trigger it
+    /// (e.g. <c>["push", "pull_request"]</c>). Populated when parsing from the filesystem.
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<string>>? WorkflowTriggers = null);
 
 /// <summary>
 /// Parses GitHub Actions workflow YAML to extract the job dependency graph.
@@ -42,12 +53,16 @@ public static class WorkflowGraphParser
         var yamlContent = await System.IO.File.ReadAllTextAsync(filePath, cancellationToken);
         var graph = ParseYaml(yamlContent);
 
+        var stem = Path.GetFileName(filePath);
+        var triggers = ParseTriggers(yamlContent);
+        var workflowTriggers = new Dictionary<string, IReadOnlyList<string>> { [stem] = triggers };
+
         // Run actionlint validation if the binary is available. This is a best-effort step:
         // actionlint is included in the helper-act image and may be installed on the host,
         // but its absence is not an error — we still return the YAML-parsed graph.
         var warnings = await TryRunActionlintAsync(filePath, cancellationToken);
 
-        return graph with { Warnings = warnings };
+        return graph with { Warnings = warnings, WorkflowTriggers = workflowTriggers };
     }
 
     /// <summary>
@@ -59,6 +74,12 @@ public static class WorkflowGraphParser
     /// the file's name stem (e.g. <c>backend/build</c>, <c>frontend/build</c>) so that jobs with
     /// the same ID in different files remain distinct. The <see cref="WorkflowJobNode.WorkflowFile"/>
     /// property is set for every node in the multi-file case.
+    /// </para>
+    /// <para>
+    /// Reusable workflow calls (<c>uses: ./.github/workflows/xxx.yml</c>) are substituted: the
+    /// calling job is removed from the graph and replaced by the actual jobs from the called file.
+    /// Jobs that depended on the calling job are re-wired to depend on the leaf jobs of the called
+    /// workflow (jobs whose output no other job within that workflow depends on).
     /// </para>
     /// </summary>
     public static async Task<WorkflowGraph> ParseDirectoryAsync(string workflowsDir, CancellationToken cancellationToken = default)
@@ -80,6 +101,7 @@ public static class WorkflowGraphParser
         var allJobs = new List<WorkflowJobNode>();
         var allEdges = new List<WorkflowEdge>();
         var allWarnings = new List<string>();
+        var workflowTriggers = new Dictionary<string, IReadOnlyList<string>>();
 
         foreach (var filePath in files)
         {
@@ -87,6 +109,9 @@ public static class WorkflowGraphParser
             var fileGraph = ParseYaml(yamlContent);
             var stem = Path.GetFileName(filePath); // e.g. "backend.yml"
             var prefix = Path.GetFileNameWithoutExtension(filePath); // e.g. "backend"
+
+            // Collect triggers for each file.
+            workflowTriggers[stem] = ParseTriggers(yamlContent);
 
             // Build a lookup so we can rewrite 'needs' references within this file.
             // Only jobs defined in the same file are prefixed; 'needs' entries that reference
@@ -115,7 +140,12 @@ public static class WorkflowGraphParser
                 allWarnings.Add(w);
         }
 
-        return new WorkflowGraph(allJobs, allEdges, allWarnings);
+        // Substitute reusable workflow calls (uses: ./.github/workflows/xxx.yml).
+        // For each caller job that references a local workflow file we also parsed, replace the
+        // caller job with the actual jobs from the called workflow and re-wire dependencies.
+        (allJobs, allEdges) = SubstituteReusableWorkflows(allJobs, allEdges);
+
+        return new WorkflowGraph(allJobs, allEdges, allWarnings, workflowTriggers);
     }
 
     /// <summary>
@@ -158,6 +188,7 @@ public static class WorkflowGraphParser
 
                 var name = jobId;
                 string? runsOn = null;
+                string? usesWorkflow = null;
                 var needs = new List<string>();
 
                 if (jobMapping is not null)
@@ -168,6 +199,15 @@ public static class WorkflowGraphParser
 
                     // Extract runs-on
                     TryGetScalar(jobMapping, "runs-on", out runsOn);
+
+                    // Extract uses (reusable local workflow reference, e.g. ./.github/workflows/backend.yml)
+                    TryGetScalar(jobMapping, "uses", out var usesValue);
+                    if (!string.IsNullOrWhiteSpace(usesValue)
+                        && usesValue.StartsWith("./", StringComparison.Ordinal))
+                    {
+                        // Normalise to just the filename so it can be matched against WorkflowFile values.
+                        usesWorkflow = Path.GetFileName(usesValue);
+                    }
 
                     // Extract needs (string or sequence)
                     var needsNode = GetChildNode(jobMapping, "needs");
@@ -186,7 +226,7 @@ public static class WorkflowGraphParser
                     }
                 }
 
-                jobs.Add(new WorkflowJobNode(jobId, name, runsOn, needs));
+                jobs.Add(new WorkflowJobNode(jobId, name, runsOn, needs, UsesWorkflow: usesWorkflow));
             }
 
             // Build edges: for each job, each need produces an edge (need → job)
@@ -266,5 +306,158 @@ public static class WorkflowGraphParser
         }
         value = null;
         return false;
+    }
+
+    /// <summary>
+    /// Parses the <c>on:</c> section of a workflow YAML and returns the list of GitHub event names
+    /// that trigger it (e.g. <c>["push", "pull_request"]</c>).
+    /// Handles all three YAML forms: scalar, sequence, and mapping.
+    /// Returns an empty list when the section is absent or the YAML is malformed.
+    /// </summary>
+    public static IReadOnlyList<string> ParseTriggers(string? yamlContent)
+    {
+        if (string.IsNullOrWhiteSpace(yamlContent))
+            return [];
+
+        try
+        {
+            var yaml = new YamlStream();
+            yaml.Load(new StringReader(yamlContent));
+
+            if (yaml.Documents.Count == 0 || yaml.Documents[0].RootNode is not YamlMappingNode root)
+                return [];
+
+            var onNode = root.Children
+                .FirstOrDefault(kv => kv.Key is YamlScalarNode k && k.Value == "on")
+                .Value;
+
+            if (onNode is null)
+                return [];
+
+            var events = new List<string>();
+
+            switch (onNode)
+            {
+                // on: push
+                case YamlScalarNode scalar when scalar.Value is not null:
+                    events.Add(scalar.Value);
+                    break;
+
+                // on: [push, pull_request]
+                case YamlSequenceNode seq:
+                    foreach (var item in seq)
+                    {
+                        if (item is YamlScalarNode s && s.Value is not null)
+                            events.Add(s.Value);
+                    }
+                    break;
+
+                // on:\n  push:\n    branches: [...]\n  pull_request: ...
+                case YamlMappingNode map:
+                    foreach (var kv in map.Children)
+                    {
+                        if (kv.Key is YamlScalarNode k && k.Value is not null)
+                            events.Add(k.Value);
+                    }
+                    break;
+            }
+
+            return events;
+        }
+        catch (Exception)
+        {
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Substitutes reusable workflow calls in a merged job list.
+    /// For each job with <see cref="WorkflowJobNode.UsesWorkflow"/> pointing to a workflow file that
+    /// also appears as <see cref="WorkflowJobNode.WorkflowFile"/> on other jobs:
+    /// <list type="bullet">
+    ///   <item>The calling job is removed from the graph.</item>
+    ///   <item>
+    ///     Jobs that depended on the caller are re-wired to depend on the <em>leaf</em> jobs of the
+    ///     called workflow (jobs inside the called workflow that no other job within that workflow
+    ///     depends on as input).
+    ///   </item>
+    ///   <item>
+    ///     Edges are updated accordingly: edges to/from the caller are removed and replacement edges
+    ///     are added from each callee-leaf to each original dependent.
+    ///   </item>
+    /// </list>
+    /// </summary>
+    private static (List<WorkflowJobNode> Jobs, List<WorkflowEdge> Edges) SubstituteReusableWorkflows(
+        List<WorkflowJobNode> allJobs, List<WorkflowEdge> allEdges)
+    {
+        // Build a lookup: WorkflowFile stem → prefixed job IDs in that file.
+        var jobsByFile = allJobs
+            .Where(j => j.WorkflowFile is not null)
+            .GroupBy(j => j.WorkflowFile!)
+            .ToDictionary(g => g.Key, g => g.Select(j => j.Id).ToHashSet(StringComparer.OrdinalIgnoreCase));
+
+        // Identify caller jobs and their callee leaf job IDs.
+        var callerToLeaves = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var job in allJobs)
+        {
+            if (job.UsesWorkflow is null) continue;
+
+            if (!jobsByFile.TryGetValue(job.UsesWorkflow, out var calleeIds) || calleeIds.Count == 0)
+                continue; // Referenced file not in directory — leave node as-is.
+
+            // Leaf callee jobs: callee jobs that no other callee job depends on as output.
+            // i.e., callee job IDs that do NOT appear as "From" in edges where "To" is also a callee.
+            var calleeWithSuccessors = new HashSet<string>(
+                allEdges
+                    .Where(e => calleeIds.Contains(e.From) && calleeIds.Contains(e.To))
+                    .Select(e => e.From),
+                StringComparer.OrdinalIgnoreCase);
+
+            var leaves = calleeIds.Where(id => !calleeWithSuccessors.Contains(id)).ToList();
+            callerToLeaves[job.Id] = leaves.Count > 0 ? leaves : calleeIds.ToList();
+        }
+
+        if (callerToLeaves.Count == 0)
+            return (allJobs, allEdges); // Nothing to substitute.
+
+        var callerIds = callerToLeaves.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // Remove caller jobs and update Needs on remaining jobs.
+        var updatedJobs = allJobs
+            .Where(j => !callerIds.Contains(j.Id))
+            .Select(j =>
+            {
+                if (!j.Needs.Any(n => callerIds.Contains(n))) return j;
+                var newNeeds = j.Needs
+                    .SelectMany(n => callerToLeaves.GetValueOrDefault(n) ?? [n])
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                return j with { Needs = newNeeds };
+            })
+            .ToList();
+
+        // Rebuild edges: remove edges that touch caller jobs, add substituted edges.
+        var updatedEdges = allEdges
+            .Where(e => !callerIds.Contains(e.From) && !callerIds.Contains(e.To))
+            .ToList();
+
+        // Build a set of existing edges for O(1) duplicate detection.
+        var existingEdgeSet = new HashSet<(string From, string To)>(
+            updatedEdges.Select(e => (e.From, e.To)),
+            EqualityComparer<(string, string)>.Default);
+
+        // Add new edges from callee leaves to jobs that previously depended on the caller.
+        foreach (var job in updatedJobs)
+        {
+            foreach (var need in job.Needs)
+            {
+                var key = (need, job.Id);
+                if (existingEdgeSet.Add(key))
+                    updatedEdges.Add(new WorkflowEdge(need, job.Id));
+            }
+        }
+
+        return (updatedJobs, updatedEdges);
     }
 }

@@ -683,6 +683,7 @@ export interface WorkflowGraph {
   jobs: WorkflowJobNode[]
   edges: WorkflowEdge[]
   warnings: string[]
+  workflowTriggers?: Record<string, string[]>
 }
 
 export interface AgentSessionLog {

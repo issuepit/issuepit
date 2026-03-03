@@ -228,6 +228,23 @@
               </svg>
             </button>
           </div>
+
+          <!-- Jobs tab controls -->
+          <div v-else-if="activeSection === 'jobs' && hasMultipleWorkflowFiles" class="flex items-center gap-2">
+            <button
+              :class="[
+                'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md transition-colors',
+                hideUntriggeredWorkflows ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'
+              ]"
+              :title="hideUntriggeredWorkflows ? 'Showing only workflows matching this run\'s triggers — click to show all' : 'Click to hide workflows not triggered by this run'"
+              @click="hideUntriggeredWorkflows = !hideUntriggeredWorkflows">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+              </svg>
+              {{ hideUntriggeredWorkflows ? 'Triggered only' : 'All workflows' }}
+            </button>
+          </div>
         </div>
 
         <!-- Jobs tab -->
@@ -282,7 +299,7 @@
                 :style="{ position: 'relative', width: graphLayout.svgWidth + 'px', minHeight: graphLayout.svgHeight + 'px', zIndex: 1 }"
                 style="z-index: 1">
                 <div
-                  v-for="job in enrichedJobs"
+                  v-for="job in visibleJobs"
                   :key="job.id"
                   :style="{ position: 'absolute', left: job.x + 'px', top: job.y + 'px', width: '220px' }"
                   :class="[
@@ -511,6 +528,44 @@ const streamTabs = [
 ]
 const activeStream = ref<string | null>(null)
 
+// ── Workflow trigger filter toggle ─────────────────────────────────────────────
+
+/** When true, only jobs from workflows whose triggers overlap with this run's workflow are shown. */
+const hideUntriggeredWorkflows = ref(false)
+
+/** True when the graph contains jobs from more than one workflow file (toggle is relevant). */
+const hasMultipleWorkflowFiles = computed(() => {
+  const files = new Set(
+    (store.currentRunGraph?.jobs ?? []).map(j => j.workflowFile).filter(Boolean),
+  )
+  return files.size > 1
+})
+
+/** Triggers of the workflow that triggered this run (extracted from workflowTriggers). */
+const runWorkflowTriggers = computed<string[]>(() => {
+  const triggers = store.currentRunGraph?.workflowTriggers
+  if (!store.currentRun?.workflow || !triggers) return []
+  // Normalise to just the filename (run.workflow may be a full path like ".github/workflows/ci.yml")
+  const workflowFile = store.currentRun.workflow.split('/').pop() ?? store.currentRun.workflow
+  return triggers[workflowFile] ?? []
+})
+
+/** Set of workflow filenames that should be visible when the toggle is active. Empty = show all. */
+const triggerVisibleFiles = computed<Set<string>>(() => {
+  if (!hideUntriggeredWorkflows.value) return new Set()
+  const runTriggers = new Set(runWorkflowTriggers.value)
+  const allTriggers = store.currentRunGraph?.workflowTriggers
+  if (runTriggers.size === 0 || !allTriggers) return new Set()
+
+  const visible = new Set<string>()
+  for (const [file, fileTriggers] of Object.entries(allTriggers)) {
+    if (fileTriggers.some(t => runTriggers.has(t))) {
+      visible.add(file)
+    }
+  }
+  return visible
+})
+
 const selectedJob = ref<string | null>(null)
 
 const filteredLogs = computed(() =>
@@ -678,6 +733,13 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
   })
 })
 
+/** Jobs visible after applying the workflow trigger filter toggle. */
+const visibleJobs = computed<EnrichedJob[]>(() => {
+  if (!hideUntriggeredWorkflows.value || triggerVisibleFiles.value.size === 0)
+    return enrichedJobs.value
+  return enrichedJobs.value.filter(j => !j.workflowFile || triggerVisibleFiles.value.has(j.workflowFile))
+})
+
 // ── SVG graph layout ───────────────────────────────────────────────────────────
 
 interface SvgEdge { path: string }
@@ -687,11 +749,14 @@ const graphLayout = computed<{ svgWidth: number; svgHeight: number; edges: SvgEd
   const BOX_H = 130
   const PAD = 16
 
-  if (!enrichedJobs.value.length) return { svgWidth: 0, svgHeight: 0, edges: [] }
+  if (!visibleJobs.value.length) return { svgWidth: 0, svgHeight: 0, edges: [] }
 
-  const posMap = new Map(enrichedJobs.value.map(j => [j.id, { x: j.x, y: j.y }]))
+  const visibleIds = new Set(visibleJobs.value.map(j => j.id))
+  const posMap = new Map(visibleJobs.value.map(j => [j.id, { x: j.x, y: j.y }]))
 
-  const edges = (store.currentRunGraph?.edges ?? []).map(e => {
+  const edges = (store.currentRunGraph?.edges ?? [])
+    .filter(e => visibleIds.has(e.from) && visibleIds.has(e.to))
+    .map(e => {
     const from = posMap.get(e.from)
     const to = posMap.get(e.to)
     if (!from || !to) return null
@@ -705,8 +770,8 @@ const graphLayout = computed<{ svgWidth: number; svgHeight: number; edges: SvgEd
     return { path: `M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}` }
   }).filter((e): e is SvgEdge => e !== null)
 
-  const maxX = Math.max(...enrichedJobs.value.map(j => j.x)) + BOX_W + PAD
-  const maxY = Math.max(...enrichedJobs.value.map(j => j.y)) + BOX_H + PAD
+  const maxX = Math.max(...visibleJobs.value.map(j => j.x)) + BOX_W + PAD
+  const maxY = Math.max(...visibleJobs.value.map(j => j.y)) + BOX_H + PAD
 
   return { svgWidth: maxX, svgHeight: maxY, edges }
 })

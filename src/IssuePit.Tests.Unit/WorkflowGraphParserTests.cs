@@ -131,4 +131,206 @@ public class WorkflowGraphParserTests
         Assert.Empty(graph.Jobs);
         Assert.Empty(graph.Edges);
     }
+
+    [Fact]
+    public void Parse_JobWithLocalUsesField_Sets_UsesWorkflow()
+    {
+        const string yaml = """
+            jobs:
+              backend:
+                name: Backend
+                uses: ./.github/workflows/backend.yml
+            """;
+
+        var graph = WorkflowGraphParser.Parse(yaml);
+
+        Assert.Single(graph.Jobs);
+        Assert.Equal("backend", graph.Jobs[0].Id);
+        Assert.Equal("backend.yml", graph.Jobs[0].UsesWorkflow);
+    }
+
+    [Fact]
+    public void Parse_JobWithExternalUsesField_DoesNotSet_UsesWorkflow()
+    {
+        const string yaml = """
+            jobs:
+              caller:
+                uses: owner/repo/.github/workflows/file.yml@main
+            """;
+
+        var graph = WorkflowGraphParser.Parse(yaml);
+
+        Assert.Single(graph.Jobs);
+        Assert.Null(graph.Jobs[0].UsesWorkflow);
+    }
+
+    // ── ParseTriggers ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ParseTriggers_ScalarPush_Returns_Push()
+    {
+        const string yaml = """
+            on: push
+            jobs: {}
+            """;
+
+        var triggers = WorkflowGraphParser.ParseTriggers(yaml);
+        Assert.Single(triggers);
+        Assert.Equal("push", triggers[0]);
+    }
+
+    [Fact]
+    public void ParseTriggers_SequenceForm_Returns_AllEvents()
+    {
+        const string yaml = """
+            on: [push, pull_request]
+            jobs: {}
+            """;
+
+        var triggers = WorkflowGraphParser.ParseTriggers(yaml);
+        Assert.Equal(2, triggers.Count);
+        Assert.Contains("push", triggers);
+        Assert.Contains("pull_request", triggers);
+    }
+
+    [Fact]
+    public void ParseTriggers_MappingForm_Returns_EventKeys()
+    {
+        const string yaml = """
+            on:
+              push:
+                branches: [main]
+              pull_request:
+                types: [opened, synchronize]
+            jobs: {}
+            """;
+
+        var triggers = WorkflowGraphParser.ParseTriggers(yaml);
+        Assert.Equal(2, triggers.Count);
+        Assert.Contains("push", triggers);
+        Assert.Contains("pull_request", triggers);
+    }
+
+    [Fact]
+    public void ParseTriggers_NoOnSection_Returns_Empty()
+    {
+        const string yaml = """
+            jobs:
+              build:
+                runs-on: ubuntu-latest
+            """;
+
+        var triggers = WorkflowGraphParser.ParseTriggers(yaml);
+        Assert.Empty(triggers);
+    }
+
+    // ── ParseDirectoryAsync substitution ──────────────────────────────────────
+
+    [Fact]
+    public async Task ParseDirectoryAsync_SubstitutesReusableWorkflowCalls()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(dir);
+        try
+        {
+            // ci.yml calls backend.yml and frontend.yml; report depends on backend
+            await File.WriteAllTextAsync(Path.Combine(dir, "ci.yml"), """
+                on: push
+                jobs:
+                  backend:
+                    name: Backend
+                    uses: ./.github/workflows/backend.yml
+                  frontend:
+                    name: Frontend
+                    uses: ./.github/workflows/frontend.yml
+                  report:
+                    name: Test Report
+                    runs-on: ubuntu-latest
+                    needs: [backend]
+                """);
+
+            await File.WriteAllTextAsync(Path.Combine(dir, "backend.yml"), """
+                on: push
+                jobs:
+                  build:
+                    name: Build Backend
+                    runs-on: ubuntu-latest
+                  test:
+                    name: Test Backend
+                    runs-on: ubuntu-latest
+                    needs: build
+                """);
+
+            await File.WriteAllTextAsync(Path.Combine(dir, "frontend.yml"), """
+                on: push
+                jobs:
+                  lint:
+                    name: Lint Frontend
+                    runs-on: ubuntu-latest
+                """);
+
+            var graph = await WorkflowGraphParser.ParseDirectoryAsync(dir);
+
+            // Caller jobs (ci/backend, ci/frontend) must be substituted away.
+            Assert.DoesNotContain(graph.Jobs, j => j.Id == "ci/backend");
+            Assert.DoesNotContain(graph.Jobs, j => j.Id == "ci/frontend");
+
+            // Callee jobs must be present.
+            Assert.Contains(graph.Jobs, j => j.Id == "backend/build");
+            Assert.Contains(graph.Jobs, j => j.Id == "backend/test");
+            Assert.Contains(graph.Jobs, j => j.Id == "frontend/lint");
+
+            // report job must still be present.
+            Assert.Contains(graph.Jobs, j => j.Id == "ci/report");
+
+            // report must now depend on the leaf of backend (backend/test, not ci/backend).
+            var report = graph.Jobs.First(j => j.Id == "ci/report");
+            Assert.DoesNotContain("ci/backend", report.Needs);
+            Assert.Contains("backend/test", report.Needs);
+
+            // Edge backend/test → ci/report must exist (not ci/backend → ci/report).
+            Assert.DoesNotContain(graph.Edges, e => e.From == "ci/backend");
+            Assert.Contains(graph.Edges, e => e.From == "backend/test" && e.To == "ci/report");
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ParseDirectoryAsync_IncludesWorkflowTriggers()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(dir);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(dir, "ci.yml"), """
+                on: [push, workflow_dispatch]
+                jobs:
+                  build:
+                    runs-on: ubuntu-latest
+                """);
+
+            await File.WriteAllTextAsync(Path.Combine(dir, "pr.yml"), """
+                on: pull_request
+                jobs:
+                  check:
+                    runs-on: ubuntu-latest
+                """);
+
+            var graph = await WorkflowGraphParser.ParseDirectoryAsync(dir);
+
+            Assert.NotNull(graph.WorkflowTriggers);
+            Assert.True(graph.WorkflowTriggers!.ContainsKey("ci.yml"));
+            Assert.True(graph.WorkflowTriggers!.ContainsKey("pr.yml"));
+            Assert.Contains("push", graph.WorkflowTriggers["ci.yml"]);
+            Assert.Contains("workflow_dispatch", graph.WorkflowTriggers["ci.yml"]);
+            Assert.Contains("pull_request", graph.WorkflowTriggers["pr.yml"]);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }
