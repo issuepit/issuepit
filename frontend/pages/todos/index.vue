@@ -47,9 +47,14 @@
         <!-- iCal export -->
         <a :href="icalUrl" download="todos.ics"
           class="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition-colors"
-          title="Export as iCal">
-          iCal
+          title="Download as iCal file">
+          iCal ↓
         </a>
+        <button @click="copyIcalUrl"
+          class="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition-colors"
+          :title="icalCopied ? 'Copied!' : 'Copy calendar subscription URL'">
+          {{ icalCopied ? '✓ Copied' : '📅 Subscribe' }}
+        </button>
       </div>
     </div>
 
@@ -167,7 +172,7 @@
 
     <!-- Calendar View -->
     <div v-if="!store.loading && view === 'calendar'" class="flex-1 overflow-auto">
-      <TodoCalendar :todos="filteredTodos" @select="openEdit" @create-on-date="openCreateOnDate" />
+      <TodoCalendar :todos="filteredTodos" @select="openEdit" @create-on-date="openCreateOnDate" @reschedule="onReschedule" />
     </div>
 
     <!-- ── Modals ───────────────────────────────────────── -->
@@ -421,6 +426,29 @@ const icalUrl = computed(() => {
   return `/api/todos/export.ics${qs ? '?' + qs : ''}`
 })
 
+const calendarFeedUrl = computed(() => {
+  const params = new URLSearchParams()
+  if (activeBoardId.value) params.set('boardId', activeBoardId.value)
+  if (filterCompleted.value !== '') params.set('completed', filterCompleted.value)
+  const qs = params.toString()
+  const path = `/api/todos/calendar.ics${qs ? '?' + qs : ''}`
+  if (import.meta.client) return `${window.location.origin}${path}`
+  return path
+})
+
+const icalCopied = ref(false)
+
+async function copyIcalUrl() {
+  try {
+    await navigator.clipboard.writeText(calendarFeedUrl.value)
+    icalCopied.value = true
+    setTimeout(() => { icalCopied.value = false }, 2000)
+  } catch {
+    // fallback: show the URL in a prompt
+    window.prompt('Copy this calendar subscription URL:', calendarFeedUrl.value)
+  }
+}
+
 // ── Boards modal ──────────────────────────────────────────────────────────
 const showBoards = ref(false)
 const newBoardName = ref('')
@@ -550,6 +578,20 @@ async function saveTodo() {
 async function confirmDelete(id: string) {
   if (!confirm('Delete this todo?')) return
   await store.deleteTodo(id)
+}
+
+async function onReschedule(todo: Todo, newDate: Date) {
+  await store.updateTodo(todo.id, {
+    title: todo.title,
+    body: todo.body,
+    priority: todo.priority,
+    dueDate: newDate.toISOString(),
+    startDate: todo.startDate,
+    recurringInterval: todo.recurringInterval,
+    isCompleted: todo.isCompleted,
+    boardIds: todo.boardMemberships.map(m => m.boardId),
+    categoryIds: todo.categoryMemberships.map(m => m.categoryId),
+  })
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────

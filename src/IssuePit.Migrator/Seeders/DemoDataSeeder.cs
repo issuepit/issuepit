@@ -13,6 +13,7 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
         await SeedDemoUsersAsync(tenantId);
         await SeedDemoDataAsync(tenantId);
         await SeedEvilCorpAsync(tenantId);
+        await SeedDemoTodosAsync(tenantId);
     }
 
     private async Task SeedDemoUsersAsync(Guid tenantId)
@@ -664,6 +665,103 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
 
         await db.SaveChangesAsync();
         logger.LogInformation("EvilCorp seeded: 3 thematic teams (Honest Participants, Attackers, Theorists) with {Count} org members.", addedOrgMembers.Count);
+    }
+
+    private async Task SeedDemoTodosAsync(Guid tenantId)
+    {
+        // Guard: only seed once
+        if (await db.TodoBoards.AnyAsync(b => b.TenantId == tenantId))
+            return;
+
+        logger.LogInformation("Seeding demo todos...");
+
+        var now = DateTime.UtcNow;
+
+        // --- Board: Work ---
+        var workBoard = new TodoBoard
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            Name = "Work",
+            Description = "Work-related tasks and projects",
+            CreatedAt = now,
+        };
+        db.TodoBoards.Add(workBoard);
+
+        var catBacklog = new TodoCategory { Id = Guid.NewGuid(), BoardId = workBoard.Id, Name = "Backlog", Color = "#6b7280", Position = 0 };
+        var catInProgress = new TodoCategory { Id = Guid.NewGuid(), BoardId = workBoard.Id, Name = "In Progress", Color = "#3b82f6", Position = 1 };
+        var catReview = new TodoCategory { Id = Guid.NewGuid(), BoardId = workBoard.Id, Name = "Review", Color = "#f59e0b", Position = 2 };
+        var catDone = new TodoCategory { Id = Guid.NewGuid(), BoardId = workBoard.Id, Name = "Done", Color = "#10b981", Position = 3 };
+        db.TodoCategories.AddRange(catBacklog, catInProgress, catReview, catDone);
+
+        // --- Board: Personal ---
+        var personalBoard = new TodoBoard
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            Name = "Personal",
+            Description = "Personal tasks and errands",
+            CreatedAt = now,
+        };
+        db.TodoBoards.Add(personalBoard);
+
+        var catErrands = new TodoCategory { Id = Guid.NewGuid(), BoardId = personalBoard.Id, Name = "Errands", Color = "#8b5cf6", Position = 0 };
+        var catHealth = new TodoCategory { Id = Guid.NewGuid(), BoardId = personalBoard.Id, Name = "Health", Color = "#ef4444", Position = 1 };
+        var catLearning = new TodoCategory { Id = Guid.NewGuid(), BoardId = personalBoard.Id, Name = "Learning", Color = "#06b6d4", Position = 2 };
+        db.TodoCategories.AddRange(catErrands, catHealth, catLearning);
+
+        await db.SaveChangesAsync();
+
+        // Helper to create a todo with memberships
+        async Task<Todo> AddTodo(string title, string? body, TodoPriority priority,
+            DateTime? dueDate, bool isCompleted, TodoBoard board, TodoCategory? category,
+            TodoRecurringInterval recurring = TodoRecurringInterval.None)
+        {
+            var todo = new Todo
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                Title = title,
+                Body = body,
+                Priority = priority,
+                DueDate = dueDate,
+                RecurringInterval = recurring,
+                IsCompleted = isCompleted,
+                CreatedAt = now.AddDays(-new Random(42).Next(0, 14)),
+                UpdatedAt = now,
+            };
+            db.Todos.Add(todo);
+            db.TodoBoardMemberships.Add(new TodoBoardMembership { TodoId = todo.Id, BoardId = board.Id });
+            if (category is not null)
+                db.TodoCategoryMemberships.Add(new TodoCategoryMembership { TodoId = todo.Id, CategoryId = category.Id });
+            await db.SaveChangesAsync();
+            return todo;
+        }
+
+        // Work todos
+        await AddTodo("Design new API schema for v2", "Define request/response models for the upcoming API redesign.", TodoPriority.High, now.AddDays(3).Date.AddHours(10), false, workBoard, catBacklog);
+        await AddTodo("Write unit tests for auth module", "Cover JWT validation, refresh token rotation, and logout.", TodoPriority.High, now.AddDays(1).Date.AddHours(14), false, workBoard, catInProgress);
+        await AddTodo("Fix pagination bug on issues list", "Offset-based pagination breaks when items are deleted.", TodoPriority.Urgent, now.Date.AddHours(9).AddMinutes(30), false, workBoard, catInProgress);
+        await AddTodo("Code review: PR #42 agent streaming", "Review the SSE streaming implementation for agent logs.", TodoPriority.Medium, now.Date.AddHours(11), false, workBoard, catReview);
+        await AddTodo("Update OpenAPI docs", "Regenerate swagger docs after adding todo endpoints.", TodoPriority.Low, now.AddDays(5).Date.AddHours(16), false, workBoard, catBacklog);
+        await AddTodo("Deploy hotfix to staging", "Cherry-pick the auth fix and push to staging environment.", TodoPriority.Urgent, now.Date.AddHours(8), false, workBoard, catInProgress);
+        await AddTodo("Team standup preparation", "Prepare talking points for weekly team sync.", TodoPriority.Medium, now.AddDays(2).Date.AddHours(9), false, workBoard, catBacklog, TodoRecurringInterval.Weekly);
+        await AddTodo("Refactor database query layer", "Replace raw SQL with proper EF Core LINQ queries.", TodoPriority.Medium, now.AddDays(7).Date.AddHours(15), false, workBoard, catBacklog);
+        await AddTodo("Add dark mode support", "Implement dark/light theme toggle in the frontend.", TodoPriority.Low, now.AddDays(10).Date.AddHours(14), false, workBoard, catBacklog);
+        await AddTodo("Release v1.2.0 changelog", "Write and publish the changelog for the v1.2.0 release.", TodoPriority.Medium, now.AddDays(-1).Date.AddHours(17), true, workBoard, catDone);
+        await AddTodo("Set up CI/CD pipeline", "Configure GitHub Actions for automated builds and tests.", TodoPriority.High, now.AddDays(-3).Date.AddHours(12), true, workBoard, catDone);
+
+        // Personal todos
+        await AddTodo("Grocery shopping", "Milk, eggs, bread, vegetables, and fruit.", TodoPriority.Medium, now.Date.AddHours(18), false, personalBoard, catErrands);
+        await AddTodo("Morning run", "5km at the park before work.", TodoPriority.Medium, now.AddDays(1).Date.AddHours(7), false, personalBoard, catHealth, TodoRecurringInterval.Daily);
+        await AddTodo("Read 'Clean Code'", "Finish chapters 8-10 of Clean Code by Robert C. Martin.", TodoPriority.Low, now.AddDays(4).Date.AddHours(21), false, personalBoard, catLearning);
+        await AddTodo("Doctor appointment", "Annual check-up at 2:30 PM.", TodoPriority.High, now.AddDays(2).Date.AddHours(14).AddMinutes(30), false, personalBoard, catHealth);
+        await AddTodo("Buy birthday present for Alice", "Get something thoughtful for her birthday next week.", TodoPriority.Medium, now.AddDays(6).Date.AddHours(12), false, personalBoard, catErrands);
+        await AddTodo("Complete Vue 3 course", "Finish the advanced composition API sections.", TodoPriority.Medium, now.AddDays(14).Date.AddHours(20), false, personalBoard, catLearning);
+        await AddTodo("Oil change for car", "Take the car to the service center.", TodoPriority.Low, now.AddDays(8).Date.AddHours(11), false, personalBoard, catErrands);
+        await AddTodo("Meal prep Sunday", "Prepare lunches for the week.", TodoPriority.Medium, now.AddDays(-2).Date.AddHours(15), true, personalBoard, catHealth, TodoRecurringInterval.Weekly);
+
+        logger.LogInformation("Demo todos seeded: 2 boards (Work, Personal) with 7 categories and 19 todos.");
     }
 
     private static Issue CreateDemoIssue(Guid projectId, int number, string title, string body, IssueStatus status, IssuePriority priority, IssueType type, int createdDaysAgo, int updatedDaysAgo) =>
