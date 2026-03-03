@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/issuepit/issuepit/compare/helper-containers-v1.1.2...helper-containers-v1.2.0) (2026-03-03)
+
+
+### Features
+
+* add actionlint to helper-act and create helper-opencode-act combined image ([#288](https://github.com/issuepit/issuepit/issues/288)) ([0731fde](https://github.com/issuepit/issuepit/commit/0731fded4322296ed6705185960a2baf66dbe814))
+
 ## [1.1.2](https://github.com/issuepit/issuepit/compare/helper-containers-v1.1.1...helper-containers-v1.1.2) (2026-03-02)
 
 
