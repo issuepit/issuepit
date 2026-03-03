@@ -36,6 +36,7 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 builder.Services.AddHostedService<RedisLogRelayService>();
 builder.Services.AddHostedService<GitPollingService>();
 builder.Services.AddHostedService<MetricSnapshotService>();
+builder.Services.AddHostedService<BotNotificationDispatchService>();
 
 builder.Services.AddScoped<TenantContext>();
 builder.Services.AddScoped<TenantDatabaseService>();
@@ -43,7 +44,10 @@ builder.Services.AddScoped<GitService>();
 builder.Services.AddScoped<ApiKeyResolverService>();
 builder.Services.AddScoped<IssueEnhancementService>();
 
+builder.Services.AddSingleton<IBotNotificationService, TelegramBotNotificationService>();
+
 builder.Services.AddHttpClient("openrouter");
+builder.Services.AddHttpClient("telegram");
 
 // HTTP client for calling the MCP server for issue enhancement.
 // In Aspire, the URL is injected via McpServer__BaseUrl. Set McpServer:BaseUrl in
