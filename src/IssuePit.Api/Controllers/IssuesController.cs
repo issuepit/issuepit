@@ -105,6 +105,15 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         issue.Number = maxNumber + 1;
 
         db.Issues.Add(issue);
+        db.IssueEvents.Add(new Core.Entities.IssueEvent
+        {
+            Id = Guid.NewGuid(),
+            IssueId = issue.Id,
+            EventType = Core.Enums.IssueEventType.Created,
+            NewValue = issue.Title,
+            ActorUserId = ctx.CurrentUser?.Id,
+            CreatedAt = DateTime.UtcNow,
+        });
         await db.SaveChangesAsync();
 
         await producer.ProduceAsync("issue-assigned", new Message<string, string>
@@ -121,15 +130,45 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
     {
         var issue = await db.Issues.FindAsync(id);
         if (issue is null) return NotFound();
-        if (req.Title is not null) issue.Title = req.Title;
-        if (req.Body is not null) issue.Body = req.Body;
-        if (req.Status.HasValue) issue.Status = req.Status.Value;
-        if (req.Priority.HasValue) issue.Priority = req.Priority.Value;
-        if (req.Type.HasValue) issue.Type = req.Type.Value;
+        var events = new List<Core.Entities.IssueEvent>();
+        if (req.Title is not null && req.Title != issue.Title)
+        {
+            events.Add(new Core.Entities.IssueEvent { Id = Guid.NewGuid(), IssueId = id, EventType = Core.Enums.IssueEventType.TitleChanged, OldValue = issue.Title, NewValue = req.Title, ActorUserId = ctx.CurrentUser?.Id, CreatedAt = DateTime.UtcNow });
+            issue.Title = req.Title;
+        }
+        if (req.Body is not null && req.Body != issue.Body)
+        {
+            events.Add(new Core.Entities.IssueEvent { Id = Guid.NewGuid(), IssueId = id, EventType = Core.Enums.IssueEventType.DescriptionChanged, ActorUserId = ctx.CurrentUser?.Id, CreatedAt = DateTime.UtcNow });
+            issue.Body = req.Body;
+        }
+        if (req.Status.HasValue && req.Status.Value != issue.Status)
+        {
+            events.Add(new Core.Entities.IssueEvent { Id = Guid.NewGuid(), IssueId = id, EventType = Core.Enums.IssueEventType.StatusChanged, OldValue = issue.Status.ToString(), NewValue = req.Status.Value.ToString(), ActorUserId = ctx.CurrentUser?.Id, CreatedAt = DateTime.UtcNow });
+            issue.Status = req.Status.Value;
+        }
+        if (req.Priority.HasValue && req.Priority.Value != issue.Priority)
+        {
+            events.Add(new Core.Entities.IssueEvent { Id = Guid.NewGuid(), IssueId = id, EventType = Core.Enums.IssueEventType.PriorityChanged, OldValue = issue.Priority.ToString(), NewValue = req.Priority.Value.ToString(), ActorUserId = ctx.CurrentUser?.Id, CreatedAt = DateTime.UtcNow });
+            issue.Priority = req.Priority.Value;
+        }
+        if (req.Type.HasValue && req.Type.Value != issue.Type)
+        {
+            events.Add(new Core.Entities.IssueEvent { Id = Guid.NewGuid(), IssueId = id, EventType = Core.Enums.IssueEventType.TypeChanged, OldValue = issue.Type.ToString(), NewValue = req.Type.Value.ToString(), ActorUserId = ctx.CurrentUser?.Id, CreatedAt = DateTime.UtcNow });
+            issue.Type = req.Type.Value;
+        }
         if (req.GitBranch is not null) issue.GitBranch = req.GitBranch;
-        if (req.ClearMilestoneId) issue.MilestoneId = null;
-        else if (req.MilestoneId.HasValue) issue.MilestoneId = req.MilestoneId.Value;
+        if (req.ClearMilestoneId && issue.MilestoneId.HasValue)
+        {
+            events.Add(new Core.Entities.IssueEvent { Id = Guid.NewGuid(), IssueId = id, EventType = Core.Enums.IssueEventType.MilestoneCleared, OldValue = issue.MilestoneId.ToString(), ActorUserId = ctx.CurrentUser?.Id, CreatedAt = DateTime.UtcNow });
+            issue.MilestoneId = null;
+        }
+        else if (req.MilestoneId.HasValue && req.MilestoneId != issue.MilestoneId)
+        {
+            events.Add(new Core.Entities.IssueEvent { Id = Guid.NewGuid(), IssueId = id, EventType = Core.Enums.IssueEventType.MilestoneSet, OldValue = issue.MilestoneId?.ToString(), NewValue = req.MilestoneId.Value.ToString(), ActorUserId = ctx.CurrentUser?.Id, CreatedAt = DateTime.UtcNow });
+            issue.MilestoneId = req.MilestoneId.Value;
+        }
         issue.UpdatedAt = DateTime.UtcNow;
+        if (events.Count > 0) db.IssueEvents.AddRange(events);
         await db.SaveChangesAsync();
         return Ok(issue);
     }
@@ -174,6 +213,20 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         {
             return BadRequest(new { error = ex.Message });
         }
+    }
+
+    // --- History ---
+
+    [HttpGet("{id:guid}/history")]
+    public async Task<IActionResult> GetHistory(Guid id)
+    {
+        var events = await db.IssueEvents
+            .Include(e => e.ActorUser)
+            .Include(e => e.ActorAgent)
+            .Where(e => e.IssueId == id)
+            .OrderBy(e => e.CreatedAt)
+            .ToListAsync();
+        return Ok(events);
     }
 
     // --- Comments ---
@@ -314,9 +367,11 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
             AgentId = req.AgentId,
         };
         db.IssueAssignees.Add(assignee);
-        await db.SaveChangesAsync();
         await db.Entry(assignee).Reference(a => a.User).LoadAsync();
         await db.Entry(assignee).Reference(a => a.Agent).LoadAsync();
+        var assigneeName = assignee.User?.Username ?? assignee.Agent?.Name ?? req.UserId?.ToString() ?? req.AgentId?.ToString();
+        db.IssueEvents.Add(new Core.Entities.IssueEvent { Id = Guid.NewGuid(), IssueId = id, EventType = Core.Enums.IssueEventType.AssigneeAdded, NewValue = assigneeName, ActorUserId = ctx.CurrentUser?.Id, ActorAgentId = null, CreatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
 
         if (req.AgentId.HasValue)
         {
@@ -333,9 +388,14 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
     [HttpDelete("{id:guid}/assignees/{assigneeId:guid}")]
     public async Task<IActionResult> RemoveAssignee(Guid id, Guid assigneeId)
     {
-        var assignee = await db.IssueAssignees.FirstOrDefaultAsync(a => a.Id == assigneeId && a.IssueId == id);
+        var assignee = await db.IssueAssignees
+            .Include(a => a.User)
+            .Include(a => a.Agent)
+            .FirstOrDefaultAsync(a => a.Id == assigneeId && a.IssueId == id);
         if (assignee is null) return NotFound();
+        var assigneeName = assignee.User?.Username ?? assignee.Agent?.Name ?? assigneeId.ToString();
         db.IssueAssignees.Remove(assignee);
+        db.IssueEvents.Add(new Core.Entities.IssueEvent { Id = Guid.NewGuid(), IssueId = id, EventType = Core.Enums.IssueEventType.AssigneeRemoved, OldValue = assigneeName, ActorUserId = ctx.CurrentUser?.Id, CreatedAt = DateTime.UtcNow });
         await db.SaveChangesAsync();
         return NoContent();
     }
@@ -351,6 +411,7 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         if (label is null) return NotFound("Label not found.");
         if (issue.Labels.Any(l => l.Id == req.LabelId)) return Conflict();
         issue.Labels.Add(label);
+        db.IssueEvents.Add(new Core.Entities.IssueEvent { Id = Guid.NewGuid(), IssueId = id, EventType = Core.Enums.IssueEventType.LabelAdded, NewValue = label.Name, ActorUserId = ctx.CurrentUser?.Id, CreatedAt = DateTime.UtcNow });
         await db.SaveChangesAsync();
         return Ok(label);
     }
@@ -363,6 +424,7 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         var label = issue.Labels.FirstOrDefault(l => l.Id == labelId);
         if (label is null) return NotFound();
         issue.Labels.Remove(label);
+        db.IssueEvents.Add(new Core.Entities.IssueEvent { Id = Guid.NewGuid(), IssueId = id, EventType = Core.Enums.IssueEventType.LabelRemoved, OldValue = label.Name, ActorUserId = ctx.CurrentUser?.Id, CreatedAt = DateTime.UtcNow });
         await db.SaveChangesAsync();
         return NoContent();
     }
