@@ -338,6 +338,8 @@
                     </template>
                   </span>
                   <span class="text-xs text-gray-600">{{ job.logCount }} log line{{ job.logCount === 1 ? '' : 's' }}</span>
+                  <!-- Matrix jobs: show instance count -->
+                  <span v-if="job.matrixCount > 1" class="text-xs text-brand-400/70 font-mono">{{ job.matrixCount }}× matrix</span>
 
                   <!-- Create issue button for failed jobs -->
                   <button
@@ -357,7 +359,7 @@
             <!-- Logs filtered to selected job, grouped by step -->
             <div v-if="selectedJob" class="mt-4">
               <div class="flex items-center gap-2 mb-2">
-                <span class="text-xs text-gray-400">Showing logs for job: <span class="text-white font-mono">{{ selectedJob }}</span></span>
+                <span class="text-xs text-gray-400">Showing logs for job: <span class="text-white font-mono">{{ visibleJobs.find(j => j.id === selectedJob)?.name ?? selectedJob }}</span></span>
                 <button class="text-xs text-gray-500 hover:text-gray-300 transition-colors" @click="selectedJob = null">Clear filter</button>
               </div>
               <div class="bg-gray-950 rounded-lg p-4 font-mono text-xs overflow-auto max-h-[500px]">
@@ -648,11 +650,80 @@ const filteredLogs = computed(() =>
     : store.currentRunLogs.filter(l => l.stream === activeStream.value)
 )
 
-const jobFilteredLogs = computed(() =>
-  selectedJob.value
-    ? store.currentRunLogs.filter(l => l.jobId === selectedJob.value)
-    : []
-)
+// ── Log job ID ↔ graph node ID resolution ──────────────────────────────────────
+// `act` emits job identifiers in its JSON logs using the job's display name (from
+// the `name:` YAML field), not the YAML key. For matrix jobs it appends `-N`.
+// Reusable workflow calls may prepend the workflow or caller job name with a `/`.
+// Our graph node IDs use the file-stem / yaml-key format (e.g. "docker/build").
+// We need a fuzzy resolver to map log IDs → graph node IDs to avoid duplicate boxes.
+
+/** Pre-built lookup indexes so resolveLogJobId() runs in O(1) per call. */
+const graphJobIndexes = computed(() => {
+  const graphJobs = store.currentRunGraph?.jobs ?? []
+  const byId = new Map<string, string>()   // lowercase_id → graph_id
+  const byName = new Map<string, string>() // lowercase_name → graph_id
+
+  for (const j of graphJobs) {
+    byId.set(j.id.toLowerCase(), j.id)
+    byName.set(j.name.trim().toLowerCase(), j.id)
+    // Also index just the last segment of compound names ("Caller / Callee" → "callee")
+    const nameParts = j.name.split(/\s*\/\s*/)
+    if (nameParts.length > 1) {
+      const lastPart = nameParts[nameParts.length - 1].trim().toLowerCase()
+      if (!byName.has(lastPart)) byName.set(lastPart, j.id)
+    }
+  }
+  return { byId, byName }
+})
+
+/**
+ * Maps an act log job ID to the matching graph node ID.
+ *
+ * act uses display names (e.g. "Build & Push") rather than YAML keys ("build").
+ * For matrix jobs it appends "-N" (e.g. "Build & Push-2").
+ * Reusable workflow calls prefix with the workflow/caller name ("Docker Build & Push/Build & Push").
+ *
+ * Matching order:
+ *  1. Exact ID match (case-insensitive, handles file-prefixed IDs like "docker/build").
+ *  2. Strip trailing matrix index "-N", retry exact ID.
+ *  3. Display-name match (full or stripped).
+ *  4. Last path segment of a compound "/" path, stripped of matrix index.
+ *  5. No match → return original log ID (shows as standalone box).
+ */
+function resolveLogJobId(logId: string): string {
+  const { byId, byName } = graphJobIndexes.value
+  const norm = logId.trim().toLowerCase()
+
+  // 1. Exact ID match
+  if (byId.has(norm)) return byId.get(norm)!
+
+  // 2. Strip trailing matrix index "-N" and retry
+  const stripped = norm.replace(/-\d+$/, '').trim()
+  if (stripped !== norm && byId.has(stripped)) return byId.get(stripped)!
+
+  // 3. Display-name match (full then stripped)
+  if (byName.has(norm)) return byName.get(norm)!
+  if (stripped !== norm && byName.has(stripped)) return byName.get(stripped)!
+
+  // 4. Compound path — match last segment (e.g. "Docker Build & Push/Build & Push-2")
+  const slashIdx = norm.lastIndexOf('/')
+  if (slashIdx !== -1) {
+    const lastSeg = norm.slice(slashIdx + 1).trim().replace(/-\d+$/, '').trim()
+    if (byName.has(lastSeg)) return byName.get(lastSeg)!
+    if (byId.has(lastSeg)) return byId.get(lastSeg)!
+  }
+
+  return logId // No match — use as-is
+}
+
+const jobFilteredLogs = computed(() => {
+  if (!selectedJob.value) return []
+  const entry = jobLogMap.value.get(selectedJob.value)
+  const rawIds = entry?.rawJobIds
+  if (rawIds && rawIds.size > 0)
+    return store.currentRunLogs.filter(l => !!l.jobId && rawIds.has(l.jobId))
+  return store.currentRunLogs.filter(l => l.jobId === selectedJob.value)
+})
 
 /** Groups job-filtered logs by step, preserving order. Each group has a stepId (null = no step) and its log lines. */
 interface StepGroup { stepId: string | null; logs: CiCdRunLog[] }
@@ -686,18 +757,23 @@ interface EnrichedJob {
   callerWorkflowFile?: string
   startedAt?: string
   endedAt?: string
+  /** Number of distinct act job IDs (log streams) that map to this graph node. >1 means matrix job. */
+  matrixCount: number
   // layout
   x: number
   y: number
 }
 
 const jobLogMap = computed(() => {
-  const map = new Map<string, { logCount: number; hasError: boolean; isComplete: boolean; startedAt?: string; endedAt?: string }>()
+  const map = new Map<string, { logCount: number; hasError: boolean; isComplete: boolean; startedAt?: string; endedAt?: string; rawJobIds: Set<string> }>()
   for (const log of store.currentRunLogs) {
     if (!log.jobId) continue
-    if (!map.has(log.jobId)) map.set(log.jobId, { logCount: 0, hasError: false, isComplete: false })
-    const entry = map.get(log.jobId)!
+    // Resolve the act job ID to the matching graph node ID (fuzzy: display names, matrix suffix, compound path).
+    const resolvedId = resolveLogJobId(log.jobId)
+    if (!map.has(resolvedId)) map.set(resolvedId, { logCount: 0, hasError: false, isComplete: false, rawJobIds: new Set() })
+    const entry = map.get(resolvedId)!
     entry.logCount++
+    entry.rawJobIds.add(log.jobId)
     if (log.stream === 'stderr') entry.hasError = true
     // Track first and last log timestamps as job start/end
     if (!entry.startedAt) entry.startedAt = log.timestamp
@@ -800,6 +876,7 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
       isComplete,
       workflowFile: meta?.workflowFile,
       callerWorkflowFile: meta?.callerWorkflowFile,
+      matrixCount: logs.rawJobIds?.size ?? (hasStarted ? 1 : 0),
       startedAt: logs.startedAt,
       // When run ended but the job never emitted a final timestamp, use the run's end time.
       endedAt: isComplete && !logs.endedAt ? (store.currentRun?.endedAt ?? logs.startedAt) : logs.endedAt,
