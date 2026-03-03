@@ -36,5 +36,8 @@ public class Project
     /// <summary>Newline-separated KEY=VALUE pairs passed as <c>--secret</c> arguments to <c>act</c> on each run.</summary>
     public string? ActSecrets { get; set; }
 
+    /// <summary>Whether this project serves as the organization-wide common agenda (global goal tracker across all projects).</summary>
+    public bool IsAgenda { get; set; } = false;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

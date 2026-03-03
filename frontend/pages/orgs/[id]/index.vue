@@ -216,7 +216,72 @@
           <p class="text-gray-400 font-medium">No projects yet</p>
         </div>
       </div>
-      <!-- Agents Tab -->
+
+      <!-- Agenda Tab -->
+      <div v-if="activeTab === 'agenda'">
+        <div class="mb-6">
+          <p class="text-gray-400 text-sm mb-1">
+            The <strong class="text-gray-200">common agenda</strong> is a shared goal tracker that spans all projects in this organization.
+            Agenda projects track cross-cutting initiatives — such as adding AI skills to all repos, updating CI/CD pipelines, or switching libraries org-wide.
+          </p>
+          <p class="text-xs text-gray-500">
+            To mark a project as the common agenda, go to the project's <strong class="text-gray-400">Settings → General → Common Agenda</strong>.
+          </p>
+        </div>
+
+        <div v-if="loadingAgendaIssues" class="flex items-center justify-center py-12">
+          <div class="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+
+        <template v-else-if="agendaProjects.length">
+          <div v-for="agendaProject in agendaProjects" :key="agendaProject.id" class="mb-8">
+            <div class="flex items-center gap-2 mb-3">
+              <span class="text-base">🎯</span>
+              <NuxtLink :to="`/projects/${agendaProject.id}`" class="text-lg font-semibold text-white hover:text-brand-300 transition-colors">
+                {{ agendaProject.name }}
+              </NuxtLink>
+              <span class="text-xs text-gray-500 font-mono">{{ agendaProject.slug }}</span>
+            </div>
+
+            <div v-if="agendaIssuesByProject[agendaProject.id]?.length" class="rounded-xl border border-gray-800 overflow-hidden">
+              <table class="w-full text-sm">
+                <thead class="bg-gray-900">
+                  <tr>
+                    <th class="text-left px-4 py-3 text-gray-400 font-medium w-8">#</th>
+                    <th class="text-left px-4 py-3 text-gray-400 font-medium">Title</th>
+                    <th class="text-left px-4 py-3 text-gray-400 font-medium">Status</th>
+                    <th class="text-left px-4 py-3 text-gray-400 font-medium">Priority</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-800">
+                  <tr
+                    v-for="issue in agendaIssuesByProject[agendaProject.id]"
+                    :key="issue.id"
+                    class="hover:bg-gray-900/50 transition-colors cursor-pointer"
+                    @click="navigateTo(`/projects/${agendaProject.id}/issues/${issue.id}`)"
+                  >
+                    <td class="px-4 py-3 text-gray-500 text-xs font-mono">{{ issue.number }}</td>
+                    <td class="px-4 py-3 text-white">{{ issue.title }}</td>
+                    <td class="px-4 py-3">
+                      <span :class="issueStatusClass(issue.status)" class="text-xs px-2 py-0.5 rounded-full">{{ issue.status }}</span>
+                    </td>
+                    <td class="px-4 py-3 text-gray-400 text-xs">{{ issue.priority }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div v-else class="text-gray-500 text-sm py-4">No issues in this agenda project yet.</div>
+          </div>
+        </template>
+
+        <div v-else class="flex flex-col items-center justify-center py-16 text-center">
+          <p class="text-2xl mb-3">🎯</p>
+          <p class="text-gray-400 font-medium">No agenda projects yet</p>
+          <p class="text-gray-500 text-sm mt-2 max-w-sm">
+            Mark a project as the common agenda in its settings to track org-wide goals here.
+          </p>
+        </div>
+      </div>
       <div v-if="activeTab === 'agents'">
         <div class="flex items-center justify-between mb-4">
           <p class="text-gray-400 text-sm">Agents available to all projects in this organization</p>
@@ -449,7 +514,7 @@ import { useOrgsStore } from '~/stores/orgs'
 import { useTeamsStore } from '~/stores/teams'
 import { useAgentsStore } from '~/stores/agents'
 import { OrgRole, OrgRoleLabels } from '~/types'
-import type { Team, User, AgentOrg } from '~/types'
+import type { Team, User, AgentOrg, Project, Issue } from '~/types'
 
 const route = useRoute()
 const orgId = route.params.id as string
@@ -464,6 +529,7 @@ const tabs = [
   { id: 'teams', label: 'Teams' },
   { id: 'members', label: 'Members' },
   { id: 'projects', label: 'Projects' },
+  { id: 'agenda', label: '🎯 Agenda' },
   { id: 'agents', label: 'Agents' },
   { id: 'settings', label: 'Settings' },
 ]
@@ -519,11 +585,60 @@ async function unlinkOrgAgent(agentId: string) {
   }
 }
 
+// --- Agenda ---
+const loadingAgendaIssues = ref(false)
+const agendaProjects = computed(() => (orgsStore.orgProjects ?? []).filter((p: Project) => p.isAgenda))
+const agendaIssues = ref<Issue[]>([])
+const agendaIssuesByProject = computed(() => {
+  const map: Record<string, Issue[]> = {}
+  for (const issue of agendaIssues.value) {
+    if (!map[issue.projectId]) map[issue.projectId] = []
+    map[issue.projectId].push(issue)
+  }
+  return map
+})
+
+function issueStatusClass(status: string) {
+  const map: Record<string, string> = {
+    backlog: 'bg-gray-800 text-gray-400',
+    todo: 'bg-blue-900/60 text-blue-300',
+    in_progress: 'bg-yellow-900/60 text-yellow-300',
+    in_review: 'bg-purple-900/60 text-purple-300',
+    done: 'bg-green-900/60 text-green-300',
+    cancelled: 'bg-red-900/60 text-red-400',
+  }
+  return map[status] ?? 'bg-gray-800 text-gray-400'
+}
+
+async function fetchAgendaIssues() {
+  loadingAgendaIssues.value = true
+  try {
+    const issueArrays = await Promise.all(
+      agendaProjects.value.map((p: Project) =>
+        api.get<Issue[]>('/api/issues', { params: { projectId: p.id } })
+      )
+    )
+    agendaIssues.value = issueArrays.flat()
+  } catch {
+    // silently ignore
+  } finally {
+    loadingAgendaIssues.value = false
+  }
+}
+
+watch(activeTab, async (tab) => {
+  if (tab === 'agenda') {
+    await orgsStore.fetchOrgProjects(orgId)
+    await fetchAgendaIssues()
+  }
+})
+
 onMounted(async () => {
   await Promise.all([
     orgsStore.fetchOrg(orgId),
     teamsStore.fetchTeams(orgId),
     orgsStore.fetchMembers(orgId),
+    orgsStore.fetchOrgProjects(orgId),
     agentsStore.fetchAgents(),
   ])
   if (orgsStore.currentOrg) {

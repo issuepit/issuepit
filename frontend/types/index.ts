@@ -169,6 +169,7 @@ export interface Project {
   icon?: string
   color?: string
   isPrivate: boolean
+  isAgenda: boolean
   issueCount: number
   memberCount: number
   mountRepositoryInDocker: boolean

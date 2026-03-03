@@ -17,6 +17,7 @@ nav_order: 1
 - 🤖 **AI agents** that automatically work on issues — agent modes define behavior, work agents execute them in Docker/Podman containers
 - 🔗 **Link GitHub repositories** to your projects
 - 🏷 **Labels, milestones, assignees** (users or agents)
+- 🎯 **Common Agenda** — org-wide goal tracker for cross-cutting initiatives across all projects
 
 ---
 
@@ -50,6 +51,7 @@ nav_order: 1
 |------|-------------|
 | [Getting Started](getting-started) | Install and start IssuePit with Podman or Docker Compose |
 | [Projects](projects) | Create projects and link Git repositories |
+| [Common Agenda](agenda) | Org-wide goal tracker for cross-cutting initiatives |
 | [Agents](agents) | Configure agent modes (system prompt, MCP tools, auth keys) |
 | [Configuration](configuration) | API keys, MCP servers, and other settings |
 | [Releases](releases) | Release notes, changelog, and upgrade instructions |

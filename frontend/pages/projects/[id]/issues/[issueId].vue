@@ -149,10 +149,11 @@
               <div v-for="link in store.currentLinks" :key="link.id"
                 class="flex items-center gap-2 group py-1 px-2 rounded-lg hover:bg-gray-800/60 transition-colors">
                 <span class="text-xs text-brand-400 shrink-0 min-w-[70px]">{{ IssueLinkTypeLabels[link.linkType] }}</span>
-                <NuxtLink :to="`/projects/${id}/issues/${link.targetIssueId}`"
+                <NuxtLink :to="`/projects/${link.targetIssue?.projectId ?? id}/issues/${link.targetIssueId}`"
                   class="flex items-center gap-1.5 text-sm text-gray-300 hover:text-white flex-1 min-w-0">
                   <span class="text-xs text-gray-600 shrink-0">#{{ link.targetIssue?.number }}</span>
                   <span class="truncate">{{ link.targetIssue?.title }}</span>
+                  <span v-if="link.targetIssue?.projectId && link.targetIssue.projectId !== id" class="text-xs text-gray-600 shrink-0 ml-1">↗ cross-project</span>
                 </NuxtLink>
                 <button @click="store.removeLink(issueId, link.id)"
                   class="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition-all">
@@ -179,7 +180,7 @@
               <select v-model="linkTargetIssueId"
                 class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500">
                 <option value="">Select issue...</option>
-                <option v-for="i in allProjectIssues" :key="i.id" :value="i.id">#{{ i.number }} {{ i.title }}</option>
+                <option v-for="i in allOrgIssues" :key="i.id" :value="i.id">{{ i.projectName ? `[${i.projectName}] ` : '' }}#{{ i.number }} {{ i.title }}</option>
               </select>
               <div class="flex gap-2">
                 <button @click="submitAddLink" :disabled="!linkTargetIssueId"
@@ -421,6 +422,7 @@ import { useIssuesStore } from '~/stores/issues'
 import { useLabelsStore } from '~/stores/labels'
 import { useAgentsStore } from '~/stores/agents'
 import { useMilestonesStore } from '~/stores/milestones'
+import { useProjectsStore } from '~/stores/projects'
 
 const route = useRoute()
 const router = useRouter()
@@ -430,6 +432,7 @@ const store = useIssuesStore()
 const labelsStore = useLabelsStore()
 const agentsStore = useAgentsStore()
 const milestonesStore = useMilestonesStore()
+const projectsStore = useProjectsStore()
 const api = useApi()
 
 const editingTitle = ref(false)
@@ -448,8 +451,7 @@ const commentEdit = ref('')
 const addingLink = ref(false)
 const linkTargetIssueId = ref('')
 const linkType = ref<IssueLinkType>(IssueLinkType.LinkedTo)
-const allProjectIssues = ref<Array<{ id: string; number: number; title: string }>>([])
-
+const allOrgIssues = ref<Array<{ id: string; number: number; title: string; projectId: string; projectName?: string }>>([])
 
 // All tenant users for assignee browsing
 const tenantUsers = ref<Array<{ id: string; username: string }>>([])
@@ -496,13 +498,30 @@ onMounted(async () => {
     agentsStore.fetchAgents(),
     fetchTenantUsers(),
     milestonesStore.fetchMilestones(id),
+    projectsStore.fetchProject(id),
   ])
-  // Fetch all issues in this project for link target selection (excluding current)
+  // Fetch all issues in this org for link target selection (excluding current), with project name for cross-project display
   try {
-    const data = await api.get<Array<{ id: string; number: number; title: string }>>('/api/issues', { params: { projectId: id } })
-    allProjectIssues.value = data.filter((i: { id: string }) => i.id !== issueId)
+    const currentProject = projectsStore.currentProject
+    const orgId = currentProject?.orgId
+    const [orgIssues, orgProjects] = await Promise.all([
+      api.get<Array<{ id: string; number: number; title: string; projectId: string }>>(
+        '/api/issues',
+        { params: { ...(orgId ? { orgId } : { projectId: id }) } }
+      ),
+      orgId
+        ? api.get<Array<{ id: string; name: string }>>(`/api/orgs/${orgId}/projects`)
+        : Promise.resolve([] as Array<{ id: string; name: string }>),
+    ])
+    const projectNameMap = Object.fromEntries(orgProjects.map((p: { id: string; name: string }) => [p.id, p.name]))
+    allOrgIssues.value = orgIssues
+      .filter((i: { id: string }) => i.id !== issueId)
+      .map((i: { id: string; number: number; title: string; projectId: string }) => ({
+        ...i,
+        projectName: projectNameMap[i.projectId],
+      }))
   } catch (e) {
-    console.error('Failed to fetch project issues for link selector', e)
+    console.error('Failed to fetch org issues for link selector', e)
   }
 })
 
