@@ -23,8 +23,8 @@ jobs:
 
       - name: Install skills-ref
         run: |
-          pip install skills-ref==0.1.1
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          pip install --user skills-ref==0.1.1
+          echo "$(python -m site --user-base)/bin" >> "$GITHUB_PATH"
 
       - name: Validate skills
         run: |
