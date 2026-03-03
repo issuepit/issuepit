@@ -89,6 +89,9 @@ public static class WorkflowGraphParser
             var prefix = Path.GetFileNameWithoutExtension(filePath); // e.g. "backend"
 
             // Build a lookup so we can rewrite 'needs' references within this file.
+            // Only jobs defined in the same file are prefixed; 'needs' entries that reference
+            // jobs from other files are left as-is (cross-file dependencies are not valid in
+            // GitHub Actions — each workflow runs independently).
             var fileJobIds = new HashSet<string>(fileGraph.Jobs.Select(j => j.Id), StringComparer.OrdinalIgnoreCase);
 
             foreach (var job in fileGraph.Jobs)

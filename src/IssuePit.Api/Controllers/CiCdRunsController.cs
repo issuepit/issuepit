@@ -179,9 +179,10 @@ public class CiCdRunsController(
 
     /// <summary>
     /// Returns logs for a specific job within a run, identified by job name/id.
+    /// Optionally filtered by stream and/or step name.
     /// </summary>
     [HttpGet("{id:guid}/jobs/{jobId}/logs")]
-    public async Task<IActionResult> GetJobLogs(Guid id, string jobId, [FromQuery] LogStream? stream)
+    public async Task<IActionResult> GetJobLogs(Guid id, string jobId, [FromQuery] LogStream? stream, [FromQuery] string? step)
     {
         var runExists = await db.CiCdRuns
             .AnyAsync(r => r.Id == id && r.Project.Organization.TenantId == tenant.CurrentTenant!.Id);
@@ -196,11 +197,38 @@ public class CiCdRunsController(
         if (stream.HasValue)
             query = query.Where(l => l.Stream == stream.Value);
 
+        if (!string.IsNullOrEmpty(step))
+            query = query.Where(l => l.StepId == step);
+
         var logs = await query
-            .Select(l => new { l.Id, l.Line, l.Stream, StreamName = l.Stream.ToString(), l.JobId, l.Timestamp })
+            .Select(l => new { l.Id, l.Line, l.Stream, StreamName = l.Stream.ToString(), l.JobId, l.StepId, l.Timestamp })
             .ToListAsync();
 
         return Ok(logs);
+    }
+
+    /// <summary>
+    /// Returns the distinct step names (act <c>stage</c> values) for a specific job within a run,
+    /// in the order they first appeared.
+    /// </summary>
+    [HttpGet("{id:guid}/jobs/{jobId}/steps")]
+    public async Task<IActionResult> GetJobSteps(Guid id, string jobId)
+    {
+        var runExists = await db.CiCdRuns
+            .AnyAsync(r => r.Id == id && r.Project.Organization.TenantId == tenant.CurrentTenant!.Id);
+
+        if (!runExists) return NotFound();
+
+        // Return steps in the order they first appeared, excluding null step IDs.
+        var steps = await db.CiCdRunLogs
+            .Where(l => l.CiCdRunId == id && l.JobId == jobId && l.StepId != null)
+            .GroupBy(l => l.StepId!)
+            .Select(g => new { StepId = g.Key, FirstSeen = g.Min(l => l.Timestamp) })
+            .OrderBy(s => s.FirstSeen)
+            .Select(s => s.StepId)
+            .ToListAsync();
+
+        return Ok(steps);
     }
 
     private static string? TryFindWorkflowYamlPath(string workspacePath, string workflow)

@@ -162,7 +162,7 @@ public partial class DockerCiCdRuntime(
                 // Mount Docker socket so act can spin up runner containers (DinD)
                 binds.Add("/var/run/docker.sock:/var/run/docker.sock");
         }
-        else if (!trigger.NoVolumeMounts && !trigger.NoDind)
+        else if (hasGitRepo && !trigger.NoDind)
         {
             // Git-clone mode: still mount Docker socket for DinD even though workspace is cloned inside.
             binds.Add("/var/run/docker.sock:/var/run/docker.sock");

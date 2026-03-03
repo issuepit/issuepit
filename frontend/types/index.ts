@@ -662,6 +662,7 @@ export interface CiCdRunLog {
   stream: string
   streamName: string
   jobId?: string
+  stepId?: string
   timestamp: string
 }
 

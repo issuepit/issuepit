@@ -25,5 +25,12 @@ public class CiCdRunLog
     [MaxLength(200)]
     public string? JobId { get; set; }
 
+    /// <summary>
+    /// Step name extracted from act's JSON <c>stage</c> field (e.g. "Set up job", "Main actions/checkout@v4").
+    /// Null for non-JSON log lines or lines that do not belong to a specific step.
+    /// </summary>
+    [MaxLength(500)]
+    public string? StepId { get; set; }
+
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
 }

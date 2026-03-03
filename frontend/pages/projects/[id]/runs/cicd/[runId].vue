@@ -326,19 +326,29 @@
               </div>
             </div>
 
-            <!-- Logs filtered to selected job -->
+            <!-- Logs filtered to selected job, grouped by step -->
             <div v-if="selectedJob" class="mt-4">
               <div class="flex items-center gap-2 mb-2">
                 <span class="text-xs text-gray-400">Showing logs for job: <span class="text-white font-mono">{{ selectedJob }}</span></span>
                 <button class="text-xs text-gray-500 hover:text-gray-300 transition-colors" @click="selectedJob = null">Clear filter</button>
               </div>
               <div class="bg-gray-950 rounded-lg p-4 font-mono text-xs overflow-auto max-h-[500px]">
-                <div v-for="log in jobFilteredLogs" :key="log.id" class="flex gap-3 leading-5">
-                  <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
-                  <!-- eslint-disable-next-line vue/no-v-html -->
-                  <span :class="log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'" class="whitespace-pre-wrap break-all" v-html="renderLogLine(log.line)" />
-                </div>
-                <div v-if="!jobFilteredLogs.length" class="text-gray-500 text-center py-4">No logs for this job</div>
+                <template v-if="jobLogsByStep.length">
+                  <template v-for="(group, gi) in jobLogsByStep" :key="gi">
+                    <!-- Step separator -->
+                    <div v-if="group.stepId" class="flex items-center gap-2 mt-3 mb-1 first:mt-0 select-none">
+                      <span class="text-gray-600">▶</span>
+                      <span class="text-xs font-semibold text-gray-400 tracking-wide uppercase">{{ group.stepId }}</span>
+                      <span class="flex-1 border-t border-gray-800" />
+                    </div>
+                    <div v-for="log in group.logs" :key="log.id" class="flex gap-3 leading-5">
+                      <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
+                      <!-- eslint-disable-next-line vue/no-v-html -->
+                      <span :class="log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'" class="whitespace-pre-wrap break-all" v-html="renderLogLine(log.line)" />
+                    </div>
+                  </template>
+                </template>
+                <div v-else class="text-gray-500 text-center py-4">No logs for this job</div>
               </div>
             </div>
           </div>
@@ -431,7 +441,7 @@
 <script setup lang="ts">
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useIssuesStore } from '~/stores/issues'
-import { CiCdRunStatus } from '~/types'
+import { CiCdRunStatus, type CiCdRunLog } from '~/types'
 import { parseAnsiToHtml, stripAnsiCodes } from '~/composables/useAnsiParser'
 
 const route = useRoute()
@@ -514,6 +524,22 @@ const jobFilteredLogs = computed(() =>
     ? store.currentRunLogs.filter(l => l.jobId === selectedJob.value)
     : []
 )
+
+/** Groups job-filtered logs by step, preserving order. Each group has a stepId (null = no step) and its log lines. */
+interface StepGroup { stepId: string | null; logs: CiCdRunLog[] }
+
+const jobLogsByStep = computed<StepGroup[]>(() => {
+  const groups: StepGroup[] = []
+  let current: StepGroup | null = null
+  for (const log of jobFilteredLogs.value) {
+    if (current === null || log.stepId !== current.stepId) {
+      current = { stepId: log.stepId ?? null, logs: [] }
+      groups.push(current)
+    }
+    current.logs.push(log)
+  }
+  return groups
+})
 
 // ── Job enrichment ─────────────────────────────────────────────────────────────
 // Merges graph data (from YAML) with live log data to produce a unified list of
@@ -801,7 +827,7 @@ onMounted(async () => {
     await cicdConnection.value.invoke('JoinRun', runId).catch((e: unknown) => { console.warn('Failed to join run group', e) })
     cicdConnection.value.on('LogLine', (event: { runId: string; payload: string }) => {
       try {
-        const data = JSON.parse(event.payload) as { event?: string; stream?: string; line?: string; jobId?: string; timestamp?: string }
+        const data = JSON.parse(event.payload) as { event?: string; stream?: string; line?: string; jobId?: string; stepId?: string; timestamp?: string }
         if (data.event === 'run-completed') {
           now.value = Date.now()
           // Refresh only run metadata (status, endedAt) — do NOT re-fetch logs to avoid losing scroll position
@@ -815,6 +841,7 @@ onMounted(async () => {
             stream: data.stream ?? 'stdout',
             streamName: data.stream ? (data.stream.charAt(0).toUpperCase() + data.stream.slice(1)) : 'Stdout',
             jobId: data.jobId,
+            stepId: data.stepId,
             timestamp: data.timestamp ?? new Date().toISOString(),
           })
         }
