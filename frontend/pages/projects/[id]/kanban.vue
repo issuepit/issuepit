@@ -151,9 +151,11 @@
               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500">
               <option value="no_priority">⚪ No Priority</option>
               <option value="urgent">🔴 Urgent</option>
-              <option value="high">🟠 High</option>
-              <option value="medium">🟡 Medium</option>
-              <option value="low">🟢 Low</option>
+              <option value="very_high">🟠 Very High</option>
+              <option value="high">🟡 High</option>
+              <option value="medium">🟢 Medium</option>
+              <option value="low">🔵 Low</option>
+              <option value="unknown">🟣 Unknown</option>
             </select>
           </div>
         </div>
@@ -316,6 +318,7 @@ const id = route.params.id as string
 const issueStore = useIssuesStore()
 const kanban = useKanbanStore()
 const milestonesStore = useMilestonesStore()
+const { priorityIcon, priorityColor } = usePriority()
 
 // ── Issue create state ────────────────────────────────────────────────────
 const showCreate = ref(false)
@@ -593,21 +596,6 @@ function statusDotColor(status: IssueStatus) {
     [IssueStatus.Cancelled]: 'bg-red-500',
   }
   return map[status] ?? 'bg-gray-500'
-}
-
-function priorityIcon(p: IssuePriority) {
-  const map: Record<IssuePriority, string> = {
-    [IssuePriority.Urgent]: '🔴',
-    [IssuePriority.High]: '🟠',
-    [IssuePriority.Medium]: '🟡',
-    [IssuePriority.Low]: '🟢',
-    [IssuePriority.NoPriority]: ''
-  }
-  return map[p] ?? ''
-}
-
-function priorityColor(p: IssuePriority) {
-  return p === IssuePriority.Urgent ? 'text-red-400' : 'text-gray-500'
 }
 
 function typeBadge(type: IssueType) {

@@ -333,9 +333,11 @@
               <select :value="store.currentIssue.priority" @change="updatePriority($event)"
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500">
                 <option value="urgent">🔴 Urgent</option>
-                <option value="high">🟠 High</option>
-                <option value="medium">🟡 Medium</option>
-                <option value="low">🟢 Low</option>
+                <option value="very_high">🟠 Very High</option>
+                <option value="high">🟡 High</option>
+                <option value="medium">🟢 Medium</option>
+                <option value="low">🔵 Low</option>
+                <option value="unknown">🟣 Unknown</option>
                 <option value="no_priority">⚪ No Priority</option>
               </select>
             </div>

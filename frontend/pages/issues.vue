@@ -234,14 +234,8 @@ function statusLabel(status: IssueStatus) {
   return map[status] ?? status
 }
 
+const { priorityIcon, priorityLabel: priorityText } = usePriority()
 function priorityLabel(priority: IssuePriority) {
-  const map: Record<IssuePriority, string> = {
-    [IssuePriority.Urgent]: '🔴 Urgent',
-    [IssuePriority.High]: '🟠 High',
-    [IssuePriority.Medium]: '🟡 Medium',
-    [IssuePriority.Low]: '🟢 Low',
-    [IssuePriority.NoPriority]: '⚪ None'
-  }
-  return map[priority] ?? priority
+  return `${priorityIcon(priority)} ${priorityText(priority)}`
 }
 </script>
