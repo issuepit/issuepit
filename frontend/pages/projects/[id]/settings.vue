@@ -46,6 +46,23 @@
               <input v-model="form.gitHubRepo" type="text" placeholder="https://github.com/org/repo"
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
             </div>
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="block text-sm font-medium text-gray-300">Common Agenda</label>
+                <p class="text-xs text-gray-500 mt-0.5">Mark this project as the org-wide common agenda — a shared goal tracker across all projects</p>
+              </div>
+              <button
+                type="button"
+                :class="form.isAgenda ? 'bg-brand-600' : 'bg-gray-700'"
+                class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors duration-200"
+                @click="form.isAgenda = !form.isAgenda"
+              >
+                <span
+                  :class="form.isAgenda ? 'translate-x-4' : 'translate-x-0.5'"
+                  class="inline-block h-4 w-4 mt-0.5 rounded-full bg-white transition-transform duration-200"
+                />
+              </button>
+            </div>
             <p v-if="saveGeneralError" class="text-red-400 text-sm">{{ saveGeneralError }}</p>
             <button type="submit" :disabled="savingGeneral"
               class="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
@@ -446,7 +463,7 @@ const agentsStore = useAgentsStore()
 const mcpServersStore = useMcpServersStore()
 
 // ── General form ──────────────────────────────────────────────
-const form = reactive({ name: '', slug: '', description: '', gitHubRepo: '' })
+const form = reactive({ name: '', slug: '', description: '', gitHubRepo: '', isAgenda: false })
 const savingGeneral = ref(false)
 const saveGeneralError = ref<string | null>(null)
 
@@ -593,6 +610,7 @@ onMounted(async () => {
     form.slug = projectsStore.currentProject.slug
     form.description = projectsStore.currentProject.description || ''
     form.gitHubRepo = projectsStore.currentProject.gitHubRepo || ''
+    form.isAgenda = projectsStore.currentProject.isAgenda ?? false
     runnerForm.mountRepositoryInDocker = projectsStore.currentProject.mountRepositoryInDocker ?? true
     runnerForm.maxConcurrentRunners = projectsStore.currentProject.maxConcurrentRunners ?? 0
     ciCdEnvForm.actEnv = projectsStore.currentProject.actEnv || ''
@@ -614,6 +632,7 @@ async function saveGeneral() {
       slug: form.slug,
       description: form.description,
       gitHubRepo: form.gitHubRepo.trim() || undefined,
+      isAgenda: form.isAgenda,
     })
   } catch (e: unknown) {
     saveGeneralError.value = e instanceof Error ? e.message : 'Failed to save'

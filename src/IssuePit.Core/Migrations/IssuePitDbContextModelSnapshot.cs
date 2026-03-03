@@ -1040,6 +1040,9 @@ namespace IssuePit.Core.Migrations
                     b.Property<string>("GitHubRepo")
                         .HasColumnType("text");
 
+                    b.Property<bool>("IsAgenda")
+                        .HasColumnType("boolean");
+
                     b.Property<int>("MaxConcurrentRunners")
                         .HasColumnType("integer");
 

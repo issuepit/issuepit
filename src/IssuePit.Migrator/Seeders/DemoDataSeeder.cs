@@ -269,7 +269,63 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
         );
         await db.SaveChangesAsync();
 
-        logger.LogInformation("Demo data seeded: org 'Acme Corp', 3 projects (frontend, backend, IssuePit), 13 issues, 3 agents, 2 MCP servers.");
+        // --- Common Agenda project ---
+        var agendaProject = new Project
+        {
+            Id = Guid.NewGuid(),
+            OrgId = org.Id,
+            Name = "Common Agenda",
+            Slug = "common-agenda",
+            Description = "Org-wide goal tracker — cross-cutting initiatives that span all projects (AI skills, security tooling, library upgrades, CI/CD patterns)",
+            IsAgenda = true,
+            CreatedAt = DateTime.UtcNow,
+        };
+        db.Projects.Add(agendaProject);
+        await db.SaveChangesAsync();
+
+        var agendaLabelAi = new Label { Id = Guid.NewGuid(), ProjectId = agendaProject.Id, Name = "ai", Color = "#7c3aed" };
+        var agendaLabelSecurity = new Label { Id = Guid.NewGuid(), ProjectId = agendaProject.Id, Name = "security", Color = "#e11d48" };
+        var agendaLabelCiCd = new Label { Id = Guid.NewGuid(), ProjectId = agendaProject.Id, Name = "ci-cd", Color = "#0891b2" };
+        var agendaLabelDeps = new Label { Id = Guid.NewGuid(), ProjectId = agendaProject.Id, Name = "dependencies", Color = "#d97706" };
+        db.Labels.AddRange(agendaLabelAi, agendaLabelSecurity, agendaLabelCiCd, agendaLabelDeps);
+        await db.SaveChangesAsync();
+
+        var agendaBoard = new KanbanBoard { Id = Guid.NewGuid(), ProjectId = agendaProject.Id, Name = "Agenda Board", CreatedAt = DateTime.UtcNow };
+        db.KanbanBoards.Add(agendaBoard);
+        await db.SaveChangesAsync();
+        db.KanbanColumns.AddRange(
+            new KanbanColumn { Id = Guid.NewGuid(), BoardId = agendaBoard.Id, Name = "Backlog",     Position = 0, IssueStatus = IssueStatus.Backlog },
+            new KanbanColumn { Id = Guid.NewGuid(), BoardId = agendaBoard.Id, Name = "To Do",       Position = 1, IssueStatus = IssueStatus.Todo },
+            new KanbanColumn { Id = Guid.NewGuid(), BoardId = agendaBoard.Id, Name = "In Progress", Position = 2, IssueStatus = IssueStatus.InProgress },
+            new KanbanColumn { Id = Guid.NewGuid(), BoardId = agendaBoard.Id, Name = "In Review",   Position = 3, IssueStatus = IssueStatus.InReview },
+            new KanbanColumn { Id = Guid.NewGuid(), BoardId = agendaBoard.Id, Name = "Done",        Position = 4, IssueStatus = IssueStatus.Done }
+        );
+        await db.SaveChangesAsync();
+
+        var agendaIssue1 = CreateDemoIssue(agendaProject.Id, 1, "Add AI coding skills to all repos", "Configure opencode/copilot agent modes and system prompts for all projects in the org. Each repo should have a plan, code, and evaluate agent mode.", IssueStatus.InProgress, IssuePriority.High, IssueType.Feature, 5);
+        var agendaIssue2 = CreateDemoIssue(agendaProject.Id, 2, "Add SAST security scanner to all CI/CD pipelines", "Integrate a static application security testing (SAST) tool (e.g. Semgrep, CodeQL) into every project's CI/CD workflow.", IssueStatus.Todo, IssuePriority.High, IssueType.Feature, 3);
+        var agendaIssue3 = CreateDemoIssue(agendaProject.Id, 3, "Migrate from deprecated logging library to OpenTelemetry", "The current logging library is end-of-life. Migrate all services to OpenTelemetry for unified observability.", IssueStatus.Backlog, IssuePriority.Medium, IssueType.Task, 7);
+        var agendaIssue4 = CreateDemoIssue(agendaProject.Id, 4, "Standardize Dockerfile base images across org", "All projects should use pinned, minimal base images (e.g. distroless). Document the approved image list.", IssueStatus.Todo, IssuePriority.Medium, IssueType.Task, 2);
+        var agendaIssue5 = CreateDemoIssue(agendaProject.Id, 5, "Enforce branch protection rules on all repos", "Main branches on all GitHub repositories should require PR reviews and passing CI before merge.", IssueStatus.Done, IssuePriority.Urgent, IssueType.Task, 14);
+        db.Issues.AddRange(agendaIssue1, agendaIssue2, agendaIssue3, agendaIssue4, agendaIssue5);
+        await db.SaveChangesAsync();
+
+        agendaIssue1.Labels.Add(agendaLabelAi);
+        agendaIssue2.Labels.Add(agendaLabelSecurity);
+        agendaIssue2.Labels.Add(agendaLabelCiCd);
+        agendaIssue3.Labels.Add(agendaLabelDeps);
+        agendaIssue4.Labels.Add(agendaLabelCiCd);
+        agendaIssue5.Labels.Add(agendaLabelSecurity);
+        await db.SaveChangesAsync();
+
+        // Cross-project links: agenda issue 1 → linked to IssuePit project issue; agenda issue 2 → linked to backend issue
+        db.IssueLinks.AddRange(
+            new IssueLink { Id = Guid.NewGuid(), IssueId = agendaIssue1.Id, TargetIssueId = ipIssue1.Id, LinkType = IssueLinkType.LinkedTo, CreatedAt = DateTime.UtcNow },
+            new IssueLink { Id = Guid.NewGuid(), IssueId = agendaIssue2.Id, TargetIssueId = issues[5].Id, LinkType = IssueLinkType.LinkedTo, CreatedAt = DateTime.UtcNow }
+        );
+        await db.SaveChangesAsync();
+
+        logger.LogInformation("Demo data seeded: org 'Acme Corp', 4 projects (Frontend, Backend API, IssuePit, Common Agenda), 18 issues, 3 agents, 2 MCP servers.");
     }
 
     private static Issue CreateDemoIssue(Guid projectId, int number, string title, string body, IssueStatus status, IssuePriority priority, IssueType type, int daysAgo) =>
