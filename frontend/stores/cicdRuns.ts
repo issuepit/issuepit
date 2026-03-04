@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { CiCdRun, CiCdRunLog, AgentSession, AgentSessionDetail, AgentSessionLog, DashboardAgentSession, WorkflowGraph, WorkflowInfo } from '~/types'
+import type { CiCdRun, CiCdRunLog, CiCdTestSuite, AgentSession, AgentSessionDetail, AgentSessionLog, DashboardAgentSession, WorkflowGraph, WorkflowInfo } from '~/types'
 
 export const useCiCdRunsStore = defineStore('cicdRuns', () => {
   const runs = ref<CiCdRun[]>([])
@@ -9,6 +9,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
   const currentRunLogs = ref<CiCdRunLog[]>([])
   const currentRunGraph = ref<WorkflowGraph | null>(null)
   const currentRunGraphError = ref<string | null>(null)
+  const currentRunTestSuites = ref<CiCdTestSuite[]>([])
   const currentSession = ref<AgentSessionDetail | null>(null)
   const currentSessionLogs = ref<AgentSessionLog[]>([])
   const loading = ref(false)
@@ -64,6 +65,15 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
       currentRun.value = await api.get<CiCdRun>(`/api/cicd-runs/${runId}`)
     } catch {
       // best-effort
+    }
+  }
+
+  /** Fetches test results (parsed TRX suites and cases) for the given run. */
+  async function fetchTestResults(runId: string) {
+    try {
+      currentRunTestSuites.value = await api.get<CiCdTestSuite[]>(`/api/cicd-runs/${runId}/test-results`)
+    } catch {
+      currentRunTestSuites.value = []
     }
   }
 
@@ -157,6 +167,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     currentRunLogs,
     currentRunGraph,
     currentRunGraphError,
+    currentRunTestSuites,
     currentSession,
     currentSessionLogs,
     loading,
@@ -164,6 +175,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     fetchRuns,
     fetchRun,
     fetchRunOnly,
+    fetchTestResults,
     fetchAgentSessions,
     fetchAgentSession,
     retryRun,

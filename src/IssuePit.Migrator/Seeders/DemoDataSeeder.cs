@@ -260,6 +260,35 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
         db.GitRepositories.Add(new GitRepository { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, RemoteUrl = issuePitProject.GitHubRepo!, DefaultBranch = "main", CreatedAt = DateTime.UtcNow });
         await db.SaveChangesAsync();
 
+        // --- Dummy CI/CD Test project ---
+        // Minimal repo used to validate CI/CD runtime: fast green runs for development and E2E testing.
+        var dummyCiCdProject = new Project
+        {
+            Id = Guid.NewGuid(),
+            OrgId = org.Id,
+            Name = "Dummy CI/CD Test",
+            Slug = "dummy-cicd-test",
+            Description = "Minimal repo used to validate the CI/CD runtime — fast green runs for development and E2E testing.",
+            GitHubRepo = "https://github.com/issuepit/dummy-cicd-action-test",
+            CreatedAt = DateTime.UtcNow,
+        };
+        db.Projects.Add(dummyCiCdProject);
+        await db.SaveChangesAsync();
+
+        db.GitRepositories.Add(new GitRepository { Id = Guid.NewGuid(), ProjectId = dummyCiCdProject.Id, RemoteUrl = "https://github.com/issuepit/dummy-cicd-action-test", DefaultBranch = "main", CreatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+
+        var dummyBoard = new KanbanBoard { Id = Guid.NewGuid(), ProjectId = dummyCiCdProject.Id, Name = "Main Board", CreatedAt = DateTime.UtcNow };
+        db.KanbanBoards.Add(dummyBoard);
+        await db.SaveChangesAsync();
+        db.KanbanColumns.AddRange(
+            new KanbanColumn { Id = Guid.NewGuid(), BoardId = dummyBoard.Id, Name = "Backlog",     Position = 0, IssueStatus = IssueStatus.Backlog },
+            new KanbanColumn { Id = Guid.NewGuid(), BoardId = dummyBoard.Id, Name = "To Do",       Position = 1, IssueStatus = IssueStatus.Todo },
+            new KanbanColumn { Id = Guid.NewGuid(), BoardId = dummyBoard.Id, Name = "In Progress", Position = 2, IssueStatus = IssueStatus.InProgress },
+            new KanbanColumn { Id = Guid.NewGuid(), BoardId = dummyBoard.Id, Name = "Done",        Position = 4, IssueStatus = IssueStatus.Done }
+        );
+        await db.SaveChangesAsync();
+
         var ipLabelBug = new Label { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Name = "bug", Color = "#e11d48" };
         var ipLabelFeature = new Label { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Name = "feature", Color = "#2563eb" };
         var ipLabelEnhancement = new Label { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Name = "enhancement", Color = "#0891b2" };
@@ -585,7 +614,7 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
         );
         await db.SaveChangesAsync();
 
-        logger.LogInformation("Demo data seeded: org 'Acme Corp', 4 projects (Frontend, Backend API, IssuePit, Common Agenda), 28 issues, 4 agents, 2 MCP servers, milestones, assignees, comments, code review comments, CI/CD run, metric snapshots.");
+        logger.LogInformation("Demo data seeded: org 'Acme Corp', 5 projects (Frontend, Backend API, IssuePit, Dummy CI/CD Test, Common Agenda), 28 issues, 4 agents, 2 MCP servers, milestones, assignees, comments, code review comments, CI/CD run, metric snapshots.");
     }
 
     private async Task SeedEvilCorpAsync(Guid tenantId)

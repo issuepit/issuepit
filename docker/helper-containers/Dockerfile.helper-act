@@ -11,7 +11,7 @@ FROM ${BASE_IMAGE}
 ARG ACT_VERSION=0.2.74
 ARG ACTIONLINT_VERSION=1.7.11
 
-# Install Docker CLI for DinD (Docker-in-Docker via mounted /var/run/docker.sock) support.
+# Install Docker Engine (dockerd) + CLI for true DinD (isolated in-container daemon).
 # curl and gnupg are already present in the base image.
 RUN install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc && \
@@ -20,7 +20,7 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" \
         > /etc/apt/sources.list.d/docker.list && \
     apt-get update && \
-    apt-get install -y --no-install-recommends docker-ce-cli && \
+    apt-get install -y --no-install-recommends docker-ce docker-ce-cli containerd.io && \
     rm -rf /var/lib/apt/lists/*
 
 # Install act using the official install script (if not already installed).
@@ -40,6 +40,6 @@ RUN curl --proto '=https' --tlsv1.2 -fsSL \
     actionlint --version
 
 LABEL org.opencontainers.image.title="issuepit-helper-act" \
-      org.opencontainers.image.description="IssuePit helper image for CI/CD runs: helper-base + Docker CLI + act + actionlint" \
+      org.opencontainers.image.description="IssuePit helper image for CI/CD runs: helper-base + Docker Engine (DinD) + act + actionlint" \
       issuepit.act.version="${ACT_VERSION}" \
       issuepit.actionlint.version="${ACTIONLINT_VERSION}"

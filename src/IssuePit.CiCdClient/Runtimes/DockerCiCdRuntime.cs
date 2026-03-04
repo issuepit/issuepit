@@ -1,9 +1,11 @@
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
 using Docker.DotNet;
 using Docker.DotNet.Models;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
+using IssuePit.Core.Services;
 
 namespace IssuePit.CiCdClient.Runtimes;
 
@@ -19,6 +21,15 @@ namespace IssuePit.CiCdClient.Runtimes;
 ///   <item><c>CiCd__DefaultWorkspacePath</c> — fallback host path to the repository workspace</item>
 ///   <item><c>CiCd__ActImage</c> — runner image injected into <c>actrc</c> on first run to prevent
 ///     the interactive image-selection prompt (default: <c>catthehacker/ubuntu:act-latest</c> — Medium)</item>
+///   <item><c>CiCd__Docker__DindCacheStrategy</c> — DinD image cache strategy:
+///     <c>Off</c> | <c>LocalVolume</c> (default) | <c>RegistryMirror</c></item>
+///   <item><c>CiCd__Docker__DindCacheVolumePath</c> — host path mounted as <c>/var/lib/docker</c> inside
+///     DinD containers (default: <c>/var/lib/issuepit-dind-cache</c>); used by
+///     <c>LocalVolume</c> and <c>RegistryMirror</c> strategies</item>
+///   <item><c>CiCd__Docker__RegistryMirrorPort</c> — host port for the pull-through registry mirror
+///     container (default: <c>5100</c>); used by the <c>RegistryMirror</c> strategy</item>
+///   <item><c>CiCd__Docker__RegistryMirrorVolumePath</c> — host path for registry data
+///     (default: <c>/var/lib/issuepit-registry-cache</c>); used by the <c>RegistryMirror</c> strategy</item>
 /// </list>
 /// </summary>
 public partial class DockerCiCdRuntime(
@@ -31,15 +42,25 @@ public partial class DockerCiCdRuntime(
     //private const string DefaultImage = "ghcr.io/issuepit/issuepit-helper-act:latest";
     private const string DefaultImage = "ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24";
 
+    // Default DinD image cache settings.
+    private const DindImageCacheStrategy DefaultDindCacheStrategy = DindImageCacheStrategy.RegistryMirror;
+    private const string DefaultDindCacheVolumePath = "/var/lib/issuepit-dind-cache";
+    private const string RegistryMirrorContainerName = "issuepit-registry-mirror";
+    private const int DefaultRegistryMirrorPort = 5100;
+    private const string DefaultRegistryMirrorVolumePath = "/var/lib/issuepit-registry-cache";
+
     private static string AppVersion =>
         Assembly.GetEntryAssembly()
             ?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
             ?.InformationalVersion
         ?? "unknown";
 
-    // Builds a stable, human-readable Docker container name for a CI/CD run.
+    // Builds a unique Docker container name for a CI/CD run.
+    // A random UUID is used (instead of deriving from the run ID) so that retries and parallel
+    // runs never produce a name conflict even when a previous container wasn't cleaned up yet.
+    // The run ID is always available via the "issuepit.run-id" container label.
     private static string BuildContainerName(CiCdRun run) =>
-        $"issuepit-cicd-{run.Id:N}"[..24]; // e.g. "issuepit-cicd-ab12cd34ef56"
+        $"issuepit-cicd-{Guid.NewGuid():N}"[..24];
 
     public async Task RunAsync(
         CiCdRun run,
@@ -64,6 +85,17 @@ public partial class DockerCiCdRuntime(
 
         var actArgs = NativeCiCdRuntime.BuildActArgumentsList(trigger);
         var actBinAndArgs = new[] { actBin }.Concat(actArgs).ToList();
+
+        // For the Docker runtime the artifact server path in trigger is a host path.
+        // Replace it with the container-internal path so act stores artifacts inside the container
+        // (which is mounted from the host directory, making files accessible on both sides).
+        const string ContainerArtifactPath = "/artifacts";
+        if (!string.IsNullOrWhiteSpace(trigger.ArtifactServerPath))
+        {
+            var idx = actBinAndArgs.IndexOf(trigger.ArtifactServerPath);
+            if (idx >= 0)
+                actBinAndArgs[idx] = ContainerArtifactPath;
+        }
 
         // Append custom CLI args if provided (e.g. "--verbose --reuse").
         // Note: args are split on spaces; quoted arguments with spaces are not supported.
@@ -99,17 +131,39 @@ public partial class DockerCiCdRuntime(
         await onLogLine($"[DEBUG] Command        : {string.Join(' ', actCmd)}", LogStream.Stdout);
         if (hasGitRepo)
             await onLogLine($"[DEBUG] Git repo URL   : {trigger.GitRepoUrl}", LogStream.Stdout);
+        else if (!string.IsNullOrWhiteSpace(workspacePath))
+            await onLogLine($"[DEBUG] Workspace      : {workspacePath}", LogStream.Stdout);
         if (!trigger.NoVolumeMounts && !hasGitRepo)
-        {
             await onLogLine($"[DEBUG] Mount          : {workspacePath}:/workspace", LogStream.Stdout);
-            if (!trigger.NoDind)
-                await onLogLine($"[DEBUG] Mount          : /var/run/docker.sock:/var/run/docker.sock", LogStream.Stdout);
-        }
         await onLogLine($"[DEBUG] Working dir    : /workspace", LogStream.Stdout);
         if (trigger.NoDind) await onLogLine($"[DEBUG] DinD           : disabled", LogStream.Stdout);
+        else await onLogLine($"[DEBUG] DinD           : isolated (Privileged=true, in-container dockerd)", LogStream.Stdout);
         if (trigger.NoVolumeMounts) await onLogLine($"[DEBUG] Volume mounts  : disabled", LogStream.Stdout);
         if (!string.IsNullOrWhiteSpace(trigger.CustomEntrypoint))
             await onLogLine($"[DEBUG] Entrypoint     : {trigger.CustomEntrypoint}", LogStream.Stdout);
+
+        // Resolve the DinD image cache strategy.
+        // Priority: trigger override → CiCd__Docker__DindCacheStrategy config → hardcoded default (LocalVolume).
+        // Cache is only meaningful when DinD is active; force Off when NoDind=true.
+        DindImageCacheStrategy effectiveCacheStrategy;
+        if (trigger.NoDind)
+        {
+            effectiveCacheStrategy = DindImageCacheStrategy.Off;
+        }
+        else if (trigger.DindCacheStrategy.HasValue)
+        {
+            effectiveCacheStrategy = trigger.DindCacheStrategy.Value;
+        }
+        else if (Enum.TryParse<DindImageCacheStrategy>(configuration["CiCd__Docker__DindCacheStrategy"], ignoreCase: true, out var configStrategy))
+        {
+            effectiveCacheStrategy = configStrategy;
+        }
+        else
+        {
+            effectiveCacheStrategy = DefaultDindCacheStrategy;
+        }
+
+        await onLogLine($"[DEBUG] Cache strategy : {effectiveCacheStrategy}", LogStream.Stdout);
 
         // Verify Docker daemon is reachable and log its version.
         try
@@ -157,18 +211,50 @@ public partial class DockerCiCdRuntime(
 
         // Build bind mounts based on trigger options.
         // When a git repo URL is set the workspace is cloned inside the container, so no host volume is needed.
+        // True DinD (Privileged=true + in-container dockerd) is used by default — the host docker socket
+        // is never mounted, keeping the host daemon fully isolated from CI/CD container activity.
         var binds = new List<string>();
         if (!trigger.NoVolumeMounts && !hasGitRepo)
         {
             binds.Add($"{workspacePath}:/workspace");
-            if (!trigger.NoDind)
-                // Mount Docker socket so act can spin up runner containers (DinD)
-                binds.Add("/var/run/docker.sock:/var/run/docker.sock");
         }
-        else if (hasGitRepo && !trigger.NoDind)
+
+        // Mount the artifact server directory from the host so artifacts are accessible after the run.
+        // ArtifactServerPath is always an absolute temp-directory path set by the CiCdWorker
+        // (Path.Combine(Path.GetTempPath(), "issuepit-artifacts-{runId}")), so it is safe to use directly.
+        if (!string.IsNullOrWhiteSpace(trigger.ArtifactServerPath))
         {
-            // Git-clone mode: still mount Docker socket for DinD even though workspace is cloned inside.
-            binds.Add("/var/run/docker.sock:/var/run/docker.sock");
+            Directory.CreateDirectory(trigger.ArtifactServerPath);
+            binds.Add($"{trigger.ArtifactServerPath}:{ContainerArtifactPath}");
+            await onLogLine($"[DEBUG] Artifact mount : {trigger.ArtifactServerPath}:{ContainerArtifactPath}", LogStream.Stdout);
+        }
+
+        // Apply the DinD image cache strategy: add volume mounts and/or start the registry mirror.
+        string? registryMirrorUrl = null;
+        var extraHosts = new List<string>();
+
+        if (effectiveCacheStrategy is DindImageCacheStrategy.LocalVolume or DindImageCacheStrategy.RegistryMirror)
+        {
+            var cacheVolumePath = configuration["CiCd__Docker__DindCacheVolumePath"] ?? DefaultDindCacheVolumePath;
+            Directory.CreateDirectory(cacheVolumePath);
+            binds.Add($"{cacheVolumePath}:/var/lib/docker");
+            await onLogLine($"[DEBUG] DinD cache vol : {cacheVolumePath}:/var/lib/docker", LogStream.Stdout);
+        }
+
+        if (effectiveCacheStrategy == DindImageCacheStrategy.RegistryMirror)
+        {
+            var mirrorPort = int.TryParse(configuration["CiCd__Docker__RegistryMirrorPort"], out var p) ? p : DefaultRegistryMirrorPort;
+            var mirrorVolumePath = configuration["CiCd__Docker__RegistryMirrorVolumePath"] ?? DefaultRegistryMirrorVolumePath;
+
+            await EnsureRegistryMirrorAsync(mirrorPort, mirrorVolumePath, onLogLine, cancellationToken);
+            // Use host.docker.internal so the DinD dockerd inside the container can reach the registry
+            // on the host. Docker 20.10+ resolves this to the host gateway IP on Linux.
+            registryMirrorUrl = $"http://host.docker.internal:{mirrorPort}";
+            extraHosts.Add("host.docker.internal:host-gateway");
+            await onLogLine($"[DEBUG] Registry mirror: {registryMirrorUrl}", LogStream.Stdout);
+            // Note: to fall back to LocalVolume cache when the mirror is unavailable, wrap the
+            // EnsureRegistryMirrorAsync call and the three lines that follow it in a try/catch,
+            // set registryMirrorUrl = null in the catch block, and clear the extraHosts entry.
         }
 
         // When a custom entrypoint is set the caller controls execution; use their entrypoint+cmd directly.
@@ -192,6 +278,11 @@ public partial class DockerCiCdRuntime(
             {
                 Binds = binds,
                 AutoRemove = false,
+                // Privileged mode is required for true DinD (in-container dockerd).
+                // The host Docker socket is never mounted — act's job containers run inside
+                // the container's own isolated daemon, fully isolated from the host.
+                Privileged = !trigger.NoDind,
+                ExtraHosts = extraHosts.Count > 0 ? extraHosts : null,
             },
             Labels = new Dictionary<string, string>
             {
@@ -231,8 +322,23 @@ public partial class DockerCiCdRuntime(
                 // ── Exec model: run each step inside the container sequentially ─────────────
 
                 // Dynamically compute the number of steps so the [N/M] prefix is always correct.
-                var totalSteps = 2 + (hasGitRepo ? 1 : 0) + (!string.IsNullOrWhiteSpace(trigger.Workflow) ? 1 : 0);
+                var useDind = !trigger.NoDind;
+                var totalSteps = 2 + (useDind ? 1 : 0) + (hasGitRepo ? 1 : 0) + (!string.IsNullOrWhiteSpace(trigger.Workflow) ? 1 : 0);
                 var stepNum = 0;
+
+                // Step: Start dockerd (true DinD — no host socket mount).
+                // The first exec step starts the in-container daemon and waits until it is ready.
+                if (useDind)
+                {
+                    await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: starting dockerd (DinD)", LogStream.Stdout);
+                    var dindExitCode = await ExecCommandAsync(
+                        container.ID,
+                        ["/bin/sh", "-c", BuildDindStartupScript(registryMirrorUrl)],
+                        onLogLine,
+                        cancellationToken);
+                    if (dindExitCode != 0)
+                        throw new Exception($"dockerd failed to start inside the container (exit code {dindExitCode})");
+                }
 
                 // Step: git clone (when a repo URL is provided instead of a volume mount).
                 if (hasGitRepo)
@@ -246,6 +352,19 @@ public partial class DockerCiCdRuntime(
                         cancellationToken);
                     if (cloneExitCode != 0)
                         throw new Exception($"git clone failed with exit code {cloneExitCode} for URL '{trigger.GitRepoUrl}'");
+
+                    // Parse the workflow graph from the cloned repo by cat-ing the YAML files
+                    // inside the container. Sets run.WorkflowGraphJson so the worker can persist it.
+                    await ParseWorkflowGraphFromContainerAsync(container.ID, run, onLogLine, cancellationToken);
+
+                    // Best-effort: run actionlint on all workflow files in the container after clone.
+                    // Output is streamed to the run log. Never aborts the run.
+                    await ExecShellAsync(
+                        container.ID,
+                        "command -v actionlint > /dev/null 2>&1 && [ -d /workspace/.github/workflows ] && " +
+                        "{ echo '[ACTIONLINT] Validating workflows...'; actionlint -color=false /workspace/.github/workflows/*.yml 2>&1 || true; }",
+                        onLogLine,
+                        cancellationToken);
                 }
 
                 // Step: Write actrc to suppress the interactive image-selection prompt.
@@ -331,8 +450,9 @@ public partial class DockerCiCdRuntime(
     /// name-conflict (409) errors. A name conflict occurs when a previous attempt succeeded on
     /// the Docker daemon side but the HTTP response was lost (named-pipe reset on Windows):
     /// the container was created but we never received its ID, so on retry the same name is
-    /// rejected. The fix is to forcibly remove any existing container with the target name
-    /// before each retry attempt.
+    /// rejected. The fix is to use a fresh unique name on every retry attempt so that any
+    /// orphaned container from a previous attempt is simply abandoned (it will be cleaned up
+    /// by the issuepit.run-id label at the end of the run, or by periodic Docker pruning).
     /// </summary>
     private async Task<CreateContainerResponse> CreateContainerWithRetryAsync(
         CreateContainerParameters createParams,
@@ -356,21 +476,14 @@ public partial class DockerCiCdRuntime(
                  (ex is OperationCanceledException oce && oce.CancellationToken != cancellationToken) ||
                  (ex is DockerApiException dex && dex.StatusCode == System.Net.HttpStatusCode.Conflict)))
             {
-                var reason = ex is DockerApiException ? "name conflict (container may have been created during a previous connection reset)" : "connection reset";
+                var reason = ex is DockerApiException ? "name conflict" : "connection reset";
+                // Generate a fresh unique name so that any orphaned container from the previous
+                // attempt does not cause another Conflict on the next attempt.
+                var newName = $"issuepit-cicd-{Guid.NewGuid():N}"[..24];
+                createParams.Name = newName;
                 await onLogLine(
-                    $"[WARN] CreateContainer: {reason} (attempt {attempt}/{maxAttempts}), cleaning up and retrying in 2s…",
+                    $"[WARN] CreateContainer: {reason} (attempt {attempt}/{maxAttempts}), retrying with new name '{newName}' in 2s…",
                     LogStream.Stderr);
-
-                // Remove any existing container with the same name before retrying.
-                // This handles the case where the daemon created the container but the response was lost.
-                try
-                {
-                    await dockerClient.Containers.RemoveContainerAsync(
-                        containerName,
-                        new ContainerRemoveParameters { Force = true },
-                        CancellationToken.None);
-                }
-                catch { /* best-effort: container may not exist */ }
 
                 await Task.Delay(2000, cancellationToken);
                 // Verify daemon is still reachable before retrying.
@@ -629,6 +742,94 @@ public partial class DockerCiCdRuntime(
     }
 
     /// <summary>
+    /// Executes a command inside the container and returns the stdout output as a string.
+    /// Stderr is discarded. Never throws on non-zero exit codes.
+    /// </summary>
+    private async Task<string> ExecCommandCaptureAsync(
+        string containerId,
+        IList<string> cmd,
+        CancellationToken cancellationToken)
+    {
+        var execCreate = await dockerClient.Exec.ExecCreateContainerAsync(
+            containerId,
+            new ContainerExecCreateParameters
+            {
+                AttachStdout = true,
+                AttachStderr = false,
+                Cmd = cmd,
+                WorkingDir = "/workspace",
+            },
+            cancellationToken);
+
+        using var stream = await dockerClient.Exec.StartAndAttachContainerExecAsync(
+            execCreate.ID, tty: false, cancellationToken);
+
+        var sb = new StringBuilder();
+        await DrainMultiplexedStreamAsync(
+            stream,
+            (line, _) => { sb.AppendLine(line); return Task.CompletedTask; },
+            cancellationToken);
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Reads the workflow YAML files from the cloned repo inside the container using <c>cat</c>,
+    /// parses the job graph with <see cref="WorkflowGraphParser.ParseFromStringsAsync"/>,
+    /// and sets <see cref="CiCdRun.WorkflowGraphJson"/> on the run object so the worker can
+    /// persist it after <c>RunAsync</c> returns.
+    /// Best-effort: errors are emitted as debug log lines but never abort the run.
+    /// </summary>
+    private async Task ParseWorkflowGraphFromContainerAsync(
+        string containerId,
+        CiCdRun run,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // List workflow files inside the container.
+            var fileListRaw = await ExecCommandCaptureAsync(
+                containerId,
+                ["/bin/sh", "-c", "find /workspace/.github/workflows -maxdepth 1 \\( -name '*.yml' -o -name '*.yaml' \\) 2>/dev/null"],
+                cancellationToken);
+
+            var files = fileListRaw
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Select(f => f.Trim())
+                .Where(f => !string.IsNullOrEmpty(f))
+                .ToList();
+
+            if (files.Count == 0)
+                return;
+
+            // Cat each file and collect content keyed by the base filename.
+            var fileContents = new Dictionary<string, string>();
+            foreach (var filePath in files)
+            {
+                var content = await ExecCommandCaptureAsync(
+                    containerId,
+                    ["/bin/sh", "-c", $"cat {ShellQuote(filePath)}"],
+                    cancellationToken);
+                if (!string.IsNullOrWhiteSpace(content))
+                    fileContents[Path.GetFileName(filePath)] = content;
+            }
+
+            if (fileContents.Count == 0)
+                return;
+
+            // Parse using the string-based multi-file API (uses ParseFromStringAsync internally).
+            var graph = await WorkflowGraphParser.ParseFromStringsAsync(fileContents, cancellationToken);
+            run.WorkflowGraphJson = JsonSerializer.Serialize(graph);
+            await onLogLine($"[DEBUG] Workflow graph parsed from cloned repo ({fileContents.Count} file(s), {graph.Jobs.Count} job(s))", LogStream.Stdout);
+        }
+        catch (Exception ex)
+        {
+            await onLogLine($"[DEBUG] Could not parse workflow graph from container: {ex.Message}", LogStream.Stdout);
+        }
+    }
+
+    /// <summary>
     /// Drains a <see cref="MultiplexedStream"/> (from container logs or exec attach), emitting each
     /// complete line through <paramref name="onLogLine"/>. Handles interleaved stdout/stderr correctly.
     /// </summary>
@@ -672,7 +873,125 @@ public partial class DockerCiCdRuntime(
     }
 
     /// <summary>
-    /// Builds a shell script that writes the <c>actrc</c> platform mapping to prevent the interactive
+    /// Builds a shell script that starts <c>dockerd</c> in the background and waits until its
+    /// Unix socket is ready. Used for true DinD (the container runs with <c>Privileged=true</c>
+    /// and manages its own isolated Docker daemon — the host socket is never mounted).
+    /// Installs <c>docker.io</c> via apt if <c>dockerd</c> is not already present (fallback for
+    /// older helper images that only shipped <c>docker-ce-cli</c>).
+    /// When <paramref name="registryMirrorUrl"/> is provided, writes a <c>/etc/docker/daemon.json</c>
+    /// that configures the daemon to use the specified URL as a pull-through registry mirror.
+    /// </summary>
+    internal static string BuildDindStartupScript(string? registryMirrorUrl = null)
+    {
+        // Start dockerd in the background, redirect its output, then poll the socket.
+        // 'dockerd &' runs as PID 1's child; we give it up to 60 s to become healthy.
+        // Use explicit \n to guarantee LF-only line endings when running inside a Linux container,
+        // regardless of the line endings in this source file (e.g. CRLF on Windows).
+        var lines = new List<string>
+        {
+            "command -v dockerd > /dev/null 2>&1 || (apt-get update -qq 2>/dev/null && apt-get install -y --no-install-recommends docker.io 2>/dev/null)",
+        };
+
+        if (!string.IsNullOrWhiteSpace(registryMirrorUrl))
+        {
+            // Write daemon.json before starting dockerd so the mirror is active from the first pull.
+            // Use JsonSerializer to produce well-formed JSON, then single-quote it for the shell
+            // (single quotes are safe here because the URL is validated to not contain single quotes).
+            var daemonJson = JsonSerializer.Serialize(
+                new { registryMirrors = new[] { registryMirrorUrl } },
+                new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.KebabCaseLower });
+            lines.Add("mkdir -p /etc/docker");
+            lines.Add($"printf '%s' '{daemonJson.Replace("'", "'\\''")}' > /etc/docker/daemon.json");
+        }
+
+        lines.AddRange([
+            "dockerd > /tmp/dockerd.log 2>&1 &",
+            "timeout=60",
+            "while [ $timeout -gt 0 ] && ! docker info > /dev/null 2>&1; do",
+            "  sleep 1; timeout=$((timeout-1))",
+            "done",
+            "docker info > /dev/null 2>&1 && echo '[DinD] dockerd ready' || { echo '[DinD] dockerd failed to start'; cat /tmp/dockerd.log; exit 1; }",
+        ]);
+
+        return string.Join('\n', lines);
+    }
+
+    /// <summary>
+    /// Ensures the pull-through registry mirror container (<c>issuepit-registry-mirror</c>) is running
+    /// on the host. Creates and starts the container if it does not exist; restarts it if it is stopped.
+    /// The container uses <c>registry:2</c> with <c>REGISTRY_PROXY_REMOTEURL</c> set to the Docker Hub
+    /// upstream so it acts as a transparent pull-through cache.
+    /// </summary>
+    private async Task EnsureRegistryMirrorAsync(
+        int port,
+        string volumePath,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        // Check whether the mirror container already exists.
+        ContainerInspectResponse? inspect = null;
+        try
+        {
+            inspect = await dockerClient.Containers.InspectContainerAsync(RegistryMirrorContainerName, cancellationToken);
+        }
+        catch (DockerApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            // Container does not exist — create it below.
+        }
+
+        if (inspect is not null)
+        {
+            if (inspect.State?.Running == true)
+            {
+                await onLogLine($"[DEBUG] Registry mirror: container '{RegistryMirrorContainerName}' already running", LogStream.Stdout);
+                return;
+            }
+
+            // Exists but stopped — start it.
+            await onLogLine($"[DEBUG] Registry mirror: starting existing container '{RegistryMirrorContainerName}'", LogStream.Stdout);
+            await dockerClient.Containers.StartContainerAsync(RegistryMirrorContainerName, new ContainerStartParameters(), cancellationToken);
+            return;
+        }
+
+        // Pull registry:2 if not present locally.
+        await onLogLine($"[DEBUG] Registry mirror: pulling registry:2", LogStream.Stdout);
+        await dockerClient.Images.CreateImageAsync(
+            new ImagesCreateParameters { FromImage = "registry", Tag = "2" },
+            null,
+            new Progress<JSONMessage>(),
+            cancellationToken);
+
+        // Create the pull-through mirror container.
+        Directory.CreateDirectory(volumePath);
+        await onLogLine($"[DEBUG] Registry mirror: creating container on port {port}", LogStream.Stdout);
+        var createParams = new CreateContainerParameters
+        {
+            Image = "registry:2",
+            Name = RegistryMirrorContainerName,
+            Env = ["REGISTRY_PROXY_REMOTEURL=https://registry-1.docker.io"],
+            HostConfig = new HostConfig
+            {
+                PortBindings = new Dictionary<string, IList<PortBinding>>
+                {
+                    // Bind to all interfaces so DinD containers can reach the registry via the
+                    // Docker bridge gateway (host.docker.internal / 172.17.0.1). Binding to 127.0.0.1
+                    // would not be reachable from the bridge network.
+                    // Restrict external access at the OS firewall level if needed.
+                    [$"{port}/tcp"] = [new PortBinding { HostIP = "0.0.0.0", HostPort = port.ToString() }],
+                },
+                Binds = [$"{volumePath}:/var/lib/registry"],
+                RestartPolicy = new RestartPolicy { Name = RestartPolicyKind.UnlessStopped },
+            },
+            Labels = new Dictionary<string, string>
+            {
+                ["issuepit.component"] = "registry-mirror",
+            },
+        };
+
+        await dockerClient.Containers.CreateContainerAsync(createParams, cancellationToken);
+        await dockerClient.Containers.StartContainerAsync(RegistryMirrorContainerName, new ContainerStartParameters(), cancellationToken);
+        await onLogLine($"[DEBUG] Registry mirror: started on 0.0.0.0:{port}", LogStream.Stdout);
+    }
     /// first-run image-selection prompt. Uses <c>printf '%b'</c> so the leading <c>-P</c> in the actrc
     /// content is not misinterpreted as a printf option by <c>/bin/sh</c> (dash).
     /// </summary>

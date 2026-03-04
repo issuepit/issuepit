@@ -16,8 +16,7 @@ public class CiCdRunsController(
     IssuePitDbContext db,
     TenantContext tenant,
     IProducer<string, string> producer,
-    IHubContext<ProjectHub> projectHub,
-    GitService gitService) : ControllerBase
+    IHubContext<ProjectHub> projectHub) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetRuns([FromQuery] Guid? projectId)
@@ -104,6 +103,52 @@ public class CiCdRunsController(
             .ToListAsync();
 
         return Ok(logs);
+    }
+
+    /// <summary>
+    /// Returns parsed test results (test suites and individual test cases) for the given run.
+    /// Test results are collected automatically from artifact <c>.trx</c> files after the run completes.
+    /// </summary>
+    [HttpGet("{id:guid}/test-results")]
+    public async Task<IActionResult> GetTestResults(Guid id)
+    {
+        var runExists = await db.CiCdRuns
+            .AnyAsync(r => r.Id == id && r.Project.Organization.TenantId == tenant.CurrentTenant!.Id);
+
+        if (!runExists) return NotFound();
+
+        var suites = await db.CiCdTestSuites
+            .Where(s => s.CiCdRunId == id)
+            .OrderBy(s => s.CreatedAt)
+            .Select(s => new
+            {
+                s.Id,
+                s.ArtifactName,
+                s.TotalTests,
+                s.PassedTests,
+                s.FailedTests,
+                s.SkippedTests,
+                s.DurationMs,
+                s.CreatedAt,
+                TestCases = s.TestCases
+                    .OrderBy(tc => tc.FullName)
+                    .Select(tc => new
+                    {
+                        tc.Id,
+                        tc.FullName,
+                        tc.ClassName,
+                        tc.MethodName,
+                        tc.Outcome,
+                        OutcomeName = tc.Outcome.ToString(),
+                        tc.DurationMs,
+                        tc.ErrorMessage,
+                        tc.StackTrace,
+                    })
+                    .ToList(),
+            })
+            .ToListAsync();
+
+        return Ok(suites);
     }
 
     /// <summary>
@@ -376,6 +421,8 @@ public class CiCdRunsController(
         }
 
         // Publish a new trigger — the CiCdWorker will create a new run record.
+        // Re-resolve the remote URL so the container can clone the latest state of the repo.
+        var retryRepo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == run.ProjectId);
         var payload = System.Text.Json.JsonSerializer.Serialize(new
         {
             projectId = run.ProjectId,
@@ -383,7 +430,7 @@ public class CiCdRunsController(
             branch = run.Branch,
             workflow = run.Workflow,
             agentSessionId = run.AgentSessionId,
-            workspacePath = run.WorkspacePath,
+            gitRepoUrl = retryRepo?.RemoteUrl,
             eventName = "push",
             keepContainerOnFailure = options?.KeepContainerOnFailure ?? false,
             noDind = options?.NoDind ?? false,
@@ -426,9 +473,10 @@ public class CiCdRunsController(
 
         if (project is null) return NotFound();
 
-        // Look up the workspace path from the linked git repository (if any).
+        // Look up the remote URL from the linked git repository (if any).
+        // The container clones the repo inside itself — no host workspace path is needed.
         var repo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == request.ProjectId);
-        var workspacePath = repo is not null ? gitService.GetLocalPath(repo) : null;
+        var gitRepoUrl = repo?.RemoteUrl;
 
         var payload = System.Text.Json.JsonSerializer.Serialize(new
         {
@@ -437,7 +485,7 @@ public class CiCdRunsController(
             branch = request.Branch,
             workflow = request.Workflow,
             agentSessionId = (Guid?)null,
-            workspacePath,
+            gitRepoUrl,
             eventName = request.EventName,
             inputs = request.Inputs,
         });
