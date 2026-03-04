@@ -100,13 +100,8 @@ public partial class DockerCiCdRuntime(
         if (hasGitRepo)
             await onLogLine($"[DEBUG] Git repo URL   : {trigger.GitRepoUrl}", LogStream.Stdout);
         if (!trigger.NoVolumeMounts && !hasGitRepo)
-        {
             await onLogLine($"[DEBUG] Mount          : {workspacePath}:/workspace", LogStream.Stdout);
-            if (!trigger.NoDind)
-                await onLogLine($"[DEBUG] Mount          : /var/run/docker.sock:/var/run/docker.sock", LogStream.Stdout);
-        }
         await onLogLine($"[DEBUG] Working dir    : /workspace", LogStream.Stdout);
-        if (trigger.NoDind) await onLogLine($"[DEBUG] DinD           : disabled", LogStream.Stdout);
         if (trigger.NoVolumeMounts) await onLogLine($"[DEBUG] Volume mounts  : disabled", LogStream.Stdout);
         if (!string.IsNullOrWhiteSpace(trigger.CustomEntrypoint))
             await onLogLine($"[DEBUG] Entrypoint     : {trigger.CustomEntrypoint}", LogStream.Stdout);
@@ -120,8 +115,9 @@ public partial class DockerCiCdRuntime(
         catch (Exception ex)
         {
             throw new InvalidOperationException(
-                "Cannot connect to the Docker daemon. Ensure Docker is running and the socket is accessible " +
-                $"(inner: {ex.Message})", ex);
+                "Cannot connect to the Docker daemon. Ensure Docker is running and accessible. " +
+                "On Windows, enable TCP access in Docker Desktop → Settings → General → " +
+                $"\"Expose daemon on tcp://localhost:2375 without TLS\" (inner: {ex.Message})", ex);
         }
 
         logger.LogInformation("Pulling Docker image {Image} for CI/CD run {RunId}", image, run.Id);
@@ -140,7 +136,6 @@ public partial class DockerCiCdRuntime(
         catch (Exception ex) when (ex is HttpRequestException or IOException)
         {
             var msg = $"Lost connection to the Docker daemon while pulling image '{image}'. " +
-                "This can happen on Windows when Docker Desktop resets named-pipe connections. " +
                 "Try running the CI/CD run again.";
             await onLogLine($"[ERROR] {msg}", LogStream.Stderr);
             foreach (var line in ex.ToString().Split('\n'))
@@ -157,19 +152,10 @@ public partial class DockerCiCdRuntime(
 
         // Build bind mounts based on trigger options.
         // When a git repo URL is set the workspace is cloned inside the container, so no host volume is needed.
+        // The Docker socket is NOT mounted: the act container image uses Docker-in-Docker (DinD) internally.
         var binds = new List<string>();
         if (!trigger.NoVolumeMounts && !hasGitRepo)
-        {
             binds.Add($"{workspacePath}:/workspace");
-            if (!trigger.NoDind)
-                // Mount Docker socket so act can spin up runner containers (DinD)
-                binds.Add("/var/run/docker.sock:/var/run/docker.sock");
-        }
-        else if (hasGitRepo && !trigger.NoDind)
-        {
-            // Git-clone mode: still mount Docker socket for DinD even though workspace is cloned inside.
-            binds.Add("/var/run/docker.sock:/var/run/docker.sock");
-        }
 
         // When a custom entrypoint is set the caller controls execution; use their entrypoint+cmd directly.
         // Otherwise use the exec model: start a long-running shell, then exec each step one by one.
@@ -211,7 +197,6 @@ public partial class DockerCiCdRuntime(
             (ex is OperationCanceledException oce && oce.CancellationToken != cancellationToken && !cancellationToken.IsCancellationRequested))
         {
             var msg = "Lost connection to the Docker daemon while creating the container. " +
-                "This can happen on Windows when Docker Desktop resets named-pipe connections. " +
                 "Try running the CI/CD run again.";
             await onLogLine($"[ERROR] {msg}", LogStream.Stderr);
             foreach (var line in ex.ToString().Split('\n'))
