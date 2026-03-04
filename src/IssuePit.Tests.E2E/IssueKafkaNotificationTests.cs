@@ -55,17 +55,17 @@ public class IssueKafkaNotificationTests(AspireFixture fixture)
         using var consumer = new ConsumerBuilder<string, string>(consumerConfig)
             .SetLogHandler((_, _) => { }) // suppress librdkafka noise in test output
             .Build();
-        consumer.Subscribe("issue-assigned");
 
-        // Wait for the consumer to receive its partition assignment before producing
-        // any message. Without this, a message produced while the assignment is still
-        // pending (rebalance in-flight) will have an offset earlier than the consumer's
-        // "latest" start position and will be silently skipped.
-        using var assignWait = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-        while (consumer.Assignment.Count == 0 && !assignWait.Token.IsCancellationRequested)
-        {
-            consumer.Consume(TimeSpan.FromMilliseconds(200));
-        }
+        // Query the current high-watermark offset and assign the consumer to that exact
+        // position BEFORE creating the issue. This eliminates the race condition inherent
+        // in Subscribe + AutoOffsetReset.Latest: with Subscribe, the "latest" offset is
+        // resolved during the first internal fetch *after* partition assignment, so a
+        // message published between rebalance completion and that first fetch would be
+        // silently skipped. Using QueryWatermarkOffsets + Assign pins the start offset
+        // synchronously, guaranteeing any subsequently published message is received.
+        var topicPartition = new TopicPartition("issue-assigned", new Partition(0));
+        var watermarks = consumer.QueryWatermarkOffsets(topicPartition, TimeSpan.FromSeconds(15));
+        consumer.Assign(new TopicPartitionOffset(topicPartition, watermarks.High));
 
         // Create the issue
         const string issueTitle = "E2E Kafka Notification Issue";
