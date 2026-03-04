@@ -148,6 +148,7 @@ public class CiCdWorker(
                 ActEnv = trigger.ActEnv ?? project.ActEnv ?? orgSettings?.ActEnv,
                 ActSecrets = trigger.ActSecrets ?? project.ActSecrets ?? orgSettings?.ActSecrets,
                 ActRunnerImage = trigger.ActRunnerImage ?? project.ActRunnerImage ?? orgSettings?.ActRunnerImage,
+                ConcurrentJobs = trigger.ConcurrentJobs ?? project.ConcurrentJobs ?? orgSettings?.ConcurrentJobs,
             };
         }
 

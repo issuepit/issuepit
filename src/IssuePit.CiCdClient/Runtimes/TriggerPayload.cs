@@ -48,6 +48,8 @@ public record TriggerPayload(
     string? ArtifactServerPath = null,
     /// <summary>Key-value input pairs passed as <c>--input</c> arguments to <c>act</c> (for workflow_dispatch events).</summary>
     IReadOnlyDictionary<string, string>? Inputs = null,
+    /// <summary>Maximum number of concurrent jobs within a single act run (--concurrent-jobs). null means use the system default (4). 0 means unlimited.</summary>
+    int? ConcurrentJobs = null,
     /// <summary>
     /// Overrides the DinD image cache strategy for this run.
     /// <c>null</c> means use the system default from <c>CiCd__Docker__DindCacheStrategy</c>.

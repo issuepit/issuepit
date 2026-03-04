@@ -418,6 +418,15 @@
                 class="w-40 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
               <p class="text-xs text-gray-500 mt-1">Applies across all projects in this organization unless overridden per project</p>
             </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">
+                Concurrent jobs per run
+                <span class="text-gray-500 font-normal">(0 = unlimited, blank = default 4)</span>
+              </label>
+              <input v-model.number="runnerSettingsForm.concurrentJobs" type="number" min="0" placeholder="4"
+                class="w-40 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+              <p class="text-xs text-gray-500 mt-1">Maximum parallel jobs within a single workflow run (<code class="bg-gray-800 px-1 rounded">--concurrent-jobs</code>). Can be overridden per project.</p>
+            </div>
             <p v-if="saveRunnerSettingsError" class="text-red-400 text-sm">{{ saveRunnerSettingsError }}</p>
             <button type="submit" :disabled="savingRunnerSettings"
               class="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
@@ -612,7 +621,7 @@ function setTab(id: string) {
 }
 
 // --- Runner Settings ---
-const runnerSettingsForm = reactive({ maxConcurrentRunners: 0 })
+const runnerSettingsForm = reactive({ maxConcurrentRunners: 0, concurrentJobs: null as number | null })
 const savingRunnerSettings = ref(false)
 const saveRunnerSettingsError = ref<string | null>(null)
 
@@ -725,6 +734,7 @@ onMounted(async () => {
   ])
   if (orgsStore.currentOrg) {
     runnerSettingsForm.maxConcurrentRunners = orgsStore.currentOrg.maxConcurrentRunners ?? 0
+    runnerSettingsForm.concurrentJobs = orgsStore.currentOrg.concurrentJobs ?? null
     ciCdForm.actRunnerImage = orgsStore.currentOrg.actRunnerImage ?? null
     ciCdForm.actEnv = orgsStore.currentOrg.actEnv || ''
     ciCdForm.actSecrets = orgsStore.currentOrg.actSecrets || ''
@@ -740,6 +750,7 @@ async function saveRunnerSettings() {
       name: orgsStore.currentOrg.name,
       slug: orgsStore.currentOrg.slug,
       maxConcurrentRunners: runnerSettingsForm.maxConcurrentRunners,
+      concurrentJobs: runnerSettingsForm.concurrentJobs,
     })
   } catch (e: unknown) {
     saveRunnerSettingsError.value = e instanceof Error ? e.message : 'Failed to save'

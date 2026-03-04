@@ -42,6 +42,7 @@ export interface Organization {
   slug: string
   description?: string
   maxConcurrentRunners: number
+  concurrentJobs?: number | null
   actRunnerImage?: string
   actEnv?: string
   actSecrets?: string
@@ -179,6 +180,7 @@ export interface Project {
   memberCount: number
   mountRepositoryInDocker: boolean
   maxConcurrentRunners: number
+  concurrentJobs?: number | null
   actEnv?: string
   actSecrets?: string
   actRunnerImage?: string

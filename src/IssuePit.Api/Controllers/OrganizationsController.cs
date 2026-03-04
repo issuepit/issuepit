@@ -52,6 +52,7 @@ public class OrganizationsController(IssuePitDbContext db, TenantContext ctx) : 
         org.Name = updated.Name;
         org.Slug = updated.Slug;
         org.MaxConcurrentRunners = updated.MaxConcurrentRunners;
+        org.ConcurrentJobs = updated.ConcurrentJobs;
         org.ActRunnerImage = updated.ActRunnerImage;
         org.ActEnv = updated.ActEnv;
         org.ActSecrets = updated.ActSecrets;
