@@ -178,6 +178,21 @@ public static class WorkflowGraphParser
     public static WorkflowGraph Parse(string? yamlContent) =>
         ParseYaml(yamlContent);
 
+    /// <summary>
+    /// Parses <paramref name="yamlContent"/> for the given <paramref name="fileName"/> (e.g. <c>ci.yml</c>)
+    /// and returns the job graph including workflow trigger information, without actionlint validation.
+    /// Useful when the YAML content has been fetched from a remote source (e.g. GitHub raw API) and
+    /// no local file path is available.
+    /// </summary>
+    public static WorkflowGraph ParseFromString(string? yamlContent, string fileName)
+    {
+        var graph = ParseYaml(yamlContent);
+        var triggers = ParseTriggers(yamlContent);
+        var stem = Path.GetFileName(fileName);
+        var workflowTriggers = new Dictionary<string, IReadOnlyList<string>> { [stem] = triggers };
+        return graph with { WorkflowTriggers = workflowTriggers };
+    }
+
     private static WorkflowGraph ParseYaml(string? yamlContent)
     {
         if (string.IsNullOrWhiteSpace(yamlContent))

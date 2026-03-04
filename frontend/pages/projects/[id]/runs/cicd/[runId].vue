@@ -260,8 +260,8 @@
 
         <!-- Jobs tab -->
         <template v-if="activeSection === 'jobs'">
-          <!-- Graph not available — show as yellow warning box -->
-          <div v-if="store.currentRunGraphError && !enrichedJobs.length" class="m-4 rounded-lg bg-yellow-900/40 border border-yellow-700/50 p-4 flex items-start gap-3">
+          <!-- Graph not available — show as yellow warning box (always shown when graph fails, even if log-based jobs exist) -->
+          <div v-if="store.currentRunGraphError" class="m-4 rounded-lg bg-yellow-900/40 border border-yellow-700/50 p-4 flex items-start gap-3">
             <svg class="w-5 h-5 text-yellow-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
             </svg>
@@ -270,7 +270,7 @@
               <p class="text-xs text-yellow-400/80 mt-0.5">{{ store.currentRunGraphError }}</p>
             </div>
           </div>
-          <div v-else-if="enrichedJobs.length" class="p-4">
+          <div v-if="enrichedJobs.length" class="p-4">
             <!-- Actionlint warnings from graph validation -->
             <div v-if="store.currentRunGraph?.warnings?.length" class="mb-4 rounded-lg bg-yellow-900/40 border border-yellow-700/50 p-3">
               <div class="flex items-center gap-2 mb-2">
