@@ -64,6 +64,29 @@ public record WorkflowGraph(
 public static class WorkflowGraphParser
 {
     /// <summary>
+    /// Parses the job graph from <paramref name="yamlContent"/> and (if actionlint is available)
+    /// validates it by piping the content to <c>actionlint -</c> via stdin.
+    /// This is the string-based counterpart of <see cref="ParseFileAsync"/> — use it when the
+    /// YAML was obtained via <c>cat</c> or an in-container exec rather than from a local file.
+    /// </summary>
+    /// <param name="yamlContent">Raw YAML text of the workflow file.</param>
+    /// <param name="fileName">Optional filename hint (e.g. <c>ci.yml</c>) used only for the <see cref="WorkflowGraph.WorkflowTriggers"/> key.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public static async Task<WorkflowGraph> ParseFromStringAsync(string yamlContent, string? fileName = null, CancellationToken cancellationToken = default)
+    {
+        var graph = ParseYaml(yamlContent);
+        var triggers = ParseTriggers(yamlContent);
+
+        var key = fileName ?? "workflow.yml";
+        var workflowTriggers = new Dictionary<string, IReadOnlyList<string>> { [key] = triggers };
+
+        // Pipe YAML to actionlint via stdin (actionlint - reads from stdin).
+        var warnings = await TryRunActionlintFromStringAsync(yamlContent, cancellationToken);
+
+        return graph with { Warnings = warnings, WorkflowTriggers = workflowTriggers };
+    }
+
+    /// <summary>
     /// Reads the workflow YAML at <paramref name="filePath"/>, parses the job graph,
     /// and (if actionlint is available) validates the file for lint errors.
     /// Throws <see cref="FileNotFoundException"/> when the file does not exist.
@@ -301,6 +324,58 @@ public static class WorkflowGraphParser
             var stderr = await stderrTask;
 
             // actionlint writes lint errors to stdout; combine stdout + stderr for warnings.
+            var warnings = new List<string>();
+            foreach (var line in (stdout + "\n" + stderr).Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                warnings.Add(line);
+
+            return warnings;
+        }
+        catch (Exception)
+        {
+            // actionlint not installed, or failed to start — silently skip.
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Pipes <paramref name="yamlContent"/> to <c>actionlint -</c> via stdin.
+    /// Returns lint warnings when actionlint is available, or an empty list when it is not
+    /// installed or times out. Never throws.
+    /// </summary>
+    private static async Task<IReadOnlyList<string>> TryRunActionlintFromStringAsync(string yamlContent, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("actionlint", "-")
+            {
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+
+            using var process = new Process { StartInfo = psi };
+
+            if (!process.Start())
+                return [];
+
+            // Write the YAML to stdin and close it so actionlint sees EOF.
+            await process.StandardInput.WriteAsync(yamlContent);
+            process.StandardInput.Close();
+
+            // Allow up to 10 seconds for actionlint to complete.
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            using var combined = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
+            var stdoutTask = process.StandardOutput.ReadToEndAsync(combined.Token);
+            var stderrTask = process.StandardError.ReadToEndAsync(combined.Token);
+
+            await process.WaitForExitAsync(combined.Token);
+
+            var stdout = await stdoutTask;
+            var stderr = await stderrTask;
+
             var warnings = new List<string>();
             foreach (var line in (stdout + "\n" + stderr).Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                 warnings.Add(line);
