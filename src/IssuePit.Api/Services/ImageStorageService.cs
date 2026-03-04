@@ -59,6 +59,44 @@ public class ImageStorageService(IOptions<ImageStorageOptions> options, ILogger<
     }
 
     /// <summary>
+    /// Uploads any file to the given <paramref name="subfolder"/> and returns its public URL.
+    /// </summary>
+    public async Task<string> UploadFileAsync(Stream content, string fileName, string contentType, string subfolder, CancellationToken ct = default)
+    {
+        var extension = Path.GetExtension(fileName);
+        if (!string.IsNullOrEmpty(extension))
+        {
+            extension = new string(extension.Where(c => char.IsLetterOrDigit(c) || c == '.').ToArray());
+        }
+        var safeSubfolder = new string(subfolder.Where(c => char.IsLetterOrDigit(c) || c == '/').ToArray()).Trim('/');
+        var key = $"{safeSubfolder}/{Guid.NewGuid():N}{extension}";
+
+        using var s3 = CreateClient();
+
+        if (!_bucketEnsured)
+        {
+            await EnsureBucketExistsAsync(s3, ct);
+            _bucketEnsured = true;
+        }
+
+        var request = new PutObjectRequest
+        {
+            BucketName = _opts.BucketName,
+            Key = key,
+            InputStream = content,
+            ContentType = contentType,
+        };
+
+        await RetryS3Async(() =>
+        {
+            if (content.CanSeek) content.Position = 0; // Reset stream for each retry attempt
+            return s3.PutObjectAsync(request, ct);
+        }, ct);
+
+        return BuildPublicUrl(key);
+    }
+
+    /// <summary>
     /// Uploads an image and returns its public URL.
     /// </summary>
     public async Task<string> UploadImageAsync(Stream content, string fileName, string contentType, CancellationToken ct = default)
@@ -89,26 +127,77 @@ public class ImageStorageService(IOptions<ImageStorageOptions> options, ILogger<
             CannedACL = S3CannedACL.PublicRead,
         };
 
-        await s3.PutObjectAsync(request, ct);
+        await RetryS3Async(() =>
+        {
+            if (content.CanSeek) content.Position = 0; // Reset stream for each retry attempt
+            return s3.PutObjectAsync(request, ct);
+        }, ct);
 
         return BuildPublicUrl(key);
     }
 
     private async Task EnsureBucketExistsAsync(IAmazonS3 s3, CancellationToken ct)
     {
-        try
+        const int maxAttempts = 5;
+        Exception? lastEx = null;
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
-            await s3.PutBucketAsync(new PutBucketRequest
+            try
             {
-                BucketName = _opts.BucketName,
-                UseClientRegion = true,
-            }, ct);
-            logger.LogInformation("Created S3 bucket '{Bucket}'", _opts.BucketName);
+                await s3.PutBucketAsync(new PutBucketRequest
+                {
+                    BucketName = _opts.BucketName,
+                    UseClientRegion = true,
+                    ObjectOwnership = ObjectOwnership.ObjectWriter, // Allow CannedACL on objects (LocalStack 4.x and AWS S3 default to BucketOwnerEnforced which disables ACLs)
+                }, ct);
+                logger.LogInformation("Created S3 bucket '{Bucket}'", _opts.BucketName);
+                return;
+            }
+            catch (AmazonS3Exception ex) when (ex.ErrorCode is "BucketAlreadyOwnedByYou" or "BucketAlreadyExists")
+            {
+                // Bucket already exists — nothing to do
+                return;
+            }
+            catch (Exception ex) when (attempt < maxAttempts - 1)
+            {
+                lastEx = ex;
+                var delay = TimeSpan.FromSeconds(attempt + 1);
+                logger.LogWarning(ex, "S3 bucket creation attempt {Attempt}/{Max} failed, retrying in {Delay}s", attempt + 1, maxAttempts, delay.TotalSeconds);
+                await Task.Delay(delay, ct);
+            }
+            catch (Exception ex)
+            {
+                lastEx = ex;
+            }
         }
-        catch (AmazonS3Exception ex) when (ex.ErrorCode is "BucketAlreadyOwnedByYou" or "BucketAlreadyExists")
+        throw new InvalidOperationException($"Failed to ensure S3 bucket '{_opts.BucketName}' after {maxAttempts} attempts.", lastEx);
+    }
+
+    /// <summary>Retries an S3 operation up to 3 times on transient failures.</summary>
+    private async Task RetryS3Async(Func<Task> operation, CancellationToken ct)
+    {
+        const int maxAttempts = 3;
+        Exception? lastEx = null;
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
-            // Bucket already exists — nothing to do
+            try
+            {
+                await operation();
+                return;
+            }
+            catch (Exception ex) when (attempt < maxAttempts - 1)
+            {
+                lastEx = ex;
+                var delay = TimeSpan.FromSeconds(attempt + 1);
+                logger.LogWarning(ex, "S3 operation attempt {Attempt}/{Max} failed, retrying in {Delay}s", attempt + 1, maxAttempts, delay.TotalSeconds);
+                await Task.Delay(delay, ct);
+            }
+            catch (Exception ex)
+            {
+                lastEx = ex;
+            }
         }
+        throw new InvalidOperationException($"S3 operation failed after {maxAttempts} attempts.", lastEx);
     }
 
     private string BuildPublicUrl(string key)
