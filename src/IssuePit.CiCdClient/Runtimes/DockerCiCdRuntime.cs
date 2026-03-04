@@ -281,7 +281,7 @@ public partial class DockerCiCdRuntime(
             binds.Add($"{cacheVolumePath}:/var/lib/docker");
             await onLogLine($"[DEBUG] DinD cache vol : {cacheVolumePath}:/var/lib/docker", LogStream.Stdout);
         }
-
+        
         if (effectiveCacheStrategy == DindImageCacheStrategy.RegistryMirror)
         {
             var mirrorPort = int.TryParse(configuration["CiCd__Docker__RegistryMirrorPort"], out var p) ? p : DefaultRegistryMirrorPort;
