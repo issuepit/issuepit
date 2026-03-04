@@ -13,13 +13,24 @@
           {{ store.filteredIssues.length }}
         </span>
       </div>
-      <button @click="showCreate = true"
-        class="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-        </svg>
-        New Issue
-      </button>
+      <div class="flex items-center gap-2">
+        <button @click="showVoiceCreate = true"
+          class="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          title="Create issue from voice">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 016 0v6a3 3 0 01-3 3z" />
+          </svg>
+          Voice
+        </button>
+        <button @click="showCreate = true"
+          class="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          New Issue
+        </button>
+      </div>
     </div>
 
     <!-- Filters -->
@@ -164,6 +175,73 @@
         </div>
       </div>
     </div>
+    <!-- Voice Create Modal -->
+    <div v-if="showVoiceCreate"
+      class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-lg p-6 shadow-xl">
+        <h2 class="text-lg font-bold text-white mb-5">Create Issue from Voice</h2>
+
+        <!-- Recording controls -->
+        <div class="flex flex-col items-center gap-4 mb-5">
+          <!-- Mic button -->
+          <button
+            v-if="!voice.recording.value && !voice.uploading.value && !voice.transcription.value"
+            @click="startVoiceRecording"
+            class="w-16 h-16 rounded-full bg-brand-600 hover:bg-brand-700 flex items-center justify-center transition-colors shadow-lg">
+            <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 016 0v6a3 3 0 01-3 3z" />
+            </svg>
+          </button>
+          <p v-if="!voice.recording.value && !voice.uploading.value && !voice.transcription.value"
+            class="text-sm text-gray-400">Click to start recording</p>
+
+          <!-- Recording indicator -->
+          <div v-if="voice.recording.value" class="flex flex-col items-center gap-3">
+            <div class="relative w-16 h-16">
+              <div class="absolute inset-0 rounded-full bg-red-500/20 animate-ping"></div>
+              <button @click="stopVoiceRecording"
+                class="relative w-16 h-16 rounded-full bg-red-600 hover:bg-red-700 flex items-center justify-center transition-colors shadow-lg">
+                <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
+                  <rect x="6" y="6" width="12" height="12" rx="1" />
+                </svg>
+              </button>
+            </div>
+            <p class="text-sm text-red-400 font-medium">Recording… click to stop</p>
+          </div>
+
+          <!-- Uploading / transcribing indicator -->
+          <div v-if="voice.uploading.value" class="flex flex-col items-center gap-2">
+            <div class="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
+            <p class="text-sm text-gray-400">Transcribing…</p>
+          </div>
+        </div>
+
+        <!-- Transcription result -->
+        <div v-if="voice.transcription.value || voiceRecordingDone" class="space-y-3 mb-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Transcription (editable)</label>
+            <textarea v-model="voice.transcription.value" rows="4" placeholder="Transcription will appear here…"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"></textarea>
+          </div>
+        </div>
+
+        <!-- Error -->
+        <p v-if="voice.error.value" class="text-sm text-red-400 mb-4">{{ voice.error.value }}</p>
+
+        <!-- Actions -->
+        <div class="flex gap-3">
+          <button v-if="voice.transcription.value" @click="submitVoiceCreate"
+            class="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
+            Create Issue
+          </button>
+          <button @click="closeVoiceModal"
+            class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 rounded-lg transition-colors">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -178,11 +256,46 @@ const store = useIssuesStore()
 const milestonesStore = useMilestonesStore()
 
 const showCreate = ref(false)
+const showVoiceCreate = ref(false)
+const voiceRecordingDone = ref(false)
 const search = ref('')
 const filterStatus = ref<IssueStatus | ''>('')
 const filterPriority = ref<IssuePriority | ''>('')
 const filterType = ref<IssueType | ''>('')
 const filterMilestone = ref<string>('')
+
+const voice = useVoiceRecorder()
+
+async function startVoiceRecording() {
+  voiceRecordingDone.value = false
+  await voice.startRecording()
+}
+
+async function stopVoiceRecording() {
+  const wavBlob = voice.stopRecording()
+  voiceRecordingDone.value = true
+  if (wavBlob) {
+    await voice.uploadRecording(wavBlob)
+  }
+}
+
+async function submitVoiceCreate() {
+  const title = `Voice Issue - ${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+  await store.createIssue(id, {
+    title,
+    body: voice.transcription.value,
+    status: IssueStatus.Todo,
+    priority: IssuePriority.Medium,
+    type: IssueType.Issue,
+  })
+  closeVoiceModal()
+}
+
+function closeVoiceModal() {
+  voice.reset()
+  voiceRecordingDone.value = false
+  showVoiceCreate.value = false
+}
 
 const form = reactive({
   title: '',

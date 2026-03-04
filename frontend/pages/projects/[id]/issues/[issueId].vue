@@ -142,17 +142,24 @@
                 <span>{{ sub.title }}</span>
               </NuxtLink>
             </div>
-            <!-- Create sub-issue -->
-            <div v-if="!creatingSubIssue">
+            <!-- Add sub-issue actions -->
+            <div v-if="!creatingSubIssue && !linkingSubIssue" class="flex gap-3">
               <button @click="creatingSubIssue = true"
                 class="text-xs text-gray-500 hover:text-brand-400 transition-colors flex items-center gap-1">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
                 </svg>
-                Add sub-issue
+                Create sub-issue
+              </button>
+              <button @click="linkingSubIssue = true; subIssueSearch = ''"
+                class="text-xs text-gray-500 hover:text-brand-400 transition-colors flex items-center gap-1">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
+                Link existing issue
               </button>
             </div>
-            <div v-else class="flex gap-2">
+            <div v-else-if="creatingSubIssue" class="flex gap-2">
               <input v-model="newSubIssueTitle" @keyup.enter="createSubIssue" @keyup.escape="creatingSubIssue = false"
                 type="text" placeholder="Sub-issue title..." autofocus
                 class="flex-1 bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-brand-500" />
@@ -160,6 +167,17 @@
                 class="text-xs bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-2.5 py-1.5 rounded transition-colors">Create</button>
               <button @click="creatingSubIssue = false"
                 class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-2.5 py-1.5 rounded transition-colors">Cancel</button>
+            </div>
+            <!-- Link existing issue as sub-issue -->
+            <div v-else-if="linkingSubIssue" class="space-y-2">
+              <IssueSearchPicker
+                v-model="subIssueSearch"
+                :issues="allOrgIssues"
+                :current-project-id="id"
+                placeholder="Search issue to link as sub-issue..."
+                @select="linkAsSubIssue"
+                @cancel="linkingSubIssue = false; subIssueSearch = ''"
+              />
             </div>
           </div>
 
@@ -185,7 +203,7 @@
               </div>
             </div>
             <div v-if="!addingLink">
-              <button @click="addingLink = true"
+              <button @click="addingLink = true; linkSearch = ''"
                 class="text-xs text-gray-500 hover:text-brand-400 transition-colors flex items-center gap-1">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -198,17 +216,14 @@
                 class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500">
                 <option v-for="(label, val) in IssueLinkTypeLabels" :key="val" :value="val">{{ label }}</option>
               </select>
-              <select v-model="linkTargetIssueId"
-                class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500">
-                <option value="">Select issue...</option>
-                <option v-for="i in allOrgIssues" :key="i.id" :value="i.id">{{ i.projectName ? `[${i.projectName}] ` : '' }}#{{ i.number }} {{ i.title }}</option>
-              </select>
-              <div class="flex gap-2">
-                <button @click="submitAddLink" :disabled="!linkTargetIssueId"
-                  class="text-xs bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-2.5 py-1.5 rounded transition-colors">Add</button>
-                <button @click="addingLink = false; linkTargetIssueId = ''"
-                  class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-2.5 py-1.5 rounded transition-colors">Cancel</button>
-              </div>
+              <IssueSearchPicker
+                v-model="linkSearch"
+                :issues="allOrgIssues"
+                :current-project-id="id"
+                placeholder="Search issue to link..."
+                @select="onLinkIssueSelected"
+                @cancel="addingLink = false; linkTargetIssueId = ''; linkSearch = ''"
+              />
             </div>
           </div>
 
@@ -563,8 +578,13 @@ const totalCommentsCount = computed(() =>
 // Links
 const addingLink = ref(false)
 const linkTargetIssueId = ref('')
+const linkSearch = ref('')
 const linkType = ref<IssueLinkType>(IssueLinkType.LinkedTo)
 const allOrgIssues = ref<Array<{ id: string; number: number; title: string; projectId: string; projectName?: string }>>([])
+
+// Sub-issue linking
+const linkingSubIssue = ref(false)
+const subIssueSearch = ref('')
 
 // All tenant users for assignee browsing
 const tenantUsers = ref<Array<{ id: string; username: string }>>([])
@@ -729,7 +749,20 @@ async function submitAddLink() {
   await store.addLink(issueId, linkTargetIssueId.value, linkType.value)
   addingLink.value = false
   linkTargetIssueId.value = ''
+  linkSearch.value = ''
   linkType.value = IssueLinkType.LinkedTo
+}
+
+async function onLinkIssueSelected(issue: { id: string }) {
+  linkTargetIssueId.value = issue.id
+  await submitAddLink()
+}
+
+async function linkAsSubIssue(issue: { id: string }) {
+  await store.updateIssue(id, issue.id, { parentIssueId: issueId })
+  linkingSubIssue.value = false
+  subIssueSearch.value = ''
+  await store.fetchIssue(id, issueId)
 }
 
 async function createSubIssue() {  if (!newSubIssueTitle.value.trim() || !store.currentIssue) return

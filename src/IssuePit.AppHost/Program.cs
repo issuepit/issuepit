@@ -20,7 +20,8 @@ var redis = builder.AddValkey("redis")
 // Open source (Apache 2.0). S3 endpoint: http://localstack:4566
 var storage = builder.AddContainer("localstack", "localstack/localstack", "4.3")
     .WithEnvironment("SERVICES", "s3")
-    .WithHttpEndpoint(targetPort: 4566, name: "http");
+    .WithHttpEndpoint(targetPort: 4566, name: "http")
+    .WithHttpHealthCheck("/_localstack/health");
 
 // Pull-through Docker registry mirror for DinD CI/CD containers.
 // Acts as a local cache for Docker Hub pulls, shared across all CI/CD runs.
@@ -69,6 +70,7 @@ var api = builder.AddProject<Projects.IssuePit_Api>("api")
     .WaitForCompletion(kafkaInitializer)
     .WaitFor(kafka)
     .WaitFor(redis)
+    .WaitFor(storage)
     .WithHttpHealthCheck("/health", endpointName: "http")
     .WithEnvironment("AllowedOrigins", frontend.GetEndpoint("http"))
     .WithEnvironment("GitHub__OAuth__FrontendUrl", frontend.GetEndpoint("http"))
