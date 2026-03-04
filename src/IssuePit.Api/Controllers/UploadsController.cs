@@ -5,7 +5,7 @@ namespace IssuePit.Api.Controllers;
 
 [ApiController]
 [Route("api/uploads")]
-public class UploadsController(ImageStorageService imageStorage, VoiceTranscriptionService voiceTranscription, TenantContext tenantContext) : ControllerBase
+public class UploadsController(ImageStorageService imageStorage, VoiceTranscriptionService voiceTranscription, TenantContext tenantContext, ILogger<UploadsController> logger) : ControllerBase
 {
     private static readonly string[] AllowedContentTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
     private static readonly string[] AllowedVoiceContentTypes = ["audio/wav", "audio/wave", "audio/x-wav"];
@@ -56,11 +56,29 @@ public class UploadsController(ImageStorageService imageStorage, VoiceTranscript
         ms.Position = 0;
 
         // Upload to S3/B2
-        var voiceUrl = await imageStorage.UploadFileAsync(ms, file.FileName, file.ContentType, "voice", ct);
+        string voiceUrl;
+        try
+        {
+            voiceUrl = await imageStorage.UploadFileAsync(ms, file.FileName, file.ContentType, "voice", ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Voice file upload to S3 failed");
+            var msg = ex.InnerException is null ? ex.Message : $"{ex.Message} | {ex.InnerException.GetType().Name}: {ex.InnerException.Message}";
+            return StatusCode(500, new { error = ex.GetType().Name, message = msg });
+        }
 
-        // Transcribe
-        ms.Position = 0;
-        var transcription = await voiceTranscription.TranscribeAsync(ms, ct);
+        // Transcribe — best-effort; a failure here must not prevent the upload from succeeding
+        var transcription = string.Empty;
+        try
+        {
+            ms.Position = 0;
+            transcription = await voiceTranscription.TranscribeAsync(ms, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Voice transcription failed; returning empty transcription");
+        }
 
         return Ok(new { voiceUrl, transcription });
     }

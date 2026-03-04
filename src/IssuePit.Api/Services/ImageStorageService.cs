@@ -87,7 +87,11 @@ public class ImageStorageService(IOptions<ImageStorageOptions> options, ILogger<
             ContentType = contentType,
         };
 
-        await RetryS3Async(() => s3.PutObjectAsync(request, ct), ct);
+        await RetryS3Async(() =>
+        {
+            if (content.CanSeek) content.Position = 0; // Reset stream for each retry attempt
+            return s3.PutObjectAsync(request, ct);
+        }, ct);
 
         return BuildPublicUrl(key);
     }
@@ -123,7 +127,11 @@ public class ImageStorageService(IOptions<ImageStorageOptions> options, ILogger<
             CannedACL = S3CannedACL.PublicRead,
         };
 
-        await RetryS3Async(() => s3.PutObjectAsync(request, ct), ct);
+        await RetryS3Async(() =>
+        {
+            if (content.CanSeek) content.Position = 0; // Reset stream for each retry attempt
+            return s3.PutObjectAsync(request, ct);
+        }, ct);
 
         return BuildPublicUrl(key);
     }

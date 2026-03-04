@@ -63,8 +63,12 @@ public class VoiceIssueTests : IAsyncLifetime
 
         var response = await client.PostAsync("/api/uploads/voice", content);
 
+        // Read the body first so we can include it in the failure message for easier debugging
+        var rawBody = await response.Content.ReadAsStringAsync();
+        if (response.StatusCode != HttpStatusCode.OK)
+            Console.WriteLine($"[Voice Upload] Failed with {response.StatusCode}: {rawBody}");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var body = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var body = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(rawBody);
         Assert.True(body.TryGetProperty("voiceUrl", out _), "Response must contain 'voiceUrl'");
         Assert.True(body.TryGetProperty("transcription", out _), "Response must contain 'transcription'");
     }
