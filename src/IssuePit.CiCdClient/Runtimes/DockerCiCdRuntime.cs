@@ -368,6 +368,15 @@ public partial class DockerCiCdRuntime(
                             onLogLine,
                             cancellationToken);
                     }
+
+                    // Best-effort: run actionlint on all workflow files in the container after clone.
+                    // Output is streamed to the run log. Never aborts the run.
+                    await ExecShellAsync(
+                        container.ID,
+                        "command -v actionlint > /dev/null 2>&1 && [ -d /workspace/.github/workflows ] && " +
+                        "{ echo '[ACTIONLINT] Validating workflows...'; actionlint -color=false /workspace/.github/workflows/*.yml 2>&1 || true; }",
+                        onLogLine,
+                        cancellationToken);
                 }
 
                 // Step: Write actrc to suppress the interactive image-selection prompt.
