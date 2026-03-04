@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { CiCdRun, CiCdRunLog, CiCdTestSuite, AgentSession, AgentSessionDetail, AgentSessionLog, DashboardAgentSession, WorkflowGraph, WorkflowInfo } from '~/types'
+import type { CiCdRun, CiCdRunLog, CiCdTestSuite, CiCdArtifact, AgentSession, AgentSessionDetail, AgentSessionLog, DashboardAgentSession, WorkflowGraph, WorkflowInfo } from '~/types'
 
 export const useCiCdRunsStore = defineStore('cicdRuns', () => {
   const runs = ref<CiCdRun[]>([])
@@ -10,6 +10,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
   const currentRunGraph = ref<WorkflowGraph | null>(null)
   const currentRunGraphError = ref<string | null>(null)
   const currentRunTestSuites = ref<CiCdTestSuite[]>([])
+  const currentRunArtifacts = ref<CiCdArtifact[]>([])
   const currentSession = ref<AgentSessionDetail | null>(null)
   const currentSessionLogs = ref<AgentSessionLog[]>([])
   const loading = ref(false)
@@ -74,6 +75,15 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
       currentRunTestSuites.value = await api.get<CiCdTestSuite[]>(`/api/cicd-runs/${runId}/test-results`)
     } catch {
       currentRunTestSuites.value = []
+    }
+  }
+
+  /** Fetches artifacts produced by the given run. */
+  async function fetchArtifacts(runId: string) {
+    try {
+      currentRunArtifacts.value = await api.get<CiCdArtifact[]>(`/api/cicd-runs/${runId}/artifacts`)
+    } catch {
+      currentRunArtifacts.value = []
     }
   }
 
@@ -168,6 +178,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     currentRunGraph,
     currentRunGraphError,
     currentRunTestSuites,
+    currentRunArtifacts,
     currentSession,
     currentSessionLogs,
     loading,
@@ -176,6 +187,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     fetchRun,
     fetchRunOnly,
     fetchTestResults,
+    fetchArtifacts,
     fetchAgentSessions,
     fetchAgentSession,
     retryRun,

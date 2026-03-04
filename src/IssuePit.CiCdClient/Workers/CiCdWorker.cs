@@ -266,6 +266,9 @@ public class CiCdWorker(
             // Collect and store test results from any .trx files produced during the run.
             await ParseAndStoreTestResultsAsync(run.Id, artifactDir, db, stoppingToken);
 
+            // Record artifact metadata before cleanup so the UI can display what was produced.
+            await ParseAndStoreArtifactsAsync(run.Id, artifactDir, db, stoppingToken);
+
             // Parse workflow graph from workflow files copied during the clone step.
             await ParseAndStoreWorkflowGraphAsync(run.Id, artifactDir, db, stoppingToken);
 
@@ -316,6 +319,64 @@ public class CiCdWorker(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to collect test results for run {RunId}", runId);
+        }
+    }
+
+    /// <summary>
+    /// Scans <paramref name="artifactDir"/> for artifact directories (top-level subdirectories
+    /// excluding <c>_workflows</c>), records their names and sizes as <see cref="CiCdArtifact"/>
+    /// rows linked to the given run. Best-effort: errors are logged but never propagated.
+    /// </summary>
+    private async Task ParseAndStoreArtifactsAsync(
+        Guid runId,
+        string artifactDir,
+        IssuePitDbContext db,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (!Directory.Exists(artifactDir)) return;
+
+            // Top-level subdirectories in the artifact server path are the artifact names.
+            // The act artifact server nests files under: <artifactName>/<runNumber>/<files>.
+            // We exclude _workflows (internal) and hidden directories.
+            var artifactDirs = Directory.GetDirectories(artifactDir)
+                .Where(d =>
+                {
+                    var name = Path.GetFileName(d);
+                    return !string.IsNullOrEmpty(name) && name != "_workflows" && !name.StartsWith('.');
+                })
+                .ToList();
+
+            if (artifactDirs.Count == 0) return;
+
+            foreach (var dir in artifactDirs)
+            {
+                var name = Path.GetFileName(dir);
+                var files = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).ToList();
+                var sizeBytes = files.Sum(f =>
+                {
+                    try { return new FileInfo(f).Length; }
+                    catch { return 0L; }
+                });
+
+                db.CiCdArtifacts.Add(new CiCdArtifact
+                {
+                    Id = Guid.NewGuid(),
+                    CiCdRunId = runId,
+                    Name = name,
+                    SizeBytes = sizeBytes,
+                    FileCount = files.Count,
+                    CreatedAt = DateTime.UtcNow,
+                });
+            }
+
+            await db.SaveChangesAsync(cancellationToken);
+            logger.LogInformation("Stored {Count} artifact(s) for run {RunId}", artifactDirs.Count, runId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to collect artifacts for run {RunId}", runId);
         }
     }
 

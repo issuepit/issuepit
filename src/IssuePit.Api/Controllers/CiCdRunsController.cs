@@ -152,6 +152,33 @@ public class CiCdRunsController(
     }
 
     /// <summary>
+    /// Returns artifacts produced by the given run (name, size, file count).
+    /// </summary>
+    [HttpGet("{id:guid}/artifacts")]
+    public async Task<IActionResult> GetArtifacts(Guid id)
+    {
+        var runExists = await db.CiCdRuns
+            .AnyAsync(r => r.Id == id && r.Project.Organization.TenantId == tenant.CurrentTenant!.Id);
+
+        if (!runExists) return NotFound();
+
+        var artifacts = await db.CiCdArtifacts
+            .Where(a => a.CiCdRunId == id)
+            .OrderBy(a => a.Name)
+            .Select(a => new
+            {
+                a.Id,
+                a.Name,
+                a.SizeBytes,
+                a.FileCount,
+                a.CreatedAt,
+            })
+            .ToListAsync();
+
+        return Ok(artifacts);
+    }
+
+    /// <summary>
     /// Returns the workflow job graph (nodes and dependency edges) for the given run.
     /// First returns the pre-computed graph stored in the DB (if available), then falls back to
     /// parsing the workflow YAML from the workspace. Returns 404 when no graph data can be found.
