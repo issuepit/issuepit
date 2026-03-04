@@ -44,6 +44,17 @@
 
     <!-- CI/CD Runs -->
     <template v-else-if="activeTab === 'CI/CD Runs'">
+      <div class="flex justify-end mb-3">
+        <button @click="triggerModal.open = true"
+          class="flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Trigger Run
+        </button>
+      </div>
       <div v-if="store.runs.length" class="rounded-xl border border-gray-800 overflow-hidden">
         <table class="w-full text-sm">
           <thead class="bg-gray-900">
@@ -161,6 +172,15 @@
     </template>
 
     <ErrorBox :error="store.error" />
+
+    <!-- Trigger CI/CD modal -->
+    <TriggerCiCdModal
+      v-if="triggerModal.open"
+      :project-id="id"
+      :commit-sha="triggerModal.commitSha"
+      @close="triggerModal.open = false"
+      @triggered="onRunTriggered"
+    />
   </div>
 </template>
 
@@ -174,6 +194,13 @@ const id = route.params.id as string
 const store = useCiCdRunsStore()
 const tabs = ['CI/CD Runs', 'Agent Runs'] as const
 const activeTab = ref<typeof tabs[number]>(route.query.tab === 'agent' ? 'Agent Runs' : 'CI/CD Runs')
+
+const triggerModal = reactive({ open: false, commitSha: '' })
+
+function onRunTriggered() {
+  triggerModal.open = false
+  store.fetchRuns(id)
+}
 
 const { connection, isConnected, connect } = useSignalR('/hubs/project')
 

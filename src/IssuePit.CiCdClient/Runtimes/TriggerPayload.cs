@@ -36,4 +36,6 @@ public record TriggerPayload(
     /// When set, the container clones this Git repository URL to <c>/workspace</c> before running act.
     /// This allows running CI/CD without a host volume mount.
     /// </summary>
-    string? GitRepoUrl = null);
+    string? GitRepoUrl = null,
+    /// <summary>Key-value input pairs passed as <c>--input</c> arguments to <c>act</c> (for workflow_dispatch events).</summary>
+    IReadOnlyDictionary<string, string>? Inputs = null);

@@ -27,6 +27,23 @@ public record WorkflowJobNode(
 /// <summary>A directed edge from one job to another (dependency: <see cref="From"/> must complete before <see cref="To"/>).</summary>
 public record WorkflowEdge(string From, string To);
 
+/// <summary>An input parameter defined in a <c>workflow_dispatch</c> trigger.</summary>
+public record WorkflowInput(
+    string Name,
+    string? Description,
+    string? Default,
+    bool Required,
+    /// <summary>One of: string, choice, boolean, environment, number.</summary>
+    string Type,
+    /// <summary>Valid options for <c>type: choice</c> inputs.</summary>
+    IReadOnlyList<string>? Options = null);
+
+/// <summary>Summary of a single workflow file: its triggers and (if any) workflow_dispatch inputs.</summary>
+public record WorkflowInfo(
+    string FileName,
+    IReadOnlyList<string> Triggers,
+    IReadOnlyList<WorkflowInput> DispatchInputs);
+
 /// <summary>Full graph of workflow jobs and their dependencies.</summary>
 public record WorkflowGraph(
     IReadOnlyList<WorkflowJobNode> Jobs,
@@ -374,6 +391,117 @@ public static class WorkflowGraphParser
         {
             return [];
         }
+    }
+
+    /// <summary>
+    /// Parses the <c>workflow_dispatch.inputs</c> section of a workflow YAML and returns the defined inputs.
+    /// Returns an empty list when the section is absent, the workflow has no <c>workflow_dispatch</c> trigger,
+    /// or the YAML is malformed.
+    /// </summary>
+    public static IReadOnlyList<WorkflowInput> ParseWorkflowDispatchInputs(string? yamlContent)
+    {
+        if (string.IsNullOrWhiteSpace(yamlContent))
+            return [];
+
+        try
+        {
+            var yaml = new YamlStream();
+            yaml.Load(new StringReader(yamlContent));
+
+            if (yaml.Documents.Count == 0 || yaml.Documents[0].RootNode is not YamlMappingNode root)
+                return [];
+
+            var onNode = root.Children
+                .FirstOrDefault(kv => kv.Key is YamlScalarNode k && k.Value == "on")
+                .Value;
+
+            if (onNode is not YamlMappingNode onMap)
+                return [];
+
+            var dispatchNode = GetChildNode(onMap, "workflow_dispatch");
+            if (dispatchNode is not YamlMappingNode dispatchMap)
+                return [];
+
+            var inputsNode = GetChildNode(dispatchMap, "inputs");
+            if (inputsNode is not YamlMappingNode inputsMap)
+                return [];
+
+            var inputs = new List<WorkflowInput>();
+            foreach (var kv in inputsMap.Children)
+            {
+                if (kv.Key is not YamlScalarNode nameNode || nameNode.Value is null)
+                    continue;
+
+                var name = nameNode.Value;
+                var inputDef = kv.Value as YamlMappingNode;
+
+                string? description = null;
+                string? defaultValue = null;
+                string type = "string";
+                bool required = false;
+                List<string>? options = null;
+
+                if (inputDef is not null)
+                {
+                    TryGetScalar(inputDef, "description", out description);
+                    TryGetScalar(inputDef, "default", out defaultValue);
+                    if (TryGetScalar(inputDef, "type", out var typeVal) && typeVal is not null)
+                        type = typeVal;
+                    if (TryGetScalar(inputDef, "required", out var reqVal))
+                        required = reqVal is "true";
+
+                    // Parse choice options
+                    var optionsNode = GetChildNode(inputDef, "options");
+                    if (optionsNode is YamlSequenceNode optSeq)
+                    {
+                        options = [];
+                        foreach (var opt in optSeq)
+                        {
+                            if (opt is YamlScalarNode optScalar && optScalar.Value is not null)
+                                options.Add(optScalar.Value);
+                        }
+                    }
+                }
+
+                inputs.Add(new WorkflowInput(name, description, defaultValue, required, type, options));
+            }
+
+            return inputs;
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Reads all workflow files in <paramref name="workflowsDir"/> and returns a <see cref="WorkflowInfo"/>
+    /// for each file, containing its filename, event triggers, and (if applicable) <c>workflow_dispatch</c> inputs.
+    /// Returns an empty list when the directory does not exist or contains no workflow files.
+    /// </summary>
+    public static async Task<IReadOnlyList<WorkflowInfo>> ParseWorkflowInfosAsync(
+        string workflowsDir, CancellationToken cancellationToken = default)
+    {
+        if (!Directory.Exists(workflowsDir))
+            return [];
+
+        var files = Directory
+            .EnumerateFiles(workflowsDir, "*.yml")
+            .Concat(Directory.EnumerateFiles(workflowsDir, "*.yaml"))
+            .OrderBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var result = new List<WorkflowInfo>();
+        foreach (var filePath in files)
+        {
+            var yamlContent = await System.IO.File.ReadAllTextAsync(filePath, cancellationToken);
+            var fileName = Path.GetFileName(filePath);
+            var triggers = ParseTriggers(yamlContent);
+            var dispatchInputs = ParseWorkflowDispatchInputs(yamlContent);
+            result.Add(new WorkflowInfo(fileName, triggers, dispatchInputs));
+        }
+
+        return result;
     }
 
     /// <summary>
