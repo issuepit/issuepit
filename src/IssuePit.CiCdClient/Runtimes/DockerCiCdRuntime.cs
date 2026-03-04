@@ -105,6 +105,33 @@ public partial class DockerCiCdRuntime(
                 actBinAndArgs.Add(a);
         }
 
+        // Package cache: mount named volumes inside the act container so job containers can reuse
+        // cached npm and NuGet packages across CI/CD runs (avoiding repeated network downloads).
+        // The outer container exposes the cache directories; act passes them to each job container
+        // via --volume so the inner dockerd (DinD) mounts them from the outer container's filesystem.
+        var npmCacheVolume = configuration["CiCd__NpmCacheVolume"];
+        var nugetCacheVolume = configuration["CiCd__NuGetCacheVolume"];
+        var npmCacheUrl = configuration["CiCd__NpmCacheUrl"];
+
+        const string ContainerNpmCachePath = "/cache/npm";
+        const string ContainerNuGetCachePath = "/cache/nuget";
+
+        if (!string.IsNullOrWhiteSpace(npmCacheVolume))
+        {
+            actBinAndArgs.Add("--volume");
+            actBinAndArgs.Add($"{ContainerNpmCachePath}:/root/.npm");
+        }
+        if (!string.IsNullOrWhiteSpace(npmCacheUrl))
+        {
+            actBinAndArgs.Add("--env");
+            actBinAndArgs.Add($"NPM_CONFIG_REGISTRY={npmCacheUrl}");
+        }
+        if (!string.IsNullOrWhiteSpace(nugetCacheVolume))
+        {
+            actBinAndArgs.Add("--volume");
+            actBinAndArgs.Add($"{ContainerNuGetCachePath}:/root/.nuget/packages");
+        }
+
         var containerName = BuildContainerName(run);
 
         // Read the act runner image that is injected into actrc to prevent the interactive
@@ -139,6 +166,12 @@ public partial class DockerCiCdRuntime(
         if (trigger.NoDind) await onLogLine($"[DEBUG] DinD           : disabled", LogStream.Stdout);
         else await onLogLine($"[DEBUG] DinD           : isolated (Privileged=true, in-container dockerd)", LogStream.Stdout);
         if (trigger.NoVolumeMounts) await onLogLine($"[DEBUG] Volume mounts  : disabled", LogStream.Stdout);
+        if (!string.IsNullOrWhiteSpace(npmCacheVolume))
+            await onLogLine($"[DEBUG] npm cache vol  : {npmCacheVolume}:{ContainerNpmCachePath} (outer container mount, passed to job containers via act --volume)", LogStream.Stdout);
+        if (!string.IsNullOrWhiteSpace(npmCacheUrl))
+            await onLogLine($"[DEBUG] npm registry   : {npmCacheUrl}", LogStream.Stdout);
+        if (!string.IsNullOrWhiteSpace(nugetCacheVolume))
+            await onLogLine($"[DEBUG] NuGet cache vol: {nugetCacheVolume}:{ContainerNuGetCachePath} (outer container mount, passed to job containers via act --volume)", LogStream.Stdout);
         if (!string.IsNullOrWhiteSpace(trigger.CustomEntrypoint))
             await onLogLine($"[DEBUG] Entrypoint     : {trigger.CustomEntrypoint}", LogStream.Stdout);
 
@@ -229,6 +262,14 @@ public partial class DockerCiCdRuntime(
             await onLogLine($"[DEBUG] Artifact mount : {trigger.ArtifactServerPath}:{ContainerArtifactPath}", LogStream.Stdout);
         }
 
+        // Mount named Docker volumes for package caches so their contents persist across CI/CD runs.
+        // The paths inside the container match what act's job containers (DinD) will bind-mount
+        // via the --volume flags already appended to actBinAndArgs above.
+        if (!string.IsNullOrWhiteSpace(npmCacheVolume))
+            binds.Add($"{npmCacheVolume}:{ContainerNpmCachePath}");
+        if (!string.IsNullOrWhiteSpace(nugetCacheVolume))
+            binds.Add($"{nugetCacheVolume}:{ContainerNuGetCachePath}");
+        
         // Apply the DinD image cache strategy: add volume mounts and/or start the registry mirror.
         string? registryMirrorUrl = null;
         var extraHosts = new List<string>();
@@ -240,7 +281,7 @@ public partial class DockerCiCdRuntime(
             binds.Add($"{cacheVolumePath}:/var/lib/docker");
             await onLogLine($"[DEBUG] DinD cache vol : {cacheVolumePath}:/var/lib/docker", LogStream.Stdout);
         }
-
+        
         if (effectiveCacheStrategy == DindImageCacheStrategy.RegistryMirror)
         {
             var mirrorPort = int.TryParse(configuration["CiCd__Docker__RegistryMirrorPort"], out var p) ? p : DefaultRegistryMirrorPort;

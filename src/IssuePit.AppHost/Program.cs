@@ -16,6 +16,13 @@ var kafka = builder.AddKafka("kafka")
 var redis = builder.AddValkey("redis")
     .WithImage("valkey/valkey", "9.0");
 
+// npm package cache (Verdaccio proxy): caches npm packages across CI/CD runs to speed up builds.
+// Packages are fetched from the upstream registry on first request and served locally thereafter.
+var npmCache = builder.AddContainer("npm-cache", "verdaccio/verdaccio", "6")
+    .WithHttpEndpoint(targetPort: 4873, name: "http")
+    .WithVolume("verdaccio-storage", "/verdaccio/storage")
+    .WithBindMount("../../docker/verdaccio/config.yaml", "/verdaccio/conf/config.yaml", isReadOnly: true);
+
 // LocalStack provides local AWS services (S3 for image uploads).
 // Open source (Apache 2.0). S3 endpoint: http://localstack:4566
 var storage = builder.AddContainer("localstack", "localstack/localstack", "4.3")
@@ -108,6 +115,7 @@ var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     .WaitFor(kafka)
     .WaitFor(redis)
     .WaitFor(registryMirror)
+    .WithEnvironment("CiCd__NpmCacheUrl", npmCache.GetEndpoint("http"))
     .WithHttpHealthCheck("/health", endpointName: "http");
 
 frontend

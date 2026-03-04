@@ -1,0 +1,29 @@
+# Verdaccio configuration for npm package proxy/cache.
+# Packages are fetched from the upstream npmjs registry on first request
+# and stored in the persistent volume so subsequent requests are served locally.
+
+storage: /verdaccio/storage
+
+auth:
+  htpasswd:
+    file: /verdaccio/conf/htpasswd
+    # Disable self-registration; this instance is read-only proxy only.
+    max_users: -1
+
+uplinks:
+  npmjs:
+    url: https://registry.npmjs.org/
+    timeout: 60s
+    maxage: 10m
+
+packages:
+  '**':
+    # All packages are publicly accessible (no auth required for reads).
+    access: $all
+    # Proxy all package requests to the upstream npm registry.
+    proxy: npmjs
+
+log:
+  type: stdout
+  format: pretty
+  level: warn
