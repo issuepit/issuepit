@@ -113,6 +113,8 @@ public partial class DockerCiCdRuntime(
         await onLogLine($"[DEBUG] Command        : {string.Join(' ', actCmd)}", LogStream.Stdout);
         if (hasGitRepo)
             await onLogLine($"[DEBUG] Git repo URL   : {trigger.GitRepoUrl}", LogStream.Stdout);
+        else if (!string.IsNullOrWhiteSpace(workspacePath))
+            await onLogLine($"[DEBUG] Workspace      : {workspacePath}", LogStream.Stdout);
         if (!trigger.NoVolumeMounts && !hasGitRepo)
             await onLogLine($"[DEBUG] Mount          : {workspacePath}:/workspace", LogStream.Stdout);
         await onLogLine($"[DEBUG] Working dir    : /workspace", LogStream.Stdout);

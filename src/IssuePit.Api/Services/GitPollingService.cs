@@ -102,8 +102,7 @@ public class GitPollingService(
                         "New commit {Sha} on '{Branch}' for repo {RepoId} — triggering CI/CD",
                         sha, repo.DefaultBranch, repo.Id);
 
-                    var workspacePath = gitService.GetLocalPath(repo);
-                    await PublishCiCdTriggerAsync(producer, repo.ProjectId, sha, repo.DefaultBranch, workspacePath, logger);
+                    await PublishCiCdTriggerAsync(producer, repo.ProjectId, sha, repo.DefaultBranch, repo.RemoteUrl, logger);
 
                     repo.LastKnownCommitSha = sha;
                 }
@@ -164,7 +163,7 @@ public class GitPollingService(
         Guid projectId,
         string commitSha,
         string branch,
-        string workspacePath,
+        string gitRepoUrl,
         ILogger logger)
     {
         var payload = JsonSerializer.Serialize(new
@@ -174,7 +173,7 @@ public class GitPollingService(
             branch,
             workflow = (string?)null,
             agentSessionId = (Guid?)null,
-            workspacePath,
+            gitRepoUrl,
             eventName = "push",
         });
 
