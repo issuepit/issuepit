@@ -169,8 +169,9 @@ public class CiCdWorker(
 
         // Prepare a host-side artifact directory so act's built-in artifact server can serve
         // actions/upload-artifact and actions/download-artifact without a real GitHub token.
+        // Each run gets its own subdirectory under a shared base dir so parallel runs don't mix.
         // The directory is cleaned up after test results have been collected.
-        var artifactDir = Path.Combine(Path.GetTempPath(), $"issuepit-artifacts-{run.Id:N}");
+        var artifactDir = Path.Combine(Path.GetTempPath(), "issuepit-artifacts", run.Id.ToString("N"));
         Directory.CreateDirectory(artifactDir);
         trigger = trigger with { ArtifactServerPath = artifactDir };
 

@@ -37,9 +37,12 @@ public partial class DockerCiCdRuntime(
             ?.InformationalVersion
         ?? "unknown";
 
-    // Builds a stable, human-readable Docker container name for a CI/CD run.
+    // Builds a unique Docker container name for a CI/CD run.
+    // A random UUID is used (instead of deriving from the run ID) so that retries and parallel
+    // runs never produce a name conflict even when a previous container wasn't cleaned up yet.
+    // The run ID is always available via the "issuepit.run-id" container label.
     private static string BuildContainerName(CiCdRun run) =>
-        $"issuepit-cicd-{run.Id:N}"[..24]; // e.g. "issuepit-cicd-ab12cd34ef56"
+        $"issuepit-cicd-{Guid.NewGuid():N}"[..24];
 
     public async Task RunAsync(
         CiCdRun run,
