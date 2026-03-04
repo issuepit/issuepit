@@ -1,3 +1,5 @@
+using IssuePit.Core.Enums;
+
 namespace IssuePit.CiCdClient.Runtimes;
 
 /// <summary>Payload received on the 'cicd-trigger' Kafka topic.</summary>
@@ -45,4 +47,9 @@ public record TriggerPayload(
     /// </summary>
     string? ArtifactServerPath = null,
     /// <summary>Key-value input pairs passed as <c>--input</c> arguments to <c>act</c> (for workflow_dispatch events).</summary>
-    IReadOnlyDictionary<string, string>? Inputs = null);
+    IReadOnlyDictionary<string, string>? Inputs = null,
+    /// <summary>
+    /// Overrides the DinD image cache strategy for this run.
+    /// <c>null</c> means use the system default from <c>CiCd__Docker__DindCacheStrategy</c>.
+    /// </summary>
+    DindImageCacheStrategy? DindCacheStrategy = null);
