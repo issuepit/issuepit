@@ -1,4 +1,4 @@
-using IssuePit.Api.Services;
+using IssuePit.Core.Services;
 
 namespace IssuePit.Tests.Unit;
 

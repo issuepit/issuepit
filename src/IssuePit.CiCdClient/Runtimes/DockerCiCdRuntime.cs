@@ -282,6 +282,17 @@ public partial class DockerCiCdRuntime(
                         cancellationToken);
                     if (cloneExitCode != 0)
                         throw new Exception($"git clone failed with exit code {cloneExitCode} for URL '{trigger.GitRepoUrl}'");
+
+                    // Best-effort: copy workflow files to the artifact directory so the worker can
+                    // generate the workflow graph after the run without needing a local workspace.
+                    if (!string.IsNullOrWhiteSpace(trigger.ArtifactServerPath))
+                    {
+                        await ExecShellAsync(
+                            container.ID,
+                            "if [ -d /workspace/.github/workflows ]; then cp -r /workspace/.github/workflows/ /artifacts/_workflows/; fi",
+                            onLogLine,
+                            cancellationToken);
+                    }
                 }
 
                 // Step: Write actrc to suppress the interactive image-selection prompt.

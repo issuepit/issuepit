@@ -6,6 +6,7 @@ using IssuePit.CiCdClient.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
+using IssuePit.Core.Services;
 using Microsoft.EntityFrameworkCore;
 using StackExchange.Redis;
 
@@ -264,6 +265,9 @@ public class CiCdWorker(
             // Collect and store test results from any .trx files produced during the run.
             await ParseAndStoreTestResultsAsync(run.Id, artifactDir, db, stoppingToken);
 
+            // Parse workflow graph from workflow files copied during the clone step.
+            await ParseAndStoreWorkflowGraphAsync(run.Id, artifactDir, db, stoppingToken);
+
             // Clean up the artifact directory now that results have been collected.
             try { Directory.Delete(artifactDir, recursive: true); }
             catch (Exception ex) { logger.LogDebug(ex, "Could not clean up artifact directory {Dir} for run {RunId}", artifactDir, run.Id); }
@@ -315,7 +319,38 @@ public class CiCdWorker(
     }
 
     /// <summary>
-    /// Returns the semaphore for the given organization, creating it on first use.
+    /// Scans <paramref name="artifactDir"/> for workflow YAML files copied from the container
+    /// during the clone step (stored under <c>_workflows/</c>), parses the job graph, and
+    /// stores the result in <see cref="CiCdRun.WorkflowGraphJson"/>.
+    /// Best-effort: errors are logged but never propagated.
+    /// </summary>
+    private async Task ParseAndStoreWorkflowGraphAsync(
+        Guid runId,
+        string artifactDir,
+        IssuePitDbContext db,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var workflowsDir = Path.Combine(artifactDir, "_workflows");
+            if (!Directory.Exists(workflowsDir)) return;
+
+            var run = await db.CiCdRuns
+                .Where(r => r.Id == runId)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (run is null || run.WorkflowGraphJson is not null) return;
+
+            var graph = await WorkflowGraphParser.ParseDirectoryAsync(workflowsDir, cancellationToken);
+            run.WorkflowGraphJson = JsonSerializer.Serialize(graph);
+            await db.SaveChangesAsync(cancellationToken);
+            logger.LogInformation("Stored workflow graph for run {RunId} ({JobCount} jobs)", runId, graph.Jobs.Count);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Could not parse workflow graph for run {RunId}", runId);
+        }
+    }
+
     /// Returns null when no limit is configured (MaxConcurrentRunners == 0).
     /// </summary>
     private SemaphoreSlim? GetOrgSemaphore(Organization? org)
