@@ -52,7 +52,7 @@ export const useOrgsStore = defineStore('orgs', () => {
     }
   }
 
-  async function updateOrg(id: string, payload: { name: string; slug: string; maxConcurrentRunners?: number; concurrentJobs?: number | null; actRunnerImage?: string | null; actEnv?: string | null; actSecrets?: string | null }) {
+  async function updateOrg(id: string, payload: { name: string; slug: string; maxConcurrentRunners?: number; concurrentJobs?: number | null; actRunnerImage?: string | null; actEnv?: string | null; actSecrets?: string | null; actionCachePath?: string | null; useNewActionCache?: boolean; actionOfflineMode?: boolean; localRepositories?: string | null }) {
     loading.value = true
     error.value = null
     try {

@@ -232,4 +232,129 @@ public class NativeCiCdRuntimeTests
         var args = NativeCiCdRuntime.BuildActArgumentsList(trigger);
         Assert.DoesNotContain("--concurrent-jobs", args);
     }
+
+    [Fact]
+    public void BuildActArgumentsList_WithActionCachePath_EmitsFlag()
+    {
+        var trigger = new TriggerPayload(
+            ProjectId: Guid.NewGuid(),
+            CommitSha: null, Branch: null, Workflow: null,
+            AgentSessionId: null, WorkspacePath: null, EventName: null,
+            ActionCachePath: "/var/lib/act-cache");
+        var args = NativeCiCdRuntime.BuildActArgumentsList(trigger).ToList();
+        var idx = args.IndexOf("--action-cache-path");
+        Assert.True(idx >= 0, "--action-cache-path flag should be present");
+        Assert.Equal("/var/lib/act-cache", args[idx + 1]);
+    }
+
+    [Fact]
+    public void BuildActArgumentsList_NoActionCachePath_NoFlag()
+    {
+        var args = NativeCiCdRuntime.BuildActArgumentsList(Trigger());
+        Assert.DoesNotContain("--action-cache-path", args);
+    }
+
+    [Fact]
+    public void BuildActArgumentsList_UseNewActionCache_EmitsFlag()
+    {
+        var trigger = new TriggerPayload(
+            ProjectId: Guid.NewGuid(),
+            CommitSha: null, Branch: null, Workflow: null,
+            AgentSessionId: null, WorkspacePath: null, EventName: null,
+            UseNewActionCache: true);
+        var args = NativeCiCdRuntime.BuildActArgumentsList(trigger);
+        Assert.Contains("--use-new-action-cache", args);
+    }
+
+    [Fact]
+    public void BuildActArgumentsList_UseNewActionCacheFalse_NoFlag()
+    {
+        var trigger = new TriggerPayload(
+            ProjectId: Guid.NewGuid(),
+            CommitSha: null, Branch: null, Workflow: null,
+            AgentSessionId: null, WorkspacePath: null, EventName: null,
+            UseNewActionCache: false);
+        var args = NativeCiCdRuntime.BuildActArgumentsList(trigger);
+        Assert.DoesNotContain("--use-new-action-cache", args);
+    }
+
+    [Fact]
+    public void BuildActArgumentsList_UseNewActionCacheNull_NoFlag()
+    {
+        var args = NativeCiCdRuntime.BuildActArgumentsList(Trigger());
+        Assert.DoesNotContain("--use-new-action-cache", args);
+    }
+
+    [Fact]
+    public void BuildActArgumentsList_ActionOfflineMode_EmitsFlag()
+    {
+        var trigger = new TriggerPayload(
+            ProjectId: Guid.NewGuid(),
+            CommitSha: null, Branch: null, Workflow: null,
+            AgentSessionId: null, WorkspacePath: null, EventName: null,
+            ActionOfflineMode: true);
+        var args = NativeCiCdRuntime.BuildActArgumentsList(trigger);
+        Assert.Contains("--action-offline-mode", args);
+    }
+
+    [Fact]
+    public void BuildActArgumentsList_ActionOfflineModeFalse_NoFlag()
+    {
+        var trigger = new TriggerPayload(
+            ProjectId: Guid.NewGuid(),
+            CommitSha: null, Branch: null, Workflow: null,
+            AgentSessionId: null, WorkspacePath: null, EventName: null,
+            ActionOfflineMode: false);
+        var args = NativeCiCdRuntime.BuildActArgumentsList(trigger);
+        Assert.DoesNotContain("--action-offline-mode", args);
+    }
+
+    [Fact]
+    public void BuildActArgumentsList_ActionOfflineModeNull_NoFlag()
+    {
+        var args = NativeCiCdRuntime.BuildActArgumentsList(Trigger());
+        Assert.DoesNotContain("--action-offline-mode", args);
+    }
+
+    [Fact]
+    public void BuildActArgumentsList_WithLocalRepositories_EmitsFlags()
+    {
+        var trigger = new TriggerPayload(
+            ProjectId: Guid.NewGuid(),
+            CommitSha: null, Branch: null, Workflow: null,
+            AgentSessionId: null, WorkspacePath: null, EventName: null,
+            LocalRepositories: "myorg/private@v1=/local/path\nmyorg/other@main=/other/path");
+        var args = NativeCiCdRuntime.BuildActArgumentsList(trigger).ToList();
+
+        Assert.Contains("--local-repository", args);
+        var firstIdx = args.IndexOf("--local-repository");
+        Assert.Equal("myorg/private@v1=/local/path", args[firstIdx + 1]);
+        Assert.Equal("--local-repository", args[firstIdx + 2]);
+        Assert.Equal("myorg/other@main=/other/path", args[firstIdx + 3]);
+    }
+
+    [Fact]
+    public void BuildActArgumentsList_NoLocalRepositories_NoFlag()
+    {
+        var args = NativeCiCdRuntime.BuildActArgumentsList(Trigger());
+        Assert.DoesNotContain("--local-repository", args);
+    }
+
+    [Fact]
+    public void BuildActArgumentsList_AllCacheFlags_CombinedCorrectly()
+    {
+        var trigger = new TriggerPayload(
+            ProjectId: Guid.NewGuid(),
+            CommitSha: null, Branch: null, Workflow: null,
+            AgentSessionId: null, WorkspacePath: null, EventName: null,
+            ActionCachePath: "/cache/actions",
+            UseNewActionCache: true,
+            ActionOfflineMode: true,
+            LocalRepositories: "owner/repo@v1=/local");
+        var args = NativeCiCdRuntime.BuildActArgumentsList(trigger).ToList();
+        Assert.Contains("--action-cache-path", args);
+        Assert.Contains("--use-new-action-cache", args);
+        Assert.Contains("--action-offline-mode", args);
+        Assert.Contains("--local-repository", args);
+    }
 }

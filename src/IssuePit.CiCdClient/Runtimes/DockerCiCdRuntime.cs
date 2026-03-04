@@ -115,6 +115,7 @@ public partial class DockerCiCdRuntime(
 
         const string ContainerNpmCachePath = "/cache/npm";
         const string ContainerNuGetCachePath = "/cache/nuget";
+        const string ContainerActionCachePath = "/cache/actions";
 
         if (!string.IsNullOrWhiteSpace(npmCacheVolume))
         {
@@ -130,6 +131,28 @@ public partial class DockerCiCdRuntime(
         {
             actBinAndArgs.Add("--volume");
             actBinAndArgs.Add($"{ContainerNuGetCachePath}:/root/.nuget/packages");
+        }
+
+        // Action cache: resolve effective host path (trigger → CiCd__ActionCachePath config → no cache).
+        // In the Docker runtime the host path is mounted into the container at ContainerActionCachePath,
+        // and the --action-cache-path arg is replaced with the container-internal path so act writes
+        // into the mounted volume (persisting the cache across runs on the host).
+        var actionCacheHostPath = !string.IsNullOrWhiteSpace(trigger.ActionCachePath)
+            ? trigger.ActionCachePath
+            : configuration["CiCd__ActionCachePath"];
+
+        if (!string.IsNullOrWhiteSpace(actionCacheHostPath))
+        {
+            // Replace the host path that BuildActArgumentsList inserted with the container-internal path.
+            var idx = actBinAndArgs.IndexOf(actionCacheHostPath);
+            if (idx >= 0)
+                actBinAndArgs[idx] = ContainerActionCachePath;
+            else
+            {
+                // ActionCachePath came from config (not from trigger field) — the arg wasn't added yet.
+                actBinAndArgs.Add("--action-cache-path");
+                actBinAndArgs.Add(ContainerActionCachePath);
+            }
         }
 
         var containerName = BuildContainerName(run);
@@ -172,6 +195,12 @@ public partial class DockerCiCdRuntime(
             await onLogLine($"[DEBUG] npm registry   : {npmCacheUrl}", LogStream.Stdout);
         if (!string.IsNullOrWhiteSpace(nugetCacheVolume))
             await onLogLine($"[DEBUG] NuGet cache vol: {nugetCacheVolume}:{ContainerNuGetCachePath} (outer container mount, passed to job containers via act --volume)", LogStream.Stdout);
+        if (!string.IsNullOrWhiteSpace(actionCacheHostPath))
+            await onLogLine($"[DEBUG] Action cache   : {actionCacheHostPath}:{ContainerActionCachePath}", LogStream.Stdout);
+        if (trigger.UseNewActionCache == true)
+            await onLogLine($"[DEBUG] New action cache: enabled (--use-new-action-cache)", LogStream.Stdout);
+        if (trigger.ActionOfflineMode == true)
+            await onLogLine($"[DEBUG] Offline mode   : enabled (--action-offline-mode)", LogStream.Stdout);
         if (!string.IsNullOrWhiteSpace(trigger.CustomEntrypoint))
             await onLogLine($"[DEBUG] Entrypoint     : {trigger.CustomEntrypoint}", LogStream.Stdout);
 
@@ -269,7 +298,14 @@ public partial class DockerCiCdRuntime(
             binds.Add($"{npmCacheVolume}:{ContainerNpmCachePath}");
         if (!string.IsNullOrWhiteSpace(nugetCacheVolume))
             binds.Add($"{nugetCacheVolume}:{ContainerNuGetCachePath}");
-        
+
+        // Mount action/repo cache directory so act can reuse previously cloned actions across runs.
+        if (!string.IsNullOrWhiteSpace(actionCacheHostPath))
+        {
+            Directory.CreateDirectory(actionCacheHostPath);
+            binds.Add($"{actionCacheHostPath}:{ContainerActionCachePath}");
+        }
+
         // Apply the DinD image cache strategy: add volume mounts and/or start the registry mirror.
         string? registryMirrorUrl = null;
         var extraHosts = new List<string>();

@@ -45,5 +45,29 @@ public class Project
     /// <summary>Docker runner image override for act. Null means use the org or global default.</summary>
     public string? ActRunnerImage { get; set; }
 
+    /// <summary>
+    /// Host path for the act action/repo cache directory (passed as <c>--action-cache-path</c>).
+    /// Null means inherit from the organization setting.
+    /// </summary>
+    public string? ActionCachePath { get; set; }
+
+    /// <summary>
+    /// When <c>true</c>, enables act's new OCI-based action cache (<c>--use-new-action-cache</c>).
+    /// Null means inherit from the organization setting.
+    /// </summary>
+    public bool? UseNewActionCache { get; set; }
+
+    /// <summary>
+    /// When <c>true</c>, passes <c>--action-offline-mode</c> to act so it uses only locally
+    /// cached actions. Null means inherit from the organization setting.
+    /// </summary>
+    public bool? ActionOfflineMode { get; set; }
+
+    /// <summary>
+    /// Newline-separated list of <c>owner/repo@ref=/local/path</c> mappings passed as
+    /// <c>--local-repository</c> arguments to <c>act</c>. Null means inherit from the org.
+    /// </summary>
+    public string? LocalRepositories { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
