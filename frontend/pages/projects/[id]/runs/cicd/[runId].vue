@@ -282,7 +282,7 @@
               <pre v-for="(w, i) in store.currentRunGraph.warnings" :key="i" class="text-xs text-yellow-400/80 font-mono whitespace-pre-wrap">{{ w }}</pre>
             </div>
             <!-- Job graph with SVG dependency arrows -->
-            <div class="relative overflow-x-auto pb-2">
+            <div class="relative overflow-x-auto pb-2" @click.self="deselectJob()">
               <!-- SVG arrows layer (absolute, behind boxes) -->
               <svg
                 v-if="graphLayout.svgWidth && graphLayout.svgHeight"
@@ -311,7 +311,8 @@
               <!-- Job boxes layer -->
               <div
                 :style="{ position: 'relative', width: graphLayout.svgWidth + 'px', minHeight: graphLayout.svgHeight + 'px', zIndex: 1 }"
-                style="z-index: 1">
+                style="z-index: 1"
+                @click.self="deselectJob()">
                 <div
                   v-for="job in visibleJobs"
                   :key="job.id"
@@ -362,7 +363,8 @@
                       ]"
                       @click.stop="selectMatrixInstance(job.id, inst.rawId)">
                       <span :class="jobStatusDot(inst)" class="w-1.5 h-1.5 rounded-full shrink-0" />
-                      {{ inst.rawId.replace(new RegExp(`^${job.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-?`, 'i'), '') || inst.rawId }}
+                      {{ matrixLabel(inst.rawId, job) }}
+                      <span v-if="inst.startedAt" class="text-gray-600 ml-0.5">{{ jobDuration(inst.startedAt, inst.isComplete ? inst.endedAt : undefined) }}</span>
                     </button>
                   </div>
 
@@ -388,22 +390,21 @@
                   Showing logs for job: <span class="text-white font-mono">{{ visibleJobs.find(j => j.id === selectedJob)?.name ?? selectedJob }}</span>
                   <template v-if="selectedMatrixRawId"> · instance <span class="text-brand-300 font-mono">{{ selectedMatrixRawId }}</span></template>
                 </span>
-                <button class="text-xs text-gray-500 hover:text-gray-300 transition-colors" @click="selectedJob = null; selectedMatrixRawId = null">Clear filter</button>
+                <button class="text-xs text-gray-500 hover:text-gray-300 transition-colors" @click="deselectJob()">Clear filter</button>
               </div>
               <div class="bg-gray-950 rounded-lg p-4 font-mono text-xs overflow-auto max-h-[500px]">
                 <template v-if="jobLogsByStep.length">
                   <template v-for="(group, gi) in jobLogsByStep" :key="gi">
-                    <!-- Step header: collapsible, shows duration -->
+                    <!-- Step header: collapsible, shows duration. Null stepId → "Set up job" (step 0). -->
                     <div
-                      v-if="group.stepId"
                       class="flex items-center gap-2 mt-3 mb-1 first:mt-0 select-none cursor-pointer group"
-                      @click="toggleStep(group.stepId)">
-                      <span class="text-gray-600 transition-transform" :class="collapsedSteps.has(group.stepId) ? '' : 'rotate-90'">▶</span>
-                      <span class="text-xs font-semibold text-gray-400 tracking-wide uppercase group-hover:text-gray-200 transition-colors">{{ group.stepId }}</span>
+                      @click="toggleStep(group.stepId ?? '__setup__')">
+                      <span class="text-gray-600 transition-transform" :class="collapsedSteps.has(group.stepId ?? '__setup__') ? '' : 'rotate-90'">▶</span>
+                      <span class="text-xs font-semibold text-gray-400 tracking-wide uppercase group-hover:text-gray-200 transition-colors">{{ group.stepId ?? 'Set up job' }}</span>
                       <span v-if="stepDuration(group)" class="text-[10px] text-gray-600 font-mono">{{ stepDuration(group) }}</span>
                       <span class="flex-1 border-t border-gray-800" />
                     </div>
-                    <template v-if="!group.stepId || !collapsedSteps.has(group.stepId)">
+                    <template v-if="!collapsedSteps.has(group.stepId ?? '__setup__')">
                       <div v-for="log in group.logs" :key="log.id" class="flex gap-3 leading-5">
                         <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
                         <!-- eslint-disable-next-line vue/no-v-html -->
@@ -413,6 +414,24 @@
                   </template>
                 </template>
                 <div v-else class="text-gray-500 text-center py-4">No logs for this job</div>
+              </div>
+            </div>
+
+            <!-- Unmatched log job IDs warning (logs arrived for job IDs not in the graph) -->
+            <div v-if="unmatchedLogJobIds.length" class="mt-4 rounded-lg bg-gray-800/60 border border-gray-700 p-3">
+              <div class="flex items-center gap-2 mb-2">
+                <svg class="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span class="text-xs font-medium text-gray-400">Unmatched log streams ({{ unmatchedLogJobIds.length }}) — logs arrived for job IDs not found in the workflow graph</span>
+              </div>
+              <div class="flex flex-wrap gap-1">
+                <span
+                  v-for="id in unmatchedLogJobIds"
+                  :key="id"
+                  class="text-[10px] font-mono bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 text-gray-500">
+                  {{ id }}
+                </span>
               </div>
             </div>
           </div>
@@ -560,6 +579,7 @@ import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useIssuesStore } from '~/stores/issues'
 import { CiCdRunStatus, type CiCdRunLog } from '~/types'
 import { parseAnsiToHtml, stripAnsiCodes } from '~/composables/useAnsiParser'
+import { buildGraphJobIndexes, resolveLogJobId as resolveLogJobIdFn, matrixLabel as matrixLabelFn } from '~/utils/cicdLogMapper'
 
 const route = useRoute()
 const projectId = route.params.id as string
@@ -694,6 +714,11 @@ const selectedJob = ref<string | null>(null)
 /** When a specific matrix instance is selected (rawId from act), only show that instance's logs. */
 const selectedMatrixRawId = ref<string | null>(null)
 
+function deselectJob() {
+  selectedJob.value = null
+  selectedMatrixRawId.value = null
+}
+
 const filteredLogs = computed(() =>
   activeStream.value === null
     ? store.currentRunLogs
@@ -708,63 +733,10 @@ const filteredLogs = computed(() =>
 // We need a fuzzy resolver to map log IDs → graph node IDs to avoid duplicate boxes.
 
 /** Pre-built lookup indexes so resolveLogJobId() runs in O(1) per call. */
-const graphJobIndexes = computed(() => {
-  const graphJobs = store.currentRunGraph?.jobs ?? []
-  const byId = new Map<string, string>()   // lowercase_id → graph_id
-  const byName = new Map<string, string>() // lowercase_name → graph_id
+const graphJobIndexes = computed(() => buildGraphJobIndexes(store.currentRunGraph?.jobs ?? []))
 
-  for (const j of graphJobs) {
-    byId.set(j.id.toLowerCase(), j.id)
-    byName.set(j.name.trim().toLowerCase(), j.id)
-    // Also index just the last segment of compound names ("Caller / Callee" → "callee")
-    const nameParts = j.name.split(/\s*\/\s*/)
-    if (nameParts.length > 1) {
-      const lastPart = nameParts[nameParts.length - 1].trim().toLowerCase()
-      if (!byName.has(lastPart)) byName.set(lastPart, j.id)
-    }
-  }
-  return { byId, byName }
-})
-
-/**
- * Maps an act log job ID to the matching graph node ID.
- *
- * act uses display names (e.g. "Build & Push") rather than YAML keys ("build").
- * For matrix jobs it appends "-N" (e.g. "Build & Push-2").
- * Reusable workflow calls prefix with the workflow/caller name ("Docker Build & Push/Build & Push").
- *
- * Matching order:
- *  1. Exact ID match (case-insensitive, handles file-prefixed IDs like "docker/build").
- *  2. Strip trailing matrix index "-N", retry exact ID.
- *  3. Display-name match (full or stripped).
- *  4. Last path segment of a compound "/" path, stripped of matrix index.
- *  5. No match → return original log ID (shows as standalone box).
- */
 function resolveLogJobId(logId: string): string {
-  const { byId, byName } = graphJobIndexes.value
-  // Normalise backslashes (Windows paths emitted by act on Windows hosts) so matching works.
-  const norm = logId.trim().toLowerCase().replace(/\\/g, '/')
-
-  // 1. Exact ID match
-  if (byId.has(norm)) return byId.get(norm)!
-
-  // 2. Strip trailing matrix index "-N" and retry
-  const stripped = norm.replace(/-\d+$/, '').trim()
-  if (stripped !== norm && byId.has(stripped)) return byId.get(stripped)!
-
-  // 3. Display-name match (full then stripped)
-  if (byName.has(norm)) return byName.get(norm)!
-  if (stripped !== norm && byName.has(stripped)) return byName.get(stripped)!
-
-  // 4. Compound path — match last segment (e.g. "Docker Build & Push/Build & Push-2")
-  const slashIdx = norm.lastIndexOf('/')
-  if (slashIdx !== -1) {
-    const lastSeg = norm.slice(slashIdx + 1).trim().replace(/-\d+$/, '').trim()
-    if (byName.has(lastSeg)) return byName.get(lastSeg)!
-    if (byId.has(lastSeg)) return byId.get(lastSeg)!
-  }
-
-  return logId // No match — use as-is
+  return resolveLogJobIdFn(logId, graphJobIndexes.value)
 }
 
 const jobFilteredLogs = computed(() => {
@@ -800,15 +772,41 @@ const jobLogsByStep = computed<StepGroup[]>(() => {
 const collapsedSteps = ref(new Set<string>())
 /** Tracks which step IDs have already been auto-collapsed so we don't re-collapse them after manual expand. */
 const seenStepIds = ref(new Set<string>())
+/** Tracks count of steps in the previous render to detect when a new step starts. */
+const prevStepCount = ref(0)
 
-// Auto-collapse any new named step that appears (default collapsed on first render).
+// Auto-collapse logic:
+// - A new step starts → collapse it unless it is the current (last) step or has failed.
+// - When a new step starts, the previously-current step (now second-to-last) is collapsed unless it failed.
+// - Failed steps are always kept open (even if previously collapsed).
 watch(jobLogsByStep, (groups) => {
-  for (const g of groups) {
-    if (g.stepId && !seenStepIds.value.has(g.stepId)) {
-      seenStepIds.value = new Set([...seenStepIds.value, g.stepId])
-      collapsedSteps.value = new Set([...collapsedSteps.value, g.stepId])
+  const newSeen = new Set(seenStepIds.value)
+  const newCollapsed = new Set(collapsedSteps.value)
+
+  for (let i = 0; i < groups.length; i++) {
+    const g = groups[i]
+    const key = g.stepId ?? '__setup__'
+    const isLast = i === groups.length - 1
+    const hasFailed = g.logs.some(l => l.stream === 'stderr')
+
+    if (!newSeen.has(key)) {
+      // First time we see this step: auto-collapse unless it's current or failed.
+      newSeen.add(key)
+      if (!isLast && !hasFailed) newCollapsed.add(key)
+    } else if (!isLast && !hasFailed && groups.length > prevStepCount.value && i === groups.length - 2) {
+      // A new step just appeared (groups grew by 1). The step at position groups.length-2 is
+      // the one that was the last (current) step in the previous render — collapse it now that
+      // it has been superseded by the new last step.
+      newCollapsed.add(key)
     }
+
+    // Failed steps must always stay open regardless of previous state.
+    if (hasFailed) newCollapsed.delete(key)
   }
+
+  seenStepIds.value = newSeen
+  collapsedSteps.value = newCollapsed
+  prevStepCount.value = groups.length
 }, { immediate: true })
 
 function toggleStep(stepId: string) {
@@ -860,6 +858,7 @@ interface EnrichedJob {
   // layout
   x: number
   y: number
+  boxHeight: number
 }
 
 const jobLogMap = computed(() => {
@@ -905,12 +904,22 @@ const runIsTerminal = computed(() => {
 // Graph nodes get their needs/name from the YAML; log-only jobs fall back to id as name.
 const enrichedJobs = computed<EnrichedJob[]>(() => {
   const BOX_W = 220
-  // Generous box height to prevent overlaps: boxes can show name, file, status, timing, log count,
-  // and (for matrix jobs) a row of instance dots. 180 px covers all combinations without DOM measurement.
-  const BOX_H = 180
+  // Estimated box height breakdown:
+  //   name(20) + statusBadge(22) + logCount(16) + padding-tb(24) + inner gaps(~16) ≈ 98px (no workflow/timing)
+  //   + workflowFile(16) + timing(16) = 130px for a started job with workflow file info
+  const BASE_BOX_H = 130
+  const MATRIX_ROW_H = 24
   const COL_GAP = 80
-  const ROW_GAP = 20
+  const ROW_GAP = 14
   const PAD = 16
+
+  // Helper: compute box height for a job based on current log data (matrix instances).
+  const computeBoxH = (id: string) => {
+    const instances = jobLogMap.value.get(id)?.instances
+    const instanceCount = instances ? instances.size : 0
+    const matrixRows = instanceCount > 1 ? Math.ceil(instanceCount / 2) : 0
+    return BASE_BOX_H + matrixRows * MATRIX_ROW_H
+  }
 
   // Collect all job IDs
   const graphJobs = store.currentRunGraph?.jobs ?? []
@@ -959,7 +968,7 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
     byCol.get(col)!.push(id)
   }
 
-  // Assign x/y positions
+  // Assign x/y positions using per-job heights for accurate spacing
   const posMap = new Map<string, { x: number; y: number }>()
   const sortedCols = Array.from(byCol.keys()).sort((a, b) => a - b)
   let x = PAD
@@ -968,7 +977,7 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
     let y = PAD
     for (const id of jobs) {
       posMap.set(id, { x, y })
-      y += BOX_H + ROW_GAP
+      y += computeBoxH(id) + ROW_GAP
     }
     x += BOX_W + COL_GAP
   }
@@ -1011,6 +1020,7 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
       endedAt: isComplete && !logs.endedAt ? (store.currentRun?.endedAt ?? logs.startedAt) : logs.endedAt,
       x: pos.x,
       y: pos.y,
+      boxHeight: computeBoxH(id),
     }
   })
 })
@@ -1020,6 +1030,24 @@ const visibleJobs = computed<EnrichedJob[]>(() => {
   if (selectedTriggerFilters.value.size === 0 || triggerVisibleFiles.value.size === 0)
     return enrichedJobs.value
   return enrichedJobs.value.filter(j => !j.workflowFile || triggerVisibleFiles.value.has(j.workflowFile))
+})
+
+/**
+ * Raw act job IDs from logs that could not be resolved to any graph node.
+ * These are log lines that arrived for a job the graph doesn't know about (no matching node by ID or name).
+ * Shown as a warning in the Jobs tab so users know some logs are not associated with a graph box.
+ */
+const unmatchedLogJobIds = computed<string[]>(() => {
+  if (!store.currentRunGraph) return []
+  const graphNodeIds = new Set(enrichedJobs.value.map(j => j.id))
+  const unmatched = new Set<string>()
+  for (const log of store.currentRunLogs) {
+    if (!log.jobId) continue
+    const resolved = resolveLogJobId(log.jobId)
+    // If resolved ID is NOT in the graph (i.e., act emitted it but we have no graph node), warn.
+    if (!graphNodeIds.has(resolved)) unmatched.add(log.jobId)
+  }
+  return Array.from(unmatched).sort()
 })
 
 /**
@@ -1058,13 +1086,12 @@ interface SvgEdge { path: string; highlighted: boolean }
 
 const graphLayout = computed<{ svgWidth: number; svgHeight: number; edges: SvgEdge[] }>(() => {
   const BOX_W = 220
-  const BOX_H = 180
   const PAD = 16
 
   if (!visibleJobs.value.length) return { svgWidth: 0, svgHeight: 0, edges: [] }
 
   const visibleIds = new Set(visibleJobs.value.map(j => j.id))
-  const posMap = new Map(visibleJobs.value.map(j => [j.id, { x: j.x, y: j.y }]))
+  const posMap = new Map(visibleJobs.value.map(j => [j.id, { x: j.x, y: j.y, boxHeight: j.boxHeight }]))
   const highlightedIds = connectedJobIds.value
   const sel = selectedJob.value
 
@@ -1076,9 +1103,9 @@ const graphLayout = computed<{ svgWidth: number; svgHeight: number; edges: SvgEd
     if (!from || !to) return null
 
     const x1 = from.x + BOX_W
-    const y1 = from.y + BOX_H / 2
+    const y1 = from.y + from.boxHeight / 2
     const x2 = to.x
-    const y2 = to.y + BOX_H / 2
+    const y2 = to.y + to.boxHeight / 2
     const cx = (x1 + x2) / 2
     const highlighted = sel !== null && (e.from === sel || e.to === sel || highlightedIds.has(e.from) || highlightedIds.has(e.to))
 
@@ -1086,21 +1113,21 @@ const graphLayout = computed<{ svgWidth: number; svgHeight: number; edges: SvgEd
   }).filter((e): e is SvgEdge => e !== null)
 
   const maxX = Math.max(...visibleJobs.value.map(j => j.x)) + BOX_W + PAD
-  const maxY = Math.max(...visibleJobs.value.map(j => j.y)) + BOX_H + PAD
+  const maxY = Math.max(...visibleJobs.value.map(j => j.y + j.boxHeight)) + PAD
 
   return { svgWidth: maxX, svgHeight: maxY, edges }
 })
 
 function toggleJobFilter(jobId: string) {
   if (selectedJob.value === jobId) {
-    selectedJob.value = null
-    selectedMatrixRawId.value = null
+    deselectJob()
   } else {
     selectedJob.value = jobId
     selectedMatrixRawId.value = null
     // Reset collapsed steps so each job starts with all steps collapsed by default.
     collapsedSteps.value = new Set()
     seenStepIds.value = new Set()
+    prevStepCount.value = 0
   }
 }
 
@@ -1109,6 +1136,7 @@ function selectMatrixInstance(jobId: string, rawId: string) {
   selectedMatrixRawId.value = selectedMatrixRawId.value === rawId ? null : rawId
   collapsedSteps.value = new Set()
   seenStepIds.value = new Set()
+  prevStepCount.value = 0
 }
 
 function jobStatusDot(job: Pick<EnrichedJob, 'hasError' | 'isComplete' | 'hasStarted'>) {
@@ -1139,6 +1167,16 @@ function jobDuration(start: string, end?: string) {
   if (s < 60) return `${s}s`
   const m = Math.floor(s / 60)
   return `${m}m ${s % 60}s`
+}
+
+/**
+ * Returns a short display label for a matrix instance button.
+ * For workflow-prefixed rawIds (e.g. "Deploy GitHub Pages/Build") returns the last
+ * segment of the prefix as discriminator (e.g. "Deploy GitHub Pages").
+ * For simple matrix rawIds (e.g. "Build-2") returns the numeric index ("2").
+ */
+function matrixLabel(rawId: string, job: EnrichedJob): string {
+  return matrixLabelFn(rawId, job.name)
 }
 
 // ── Create Issue from failed job ───────────────────────────────────────────────
@@ -1226,6 +1264,9 @@ const { connection: projectConnection, connect: connectProject } = useSignalR('/
 onMounted(async () => {
   await store.fetchRun(runId)
 
+  // Dismiss job selection on Escape key
+  window.addEventListener('keydown', handleEscapeKey)
+
   // Connect to the CiCd output hub to receive live log lines and run-completed events
   await connectCicd()
   if (cicdConnection.value) {
@@ -1262,6 +1303,16 @@ onMounted(async () => {
       if (data.runId === runId) store.fetchRunOnly(runId)
     })
   }
+})
+
+function handleEscapeKey(e: KeyboardEvent) {
+  if (e.key === 'Escape' && (selectedJob.value || selectedMatrixRawId.value)) {
+    deselectJob()
+  }
+}
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleEscapeKey)
 })
 
 async function retryRun() {

@@ -267,4 +267,92 @@ public class CiCdEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     private sealed record LogEntry(string id, string line, string streamName, string? jobId, DateTime timestamp);
+
+    [Fact]
+    public async Task Trigger_WithValidRequest_Returns_Accepted()
+    {
+        var (tenantId, _, projectId) = await SeedProjectAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var response = await _client.PostAsJsonAsync("/api/cicd-runs/trigger", new
+        {
+            projectId,
+            commitSha = "abc123def456",
+            eventName = "push",
+            branch = "main",
+        });
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
+    public async Task Trigger_WithWorkflowDispatchInputs_Returns_Accepted()
+    {
+        var (tenantId, _, projectId) = await SeedProjectAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var response = await _client.PostAsJsonAsync("/api/cicd-runs/trigger", new
+        {
+            projectId,
+            commitSha = "abc123def456",
+            eventName = "workflow_dispatch",
+            branch = "main",
+            workflow = "ci.yml",
+            inputs = new Dictionary<string, string>
+            {
+                ["environment"] = "staging",
+                ["version"] = "1.2.3",
+            },
+        });
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
+    public async Task Trigger_MissingCommitSha_Returns_BadRequest()
+    {
+        var (tenantId, _, projectId) = await SeedProjectAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var response = await _client.PostAsJsonAsync("/api/cicd-runs/trigger", new
+        {
+            projectId,
+            commitSha = "",
+            eventName = "push",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
+    public async Task Trigger_UnknownProject_Returns_NotFound()
+    {
+        var (tenantId, _, _) = await SeedProjectAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var response = await _client.PostAsJsonAsync("/api/cicd-runs/trigger", new
+        {
+            projectId = Guid.NewGuid(),
+            commitSha = "abc123",
+            eventName = "push",
+        });
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
 }

@@ -7,18 +7,44 @@
 
     <template v-else-if="projectsStore.currentProject">
       <!-- Header -->
-      <div class="flex items-center gap-3 mb-6">
+      <div class="flex items-center gap-3 mb-4">
         <NuxtLink :to="`/projects/${id}`" class="text-gray-500 hover:text-gray-300 transition-colors">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
           </svg>
         </NuxtLink>
-        <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-            d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-        </svg>
-        <h1 class="text-xl font-bold text-white">Settings — {{ projectsStore.currentProject.name }}</h1>
+        <h1 class="text-xl font-bold text-white">{{ projectsStore.currentProject.name }}</h1>
+      </div>
+
+      <!-- Tabs -->
+      <div class="flex gap-1 border-b border-gray-800 mb-6">
+        <NuxtLink
+          :to="`/projects/${id}/settings`"
+          :class="[
+            'px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
+            $route.path === `/projects/${id}/settings`
+              ? 'text-white border-brand-500'
+              : 'text-gray-400 hover:text-gray-200 border-transparent'
+          ]"
+        >Settings</NuxtLink>
+        <NuxtLink
+          :to="`/projects/${id}/ci-cd`"
+          :class="[
+            'px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
+            $route.path === `/projects/${id}/ci-cd`
+              ? 'text-white border-brand-500'
+              : 'text-gray-400 hover:text-gray-200 border-transparent'
+          ]"
+        >CI/CD</NuxtLink>
+        <NuxtLink
+          :to="`/projects/${id}/members`"
+          :class="[
+            'px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
+            $route.path === `/projects/${id}/members`
+              ? 'text-white border-brand-500'
+              : 'text-gray-400 hover:text-gray-200 border-transparent'
+          ]"
+        >Members</NuxtLink>
       </div>
 
       <div class="space-y-6 max-w-2xl">
@@ -133,85 +159,6 @@
           </form>
         </div>
 
-        <!-- Runner Options -->
-        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
-          <h2 class="font-semibold text-white mb-1">Runner Options</h2>
-          <p class="text-sm text-gray-500 mb-4">Configure CI/CD runner behaviour for this project</p>
-          <form class="space-y-4" @submit.prevent="saveRunnerOptions">
-            <div class="flex items-center justify-between">
-              <div>
-                <label class="block text-sm font-medium text-gray-300">Mount repository in Docker</label>
-                <p class="text-xs text-gray-500 mt-0.5">Bind the workspace directory into the runner container</p>
-              </div>
-              <button
-                type="button"
-                :class="runnerForm.mountRepositoryInDocker ? 'bg-brand-600' : 'bg-gray-700'"
-                class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-gray-900"
-                @click="runnerForm.mountRepositoryInDocker = !runnerForm.mountRepositoryInDocker">
-                <span
-                  :class="runnerForm.mountRepositoryInDocker ? 'translate-x-6' : 'translate-x-1'"
-                  class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" />
-              </button>
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-300 mb-1.5">
-                Max concurrent runners
-                <span class="text-gray-500 font-normal">(0 = unlimited)</span>
-              </label>
-              <input v-model.number="runnerForm.maxConcurrentRunners" type="number" min="0"
-                class="w-40 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
-            </div>
-            <p v-if="saveRunnerError" class="text-red-400 text-sm">{{ saveRunnerError }}</p>
-            <button type="submit" :disabled="savingRunner"
-              class="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-              {{ savingRunner ? 'Saving…' : 'Save Runner Options' }}
-            </button>
-          </form>
-        </div>
-
-        <!-- CI/CD Environment & Secrets -->
-        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
-          <h2 class="font-semibold text-white mb-1">CI/CD Environment &amp; Secrets</h2>
-          <p class="text-sm text-gray-500 mb-4">
-            Values passed as <code class="text-gray-300 bg-gray-800 px-1 rounded">--env</code> and
-            <code class="text-gray-300 bg-gray-800 px-1 rounded">--secret</code> arguments to
-            <code class="text-gray-300 bg-gray-800 px-1 rounded">act</code> on every run.
-            One <code class="text-gray-300 bg-gray-800 px-1 rounded">KEY=VALUE</code> per line.
-          </p>
-          <form class="space-y-4" @submit.prevent="saveCiCdEnv">
-            <div>
-              <label class="block text-sm font-medium text-gray-300 mb-1.5">
-                Environment variables
-                <span class="text-gray-500 font-normal">(--env KEY=VALUE)</span>
-              </label>
-              <textarea
-                v-model="ciCdEnvForm.actEnv"
-                rows="4"
-                placeholder="MY_VAR=my_value&#10;NODE_ENV=test"
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y"
-              />
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-300 mb-1.5">
-                Secrets
-                <span class="text-gray-500 font-normal">(--secret KEY=VALUE)</span>
-              </label>
-              <textarea
-                v-model="ciCdEnvForm.actSecrets"
-                rows="4"
-                placeholder="MY_SECRET=value&#10;API_KEY=key"
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y"
-              />
-              <p class="text-xs text-gray-500 mt-1">Secret values are stored as plain text — avoid committing sensitive credentials that can be rotated.</p>
-            </div>
-            <p v-if="saveCiCdEnvError" class="text-red-400 text-sm">{{ saveCiCdEnvError }}</p>
-            <button type="submit" :disabled="savingCiCdEnv"
-              class="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-              {{ savingCiCdEnv ? 'Saving…' : 'Save Environment & Secrets' }}
-            </button>
-          </form>
-        </div>
-
         <!-- Agents -->
         <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
           <div class="flex items-center justify-between mb-1">
@@ -257,7 +204,7 @@
           </div>
           <div v-else class="text-sm text-gray-600 py-2">
             No agents assigned. Link agents directly or via
-            <NuxtLink to="/config/mcp-servers" class="text-brand-400 hover:text-brand-300">Configuration → MCP Servers</NuxtLink>
+            <NuxtLink to="/config/mcp-servers" class="text-brand-400 hover:text-brand-300">Agents → MCP Servers</NuxtLink>
             or manage org-level agents in the
             <NuxtLink :to="`/orgs/${projectsStore.currentProject?.organizationId}`" class="text-brand-400 hover:text-brand-300">Organization</NuxtLink>.
           </div>
@@ -298,40 +245,8 @@
           </div>
           <div v-else class="text-sm text-gray-600 py-2">
             No MCP servers linked. Add one above or link from
-            <NuxtLink to="/config/mcp-servers" class="text-brand-400 hover:text-brand-300">Configuration → MCP Servers</NuxtLink>.
+            <NuxtLink to="/config/mcp-servers" class="text-brand-400 hover:text-brand-300">Agents → MCP Servers</NuxtLink>.
           </div>
-        </div>
-
-        <!-- Members -->
-        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
-          <div class="flex items-center justify-between mb-4">
-            <div>
-              <h2 class="font-semibold text-white">Members</h2>
-              <p class="text-sm text-gray-500">Users and teams with access to this project</p>
-            </div>
-            <NuxtLink :to="`/projects/${id}/members`"
-              class="text-sm text-brand-400 hover:text-brand-300 transition-colors">
-              Manage Members →
-            </NuxtLink>
-          </div>
-          <div v-if="membersStore.loading" class="flex items-center justify-center py-4">
-            <div class="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
-          </div>
-          <div v-else-if="membersStore.members.length" class="space-y-2">
-            <div v-for="member in membersStore.members.slice(0, 5)" :key="member.id"
-              class="flex items-center gap-3 bg-gray-800 rounded-lg px-3 py-2">
-              <span
-                :class="member.userId ? 'bg-blue-900/30 text-blue-400' : 'bg-purple-900/30 text-purple-400'"
-                class="text-xs px-1.5 py-0.5 rounded-full">
-                {{ member.userId ? 'User' : 'Team' }}
-              </span>
-              <span class="text-sm text-white">{{ member.user?.username || member.team?.name || '—' }}</span>
-            </div>
-            <p v-if="membersStore.members.length > 5" class="text-xs text-gray-500 pl-1">
-              +{{ membersStore.members.length - 5 }} more
-            </p>
-          </div>
-          <div v-else class="text-sm text-gray-600 py-2">No members yet.</div>
         </div>
 
         <!-- Move to Organization -->
@@ -444,7 +359,6 @@
 
 <script setup lang="ts">
 import { useProjectsStore } from '~/stores/projects'
-import { useProjectMembersStore } from '~/stores/projectMembers'
 import { useOrgsStore } from '~/stores/orgs'
 import { useGitStore } from '~/stores/git'
 import { useAgentsStore } from '~/stores/agents'
@@ -456,7 +370,6 @@ const router = useRouter()
 const id = route.params.id as string
 
 const projectsStore = useProjectsStore()
-const membersStore = useProjectMembersStore()
 const orgsStore = useOrgsStore()
 const gitStore = useGitStore()
 const agentsStore = useAgentsStore()
@@ -466,16 +379,6 @@ const mcpServersStore = useMcpServersStore()
 const form = reactive({ name: '', slug: '', description: '', gitHubRepo: '', isAgenda: false })
 const savingGeneral = ref(false)
 const saveGeneralError = ref<string | null>(null)
-
-// ── Runner Options form ────────────────────────────────────────
-const runnerForm = reactive({ mountRepositoryInDocker: true, maxConcurrentRunners: 0 })
-const savingRunner = ref(false)
-const saveRunnerError = ref<string | null>(null)
-
-// ── CI/CD Environment & Secrets form ─────────────────────────
-const ciCdEnvForm = reactive({ actEnv: '', actSecrets: '' })
-const savingCiCdEnv = ref(false)
-const saveCiCdEnvError = ref<string | null>(null)
 
 // ── Repo form ─────────────────────────────────────────────────
 const repoForm = reactive({ remoteUrl: '', defaultBranch: 'main', authUsername: '', authToken: '' })
@@ -597,7 +500,6 @@ const otherOrgs = computed(() =>
 onMounted(async () => {
   await Promise.all([
     projectsStore.fetchProject(id),
-    membersStore.fetchMembers(id),
     orgsStore.fetchOrgs(),
     gitStore.fetchRepo(id),
     agentsStore.fetchAgents(),
@@ -611,10 +513,6 @@ onMounted(async () => {
     form.description = projectsStore.currentProject.description || ''
     form.gitHubRepo = projectsStore.currentProject.gitHubRepo || ''
     form.isAgenda = projectsStore.currentProject.isAgenda ?? false
-    runnerForm.mountRepositoryInDocker = projectsStore.currentProject.mountRepositoryInDocker ?? true
-    runnerForm.maxConcurrentRunners = projectsStore.currentProject.maxConcurrentRunners ?? 0
-    ciCdEnvForm.actEnv = projectsStore.currentProject.actEnv || ''
-    ciCdEnvForm.actSecrets = projectsStore.currentProject.actSecrets || ''
   }
 
   if (gitStore.repo) {
@@ -638,44 +536,6 @@ async function saveGeneral() {
     saveGeneralError.value = e instanceof Error ? e.message : 'Failed to save'
   } finally {
     savingGeneral.value = false
-  }
-}
-
-async function saveRunnerOptions() {
-  savingRunner.value = true
-  saveRunnerError.value = null
-  try {
-    await projectsStore.updateProject(id, {
-      name: form.name,
-      slug: form.slug,
-      description: form.description,
-      gitHubRepo: form.gitHubRepo.trim() || undefined,
-      mountRepositoryInDocker: runnerForm.mountRepositoryInDocker,
-      maxConcurrentRunners: runnerForm.maxConcurrentRunners,
-    })
-  } catch (e: unknown) {
-    saveRunnerError.value = e instanceof Error ? e.message : 'Failed to save runner options'
-  } finally {
-    savingRunner.value = false
-  }
-}
-
-async function saveCiCdEnv() {
-  savingCiCdEnv.value = true
-  saveCiCdEnvError.value = null
-  try {
-    await projectsStore.updateProject(id, {
-      name: form.name,
-      slug: form.slug,
-      description: form.description,
-      gitHubRepo: form.gitHubRepo.trim() || undefined,
-      actEnv: ciCdEnvForm.actEnv || undefined,
-      actSecrets: ciCdEnvForm.actSecrets || undefined,
-    })
-  } catch (e: unknown) {
-    saveCiCdEnvError.value = e instanceof Error ? e.message : 'Failed to save environment & secrets'
-  } finally {
-    savingCiCdEnv.value = false
   }
 }
 
