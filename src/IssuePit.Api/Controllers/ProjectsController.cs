@@ -62,6 +62,7 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
         project.GitHubRepo = updated.GitHubRepo;
         project.MountRepositoryInDocker = updated.MountRepositoryInDocker;
         project.MaxConcurrentRunners = updated.MaxConcurrentRunners;
+        project.ConcurrentJobs = updated.ConcurrentJobs;
         project.ActEnv = updated.ActEnv;
         project.ActSecrets = updated.ActSecrets;
         project.IsAgenda = updated.IsAgenda;
@@ -374,6 +375,7 @@ public record ProjectDto(
     string? Description, string? GitHubRepo, DateTime CreatedAt,
     int IssueCount, int MemberCount,
     bool MountRepositoryInDocker, int MaxConcurrentRunners,
+    int? ConcurrentJobs,
     bool IsAgenda,
     string? ActEnv, string? ActSecrets, string? ActRunnerImage)
 {
@@ -383,6 +385,7 @@ public record ProjectDto(
             db.Issues.Count(i => i.ProjectId == p.Id),
             db.ProjectMembers.Count(m => m.ProjectId == p.Id),
             p.MountRepositoryInDocker, p.MaxConcurrentRunners,
+            p.ConcurrentJobs,
             p.IsAgenda,
             p.ActEnv, p.ActSecrets, p.ActRunnerImage);
 }

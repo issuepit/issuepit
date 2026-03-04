@@ -30,6 +30,9 @@ public class Project
     /// <summary>Maximum number of concurrent CI/CD runners for this project. 0 means unlimited.</summary>
     public int MaxConcurrentRunners { get; set; } = 0;
 
+    /// <summary>Maximum number of concurrent jobs within a single CI/CD run (passed as --concurrent-jobs to act). null means inherit from org. 0 means unlimited.</summary>
+    public int? ConcurrentJobs { get; set; }
+
     /// <summary>Newline-separated KEY=VALUE pairs passed as <c>--env</c> arguments to <c>act</c> on each run.</summary>
     public string? ActEnv { get; set; }
 

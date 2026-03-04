@@ -23,6 +23,9 @@ public class Organization
     /// <summary>Maximum number of concurrent CI/CD runners for this organization. 0 means unlimited.</summary>
     public int MaxConcurrentRunners { get; set; } = 0;
 
+    /// <summary>Maximum number of concurrent jobs within a single CI/CD run (passed as --concurrent-jobs to act). null means use the system default (4). 0 means unlimited.</summary>
+    public int? ConcurrentJobs { get; set; }
+
     /// <summary>Docker runner image override for act. Null means use the global default.</summary>
     public string? ActRunnerImage { get; set; }
 

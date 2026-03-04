@@ -153,6 +153,9 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
     internal static string BuildActArguments(TriggerPayload trigger) =>
         string.Join(' ', BuildActArgumentsList(trigger));
 
+    /// <summary>Default number of concurrent jobs passed to <c>--concurrent-jobs</c> when neither project nor org specifies a value.</summary>
+    internal const int DefaultConcurrentJobs = 4;
+
     internal static IReadOnlyList<string> BuildActArgumentsList(TriggerPayload trigger)
     {
         var list = new List<string> { trigger.EventName ?? "push" };
@@ -195,6 +198,14 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
                 list.Add("--input");
                 list.Add($"{kv.Key}={kv.Value}");
             }
+        }
+
+        // Limit concurrent act jobs. Default is 4; 0 means unlimited (no flag).
+        var concurrentJobs = trigger.ConcurrentJobs ?? DefaultConcurrentJobs;
+        if (concurrentJobs > 0)
+        {
+            list.Add("--concurrent-jobs");
+            list.Add(concurrentJobs.ToString());
         }
 
         return list;

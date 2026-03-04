@@ -89,6 +89,15 @@
               <input v-model.number="ciCdForm.maxConcurrentRunners" type="number" min="0"
                 class="w-40 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
             </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">
+                Concurrent jobs per run
+                <span class="text-gray-500 font-normal">(0 = unlimited, blank = inherit from org / default 4)</span>
+              </label>
+              <input v-model.number="ciCdForm.concurrentJobs" type="number" min="0" placeholder="inherit (org or default 4)"
+                class="w-40 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+              <p class="text-xs text-gray-500 mt-1">Overrides the organization setting for <code class="bg-gray-800 px-1 rounded">--concurrent-jobs</code>.</p>
+            </div>
           </div>
         </div>
 
@@ -163,6 +172,7 @@ const ciCdForm = reactive({
   actRunnerImage: null as string | null,
   mountRepositoryInDocker: true,
   maxConcurrentRunners: 0,
+  concurrentJobs: null as number | null,
   actEnv: '',
   actSecrets: '',
 })
@@ -178,6 +188,7 @@ onMounted(async () => {
     ciCdForm.actRunnerImage = p.actRunnerImage ?? null
     ciCdForm.mountRepositoryInDocker = p.mountRepositoryInDocker
     ciCdForm.maxConcurrentRunners = p.maxConcurrentRunners ?? 0
+    ciCdForm.concurrentJobs = p.concurrentJobs ?? null
     ciCdForm.actEnv = p.actEnv || ''
     ciCdForm.actSecrets = p.actSecrets || ''
   }
@@ -195,6 +206,7 @@ async function save() {
       actRunnerImage: ciCdForm.actRunnerImage || undefined,
       mountRepositoryInDocker: ciCdForm.mountRepositoryInDocker,
       maxConcurrentRunners: ciCdForm.maxConcurrentRunners,
+      concurrentJobs: ciCdForm.concurrentJobs,
       actEnv: ciCdForm.actEnv || undefined,
       actSecrets: ciCdForm.actSecrets || undefined,
     })
