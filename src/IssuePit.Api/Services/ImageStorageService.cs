@@ -87,7 +87,7 @@ public class ImageStorageService(IOptions<ImageStorageOptions> options, ILogger<
             ContentType = contentType,
         };
 
-        await s3.PutObjectAsync(request, ct);
+        await RetryS3Async(() => s3.PutObjectAsync(request, ct), ct);
 
         return BuildPublicUrl(key);
     }
@@ -123,14 +123,16 @@ public class ImageStorageService(IOptions<ImageStorageOptions> options, ILogger<
             CannedACL = S3CannedACL.PublicRead,
         };
 
-        await s3.PutObjectAsync(request, ct);
+        await RetryS3Async(() => s3.PutObjectAsync(request, ct), ct);
 
         return BuildPublicUrl(key);
     }
 
     private async Task EnsureBucketExistsAsync(IAmazonS3 s3, CancellationToken ct)
     {
-        for (var attempt = 0; attempt < 3; attempt++)
+        const int maxAttempts = 5;
+        Exception? lastEx = null;
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
             try
             {
@@ -148,13 +150,46 @@ public class ImageStorageService(IOptions<ImageStorageOptions> options, ILogger<
                 // Bucket already exists — nothing to do
                 return;
             }
-            catch (Exception ex) when (attempt < 2)
+            catch (Exception ex) when (attempt < maxAttempts - 1)
             {
+                lastEx = ex;
                 var delay = TimeSpan.FromSeconds(attempt + 1);
-                logger.LogWarning(ex, "S3 bucket creation attempt {Attempt}/3 failed, retrying in {Delay}s", attempt + 1, delay.TotalSeconds);
+                logger.LogWarning(ex, "S3 bucket creation attempt {Attempt}/{Max} failed, retrying in {Delay}s", attempt + 1, maxAttempts, delay.TotalSeconds);
                 await Task.Delay(delay, ct);
             }
+            catch (Exception ex)
+            {
+                lastEx = ex;
+            }
         }
+        throw new InvalidOperationException($"Failed to ensure S3 bucket '{_opts.BucketName}' after {maxAttempts} attempts.", lastEx);
+    }
+
+    /// <summary>Retries an S3 operation up to 3 times on transient failures.</summary>
+    private async Task RetryS3Async(Func<Task> operation, CancellationToken ct)
+    {
+        const int maxAttempts = 3;
+        Exception? lastEx = null;
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            try
+            {
+                await operation();
+                return;
+            }
+            catch (Exception ex) when (attempt < maxAttempts - 1)
+            {
+                lastEx = ex;
+                var delay = TimeSpan.FromSeconds(attempt + 1);
+                logger.LogWarning(ex, "S3 operation attempt {Attempt}/{Max} failed, retrying in {Delay}s", attempt + 1, maxAttempts, delay.TotalSeconds);
+                await Task.Delay(delay, ct);
+            }
+            catch (Exception ex)
+            {
+                lastEx = ex;
+            }
+        }
+        throw new InvalidOperationException($"S3 operation failed after {maxAttempts} attempts.", lastEx);
     }
 
     private string BuildPublicUrl(string key)
