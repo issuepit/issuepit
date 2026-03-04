@@ -393,8 +393,17 @@ public partial class DockerCiCdRuntime(
                         containerName,
                         new ContainerRemoveParameters { Force = true },
                         CancellationToken.None);
+                    await onLogLine(
+                        $"[WARN] CreateContainer: removed existing container with name '{containerName}' to resolve name conflict",
+                        LogStream.Stderr);
                 }
-                catch { /* best-effort: container may not exist */ }
+                catch
+                {
+                    /* best-effort: container may not exist */
+                    await onLogLine(
+                        $"[WARN] CreateContainer: failed to remove existing container with name '{containerName}' — it may need to be cleaned up manually (or did not exist???)",
+                        LogStream.Stderr);
+                }
 
                 await Task.Delay(2000, cancellationToken);
                 // Verify daemon is still reachable before retrying.
