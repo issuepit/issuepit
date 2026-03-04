@@ -21,7 +21,7 @@ var redis = builder.AddValkey("redis")
 var npmCache = builder.AddContainer("npm-cache", "verdaccio/verdaccio", "6")
     .WithHttpEndpoint(targetPort: 4873, name: "http")
     .WithVolume("verdaccio-storage", "/verdaccio/storage")
-    .WithBindMount("../../docker/verdaccio/config.yaml", "/verdaccio/conf/config.yaml", isReadOnly: true);
+    .WithBindMount("../../docker/verdaccio/config.yaml", "/verdaccio/conf/config.yaml", isReadOnly: true); // TODO source from c# string; no mount on host
 
 // LocalStack provides local AWS services (S3 for image uploads).
 // Open source (Apache 2.0). S3 endpoint: http://localstack:4566
