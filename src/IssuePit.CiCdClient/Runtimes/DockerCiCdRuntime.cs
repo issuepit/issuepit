@@ -365,8 +365,9 @@ public partial class DockerCiCdRuntime(
     /// name-conflict (409) errors. A name conflict occurs when a previous attempt succeeded on
     /// the Docker daemon side but the HTTP response was lost (named-pipe reset on Windows):
     /// the container was created but we never received its ID, so on retry the same name is
-    /// rejected. The fix is to forcibly remove any existing container with the target name
-    /// before each retry attempt.
+    /// rejected. The fix is to use a fresh unique name on every retry attempt so that any
+    /// orphaned container from a previous attempt is simply abandoned (it will be cleaned up
+    /// by the issuepit.run-id label at the end of the run, or by periodic Docker pruning).
     /// </summary>
     private async Task<CreateContainerResponse> CreateContainerWithRetryAsync(
         CreateContainerParameters createParams,
@@ -390,30 +391,14 @@ public partial class DockerCiCdRuntime(
                  (ex is OperationCanceledException oce && oce.CancellationToken != cancellationToken) ||
                  (ex is DockerApiException dex && dex.StatusCode == System.Net.HttpStatusCode.Conflict)))
             {
-                var reason = ex is DockerApiException ? "name conflict (container may have been created during a previous connection reset)" : "connection reset";
+                var reason = ex is DockerApiException ? "name conflict" : "connection reset";
+                // Generate a fresh unique name so that any orphaned container from the previous
+                // attempt does not cause another Conflict on the next attempt.
+                var newName = $"issuepit-cicd-{Guid.NewGuid():N}"[..24];
+                createParams.Name = newName;
                 await onLogLine(
-                    $"[WARN] CreateContainer: {reason} (attempt {attempt}/{maxAttempts}), cleaning up and retrying in 2s…",
+                    $"[WARN] CreateContainer: {reason} (attempt {attempt}/{maxAttempts}), retrying with new name '{newName}' in 2s…",
                     LogStream.Stderr);
-
-                // Remove any existing container with the same name before retrying.
-                // This handles the case where the daemon created the container but the response was lost.
-                try
-                {
-                    await dockerClient.Containers.RemoveContainerAsync(
-                        containerName,
-                        new ContainerRemoveParameters { Force = true },
-                        CancellationToken.None);
-                    await onLogLine(
-                        $"[WARN] CreateContainer: removed existing container with name '{containerName}' to resolve name conflict",
-                        LogStream.Stderr);
-                }
-                catch
-                {
-                    /* best-effort: container may not exist */
-                    await onLogLine(
-                        $"[WARN] CreateContainer: failed to remove existing container with name '{containerName}' — it may need to be cleaned up manually (or did not exist???)",
-                        LogStream.Stderr);
-                }
 
                 await Task.Delay(2000, cancellationToken);
                 // Verify daemon is still reachable before retrying.
