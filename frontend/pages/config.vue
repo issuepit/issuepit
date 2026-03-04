@@ -2,7 +2,7 @@
   <div class="p-8 max-w-4xl mx-auto">
     <div class="mb-6">
       <h1 class="text-2xl font-bold text-white">Configuration</h1>
-      <p class="text-gray-400 mt-1">Manage API keys, MCP servers, and agent runtime environments.</p>
+      <p class="text-gray-400 mt-1">Manage API keys, GitHub identities, Telegram bots and CI/CD defaults.</p>
     </div>
 
     <!-- Tab bar -->
@@ -29,9 +29,6 @@ const route = useRoute()
 
 const tabs = [
   { id: 'keys', label: 'API Keys', href: '/config/keys' },
-  { id: 'runtimes', label: 'Agent Runtimes', href: '/config/runtimes' },
-  { id: 'mcp-servers', label: 'MCP Servers', href: '/config/mcp-servers' },
-  { id: 'mcp-playground', label: 'MCP Playground', href: '/config/mcp-playground' },
   { id: 'github-identities', label: 'GitHub Identities', href: '/config/github-identities' },
   { id: 'telegram-bots', label: 'Telegram Bots', href: '/config/telegram-bots' },
   { id: 'ci-cd', label: 'CI/CD', href: '/config/ci-cd' },

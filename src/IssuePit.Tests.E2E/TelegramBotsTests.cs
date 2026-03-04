@@ -115,6 +115,7 @@ public class TelegramBotsTests : IAsyncLifetime
         var orgId = org.GetProperty("id").GetString()!;
 
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
+        context.SetDefaultTimeout(10_000);
         var page = await context.NewPageAsync();
 
         try

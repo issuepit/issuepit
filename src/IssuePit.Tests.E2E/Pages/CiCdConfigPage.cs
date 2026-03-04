@@ -36,24 +36,42 @@ public class CiCdConfigPage(IPage page)
     }
 
     /// <summary>
-    /// Selects a specific tag version button (e.g. "latest", "24.04", "22.04") inside the
-    /// currently-selected group's version picker.
+    /// Selects a specific tag version (e.g. "latest", "24.04", "22.04") by clicking the
+    /// corresponding tag label directly in the image group.
     /// </summary>
     public async Task SelectTagVersionAsync(string versionLabel)
     {
-        // Scope to the container that holds the "Select version:" label to avoid matching
-        // buttons from other sections of the page.
-        await page.ClickAsync($"div:has(> p:has-text('Select version:')) button:has-text('{versionLabel}')");
+        // Tags are shown as full image references (e.g. "ghcr.io/catthehacker/ubuntu:act-latest").
+        // Click the code element whose text ends with the version label (after the last dash).
+        var codes = await page.QuerySelectorAllAsync("code");
+        foreach (var code in codes)
+        {
+            var text = (await code.InnerTextAsync()).Trim();
+            if (text.EndsWith($"-{versionLabel}") || text.EndsWith($":{versionLabel}"))
+            {
+                await code.ClickAsync();
+                return;
+            }
+        }
+        throw new InvalidOperationException($"Tag version '{versionLabel}' not found in image selector.");
     }
 
     /// <summary>
-    /// Returns the version label of the highlighted (active) tag button inside the selected group.
+    /// Returns the currently selected tag text (full image reference) or null if nothing is selected.
     /// </summary>
     public async Task<string?> GetSelectedTagVersionAsync()
     {
-        // Active tag buttons carry bg-brand-700 styling
-        var btn = await page.QuerySelectorAsync("button.bg-brand-700");
-        return btn is null ? null : (await btn.InnerTextAsync()).Trim();
+        // Selected tag code elements have text-brand-300 styling (distinct from default unselected tags)
+        var codes = await page.QuerySelectorAllAsync("code.text-brand-300");
+        if (codes.Count == 0) return null;
+        var text = (await codes[0].InnerTextAsync()).Trim();
+        // Extract the version suffix after the last '-' in the colon-part
+        // e.g. "ghcr.io/catthehacker/ubuntu:act-latest" → "latest"
+        var colonIdx = text.LastIndexOf(':');
+        if (colonIdx < 0) return text;
+        var afterColon = text[(colonIdx + 1)..];
+        var dashIdx = afterColon.LastIndexOf('-');
+        return dashIdx >= 0 ? afterColon[(dashIdx + 1)..] : afterColon;
     }
 
     /// <summary>

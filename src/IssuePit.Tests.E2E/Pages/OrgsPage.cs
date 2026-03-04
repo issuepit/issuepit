@@ -35,6 +35,20 @@ public class OrgsPage(IPage page)
         }
 
         await page.ClickAsync("button:has-text('New Organization')");
+
+        // Wait for the modal input to appear; retry the button click once if the modal didn't open
+        // (can happen due to a Vue hydration race where the click is swallowed before handlers attach).
+        try
+        {
+            await page.WaitForSelectorAsync("input[placeholder='Acme Corp']",
+                new PageWaitForSelectorOptions { Timeout = VueHydrationRetryTimeoutMs });
+        }
+        catch (TimeoutException)
+        {
+            await page.ClickAsync("button:has-text('New Organization')");
+            await page.WaitForSelectorAsync("input[placeholder='Acme Corp']");
+        }
+
         await page.FillAsync("input[placeholder='Acme Corp']", orgName);
         await page.ClickAsync("button[type='submit']");
         await page.WaitForSelectorAsync($"text={orgName}", new PageWaitForSelectorOptions { Timeout = 10_000 });

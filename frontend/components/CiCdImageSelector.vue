@@ -37,31 +37,14 @@
             <code
               v-for="tag in group.tags"
               :key="tag"
-              class="text-xs font-mono px-2 py-0.5 rounded border"
+              class="text-xs font-mono px-2 py-0.5 rounded border cursor-pointer transition-colors"
               :class="props.modelValue === tag
                 ? 'bg-brand-950/60 border-brand-800 text-brand-300'
                 : group.isDefault && !selectedGroupId && !customImageSelected && tag === group.tags[0]
-                  ? 'bg-brand-950/60 border-brand-800 text-brand-300'
-                  : 'bg-gray-950/60 border-gray-700 text-gray-400'"
+                  ? 'bg-brand-950/60 border-brand-800 text-brand-300 hover:border-brand-600'
+                  : 'bg-gray-950/60 border-gray-700 text-gray-400 hover:border-gray-500 hover:text-gray-200'"
+              @click.stop="emit('update:modelValue', tag)"
             >{{ tag }}</code>
-          </div>
-          <!-- Tag selector shown when this group is active -->
-          <div v-if="selectedGroupId === group.id" class="mt-3 pt-3 border-t border-gray-700/60" @click.stop>
-            <p class="text-xs text-gray-400 mb-2">Select version:</p>
-            <div class="flex flex-wrap gap-2">
-              <button
-                v-for="tag in group.tags"
-                :key="tag"
-                type="button"
-                class="text-xs font-mono px-2.5 py-1 rounded border transition-colors"
-                :class="props.modelValue === tag
-                  ? 'bg-brand-700 border-brand-500 text-white'
-                  : 'bg-gray-800 border-gray-600 text-gray-300 hover:border-gray-400 hover:text-white'"
-                @click.stop="emit('update:modelValue', tag)"
-              >
-                {{ tagVersionLabel(tag) }}
-              </button>
-            </div>
           </div>
         </div>
         <!-- Selected indicator -->
@@ -333,16 +316,6 @@ watch(
   },
   { immediate: true },
 )
-
-// Extract a human-readable version label from a full tag string.
-// Only called for known group tags (e.g. "ghcr.io/catthehacker/ubuntu:act-latest").
-// e.g. "ghcr.io/catthehacker/ubuntu:act-latest" → "latest"
-//      "ghcr.io/catthehacker/ubuntu:act-24.04"   → "24.04"
-function tagVersionLabel(tag: string): string {
-  const colonPart = tag.split(':')[1] ?? tag
-  const parts = colonPart.split('-')
-  return parts[parts.length - 1]
-}
 
 function selectGroup(id: string) {
   const group = imageGroups.find(g => g.id === id)
