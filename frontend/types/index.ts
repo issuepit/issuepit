@@ -702,6 +702,21 @@ export interface WorkflowGraph {
   workflowTriggers?: Record<string, string[]>
 }
 
+export interface WorkflowInput {
+  name: string
+  description?: string
+  default?: string
+  required: boolean
+  type: string
+  options?: string[]
+}
+
+export interface WorkflowInfo {
+  fileName: string
+  triggers: string[]
+  dispatchInputs: WorkflowInput[]
+}
+
 export interface AgentSessionLog {
   id: string
   line: string

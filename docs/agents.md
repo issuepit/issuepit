@@ -93,7 +93,7 @@ Work agents can run in different environments depending on your setup:
 | **Hetzner + Terraform** | Provisions a fresh Hetzner cloud VM per run |
 | **OpenSandbox** | Uses an OpenSandbox-compatible environment |
 
-To configure a runtime, go to **Configuration → Agent Runtimes**.
+To configure a runtime, go to **Agents → Runtimes**.
 
 ---
 
@@ -101,7 +101,7 @@ To configure a runtime, go to **Configuration → Agent Runtimes**.
 
 Agent modes can use **MCP (Model Context Protocol) servers** to access external tools such as GitHub, file systems, or custom APIs.
 
-1. First, add an MCP server under **Configuration → MCP Servers**.
+1. First, add an MCP server under **Agents → MCP Servers**.
 2. Then link it to an agent in the agent's settings under **MCP Servers**.
 
 ---

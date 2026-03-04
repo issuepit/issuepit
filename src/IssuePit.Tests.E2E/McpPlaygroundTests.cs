@@ -43,6 +43,7 @@ public class McpPlaygroundTests : IAsyncLifetime
     public async Task Ui_McpPlayground_LoadsAndShowsHeading()
     {
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
+        context.SetDefaultTimeout(10_000);
         var page = await context.NewPageAsync();
 
         try
@@ -71,6 +72,7 @@ public class McpPlaygroundTests : IAsyncLifetime
     public async Task Ui_McpPlayground_ToolsListAttempted()
     {
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
+        context.SetDefaultTimeout(10_000);
         var page = await context.NewPageAsync();
 
         try
@@ -105,6 +107,7 @@ public class McpPlaygroundTests : IAsyncLifetime
     public async Task Ui_McpPlayground_ReloadToolsButton_Works()
     {
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
+        context.SetDefaultTimeout(10_000);
         var page = await context.NewPageAsync();
 
         try
