@@ -40,7 +40,7 @@ public class TelegramBotsPage(IPage page)
     {
         // Click the header "Add Bot" button to open the modal.
         await page.ClickAsync("button:has-text('Add Bot')");
-        await page.WaitForSelectorAsync("h3:has-text('Add Telegram Bot')", new PageWaitForSelectorOptions { Timeout = 5_000 });
+        await page.WaitForSelectorAsync("h3:has-text('Add Telegram Bot')");
 
         await page.FillAsync("input[placeholder='e.g. Team Alerts']", name);
         await page.FillAsync("#bot-token", botToken);
