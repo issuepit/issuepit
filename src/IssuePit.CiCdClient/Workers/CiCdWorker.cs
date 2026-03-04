@@ -147,6 +147,7 @@ public class CiCdWorker(
                 ActEnv = trigger.ActEnv ?? project.ActEnv ?? orgSettings?.ActEnv,
                 ActSecrets = trigger.ActSecrets ?? project.ActSecrets ?? orgSettings?.ActSecrets,
                 ActRunnerImage = trigger.ActRunnerImage ?? project.ActRunnerImage ?? orgSettings?.ActRunnerImage,
+                DindCacheStrategy = trigger.DindCacheStrategy ?? project.DindCacheStrategy ?? orgSettings?.DindCacheStrategy,
             };
         }
 

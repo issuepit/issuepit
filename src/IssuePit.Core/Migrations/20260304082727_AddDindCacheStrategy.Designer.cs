@@ -3,6 +3,7 @@ using System;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace IssuePit.Core.Migrations
 {
     [DbContext(typeof(IssuePitDbContext))]
-    partial class IssuePitDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260304082727_AddDindCacheStrategy")]
+    partial class AddDindCacheStrategy
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

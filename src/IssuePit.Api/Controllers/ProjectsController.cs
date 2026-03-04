@@ -66,6 +66,7 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
         project.ActSecrets = updated.ActSecrets;
         project.IsAgenda = updated.IsAgenda;
         project.ActRunnerImage = updated.ActRunnerImage;
+        project.DindCacheStrategy = updated.DindCacheStrategy;
         await db.SaveChangesAsync();
         return Ok(project);
     }
@@ -375,7 +376,8 @@ public record ProjectDto(
     int IssueCount, int MemberCount,
     bool MountRepositoryInDocker, int MaxConcurrentRunners,
     bool IsAgenda,
-    string? ActEnv, string? ActSecrets, string? ActRunnerImage)
+    string? ActEnv, string? ActSecrets, string? ActRunnerImage,
+    DindCacheStrategy? DindCacheStrategy)
 {
     public static Expression<Func<Project, ProjectDto>> Selector(IssuePitDbContext db) =>
         p => new ProjectDto(
@@ -384,5 +386,6 @@ public record ProjectDto(
             db.ProjectMembers.Count(m => m.ProjectId == p.Id),
             p.MountRepositoryInDocker, p.MaxConcurrentRunners,
             p.IsAgenda,
-            p.ActEnv, p.ActSecrets, p.ActRunnerImage);
+            p.ActEnv, p.ActSecrets, p.ActRunnerImage,
+            p.DindCacheStrategy);
 }

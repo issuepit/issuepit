@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using IssuePit.Core.Enums;
 
 namespace IssuePit.Core.Entities;
 
@@ -31,6 +32,12 @@ public class Organization
 
     /// <summary>Newline-separated KEY=VALUE pairs passed as <c>--secret</c> arguments to <c>act</c> on each run.</summary>
     public string? ActSecrets { get; set; }
+
+    /// <summary>
+    /// Docker image caching strategy for DinD containers. Null means use the global default
+    /// (configured via <c>CiCd__DindCache__Strategy</c>, defaulting to <c>Volume</c>).
+    /// </summary>
+    public DindCacheStrategy? DindCacheStrategy { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

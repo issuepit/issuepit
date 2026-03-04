@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using IssuePit.Core.Enums;
 
 namespace IssuePit.Core.Entities;
 
@@ -41,6 +42,12 @@ public class Project
   
     /// <summary>Docker runner image override for act. Null means use the org or global default.</summary>
     public string? ActRunnerImage { get; set; }
+
+    /// <summary>
+    /// Docker image caching strategy for DinD containers. Null means use the org or global default
+    /// (configured via <c>CiCd__DindCache__Strategy</c>, defaulting to <c>Volume</c>).
+    /// </summary>
+    public DindCacheStrategy? DindCacheStrategy { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
