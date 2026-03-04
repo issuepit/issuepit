@@ -44,3 +44,5 @@ public record TriggerPayload(
     /// The worker reads parsed test results from this directory after the run.
     /// </summary>
     string? ArtifactServerPath = null);
+    /// <summary>Key-value input pairs passed as <c>--input</c> arguments to <c>act</c> (for workflow_dispatch events).</summary>
+    IReadOnlyDictionary<string, string>? Inputs = null);

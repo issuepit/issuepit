@@ -166,6 +166,27 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         }
     }
 
+    /// <summary>
+    /// Returns the list of workflow files found in the repository workspace's <c>.github/workflows/</c>
+    /// directory, including their event triggers and (for <c>workflow_dispatch</c>) the input parameters.
+    /// Returns an empty list when no workflows directory exists.
+    /// </summary>
+    [HttpGet("workflows")]
+    public async Task<IActionResult> GetWorkflows(Guid projectId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var repo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == projectId);
+        if (repo is null) return NotFound();
+
+        var localPath = gitService.GetLocalPath(repo);
+        if (string.IsNullOrWhiteSpace(localPath))
+            return Ok(Array.Empty<WorkflowInfo>());
+
+        var workflowsDir = Path.Combine(localPath, ".github", "workflows");
+        var infos = await WorkflowGraphParser.ParseWorkflowInfosAsync(workflowsDir, HttpContext.RequestAborted);
+        return Ok(infos);
+    }
+
     [HttpGet("tree")]
     public async Task<IActionResult> GetTree(Guid projectId, [FromQuery] string? ref_, [FromQuery] string? path)
     {

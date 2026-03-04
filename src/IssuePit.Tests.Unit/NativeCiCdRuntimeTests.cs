@@ -164,4 +164,37 @@ public class NativeCiCdRuntimeTests
         Assert.Single(result);
         Assert.Equal("URL=https://example.com?a=b", result[0]);
     }
+
+    [Fact]
+    public void BuildActArgumentsList_WithInputs_EmitsInputFlags()
+    {
+        var trigger = new TriggerPayload(
+            ProjectId: Guid.NewGuid(),
+            CommitSha: null,
+            Branch: null,
+            Workflow: null,
+            AgentSessionId: null,
+            WorkspacePath: null,
+            EventName: "workflow_dispatch",
+            Inputs: new Dictionary<string, string>
+            {
+                ["environment"] = "staging",
+                ["version"] = "1.0.0",
+            });
+
+        var args = NativeCiCdRuntime.BuildActArgumentsList(trigger).ToList();
+
+        Assert.Contains("--input", args);
+        var envIdx = args.IndexOf("--input");
+        Assert.Equal("environment=staging", args[envIdx + 1]);
+        Assert.Equal("--input", args[envIdx + 2]);
+        Assert.Equal("version=1.0.0", args[envIdx + 3]);
+    }
+
+    [Fact]
+    public void BuildActArgumentsList_NullInputs_NoInputFlags()
+    {
+        var args = NativeCiCdRuntime.BuildActArgumentsList(Trigger(eventName: "workflow_dispatch"));
+        Assert.DoesNotContain("--input", args);
+    }
 }

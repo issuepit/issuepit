@@ -185,6 +185,14 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
             list.Add("--artifact-server-path");
             list.Add(trigger.ArtifactServerPath);
         }
+        if (trigger.Inputs is not null)
+        {
+            foreach (var kv in trigger.Inputs)
+            {
+                list.Add("--input");
+                list.Add($"{kv.Key}={kv.Value}");
+            }
+        }
 
         return list;
     }

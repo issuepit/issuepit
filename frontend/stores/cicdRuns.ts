@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { CiCdRun, CiCdRunLog, CiCdTestSuite, AgentSession, AgentSessionDetail, AgentSessionLog, DashboardAgentSession, WorkflowGraph } from '~/types'
+import type { CiCdRun, CiCdRunLog, CiCdTestSuite, AgentSession, AgentSessionDetail, AgentSessionLog, DashboardAgentSession, WorkflowGraph, WorkflowInfo } from '~/types'
 
 export const useCiCdRunsStore = defineStore('cicdRuns', () => {
   const runs = ref<CiCdRun[]>([])
@@ -140,6 +140,25 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     }
   }
 
+  async function fetchWorkflows(projectId: string): Promise<WorkflowInfo[]> {
+    try {
+      return await api.get<WorkflowInfo[]>(`/api/projects/${projectId}/git/workflows`)
+    } catch {
+      return []
+    }
+  }
+
+  async function triggerRun(request: {
+    projectId: string
+    commitSha: string
+    eventName: string
+    branch?: string
+    workflow?: string
+    inputs?: Record<string, string>
+  }) {
+    await api.post('/api/cicd-runs/trigger', request)
+  }
+
   return {
     runs,
     agentSessions,
@@ -162,5 +181,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     retryRun,
     cancelRun,
     fetchDashboardSessions,
+    fetchWorkflows,
+    triggerRun,
   }
 })
