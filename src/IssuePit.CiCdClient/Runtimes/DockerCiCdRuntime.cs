@@ -114,13 +114,10 @@ public partial class DockerCiCdRuntime(
         if (hasGitRepo)
             await onLogLine($"[DEBUG] Git repo URL   : {trigger.GitRepoUrl}", LogStream.Stdout);
         if (!trigger.NoVolumeMounts && !hasGitRepo)
-        {
             await onLogLine($"[DEBUG] Mount          : {workspacePath}:/workspace", LogStream.Stdout);
-            if (!trigger.NoDind)
-                await onLogLine($"[DEBUG] Mount          : /var/run/docker.sock:/var/run/docker.sock", LogStream.Stdout);
-        }
         await onLogLine($"[DEBUG] Working dir    : /workspace", LogStream.Stdout);
         if (trigger.NoDind) await onLogLine($"[DEBUG] DinD           : disabled", LogStream.Stdout);
+        else await onLogLine($"[DEBUG] DinD           : isolated (Privileged=true, in-container dockerd)", LogStream.Stdout);
         if (trigger.NoVolumeMounts) await onLogLine($"[DEBUG] Volume mounts  : disabled", LogStream.Stdout);
         if (!string.IsNullOrWhiteSpace(trigger.CustomEntrypoint))
             await onLogLine($"[DEBUG] Entrypoint     : {trigger.CustomEntrypoint}", LogStream.Stdout);
@@ -171,18 +168,12 @@ public partial class DockerCiCdRuntime(
 
         // Build bind mounts based on trigger options.
         // When a git repo URL is set the workspace is cloned inside the container, so no host volume is needed.
+        // True DinD (Privileged=true + in-container dockerd) is used by default — the host docker socket
+        // is never mounted, keeping the host daemon fully isolated from CI/CD container activity.
         var binds = new List<string>();
         if (!trigger.NoVolumeMounts && !hasGitRepo)
         {
             binds.Add($"{workspacePath}:/workspace");
-            if (!trigger.NoDind)
-                // Mount Docker socket so act can spin up runner containers (DinD)
-                binds.Add("/var/run/docker.sock:/var/run/docker.sock");
-        }
-        else if (hasGitRepo && !trigger.NoDind)
-        {
-            // Git-clone mode: still mount Docker socket for DinD even though workspace is cloned inside.
-            binds.Add("/var/run/docker.sock:/var/run/docker.sock");
         }
 
         // Mount the artifact server directory from the host so artifacts are accessible after the run.
@@ -216,6 +207,10 @@ public partial class DockerCiCdRuntime(
             {
                 Binds = binds,
                 AutoRemove = false,
+                // Privileged mode is required for true DinD (in-container dockerd).
+                // The host Docker socket is never mounted — act's job containers run inside
+                // the container's own isolated daemon, fully isolated from the host.
+                Privileged = !trigger.NoDind,
             },
             Labels = new Dictionary<string, string>
             {
@@ -255,8 +250,23 @@ public partial class DockerCiCdRuntime(
                 // ── Exec model: run each step inside the container sequentially ─────────────
 
                 // Dynamically compute the number of steps so the [N/M] prefix is always correct.
-                var totalSteps = 2 + (hasGitRepo ? 1 : 0) + (!string.IsNullOrWhiteSpace(trigger.Workflow) ? 1 : 0);
+                var useDind = !trigger.NoDind;
+                var totalSteps = 2 + (useDind ? 1 : 0) + (hasGitRepo ? 1 : 0) + (!string.IsNullOrWhiteSpace(trigger.Workflow) ? 1 : 0);
                 var stepNum = 0;
+
+                // Step: Start dockerd (true DinD — no host socket mount).
+                // The first exec step starts the in-container daemon and waits until it is ready.
+                if (useDind)
+                {
+                    await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: starting dockerd (DinD)", LogStream.Stdout);
+                    var dindExitCode = await ExecCommandAsync(
+                        container.ID,
+                        ["/bin/sh", "-c", BuildDindStartupScript()],
+                        onLogLine,
+                        cancellationToken);
+                    if (dindExitCode != 0)
+                        throw new Exception($"dockerd failed to start inside the container (exit code {dindExitCode})");
+                }
 
                 // Step: git clone (when a repo URL is provided instead of a volume mount).
                 if (hasGitRepo)
@@ -703,6 +713,23 @@ public partial class DockerCiCdRuntime(
         if (!string.IsNullOrEmpty(flushed))
             await onLogLine(flushed, lastTarget);
     }
+
+    /// <summary>
+    /// Builds a shell script that starts <c>dockerd</c> in the background and waits until its
+    /// Unix socket is ready. Used for true DinD (the container runs with <c>Privileged=true</c>
+    /// and manages its own isolated Docker daemon — the host socket is never mounted).
+    /// </summary>
+    private static string BuildDindStartupScript() =>
+        // Start dockerd in the background, redirect its output, then poll the socket.
+        // 'dockerd &' runs as PID 1's child; we give it up to 60 s to become healthy.
+        """
+        dockerd > /tmp/dockerd.log 2>&1 &
+        timeout=60
+        while [ $timeout -gt 0 ] && ! docker info > /dev/null 2>&1; do
+          sleep 1; timeout=$((timeout-1))
+        done
+        docker info > /dev/null 2>&1 && echo '[DinD] dockerd ready' || { echo '[DinD] dockerd failed to start'; cat /tmp/dockerd.log; exit 1; }
+        """;
 
     /// <summary>
     /// Builds a shell script that writes the <c>actrc</c> platform mapping to prevent the interactive

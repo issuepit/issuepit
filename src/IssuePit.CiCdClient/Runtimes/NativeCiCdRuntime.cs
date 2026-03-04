@@ -157,6 +157,9 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
     {
         var list = new List<string> { trigger.EventName ?? "push" };
 
+        // Remove runner containers after each job completes (same as docker run --rm).
+        list.Add("--rm");
+
         // Output logs as JSON so the worker can extract job/step info for the UI.
         list.Add("--json");
 
