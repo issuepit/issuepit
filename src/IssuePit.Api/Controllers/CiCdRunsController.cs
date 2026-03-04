@@ -16,8 +16,7 @@ public class CiCdRunsController(
     IssuePitDbContext db,
     TenantContext tenant,
     IProducer<string, string> producer,
-    IHubContext<ProjectHub> projectHub,
-    IHttpClientFactory httpClientFactory) : ControllerBase
+    IHubContext<ProjectHub> projectHub) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetRuns([FromQuery] Guid? projectId)
@@ -163,7 +162,7 @@ public class CiCdRunsController(
         var run = await db.CiCdRuns
             .Include(r => r.Project)
             .Where(r => r.Id == id && r.Project.Organization.TenantId == tenant.CurrentTenant!.Id)
-            .Select(r => new { r.ProjectId, r.WorkspacePath, r.Workflow, r.WorkflowGraphJson, r.Branch })
+            .Select(r => new { r.WorkspacePath, r.Workflow, r.WorkflowGraphJson })
             .FirstOrDefaultAsync();
 
         if (run is null) return NotFound();
@@ -183,48 +182,11 @@ public class CiCdRunsController(
         }
 
         if (string.IsNullOrWhiteSpace(run.WorkspacePath))
-        {
-            // No local workspace (e.g. DinD run that clones inside the container).
-            // Try to fetch the workflow YAML from the GitHub raw API using the project's git repo URL.
-            var gitRepo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == run.ProjectId);
-            if (gitRepo is not null && TryBuildGitHubRawUrl(gitRepo.RemoteUrl, run.Branch ?? gitRepo.DefaultBranch ?? "main", run.Workflow, out var rawUrl))
-            {
-                try
-                {
-                    var http = httpClientFactory.CreateClient();
-                    var yaml = await http.GetStringAsync(rawUrl, HttpContext.RequestAborted);
-                    if (!string.IsNullOrWhiteSpace(yaml))
-                    {
-                        var fileName = string.IsNullOrWhiteSpace(run.Workflow)
-                            ? "ci.yml"
-                            : Path.GetFileName(run.Workflow);
-                        var graph = WorkflowGraphParser.ParseFromString(yaml, fileName);
-                        if (graph.Jobs.Count > 0)
-                        {
-                            // Cache the result so subsequent calls don't hit GitHub again.
-                            try
-                            {
-                                var runToUpdate = await db.CiCdRuns.FindAsync(id);
-                                if (runToUpdate is not null)
-                                {
-                                    runToUpdate.WorkflowGraphJson = System.Text.Json.JsonSerializer.Serialize(graph);
-                                    await db.SaveChangesAsync(HttpContext.RequestAborted);
-                                }
-                            }
-                            catch { /* best-effort */ }
-                            return Ok(graph);
-                        }
-                    }
-                }
-                catch { /* best-effort — fall through to NotFound */ }
-            }
-
-            return NotFound(new { error = "This run has no local workspace and no workflow YAML could be fetched from the remote repository." });
-        }
+            return NotFound(new { error = "This run has no local workspace. Graph data is only available for locally-triggered runs." });
 
         var workflowsDir = Path.Combine(run.WorkspacePath, ".github", "workflows");
 
-        WorkflowGraph workspaceGraph;
+        WorkflowGraph graph;
         if (!string.IsNullOrWhiteSpace(run.Workflow))
         {
             // Run was triggered for a specific workflow file — parse only that file.
@@ -232,13 +194,13 @@ public class CiCdRunsController(
             if (yamlPath is null)
                 return NotFound(new { error = $"Workflow file '{run.Workflow}' not found in workspace '{run.WorkspacePath}'." });
 
-            workspaceGraph = await WorkflowGraphParser.ParseFileAsync(yamlPath, HttpContext.RequestAborted);
+            graph = await WorkflowGraphParser.ParseFileAsync(yamlPath, HttpContext.RequestAborted);
         }
         else if (Directory.Exists(workflowsDir))
         {
             // No specific workflow — merge all workflow files in .github/workflows/.
-            workspaceGraph = await WorkflowGraphParser.ParseDirectoryAsync(workflowsDir, HttpContext.RequestAborted);
-            if (workspaceGraph.Jobs.Count == 0)
+            graph = await WorkflowGraphParser.ParseDirectoryAsync(workflowsDir, HttpContext.RequestAborted);
+            if (graph.Jobs.Count == 0)
                 return NotFound(new { error = "No workflow files with jobs found in workspace '.github/workflows/'." });
         }
         else
@@ -252,50 +214,13 @@ public class CiCdRunsController(
             var runToUpdate = await db.CiCdRuns.FindAsync(id);
             if (runToUpdate is not null)
             {
-                runToUpdate.WorkflowGraphJson = System.Text.Json.JsonSerializer.Serialize(workspaceGraph);
+                runToUpdate.WorkflowGraphJson = System.Text.Json.JsonSerializer.Serialize(graph);
                 await db.SaveChangesAsync(HttpContext.RequestAborted);
             }
         }
         catch { /* best-effort — caching failure must not fail the response */ }
 
-        return Ok(workspaceGraph);
-    }
-
-    /// <summary>
-    /// Attempts to build a GitHub raw-content URL for the given <paramref name="remoteUrl"/> and <paramref name="workflow"/>.
-    /// Returns <c>true</c> and sets <paramref name="rawUrl"/> when the remote URL looks like a GitHub HTTPS URL.
-    /// When <paramref name="workflow"/> is null/empty the URL points at the conventional <c>ci.yml</c> file as a
-    /// best-guess; the caller should handle a 404 from GitHub gracefully.
-    /// </summary>
-    private static bool TryBuildGitHubRawUrl(string? remoteUrl, string? branch, string? workflow, out string? rawUrl)
-    {
-        rawUrl = null;
-        if (string.IsNullOrWhiteSpace(remoteUrl)) return false;
-
-        // Accept https://github.com/owner/repo or https://github.com/owner/repo.git
-        if (!remoteUrl.StartsWith("https://github.com/", StringComparison.OrdinalIgnoreCase)) return false;
-
-        var path = remoteUrl
-            .Substring("https://github.com/".Length)
-            .TrimEnd('/');
-        // Strip a trailing .git suffix exactly (not character-by-character).
-        if (path.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
-            path = path[..^4];
-
-        var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length < 2) return false;
-
-        var owner = parts[0];
-        var repo  = parts[1];
-        var @ref  = branch ?? "main";
-
-        // Normalise the workflow name to just the filename (strip leading path if the caller stored a full path).
-        var fileName = string.IsNullOrWhiteSpace(workflow)
-            ? "ci.yml"
-            : Path.GetFileName(workflow);
-
-        rawUrl = $"https://raw.githubusercontent.com/{owner}/{repo}/{@ref}/.github/workflows/{fileName}";
-        return true;
+        return Ok(graph);
     }
 
     /// <summary>
