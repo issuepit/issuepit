@@ -178,6 +178,15 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
             list.Add(pair);
         }
 
+        if (trigger.Inputs is not null)
+        {
+            foreach (var kv in trigger.Inputs)
+            {
+                list.Add("--input");
+                list.Add($"{kv.Key}={kv.Value}");
+            }
+        }
+
         return list;
     }
 

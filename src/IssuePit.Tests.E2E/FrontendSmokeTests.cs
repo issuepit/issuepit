@@ -41,6 +41,7 @@ public class FrontendSmokeTests : IAsyncLifetime
             Channel = "chrome",
         });
         _context = await _browser.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
+        _context.SetDefaultTimeout(10_000);
         await SetUpAuthAsync();
     }
 

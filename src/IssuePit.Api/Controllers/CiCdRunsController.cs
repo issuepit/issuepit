@@ -16,7 +16,8 @@ public class CiCdRunsController(
     IssuePitDbContext db,
     TenantContext tenant,
     IProducer<string, string> producer,
-    IHubContext<ProjectHub> projectHub) : ControllerBase
+    IHubContext<ProjectHub> projectHub,
+    GitService gitService) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetRuns([FromQuery] Guid? projectId)
@@ -402,6 +403,54 @@ public class CiCdRunsController(
         return Accepted(new { retriedRunId = run.Id });
     }
 
+    /// <summary>
+    /// Triggers a new CI/CD run for a specific commit and event type.
+    /// Supports all GitHub Actions event types including push, pull_request, workflow_dispatch,
+    /// workflow_call, merge_group, and release. For workflow_dispatch, optional inputs can be supplied.
+    /// </summary>
+    [HttpPost("trigger")]
+    public async Task<IActionResult> TriggerRun([FromBody] TriggerRunRequest request)
+    {
+        if (request.ProjectId == Guid.Empty)
+            return BadRequest(new { error = "projectId is required" });
+
+        if (string.IsNullOrWhiteSpace(request.CommitSha))
+            return BadRequest(new { error = "commitSha is required" });
+
+        if (string.IsNullOrWhiteSpace(request.EventName))
+            return BadRequest(new { error = "eventName is required" });
+
+        var project = await db.Projects
+            .Include(p => p.Organization)
+            .FirstOrDefaultAsync(p => p.Id == request.ProjectId && p.Organization.TenantId == tenant.CurrentTenant!.Id);
+
+        if (project is null) return NotFound();
+
+        // Look up the workspace path from the linked git repository (if any).
+        var repo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == request.ProjectId);
+        var workspacePath = repo is not null ? gitService.GetLocalPath(repo) : null;
+
+        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            projectId = request.ProjectId,
+            commitSha = request.CommitSha,
+            branch = request.Branch,
+            workflow = request.Workflow,
+            agentSessionId = (Guid?)null,
+            workspacePath,
+            eventName = request.EventName,
+            inputs = request.Inputs,
+        });
+
+        await producer.ProduceAsync("cicd-trigger", new Message<string, string>
+        {
+            Key = request.CommitSha,
+            Value = payload,
+        });
+
+        return Accepted(new { projectId = request.ProjectId, commitSha = request.CommitSha, eventName = request.EventName });
+    }
+
     [HttpPost("{id:guid}/cancel")]
     public async Task<IActionResult> CancelRun(Guid id)
     {
@@ -483,3 +532,13 @@ public record ExternalSyncRequest(
     string? Conclusion,
     DateTime? StartedAt,
     DateTime? EndedAt);
+
+/// <summary>Request body for the manual trigger endpoint.</summary>
+public record TriggerRunRequest(
+    Guid ProjectId,
+    string CommitSha,
+    string EventName,
+    string? Branch = null,
+    string? Workflow = null,
+    /// <summary>Input key-value pairs for workflow_dispatch events.</summary>
+    Dictionary<string, string>? Inputs = null);
