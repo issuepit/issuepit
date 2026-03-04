@@ -186,6 +186,17 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
             list.Add(trigger.ArtifactServerPath);
         }
 
+        // Remove inner runner containers automatically after each job completes.
+        list.Add("--rm");
+
+        // Label inner runner containers with the run ID so all containers for a single
+        // CI/CD run share the same namespace and can be identified or cleaned up together.
+        if (trigger.RunId.HasValue)
+        {
+            list.Add("--container-options");
+            list.Add($"--label issuepit.run-id={trigger.RunId.Value:N}");
+        }
+
         return list;
     }
 

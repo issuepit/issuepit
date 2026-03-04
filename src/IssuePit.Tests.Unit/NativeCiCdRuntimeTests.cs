@@ -139,6 +139,31 @@ public class NativeCiCdRuntimeTests
     }
 
     [Fact]
+    public void BuildActArgumentsList_AlwaysIncludesRmFlag()
+    {
+        var args = NativeCiCdRuntime.BuildActArgumentsList(Trigger());
+        Assert.Contains("--rm", args);
+    }
+
+    [Fact]
+    public void BuildActArgumentsList_WithRunId_EmitsContainerOptionsLabel()
+    {
+        var runId = Guid.NewGuid();
+        var trigger = Trigger() with { RunId = runId };
+        var args = NativeCiCdRuntime.BuildActArgumentsList(trigger).ToList();
+        var optIdx = args.IndexOf("--container-options");
+        Assert.True(optIdx >= 0, "--container-options flag should be present");
+        Assert.Equal($"--label issuepit.run-id={runId:N}", args[optIdx + 1]);
+    }
+
+    [Fact]
+    public void BuildActArgumentsList_WithoutRunId_NoContainerOptionsFlag()
+    {
+        var args = NativeCiCdRuntime.BuildActArgumentsList(Trigger());
+        Assert.DoesNotContain("--container-options", args);
+    }
+
+    [Fact]
     public void ParseKeyValuePairs_NullInput_ReturnsEmpty()
     {
         Assert.Empty(NativeCiCdRuntime.ParseKeyValuePairs(null));

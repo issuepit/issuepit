@@ -43,4 +43,9 @@ public record TriggerPayload(
     /// <c>actions/download-artifact</c> work without a real GitHub token.
     /// The worker reads parsed test results from this directory after the run.
     /// </summary>
-    string? ArtifactServerPath = null);
+    string? ArtifactServerPath = null,
+    /// <summary>
+    /// Run ID injected by the worker so act's inner runner containers are labelled with
+    /// <c>--container-options "--label issuepit.run-id=&lt;id&gt;"</c> for namespace isolation.
+    /// </summary>
+    Guid? RunId = null);

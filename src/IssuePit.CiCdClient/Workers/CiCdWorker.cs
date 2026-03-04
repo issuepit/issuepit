@@ -173,7 +173,7 @@ public class CiCdWorker(
         // The directory is cleaned up after test results have been collected.
         var artifactDir = Path.Combine(Path.GetTempPath(), "issuepit-artifacts", run.Id.ToString("N"));
         Directory.CreateDirectory(artifactDir);
-        trigger = trigger with { ArtifactServerPath = artifactDir };
+        trigger = trigger with { ArtifactServerPath = artifactDir, RunId = run.Id };
 
         db.CiCdRuns.Add(run);
         await db.SaveChangesAsync(stoppingToken);
