@@ -705,6 +705,8 @@ public partial class DockerCiCdRuntime(
     /// Builds a shell script that starts <c>dockerd</c> in the background and waits until its
     /// Unix socket is ready. Used for true DinD (the container runs with <c>Privileged=true</c>
     /// and manages its own isolated Docker daemon — the host socket is never mounted).
+    /// Installs <c>docker.io</c> via apt if <c>dockerd</c> is not already present (fallback for
+    /// older helper images that only shipped <c>docker-ce-cli</c>).
     /// </summary>
     private static string BuildDindStartupScript() =>
         // Start dockerd in the background, redirect its output, then poll the socket.
@@ -712,6 +714,7 @@ public partial class DockerCiCdRuntime(
         // Use explicit \n to guarantee LF-only line endings when running inside a Linux container,
         // regardless of the line endings in this source file (e.g. CRLF on Windows).
         string.Join('\n',
+            "command -v dockerd > /dev/null 2>&1 || (apt-get update -qq 2>/dev/null && apt-get install -y --no-install-recommends docker.io 2>/dev/null)",
             "dockerd > /tmp/dockerd.log 2>&1 &",
             "timeout=60",
             "while [ $timeout -gt 0 ] && ! docker info > /dev/null 2>&1; do",
