@@ -17,13 +17,11 @@ public class IssuesPage(IPage page)
     /// </summary>
     public async Task GotoAsync(string projectId)
     {
-        await page.GotoAsync($"/projects/{projectId}/issues");
-        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-
-        // Retry once in case the heading was not yet visible due to a Vue SSR hydration race
-        // or the SPA navigation was aborted mid-flight.
+        // Retry once on ERR_ABORTED (Nuxt SPA router race) or TimeoutException (slow first render).
         try
         {
+            await page.GotoAsync($"/projects/{projectId}/issues");
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
             await page.WaitForSelectorAsync("h1:has-text('Issues')",
                 new PageWaitForSelectorOptions { Timeout = NavigationFirstAttemptTimeoutMs });
         }
