@@ -34,14 +34,21 @@ public enum DindImageCacheStrategy
     /// with a Docker pull-through registry mirror (<c>registry:2</c>) running as a sidecar.
     /// The DinD Docker daemon is configured to route all image pulls through the local mirror,
     /// so cache hits are served from the same host without touching the upstream registry.
+    /// This is the <b>default</b> strategy.
     /// <para>
     /// <b>When to use:</b> When you run many parallel CI/CD containers or want to share a
     /// single image cache across multiple host machines (by pointing the mirror's storage at
     /// a shared NFS/block volume).
     /// </para>
     /// <para>
+    /// <b>Aspire:</b> the <c>registry-mirror</c> Aspire resource (container name
+    /// <c>issuepit-registry-mirror</c>) is started automatically with a persistent Docker volume
+    /// (<c>issuepit-registry-cache</c>) and port 5100. The runtime reuses it when running.
+    /// </para>
+    /// <para>
     /// <b>Security:</b> The sidecar container runs with <c>--restart=unless-stopped</c>.
     /// It only caches public images; private registry credentials are never forwarded.
+    /// If the registry is unavailable, CI/CD runs will fail (intentional — no silent fallback).
     /// </para>
     /// <para>
     /// <b>Disk:</b> Registry data is stored at <c>CiCd__Docker__RegistryMirrorVolumePath</c>

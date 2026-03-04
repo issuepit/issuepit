@@ -113,7 +113,7 @@ public class DockerCiCdRuntimeCacheTests
     }
 
     [Fact]
-    public void DindImageCacheStrategy_DefaultIsLocalVolume()
+    public void DindImageCacheStrategy_EnumValues_AreStable()
     {
         // Verify the enum values so code that relies on integer comparison doesn't break silently.
         Assert.Equal(0, (int)DindImageCacheStrategy.Off);
@@ -122,11 +122,11 @@ public class DockerCiCdRuntimeCacheTests
     }
 
     [Fact]
-    public void DindImageCacheStrategy_DefaultConstant_IsLocalVolume()
+    public void DindImageCacheStrategy_DefaultConstant_IsRegistryMirror()
     {
-        // The DockerCiCdRuntime applies LocalVolume when no config key and no trigger override.
+        // The DockerCiCdRuntime applies RegistryMirror when no config key and no trigger override.
         // Verify this is the documented default by checking the enum name matches.
-        Assert.Equal("LocalVolume", DindImageCacheStrategy.LocalVolume.ToString());
+        Assert.Equal("RegistryMirror", DindImageCacheStrategy.RegistryMirror.ToString());
     }
 
     // ── TriggerPayload DindCacheStrategy field ─────────────────────────────────

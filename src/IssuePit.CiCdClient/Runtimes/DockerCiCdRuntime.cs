@@ -42,7 +42,7 @@ public partial class DockerCiCdRuntime(
     private const string DefaultImage = "ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24";
 
     // Default DinD image cache settings.
-    private const DindImageCacheStrategy DefaultDindCacheStrategy = DindImageCacheStrategy.LocalVolume;
+    private const DindImageCacheStrategy DefaultDindCacheStrategy = DindImageCacheStrategy.RegistryMirror;
     private const string DefaultDindCacheVolumePath = "/var/lib/issuepit-dind-cache";
     private const string RegistryMirrorContainerName = "issuepit-registry-mirror";
     private const int DefaultRegistryMirrorPort = 5100;
@@ -245,21 +245,15 @@ public partial class DockerCiCdRuntime(
             var mirrorPort = int.TryParse(configuration["CiCd__Docker__RegistryMirrorPort"], out var p) ? p : DefaultRegistryMirrorPort;
             var mirrorVolumePath = configuration["CiCd__Docker__RegistryMirrorVolumePath"] ?? DefaultRegistryMirrorVolumePath;
 
-            try
-            {
-                await EnsureRegistryMirrorAsync(mirrorPort, mirrorVolumePath, onLogLine, cancellationToken);
-                // Use host.docker.internal so the DinD dockerd inside the container can reach the registry
-                // on the host. Docker 20.10+ resolves this to the host gateway IP on Linux.
-                registryMirrorUrl = $"http://host.docker.internal:{mirrorPort}";
-                extraHosts.Add("host.docker.internal:host-gateway");
-                await onLogLine($"[DEBUG] Registry mirror: {registryMirrorUrl}", LogStream.Stdout);
-            }
-            catch (Exception ex)
-            {
-                // Degraded mode: log a warning and continue without the mirror (cache miss, not a failure).
-                await onLogLine($"[WARN] Registry mirror unavailable, falling back to LocalVolume cache: {ex.Message}", LogStream.Stderr);
-                registryMirrorUrl = null;
-            }
+            await EnsureRegistryMirrorAsync(mirrorPort, mirrorVolumePath, onLogLine, cancellationToken);
+            // Use host.docker.internal so the DinD dockerd inside the container can reach the registry
+            // on the host. Docker 20.10+ resolves this to the host gateway IP on Linux.
+            registryMirrorUrl = $"http://host.docker.internal:{mirrorPort}";
+            extraHosts.Add("host.docker.internal:host-gateway");
+            await onLogLine($"[DEBUG] Registry mirror: {registryMirrorUrl}", LogStream.Stdout);
+            // Note: to fall back to LocalVolume cache when the mirror is unavailable, wrap the
+            // EnsureRegistryMirrorAsync call and the three lines that follow it in a try/catch,
+            // set registryMirrorUrl = null in the catch block, and clear the extraHosts entry.
         }
 
         // When a custom entrypoint is set the caller controls execution; use their entrypoint+cmd directly.

@@ -144,7 +144,7 @@ Each DinD container starts with an empty image store. Images are pulled fresh ev
 
 **Use when:** disk space is constrained, or strict reproducibility is required.
 
-#### `LocalVolume` — persistent `/var/lib/docker` volume *(default)*
+#### `LocalVolume` — persistent `/var/lib/docker` volume
 
 A host directory is bind-mounted as `/var/lib/docker` inside the DinD container so pulled layers survive across runs.
 
@@ -161,14 +161,16 @@ docker run --rm --privileged \
   docker:dind docker system prune -f
 ```
 
-#### `RegistryMirror` — pull-through registry mirror + volume
+#### `RegistryMirror` — pull-through registry mirror + volume *(default)*
 
 Combines the persistent volume from `LocalVolume` with a `registry:2` sidecar container running as a pull-through cache for Docker Hub. The DinD `dockerd` is configured to route all image pulls through the local mirror; cache hits bypass Docker Hub entirely.
 
 **Pros:** reduces upstream bandwidth and is horizontally scalable — the registry storage can be placed on a shared NFS/block volume accessible by multiple runner hosts.  
 **Cons:** an additional `issuepit-registry-mirror` container is started on the host (once, managed automatically). Only public images are cached; private registry credentials are not forwarded.
 
-**Degraded mode:** if the registry container fails to start, the runtime falls back to `LocalVolume` behaviour (volume mount active, no mirror configured) and logs a `[WARN]` line.
+**Aspire:** the `registry-mirror` resource is declared in the Aspire AppHost and started automatically with a persistent Docker volume (`issuepit-registry-cache`) on port 5100. The runtime reuses this container when it is already running. `cicd-client` waits for it to be healthy before accepting CI/CD triggers.
+
+**Failure behavior:** if the registry is unavailable, CI/CD runs fail — there is no silent fallback. To restore the previous fallback-to-`LocalVolume` behavior, wrap the `EnsureRegistryMirrorAsync` call in `DockerCiCdRuntime` in a try/catch.
 
 ---
 
@@ -178,7 +180,7 @@ All settings are environment variables on the `cicd-client` service.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CiCd__Docker__DindCacheStrategy` | `LocalVolume` | Cache strategy: `Off`, `LocalVolume`, or `RegistryMirror` |
+| `CiCd__Docker__DindCacheStrategy` | `RegistryMirror` | Cache strategy: `Off`, `LocalVolume`, or `RegistryMirror` |
 | `CiCd__Docker__DindCacheVolumePath` | `/var/lib/issuepit-dind-cache` | Host path mounted as `/var/lib/docker` inside DinD containers |
 | `CiCd__Docker__RegistryMirrorPort` | `5100` | Host port the `registry:2` mirror container listens on |
 | `CiCd__Docker__RegistryMirrorVolumePath` | `/var/lib/issuepit-registry-cache` | Host path for registry mirror data |
@@ -191,8 +193,6 @@ The strategy can also be overridden per-run via the `DindCacheStrategy` field in
 services:
   cicd-client:
     environment:
-      # Use registry mirror with custom paths
-      CiCd__Docker__DindCacheStrategy: RegistryMirror
       CiCd__Docker__DindCacheVolumePath: /data/dind-cache
       CiCd__Docker__RegistryMirrorPort: "5100"
       CiCd__Docker__RegistryMirrorVolumePath: /data/registry-cache
