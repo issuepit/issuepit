@@ -18,13 +18,14 @@ public class DockerExecModelTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _client = new DockerClientConfiguration().CreateClient();
+        _client = new DockerClientBuilder().Build();
 
         // Pull alpine:3 if not present
         await _client.Images.CreateImageAsync(
             new ImagesCreateParameters { FromImage = TestImage },
-            null,
-            new Progress<JSONMessage>());
+            null!,
+            new Progress<JSONMessage>(),
+            CancellationToken.None);
 
         // Create container using the new TTY + OpenStdin idiom (Cmd=["/bin/sh"], Entrypoint=[], Tty=true, OpenStdin=true)
         var response = await _client.Containers.CreateContainerAsync(new CreateContainerParameters
@@ -115,19 +116,19 @@ public class DockerExecModelTests : IAsyncLifetime
         IList<string> cmd,
         Func<string, MultiplexedStream.TargetStream, Task> onLine)
     {
-        var execCreate = await _client.Exec.ExecCreateContainerAsync(
+        var execCreate = await _client.Exec.CreateContainerExecAsync(
             containerId,
             new ContainerExecCreateParameters
             {
                 AttachStdin = true,
                 AttachStdout = true,
                 AttachStderr = true,
-                Tty = true,
+                TTY = true,
                 Cmd = cmd,
             });
 
-        using var stream = await _client.Exec.StartAndAttachContainerExecAsync(
-            execCreate.ID, tty: true, CancellationToken.None);
+        using var stream = await _client.Exec.StartContainerExecAsync(
+            execCreate.ID, new ContainerExecStartParameters { TTY = true }, CancellationToken.None);
 
         var buffer = new byte[4096];
         var remainder = string.Empty;
@@ -152,6 +153,6 @@ public class DockerExecModelTests : IAsyncLifetime
             await onLine(remainder.TrimEnd('\r'), MultiplexedStream.TargetStream.StandardOut);
 
         var inspect = await _client.Exec.InspectContainerExecAsync(execCreate.ID, CancellationToken.None);
-        return inspect.ExitCode;
+        return inspect.ExitCode ?? 0;
     }
 }

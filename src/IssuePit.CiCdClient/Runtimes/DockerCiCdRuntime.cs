@@ -132,7 +132,7 @@ public partial class DockerCiCdRuntime(
         {
             await dockerClient.Images.CreateImageAsync(
                 new ImagesCreateParameters { FromImage = image },
-                null,
+                null!,
                 // Progress handler is required by the API but pull status is captured via container logs
                 new Progress<JSONMessage>(),
                 cancellationToken);
@@ -412,7 +412,7 @@ public partial class DockerCiCdRuntime(
         };
 
         using var stream = await dockerClient.Containers.GetContainerLogsAsync(
-            containerId, false, logsParams, cancellationToken);
+            containerId, logsParams, cancellationToken);
 
         await DrainMultiplexedStreamAsync(stream, onLogLine, cancellationToken);
     }
@@ -427,26 +427,26 @@ public partial class DockerCiCdRuntime(
         Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {
-        var execCreate = await dockerClient.Exec.ExecCreateContainerAsync(
+        var execCreate = await dockerClient.Exec.CreateContainerExecAsync(
             containerId,
             new ContainerExecCreateParameters
             {
                 AttachStdin = true,
                 AttachStdout = true,
                 AttachStderr = true,
-                Tty = true,
+                TTY = true,
                 Cmd = cmd,
                 WorkingDir = "/workspace",
             },
             cancellationToken);
 
-        using var stream = await dockerClient.Exec.StartAndAttachContainerExecAsync(
-            execCreate.ID, tty: true, cancellationToken);
+        using var stream = await dockerClient.Exec.StartContainerExecAsync(
+            execCreate.ID, new ContainerExecStartParameters { TTY = true }, cancellationToken);
 
         await DrainMultiplexedStreamAsync(stream, onLogLine, cancellationToken);
 
         var inspect = await dockerClient.Exec.InspectContainerExecAsync(execCreate.ID, CancellationToken.None);
-        return inspect.ExitCode;
+        return inspect.ExitCode ?? 0;
     }
 
     /// <summary>
