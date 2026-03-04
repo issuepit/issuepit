@@ -240,8 +240,9 @@
           </div>
 
           <!-- Jobs tab controls -->
-          <div v-else-if="activeSection === 'jobs' && hasMultipleWorkflowFiles" class="flex items-center gap-2">
+          <div v-else-if="activeSection === 'jobs'" class="flex items-center gap-2">
             <button
+              v-if="hasMultipleWorkflowFiles"
               :class="[
                 'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md transition-colors',
                 selectedTriggerFilters.size > 0 ? 'bg-brand-700 text-white' : 'text-gray-500 hover:text-gray-300'
@@ -254,6 +255,19 @@
               </svg>
               Filter triggers
               <span v-if="selectedTriggerFilters.size > 0" class="ml-0.5 bg-brand-500 text-white rounded-full px-1 text-[10px] leading-4">{{ selectedTriggerFilters.size }}</span>
+            </button>
+            <!-- Slim mode toggle -->
+            <button
+              :class="[
+                'flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md transition-colors',
+                slimMode ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'
+              ]"
+              title="Toggle slim mode — hides log counts, file names and status labels"
+              @click="slimMode = !slimMode">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+              Slim
             </button>
           </div>
         </div>
@@ -297,15 +311,18 @@
                   <marker id="arrow-hi" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
                     <path d="M0,0 L0,6 L8,3 z" fill="#6366f1" />
                   </marker>
+                  <marker id="arrow-fail" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                    <path d="M0,0 L0,6 L8,3 z" fill="#ef4444" />
+                  </marker>
                 </defs>
                 <path
                   v-for="(edge, i) in graphLayout.edges"
                   :key="i"
                   :d="edge.path"
                   fill="none"
-                  :stroke="edge.highlighted ? '#6366f1' : '#4b5563'"
-                  :stroke-width="edge.highlighted ? 2 : 1.5"
-                  :marker-end="edge.highlighted ? 'url(#arrow-hi)' : 'url(#arrow)'" />
+                  :stroke="edge.isFailure ? '#ef4444' : edge.highlighted ? '#6366f1' : '#4b5563'"
+                  :stroke-width="edge.isFailure || edge.highlighted ? 2 : 1.5"
+                  :marker-end="edge.isFailure ? 'url(#arrow-fail)' : edge.highlighted ? 'url(#arrow-hi)' : 'url(#arrow)'" />
               </svg>
 
               <!-- Job boxes layer -->
@@ -321,22 +338,26 @@
                     'flex flex-col items-start gap-1 px-4 py-3 rounded-xl border transition-all text-left cursor-pointer',
                     selectedJob === job.id
                       ? 'border-brand-500 bg-brand-950/30 ring-1 ring-brand-500/40'
-                      : connectedJobIds.has(job.id)
-                        ? 'border-brand-700/60 bg-brand-950/10 ring-1 ring-brand-700/30'
-                        : selectedJob
-                          ? 'border-gray-800 bg-gray-800/40 opacity-50'
-                          : 'border-gray-700 bg-gray-800/80 hover:border-gray-600',
+                      : hoveredJob === job.id
+                        ? 'border-gray-400 bg-gray-800/80 ring-1 ring-gray-400/10'
+                        : connectedJobIds.has(job.id)
+                          ? 'border-brand-700/50 bg-gray-800/60'
+                          : blockedJobIds.has(job.id)
+                            ? 'border-gray-700 bg-gray-800/40 opacity-40'
+                            : 'border-gray-700 bg-gray-800/80 hover:border-gray-600',
                   ]"
+                  @mouseenter="hoveredJob = job.id"
+                  @mouseleave="hoveredJob = null"
                   @click="toggleJobFilter(job.id)">
                   <span class="flex items-center gap-1.5 w-full">
                     <span :class="jobStatusDot(job)" class="w-2 h-2 rounded-full shrink-0" />
                     <span class="text-sm font-medium text-white break-words leading-tight">{{ job.name }}</span>
                   </span>
-                  <span v-if="job.callerWorkflowFile || job.workflowFile" class="text-xs text-gray-500 font-mono">
+                  <span v-if="(job.callerWorkflowFile || job.workflowFile) && !slimMode" class="text-xs text-gray-500 font-mono">
                     <template v-if="job.callerWorkflowFile">{{ job.callerWorkflowFile }} / {{ job.workflowFile }}</template>
                     <template v-else>{{ job.workflowFile }}</template>
                   </span>
-                  <span :class="jobStatusClass(job)" class="text-xs px-1.5 py-0.5 rounded-full font-medium">
+                  <span v-if="!slimMode" :class="jobStatusClass(job)" class="text-xs px-1.5 py-0.5 rounded-full font-medium">
                     {{ jobStatusLabel(job) }}
                   </span>
                   <!-- Timing: show elapsed time while running, total time when complete -->
@@ -348,7 +369,7 @@
                       {{ jobDuration(job.startedAt) }} elapsed
                     </template>
                   </span>
-                  <span class="text-xs text-gray-600">{{ job.logCount }} log line{{ job.logCount === 1 ? '' : 's' }}</span>
+                  <span v-if="!slimMode" class="text-xs text-gray-600">{{ job.logCount }} log line{{ job.logCount === 1 ? '' : 's' }}</span>
                   <!-- Matrix jobs: show per-instance status dots instead of "Nx matrix" label -->
                   <div v-if="job.matrixInstances.length > 1" class="flex flex-wrap gap-1 mt-1 w-full">
                     <button
@@ -385,16 +406,31 @@
 
             <!-- Logs filtered to selected job, grouped by step -->
             <div v-if="selectedJob" class="mt-4">
-              <div class="flex items-center gap-2 mb-2">
+              <div class="flex items-center gap-2 mb-2 flex-wrap">
                 <span class="text-xs text-gray-400">
                   Showing logs for job: <span class="text-white font-mono">{{ visibleJobs.find(j => j.id === selectedJob)?.name ?? selectedJob }}</span>
                   <template v-if="selectedMatrixRawId"> · instance <span class="text-brand-300 font-mono">{{ selectedMatrixRawId }}</span></template>
                 </span>
                 <button class="text-xs text-gray-500 hover:text-gray-300 transition-colors" @click="deselectJob()">Clear filter</button>
+                <!-- Search -->
+                <div class="ml-auto flex items-center gap-2">
+                  <input
+                    v-model="logSearchQuery"
+                    type="text"
+                    placeholder="Search logs…"
+                    class="bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-300 px-2 py-0.5 placeholder-gray-600 focus:outline-none focus:border-brand-500 w-40" />
+                  <!-- Word wrap toggle -->
+                  <button
+                    :class="['px-2 py-0.5 text-xs rounded-md border transition-colors', wordWrap ? 'border-brand-700 text-brand-300 bg-brand-950/30' : 'border-gray-700 text-gray-500 hover:border-gray-600']"
+                    title="Toggle word wrap"
+                    @click="wordWrap = !wordWrap">
+                    Wrap
+                  </button>
+                </div>
               </div>
               <div class="bg-gray-950 rounded-lg p-4 font-mono text-xs overflow-auto max-h-[500px]">
-                <template v-if="jobLogsByStep.length">
-                  <template v-for="(group, gi) in jobLogsByStep" :key="gi">
+                <template v-if="filteredJobLogsByStep.length">
+                  <template v-for="(group, gi) in filteredJobLogsByStep" :key="gi">
                     <!-- Step header: collapsible, shows duration. Null stepId → "Set up job" (step 0). -->
                     <div
                       class="flex items-center gap-2 mt-3 mb-1 first:mt-0 select-none cursor-pointer group"
@@ -408,12 +444,12 @@
                       <div v-for="log in group.logs" :key="log.id" class="flex gap-3 leading-5">
                         <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
                         <!-- eslint-disable-next-line vue/no-v-html -->
-                        <span :class="log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'" class="whitespace-pre-wrap break-all" v-html="renderLogLine(log.line)" />
+                        <span :class="[log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300', wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line)" />
                       </div>
                     </template>
                   </template>
                 </template>
-                <div v-else class="text-gray-500 text-center py-4">No logs for this job</div>
+                <div v-else class="text-gray-500 text-center py-4">{{ logSearchQuery ? 'No matching log lines' : 'No logs for this job' }}</div>
               </div>
             </div>
 
@@ -509,6 +545,21 @@
           <div v-else class="py-10 text-center text-sm text-gray-500">
             No test results available.<br>
             <span class="text-xs text-gray-600">Test results are collected automatically from <code>.trx</code> artifact files after the run completes.</span>
+          </div>
+        </template>
+
+        <!-- Artifacts tab -->
+        <template v-else-if="activeSection === 'artifacts'">
+          <div class="p-4">
+            <p class="text-sm text-gray-400 mb-4">Artifacts produced by this run.</p>
+            <div class="rounded-lg bg-gray-800/60 border border-gray-700 p-6 flex flex-col items-center gap-3 text-center">
+              <svg class="w-8 h-8 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                  d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+              </svg>
+              <p class="text-sm text-gray-500">Artifact storage is not yet configured.</p>
+              <p class="text-xs text-gray-600">Artifacts will appear here once storage (S3/B2) is set up.</p>
+            </div>
           </div>
         </template>
 
@@ -689,9 +740,22 @@ const sectionTabs = [
   { label: 'Jobs', value: 'jobs' },
   { label: 'Logs', value: 'logs' },
   { label: 'Tests', value: 'tests' },
+  { label: 'Artifacts', value: 'artifacts' },
   { label: 'Details', value: 'details' },
 ]
-const activeSection = ref<'jobs' | 'logs' | 'tests' | 'details'>('jobs')
+const activeSection = ref<'jobs' | 'logs' | 'tests' | 'artifacts' | 'details'>('jobs')
+
+/** Slim mode: hides log counts, yml file names and status labels in the job graph. */
+const slimMode = ref(false)
+
+/** Currently hovered job ID for connection highlighting. */
+const hoveredJob = ref<string | null>(null)
+
+/** Log search query for filtering job log lines. */
+const logSearchQuery = ref('')
+
+/** Word/line wrap for log display. */
+const wordWrap = ref(true)
 
 const streamTabs = [
   { label: 'All', value: null },
@@ -819,17 +883,30 @@ const jobLogsByStep = computed<StepGroup[]>(() => {
   return groups
 })
 
+/** Filtered job log groups by search query. */
+const filteredJobLogsByStep = computed<StepGroup[]>(() => {
+  if (!logSearchQuery.value.trim()) return jobLogsByStep.value
+  const query = logSearchQuery.value.toLowerCase()
+  return jobLogsByStep.value.map(group => ({
+    ...group,
+    logs: group.logs.filter(l => stripAnsiCodes(l.line).toLowerCase().includes(query)),
+  })).filter(g => g.logs.length > 0)
+})
+
 /** Set of collapsed step IDs (default: all named steps collapsed). */
 const collapsedSteps = ref(new Set<string>())
 /** Tracks which step IDs have already been auto-collapsed so we don't re-collapse them after manual expand. */
 const seenStepIds = ref(new Set<string>())
 /** Tracks count of steps in the previous render to detect when a new step starts. */
 const prevStepCount = ref(0)
+/** Steps the user has manually expanded — auto-collapse will not override these. */
+const manuallyOpenedSteps = ref(new Set<string>())
 
 // Auto-collapse logic:
 // - A new step starts → collapse it unless it is the current (last) step or has failed.
 // - When a new step starts, the previously-current step (now second-to-last) is collapsed unless it failed.
 // - Failed steps are always kept open (even if previously collapsed).
+// - Steps manually opened by the user are not re-collapsed automatically.
 watch(jobLogsByStep, (groups) => {
   const newSeen = new Set(seenStepIds.value)
   const newCollapsed = new Set(collapsedSteps.value)
@@ -839,12 +916,13 @@ watch(jobLogsByStep, (groups) => {
     const key = g.stepId ?? '__setup__'
     const isLast = i === groups.length - 1
     const hasFailed = g.logs.some(l => l.stream === 'stderr')
+    const manuallyOpened = manuallyOpenedSteps.value.has(key)
 
     if (!newSeen.has(key)) {
-      // First time we see this step: auto-collapse unless it's current or failed.
+      // First time we see this step: auto-collapse unless it's current, failed, or manually opened.
       newSeen.add(key)
-      if (!isLast && !hasFailed) newCollapsed.add(key)
-    } else if (!isLast && !hasFailed && groups.length > prevStepCount.value && i === groups.length - 2) {
+      if (!isLast && !hasFailed && !manuallyOpened) newCollapsed.add(key)
+    } else if (!isLast && !hasFailed && !manuallyOpened && groups.length > prevStepCount.value && i === groups.length - 2) {
       // A new step just appeared (groups grew by 1). The step at position groups.length-2 is
       // the one that was the last (current) step in the previous render — collapse it now that
       // it has been superseded by the new last step.
@@ -862,9 +940,16 @@ watch(jobLogsByStep, (groups) => {
 
 function toggleStep(stepId: string) {
   const s = new Set(collapsedSteps.value)
-  if (s.has(stepId)) s.delete(stepId)
-  else s.add(stepId)
+  const m = new Set(manuallyOpenedSteps.value)
+  if (s.has(stepId)) {
+    s.delete(stepId)
+    m.add(stepId)  // user manually opened this step
+  } else {
+    s.add(stepId)
+    m.delete(stepId)  // user manually closed this step
+  }
   collapsedSteps.value = s
+  manuallyOpenedSteps.value = m
 }
 
 function stepDuration(group: StepGroup): string | null {
@@ -1102,17 +1187,17 @@ const unmatchedLogJobIds = computed<string[]>(() => {
 })
 
 /**
- * Set of job IDs connected to the currently selected job (all ancestors + descendants via edges).
- * Used for visual highlighting of related nodes.
+ * Set of job IDs connected to the currently hovered job (all ancestors + descendants via edges).
+ * Used for visual highlighting of related nodes and edges on hover.
  */
 const connectedJobIds = computed<Set<string>>(() => {
-  if (!selectedJob.value) return new Set()
+  if (!hoveredJob.value) return new Set()
   const edges = store.currentRunGraph?.edges ?? []
   const connected = new Set<string>()
 
   // BFS forward (downstream) and backward (upstream)
-  const queue = [selectedJob.value]
-  const visited = new Set([selectedJob.value])
+  const queue = [hoveredJob.value]
+  const visited = new Set([hoveredJob.value])
   while (queue.length) {
     const id = queue.shift()!
     for (const e of edges) {
@@ -1131,9 +1216,37 @@ const connectedJobIds = computed<Set<string>>(() => {
   return connected
 })
 
+/**
+ * Set of job IDs that are blocked because a predecessor job has failed.
+ * Blocked jobs have not started and have at least one failed transitive dependency.
+ */
+const blockedJobIds = computed<Set<string>>(() => {
+  const failedIds = new Set(enrichedJobs.value.filter(j => j.hasError && j.isComplete).map(j => j.id))
+  if (failedIds.size === 0) return new Set()
+  const edges = store.currentRunGraph?.edges ?? []
+  const blocked = new Set<string>()
+  // BFS forward from failed jobs; only mark not-started jobs as blocked
+  const queue = Array.from(failedIds)
+  const visited = new Set(queue)
+  while (queue.length) {
+    const id = queue.shift()!
+    for (const e of edges) {
+      if (e.from === id && !visited.has(e.to)) {
+        visited.add(e.to)
+        const job = enrichedJobs.value.find(j => j.id === e.to)
+        if (job && !job.hasStarted) {
+          blocked.add(e.to)
+          queue.push(e.to)
+        }
+      }
+    }
+  }
+  return blocked
+})
+
 // ── SVG graph layout ───────────────────────────────────────────────────────────
 
-interface SvgEdge { path: string; highlighted: boolean }
+interface SvgEdge { path: string; highlighted: boolean; isFailure: boolean }
 
 const graphLayout = computed<{ svgWidth: number; svgHeight: number; edges: SvgEdge[] }>(() => {
   const BOX_W = 220
@@ -1144,7 +1257,9 @@ const graphLayout = computed<{ svgWidth: number; svgHeight: number; edges: SvgEd
   const visibleIds = new Set(visibleJobs.value.map(j => j.id))
   const posMap = new Map(visibleJobs.value.map(j => [j.id, { x: j.x, y: j.y, boxHeight: j.boxHeight }]))
   const highlightedIds = connectedJobIds.value
-  const sel = selectedJob.value
+  const hovered = hoveredJob.value
+  const failedIds = new Set(enrichedJobs.value.filter(j => j.hasError && j.isComplete).map(j => j.id))
+  const blocked = blockedJobIds.value
 
   const edges = (store.currentRunGraph?.edges ?? [])
     .filter(e => visibleIds.has(e.from) && visibleIds.has(e.to))
@@ -1158,9 +1273,10 @@ const graphLayout = computed<{ svgWidth: number; svgHeight: number; edges: SvgEd
     const x2 = to.x
     const y2 = to.y + to.boxHeight / 2
     const cx = (x1 + x2) / 2
-    const highlighted = sel !== null && (e.from === sel || e.to === sel || highlightedIds.has(e.from) || highlightedIds.has(e.to))
+    const highlighted = hovered !== null && (e.from === hovered || e.to === hovered || highlightedIds.has(e.from) || highlightedIds.has(e.to))
+    const isFailure = failedIds.has(e.from) && blocked.has(e.to)
 
-    return { path: `M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}`, highlighted }
+    return { path: `M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}`, highlighted, isFailure }
   }).filter((e): e is SvgEdge => e !== null)
 
   const maxX = Math.max(...visibleJobs.value.map(j => j.x)) + BOX_W + PAD
@@ -1179,6 +1295,8 @@ function toggleJobFilter(jobId: string) {
     collapsedSteps.value = new Set()
     seenStepIds.value = new Set()
     prevStepCount.value = 0
+    manuallyOpenedSteps.value = new Set()
+    logSearchQuery.value = ''
   }
 }
 
@@ -1188,6 +1306,8 @@ function selectMatrixInstance(jobId: string, rawId: string) {
   collapsedSteps.value = new Set()
   seenStepIds.value = new Set()
   prevStepCount.value = 0
+  manuallyOpenedSteps.value = new Set()
+  logSearchQuery.value = ''
 }
 
 function jobStatusDot(job: Pick<EnrichedJob, 'hasError' | 'isComplete' | 'hasStarted'>) {
@@ -1316,9 +1436,6 @@ onMounted(async () => {
   await store.fetchRun(runId)
   await store.fetchTestResults(runId)
 
-  // Dismiss job selection on Escape key
-  window.addEventListener('keydown', handleEscapeKey)
-
   // Connect to the CiCd output hub to receive live log lines and run-completed events
   await connectCicd()
   if (cicdConnection.value) {
@@ -1357,16 +1474,6 @@ onMounted(async () => {
       if (data.runId === runId) store.fetchRunOnly(runId)
     })
   }
-})
-
-function handleEscapeKey(e: KeyboardEvent) {
-  if (e.key === 'Escape' && (selectedJob.value || selectedMatrixRawId.value)) {
-    deselectJob()
-  }
-}
-
-onUnmounted(() => {
-  window.removeEventListener('keydown', handleEscapeKey)
 })
 
 async function retryRun() {
