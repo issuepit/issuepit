@@ -709,14 +709,15 @@ public partial class DockerCiCdRuntime(
     private static string BuildDindStartupScript() =>
         // Start dockerd in the background, redirect its output, then poll the socket.
         // 'dockerd &' runs as PID 1's child; we give it up to 60 s to become healthy.
-        """
-        dockerd > /tmp/dockerd.log 2>&1 &
-        timeout=60
-        while [ $timeout -gt 0 ] && ! docker info > /dev/null 2>&1; do
-          sleep 1; timeout=$((timeout-1))
-        done
-        docker info > /dev/null 2>&1 && echo '[DinD] dockerd ready' || { echo '[DinD] dockerd failed to start'; cat /tmp/dockerd.log; exit 1; }
-        """;
+        // Use explicit \n to guarantee LF-only line endings when running inside a Linux container,
+        // regardless of the line endings in this source file (e.g. CRLF on Windows).
+        string.Join('\n',
+            "dockerd > /tmp/dockerd.log 2>&1 &",
+            "timeout=60",
+            "while [ $timeout -gt 0 ] && ! docker info > /dev/null 2>&1; do",
+            "  sleep 1; timeout=$((timeout-1))",
+            "done",
+            "docker info > /dev/null 2>&1 && echo '[DinD] dockerd ready' || { echo '[DinD] dockerd failed to start'; cat /tmp/dockerd.log; exit 1; }");
 
     /// <summary>
     /// Builds a shell script that writes the <c>actrc</c> platform mapping to prevent the interactive
