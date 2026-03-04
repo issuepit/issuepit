@@ -21,6 +21,20 @@ var redis = builder.AddValkey("redis")
 var storage = builder.AddContainer("localstack", "localstack/localstack", "4.3")
     .WithEnvironment("SERVICES", "s3")
     .WithHttpEndpoint(targetPort: 4566, name: "http");
+
+// Pull-through Docker registry mirror for DinD CI/CD containers.
+// Acts as a local cache for Docker Hub pulls, shared across all CI/CD runs.
+// Container name is fixed to match the name EnsureRegistryMirrorAsync expects in
+// DockerCiCdRuntime — so both Aspire-managed and standalone deployments share the same container.
+// Port 5100 is fixed (not dynamic) because EnsureRegistryMirrorAsync also binds on this port
+// when running outside Aspire, and DockerCiCdRuntime builds the DinD mirror URL from
+// CiCd__Docker__RegistryMirrorPort (default 5100). Keep port consistent across both deployments.
+var registryMirror = builder.AddContainer("registry-mirror", "registry", "2")
+    .WithContainerName("issuepit-registry-mirror")
+    .WithLifetime(ContainerLifetime.Persistent)
+    .WithHttpEndpoint(targetPort: 5100, port: 5100, name: "http")
+    .WithVolume("issuepit-registry-cache", "/var/lib/registry")
+    .WithEnvironment("REGISTRY_PROXY_REMOTEURL", "https://registry-1.docker.io");
     //.WithExplicitStart(); // not started in CI; configure real S3/B2 via ImageStorage settings; we need it in ci/cd for e2e tests which could upload data
 
 // Management UI tools - set to explicit start so they are not auto-started in CI and require manual start from the Aspire dashboard
@@ -91,6 +105,7 @@ var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     .WaitForCompletion(kafkaInitializer)
     .WaitFor(kafka)
     .WaitFor(redis)
+    .WaitFor(registryMirror)
     .WithHttpHealthCheck("/health", endpointName: "http");
 
 frontend
