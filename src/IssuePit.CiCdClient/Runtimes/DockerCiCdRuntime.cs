@@ -49,6 +49,12 @@ public partial class DockerCiCdRuntime(
     private const int DefaultRegistryMirrorPort = 5100;
     private const string DefaultRegistryMirrorVolumePath = "/var/lib/issuepit-registry-cache";
 
+    // Default host path for the act action/repo cache. Used when neither the trigger nor
+    // CiCd__ActionCachePath config key specifies a path. Mirrors the naming convention of
+    // DefaultDindCacheVolumePath so operators can find and manage all IssuePit cache dirs
+    // from the same parent directory.
+    private const string DefaultActionCachePath = "/var/lib/issuepit-action-cache";
+
     private static string AppVersion =>
         Assembly.GetEntryAssembly()
             ?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
@@ -133,13 +139,15 @@ public partial class DockerCiCdRuntime(
             actBinAndArgs.Add($"{ContainerNuGetCachePath}:/root/.nuget/packages");
         }
 
-        // Action cache: resolve effective host path (trigger → CiCd__ActionCachePath config → no cache).
+        // Action cache: resolve effective host path (trigger → CiCd__ActionCachePath config → DefaultActionCachePath).
         // In the Docker runtime the host path is mounted into the container at ContainerActionCachePath,
         // and the --action-cache-path arg is replaced with the container-internal path so act writes
         // into the mounted volume (persisting the cache across runs on the host).
+        // A default is always applied so caching is on by default — disable it by setting
+        // CiCd__ActionCachePath to an empty string.
         var actionCacheHostPath = !string.IsNullOrWhiteSpace(trigger.ActionCachePath)
             ? trigger.ActionCachePath
-            : configuration["CiCd__ActionCachePath"];
+            : configuration["CiCd__ActionCachePath"] ?? DefaultActionCachePath;
 
         if (!string.IsNullOrWhiteSpace(actionCacheHostPath))
         {
