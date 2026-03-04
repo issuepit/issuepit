@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/issuepit/issuepit/compare/helper-containers-v1.2.0...helper-containers-v1.2.1) (2026-03-04)
+
+
+### Bug Fixes
+
+* true isolated DinD, gitRepoUrl instead of workspacePath, TriggerPayload build fix, dockerd in helper image, workflow graph via cat from clone, WorkflowGraphParser string API ([#350](https://github.com/issuepit/issuepit/issues/350)) ([862d082](https://github.com/issuepit/issuepit/commit/862d082c727c5ecb2cc0eb08af83945bafe0cfe1))
+
 ## [1.2.0](https://github.com/issuepit/issuepit/compare/helper-containers-v1.1.2...helper-containers-v1.2.0) (2026-03-03)
 
 

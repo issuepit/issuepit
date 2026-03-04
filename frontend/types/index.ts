@@ -681,6 +681,30 @@ export interface CiCdRunLog {
   timestamp: string
 }
 
+export interface CiCdTestCase {
+  id: string
+  fullName: string
+  className?: string
+  methodName?: string
+  outcome: number
+  outcomeName: string
+  durationMs: number
+  errorMessage?: string
+  stackTrace?: string
+}
+
+export interface CiCdTestSuite {
+  id: string
+  artifactName: string
+  totalTests: number
+  passedTests: number
+  failedTests: number
+  skippedTests: number
+  durationMs: number
+  createdAt: string
+  testCases: CiCdTestCase[]
+}
+
 export interface WorkflowJobNode {
   id: string
   name: string

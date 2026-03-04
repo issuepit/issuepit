@@ -281,8 +281,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
                 return;
             }
 
-            var workspacePath = gitSvc.GetLocalPath(repo);
-            await GitPollingService.PublishCiCdTriggerAsync(producer, repo.ProjectId, sha, repo.DefaultBranch, workspacePath, logger);
+            await GitPollingService.PublishCiCdTriggerAsync(producer, repo.ProjectId, sha, repo.DefaultBranch, repo.RemoteUrl, logger);
 
             // Record the last known SHA so the poller doesn't re-trigger immediately.
             var repoRecord = await dbCtx.GitRepositories.FindAsync(repo.Id);

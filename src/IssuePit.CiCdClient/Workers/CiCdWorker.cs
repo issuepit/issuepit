@@ -2,9 +2,11 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using Confluent.Kafka;
 using IssuePit.CiCdClient.Runtimes;
+using IssuePit.CiCdClient.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
+using IssuePit.Core.Services;
 using Microsoft.EntityFrameworkCore;
 using StackExchange.Redis;
 
@@ -166,6 +168,14 @@ public class CiCdWorker(
             StartedAt = DateTime.UtcNow,
         };
 
+        // Prepare a host-side artifact directory so act's built-in artifact server can serve
+        // actions/upload-artifact and actions/download-artifact without a real GitHub token.
+        // Each run gets its own subdirectory under a shared base dir so parallel runs don't mix.
+        // The directory is cleaned up after test results have been collected.
+        var artifactDir = Path.Combine(Path.GetTempPath(), "issuepit-artifacts", run.Id.ToString("N"));
+        Directory.CreateDirectory(artifactDir);
+        trigger = trigger with { ArtifactServerPath = artifactDir };
+
         db.CiCdRuns.Add(run);
         await db.SaveChangesAsync(stoppingToken);
 
@@ -252,6 +262,16 @@ public class CiCdWorker(
             run.EndedAt = DateTime.UtcNow;
             await db.SaveChangesAsync(stoppingToken);
 
+            // Collect and store test results from any .trx files produced during the run.
+            await ParseAndStoreTestResultsAsync(run.Id, artifactDir, db, stoppingToken);
+
+            // Parse workflow graph from workflow files copied during the clone step.
+            await ParseAndStoreWorkflowGraphAsync(run.Id, artifactDir, db, stoppingToken);
+
+            // Clean up the artifact directory now that results have been collected.
+            try { Directory.Delete(artifactDir, recursive: true); }
+            catch (Exception ex) { logger.LogDebug(ex, "Could not clean up artifact directory {Dir} for run {RunId}", artifactDir, run.Id); }
+
             // Notify clients that the run has completed
             await PublishLogLineAsync(run.Id.ToString(),
                 JsonSerializer.Serialize(new { @event = "run-completed", status = run.Status.ToString() }));
@@ -259,7 +279,78 @@ public class CiCdWorker(
     }
 
     /// <summary>
-    /// Returns the semaphore for the given organization, creating it on first use.
+    /// Scans <paramref name="artifactDir"/> for <c>.trx</c> files, parses each one, and
+    /// persists the results as <see cref="CiCdTestSuite"/> rows linked to the given run.
+    /// Best-effort: errors are logged but never propagated.
+    /// </summary>
+    private async Task ParseAndStoreTestResultsAsync(
+        Guid runId,
+        string artifactDir,
+        IssuePitDbContext db,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var trxFiles = TrxParser.FindTrxFiles(artifactDir).ToList();
+            if (trxFiles.Count == 0) return;
+
+            logger.LogInformation("Found {Count} TRX file(s) for run {RunId}; parsing test results", trxFiles.Count, runId);
+
+            foreach (var trxFile in trxFiles)
+            {
+                var suite = TrxParser.Parse(trxFile);
+                if (suite is null)
+                {
+                    logger.LogWarning("Failed to parse TRX file {TrxFile} for run {RunId}", trxFile, runId);
+                    continue;
+                }
+
+                suite.CiCdRunId = runId;
+                db.CiCdTestSuites.Add(suite);
+            }
+
+            await db.SaveChangesAsync(cancellationToken);
+            logger.LogInformation("Stored test results for run {RunId}", runId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to collect test results for run {RunId}", runId);
+        }
+    }
+
+    /// <summary>
+    /// Scans <paramref name="artifactDir"/> for workflow YAML files copied from the container
+    /// during the clone step (stored under <c>_workflows/</c>), parses the job graph, and
+    /// stores the result in <see cref="CiCdRun.WorkflowGraphJson"/>.
+    /// Best-effort: errors are logged but never propagated.
+    /// </summary>
+    private async Task ParseAndStoreWorkflowGraphAsync(
+        Guid runId,
+        string artifactDir,
+        IssuePitDbContext db,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var workflowsDir = Path.Combine(artifactDir, "_workflows");
+            if (!Directory.Exists(workflowsDir)) return;
+
+            var run = await db.CiCdRuns
+                .Where(r => r.Id == runId)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (run is null || run.WorkflowGraphJson is not null) return;
+
+            var graph = await WorkflowGraphParser.ParseDirectoryAsync(workflowsDir, cancellationToken);
+            run.WorkflowGraphJson = JsonSerializer.Serialize(graph);
+            await db.SaveChangesAsync(cancellationToken);
+            logger.LogInformation("Stored workflow graph for run {RunId} ({JobCount} jobs)", runId, graph.Jobs.Count);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Could not parse workflow graph for run {RunId}", runId);
+        }
+    }
+
     /// Returns null when no limit is configured (MaxConcurrentRunners == 0).
     /// </summary>
     private SemaphoreSlim? GetOrgSemaphore(Organization? org)

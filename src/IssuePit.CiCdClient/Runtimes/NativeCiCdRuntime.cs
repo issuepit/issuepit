@@ -157,6 +157,9 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
     {
         var list = new List<string> { trigger.EventName ?? "push" };
 
+        // Remove runner containers after each job completes (same as docker run --rm).
+        list.Add("--rm");
+
         // Output logs as JSON so the worker can extract job/step info for the UI.
         list.Add("--json");
 
@@ -178,6 +181,13 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
             list.Add(pair);
         }
 
+        // Enable act's built-in artifact server so actions/upload-artifact and
+        // actions/download-artifact work without a real GitHub token.
+        if (!string.IsNullOrWhiteSpace(trigger.ArtifactServerPath))
+        {
+            list.Add("--artifact-server-path");
+            list.Add(trigger.ArtifactServerPath);
+        }
         if (trigger.Inputs is not null)
         {
             foreach (var kv in trigger.Inputs)
