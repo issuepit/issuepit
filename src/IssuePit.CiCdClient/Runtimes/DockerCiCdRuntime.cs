@@ -1,9 +1,11 @@
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
 using Docker.DotNet;
 using Docker.DotNet.Models;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
+using IssuePit.Core.Services;
 
 namespace IssuePit.CiCdClient.Runtimes;
 
@@ -283,16 +285,9 @@ public partial class DockerCiCdRuntime(
                     if (cloneExitCode != 0)
                         throw new Exception($"git clone failed with exit code {cloneExitCode} for URL '{trigger.GitRepoUrl}'");
 
-                    // Best-effort: copy workflow files to the artifact directory so the worker can
-                    // generate the workflow graph after the run without needing a local workspace.
-                    if (!string.IsNullOrWhiteSpace(trigger.ArtifactServerPath))
-                    {
-                        await ExecShellAsync(
-                            container.ID,
-                            "if [ -d /workspace/.github/workflows ]; then cp -r /workspace/.github/workflows/ /artifacts/_workflows/; fi",
-                            onLogLine,
-                            cancellationToken);
-                    }
+                    // Parse the workflow graph from the cloned repo by cat-ing the YAML files
+                    // inside the container. Sets run.WorkflowGraphJson so the worker can persist it.
+                    await ParseWorkflowGraphFromContainerAsync(container.ID, run, onLogLine, cancellationToken);
 
                     // Best-effort: run actionlint on all workflow files in the container after clone.
                     // Output is streamed to the run log. Never aborts the run.
@@ -675,6 +670,94 @@ public partial class DockerCiCdRuntime(
         catch (Exception ex)
         {
             await onLogLine($"[WARN] exec step error (non-fatal): {ex.Message}", LogStream.Stdout);
+        }
+    }
+
+    /// <summary>
+    /// Executes a command inside the container and returns the stdout output as a string.
+    /// Stderr is discarded. Never throws on non-zero exit codes.
+    /// </summary>
+    private async Task<string> ExecCommandCaptureAsync(
+        string containerId,
+        IList<string> cmd,
+        CancellationToken cancellationToken)
+    {
+        var execCreate = await dockerClient.Exec.ExecCreateContainerAsync(
+            containerId,
+            new ContainerExecCreateParameters
+            {
+                AttachStdout = true,
+                AttachStderr = false,
+                Cmd = cmd,
+                WorkingDir = "/workspace",
+            },
+            cancellationToken);
+
+        using var stream = await dockerClient.Exec.StartAndAttachContainerExecAsync(
+            execCreate.ID, tty: false, cancellationToken);
+
+        var sb = new StringBuilder();
+        await DrainMultiplexedStreamAsync(
+            stream,
+            (line, _) => { sb.AppendLine(line); return Task.CompletedTask; },
+            cancellationToken);
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Reads the workflow YAML files from the cloned repo inside the container using <c>cat</c>,
+    /// parses the job graph with <see cref="WorkflowGraphParser.ParseFromStringsAsync"/>,
+    /// and sets <see cref="CiCdRun.WorkflowGraphJson"/> on the run object so the worker can
+    /// persist it after <c>RunAsync</c> returns.
+    /// Best-effort: errors are emitted as debug log lines but never abort the run.
+    /// </summary>
+    private async Task ParseWorkflowGraphFromContainerAsync(
+        string containerId,
+        CiCdRun run,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // List workflow files inside the container.
+            var fileListRaw = await ExecCommandCaptureAsync(
+                containerId,
+                ["/bin/sh", "-c", "find /workspace/.github/workflows -maxdepth 1 \\( -name '*.yml' -o -name '*.yaml' \\) 2>/dev/null"],
+                cancellationToken);
+
+            var files = fileListRaw
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Select(f => f.Trim())
+                .Where(f => !string.IsNullOrEmpty(f))
+                .ToList();
+
+            if (files.Count == 0)
+                return;
+
+            // Cat each file and collect content keyed by the base filename.
+            var fileContents = new Dictionary<string, string>();
+            foreach (var filePath in files)
+            {
+                var content = await ExecCommandCaptureAsync(
+                    containerId,
+                    ["/bin/sh", "-c", $"cat {ShellQuote(filePath)}"],
+                    cancellationToken);
+                if (!string.IsNullOrWhiteSpace(content))
+                    fileContents[Path.GetFileName(filePath)] = content;
+            }
+
+            if (fileContents.Count == 0)
+                return;
+
+            // Parse using the string-based multi-file API (uses ParseFromStringAsync internally).
+            var graph = await WorkflowGraphParser.ParseFromStringsAsync(fileContents, cancellationToken);
+            run.WorkflowGraphJson = JsonSerializer.Serialize(graph);
+            await onLogLine($"[DEBUG] Workflow graph parsed from cloned repo ({fileContents.Count} file(s), {graph.Jobs.Count} job(s))", LogStream.Stdout);
+        }
+        catch (Exception ex)
+        {
+            await onLogLine($"[DEBUG] Could not parse workflow graph from container: {ex.Message}", LogStream.Stdout);
         }
     }
 

@@ -195,6 +195,71 @@ public static class WorkflowGraphParser
     }
 
     /// <summary>
+    /// Parses workflow graphs from in-memory YAML strings (e.g. obtained via <c>cat</c> inside a
+    /// container) and merges them into a single <see cref="WorkflowGraph"/>.
+    /// Applies the same multi-file merge logic as <see cref="ParseDirectoryAsync"/>: when multiple
+    /// files are supplied every job ID is prefixed with the file's name stem so that jobs with the
+    /// same ID in different files remain distinct.
+    /// </summary>
+    /// <param name="fileContents">
+    /// Map of <c>fileName → yamlContent</c> (e.g. <c>{ "ci.yml" → "…" }</c>).
+    /// Only the base filename is used as the stem prefix; full paths are not required.
+    /// </param>
+    public static async Task<WorkflowGraph> ParseFromStringsAsync(
+        IReadOnlyDictionary<string, string> fileContents,
+        CancellationToken cancellationToken = default)
+    {
+        if (fileContents.Count == 0)
+            return new WorkflowGraph([], [], []);
+
+        if (fileContents.Count == 1)
+        {
+            var (fileName, content) = fileContents.First();
+            return await ParseFromStringAsync(content, fileName, cancellationToken);
+        }
+
+        var allJobs = new List<WorkflowJobNode>();
+        var allEdges = new List<WorkflowEdge>();
+        var allWarnings = new List<string>();
+        var workflowTriggers = new Dictionary<string, IReadOnlyList<string>>();
+
+        foreach (var (filePath, yamlContent) in fileContents.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            var fileGraph = ParseYaml(yamlContent);
+            var stem = Path.GetFileName(filePath); // e.g. "backend.yml"
+            var prefix = Path.GetFileNameWithoutExtension(filePath); // e.g. "backend"
+
+            workflowTriggers[stem] = ParseTriggers(yamlContent);
+
+            var fileJobIds = new HashSet<string>(fileGraph.Jobs.Select(j => j.Id), StringComparer.OrdinalIgnoreCase);
+
+            foreach (var job in fileGraph.Jobs)
+            {
+                var prefixedId = $"{prefix}/{job.Id}";
+                var prefixedNeeds = job.Needs
+                    .Select(n => fileJobIds.Contains(n) ? $"{prefix}/{n}" : n)
+                    .ToList();
+                allJobs.Add(job with { Id = prefixedId, Needs = prefixedNeeds, WorkflowFile = stem });
+            }
+
+            foreach (var edge in fileGraph.Edges)
+            {
+                var from = fileJobIds.Contains(edge.From) ? $"{prefix}/{edge.From}" : edge.From;
+                var to   = fileJobIds.Contains(edge.To)   ? $"{prefix}/{edge.To}"   : edge.To;
+                allEdges.Add(new WorkflowEdge(from, to));
+            }
+
+            var fileWarnings = await TryRunActionlintFromStringAsync(yamlContent, cancellationToken);
+            foreach (var w in fileWarnings)
+                allWarnings.Add(w);
+        }
+
+        (allJobs, allEdges) = SubstituteReusableWorkflows(allJobs, allEdges);
+
+        return new WorkflowGraph(allJobs, allEdges, allWarnings, workflowTriggers);
+    }
+
+    /// <summary>
     /// Parses <paramref name="yamlContent"/> and returns the job graph without actionlint validation.
     /// Returns an empty graph when the content is null/empty or does not contain a valid <c>jobs</c> map.
     /// </summary>

@@ -473,4 +473,101 @@ public class WorkflowGraphParserTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    // ── ParseFromStringsAsync ────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ParseFromStringsAsync_EmptyDictionary_Returns_EmptyGraph()
+    {
+        var graph = await WorkflowGraphParser.ParseFromStringsAsync(new Dictionary<string, string>());
+        Assert.Empty(graph.Jobs);
+        Assert.Empty(graph.Edges);
+    }
+
+    [Fact]
+    public async Task ParseFromStringsAsync_SingleFile_Returns_Graph()
+    {
+        const string yaml = """
+            on: push
+            jobs:
+              build:
+                name: Build
+                runs-on: ubuntu-latest
+              test:
+                name: Test
+                runs-on: ubuntu-latest
+                needs: build
+            """;
+
+        var graph = await WorkflowGraphParser.ParseFromStringsAsync(new Dictionary<string, string>
+        {
+            ["ci.yml"] = yaml,
+        });
+
+        Assert.Contains(graph.Jobs, j => j.Id == "build");
+        Assert.Contains(graph.Jobs, j => j.Id == "test");
+        Assert.Contains(graph.Edges, e => e.From == "build" && e.To == "test");
+    }
+
+    [Fact]
+    public async Task ParseFromStringsAsync_MultipleFiles_PrefixesJobIds()
+    {
+        const string backendYaml = """
+            on: push
+            jobs:
+              build:
+                name: Build Backend
+                runs-on: ubuntu-latest
+            """;
+
+        const string frontendYaml = """
+            on: push
+            jobs:
+              build:
+                name: Build Frontend
+                runs-on: ubuntu-latest
+            """;
+
+        var graph = await WorkflowGraphParser.ParseFromStringsAsync(new Dictionary<string, string>
+        {
+            ["backend.yml"] = backendYaml,
+            ["frontend.yml"] = frontendYaml,
+        });
+
+        // Both 'build' jobs must be prefixed so they don't collide.
+        Assert.Contains(graph.Jobs, j => j.Id == "backend/build");
+        Assert.Contains(graph.Jobs, j => j.Id == "frontend/build");
+        Assert.DoesNotContain(graph.Jobs, j => j.Id == "build");
+    }
+
+    [Fact]
+    public async Task ParseFromStringsAsync_MultipleFiles_IncludesWorkflowTriggers()
+    {
+        const string ciYaml = """
+            on: [push, workflow_dispatch]
+            jobs:
+              build:
+                runs-on: ubuntu-latest
+            """;
+
+        const string prYaml = """
+            on: pull_request
+            jobs:
+              check:
+                runs-on: ubuntu-latest
+            """;
+
+        var graph = await WorkflowGraphParser.ParseFromStringsAsync(new Dictionary<string, string>
+        {
+            ["ci.yml"] = ciYaml,
+            ["pr.yml"] = prYaml,
+        });
+
+        Assert.NotNull(graph.WorkflowTriggers);
+        Assert.True(graph.WorkflowTriggers!.ContainsKey("ci.yml"));
+        Assert.True(graph.WorkflowTriggers!.ContainsKey("pr.yml"));
+        Assert.Contains("push", graph.WorkflowTriggers["ci.yml"]);
+        Assert.Contains("workflow_dispatch", graph.WorkflowTriggers["ci.yml"]);
+        Assert.Contains("pull_request", graph.WorkflowTriggers["pr.yml"]);
+    }
 }
