@@ -264,7 +264,7 @@ public class TodosController(IssuePitDbContext db, TenantContext ctx) : Controll
     // ── iCal Export ───────────────────────────────────────────────────────
 
     /// <summary>
-    /// Export todos as an iCalendar (.ics) file.
+    /// Export todos as an iCalendar (.ics) file download.
     /// Supports optional filtering by boardId, categoryId, and completed status.
     /// </summary>
     [HttpGet("export.ics")]
@@ -291,6 +291,36 @@ public class TodosController(IssuePitDbContext db, TenantContext ctx) : Controll
 
         var ical = BuildIcal(todos);
         return File(Encoding.UTF8.GetBytes(ical), "text/calendar", "todos.ics");
+    }
+
+    /// <summary>
+    /// Subscribe to todos as a live iCalendar feed (inline, suitable for calendar app subscriptions).
+    /// Supports optional filtering by boardId, categoryId, and completed status.
+    /// </summary>
+    [HttpGet("calendar.ics")]
+    public async Task<IActionResult> GetCalendarFeed(
+        [FromQuery] Guid? boardId,
+        [FromQuery] Guid? categoryId,
+        [FromQuery] bool? completed)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+
+        var query = db.Todos
+            .Where(t => t.TenantId == ctx.CurrentTenant.Id);
+
+        if (boardId.HasValue)
+            query = query.Where(t => t.BoardMemberships.Any(m => m.BoardId == boardId.Value));
+
+        if (categoryId.HasValue)
+            query = query.Where(t => t.CategoryMemberships.Any(m => m.CategoryId == categoryId.Value));
+
+        if (completed.HasValue)
+            query = query.Where(t => t.IsCompleted == completed.Value);
+
+        var todos = await query.OrderBy(t => t.DueDate).ToListAsync();
+
+        var ical = BuildIcal(todos);
+        return Content(ical, "text/calendar; charset=utf-8");
     }
 
     private static string BuildIcal(IEnumerable<Todo> todos)
