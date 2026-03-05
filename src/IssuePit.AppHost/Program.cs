@@ -59,13 +59,18 @@ var npmCache = builder.AddContainer("npm-cache", "verdaccio/verdaccio", "6")
 // All apt-get update / apt-get install requests from act job containers are transparently proxied
 // and cached so subsequent runs reuse already-downloaded .deb files without hitting the upstream mirror.
 // Port 3142 is fixed (the apt-cacher-ng default) so DockerCiCdRuntime can reference it by constant.
-// Metrics/stats: http://<host>:3142/acng-report.html (built-in apt-cacher-ng statistics page).
 // WithLifetime Persistent: cache data survives Aspire restarts.
+// Docs: https://help.ubuntu.com/community/Apt-Cacher-NG
 var aptCache = builder.AddContainer("apt-cache", "sameersbn/apt-cacher-ng", "3.3.4-20221016")
     .WithContainerName("issuepit-apt-cache")
     .WithLifetime(ContainerLifetime.Persistent)
     .WithHttpEndpoint(targetPort: 3142, port: 3142, name: "http")
-    .WithVolume("issuepit-apt-cache", "/var/cache/apt-cacher-ng");
+    .WithVolume("issuepit-apt-cache", "/var/cache/apt-cacher-ng")
+    .WithUrlForEndpoint("http", u =>
+    {
+        u.DisplayText = "Statistics";
+        u.Url = "/acng-report.html";
+    });
 
 // Generic HTTP caching reverse-proxy for CI/CD downloads.
 // Routes by Host header: cdn.playwright.dev (30-day cache), objects.githubusercontent.com (7-day + revalidation).
@@ -164,7 +169,12 @@ var httpCache = builder.AddContainer("http-cache", "nginx", "1.27-alpine")
                 }
                 """
         }
-    ]);
+    ])
+    .WithUrlForEndpoint("http", u =>
+    {
+        u.DisplayText = "Metrics";
+        u.Url = "/stub_status";
+    });
 
 // LocalStack provides local AWS services (S3 for image uploads).
 // Open source (Apache 2.0). S3 endpoint: http://localstack:4566

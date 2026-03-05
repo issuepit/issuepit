@@ -84,8 +84,6 @@ services:
       ConnectionStrings__redis: "redis:6379"
       Kafka__BootstrapServers: "kafka:9092"
       CiCd__AptCacheUrl: "http://apt-cache:3142"
-      CiCd__HttpCacheUrl: "http://http-cache:3143"
-      CiCd__InterceptAllTraffic: "true"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
@@ -108,20 +106,6 @@ services:
       - issuepit-apt-cache:/var/cache/apt-cacher-ng
     restart: unless-stopped
 
-  # Generic HTTP caching reverse-proxy for CI/CD downloads (Playwright CDN, GitHub release assets).
-  # Caches by Host header so each upstream has separate cache policies and revalidation rules.
-  # Metrics: GET http://localhost:3143/stub_status
-  # Set PLAYWRIGHT_DOWNLOAD_HOST=http://http-cache:3143 or HTTP_PROXY=http://http-cache:3143.
-  http-cache:
-    image: nginx:1.27-alpine
-    container_name: issuepit-http-cache
-    ports:
-      - "3143:3143"
-    volumes:
-      - issuepit-http-cache:/var/cache/nginx
-      - ./docker/http-cache.nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    restart: unless-stopped
-
   frontend:
     build:
       context: .
@@ -135,4 +119,3 @@ volumes:
   postgres_data:
   issuepit-action-cache:
   issuepit-apt-cache:
-  issuepit-http-cache:
