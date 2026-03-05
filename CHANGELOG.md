@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.5.0](https://github.com/issuepit/issuepit/compare/v1.4.0...v1.5.0) (2026-03-05)
+
+
+### Features
+
+* action cache, offline mode, and local repository rerouting for act runner ([#361](https://github.com/issuepit/issuepit/issues/361)) ([3a9761f](https://github.com/issuepit/issuepit/commit/3a9761f716dc9f3269d72046eb834eeb5d021549))
+* CI/CD page slim mode, hover highlights, failure propagation, log search ([#360](https://github.com/issuepit/issuepit/issues/360)) ([7282856](https://github.com/issuepit/issuepit/commit/7282856f22813e65efeb95c51c266f57ccae9a7d))
+* CICD page — slim mode fixes, artifact list, job status inference, log UX ([#365](https://github.com/issuepit/issuepit/issues/365)) ([699f321](https://github.com/issuepit/issuepit/commit/699f3212b7200b58607b9ba76b450ea0e496471b))
+* create issues by parsing voice using Vosk ([#324](https://github.com/issuepit/issuepit/issues/324)) ([60bca7e](https://github.com/issuepit/issuepit/commit/60bca7e7af2af9fec74d04b4b407f998ad0641a5))
+* dynamic CI/CD job graph layout via ResizeObserver ([#367](https://github.com/issuepit/issuepit/issues/367)) ([a9164e2](https://github.com/issuepit/issuepit/commit/a9164e27b9c00a12c9fcc267d8b8965e9243638b))
+* improve run UI — mixed tab, filters, project column, agent run navigation ([#374](https://github.com/issuepit/issuepit/issues/374)) ([99f0fb4](https://github.com/issuepit/issuepit/commit/99f0fb4ac05b6601c554541027c60c5117ab3e9f))
+* improve todos — weekly calendar, drag & drop, iCal subscription, seed data ([#344](https://github.com/issuepit/issuepit/issues/344)) ([ece7241](https://github.com/issuepit/issuepit/commit/ece724145c70247a8030c2ff0cc6ed2cfbafaee7))
+* issue viewer — delete confirmation, slug/number URL routing, fix actual deletion ([#372](https://github.com/issuepit/issuepit/issues/372)) ([3e8bab4](https://github.com/issuepit/issuepit/commit/3e8bab48bd5c3097bc4d4625fc307a6c86bb4796))
+* limit --concurrent-jobs to 4 by default, configurable per org and project ([#358](https://github.com/issuepit/issuepit/issues/358)) ([9ecd3f2](https://github.com/issuepit/issuepit/commit/9ecd3f2065c349259fd80743913c3866c793f95a))
+* persistent npm and NuGet package caching for CI/CD runs ([#357](https://github.com/issuepit/issuepit/issues/357)) ([0c4e198](https://github.com/issuepit/issuepit/commit/0c4e198a07fa4eb50522f45cb9c27e398759d7cb))
+* trigger CI/CD runs from commit list with extended event type support ([#343](https://github.com/issuepit/issuepit/issues/343)) ([dffcc5d](https://github.com/issuepit/issuepit/commit/dffcc5d694c770685c927043b500380e416bb0d7))
+
+
+### Bug Fixes
+
+* CI/CD run page – selection reset, dynamic layout, mapping, matrix UX, step 0, step collapse, unmatched log warning, unit tests ([#337](https://github.com/issuepit/issuepit/issues/337)) ([c24b74a](https://github.com/issuepit/issuepit/commit/c24b74a3b35120a65ebae7fa33bcbf7a131d80c5))
+* cicd page interaction polish — hover blur, arrow sizing, job completion, matrix template resolution ([#368](https://github.com/issuepit/issuepit/issues/368)) ([d6618d4](https://github.com/issuepit/issuepit/commit/d6618d4828753cc159d1bdd6281d574446d08b27))
+* embed Verdaccio config as inline C# string instead of host bind mount ([#369](https://github.com/issuepit/issuepit/issues/369)) ([8985c29](https://github.com/issuepit/issuepit/commit/8985c295a66f18b06481eccc5a98a38f7da95182))
+* linked issues — bidirectional visibility, searchable picker, sub-issue linking ([#345](https://github.com/issuepit/issuepit/issues/345)) ([883cbc0](https://github.com/issuepit/issuepit/commit/883cbc0a8c3e8f2f6c6ade8ae0ec3c819ad3e3d6))
+* true isolated DinD, gitRepoUrl instead of workspacePath, TriggerPayload build fix, dockerd in helper image, workflow graph via cat from clone, WorkflowGraphParser string API ([#350](https://github.com/issuepit/issuepit/issues/350)) ([862d082](https://github.com/issuepit/issuepit/commit/862d082c727c5ecb2cc0eb08af83945bafe0cfe1))
+* ui orgs and project settings ([#335](https://github.com/issuepit/issuepit/issues/335)) ([5033e1e](https://github.com/issuepit/issuepit/commit/5033e1eae899691ddf827917ca3ac586dae37673))
+
 ## [1.4.0](https://github.com/issuepit/issuepit/compare/v1.3.0...v1.4.0) (2026-03-03)
 
 
