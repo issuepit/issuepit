@@ -84,7 +84,12 @@ export const useIssuesStore = defineStore('issues', () => {
     loading.value = true
     error.value = null
     try {
-      const data = await api.get<Issue>(`/api/issues/${issueId}`)
+      // Support numeric issue IDs (issue number) in addition to GUIDs
+      const isNumeric = /^\d+$/.test(issueId)
+      const url = isNumeric
+        ? `/api/issues/by-project/${projectId}/${issueId}`
+        : `/api/issues/${issueId}`
+      const data = await api.get<Issue>(url)
       currentIssue.value = data
       return data
     } catch (e: unknown) {

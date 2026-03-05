@@ -730,6 +730,7 @@ async function finishReview() {
     const body = bodyLines.join('\n\n---\n\n')
 
     let issueId: string | undefined
+    let issueNumber: number | undefined
     if (targetIssueId.value.trim()) {
       // Add as a comment to an existing issue
       issueId = targetIssueId.value.trim()
@@ -748,6 +749,7 @@ async function finishReview() {
         await issuesStore.addAssignee(newIssue.id, { userId: authStore.user.id })
       }
       issueId = newIssue?.id
+      issueNumber = newIssue?.number
     }
 
     // Persist each inline code-review comment as a structured CodeReviewComment
@@ -770,7 +772,8 @@ async function finishReview() {
     reviewTitle.value = ''
     targetIssueId.value = ''
     if (issueId) {
-      router.push(`/projects/${id}/issues/${issueId}`)
+      // Navigate using issue number for cleaner URLs when available
+      router.push(`/projects/${id}/issues/${issueNumber ?? issueId}`)
     }
   } finally {
     savingReview.value = false

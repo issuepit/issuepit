@@ -13,7 +13,7 @@
         <NuxtLink :to="`/projects/${id}/issues`" class="hover:text-gray-300">Issues</NuxtLink>
         <template v-if="store.currentIssue.parentIssue">
           <span>/</span>
-          <NuxtLink :to="`/projects/${id}/issues/${store.currentIssue.parentIssue.id}`" class="hover:text-gray-300">
+          <NuxtLink :to="`/projects/${id}/issues/${store.currentIssue.parentIssue.number}`" class="hover:text-gray-300">
             #{{ store.currentIssue.parentIssue.number }} {{ store.currentIssue.parentIssue.title }}
           </NuxtLink>
         </template>
@@ -104,7 +104,7 @@
             <div v-if="store.currentTasks.length" class="space-y-2 mb-3">
               <div v-for="task in store.currentTasks" :key="task.id"
                 class="flex items-center gap-2 group">
-                <button @click="store.toggleTask(issueId, task.id, task.status !== 'done')"
+                <button @click="store.toggleTask(resolvedIssueId, task.id, task.status !== 'done')"
                   class="w-4 h-4 rounded border shrink-0 flex items-center justify-center transition-colors"
                   :class="task.status === 'done' ? 'bg-brand-600 border-brand-600 text-white' : 'border-gray-600 hover:border-brand-500'">
                   <svg v-if="task.status === 'done'" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -114,7 +114,7 @@
                 <span class="text-sm flex-1" :class="task.status === 'done' ? 'line-through text-gray-500' : 'text-gray-300'">
                   {{ task.title }}
                 </span>
-                <button @click="store.deleteTask(issueId, task.id)"
+                <button @click="store.deleteTask(resolvedIssueId, task.id)"
                   class="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition-all">
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -135,7 +135,7 @@
             <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Sub-Issues</h2>
             <div v-if="store.currentIssue.subIssues?.length" class="space-y-1.5 mb-3">
               <NuxtLink v-for="sub in store.currentIssue.subIssues" :key="sub.id"
-                :to="`/projects/${id}/issues/${sub.id}`"
+                :to="`/projects/${id}/issues/${sub.number}`"
                 class="flex items-center gap-2 text-sm text-gray-300 hover:text-white group py-1 px-2 rounded-lg hover:bg-gray-800/60 transition-colors">
                 <span :class="statusColor(sub.status)" class="w-2.5 h-2.5 rounded-full shrink-0"></span>
                 <span class="text-xs text-gray-600 shrink-0">#{{ sub.number }}</span>
@@ -173,7 +173,7 @@
               <IssueSearchPicker
                 v-model="subIssueSearch"
                 :issues="allOrgIssues"
-                :current-project-id="id"
+                :current-project-id="actualProjectId"
                 placeholder="Search issue to link as sub-issue..."
                 @select="linkAsSubIssue"
                 @cancel="linkingSubIssue = false; subIssueSearch = ''"
@@ -188,13 +188,13 @@
               <div v-for="link in store.currentLinks" :key="link.id"
                 class="flex items-center gap-2 group py-1 px-2 rounded-lg hover:bg-gray-800/60 transition-colors">
                 <span class="text-xs text-brand-400 shrink-0 min-w-[70px]">{{ IssueLinkTypeLabels[link.linkType] }}</span>
-                <NuxtLink :to="`/projects/${link.targetIssue?.projectId ?? id}/issues/${link.targetIssueId}`"
+                <NuxtLink :to="`/projects/${link.targetIssue?.projectId ?? id}/issues/${link.targetIssue?.number ?? link.targetIssueId}`"
                   class="flex items-center gap-1.5 text-sm text-gray-300 hover:text-white flex-1 min-w-0">
                   <span class="text-xs text-gray-600 shrink-0">#{{ link.targetIssue?.number }}</span>
                   <span class="truncate">{{ link.targetIssue?.title }}</span>
-                  <span v-if="link.targetIssue?.projectId && link.targetIssue.projectId !== id" class="text-xs text-gray-600 shrink-0 ml-1">↗ cross-project</span>
+                  <span v-if="link.targetIssue?.projectId && link.targetIssue.projectId !== actualProjectId" class="text-xs text-gray-600 shrink-0 ml-1">↗ cross-project</span>
                 </NuxtLink>
-                <button @click="store.removeLink(issueId, link.id)"
+                <button @click="store.removeLink(resolvedIssueId, link.id)"
                   class="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition-all">
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -219,7 +219,7 @@
               <IssueSearchPicker
                 v-model="linkSearch"
                 :issues="allOrgIssues"
-                :current-project-id="id"
+                :current-project-id="actualProjectId"
                 placeholder="Search issue to link..."
                 @select="onLinkIssueSelected"
                 @cancel="addingLink = false; linkTargetIssueId = ''; linkSearch = ''"
@@ -279,7 +279,7 @@
                     <div class="ml-auto flex gap-2 opacity-0 group-hover:opacity-100 transition-all">
                       <button @click="startEditingComment(comment)"
                         class="text-gray-600 hover:text-brand-400 text-xs">Edit</button>
-                      <button @click="store.deleteComment(issueId, comment.id)"
+                      <button @click="store.deleteComment(resolvedIssueId, comment.id)"
                         class="text-gray-600 hover:text-red-400 text-xs">Delete</button>
                     </div>
                   </div>
@@ -418,7 +418,7 @@
                   class="flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full font-medium"
                   :style="{ backgroundColor: label.color + '33', color: label.color }">
                   {{ label.name }}
-                  <button @click="store.removeIssueLabel(issueId, label.id)" class="hover:opacity-70">×</button>
+                  <button @click="store.removeIssueLabel(resolvedIssueId, label.id)" class="hover:opacity-70">×</button>
                 </span>
               </div>
               <div class="relative">
@@ -441,7 +441,7 @@
                     {{ assigneeInitial(a) }}
                   </div>
                   <span class="text-xs text-gray-300 flex-1 truncate">{{ assigneeName(a) }}</span>
-                  <button @click="store.removeAssignee(issueId, a.id)"
+                  <button @click="store.removeAssignee(resolvedIssueId, a.id)"
                     class="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition-all text-xs">×</button>
                 </div>
               </div>
@@ -471,7 +471,7 @@
           </div>
 
           <!-- Delete -->
-          <button @click="deleteAndGoBack"
+          <button @click="requestDelete"
             class="w-full text-xs text-red-400 hover:text-red-300 hover:bg-red-900/20 border border-red-900/30 rounded-lg py-2 transition-colors">
             Delete Issue
           </button>
@@ -482,6 +482,24 @@
     <div v-else class="flex flex-col items-center justify-center py-20 text-center">
       <p class="text-gray-400">Issue not found</p>
       <NuxtLink :to="`/projects/${id}/issues`" class="mt-3 text-brand-400 hover:text-brand-300 text-sm">← Back to Issues</NuxtLink>
+    </div>
+
+    <!-- Delete Confirmation Dialog -->
+    <div v-if="showDeleteConfirm" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-sm p-6 shadow-xl">
+        <h2 class="text-lg font-bold text-white mb-2">Delete Issue</h2>
+        <p class="text-sm text-gray-400 mb-6">Are you sure you want to delete this issue? This action cannot be undone.</p>
+        <div class="flex gap-3">
+          <button @click="confirmDelete"
+            class="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
+            Delete
+          </button>
+          <button @click="showDeleteConfirm = false"
+            class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 rounded-lg transition-colors">
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -500,7 +518,10 @@ import { useProjectsStore } from '~/stores/projects'
 const route = useRoute()
 const router = useRouter()
 const id = route.params.id as string
-const issueId = route.params.issueId as string
+// The URL parameter: may be a numeric issue number (e.g. "42") or a GUID
+const issueIdParam = route.params.issueId as string
+// After fetch, this is resolved to the actual issue GUID for all API operations
+const resolvedIssueId = ref(issueIdParam)
 const store = useIssuesStore()
 const labelsStore = useLabelsStore()
 const agentsStore = useAgentsStore()
@@ -508,6 +529,11 @@ const milestonesStore = useMilestonesStore()
 const projectsStore = useProjectsStore()
 const api = useApi()
 const { uploading: uploadingImage, uploadError: uploadImageError, handlePaste: handleImagePaste } = useImageUpload()
+
+// Resolved project GUID (falls back to URL param before issue is loaded)
+const actualProjectId = computed(() => store.currentIssue?.projectId ?? id)
+
+const showDeleteConfirm = ref(false)
 
 const editingTitle = ref(false)
 const editingBody = ref(false)
@@ -617,21 +643,23 @@ const renderedBodyEdit = computed(() => {
 })
 
 onMounted(async () => {
-  await store.fetchIssue(id, issueId)
+  await store.fetchIssue(id, issueIdParam)
   if (store.currentIssue) {
+    // Resolve to actual GUID so all subsequent operations use the canonical ID
+    resolvedIssueId.value = store.currentIssue.id
     titleEdit.value = store.currentIssue.title
     bodyEdit.value = store.currentIssue.body ?? ''
   }
   await Promise.all([
-    store.fetchComments(issueId),
-    store.fetchCodeReviewComments(issueId),
-    store.fetchTasks(issueId),
-    store.fetchLinks(issueId),
-    store.fetchHistory(issueId),
-    labelsStore.fetchLabels(id),
+    store.fetchComments(resolvedIssueId.value),
+    store.fetchCodeReviewComments(resolvedIssueId.value),
+    store.fetchTasks(resolvedIssueId.value),
+    store.fetchLinks(resolvedIssueId.value),
+    store.fetchHistory(resolvedIssueId.value),
+    labelsStore.fetchLabels(actualProjectId.value),
     agentsStore.fetchAgents(),
     fetchTenantUsers(),
-    milestonesStore.fetchMilestones(id),
+    milestonesStore.fetchMilestones(actualProjectId.value),
     projectsStore.fetchProject(id),
   ])
   // Fetch all issues in this org for link target selection (excluding current), with project name for cross-project display
@@ -641,7 +669,7 @@ onMounted(async () => {
     const [orgIssues, orgProjects] = await Promise.all([
       api.get<Array<{ id: string; number: number; title: string; projectId: string }>>(
         '/api/issues',
-        { params: { ...(orgId ? { orgId } : { projectId: id }) } }
+        { params: { ...(orgId ? { orgId } : { projectId: actualProjectId.value }) } }
       ),
       orgId
         ? api.get<Array<{ id: string; name: string }>>(`/api/orgs/${orgId}/projects`)
@@ -649,7 +677,7 @@ onMounted(async () => {
     ])
     const projectNameMap = Object.fromEntries(orgProjects.map((p: { id: string; name: string }) => [p.id, p.name]))
     allOrgIssues.value = orgIssues
-      .filter((i: { id: string }) => i.id !== issueId)
+      .filter((i: { id: string }) => i.id !== resolvedIssueId.value)
       .map((i: { id: string; number: number; title: string; projectId: string }) => ({
         ...i,
         projectName: projectNameMap[i.projectId],
@@ -677,35 +705,35 @@ const availableAgents = computed(() => {
 async function saveTitle() {
   editingTitle.value = false
   if (titleEdit.value && titleEdit.value !== store.currentIssue?.title) {
-    await store.updateIssue(id, issueId, { title: titleEdit.value })
+    await store.updateIssue(id, resolvedIssueId.value, { title: titleEdit.value })
   }
 }
 
 async function saveBody() {
   editingBody.value = false
-  await store.updateIssue(id, issueId, { body: bodyEdit.value })
+  await store.updateIssue(id, resolvedIssueId.value, { body: bodyEdit.value })
 }
 
 async function updateStatus(e: Event) {
   const val = (e.target as HTMLSelectElement).value as IssueStatus
-  await store.updateIssue(id, issueId, { status: val })
+  await store.updateIssue(id, resolvedIssueId.value, { status: val })
 }
 
 async function updatePriority(e: Event) {
   const val = (e.target as HTMLSelectElement).value as IssuePriority
-  await store.updateIssue(id, issueId, { priority: val })
+  await store.updateIssue(id, resolvedIssueId.value, { priority: val })
 }
 
 async function updateType(e: Event) {
   const val = (e.target as HTMLSelectElement).value as IssueType
-  await store.updateIssue(id, issueId, { type: val })
+  await store.updateIssue(id, resolvedIssueId.value, { type: val })
 }
 
 async function updateMilestone(milestoneId: string | null) {
   if (milestoneId) {
-    await store.updateIssue(id, issueId, { milestoneId })
+    await store.updateIssue(id, resolvedIssueId.value, { milestoneId })
   } else {
-    await store.clearIssueMilestone(id, issueId)
+    await store.clearIssueMilestone(id, resolvedIssueId.value)
   }
 }
 
@@ -715,14 +743,19 @@ async function onSetMilestone(e: Event) {
   ;(e.target as HTMLSelectElement).value = ''
 }
 
-async function deleteAndGoBack() {
-  await store.deleteIssue(id, issueId)
+function requestDelete() {
+  showDeleteConfirm.value = true
+}
+
+async function confirmDelete() {
+  showDeleteConfirm.value = false
+  await store.deleteIssue(actualProjectId.value, resolvedIssueId.value)
   router.push(`/projects/${id}/issues`)
 }
 
 async function submitComment() {
   if (!newComment.value.trim()) return
-  await store.addComment(issueId, newComment.value.trim())
+  await store.addComment(resolvedIssueId.value, newComment.value.trim())
   newComment.value = ''
 }
 
@@ -733,20 +766,20 @@ function startEditingComment(comment: { id: string; body: string }) {
 
 async function saveComment(commentId: string) {
   if (!commentEdit.value.trim()) return
-  await store.updateComment(issueId, commentId, commentEdit.value.trim())
+  await store.updateComment(resolvedIssueId.value, commentId, commentEdit.value.trim())
   editingCommentId.value = null
   commentEdit.value = ''
 }
 
 async function addTask() {
   if (!newTaskTitle.value.trim()) return
-  await store.createTask(issueId, newTaskTitle.value.trim())
+  await store.createTask(resolvedIssueId.value, newTaskTitle.value.trim())
   newTaskTitle.value = ''
 }
 
 async function submitAddLink() {
   if (!linkTargetIssueId.value) return
-  await store.addLink(issueId, linkTargetIssueId.value, linkType.value)
+  await store.addLink(resolvedIssueId.value, linkTargetIssueId.value, linkType.value)
   addingLink.value = false
   linkTargetIssueId.value = ''
   linkSearch.value = ''
@@ -759,29 +792,29 @@ async function onLinkIssueSelected(issue: { id: string }) {
 }
 
 async function linkAsSubIssue(issue: { id: string }) {
-  await store.updateIssue(id, issue.id, { parentIssueId: issueId })
+  await store.updateIssue(id, issue.id, { parentIssueId: resolvedIssueId.value })
   linkingSubIssue.value = false
   subIssueSearch.value = ''
-  await store.fetchIssue(id, issueId)
+  await store.fetchIssue(id, resolvedIssueId.value)
 }
 
 async function createSubIssue() {  if (!newSubIssueTitle.value.trim() || !store.currentIssue) return
-  await store.createIssue(id, {
+  await store.createIssue(actualProjectId.value, {
     title: newSubIssueTitle.value.trim(),
     status: IssueStatus.Todo,
-    parentIssueId: issueId,
+    parentIssueId: resolvedIssueId.value,
     type: IssueType.Task,
   })
   creatingSubIssue.value = false
   newSubIssueTitle.value = ''
-  await store.fetchIssue(id, issueId)
+  await store.fetchIssue(id, resolvedIssueId.value)
 }
 
 async function onAddLabel(e: Event) {
   const sel = e.target as HTMLSelectElement
   const labelId = sel.value
   if (!labelId) return
-  await store.addIssueLabel(issueId, labelId)
+  await store.addIssueLabel(resolvedIssueId.value, labelId)
   sel.value = ''
 }
 
@@ -789,7 +822,7 @@ async function onAddUserAssignee(e: Event) {
   const sel = e.target as HTMLSelectElement
   const userId = sel.value
   if (!userId) return
-  await store.addAssignee(issueId, { userId })
+  await store.addAssignee(resolvedIssueId.value, { userId })
   sel.value = ''
 }
 
@@ -797,7 +830,7 @@ async function onAddAgentAssignee(e: Event) {
   const sel = e.target as HTMLSelectElement
   const agentId = sel.value
   if (!agentId) return
-  await store.addAssignee(issueId, { agentId })
+  await store.addAssignee(resolvedIssueId.value, { agentId })
   sel.value = ''
 }
 

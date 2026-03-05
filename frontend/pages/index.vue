@@ -24,7 +24,7 @@
         </div>
         <div class="space-y-2">
           <NuxtLink v-for="issue in recentIssues" :key="issue.id"
-            :to="`/projects/${issue.projectId}/issues/${issue.id}`"
+            :to="`/projects/${issue.projectId}/issues/${issue.number}`"
             class="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-800 transition-colors block">
             <span :class="statusDot(issue.status)" class="w-2 h-2 rounded-full shrink-0"></span>
             <div class="flex-1 min-w-0">
@@ -182,7 +182,7 @@
                 </td>
                 <td class="px-3 py-2 text-gray-300 text-xs">{{ session.agentName }}</td>
                 <td class="px-3 py-2 text-xs">
-                  <NuxtLink :to="`/projects/${session.projectId}/issues/${session.issueId}`"
+                  <NuxtLink :to="`/projects/${session.projectId}/issues/${session.issueNumber}`"
                     class="text-brand-400 hover:text-brand-300 transition-colors"
                     @click.stop>
                     #{{ session.issueNumber }} {{ session.issueTitle }}
