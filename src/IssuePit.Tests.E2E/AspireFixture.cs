@@ -32,6 +32,12 @@ public sealed class AspireFixture : IAsyncLifetime
     {
         Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Building Aspire AppHost...");
 
+        // Enable dry-run mode for E2E tests: the AppHost will skip optional Docker-heavy
+        // containers (registry-mirror, npm-cache) that are only needed for real CI/CD runs.
+        // This reduces container count / memory pressure in constrained CI environments
+        // (e.g. when running inside an issuepit-helper-act container via act).
+        Environment.SetEnvironmentVariable("CICD_TEST_DRY_RUN", "true");
+
         // Disable resource logging so Aspire does not relay child-process stdout/stderr through
         // ILogger — the librdkafka C library can emit verbose connection-error lines to stderr
         // during Kafka container startup/teardown, which would otherwise flood the test output.

@@ -1,5 +1,11 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
+// In E2E test mode (CICD_TEST_DRY_RUN=true), skip Docker-heavy optional containers
+// (registry-mirror, npm-cache) that are only needed for real CI/CD runs.
+// This reduces container count, memory pressure, and eliminates fixed-port conflicts
+// so E2E tests are reliable in constrained CI environments (e.g. helper-act image).
+var isDryRunMode = Environment.GetEnvironmentVariable("CICD_TEST_DRY_RUN") == "true";
+
 var postgresServer = builder.AddPostgres("postgres")
     .WithImage("postgres", "17.6");
 var postgresDb = postgresServer.AddDatabase("issuepit-db");
@@ -18,6 +24,7 @@ var redis = builder.AddValkey("redis")
 
 // npm package cache (Verdaccio proxy): caches npm packages across CI/CD runs to speed up builds.
 // Packages are fetched from the upstream registry on first request and served locally thereafter.
+// In E2E dry-run test mode this container is not needed and is not auto-started.
 var npmCache = builder.AddContainer("npm-cache", "verdaccio/verdaccio", "6")
     .WithHttpEndpoint(targetPort: 4873, name: "http")
     .WithVolume("verdaccio-storage", "/verdaccio/storage")
@@ -69,6 +76,7 @@ var storage = builder.AddContainer("localstack", "localstack/localstack", "4.3")
 // Port 5100 is fixed (not dynamic) because EnsureRegistryMirrorAsync also binds on this port
 // when running outside Aspire, and DockerCiCdRuntime builds the DinD mirror URL from
 // CiCd__Docker__RegistryMirrorPort (default 5100). Keep port consistent across both deployments.
+// In E2E dry-run test mode this container is not needed and is not auto-started.
 var registryMirror = builder.AddContainer("registry-mirror", "registry", "2")
     .WithContainerName("issuepit-registry-mirror")
     .WithLifetime(ContainerLifetime.Persistent)
@@ -76,6 +84,14 @@ var registryMirror = builder.AddContainer("registry-mirror", "registry", "2")
     .WithVolume("issuepit-registry-cache", "/var/lib/registry")
     .WithEnvironment("REGISTRY_PROXY_REMOTEURL", "https://registry-1.docker.io");
     //.WithExplicitStart(); // not started in CI; configure real S3/B2 via ImageStorage settings; we need it in ci/cd for e2e tests which could upload data
+
+if (isDryRunMode)
+{
+    // In E2E test mode skip optional Docker-only containers to reduce resource usage and avoid
+    // fixed-port (5100) conflicts in constrained or nested-Docker CI environments.
+    npmCache.WithExplicitStart();
+    registryMirror.WithExplicitStart();
+}
 
 // Management UI tools - set to explicit start so they are not auto-started in CI and require manual start from the Aspire dashboard
 postgresServer.WithPgAdmin(admin => admin.WithExplicitStart());
@@ -146,9 +162,24 @@ var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     .WaitForCompletion(kafkaInitializer)
     .WaitFor(kafka)
     .WaitFor(redis)
-    .WaitFor(registryMirror)
-    .WithEnvironment("CiCd__NpmCacheUrl", npmCache.GetEndpoint("http"))
     .WithHttpHealthCheck("/health", endpointName: "http");
+
+if (isDryRunMode)
+{
+    // In E2E test mode the cicd-client uses DryRunCiCdRuntime so Docker is not needed.
+    // Skip the registry-mirror wait and enable dry-run mode so no Docker daemon is required.
+    // Note: CiCd__DryRun uses double-underscore (env var convention); IConfiguration maps it
+    // to the config key CiCd:DryRun which CiCdRuntimeFactory reads.
+    cicdClient.WithEnvironment("CiCd__DryRun", "true");
+}
+else
+{
+    // In production/dev mode, cicd-client waits for the registry mirror before starting
+    // and publishes the npm cache URL for act job containers.
+    cicdClient
+        .WaitFor(registryMirror)
+        .WithEnvironment("CiCd__NpmCacheUrl", npmCache.GetEndpoint("http"));
+}
 
 frontend
     .WithEnvironment("NUXT_PUBLIC_API_BASE", api.GetEndpoint("http"))
