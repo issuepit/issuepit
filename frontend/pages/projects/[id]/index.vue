@@ -222,7 +222,8 @@
           </div>
           <div v-if="recentAgentSessions.length" class="space-y-2">
             <div v-for="session in recentAgentSessions" :key="session.id"
-              class="flex items-center gap-3 py-2 border-b border-gray-800 last:border-0">
+              class="flex items-center gap-3 py-2 border-b border-gray-800 last:border-0 cursor-pointer"
+              @click="navigateTo(`/projects/${id}/runs/agent-sessions/${session.id}`)">
               <span :class="agentStatusClass(session.status)"
                 class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium shrink-0">
                 <span :class="agentStatusDot(session.status)" class="w-1.5 h-1.5 rounded-full" />
@@ -230,7 +231,8 @@
               </span>
               <div class="flex-1 min-w-0">
                 <NuxtLink :to="`/projects/${id}/issues/${session.issueId}`"
-                  class="text-sm text-gray-300 hover:text-brand-300 transition-colors truncate block">
+                  class="text-sm text-gray-300 hover:text-brand-300 transition-colors truncate block"
+                  @click.stop>
                   #{{ session.issueNumber }} {{ session.issueTitle }}
                 </NuxtLink>
                 <p class="text-xs text-gray-500 truncate">{{ session.agentName }}</p>
