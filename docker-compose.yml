@@ -84,7 +84,8 @@ services:
       ConnectionStrings__redis: "redis:6379"
       Kafka__BootstrapServers: "kafka:9092"
       CiCd__AptCacheUrl: "http://apt-cache:3142"
-      CiCd__PlaywrightCacheUrl: "http://playwright-cache:3143"
+      CiCd__HttpCacheUrl: "http://http-cache:3143"
+      CiCd__InterceptAllTraffic: "true"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
@@ -97,7 +98,7 @@ services:
 
   # apt package cache: caches Ubuntu/Debian apt packages so CI/CD runs reuse
   # already-downloaded .deb files instead of fetching them from the upstream mirror.
-  # Cache data is stored in a named volume so it survives container restarts.
+  # Stats page: http://localhost:3142/acng-report.html
   apt-cache:
     image: sameersbn/apt-cacher-ng:3.3.4-20221016
     container_name: issuepit-apt-cache
@@ -107,17 +108,18 @@ services:
       - issuepit-apt-cache:/var/cache/apt-cacher-ng
     restart: unless-stopped
 
-  # Playwright browser download cache: nginx reverse proxy that intercepts and caches
-  # browser binary archives (Chrome, FFmpeg, etc.) from cdn.playwright.dev.
-  # Set PLAYWRIGHT_DOWNLOAD_HOST=http://playwright-cache:3143 in job containers to use it.
-  playwright-cache:
+  # Generic HTTP caching reverse-proxy for CI/CD downloads (Playwright CDN, GitHub release assets).
+  # Caches by Host header so each upstream has separate cache policies and revalidation rules.
+  # Metrics: GET http://localhost:3143/stub_status
+  # Set PLAYWRIGHT_DOWNLOAD_HOST=http://http-cache:3143 or HTTP_PROXY=http://http-cache:3143.
+  http-cache:
     image: nginx:1.27-alpine
-    container_name: issuepit-playwright-cache
+    container_name: issuepit-http-cache
     ports:
       - "3143:3143"
     volumes:
-      - issuepit-playwright-cache:/var/cache/nginx/playwright
-      - ./docker/playwright-cache.nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - issuepit-http-cache:/var/cache/nginx
+      - ./docker/http-cache.nginx.conf:/etc/nginx/conf.d/default.conf:ro
     restart: unless-stopped
 
   frontend:
@@ -133,4 +135,4 @@ volumes:
   postgres_data:
   issuepit-action-cache:
   issuepit-apt-cache:
-  issuepit-playwright-cache:
+  issuepit-http-cache:

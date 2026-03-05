@@ -59,6 +59,7 @@ var npmCache = builder.AddContainer("npm-cache", "verdaccio/verdaccio", "6")
 // All apt-get update / apt-get install requests from act job containers are transparently proxied
 // and cached so subsequent runs reuse already-downloaded .deb files without hitting the upstream mirror.
 // Port 3142 is fixed (the apt-cacher-ng default) so DockerCiCdRuntime can reference it by constant.
+// Metrics/stats: http://<host>:3142/acng-report.html (built-in apt-cacher-ng statistics page).
 // WithLifetime Persistent: cache data survives Aspire restarts.
 var aptCache = builder.AddContainer("apt-cache", "sameersbn/apt-cacher-ng", "3.3.4-20221016")
     .WithContainerName("issuepit-apt-cache")
@@ -66,16 +67,17 @@ var aptCache = builder.AddContainer("apt-cache", "sameersbn/apt-cacher-ng", "3.3
     .WithHttpEndpoint(targetPort: 3142, port: 3142, name: "http")
     .WithVolume("issuepit-apt-cache", "/var/cache/apt-cacher-ng");
 
-// Playwright browser download cache (nginx reverse proxy): caches browser binary archives
-// downloaded from cdn.playwright.dev (Chrome, Chrome Headless Shell, FFmpeg) across CI/CD runs.
-// The first run downloads and caches each archive; subsequent runs are served locally.
+// Generic HTTP caching reverse-proxy for CI/CD downloads.
+// Routes by Host header: cdn.playwright.dev (30-day cache), objects.githubusercontent.com (7-day + revalidation).
+// Unconfigured hosts are passed through without caching.
 // Port 3143 is fixed so DockerCiCdRuntime can reference it by constant.
+// Metrics: GET http://<host>:3143/stub_status  (nginx stub_status — connections and request counts).
 // WithLifetime Persistent: cache data survives Aspire restarts.
-var playwrightCache = builder.AddContainer("playwright-cache", "nginx", "1.27-alpine")
-    .WithContainerName("issuepit-playwright-cache")
+var httpCache = builder.AddContainer("http-cache", "nginx", "1.27-alpine")
+    .WithContainerName("issuepit-http-cache")
     .WithLifetime(ContainerLifetime.Persistent)
     .WithHttpEndpoint(targetPort: 3143, port: 3143, name: "http")
-    .WithVolume("issuepit-playwright-cache", "/var/cache/nginx/playwright")
+    .WithVolume("issuepit-http-cache", "/var/cache/nginx")
     .WithContainerFiles("/etc/nginx/conf.d", [
         new ContainerFile
         {
@@ -88,9 +90,16 @@ var playwrightCache = builder.AddContainer("playwright-cache", "nginx", "1.27-al
                     inactive=30d
                     use_temp_path=off;
 
+                proxy_cache_path /var/cache/nginx/github
+                    levels=2:2
+                    keys_zone=github_cache:10m
+                    max_size=5g
+                    inactive=7d
+                    use_temp_path=off;
+
                 server {
                     listen 3143;
-                    server_name _;
+                    server_name cdn.playwright.dev;
 
                     proxy_connect_timeout 60s;
                     proxy_read_timeout    600s;
@@ -109,6 +118,48 @@ var playwrightCache = builder.AddContainer("playwright-cache", "nginx", "1.27-al
                         proxy_cache_revalidate on;
 
                         add_header X-Cache-Status $upstream_cache_status;
+                    }
+                }
+
+                server {
+                    listen 3143;
+                    server_name objects.githubusercontent.com;
+
+                    proxy_connect_timeout 60s;
+                    proxy_read_timeout    300s;
+                    proxy_send_timeout    300s;
+
+                    location / {
+                        proxy_pass https://objects.githubusercontent.com;
+                        proxy_ssl_server_name on;
+                        proxy_set_header Host objects.githubusercontent.com;
+
+                        proxy_cache            github_cache;
+                        proxy_cache_valid      200 7d;
+                        proxy_cache_valid      any 30s;
+                        proxy_cache_use_stale  error timeout updating http_500 http_502 http_503 http_504;
+                        proxy_cache_lock       on;
+                        proxy_cache_revalidate on;
+
+                        add_header X-Cache-Status $upstream_cache_status;
+                    }
+                }
+
+                server {
+                    listen 3143 default_server;
+                    server_name _;
+
+                    location = /stub_status {
+                        stub_status;
+                    }
+
+                    resolver 1.1.1.1 8.8.8.8 valid=30s ipv6=off;
+                    location / {
+                        proxy_pass https://$host$request_uri;
+                        proxy_ssl_server_name on;
+                        proxy_set_header Host $host;
+                        proxy_connect_timeout 30s;
+                        proxy_read_timeout    120s;
                     }
                 }
                 """
@@ -208,13 +259,12 @@ var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     .WaitFor(redis)
     .WaitFor(registryMirror)
     .WithEnvironment("CiCd__NpmCacheUrl", npmCache.GetEndpoint("http"))
-    // Apt and Playwright cache services use fixed ports (3142 / 3143) so that
-    // DockerCiCdRuntime can set up iptables DNAT rules inside privileged act containers,
-    // routing DinD job-container traffic through host.docker.internal to each cache service.
-    // The "http://host.docker.internal:PORT" form is intentional: cicd-client runs inside
-    // a Docker container and accesses these services via the Docker host gateway.
-    .WithEnvironment("CiCd__AptCacheUrl", "http://host.docker.internal:3142")
-    .WithEnvironment("CiCd__PlaywrightCacheUrl", "http://host.docker.internal:3143")
+    .WithEnvironment("CiCd__AptCacheUrl", aptCache.GetEndpoint("http"))
+    .WithEnvironment("CiCd__HttpCacheUrl", httpCache.GetEndpoint("http"))
+    // Enable full DinD traffic interception: sets up iptables DNAT rules inside privileged act
+    // containers so DinD job containers can reach the apt and HTTP cache services on the outer host.
+    // Disable by setting CiCd__InterceptAllTraffic=false (volume-based playwright cache still works).
+    .WithEnvironment("CiCd__InterceptAllTraffic", "true")
     .WithHttpHealthCheck("/health", endpointName: "http");
 
 frontend

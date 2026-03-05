@@ -159,28 +159,28 @@ public class DockerCiCdRuntimeCacheTests
         Assert.DoesNotContain("\r\n", script);
     }
 
-    // ── Playwright cache port ──────────────────────────────────────────────────
+    // ── HTTP cache port (renamed from playwright cache port) ───────────────────
 
     [Fact]
-    public void BuildDindStartupScript_WithPlaywrightCachePort_ContainsIptablesDnat()
+    public void BuildDindStartupScript_WithHttpCachePort_ContainsIptablesDnat()
     {
-        var script = DockerCiCdRuntime.BuildDindStartupScript(playwrightCachePort: 3143);
+        var script = DockerCiCdRuntime.BuildDindStartupScript(httpCachePort: 3143);
         Assert.Contains("iptables -t nat -A PREROUTING -p tcp --dport 3143 -j DNAT", script);
         Assert.Contains("POSTROUTING -j MASQUERADE", script);
     }
 
     [Fact]
-    public void BuildDindStartupScript_WithPlaywrightCachePort_NoAptProxyConfig()
+    public void BuildDindStartupScript_WithHttpCachePort_NoAptProxyConfig()
     {
-        // Playwright cache port alone should not produce an apt proxy config file.
-        var script = DockerCiCdRuntime.BuildDindStartupScript(playwrightCachePort: 3143);
+        // HTTP cache port alone should not produce an apt proxy config file.
+        var script = DockerCiCdRuntime.BuildDindStartupScript(httpCachePort: 3143);
         Assert.DoesNotContain("/etc/apt/apt.conf.d/01proxy", script);
     }
 
     [Fact]
     public void BuildDindStartupScript_WithBothCachePorts_ContainsBothDnatRules()
     {
-        var script = DockerCiCdRuntime.BuildDindStartupScript(aptCachePort: 3142, playwrightCachePort: 3143);
+        var script = DockerCiCdRuntime.BuildDindStartupScript(aptCachePort: 3142, httpCachePort: 3143);
         Assert.Contains("--dport 3142 -j DNAT", script);
         Assert.Contains("--dport 3143 -j DNAT", script);
         Assert.Contains("/etc/apt/apt.conf.d/01proxy", script);
@@ -189,11 +189,11 @@ public class DockerCiCdRuntimeCacheTests
     [Fact]
     public void BuildDindStartupScript_WithBothCachePorts_StillStartsDockerd()
     {
-        var script = DockerCiCdRuntime.BuildDindStartupScript(aptCachePort: 3142, playwrightCachePort: 3143);
+        var script = DockerCiCdRuntime.BuildDindStartupScript(aptCachePort: 3142, httpCachePort: 3143);
         Assert.Contains("dockerd > /tmp/dockerd.log 2>&1 &", script);
     }
 
-    // ── AptCachePort / PlaywrightCachePort constants ───────────────────────────
+    // ── AptCachePort / HttpCachePort constants ─────────────────────────────────
 
     [Fact]
     public void DockerCiCdRuntime_AptCachePort_Is3142()
@@ -202,9 +202,9 @@ public class DockerCiCdRuntimeCacheTests
     }
 
     [Fact]
-    public void DockerCiCdRuntime_PlaywrightCachePort_Is3143()
+    public void DockerCiCdRuntime_HttpCachePort_Is3143()
     {
-        Assert.Equal(3143, DockerCiCdRuntime.PlaywrightCachePort);
+        Assert.Equal(3143, DockerCiCdRuntime.HttpCachePort);
     }
 
     // ── DindImageCacheStrategy enum ────────────────────────────────────────────
