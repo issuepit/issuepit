@@ -577,12 +577,18 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
         var (teamTheorists, _) = await db.Teams.AddIfNotExistsAsync(t => t.OrgId == evilCorpOrg.Id && t.Slug == "theorists", new Team { Id = Guid.NewGuid(), OrgId = evilCorpOrg.Id, Name = "Theorists",            Slug = "theorists", Description = "Participants from formal proof systems: Arthur/Merlin complexity classes and zero-knowledge proof roles.", CreatedAt = DateTime.UtcNow });
         await db.SaveChangesAsync();
 
-        // Add org members and team memberships idempotently
+        // Add org members and team memberships idempotently.
+        // A HashSet prevents calling AddIfNotExistsAsync twice for the same user's OrgMember
+        // within the same SaveChanges batch (some users appear in multiple teams; AddIfNotExistsAsync
+        // queries the DB, not the EF change tracker, so a pending-but-unsaved entry would not be
+        // found, causing a duplicate-key violation on SaveChangesAsync).
+        var addedOrgMemberUserIds = new HashSet<Guid>();
         async Task AddMemberAsync(Team team, string username)
         {
             var user = GetUser(username);
             if (user is null) return;
-            await db.OrganizationMembers.AddIfNotExistsAsync(m => m.OrgId == evilCorpOrg.Id && m.UserId == user.Id, new OrganizationMember { OrgId = evilCorpOrg.Id, UserId = user.Id });
+            if (addedOrgMemberUserIds.Add(user.Id))
+                await db.OrganizationMembers.AddIfNotExistsAsync(m => m.OrgId == evilCorpOrg.Id && m.UserId == user.Id, new OrganizationMember { OrgId = evilCorpOrg.Id, UserId = user.Id });
             await db.TeamMembers.AddIfNotExistsAsync(m => m.TeamId == team.Id && m.UserId == user.Id, new TeamMember { TeamId = team.Id, UserId = user.Id });
         }
 
