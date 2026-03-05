@@ -39,6 +39,7 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<CiCdRunLog> CiCdRunLogs => Set<CiCdRunLog>();
     public DbSet<CiCdTestSuite> CiCdTestSuites => Set<CiCdTestSuite>();
     public DbSet<CiCdTestCase> CiCdTestCases => Set<CiCdTestCase>();
+    public DbSet<CiCdArtifact> CiCdArtifacts => Set<CiCdArtifact>();
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<TeamMember> TeamMembers => Set<TeamMember>();
     public DbSet<OrganizationMember> OrganizationMembers => Set<OrganizationMember>();

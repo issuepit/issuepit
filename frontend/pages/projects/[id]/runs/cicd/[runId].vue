@@ -296,7 +296,7 @@
               <pre v-for="(w, i) in store.currentRunGraph.warnings" :key="i" class="text-xs text-yellow-400/80 font-mono whitespace-pre-wrap">{{ w }}</pre>
             </div>
             <!-- Job graph with SVG dependency arrows -->
-            <div class="relative overflow-x-auto pb-2" @click.self="deselectJob()">
+            <div class="relative overflow-x-auto pb-2">
               <!-- SVG arrows layer (absolute, behind boxes) -->
               <svg
                 v-if="graphLayout.svgWidth && graphLayout.svgHeight"
@@ -305,14 +305,14 @@
                 :height="graphLayout.svgHeight"
                 style="z-index: 0">
                 <defs>
-                  <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-                    <path d="M0,0 L0,6 L8,3 z" fill="#4b5563" />
+                  <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                    <path d="M0,0 L0,6 L6,3 z" fill="#4b5563" />
                   </marker>
-                  <marker id="arrow-hi" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-                    <path d="M0,0 L0,6 L8,3 z" fill="#6366f1" />
+                  <marker id="arrow-hi" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                    <path d="M0,0 L0,6 L6,3 z" fill="#6366f1" />
                   </marker>
-                  <marker id="arrow-fail" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-                    <path d="M0,0 L0,6 L8,3 z" fill="#ef4444" />
+                  <marker id="arrow-fail" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                    <path d="M0,0 L0,6 L6,3 z" fill="#ef4444" />
                   </marker>
                 </defs>
                 <path
@@ -328,8 +328,7 @@
               <!-- Job boxes layer -->
               <div
                 :style="{ position: 'relative', width: graphLayout.svgWidth + 'px', minHeight: graphLayout.svgHeight + 'px', zIndex: 1 }"
-                style="z-index: 1"
-                @click.self="deselectJob()">
+                style="z-index: 1">
                 <div
                   v-for="job in visibleJobs"
                   :key="job.id"
@@ -339,7 +338,7 @@
                     selectedJob === job.id
                       ? 'border-brand-500 bg-brand-950/30 ring-1 ring-brand-500/40'
                       : hoveredJob === job.id
-                        ? 'border-gray-400 bg-gray-800/80 ring-1 ring-gray-400/10'
+                        ? 'border-gray-500 bg-gray-700/60 shadow-lg shadow-gray-900/50'
                         : connectedJobIds.has(job.id)
                           ? 'border-brand-700/50 bg-gray-800/60'
                           : blockedJobIds.has(job.id)
@@ -414,11 +413,16 @@
                 <button class="text-xs text-gray-500 hover:text-gray-300 transition-colors" @click="deselectJob()">Clear filter</button>
                 <!-- Search -->
                 <div class="ml-auto flex items-center gap-2">
-                  <input
-                    v-model="logSearchQuery"
-                    type="text"
-                    placeholder="Search logs…"
-                    class="bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-300 px-2 py-0.5 placeholder-gray-600 focus:outline-none focus:border-brand-500 w-40" />
+                  <div class="relative">
+                    <svg class="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input
+                      v-model="logSearchQuery"
+                      type="text"
+                      placeholder="Search logs…"
+                      class="bg-gray-900 border border-gray-700 rounded-md text-xs text-gray-300 pl-6 pr-2 py-1 placeholder-gray-600 focus:outline-none focus:border-brand-500 w-44 transition-colors" />
+                  </div>
                   <!-- Word wrap toggle -->
                   <button
                     :class="['px-2 py-0.5 text-xs rounded-md border transition-colors', wordWrap ? 'border-brand-700 text-brand-300 bg-brand-950/30' : 'border-gray-700 text-gray-500 hover:border-gray-600']"
@@ -551,14 +555,32 @@
         <!-- Artifacts tab -->
         <template v-else-if="activeSection === 'artifacts'">
           <div class="p-4">
-            <p class="text-sm text-gray-400 mb-4">Artifacts produced by this run.</p>
-            <div class="rounded-lg bg-gray-800/60 border border-gray-700 p-6 flex flex-col items-center gap-3 text-center">
+            <template v-if="store.currentRunArtifacts.length">
+              <p class="text-xs text-gray-500 mb-3">{{ store.currentRunArtifacts.length }} artifact{{ store.currentRunArtifacts.length === 1 ? '' : 's' }} produced by this run.</p>
+              <div class="space-y-2">
+                <div
+                  v-for="artifact in store.currentRunArtifacts"
+                  :key="artifact.id"
+                  class="flex items-center gap-3 px-4 py-3 rounded-lg bg-gray-800/60 border border-gray-700">
+                  <svg class="w-5 h-5 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                      d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                  </svg>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-gray-200 truncate">{{ artifact.name }}</p>
+                    <p class="text-xs text-gray-500">{{ artifact.fileCount }} file{{ artifact.fileCount === 1 ? '' : 's' }} · {{ formatBytes(artifact.sizeBytes) }}</p>
+                  </div>
+                  <span class="text-xs text-gray-600 shrink-0">{{ formatDate(artifact.createdAt) }}</span>
+                </div>
+              </div>
+            </template>
+            <div v-else class="rounded-lg bg-gray-800/60 border border-gray-700 p-6 flex flex-col items-center gap-3 text-center">
               <svg class="w-8 h-8 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
                   d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
               </svg>
-              <p class="text-sm text-gray-500">Artifact storage is not yet configured.</p>
-              <p class="text-xs text-gray-600">Artifacts will appear here once storage (S3/B2) is set up.</p>
+              <p class="text-sm text-gray-500">No artifacts found for this run.</p>
+              <p class="text-xs text-gray-600">Artifacts are collected after the run completes. Make sure <code class="text-gray-400">actions/upload-artifact</code> is used in your workflows.</p>
             </div>
           </div>
         </template>
@@ -754,8 +776,8 @@ const hoveredJob = ref<string | null>(null)
 /** Log search query for filtering job log lines. */
 const logSearchQuery = ref('')
 
-/** Word/line wrap for log display. */
-const wordWrap = ref(true)
+/** Word/line wrap for log display. Off by default for better readability of long log lines. */
+const wordWrap = ref(false)
 
 const streamTabs = [
   { label: 'All', value: null },
@@ -1040,10 +1062,13 @@ const runIsTerminal = computed(() => {
 // Graph nodes get their needs/name from the YAML; log-only jobs fall back to id as name.
 const enrichedJobs = computed<EnrichedJob[]>(() => {
   const BOX_W = 220
-  // Estimated box height breakdown:
+  // Estimated box height breakdown (normal mode):
   //   name(20) + statusBadge(22) + logCount(16) + padding-tb(24) + inner gaps(~16) ≈ 98px (no workflow/timing)
   //   + workflowFile(16) + timing(16) = 130px for a started job with workflow file info
   const BASE_BOX_H = 130
+  // Slim mode hides status badge (~22px), log count (~16px), and workflow file (~16px),
+  // reducing the box height: 130 - 22 - 16 - 16 ≈ 76px; 80px with a small safety margin.
+  const SLIM_BOX_H = 80
   const MATRIX_ROW_H = 24
   const COL_GAP = 80
   const ROW_GAP = 14
@@ -1054,7 +1079,8 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
     const instances = jobLogMap.value.get(id)?.instances
     const instanceCount = instances ? instances.size : 0
     const matrixRows = instanceCount > 1 ? Math.ceil(instanceCount / 2) : 0
-    return BASE_BOX_H + matrixRows * MATRIX_ROW_H
+    const baseH = slimMode.value ? SLIM_BOX_H : BASE_BOX_H
+    return baseH + matrixRows * MATRIX_ROW_H
   }
 
   // Collect all job IDs
@@ -1118,13 +1144,22 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
     x += BOX_W + COL_GAP
   }
 
+  // Pre-build a map of which jobs have started (have log lines) for downstream inference.
+  const startedIds = new Set(Array.from(allIds).filter(id => (jobLogMap.value.get(id)?.logCount ?? 0) > 0))
+  // A job is implicitly complete if any of its direct downstream jobs has started.
+  const implicitlyCompleteIds = new Set<string>()
+  for (const e of edges) {
+    if (startedIds.has(e.to)) implicitlyCompleteIds.add(e.from)
+  }
+
   return Array.from(allIds).map(id => {
     const meta = jobMeta.get(id)
     const logs = jobLogMap.value.get(id) ?? { logCount: 0, hasError: false, isComplete: false, instances: new Map() }
     const pos = posMap.get(id) ?? { x: PAD, y: PAD }
     const hasStarted = logs.logCount > 0
-    // Mark job as complete if it logged "Job succeeded/failed" OR if the overall run has ended.
-    const isComplete = logs.isComplete || (hasStarted && runIsTerminal.value)
+    // Mark job as complete if it logged "Job succeeded/failed", if the overall run has ended,
+    // or if any downstream job has already started (cannot start until this one is done).
+    const isComplete = logs.isComplete || (hasStarted && runIsTerminal.value) || implicitlyCompleteIds.has(id)
     const matrixCount = logs.rawJobIds?.size ?? (hasStarted ? 1 : 0)
 
     // Build per-instance matrix data for the grouped display.
@@ -1435,6 +1470,7 @@ const { connection: projectConnection, connect: connectProject } = useSignalR('/
 onMounted(async () => {
   await store.fetchRun(runId)
   await store.fetchTestResults(runId)
+  await store.fetchArtifacts(runId)
 
   // Connect to the CiCd output hub to receive live log lines and run-completed events
   await connectCicd()
@@ -1447,8 +1483,9 @@ onMounted(async () => {
           now.value = Date.now()
           // Refresh only run metadata (status, endedAt) — do NOT re-fetch logs to avoid losing scroll position
           store.fetchRunOnly(runId)
-          // Fetch test results now that the run has completed
+          // Fetch test results and artifacts now that the run has completed
           store.fetchTestResults(runId)
+          store.fetchArtifacts(runId)
         } else if (data.event === 'run-heartbeat') {
           now.value = Date.now()
         } else if (data.line !== undefined) {
@@ -1534,6 +1571,14 @@ async function copyLogsToClipboard() {
 
 function formatDate(d: string) {
   return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`
 }
 
 function formatLogTime(d: string) {

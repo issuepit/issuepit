@@ -707,6 +707,14 @@ export interface CiCdTestSuite {
   testCases: CiCdTestCase[]
 }
 
+export interface CiCdArtifact {
+  id: string
+  name: string
+  sizeBytes: number
+  fileCount: number
+  createdAt: string
+}
+
 export interface WorkflowJobNode {
   id: string
   name: string
