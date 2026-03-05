@@ -436,20 +436,20 @@
               <div class="bg-gray-950 rounded-lg p-4 font-mono text-xs overflow-auto max-h-[500px]">
                 <template v-if="filteredJobLogsByStep.length">
                   <template v-for="(group, gi) in filteredJobLogsByStep" :key="gi">
-                    <!-- Step header: collapsible, shows duration. Null stepId → "Set up job" (step 0). -->
+                    <!-- Step header: collapsible, shows duration. Null stepId → "Set up job" (step 0) or "Complete job" (last). -->
                     <div
                       class="flex items-center gap-2 mt-3 mb-1 first:mt-0 select-none cursor-pointer group"
-                      @click="toggleStep(group.stepId ?? '__setup__')">
-                      <span class="text-gray-600 transition-transform" :class="collapsedSteps.has(group.stepId ?? '__setup__') ? '' : 'rotate-90'">▶</span>
-                      <span class="text-xs font-semibold text-gray-400 tracking-wide uppercase group-hover:text-gray-200 transition-colors">{{ group.stepId ?? 'Set up job' }}</span>
+                      @click="toggleStep(group.key)">
+                      <span class="text-gray-600 transition-transform" :class="collapsedSteps.has(group.key) ? '' : 'rotate-90'">▶</span>
+                      <span class="text-xs font-semibold text-gray-400 tracking-wide uppercase group-hover:text-gray-200 transition-colors">{{ group.label }}</span>
                       <span v-if="stepDuration(group)" class="text-[10px] text-gray-600 font-mono">{{ stepDuration(group) }}</span>
                       <span class="flex-1 border-t border-gray-800" />
                     </div>
-                    <template v-if="!collapsedSteps.has(group.stepId ?? '__setup__')">
+                    <template v-if="!collapsedSteps.has(group.key)">
                       <div v-for="log in group.logs" :key="log.id" class="flex gap-3 leading-5">
                         <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
                         <!-- eslint-disable-next-line vue/no-v-html -->
-                        <span :class="[log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300', wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line)" />
+                        <span :class="[log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300', wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
                       </div>
                     </template>
                   </template>
@@ -727,8 +727,10 @@ const compiledColorRules = computed(() =>
  * Renders a log line as HTML, applying ANSI color codes and custom regex color rules.
  * Always strips raw ANSI codes — when ansiColors is enabled they become colored spans,
  * otherwise they are simply removed so no `[90m` artifacts are shown.
+ * When `highlight` is provided, all case-insensitive occurrences of the query are
+ * wrapped in a <mark> element for visual emphasis.
  */
-function renderLogLine(line: string): string {
+function renderLogLine(line: string, highlight?: string): string {
   let html = prefs.value.ansiColors ? parseAnsiToHtml(line) : stripAnsiCodes(line)
 
   // Apply the first matching regex color rule (line-level text color override).
@@ -742,6 +744,17 @@ function renderLogLine(line: string): string {
       }
     }
   }
+
+  // Highlight search query hits — replace occurrences in text content only (not inside HTML tags).
+  if (highlight && highlight.trim()) {
+    const escapedQuery = highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const re = new RegExp(`(${escapedQuery})`, 'gi')
+    // Split HTML by tags so we only replace in text nodes (even-indexed parts).
+    html = html.split(/(<[^>]*>)/g).map((part, i) =>
+      i % 2 === 1 ? part : part.replace(re, '<mark class="bg-yellow-400/40 text-yellow-100 rounded-sm not-italic">$1</mark>'),
+    ).join('')
+  }
+
   return html
 }
 
@@ -931,14 +944,30 @@ const jobFilteredLogs = computed(() => {
 })
 
 /** Groups job-filtered logs by step, preserving order. Each group has a stepId (null = no step) and its log lines. */
-interface StepGroup { stepId: string | null; logs: CiCdRunLog[]; startTs?: string; endTs?: string }
+interface StepGroup { stepId: string | null; key: string; label: string; logs: CiCdRunLog[]; startTs?: string; endTs?: string }
 
 const jobLogsByStep = computed<StepGroup[]>(() => {
   const groups: StepGroup[] = []
   let current: StepGroup | null = null
+  let firstNullSeen = false
   for (const log of jobFilteredLogs.value) {
     if (current === null || log.stepId !== current.stepId) {
-      current = { stepId: log.stepId ?? null, logs: [], startTs: log.timestamp }
+      let key: string
+      let label: string
+      if (log.stepId == null) {
+        if (!firstNullSeen) {
+          key = '__setup__'
+          label = 'Set up job'
+          firstNullSeen = true
+        } else {
+          key = '__complete__'
+          label = 'Complete job'
+        }
+      } else {
+        key = log.stepId
+        label = log.stepId
+      }
+      current = { stepId: log.stepId ?? null, key, label, logs: [], startTs: log.timestamp }
       groups.push(current)
     }
     current.logs.push(log)
@@ -977,7 +1006,7 @@ watch(jobLogsByStep, (groups) => {
 
   for (let i = 0; i < groups.length; i++) {
     const g = groups[i]
-    const key = g.stepId ?? '__setup__'
+    const key = g.key
     const isLast = i === groups.length - 1
     const hasFailed = g.logs.some(l => l.stream === 'stderr')
     const manuallyOpened = manuallyOpenedSteps.value.has(key)
