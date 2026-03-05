@@ -149,6 +149,10 @@ public class CiCdWorker(
                 ActSecrets = trigger.ActSecrets ?? project.ActSecrets ?? orgSettings?.ActSecrets,
                 ActRunnerImage = trigger.ActRunnerImage ?? project.ActRunnerImage ?? orgSettings?.ActRunnerImage,
                 ConcurrentJobs = trigger.ConcurrentJobs ?? project.ConcurrentJobs ?? orgSettings?.ConcurrentJobs,
+                ActionCachePath = trigger.ActionCachePath ?? project.ActionCachePath ?? orgSettings?.ActionCachePath,
+                UseNewActionCache = trigger.UseNewActionCache ?? (project.UseNewActionCache ?? orgSettings?.UseNewActionCache),
+                ActionOfflineMode = trigger.ActionOfflineMode ?? (project.ActionOfflineMode ?? orgSettings?.ActionOfflineMode),
+                LocalRepositories = trigger.LocalRepositories ?? project.LocalRepositories ?? orgSettings?.LocalRepositories,
             };
         }
 

@@ -67,6 +67,10 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
         project.ActSecrets = updated.ActSecrets;
         project.IsAgenda = updated.IsAgenda;
         project.ActRunnerImage = updated.ActRunnerImage;
+        project.ActionCachePath = updated.ActionCachePath;
+        project.UseNewActionCache = updated.UseNewActionCache;
+        project.ActionOfflineMode = updated.ActionOfflineMode;
+        project.LocalRepositories = updated.LocalRepositories;
         await db.SaveChangesAsync();
         return Ok(project);
     }
@@ -377,7 +381,9 @@ public record ProjectDto(
     bool MountRepositoryInDocker, int MaxConcurrentRunners,
     int? ConcurrentJobs,
     bool IsAgenda,
-    string? ActEnv, string? ActSecrets, string? ActRunnerImage)
+    string? ActEnv, string? ActSecrets, string? ActRunnerImage,
+    string? ActionCachePath, bool? UseNewActionCache, bool? ActionOfflineMode,
+    string? LocalRepositories)
 {
     public static Expression<Func<Project, ProjectDto>> Selector(IssuePitDbContext db) =>
         p => new ProjectDto(
@@ -387,5 +393,7 @@ public record ProjectDto(
             p.MountRepositoryInDocker, p.MaxConcurrentRunners,
             p.ConcurrentJobs,
             p.IsAgenda,
-            p.ActEnv, p.ActSecrets, p.ActRunnerImage);
+            p.ActEnv, p.ActSecrets, p.ActRunnerImage,
+            p.ActionCachePath, p.UseNewActionCache, p.ActionOfflineMode,
+            p.LocalRepositories);
 }

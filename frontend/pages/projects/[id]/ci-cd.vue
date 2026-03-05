@@ -139,6 +139,79 @@
           </div>
         </div>
 
+        <!-- Action Cache & Offline Mode -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h2 class="font-semibold text-white mb-1">Action Cache</h2>
+          <p class="text-sm text-gray-500 mb-4">
+            Configure action and repository caching to avoid repeated network downloads.
+            Overrides the organization setting. Leave blank to inherit from the organization.
+          </p>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">
+                Action cache path
+                <span class="text-gray-500 font-normal">(--action-cache-path)</span>
+              </label>
+              <input
+                v-model="ciCdForm.actionCachePath"
+                type="text"
+                placeholder="inherit from org (default: /var/lib/issuepit-action-cache)"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+              <p class="text-xs text-gray-500 mt-1">Host directory for caching cloned actions. Leave blank to inherit from organization.</p>
+            </div>
+            <div class="flex items-center gap-3">
+              <input
+                id="projectUseNewActionCache"
+                v-model="ciCdForm.useNewActionCache"
+                type="checkbox"
+                class="w-4 h-4 rounded bg-gray-800 border-gray-600 text-brand-500 focus:ring-brand-500"
+              />
+              <label for="projectUseNewActionCache" class="text-sm text-gray-300">
+                Use new action cache
+                <span class="text-gray-500 font-normal">(--use-new-action-cache)</span>
+              </label>
+            </div>
+            <div class="flex items-center gap-3">
+              <input
+                id="projectActionOfflineMode"
+                v-model="ciCdForm.actionOfflineMode"
+                type="checkbox"
+                class="w-4 h-4 rounded bg-gray-800 border-gray-600 text-brand-500 focus:ring-brand-500"
+              />
+              <label for="projectActionOfflineMode" class="text-sm text-gray-300">
+                Offline mode — use only cached actions, no network downloads
+                <span class="text-gray-500 font-normal">(--action-offline-mode)</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Local Repository Rerouting -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h2 class="font-semibold text-white mb-1">Local Repository Mappings</h2>
+          <p class="text-sm text-gray-500 mb-4">
+            Map remote workflow/action repositories to local paths using
+            <code class="text-gray-300 bg-gray-800 px-1 rounded">--local-repository</code>.
+            Useful for private or internal reusable workflows. One mapping per line:
+            <code class="text-gray-300 bg-gray-800 px-1 rounded">owner/repo@ref=/local/path</code>.
+            Overrides the organization setting.
+          </p>
+          <div>
+            <textarea
+              v-model="ciCdForm.localRepositories"
+              rows="4"
+              :placeholder="`myorg/private-actions@v1=/home/act/private-actions\nmyorg/shared-workflows@main=/home/act/workflows`"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y"
+            />
+            <p class="text-xs text-gray-500 mt-1">
+              Each line is passed as a separate
+              <code class="bg-gray-800 px-1 rounded">--local-repository</code> argument to act.
+              Paths must be accessible inside the act runner container.
+            </p>
+          </div>
+        </div>
+
         <!-- Save button -->
         <div class="flex items-center gap-4">
           <button
@@ -175,6 +248,10 @@ const ciCdForm = reactive({
   concurrentJobs: null as number | null,
   actEnv: '',
   actSecrets: '',
+  actionCachePath: '' as string,
+  useNewActionCache: false as boolean | null,
+  actionOfflineMode: false as boolean | null,
+  localRepositories: '' as string,
 })
 
 const saving = ref(false)
@@ -191,6 +268,10 @@ onMounted(async () => {
     ciCdForm.concurrentJobs = p.concurrentJobs ?? null
     ciCdForm.actEnv = p.actEnv || ''
     ciCdForm.actSecrets = p.actSecrets || ''
+    ciCdForm.actionCachePath = p.actionCachePath || ''
+    ciCdForm.useNewActionCache = p.useNewActionCache ?? null
+    ciCdForm.actionOfflineMode = p.actionOfflineMode ?? null
+    ciCdForm.localRepositories = p.localRepositories || ''
   }
 })
 
@@ -209,6 +290,10 @@ async function save() {
       concurrentJobs: ciCdForm.concurrentJobs,
       actEnv: ciCdForm.actEnv || undefined,
       actSecrets: ciCdForm.actSecrets || undefined,
+      actionCachePath: ciCdForm.actionCachePath || null,
+      useNewActionCache: ciCdForm.useNewActionCache,
+      actionOfflineMode: ciCdForm.actionOfflineMode,
+      localRepositories: ciCdForm.localRepositories || null,
     })
     savedOk.value = true
     setTimeout(() => { savedOk.value = false }, 3000)

@@ -208,6 +208,26 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
             list.Add(concurrentJobs.ToString());
         }
 
+        // Action/repo cache support (act --action-cache-path, --use-new-action-cache, --action-offline-mode).
+        if (!string.IsNullOrWhiteSpace(trigger.ActionCachePath))
+        {
+            list.Add("--action-cache-path");
+            list.Add(trigger.ActionCachePath);
+        }
+
+        if (trigger.UseNewActionCache == true)
+            list.Add("--use-new-action-cache");
+
+        if (trigger.ActionOfflineMode == true)
+            list.Add("--action-offline-mode");
+
+        // Local repository rerouting: map remote owner/repo@ref to local path for private workflows/actions.
+        foreach (var mapping in ParseKeyValuePairs(trigger.LocalRepositories))
+        {
+            list.Add("--local-repository");
+            list.Add(mapping);
+        }
+
         return list;
     }
 

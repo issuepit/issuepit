@@ -57,7 +57,7 @@
     </div>
 
     <!-- actrc reference -->
-    <div class="rounded-xl border border-gray-800 bg-gray-900/40 p-5">
+    <div class="rounded-xl border border-gray-800 bg-gray-900/40 p-5 mb-6">
       <h3 class="font-medium text-white mb-1">actrc Configuration</h3>
       <p class="text-sm text-gray-400 mb-3">
         IssuePit automatically injects <code class="text-gray-300 bg-gray-800 px-1 rounded">/root/.config/act/actrc</code>
@@ -87,6 +87,31 @@
           class="text-brand-400 hover:text-brand-300 ml-1"
         >act CLI reference (root.go) ↗</a>
         for a full list of supported flags.
+      </p>
+    </div>
+
+    <!-- Action Cache & Local Repositories -->
+    <div class="rounded-xl border border-gray-800 bg-gray-900/40 p-5">
+      <h3 class="font-medium text-white mb-1">Action Cache &amp; Offline Mode</h3>
+      <p class="text-sm text-gray-400 mb-3">
+        IssuePit supports caching cloned actions and rerouting private workflow repositories.
+        Configure these settings at the organization or project level.
+      </p>
+      <div class="space-y-3">
+        <div class="bg-gray-950 rounded-lg border border-gray-800 p-4">
+          <p class="text-xs text-gray-500 mb-2 font-mono">Pre-cache &amp; offline mode</p>
+          <pre class="text-xs text-gray-300 font-mono leading-relaxed">--action-cache-path ~/act-cache
+--use-new-action-cache
+--action-offline-mode</pre>
+        </div>
+        <div class="bg-gray-950 rounded-lg border border-gray-800 p-4">
+          <p class="text-xs text-gray-500 mb-2 font-mono">Reroute private workflows to local path</p>
+          <pre class="text-xs text-gray-300 font-mono leading-relaxed">--local-repository "myorg/private-actions@v1=/home/act/private-actions"</pre>
+        </div>
+      </div>
+      <p class="text-xs text-gray-500 mt-3">
+        Set <code class="text-gray-300 bg-gray-800 px-1 rounded">CiCd__ActionCachePath</code> on the CI/CD client to configure a system-wide action cache path.
+        Per-organization and per-project overrides are available in the organization CI/CD settings.
       </p>
     </div>
   </div>
