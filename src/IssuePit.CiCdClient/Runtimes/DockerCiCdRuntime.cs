@@ -39,6 +39,20 @@ namespace IssuePit.CiCdClient.Runtimes;
 ///   <item><c>CiCd__ActionCachePath</c> — explicit host path for the action cache. When set, takes
 ///     precedence over <c>CiCd__ActionCacheVolume</c>. Useful for development or bare-metal deployments
 ///     where the cicd-client process runs directly on the host.</item>
+///   <item><c>CiCd__PlaywrightCacheVolume</c> — named Docker volume for Playwright browser binaries
+///     (default: <c>issuepit-playwright-cache</c>). The volume is mounted at <c>/cache/playwright</c>
+///     inside the outer helper-act container, then exposed to job containers via act
+///     <c>--volume /cache/playwright:/root/.cache/ms-playwright</c>, so Playwright skips
+///     re-downloading Chrome, FFmpeg, and Chrome Headless Shell on every run. Named volumes are
+///     managed by the Docker daemon and survive <c>cicd-client</c> container restarts
+///     (e.g. Aspire redeploys). Set to an empty string to disable.</item>
+///   <item><c>CiCd__AptCacheVolume</c> — named Docker volume for apt package archives
+///     (default: <c>issuepit-apt-cache</c>). The volume is mounted at <c>/cache/apt</c> inside the
+///     outer helper-act container, then exposed to job containers via act
+///     <c>--volume /cache/apt:/var/cache/apt/archives</c>, so <c>apt-get install</c> reuses
+///     previously downloaded <c>.deb</c> files and skips redundant network downloads (intercepts
+///     apt traffic). Named volumes survive <c>cicd-client</c> container restarts. Set to an empty
+///     string to disable.</item>
 /// </list>
 /// </summary>
 public partial class DockerCiCdRuntime(
@@ -69,6 +83,11 @@ public partial class DockerCiCdRuntime(
     // reliable default for containerised deployments where bind-mount host paths are not accessible.
     // This is used when no explicit host path (CiCd__ActionCachePath / trigger.ActionCachePath) is set.
     private const string DefaultActionCacheVolume = "issuepit-action-cache";
+
+    // Default named Docker volumes for Playwright browser binaries and apt package archives.
+    // Both use named volumes so they survive cicd-client container restarts (e.g. Aspire redeploys).
+    private const string DefaultPlaywrightCacheVolume = "issuepit-playwright-cache";
+    private const string DefaultAptCacheVolume = "issuepit-apt-cache";
 
     private static string AppVersion =>
         Assembly.GetEntryAssembly()
@@ -134,9 +153,22 @@ public partial class DockerCiCdRuntime(
         var nugetCacheVolume = configuration["CiCd__NuGetCacheVolume"];
         var npmCacheUrl = configuration["CiCd__NpmCacheUrl"];
 
+        // Playwright browser cache: named volume for Chrome, FFmpeg, and Chrome Headless Shell downloads.
+        // Defaults to "issuepit-playwright-cache" (a named Docker volume that survives container restarts).
+        // Set CiCd__PlaywrightCacheVolume="" to disable.
+        var playwrightCacheVolume = configuration["CiCd__PlaywrightCacheVolume"] ?? DefaultPlaywrightCacheVolume;
+
+        // Apt archive cache: named volume for .deb files downloaded by apt-get.
+        // Mounted as /var/cache/apt/archives inside job containers so apt reuses previously downloaded
+        // packages instead of re-downloading them on every run ("intercept traffic" for apt installs).
+        // Defaults to "issuepit-apt-cache". Set CiCd__AptCacheVolume="" to disable.
+        var aptCacheVolume = configuration["CiCd__AptCacheVolume"] ?? DefaultAptCacheVolume;
+
         const string ContainerNpmCachePath = "/cache/npm";
         const string ContainerNuGetCachePath = "/cache/nuget";
         const string ContainerActionCachePath = "/cache/actions";
+        const string ContainerPlaywrightCachePath = "/cache/playwright";
+        const string ContainerAptCachePath = "/cache/apt";
 
         if (!string.IsNullOrWhiteSpace(npmCacheVolume))
         {
@@ -152,6 +184,16 @@ public partial class DockerCiCdRuntime(
         {
             actBinAndArgs.Add("--volume");
             actBinAndArgs.Add($"{ContainerNuGetCachePath}:/root/.nuget/packages");
+        }
+        if (!string.IsNullOrWhiteSpace(playwrightCacheVolume))
+        {
+            actBinAndArgs.Add("--volume");
+            actBinAndArgs.Add($"{ContainerPlaywrightCachePath}:/root/.cache/ms-playwright");
+        }
+        if (!string.IsNullOrWhiteSpace(aptCacheVolume))
+        {
+            actBinAndArgs.Add("--volume");
+            actBinAndArgs.Add($"{ContainerAptCachePath}:/var/cache/apt/archives");
         }
 
         // Action cache: resolve the effective cache mount.
@@ -240,6 +282,10 @@ public partial class DockerCiCdRuntime(
             await onLogLine($"[DEBUG] npm registry   : {npmCacheUrl}", LogStream.Stdout);
         if (!string.IsNullOrWhiteSpace(nugetCacheVolume))
             await onLogLine($"[DEBUG] NuGet cache vol: {nugetCacheVolume}:{ContainerNuGetCachePath} (outer container mount, passed to job containers via act --volume)", LogStream.Stdout);
+        if (!string.IsNullOrWhiteSpace(playwrightCacheVolume))
+            await onLogLine($"[DEBUG] Playwright vol : {playwrightCacheVolume}:{ContainerPlaywrightCachePath} (outer container mount, passed to job containers via act --volume)", LogStream.Stdout);
+        if (!string.IsNullOrWhiteSpace(aptCacheVolume))
+            await onLogLine($"[DEBUG] Apt cache vol  : {aptCacheVolume}:{ContainerAptCachePath} (outer container mount, passed to job containers via act --volume)", LogStream.Stdout);
         if (!string.IsNullOrWhiteSpace(actionCacheHostPath))
             await onLogLine($"[DEBUG] Action cache   : {actionCacheHostPath}:{ContainerActionCachePath} (host bind-mount)", LogStream.Stdout);
         else if (!string.IsNullOrWhiteSpace(actionCacheVolumeName))
@@ -345,6 +391,12 @@ public partial class DockerCiCdRuntime(
             binds.Add($"{npmCacheVolume}:{ContainerNpmCachePath}");
         if (!string.IsNullOrWhiteSpace(nugetCacheVolume))
             binds.Add($"{nugetCacheVolume}:{ContainerNuGetCachePath}");
+        // Playwright and apt caches use named volumes (default) so they survive cicd-client restarts
+        // (e.g. Aspire redeploys). Docker auto-creates named volumes on first use.
+        if (!string.IsNullOrWhiteSpace(playwrightCacheVolume))
+            binds.Add($"{playwrightCacheVolume}:{ContainerPlaywrightCachePath}");
+        if (!string.IsNullOrWhiteSpace(aptCacheVolume))
+            binds.Add($"{aptCacheVolume}:{ContainerAptCachePath}");
 
         // Mount action/repo cache so act can reuse previously cloned actions across runs.
         // Named Docker volumes (default) persist independently of the cicd-client container lifecycle,

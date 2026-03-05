@@ -105,3 +105,5 @@ services:
 volumes:
   postgres_data:
   issuepit-action-cache:
+  issuepit-playwright-cache:
+  issuepit-apt-cache:

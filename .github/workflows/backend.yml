@@ -165,13 +165,34 @@ jobs:
           docker pull valkey/valkey:9.0
           docker pull apache/kafka:3.9.0
 
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
+      - name: Cache apt packages
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-playwright-${{ runner.os }}-${{ hashFiles('src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj') }}
+          restore-keys: |
+            apt-playwright-${{ runner.os }}-
+
       - name: Build E2E test project
         run: dotnet build src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj --configuration Release
 
       - name: Install Playwright browsers
         run: |
           PLAYWRIGHT_SCRIPT=$(find src/IssuePit.Tests.E2E/bin/Release -name 'playwright.ps1' | head -1)
-          pwsh "$PLAYWRIGHT_SCRIPT" install --with-deps chromium
+          if [[ "${{ steps.playwright-cache.outputs.cache-hit }}" == "true" ]]; then
+            pwsh "$PLAYWRIGHT_SCRIPT" install-deps chromium
+          else
+            pwsh "$PLAYWRIGHT_SCRIPT" install --with-deps chromium
+          fi
 
       - name: E2E Tests
         run: >
