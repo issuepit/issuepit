@@ -205,7 +205,13 @@ public class CiCdWorker(
         // running inside IssuePit and skip operations that require external credentials
         // (container registry push, GitHub Pages deployment, release PR creation, etc.).
         // User-supplied ActEnv values are appended after so they can override these defaults.
-        trigger = trigger with { ActEnv = PrependIssuePitEnvVars(trigger.ActEnv, run, project?.OrgId) };
+        // The same ISSUEPIT_* vars are also injected as --var so they are accessible via
+        // ${{ vars.KEY }} in job-level if: conditions (the env context is not available there).
+        trigger = trigger with
+        {
+            ActEnv = PrependIssuePitEnvVars(trigger.ActEnv, run, project?.OrgId),
+            ActVars = PrependIssuePitEnvVars(trigger.ActVars, run, project?.OrgId),
+        };
 
         // Create a per-run CTS linked to the host stoppingToken so we can cancel this run independently.
         using var runCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
