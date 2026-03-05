@@ -6,6 +6,7 @@ using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
 using IssuePit.ExecutionClient.Runtimes;
 using Microsoft.EntityFrameworkCore;
+using StackExchange.Redis;
 
 namespace IssuePit.ExecutionClient.Workers;
 
@@ -13,7 +14,8 @@ public class IssueWorker(
     ILogger<IssueWorker> logger,
     IConfiguration configuration,
     IServiceProvider services,
-    AgentRuntimeFactory runtimeFactory) : BackgroundService
+    AgentRuntimeFactory runtimeFactory,
+    IConnectionMultiplexer redis) : BackgroundService
 {
     // Tracks CancellationTokenSources for in-flight agent launches so they can be cancelled on demand.
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _activeSessions = new();
@@ -239,35 +241,19 @@ public class IssueWorker(
             await db.SaveChangesAsync(sessionCts.Token);
         }
 
-        // Collect log lines so they can be saved to the DB regardless of success or failure.
-        var logBuffer = new List<AgentSessionLog>();
-
         try
         {
             var credentials = await LoadCredentialsAsync(agent.OrgId, db, sessionCts.Token);
             var runtime = runtimeFactory.Create(runtimeType);
 
             Task onLogLine(string line, LogStream stream)
-            {
-                logBuffer.Add(new AgentSessionLog
-                {
-                    Id = Guid.NewGuid(),
-                    AgentSessionId = session.Id,
-                    Line = line,
-                    Stream = stream,
-                    Timestamp = DateTime.UtcNow,
-                });
-                return Task.CompletedTask;
-            }
+                => AppendLogAsync(session.Id, line, stream, db, sessionCts.Token);
+
+            // Start a periodic heartbeat so connected clients can keep the duration display live
+            // without needing a client-side timer. The heartbeat is cancelled when the session ends.
+            _ = PublishHeartbeatAsync(session.Id.ToString(), sessionCts.Token);
 
             var runtimeId = await runtime.LaunchAsync(session, agent, issue, credentials, runtimeConfig, gitRepository, onLogLine, sessionCts.Token);
-
-            if (logBuffer.Count > 0)
-            {
-                db.AgentSessionLogs.AddRange(logBuffer);
-                logBuffer.Clear();
-                await db.SaveChangesAsync(sessionCts.Token);
-            }
 
             logger.LogInformation(
                 "Agent {AgentId} launched via {RuntimeType} with id '{RuntimeId}' for session {SessionId}",
@@ -279,12 +265,6 @@ public class IssueWorker(
             logger.LogInformation("Agent session {SessionId} was cancelled before launch completed", session.Id);
             session.Status = AgentSessionStatus.Cancelled;
             session.EndedAt = DateTime.UtcNow;
-            // Flush any buffered logs so [DEBUG] diagnostics are visible even on early cancellation.
-            if (logBuffer.Count > 0)
-            {
-                db.AgentSessionLogs.AddRange(logBuffer);
-                logBuffer.Clear();
-            }
             await db.SaveChangesAsync(cancellationToken);
         }
         catch (Exception ex)
@@ -292,39 +272,23 @@ public class IssueWorker(
             logger.LogError(ex, "Failed to launch agent {AgentId} for session {SessionId}", agent.Id, session.Id);
             session.Status = AgentSessionStatus.Failed;
             session.EndedAt = DateTime.UtcNow;
-            // Flush any buffered logs (e.g. [DEBUG] lines logged before the failure) so the
-            // Details tab is populated even when LaunchAsync throws early (e.g. docker image pull failure).
-            if (logBuffer.Count > 0)
-            {
-                db.AgentSessionLogs.AddRange(logBuffer);
-                logBuffer.Clear();
-            }
             // Store the error as a log line so it's visible in the session detail UI.
-            db.AgentSessionLogs.Add(new AgentSessionLog
-            {
-                Id = Guid.NewGuid(),
-                AgentSessionId = session.Id,
-                Line = $"[ERROR] {ex.Message}",
-                Stream = LogStream.Stderr,
-                Timestamp = DateTime.UtcNow,
-            });
+            await AppendLogAsync(session.Id, $"[ERROR] {ex.Message}", LogStream.Stderr, db, cancellationToken);
             if (ex.InnerException is not null)
-            {
-                db.AgentSessionLogs.Add(new AgentSessionLog
-                {
-                    Id = Guid.NewGuid(),
-                    AgentSessionId = session.Id,
-                    Line = $"[ERROR] Caused by: {ex.InnerException.Message}",
-                    Stream = LogStream.Stderr,
-                    Timestamp = DateTime.UtcNow,
-                });
-            }
+                await AppendLogAsync(session.Id, $"[ERROR] Caused by: {ex.InnerException.Message}", LogStream.Stderr, db, cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
         }
         finally
         {
             semaphore?.Release();
             _activeSessions.TryRemove(session.Id, out _);
+            if (session.EndedAt is null)
+                session.EndedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(cancellationToken);
+
+            // Notify clients that the session has completed
+            await PublishSessionEventAsync(session.Id.ToString(),
+                JsonSerializer.Serialize(new { @event = "session-completed", status = session.Status.ToString() }));
         }
     }
 
@@ -371,6 +335,70 @@ public class IssueWorker(
     /// <summary>Strips the "plain:" placeholder prefix. Production will use proper decryption.</summary>
     private static string DecryptValue(string encryptedValue) =>
         encryptedValue.StartsWith("plain:") ? encryptedValue["plain:".Length..] : encryptedValue;
+
+    /// <summary>
+    /// Saves a single log line to the database immediately and publishes it to the
+    /// Redis pub/sub channel so connected SignalR clients receive it in real time.
+    /// Mirrors <c>CiCdWorker.AppendLogAsync</c>.
+    /// </summary>
+    private async Task AppendLogAsync(
+        Guid sessionId,
+        string line,
+        LogStream stream,
+        IssuePitDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var log = new AgentSessionLog
+        {
+            Id = Guid.NewGuid(),
+            AgentSessionId = sessionId,
+            Line = line,
+            Stream = stream,
+            Timestamp = DateTime.UtcNow,
+        };
+
+        db.AgentSessionLogs.Add(log);
+        await db.SaveChangesAsync(cancellationToken);
+
+        // Publish to Redis so the API relay pushes it to SignalR clients
+        var payload = JsonSerializer.Serialize(new
+        {
+            stream = stream.ToString().ToLowerInvariant(),
+            line,
+            timestamp = log.Timestamp,
+        });
+        await PublishSessionEventAsync(sessionId.ToString(), payload);
+    }
+
+    private Task PublishSessionEventAsync(string sessionId, string payload)
+    {
+        var subscriber = redis.GetSubscriber();
+        return subscriber.PublishAsync(
+            RedisChannel.Literal($"agent-session:{sessionId}"),
+            payload);
+    }
+
+    /// <summary>
+    /// Publishes a lightweight heartbeat event every 30 seconds for the duration of the session.
+    /// The relay service forwards it as <c>RunsUpdated</c> on the project hub so that connected
+    /// clients can refresh their duration display without any client-side timer.
+    /// </summary>
+    private async Task PublishHeartbeatAsync(string sessionId, CancellationToken ct)
+    {
+        try
+        {
+            var heartbeat = JsonSerializer.Serialize(new { @event = "session-heartbeat" });
+            while (!ct.IsCancellationRequested)
+            {
+                await PublishSessionEventAsync(sessionId, heartbeat);
+                await Task.Delay(TimeSpan.FromSeconds(30), ct);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Session completed or was cancelled — stop heartbeat silently
+        }
+    }
 
     private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null);
 }

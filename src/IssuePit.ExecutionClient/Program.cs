@@ -8,6 +8,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 builder.AddKafkaHealthCheck();
 builder.AddNpgsqlDbContext<IssuePitDbContext>("issuepit-db");
+builder.AddRedisClient("redis");
 
 // Register Docker client (used by DockerAgentRuntime)
 builder.Services.AddSingleton(_ => new DockerClientBuilder().Build());
