@@ -1,5 +1,19 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
+// Environment variable that signals the AppHost is running under the E2E test suite.
+// Must match the value set in AspireFixture.cs.
+const string DryRunEnvVar = "CICD_TEST_DRY_RUN";
+
+// When CICD_TEST_DRY_RUN=true the AppHost is running under the E2E test suite.
+// In that mode we skip the heavy CI/CD infrastructure containers (apt-cache, http-cache,
+// registry-mirror) that are only needed for real act runs, and we tell the cicd-client to
+// use its DryRunCiCdRuntime so it never tries to launch Docker containers.  This keeps
+// resource usage low and avoids DinD/port-conflict issues when the tests run inside an
+// act job container (e.g. the issuepit helper image).
+var isDryRunMode = string.Equals(
+    Environment.GetEnvironmentVariable(DryRunEnvVar), "true",
+    StringComparison.OrdinalIgnoreCase);
+
 var postgresServer = builder.AddPostgres("postgres")
     .WithImage("postgres", "17.6");
 var postgresDb = postgresServer.AddDatabase("issuepit-db");
@@ -18,6 +32,7 @@ var redis = builder.AddValkey("redis")
 
 // npm package cache (Verdaccio proxy): caches npm packages across CI/CD runs to speed up builds.
 // Packages are fetched from the upstream registry on first request and served locally thereafter.
+// In DryRun/test mode this container is not needed and is set to explicit start to save resources.
 var npmCache = builder.AddContainer("npm-cache", "verdaccio/verdaccio", "6")
     .WithHttpEndpoint(targetPort: 4873, name: "http")
     .WithVolume("verdaccio-storage", "/verdaccio/storage")
@@ -55,12 +70,15 @@ var npmCache = builder.AddContainer("npm-cache", "verdaccio/verdaccio", "6")
         }
     ]);
 
+if (isDryRunMode) npmCache.WithExplicitStart();
+
 // apt package cache (apt-cacher-ng proxy): caches Ubuntu/Debian apt packages across CI/CD runs.
 // All apt-get update / apt-get install requests from act job containers are transparently proxied
 // and cached so subsequent runs reuse already-downloaded .deb files without hitting the upstream mirror.
 // Port 3142 is fixed (the apt-cacher-ng default) so DockerCiCdRuntime can reference it by constant.
 // WithLifetime Persistent: cache data survives Aspire restarts.
 // Docs: https://help.ubuntu.com/community/Apt-Cacher-NG
+// In DryRun/test mode this container is not needed and is set to explicit start to save resources.
 var aptCache = builder.AddContainer("apt-cache", "sameersbn/apt-cacher-ng", "3.3.4-20221016")
     .WithContainerName("issuepit-apt-cache")
     .WithLifetime(ContainerLifetime.Persistent)
@@ -72,12 +90,15 @@ var aptCache = builder.AddContainer("apt-cache", "sameersbn/apt-cacher-ng", "3.3
         u.Url = "/acng-report.html";
     });
 
+if (isDryRunMode) aptCache.WithExplicitStart();
+
 // Generic HTTP caching reverse-proxy for CI/CD downloads.
 // Routes by Host header: cdn.playwright.dev (30-day cache), objects.githubusercontent.com (7-day + revalidation).
 // Unconfigured hosts are passed through without caching.
 // Port 3143 is fixed so DockerCiCdRuntime can reference it by constant.
 // Metrics: GET http://<host>:3143/stub_status  (nginx stub_status — connections and request counts).
 // WithLifetime Persistent: cache data survives Aspire restarts.
+// In DryRun/test mode this container is not needed and is set to explicit start to save resources.
 var httpCache = builder.AddContainer("http-cache", "nginx", "1.27-alpine")
     .WithContainerName("issuepit-http-cache")
     .WithLifetime(ContainerLifetime.Persistent)
@@ -176,6 +197,8 @@ var httpCache = builder.AddContainer("http-cache", "nginx", "1.27-alpine")
         u.Url = "/stub_status";
     });
 
+if (isDryRunMode) httpCache.WithExplicitStart();
+
 // LocalStack provides local AWS services (S3 for image uploads).
 // Open source (Apache 2.0). S3 endpoint: http://localstack:4566
 var storage = builder.AddContainer("localstack", "localstack/localstack", "4.3")
@@ -190,6 +213,7 @@ var storage = builder.AddContainer("localstack", "localstack/localstack", "4.3")
 // Port 5100 is fixed (not dynamic) because EnsureRegistryMirrorAsync also binds on this port
 // when running outside Aspire, and DockerCiCdRuntime builds the DinD mirror URL from
 // CiCd__Docker__RegistryMirrorPort (default 5100). Keep port consistent across both deployments.
+// In DryRun/test mode this container is not needed and is set to explicit start to save resources.
 var registryMirror = builder.AddContainer("registry-mirror", "registry", "2")
     .WithContainerName("issuepit-registry-mirror")
     .WithLifetime(ContainerLifetime.Persistent)
@@ -197,6 +221,8 @@ var registryMirror = builder.AddContainer("registry-mirror", "registry", "2")
     .WithVolume("issuepit-registry-cache", "/var/lib/registry")
     .WithEnvironment("REGISTRY_PROXY_REMOTEURL", "https://registry-1.docker.io");
     //.WithExplicitStart(); // not started in CI; configure real S3/B2 via ImageStorage settings; we need it in ci/cd for e2e tests which could upload data
+
+if (isDryRunMode) registryMirror.WithExplicitStart();
 
 // Management UI tools - set to explicit start so they are not auto-started in CI and require manual start from the Aspire dashboard
 postgresServer.WithPgAdmin(admin => admin.WithExplicitStart());
@@ -276,16 +302,29 @@ var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     .WaitForCompletion(kafkaInitializer)
     .WaitFor(kafka)
     .WaitFor(redis)
-    .WaitFor(registryMirror)
-    .WithEnvironment("CiCd__NpmCacheUrl", npmCache.GetEndpoint("http"))
-    .WithEnvironment("CiCd__AptCacheUrl", aptCache.GetEndpoint("http"))
-    .WithEnvironment("CiCd__HttpCacheUrl", httpCache.GetEndpoint("http"))
-    // Enable full DinD traffic interception: sets up iptables DNAT rules inside privileged act
-    // containers so DinD job containers can reach the apt and HTTP cache services on the outer host.
-    // Disable by setting CiCd__InterceptAllTraffic=false (volume-based playwright cache still works).
-    .WithEnvironment("CiCd__InterceptAllTraffic", "true")
     .WithHttpHealthCheck("/health", endpointName: "http")
     .WithReplicas(cicdClientWorkers);
+
+if (isDryRunMode)
+{
+    // In DryRun/test mode use the dry-run runtime so the cicd-client never tries to
+    // launch Docker containers.  This avoids Docker/DinD issues in E2E test environments
+    // (e.g. the issuepit helper image used as an act job container).
+    cicdClient.WithEnvironment("CiCd__DryRun", "true");
+}
+else
+{
+    // In normal (non-test) mode wire up all CI/CD infrastructure and enable traffic interception.
+    cicdClient
+        .WaitFor(registryMirror)
+        .WithEnvironment("CiCd__NpmCacheUrl", npmCache.GetEndpoint("http"))
+        .WithEnvironment("CiCd__AptCacheUrl", aptCache.GetEndpoint("http"))
+        .WithEnvironment("CiCd__HttpCacheUrl", httpCache.GetEndpoint("http"))
+        // Enable full DinD traffic interception: sets up iptables DNAT rules inside privileged act
+        // containers so DinD job containers can reach the apt and HTTP cache services on the outer host.
+        // Disable by setting CiCd__InterceptAllTraffic=false (volume-based playwright cache still works).
+        .WithEnvironment("CiCd__InterceptAllTraffic", "true");
+}
 
 frontend
     .WithEnvironment("NUXT_PUBLIC_API_BASE", api.GetEndpoint("http"))

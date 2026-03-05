@@ -32,6 +32,15 @@ public sealed class AspireFixture : IAsyncLifetime
     {
         Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Building Aspire AppHost...");
 
+        // Signal the AppHost to run in DryRun/test mode:
+        //   - Skips heavy CI/CD infrastructure containers (npm-cache, apt-cache, http-cache,
+        //     registry-mirror) that are only needed for real act runs.
+        //   - Configures cicd-client to use DryRunCiCdRuntime so it never launches Docker containers.
+        // This keeps resource usage low and avoids DinD/fixed-port conflicts when the tests run
+        // inside an act job container (e.g. the issuepit helper image).
+        // Value must match the DryRunEnvVar constant in IssuePit.AppHost/Program.cs.
+        Environment.SetEnvironmentVariable("CICD_TEST_DRY_RUN", "true");
+
         // Disable resource logging so Aspire does not relay child-process stdout/stderr through
         // ILogger — the librdkafka C library can emit verbose connection-error lines to stderr
         // during Kafka container startup/teardown, which would otherwise flood the test output.
