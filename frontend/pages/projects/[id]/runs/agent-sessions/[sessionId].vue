@@ -63,6 +63,19 @@
             <p class="text-sm text-gray-400">{{ duration(store.currentSession.startedAt, store.currentSession.endedAt) }}</p>
           </div>
         </div>
+        <!-- Retry button for failed/cancelled sessions -->
+        <div v-if="store.currentSession.status === AgentSessionStatus.Failed || store.currentSession.status === AgentSessionStatus.Cancelled"
+          class="mt-4 pt-4 border-t border-gray-800 flex justify-end">
+          <button
+            class="flex items-center gap-1.5 text-sm text-brand-400 hover:text-brand-300 transition-colors"
+            @click="retrySession">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Retry Session
+          </button>
+        </div>
       </div>
 
       <!-- Logs / Details -->
@@ -188,7 +201,7 @@
 
 <script setup lang="ts">
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
-import { CiCdRunStatus, AgentSessionStatus } from '~/types'
+import { CiCdRunStatus, AgentSessionStatus, type AgentSessionLog } from '~/types'
 
 const route = useRoute()
 const projectId = route.params.id as string
@@ -231,6 +244,9 @@ const now = ref(Date.now())
 // SignalR: connect to project hub to receive RunsUpdated events (updates the CI/CD runs table)
 const { connection, isConnected, connect } = useSignalR('/hubs/project')
 
+// SignalR: connect to agent output hub for live log streaming
+const { connection: agentConnection, connect: connectAgent } = useSignalR('/hubs/agent-output')
+
 // Whether the session is still in an active (non-terminal) state
 const isActive = computed(() =>
   store.currentSession?.statusName === 'Pending' ||
@@ -249,7 +265,41 @@ onMounted(async () => {
       if (store.currentSession) await store.fetchAgentSession(sessionId)
     })
   }
+
+  // Connect to agent output hub for live log lines (published by IssueWorker via Redis)
+  await connectAgent()
+  if (agentConnection.value) {
+    await agentConnection.value.invoke('JoinSession', sessionId).catch((e: unknown) => { console.warn('Failed to join agent session group', e) })
+    agentConnection.value.on('LogLine', ({ payload }: { sessionId: string; payload: string }) => {
+      try {
+        const data = JSON.parse(payload) as { event?: string; stream?: string; line?: string; timestamp?: string; status?: string }
+        if (data.event === 'session-completed') {
+          now.value = Date.now()
+          // Refresh session metadata (status, endedAt) without replacing logs
+          store.fetchAgentSession(sessionId)
+        } else if (data.event === 'session-heartbeat') {
+          now.value = Date.now()
+        } else if (data.line !== undefined) {
+          store.currentSessionLogs.push({
+            id: crypto.randomUUID(),
+            line: data.line,
+            stream: data.stream ?? 'stdout',
+            streamName: data.stream ? (data.stream.charAt(0).toUpperCase() + data.stream.slice(1)) : 'Stdout',
+            timestamp: data.timestamp ?? new Date().toISOString(),
+          } satisfies AgentSessionLog)
+          now.value = Date.now()
+        }
+      }
+      catch (e) { console.warn('Failed to parse agent LogLine payload', e) }
+    })
+  }
 })
+
+async function retrySession() {
+  await store.retrySession(sessionId)
+  await store.fetchAgentSessions(projectId)
+  navigateTo(`/projects/${projectId}/runs?tab=agent`)
+}
 
 async function copyLogsToClipboard() {
   const text = store.currentSessionLogs.map(l => `${formatLogTime(l.timestamp)} ${l.line}`).join('\n')

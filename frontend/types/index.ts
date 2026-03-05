@@ -646,11 +646,11 @@ export interface CiCdRun {
 }
 
 export enum AgentSessionStatus {
-  Pending = 0,
-  Running = 1,
-  Succeeded = 2,
-  Failed = 3,
-  Cancelled = 4,
+  Pending = 'pending',
+  Running = 'running',
+  Succeeded = 'succeeded',
+  Failed = 'failed',
+  Cancelled = 'cancelled',
 }
 
 export const AgentSessionStatusLabels: Record<AgentSessionStatus, string> = {
