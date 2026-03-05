@@ -21,6 +21,23 @@
           <h1 class="text-2xl font-bold text-white truncate">{{ store.currentProject.name }}</h1>
           <span v-if="store.currentProject.isPrivate"
             class="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full shrink-0">Private</span>
+          <!-- Small badges for members and MCP servers -->
+          <NuxtLink :to="`/projects/${id}/members`"
+            class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-gray-200 px-2 py-0.5 rounded-full shrink-0 transition-colors flex items-center gap-1">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            {{ store.currentProject.memberCount }} members
+          </NuxtLink>
+          <span v-if="mcpCount > 0"
+            class="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2" />
+            </svg>
+            {{ mcpCount }} MCP
+          </span>
         </div>
         <!-- Header actions: Settings (with tabs for Members + CI/CD) -->
         <div class="flex items-center gap-2 shrink-0">
@@ -40,8 +57,8 @@
         {{ store.currentProject.description }}
       </p>
 
-      <!-- Stats Row -->
-      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
+      <!-- Stats Row: Issues + Commits -->
+      <div class="grid grid-cols-2 gap-3 mb-6 max-w-sm">
         <NuxtLink :to="`/projects/${id}/issues`"
           class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group">
           <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
@@ -50,45 +67,13 @@
           <p class="text-xs text-gray-500 mt-0.5">Issues</p>
         </NuxtLink>
 
-        <NuxtLink :to="`/projects/${id}/members`"
+        <NuxtLink :to="`/projects/${id}/code?tab=commits`"
           class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group">
           <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
-            {{ store.currentProject.memberCount }}
+            {{ commitCountLabel }}
           </p>
-          <p class="text-xs text-gray-500 mt-0.5">Members</p>
+          <p class="text-xs text-gray-500 mt-0.5">Commits</p>
         </NuxtLink>
-
-        <!-- Agent Runs with live indicator -->
-        <NuxtLink :to="`/projects/${id}/runs?tab=agent`"
-          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group relative">
-          <div class="flex items-center justify-center gap-1.5">
-            <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
-              {{ runsStore.agentSessions.length }}
-            </p>
-            <span v-if="isConnected" class="w-2 h-2 rounded-full bg-green-400 animate-pulse shrink-0" title="Live updates connected" />
-            <span v-else class="w-2 h-2 rounded-full bg-gray-600 shrink-0" title="Live updates disconnected" />
-          </div>
-          <p class="text-xs text-gray-500 mt-0.5">Agent Runs</p>
-        </NuxtLink>
-
-        <!-- CI/CD Runs with live indicator -->
-        <NuxtLink :to="`/projects/${id}/runs`"
-          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group">
-          <div class="flex items-center justify-center gap-1.5">
-            <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
-              {{ runsStore.runs.length }}
-            </p>
-            <span v-if="isConnected" class="w-2 h-2 rounded-full bg-green-400 animate-pulse shrink-0" title="Live updates connected" />
-            <span v-else class="w-2 h-2 rounded-full bg-gray-600 shrink-0" title="Live updates disconnected" />
-          </div>
-          <p class="text-xs text-gray-500 mt-0.5">CI/CD Runs</p>
-        </NuxtLink>
-
-        <!-- MCP Servers -->
-        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
-          <p class="text-2xl font-bold text-white">{{ mcpCount }}</p>
-          <p class="text-xs text-gray-500 mt-0.5">MCP Servers</p>
-        </div>
       </div>
 
       <!-- Quick Navigation -->
@@ -102,6 +87,17 @@
             </svg>
           </div>
           <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Code</span>
+        </NuxtLink>
+
+        <NuxtLink :to="`/projects/${id}/code?tab=commits`"
+          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 flex items-center gap-3 transition-colors group">
+          <div class="w-8 h-8 bg-amber-900/30 rounded-lg flex items-center justify-center shrink-0">
+            <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Commits</span>
         </NuxtLink>
 
         <NuxtLink :to="`/projects/${id}/issues`"
@@ -124,16 +120,6 @@
             </svg>
           </div>
           <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Kanban</span>
-        </NuxtLink>
-
-        <NuxtLink :to="`/projects/${id}/runs`"
-          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 flex items-center gap-3 transition-colors group">
-          <div class="w-8 h-8 bg-yellow-900/30 rounded-lg flex items-center justify-center shrink-0">
-            <svg class="w-4 h-4 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-          </div>
-          <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Runs</span>
         </NuxtLink>
 
         <NuxtLink :to="`/projects/${id}/review`"
@@ -205,6 +191,7 @@
                   d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2" />
               </svg>
               Recent Agent Runs
+              <span class="text-xs font-normal text-gray-500">({{ runsStore.agentSessions.length }})</span>
               <!-- WS connection indicator -->
               <span v-if="isConnected" class="flex items-center gap-1 text-xs text-green-400 font-normal">
                 <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
@@ -215,32 +202,51 @@
                 Offline
               </span>
             </h2>
-            <NuxtLink :to="`/projects/${id}/runs?tab=agent`"
-              class="text-xs text-brand-400 hover:text-brand-300 transition-colors">
-              View all →
-            </NuxtLink>
-          </div>
-          <div v-if="recentAgentSessions.length" class="space-y-2">
-            <div v-for="session in recentAgentSessions" :key="session.id"
-              class="flex items-center gap-3 py-2 border-b border-gray-800 last:border-0 cursor-pointer"
-              @click="navigateTo(`/projects/${id}/runs/agent-sessions/${session.id}`)">
-              <span :class="agentStatusClass(session.status)"
-                class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium shrink-0">
-                <span :class="agentStatusDot(session.status)" class="w-1.5 h-1.5 rounded-full" />
-                {{ session.statusName }}
-              </span>
-              <div class="flex-1 min-w-0">
-                <NuxtLink :to="`/projects/${id}/issues/${session.issueNumber}`"
-                  class="text-sm text-gray-300 hover:text-brand-300 transition-colors truncate block"
-                  @click.stop>
-                  #{{ session.issueNumber }} {{ session.issueTitle }}
-                </NuxtLink>
-                <p class="text-xs text-gray-500 truncate">{{ session.agentName }}</p>
-              </div>
-              <span class="text-xs text-gray-600 shrink-0">{{ relativeTime(session.startedAt) }}</span>
+            <div class="flex items-center gap-2">
+              <button v-if="agentRunsCollapsible" @click="agentRunsExpanded = !agentRunsExpanded"
+                class="text-xs text-gray-500 hover:text-gray-300 transition-colors">
+                {{ agentRunsExpanded ? 'Collapse' : 'Expand' }}
+              </button>
+              <NuxtLink :to="`/projects/${id}/runs?tab=agent`"
+                class="text-xs text-brand-400 hover:text-brand-300 transition-colors">
+                View all →
+              </NuxtLink>
             </div>
           </div>
-          <p v-else class="text-sm text-gray-600 py-4 text-center">No agent runs yet</p>
+
+          <!-- Collapsed green state -->
+          <div v-if="agentRunsCollapsible && !agentRunsExpanded"
+            class="flex items-center gap-2 py-3 text-sm text-green-400">
+            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+            All {{ runsStore.agentSessions.length }} agent runs succeeded
+          </div>
+
+          <!-- Expanded or non-green runs -->
+          <template v-else>
+            <div v-if="visibleAgentSessions.length" class="space-y-2">
+              <div v-for="session in visibleAgentSessions" :key="session.id"
+                class="flex items-center gap-3 py-2 border-b border-gray-800 last:border-0 cursor-pointer"
+                @click="navigateTo(`/projects/${id}/runs/agent-sessions/${session.id}`)">
+                <span :class="agentStatusClass(session.status)"
+                  class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium shrink-0">
+                  <span :class="agentStatusDot(session.status)" class="w-1.5 h-1.5 rounded-full" />
+                  {{ session.statusName }}
+                </span>
+                <div class="flex-1 min-w-0">
+                  <NuxtLink :to="`/projects/${id}/issues/${session.issueNumber}`"
+                    class="text-sm text-gray-300 hover:text-brand-300 transition-colors truncate block"
+                    @click.stop>
+                    #{{ session.issueNumber }} {{ session.issueTitle }}
+                  </NuxtLink>
+                  <p class="text-xs text-gray-500 truncate">{{ session.agentName }}</p>
+                </div>
+                <span class="text-xs text-gray-600 shrink-0">{{ relativeTime(session.startedAt) }}</span>
+              </div>
+            </div>
+            <p v-else class="text-sm text-gray-600 py-4 text-center">No agent runs yet</p>
+          </template>
         </div>
 
         <!-- CI/CD Runs -->
@@ -251,6 +257,7 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
               Recent CI/CD Runs
+              <span class="text-xs font-normal text-gray-500">({{ runsStore.runs.length }})</span>
               <!-- WS connection indicator -->
               <span v-if="isConnected" class="flex items-center gap-1 text-xs text-green-400 font-normal">
                 <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
@@ -261,84 +268,149 @@
                 Offline
               </span>
             </h2>
-            <NuxtLink :to="`/projects/${id}/runs`"
-              class="text-xs text-brand-400 hover:text-brand-300 transition-colors">
-              View all →
-            </NuxtLink>
-          </div>
-          <div v-if="recentCiCdRuns.length" class="space-y-2">
-            <div v-for="run in recentCiCdRuns" :key="run.id"
-              class="flex items-center gap-3 py-2 border-b border-gray-800 last:border-0 cursor-pointer"
-              @click="navigateTo(`/projects/${id}/runs/cicd/${run.id}`)">
-              <span :class="cicdStatusClass(run.status)"
-                class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium shrink-0">
-                <span :class="cicdStatusDot(run.status)" class="w-1.5 h-1.5 rounded-full" />
-                {{ run.statusName }}
-              </span>
-              <div class="flex-1 min-w-0">
-                <p class="text-sm text-gray-300 truncate">
-                  {{ run.workflow || run.branch || 'Run' }}
-                </p>
-                <p class="text-xs text-gray-500 font-mono truncate">
-                  {{ run.commitSha?.slice(0, 7) || '—' }}
-                  <span v-if="run.branch"> · {{ run.branch }}</span>
-                </p>
-              </div>
-              <span class="text-xs text-gray-600 shrink-0">{{ relativeTime(run.startedAt) }}</span>
+            <div class="flex items-center gap-2">
+              <button v-if="cicdRunsCollapsible" @click="cicdRunsExpanded = !cicdRunsExpanded"
+                class="text-xs text-gray-500 hover:text-gray-300 transition-colors">
+                {{ cicdRunsExpanded ? 'Collapse' : 'Expand' }}
+              </button>
+              <NuxtLink :to="`/projects/${id}/runs`"
+                class="text-xs text-brand-400 hover:text-brand-300 transition-colors">
+                View all →
+              </NuxtLink>
             </div>
           </div>
-          <p v-else class="text-sm text-gray-600 py-4 text-center">No CI/CD runs yet</p>
+
+          <!-- Collapsed green state -->
+          <div v-if="cicdRunsCollapsible && !cicdRunsExpanded"
+            class="flex items-center gap-2 py-3 text-sm text-green-400">
+            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+            All {{ runsStore.runs.length }} CI/CD runs succeeded
+          </div>
+
+          <!-- Expanded or non-green runs -->
+          <template v-else>
+            <div v-if="visibleCiCdRuns.length" class="space-y-2">
+              <div v-for="run in visibleCiCdRuns" :key="run.id"
+                class="flex items-center gap-3 py-2 border-b border-gray-800 last:border-0 cursor-pointer"
+                @click="navigateTo(`/projects/${id}/runs/cicd/${run.id}`)">
+                <span :class="cicdStatusClass(run.status)"
+                  class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium shrink-0">
+                  <span :class="cicdStatusDot(run.status)" class="w-1.5 h-1.5 rounded-full" />
+                  {{ run.statusName }}
+                </span>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm text-gray-300 truncate">
+                    {{ run.workflow || run.branch || 'Run' }}
+                  </p>
+                  <p class="text-xs text-gray-500 font-mono truncate">
+                    {{ run.commitSha?.slice(0, 7) || '—' }}
+                    <span v-if="run.branch"> · {{ run.branch }}</span>
+                  </p>
+                </div>
+                <span class="text-xs text-gray-600 shrink-0">{{ relativeTime(run.startedAt) }}</span>
+              </div>
+            </div>
+            <p v-else class="text-sm text-gray-600 py-4 text-center">No CI/CD runs yet</p>
+          </template>
         </div>
       </div>
 
-      <!-- Metric History Chart -->
+      <!-- Bottom section: History / Kanban toggle -->
       <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
-        <h2 class="font-semibold text-white mb-4">Issue &amp; Run History (last 24 h)</h2>
-        <div v-if="metricSnapshots.length" class="overflow-x-auto">
-          <svg :viewBox="`0 0 ${chartWidth} ${chartHeight}`" class="w-full" style="min-width:500px">
-            <!-- Grid lines -->
-            <line v-for="y in gridYValues" :key="y"
-              :x1="chartPad" :y1="yScale(y)" :x2="chartWidth - chartPad" :y2="yScale(y)"
-              stroke="#374151" stroke-width="1" />
-            <!-- Y labels -->
-            <text v-for="y in gridYValues" :key="`yl-${y}`"
-              :x="chartPad - 6" :y="yScale(y) + 4"
-              text-anchor="end" fill="#6b7280" font-size="10">{{ y }}</text>
-            <!-- Open issues line -->
-            <polyline :points="linePoints('openIssues')" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linejoin="round" />
-            <!-- In-progress issues line -->
-            <polyline :points="linePoints('inProgressIssues')" fill="none" stroke="#6366f1" stroke-width="2" stroke-linejoin="round" />
-            <!-- Done issues line -->
-            <polyline :points="linePoints('doneIssues')" fill="none" stroke="#22c55e" stroke-width="2" stroke-linejoin="round" />
-            <!-- Agent runs line -->
-            <polyline :points="linePoints('totalAgentRuns')" fill="none" stroke="#e879f9" stroke-width="2" stroke-linejoin="round" stroke-dasharray="4 2" />
-            <!-- CI/CD runs line -->
-            <polyline :points="linePoints('totalCiCdRuns')" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linejoin="round" stroke-dasharray="4 2" />
-            <!-- X labels -->
-            <text v-for="(snap, i) in metricSnapshots" :key="`xl-${i}`"
-              :x="xPos(i)" :y="chartHeight - 4"
-              text-anchor="middle" fill="#6b7280" font-size="9">{{ shortTime(snap.recordedAt) }}</text>
-          </svg>
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="font-semibold text-white">
+            {{ bottomView === 'history' ? 'Issue &amp; Run History (last 24 h)' : 'Kanban Board' }}
+          </h2>
+          <!-- Toggle -->
+          <div class="flex items-center bg-gray-800 rounded-lg p-0.5 gap-0.5">
+            <button @click="setBottomView('history')"
+              :class="bottomView === 'history' ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'"
+              class="text-xs px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              History
+            </button>
+            <button @click="setBottomView('kanban')"
+              :class="bottomView === 'kanban' ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'"
+              class="text-xs px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+              </svg>
+              Kanban
+            </button>
+          </div>
         </div>
-        <div v-else class="py-8 text-center text-sm text-gray-500">No history yet — snapshots are saved hourly</div>
-        <!-- Legend -->
-        <div class="flex flex-wrap items-center gap-5 mt-3">
-          <span class="flex items-center gap-1.5 text-xs text-gray-400">
-            <span class="w-3 h-0.5 bg-amber-400 rounded-full inline-block"></span> Open
-          </span>
-          <span class="flex items-center gap-1.5 text-xs text-gray-400">
-            <span class="w-3 h-0.5 bg-indigo-400 rounded-full inline-block"></span> In Progress
-          </span>
-          <span class="flex items-center gap-1.5 text-xs text-gray-400">
-            <span class="w-3 h-0.5 bg-green-400 rounded-full inline-block"></span> Done
-          </span>
-          <span class="flex items-center gap-1.5 text-xs text-gray-400">
-            <span class="w-3 h-0.5 bg-fuchsia-400 rounded-full inline-block" style="background: repeating-linear-gradient(90deg,#e879f9 0,#e879f9 4px,transparent 4px,transparent 6px)"></span> Agent Runs
-          </span>
-          <span class="flex items-center gap-1.5 text-xs text-gray-400">
-            <span class="w-3 h-0.5 bg-sky-400 rounded-full inline-block" style="background: repeating-linear-gradient(90deg,#38bdf8 0,#38bdf8 4px,transparent 4px,transparent 6px)"></span> CI/CD Runs
-          </span>
-        </div>
+
+        <!-- History view -->
+        <template v-if="bottomView === 'history'">
+          <div v-if="metricSnapshots.length" class="overflow-x-auto">
+            <svg :viewBox="`0 0 ${chartWidth} ${chartHeight}`" class="w-full" style="min-width:500px">
+              <!-- Grid lines -->
+              <line v-for="y in gridYValues" :key="y"
+                :x1="chartPad" :y1="yScale(y)" :x2="chartWidth - chartPad" :y2="yScale(y)"
+                stroke="#374151" stroke-width="1" />
+              <!-- Y labels -->
+              <text v-for="y in gridYValues" :key="`yl-${y}`"
+                :x="chartPad - 6" :y="yScale(y) + 4"
+                text-anchor="end" fill="#6b7280" font-size="10">{{ y }}</text>
+              <!-- Open issues line -->
+              <polyline :points="linePoints('openIssues')" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linejoin="round" />
+              <!-- In-progress issues line -->
+              <polyline :points="linePoints('inProgressIssues')" fill="none" stroke="#6366f1" stroke-width="2" stroke-linejoin="round" />
+              <!-- Done issues line -->
+              <polyline :points="linePoints('doneIssues')" fill="none" stroke="#22c55e" stroke-width="2" stroke-linejoin="round" />
+              <!-- Agent runs line -->
+              <polyline :points="linePoints('totalAgentRuns')" fill="none" stroke="#e879f9" stroke-width="2" stroke-linejoin="round" stroke-dasharray="4 2" />
+              <!-- CI/CD runs line -->
+              <polyline :points="linePoints('totalCiCdRuns')" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linejoin="round" stroke-dasharray="4 2" />
+              <!-- X labels -->
+              <text v-for="(snap, i) in metricSnapshots" :key="`xl-${i}`"
+                :x="xPos(i)" :y="chartHeight - 4"
+                text-anchor="middle" fill="#6b7280" font-size="9">{{ shortTime(snap.recordedAt) }}</text>
+            </svg>
+          </div>
+          <div v-else class="py-8 text-center text-sm text-gray-500">No history yet — snapshots are saved hourly</div>
+          <!-- Legend -->
+          <div class="flex flex-wrap items-center gap-5 mt-3">
+            <span class="flex items-center gap-1.5 text-xs text-gray-400">
+              <span class="w-3 h-0.5 bg-amber-400 rounded-full inline-block"></span> Open
+            </span>
+            <span class="flex items-center gap-1.5 text-xs text-gray-400">
+              <span class="w-3 h-0.5 bg-indigo-400 rounded-full inline-block"></span> In Progress
+            </span>
+            <span class="flex items-center gap-1.5 text-xs text-gray-400">
+              <span class="w-3 h-0.5 bg-green-400 rounded-full inline-block"></span> Done
+            </span>
+            <span class="flex items-center gap-1.5 text-xs text-gray-400">
+              <span class="w-3 h-0.5 bg-fuchsia-400 rounded-full inline-block" style="background: repeating-linear-gradient(90deg,#e879f9 0,#e879f9 4px,transparent 4px,transparent 6px)"></span> Agent Runs
+            </span>
+            <span class="flex items-center gap-1.5 text-xs text-gray-400">
+              <span class="w-3 h-0.5 bg-sky-400 rounded-full inline-block" style="background: repeating-linear-gradient(90deg,#38bdf8 0,#38bdf8 4px,transparent 4px,transparent 6px)"></span> CI/CD Runs
+            </span>
+          </div>
+        </template>
+
+        <!-- Kanban view -->
+        <template v-else>
+          <div class="flex flex-col items-center gap-4 py-6">
+            <p class="text-sm text-gray-400 text-center max-w-sm">
+              Manage your issues visually using drag-and-drop columns. The Kanban board shows all issues organised by status.
+            </p>
+            <NuxtLink :to="`/projects/${id}/kanban`"
+              class="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+              </svg>
+              Open Kanban Board
+            </NuxtLink>
+          </div>
+        </template>
       </div>
     </template>
 
@@ -351,7 +423,7 @@
 </template>
 
 <script setup lang="ts">
-import type { ProjectMetricSnapshot, Milestone } from '~/types'
+import type { ProjectMetricSnapshot, Milestone, GitCommit } from '~/types'
 import { AgentSessionStatus, CiCdRunStatus } from '~/types'
 import { useProjectsStore } from '~/stores/projects'
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
@@ -365,14 +437,102 @@ const api = useApi()
 const metricSnapshots = ref<ProjectMetricSnapshot[]>([])
 const milestones = ref<Milestone[]>([])
 const mcpCount = ref(0)
+const commitCount = ref<number | null>(null)
+const hasMoreCommits = ref(false)
+
+// Bottom section view preference, persisted to localStorage
+const BOTTOM_VIEW_KEY = `project-dashboard-bottom-view-${id}`
+const bottomView = ref<'history' | 'kanban'>('history')
+
+function setBottomView(view: 'history' | 'kanban') {
+  bottomView.value = view
+  if (import.meta.client) {
+    localStorage.setItem(BOTTOM_VIEW_KEY, view)
+  }
+}
+
+const commitCountLabel = computed(() => {
+  if (commitCount.value === null) return '—'
+  return hasMoreCommits.value ? `${commitCount.value}+` : String(commitCount.value)
+})
 
 const { connection, isConnected, connect } = useSignalR('/hubs/project')
 
 const openMilestones = computed(() => milestones.value.filter(m => m.status === 'open').slice(0, 3))
-const recentAgentSessions = computed(() => runsStore.agentSessions.slice(0, 5))
-const recentCiCdRuns = computed(() => runsStore.runs.slice(0, 5))
+
+// Agent runs collapse logic:
+// - All green (Succeeded) → collapsed by default; user can expand
+// - Any red (Failed/Cancelled) → show one entry per unique branch (max 5), always expanded
+// - Otherwise → show up to 5 normally
+const agentRunsAllGreen = computed(() =>
+  runsStore.agentSessions.length > 0
+  && runsStore.agentSessions.every(s => s.status === AgentSessionStatus.Succeeded),
+)
+const agentRunsHasRed = computed(() =>
+  runsStore.agentSessions.some(s => s.status === AgentSessionStatus.Failed || s.status === AgentSessionStatus.Cancelled),
+)
+const agentRunsCollapsible = computed(() => agentRunsAllGreen.value)
+const agentRunsExpanded = ref(false)
+
+const visibleAgentSessions = computed(() => {
+  if (agentRunsHasRed.value) {
+    // Show one entry per unique branch (max 5)
+    const seen = new Set<string>()
+    const result = []
+    for (const s of runsStore.agentSessions) {
+      const key = s.gitBranch || s.id
+      if (!seen.has(key)) {
+        seen.add(key)
+        result.push(s)
+        if (result.length >= 5) break
+      }
+    }
+    return result
+  }
+  return runsStore.agentSessions.slice(0, 5)
+})
+
+// CI/CD runs collapse logic:
+// - All green (Succeeded) → collapsed by default; user can expand
+// - Any red (Failed/Cancelled) → show one entry per unique branch (max 5), always expanded
+// - Otherwise → show up to 5 normally
+const cicdRunsAllGreen = computed(() =>
+  runsStore.runs.length > 0
+  && runsStore.runs.every(r => r.status === CiCdRunStatus.Succeeded),
+)
+const cicdRunsHasRed = computed(() =>
+  runsStore.runs.some(r => r.status === CiCdRunStatus.Failed || r.status === CiCdRunStatus.Cancelled),
+)
+const cicdRunsCollapsible = computed(() => cicdRunsAllGreen.value)
+const cicdRunsExpanded = ref(false)
+
+const visibleCiCdRuns = computed(() => {
+  if (cicdRunsHasRed.value) {
+    // Show one entry per unique branch (max 5)
+    const seen = new Set<string>()
+    const result = []
+    for (const r of runsStore.runs) {
+      const key = r.branch || r.id
+      if (!seen.has(key)) {
+        seen.add(key)
+        result.push(r)
+        if (result.length >= 5) break
+      }
+    }
+    return result
+  }
+  return runsStore.runs.slice(0, 5)
+})
 
 onMounted(async () => {
+  // Restore bottom view preference
+  if (import.meta.client) {
+    const saved = localStorage.getItem(BOTTOM_VIEW_KEY)
+    if (saved === 'kanban' || saved === 'history') {
+      bottomView.value = saved
+    }
+  }
+
   await store.fetchProject(id)
   await Promise.all([
     runsStore.fetchRuns(id),
@@ -386,6 +546,12 @@ onMounted(async () => {
     api.get<ProjectMetricSnapshot[]>(`/api/dashboard/projects/${id}/metric-history`)
       .then(data => { metricSnapshots.value = data })
       .catch((e) => { console.error(`Failed to load metric history for project ${id}`, e) }),
+    api.get<GitCommit[]>(`/api/projects/${id}/git/commits?take=50`)
+      .then((data) => {
+        commitCount.value = data.length
+        hasMoreCommits.value = data.length === 50
+      })
+      .catch(() => { commitCount.value = null }),
   ])
 
   // Connect to SignalR for live run updates
