@@ -41,11 +41,22 @@ export function buildGraphJobIndexes(graphJobs: WorkflowJobNode[]): GraphJobInde
     if (nameNoSpaces !== nameKey && !byName.has(nameNoSpaces)) byName.set(nameNoSpaces, j.id)
     // Compute the last segment of the job display name once (reused for file-stem indexing below).
     const lastJobNamePart = (j.name.split(/\s*\/\s*/).pop() || j.name).trim().toLowerCase()
+    // Also compute a stripped version of lastJobNamePart for matrix jobs that use template expressions
+    // like "${{ matrix.version }}" in their name. Stripping the parenthetical makes "ci/build" match
+    // log IDs like "CI/Build (version 1)-1" (where the resolved value replaces the template).
+    const lastJobNamePartBase = lastJobNamePart.replace(/\s*\([^)]*\)\s*$/, '').trim()
+    const hasTemplateSuffix = lastJobNamePartBase !== lastJobNamePart && lastJobNamePart.includes('${{')
+
     // Index by workflowFileStem/lastJobNamePart so act's "stem/callee" format can resolve correctly
     if (j.workflowFile) {
       const stem = j.workflowFile.replace(/\.(yml|yaml)$/i, '').toLowerCase()
       const workflowKey = `${stem}/${lastJobNamePart}`
       if (!byName.has(workflowKey)) byName.set(workflowKey, j.id)
+      // Add stripped template key so "ci/build" matches "CI/Build (version 1)-1" style log IDs
+      if (hasTemplateSuffix) {
+        const workflowKeyBase = `${stem}/${lastJobNamePartBase}`
+        if (!byName.has(workflowKeyBase)) byName.set(workflowKeyBase, j.id)
+      }
     }
     // Index by callerWorkflowFileStem/lastJobNamePart so act's "<callerWorkflow>/.../job" format resolves.
     // e.g. for "CI/Backend CI/Build" → segments[0]="ci" matches ci.yml stem → "ci/build" → backend/build
@@ -53,6 +64,11 @@ export function buildGraphJobIndexes(graphJobs: WorkflowJobNode[]): GraphJobInde
       const callerStem = j.callerWorkflowFile.replace(/\.(yml|yaml)$/i, '').toLowerCase()
       const callerKey = `${callerStem}/${lastJobNamePart}`
       if (!byName.has(callerKey)) byName.set(callerKey, j.id)
+      // Add stripped template key for matrix template names (e.g. "ci/build" for "Build (${{ matrix.version }})")
+      if (hasTemplateSuffix) {
+        const callerKeyBase = `${callerStem}/${lastJobNamePartBase}`
+        if (!byName.has(callerKeyBase)) byName.set(callerKeyBase, j.id)
+      }
     }
     // Collect last-segment candidates (used below to prevent ambiguous single-segment matching)
     const nameParts = j.name.split(/\s*\/\s*/)
