@@ -104,11 +104,23 @@
             </svg>
           </button>
         </div>
-        <div class="flex-1 space-y-2 bg-gray-900/40 rounded-xl p-2 min-h-32 border border-gray-800/60">
-          <TodoCard v-for="todo in uncategorizedTodos" :key="todo.id" :todo="todo"
-            @toggle="store.toggleTodo(todo.id)"
-            @edit="openEdit(todo)"
-            @delete="confirmDelete(todo.id)" />
+        <div class="flex-1 space-y-2 bg-gray-900/40 rounded-xl p-2 min-h-32 border border-gray-800/60 transition-colors"
+          :class="{
+            'border-brand-500/60 bg-brand-900/10': boardHoverCategoryId === '__uncategorized__' && boardDraggingTodoId,
+            'border-brand-500/20': boardDraggingTodoId && boardHoverCategoryId !== '__uncategorized__',
+          }"
+          @dragover="onBoardColumnDragOver($event, null)"
+          @dragleave="onBoardColumnDragLeave"
+          @drop="onBoardColumnDrop($event, null)">
+          <div v-for="todo in uncategorizedTodos" :key="todo.id"
+            draggable="true"
+            @dragstart="onBoardDragStart($event, todo.id)"
+            @dragend="onBoardDragEnd">
+            <TodoCard :todo="todo"
+              @toggle="store.toggleTodo(todo.id)"
+              @edit="openEdit(todo)"
+              @delete="confirmDelete(todo.id)" />
+          </div>
           <div v-if="!uncategorizedTodos.length" class="py-4 text-center text-xs text-gray-600">
             No todos
           </div>
@@ -132,11 +144,23 @@
             </svg>
           </button>
         </div>
-        <div class="flex-1 space-y-2 bg-gray-900/40 rounded-xl p-2 min-h-32 border border-gray-800/60">
-          <TodoCard v-for="todo in todosByCategory[cat.id] ?? []" :key="todo.id" :todo="todo"
-            @toggle="store.toggleTodo(todo.id)"
-            @edit="openEdit(todo)"
-            @delete="confirmDelete(todo.id)" />
+        <div class="flex-1 space-y-2 bg-gray-900/40 rounded-xl p-2 min-h-32 border border-gray-800/60 transition-colors"
+          :class="{
+            'border-brand-500/60 bg-brand-900/10': boardHoverCategoryId === cat.id && boardDraggingTodoId,
+            'border-brand-500/20': boardDraggingTodoId && boardHoverCategoryId !== cat.id,
+          }"
+          @dragover="onBoardColumnDragOver($event, cat.id)"
+          @dragleave="onBoardColumnDragLeave"
+          @drop="onBoardColumnDrop($event, cat.id)">
+          <div v-for="todo in todosByCategory[cat.id] ?? []" :key="todo.id"
+            draggable="true"
+            @dragstart="onBoardDragStart($event, todo.id)"
+            @dragend="onBoardDragEnd">
+            <TodoCard :todo="todo"
+              @toggle="store.toggleTodo(todo.id)"
+              @edit="openEdit(todo)"
+              @delete="confirmDelete(todo.id)" />
+          </div>
           <div v-if="!todosByCategory[cat.id]?.length" class="py-4 text-center text-xs text-gray-600">
             No todos
           </div>
@@ -592,6 +616,56 @@ async function onReschedule(todo: Todo, newDate: Date) {
     boardIds: todo.boardMemberships.map(m => m.boardId),
     categoryIds: todo.categoryMemberships.map(m => m.categoryId),
   })
+}
+
+// ── Board drag & drop ─────────────────────────────────────────────────────
+const boardDraggingTodoId = ref<string | null>(null)
+const boardHoverCategoryId = ref<string | null>(null)
+
+function onBoardDragStart(event: DragEvent, todoId: string) {
+  boardDraggingTodoId.value = todoId
+  event.dataTransfer!.effectAllowed = 'move'
+}
+
+function onBoardDragEnd() {
+  boardDraggingTodoId.value = null
+  boardHoverCategoryId.value = null
+}
+
+function onBoardColumnDragOver(event: DragEvent, categoryId: string | null) {
+  if (!boardDraggingTodoId.value) return
+  event.preventDefault()
+  boardHoverCategoryId.value = categoryId ?? '__uncategorized__'
+}
+
+function onBoardColumnDragLeave(event: DragEvent) {
+  const relatedTarget = event.relatedTarget as Node | null
+  if (relatedTarget && (event.currentTarget as Node)?.contains(relatedTarget)) return
+  boardHoverCategoryId.value = null
+}
+
+async function onBoardColumnDrop(event: DragEvent, categoryId: string | null) {
+  event.preventDefault()
+  if (!boardDraggingTodoId.value) return
+  const todo = store.todos.find(t => t.id === boardDraggingTodoId.value)
+  if (!todo) {
+    boardDraggingTodoId.value = null
+    boardHoverCategoryId.value = null
+    return
+  }
+  await store.updateTodo(todo.id, {
+    title: todo.title,
+    body: todo.body,
+    priority: todo.priority,
+    dueDate: todo.dueDate,
+    startDate: todo.startDate,
+    recurringInterval: todo.recurringInterval,
+    isCompleted: todo.isCompleted,
+    boardIds: todo.boardMemberships.map(m => m.boardId),
+    categoryIds: categoryId ? [categoryId] : [],
+  })
+  boardDraggingTodoId.value = null
+  boardHoverCategoryId.value = null
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────

@@ -45,6 +45,15 @@ public class NativeCiCdRuntimeTests
     }
 
     [Fact]
+    public void BuildActArgumentsList_BareWorkflowFilename_NormalizedToGitHubWorkflowsPath()
+    {
+        var args = NativeCiCdRuntime.BuildActArgumentsList(Trigger(workflow: "ci.yml"));
+        Assert.Contains("-W", args);
+        var idx = args.ToList().IndexOf("-W");
+        Assert.Equal(Path.Combine(".github", "workflows", "ci.yml"), args[idx + 1]);
+    }
+
+    [Fact]
     public void BuildActArgumentsList_NoActEnvOrSecrets_NoExtraArgs()
     {
         var args = NativeCiCdRuntime.BuildActArgumentsList(Trigger());
