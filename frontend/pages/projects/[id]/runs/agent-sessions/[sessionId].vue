@@ -272,22 +272,25 @@ onMounted(async () => {
     await agentConnection.value.invoke('JoinSession', sessionId).catch((e: unknown) => { console.warn('Failed to join agent session group', e) })
     agentConnection.value.on('LogLine', ({ payload }: { sessionId: string; payload: string }) => {
       try {
-        const data = JSON.parse(payload) as { stream?: string; line?: string; timestamp?: string }
-        if (data.stream && data.line) {
-          const exists = store.currentSessionLogs.some(l => l.line === data.line && l.timestamp === data.timestamp)
-          if (!exists) {
-            store.currentSessionLogs.push({
-              id: crypto.randomUUID(),
-              line: data.line,
-              stream: data.stream,
-              streamName: data.stream === 'stderr' ? 'Stderr' : 'Stdout',
-              timestamp: data.timestamp ?? new Date().toISOString(),
-            } satisfies AgentSessionLog)
-            now.value = Date.now()
-          }
+        const data = JSON.parse(payload) as { event?: string; stream?: string; line?: string; timestamp?: string; status?: string }
+        if (data.event === 'session-completed') {
+          now.value = Date.now()
+          // Refresh session metadata (status, endedAt) without replacing logs
+          store.fetchAgentSession(sessionId)
+        } else if (data.event === 'session-heartbeat') {
+          now.value = Date.now()
+        } else if (data.line !== undefined) {
+          store.currentSessionLogs.push({
+            id: crypto.randomUUID(),
+            line: data.line,
+            stream: data.stream ?? 'stdout',
+            streamName: data.stream ? (data.stream.charAt(0).toUpperCase() + data.stream.slice(1)) : 'Stdout',
+            timestamp: data.timestamp ?? new Date().toISOString(),
+          } satisfies AgentSessionLog)
+          now.value = Date.now()
         }
       }
-      catch { /* ignore malformed messages */ }
+      catch (e) { console.warn('Failed to parse agent LogLine payload', e) }
     })
   }
 })

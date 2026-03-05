@@ -88,8 +88,7 @@ public sealed class RedisLogRelayService(
                         .SendAsync("LogLine", new { sessionId, payload }, stoppingToken);
 
                     // When a session finishes or sends a heartbeat, notify project-level subscribers.
-                    if (payload.Contains("session-completed", StringComparison.Ordinal) ||
-                        payload.Contains("session-heartbeat", StringComparison.Ordinal))
+                    try
                     {
                         using var doc = JsonDocument.Parse(payload);
                         if (doc.RootElement.TryGetProperty("event", out var eventProp))
@@ -98,6 +97,11 @@ public sealed class RedisLogRelayService(
                             if (evt == "session-completed" || evt == "session-heartbeat")
                                 await NotifyProjectSessionsUpdatedAsync(sessionId, stoppingToken);
                         }
+                    }
+                    catch (JsonException)
+                    {
+                        // Log line payloads are always valid JSON (serialised by IssueWorker),
+                        // but guard against malformed messages without crashing the relay.
                     }
                 }
                 catch (Exception ex)
