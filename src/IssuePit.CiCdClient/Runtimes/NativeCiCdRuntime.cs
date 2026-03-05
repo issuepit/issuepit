@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
 
@@ -44,6 +46,15 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
         {
             argsList.Add("-P");
             argsList.Add($"{label}={actRunnerImage}");
+        }
+
+        // Each run must use its own artifact-server port so that consecutive runs do not
+        // collide when act's default port (34567) is briefly in TCP TIME_WAIT after a prior run.
+        // We probe for a free port and pass it explicitly; the slight TOCTOU gap is acceptable.
+        if (!string.IsNullOrWhiteSpace(trigger.ArtifactServerPath))
+        {
+            argsList.Add("--artifact-server-port");
+            argsList.Add(FindFreePort().ToString());
         }
 
         logger.LogInformation("Running act (native) for run {RunId}: {ActBin} {Args}", run.Id, actBin, string.Join(' ', argsList));
@@ -257,5 +268,19 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
             if (eqIdx > 0)
                 yield return trimmed;
         }
+    }
+
+    /// <summary>
+    /// Probes the OS for a free TCP port by binding to port 0 (kernel assigns one) and
+    /// immediately releasing it. Used to give each act run a unique artifact-server port
+    /// so that consecutive runs do not collide when the default port is in TIME_WAIT.
+    /// </summary>
+    internal static int FindFreePort()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        return port;
     }
 }
