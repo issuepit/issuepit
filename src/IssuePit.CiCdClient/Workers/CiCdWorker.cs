@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.IO.Compression;
 using System.Text.Json;
 using Confluent.Kafka;
 using IssuePit.CiCdClient.Runtimes;
@@ -295,6 +296,7 @@ public class CiCdWorker(
     /// <summary>
     /// Scans <paramref name="artifactDir"/> for <c>.trx</c> files, parses each one, and
     /// persists the results as <see cref="CiCdTestSuite"/> rows linked to the given run.
+    /// Also searches inside <c>.zip</c> archives (act stores artifact uploads as zipped files).
     /// Best-effort: errors are logged but never propagated.
     /// </summary>
     private async Task ParseAndStoreTestResultsAsync(
@@ -303,9 +305,29 @@ public class CiCdWorker(
         IssuePitDbContext db,
         CancellationToken cancellationToken)
     {
+        var tempDirs = new List<string>();
         try
         {
+            // Collect .trx files — both directly present and inside .zip artifact archives.
+            // act v0.2.x stores uploaded artifacts as .zip files, so we must extract them
+            // into a temporary directory to find any embedded .trx test result files.
             var trxFiles = TrxParser.FindTrxFiles(artifactDir).ToList();
+
+            foreach (var zipFile in Directory.EnumerateFiles(artifactDir, "*.zip", SearchOption.AllDirectories))
+            {
+                var tempDir = Path.Combine(Path.GetTempPath(), $"issuepit-trx-{Guid.NewGuid():N}");
+                try
+                {
+                    ZipFile.ExtractToDirectory(zipFile, tempDir);
+                    trxFiles.AddRange(TrxParser.FindTrxFiles(tempDir));
+                    tempDirs.Add(tempDir);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogDebug(ex, "Could not extract zip {ZipFile} while scanning for TRX files", zipFile);
+                }
+            }
+
             if (trxFiles.Count == 0) return;
 
             logger.LogInformation("Found {Count} TRX file(s) for run {RunId}; parsing test results", trxFiles.Count, runId);
@@ -330,12 +352,23 @@ public class CiCdWorker(
         {
             logger.LogError(ex, "Failed to collect test results for run {RunId}", runId);
         }
+        finally
+        {
+            foreach (var tempDir in tempDirs)
+            {
+                try { Directory.Delete(tempDir, recursive: true); }
+                catch (Exception ex) { logger.LogDebug(ex, "Could not clean up temp dir {TempDir}", tempDir); }
+            }
+        }
     }
 
     /// <summary>
-    /// Scans <paramref name="artifactDir"/> for artifact directories (top-level subdirectories
-    /// excluding <c>_workflows</c>), records their names and sizes as <see cref="CiCdArtifact"/>
-    /// rows linked to the given run. Best-effort: errors are logged but never propagated.
+    /// Scans <paramref name="artifactDir"/> for artifact directories and records their names and
+    /// sizes as <see cref="CiCdArtifact"/> rows linked to the given run.
+    /// Handles both the legacy flat layout (<c>&lt;artifactName&gt;/&lt;files&gt;</c>) and the
+    /// act v0.2.x layout where a numeric run-number directory is interposed
+    /// (<c>&lt;runNumber&gt;/&lt;artifactName&gt;/&lt;files&gt;</c>).
+    /// Excludes <c>_workflows</c> and hidden directories. Best-effort: errors are logged but never propagated.
     /// </summary>
     private async Task ParseAndStoreArtifactsAsync(
         Guid runId,
@@ -347,16 +380,33 @@ public class CiCdWorker(
         {
             if (!Directory.Exists(artifactDir)) return;
 
-            // Top-level subdirectories in the artifact server path are the artifact names.
-            // The act artifact server nests files under: <artifactName>/<runNumber>/<files>.
-            // We exclude _workflows (internal) and hidden directories.
-            var artifactDirs = Directory.GetDirectories(artifactDir)
-                .Where(d =>
+            // Collect artifact directories. act v0.2.x nests artifacts under a numeric run-number
+            // directory: <runNumber>/<artifactName>/<files>. Older act versions used a flat layout:
+            // <artifactName>/<files>. We handle both by checking whether the top-level dir name is
+            // purely numeric (run-number prefix) and if so, looking one level deeper.
+            var artifactDirs = new List<string>();
+            foreach (var topDir in Directory.GetDirectories(artifactDir))
+            {
+                var topName = Path.GetFileName(topDir);
+                if (string.IsNullOrEmpty(topName) || topName == "_workflows" || topName.StartsWith('.'))
+                    continue;
+
+                if (long.TryParse(topName, out _))
                 {
-                    var name = Path.GetFileName(d);
-                    return !string.IsNullOrEmpty(name) && name != "_workflows" && !name.StartsWith('.');
-                })
-                .ToList();
+                    // New format: numeric run-number dir → descend one level for artifact name dirs.
+                    foreach (var innerDir in Directory.GetDirectories(topDir))
+                    {
+                        var innerName = Path.GetFileName(innerDir);
+                        if (!string.IsNullOrEmpty(innerName) && !innerName.StartsWith('.'))
+                            artifactDirs.Add(innerDir);
+                    }
+                }
+                else
+                {
+                    // Legacy format: top-level dir is the artifact name.
+                    artifactDirs.Add(topDir);
+                }
+            }
 
             if (artifactDirs.Count == 0) return;
 
@@ -443,7 +493,10 @@ public class CiCdWorker(
         CancellationToken cancellationToken)
     {
         // Try to parse act's JSON log format (enabled by --json flag).
-        // act uses logrus JSON format: {"level":"info","msg":"...","job":"build","stage":"Set up job","time":"..."}
+        // act uses logrus JSON format: {"level":"info","msg":"...","jobID":"build","stage":"Set up job","time":"..."}
+        // Note: act also emits a "job" field with the workflow-qualified name (e.g. "CI/build") — we
+        // prefer the "jobID" field (plain job name, e.g. "build") so that callers can filter by job
+        // name without knowing the workflow prefix.
         var displayLine = line;
         var jobId = (string?)null;
         var stepId = (string?)null;
@@ -457,7 +510,10 @@ public class CiCdWorker(
                 if (root.TryGetProperty("msg", out var msgEl))
                 {
                     displayLine = msgEl.GetString() ?? line;
-                    if (root.TryGetProperty("job", out var jobEl))
+                    // Prefer "jobID" (plain job name) over "job" (workflow-qualified name like "CI/build").
+                    if (root.TryGetProperty("jobID", out var jobIdEl))
+                        jobId = jobIdEl.GetString();
+                    else if (root.TryGetProperty("job", out var jobEl))
                         jobId = jobEl.GetString();
                     // Extract step name from the 'stage' field (e.g. "Set up job", "Main actions/checkout@v4").
                     if (root.TryGetProperty("stage", out var stageEl))
