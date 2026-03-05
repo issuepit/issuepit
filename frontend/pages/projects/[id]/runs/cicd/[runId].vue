@@ -305,14 +305,14 @@
                 :height="graphLayout.svgHeight"
                 style="z-index: 0">
                 <defs>
-                  <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-                    <path d="M0,0 L0,6 L6,3 z" fill="#4b5563" />
+                  <marker id="arrow" markerWidth="4" markerHeight="4" refX="3" refY="2" orient="auto">
+                    <path d="M0,0 L0,4 L4,2 z" fill="#4b5563" />
                   </marker>
-                  <marker id="arrow-hi" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-                    <path d="M0,0 L0,6 L6,3 z" fill="#6366f1" />
+                  <marker id="arrow-hi" markerWidth="4" markerHeight="4" refX="3" refY="2" orient="auto">
+                    <path d="M0,0 L0,4 L4,2 z" fill="#6366f1" />
                   </marker>
-                  <marker id="arrow-fail" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-                    <path d="M0,0 L0,6 L6,3 z" fill="#ef4444" />
+                  <marker id="arrow-fail" markerWidth="4" markerHeight="4" refX="3" refY="2" orient="auto">
+                    <path d="M0,0 L0,4 L4,2 z" fill="#ef4444" />
                   </marker>
                 </defs>
                 <path
@@ -334,11 +334,11 @@
                   :key="job.id"
                   :style="{ position: 'absolute', left: job.x + 'px', top: job.y + 'px', width: '220px' }"
                   :class="[
-                    'flex flex-col items-start gap-1 px-4 py-3 rounded-xl border transition-all text-left cursor-pointer',
+                    'flex flex-col items-start gap-1 px-4 py-3 rounded-xl border transition-colors text-left cursor-pointer',
                     selectedJob === job.id
                       ? 'border-brand-500 bg-brand-950/30 ring-1 ring-brand-500/40'
                       : hoveredJob === job.id
-                        ? 'border-gray-500 bg-gray-700/60 shadow-lg shadow-gray-900/50'
+                        ? 'border-gray-400/50 bg-gray-700/40 shadow-lg shadow-black/40 ring-1 ring-white/5 backdrop-blur-sm'
                         : connectedJobIds.has(job.id)
                           ? 'border-brand-700/50 bg-gray-800/60'
                           : blockedJobIds.has(job.id)
@@ -1146,10 +1146,32 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
 
   // Pre-build a map of which jobs have started (have log lines) for downstream inference.
   const startedIds = new Set(Array.from(allIds).filter(id => (jobLogMap.value.get(id)?.logCount ?? 0) > 0))
-  // A job is implicitly complete if any of its direct downstream jobs has started.
+  // A job is implicitly complete if any of its downstream jobs (direct or transitive) has started.
+  // Reverse BFS: seed with direct parents of all started jobs, then walk backwards through edges (O(V+E)).
   const implicitlyCompleteIds = new Set<string>()
+  // Build reverse adjacency map (child → set of parents)
+  const reverseAdj = new Map<string, string[]>()
   for (const e of edges) {
-    if (startedIds.has(e.to)) implicitlyCompleteIds.add(e.from)
+    if (!reverseAdj.has(e.to)) reverseAdj.set(e.to, [])
+    reverseAdj.get(e.to)!.push(e.from)
+  }
+  const bfsQueue: string[] = []
+  for (const id of startedIds) {
+    for (const parent of (reverseAdj.get(id) ?? [])) {
+      if (!implicitlyCompleteIds.has(parent)) {
+        implicitlyCompleteIds.add(parent)
+        bfsQueue.push(parent)
+      }
+    }
+  }
+  while (bfsQueue.length > 0) {
+    const curr = bfsQueue.shift()!
+    for (const parent of (reverseAdj.get(curr) ?? [])) {
+      if (!implicitlyCompleteIds.has(parent)) {
+        implicitlyCompleteIds.add(parent)
+        bfsQueue.push(parent)
+      }
+    }
   }
 
   return Array.from(allIds).map(id => {
