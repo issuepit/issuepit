@@ -21,7 +21,39 @@ var redis = builder.AddValkey("redis")
 var npmCache = builder.AddContainer("npm-cache", "verdaccio/verdaccio", "6")
     .WithHttpEndpoint(targetPort: 4873, name: "http")
     .WithVolume("verdaccio-storage", "/verdaccio/storage")
-    .WithBindMount("../../docker/verdaccio/config.yaml", "/verdaccio/conf/config.yaml", isReadOnly: true); // TODO source from c# string; no mount on host
+    .WithContainerFiles("/verdaccio/conf", [
+        new ContainerFile
+        {
+            Name = "config.yaml",
+            Contents = """
+                storage: /verdaccio/storage
+
+                auth:
+                  htpasswd:
+                    file: /verdaccio/conf/htpasswd
+                    # Disable self-registration; this instance is read-only proxy only.
+                    max_users: -1
+
+                uplinks:
+                  npmjs:
+                    url: https://registry.npmjs.org/
+                    timeout: 60s
+                    maxage: 10m
+
+                packages:
+                  '**':
+                    # All packages are publicly accessible (no auth required for reads).
+                    access: $all
+                    # Proxy all package requests to the upstream npm registry.
+                    proxy: npmjs
+
+                log:
+                  type: stdout
+                  format: pretty
+                  level: warn
+                """
+        }
+    ]);
 
 // LocalStack provides local AWS services (S3 for image uploads).
 // Open source (Apache 2.0). S3 endpoint: http://localstack:4566
