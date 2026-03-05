@@ -45,16 +45,17 @@ public sealed class RedisLogRelayService(
                         .Group(CiCdOutputHub.RunGroup(runId))
                         .SendAsync("LogLine", new { runId, payload }, stoppingToken);
 
-                    // When a run finishes or sends a heartbeat, notify project-level subscribers
+                    // When a run finishes, is created, or sends a heartbeat, notify project-level subscribers
                     // so the runs list refreshes (duration, status) without any client-side timer.
                     if (payload.Contains("run-completed", StringComparison.Ordinal) ||
+                        payload.Contains("run-created", StringComparison.Ordinal) ||
                         payload.Contains("run-heartbeat", StringComparison.Ordinal))
                     {
                         using var doc = JsonDocument.Parse(payload);
                         if (doc.RootElement.TryGetProperty("event", out var eventProp))
                         {
                             var evt = eventProp.GetString();
-                            if (evt == "run-completed" || evt == "run-heartbeat")
+                            if (evt == "run-completed" || evt == "run-created" || evt == "run-heartbeat")
                                 await NotifyProjectRunsUpdatedAsync(runId, stoppingToken);
                         }
                     }

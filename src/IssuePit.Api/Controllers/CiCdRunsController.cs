@@ -47,6 +47,8 @@ public class CiCdRunsController(
                 r.ExternalSource,
                 r.ExternalRunId,
                 r.WorkspacePath,
+                r.EventName,
+                r.InputsJson,
             })
             .Take(100)
             .ToListAsync();
@@ -75,6 +77,8 @@ public class CiCdRunsController(
                 r.ExternalSource,
                 r.ExternalRunId,
                 r.WorkspacePath,
+                r.EventName,
+                r.InputsJson,
             })
             .FirstOrDefaultAsync();
 

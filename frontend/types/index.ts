@@ -643,6 +643,8 @@ export interface CiCdRun {
   externalSource?: string
   externalRunId?: string
   workspacePath?: string
+  eventName?: string
+  inputsJson?: string
 }
 
 export enum AgentSessionStatus {

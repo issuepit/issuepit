@@ -52,7 +52,10 @@ public class CiCdWorker(
             {
                 var result = consumer.Consume(stoppingToken);
                 logger.LogInformation("Received cicd-trigger: key={Key}", result.Message.Key);
-                await ProcessTriggerAsync(result.Message.Key, result.Message.Value, stoppingToken);
+                // Fire-and-forget: do not await so the consumer loop continues consuming
+                // new messages while this run is in progress. Concurrency is controlled by
+                // the per-org SemaphoreSlim inside ProcessTriggerAsync.
+                _ = ProcessTriggerAsync(result.Message.Key, result.Message.Value, stoppingToken);
             }
             catch (OperationCanceledException)
             {
@@ -169,6 +172,10 @@ public class CiCdWorker(
             Branch = trigger.Branch,
             Workflow = trigger.Workflow,
             WorkspacePath = trigger.WorkspacePath,
+            EventName = trigger.EventName,
+            InputsJson = trigger.Inputs is { Count: > 0 }
+                ? JsonSerializer.Serialize(trigger.Inputs)
+                : null,
             Status = semaphore is not null ? CiCdRunStatus.Pending : CiCdRunStatus.Running,
             StartedAt = DateTime.UtcNow,
         };
@@ -184,7 +191,12 @@ public class CiCdWorker(
         db.CiCdRuns.Add(run);
         await db.SaveChangesAsync(stoppingToken);
 
-        logger.LogInformation("CI/CD run {RunId} started for commit {Commit}", run.Id, run.CommitSha);
+        logger.LogInformation("CI/CD run {RunId} created for commit {Commit} (event={EventName}, status={Status})",
+            run.Id, run.CommitSha, run.EventName, run.Status);
+
+        // Notify frontend clients that a new run was created so the runs list refreshes immediately.
+        await PublishLogLineAsync(run.Id.ToString(),
+            JsonSerializer.Serialize(new { @event = "run-created", status = run.Status.ToString() }));
 
         // Create a per-run CTS linked to the host stoppingToken so we can cancel this run independently.
         using var runCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
@@ -216,6 +228,17 @@ public class CiCdWorker(
             }
 
             var runtime = runtimeFactory.Create();
+
+            // Log run parameters so they are visible in the log output
+            await AppendLogAsync(run.Id,
+                $"[INFO] Run started — event: {run.EventName ?? "push"}, commit: {run.CommitSha}",
+                LogStream.Stdout, db, stoppingToken);
+            if (!string.IsNullOrEmpty(run.InputsJson))
+            {
+                await AppendLogAsync(run.Id,
+                    $"[INFO] Inputs: {run.InputsJson}",
+                    LogStream.Stdout, db, stoppingToken);
+            }
 
             // Start a periodic heartbeat so connected clients can keep the duration display live
             // without needing a client-side timer. The heartbeat is cancelled when the run finishes.
