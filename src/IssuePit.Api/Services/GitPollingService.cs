@@ -1,5 +1,6 @@
 using Confluent.Kafka;
 using IssuePit.Core.Data;
+using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
@@ -9,6 +10,7 @@ namespace IssuePit.Api.Services;
 /// <summary>
 /// Background service that periodically polls all linked git repositories for new commits
 /// on their monitored (default) branch and publishes a CI/CD trigger when a new commit is detected.
+/// Also polls source branches of open merge requests and triggers CI/CD when new commits are pushed.
 /// </summary>
 public class GitPollingService(
     ILogger<GitPollingService> logger,
@@ -108,6 +110,9 @@ public class GitPollingService(
                 }
 
                 await db.SaveChangesAsync(cancellationToken);
+
+                // Poll open merge requests for this repo's project and trigger CI/CD if new commits.
+                await PollOpenMergeRequestsAsync(repo, gitService, db, cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -131,6 +136,48 @@ public class GitPollingService(
                 catch (Exception saveEx) { logger.LogError(saveEx, "Failed to persist status update for repo {RepoId}", repo.Id); }
             }
         }
+    }
+
+    /// <summary>
+    /// Checks all open merge requests for the project and triggers CI/CD when new commits
+    /// are pushed to their source branches.
+    /// </summary>
+    private async Task PollOpenMergeRequestsAsync(
+        GitRepository repo,
+        GitService gitService,
+        IssuePitDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var openMrs = await db.MergeRequests
+            .Where(mr => mr.ProjectId == repo.ProjectId && mr.Status == MergeRequestStatus.Open)
+            .ToListAsync(cancellationToken);
+
+        foreach (var mr in openMrs)
+        {
+            var sourceSha = gitService.GetBranchTipSha(repo, mr.SourceBranch);
+            if (sourceSha is null)
+            {
+                logger.LogDebug("Source branch '{Branch}' for MR {MrId} not found — skipping", mr.SourceBranch, mr.Id);
+                continue;
+            }
+
+            if (sourceSha != mr.HeadCommitSha)
+            {
+                logger.LogInformation(
+                    "New commit {Sha} on MR source branch '{Branch}' for project {ProjectId} — triggering CI/CD (pull_request event)",
+                    sourceSha, mr.SourceBranch, repo.ProjectId);
+
+                await PublishCiCdTriggerAsync(
+                    producer, repo.ProjectId, sourceSha, mr.SourceBranch, repo.RemoteUrl, logger,
+                    eventName: "pull_request", mergeRequestId: mr.Id);
+
+                mr.HeadCommitSha = sourceSha;
+                mr.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
+        if (openMrs.Count > 0)
+            await db.SaveChangesAsync(cancellationToken);
     }
 
     /// <summary>
@@ -164,7 +211,9 @@ public class GitPollingService(
         string commitSha,
         string branch,
         string gitRepoUrl,
-        ILogger logger)
+        ILogger logger,
+        string eventName = "push",
+        Guid? mergeRequestId = null)
     {
         var payload = JsonSerializer.Serialize(new
         {
@@ -174,7 +223,8 @@ public class GitPollingService(
             workflow = (string?)null,
             agentSessionId = (Guid?)null,
             gitRepoUrl,
-            eventName = "push",
+            eventName,
+            mergeRequestId,
         });
 
         try

@@ -35,6 +35,7 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 
 builder.Services.AddHostedService<RedisLogRelayService>();
 builder.Services.AddHostedService<GitPollingService>();
+builder.Services.AddHostedService<MergeRequestAutoMergeService>();
 builder.Services.AddHostedService<MetricSnapshotService>();
 builder.Services.AddHostedService<BotNotificationDispatchService>();
 

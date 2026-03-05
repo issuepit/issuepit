@@ -354,6 +354,68 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
         return hunks;
     }
 
+    /// <summary>
+    /// Merges <paramref name="sourceBranch"/> into <paramref name="targetBranch"/> in the local
+    /// working copy and pushes the result to the remote. Uses a fast-forward merge when possible;
+    /// falls back to a merge commit. Throws if there are conflicts.
+    /// </summary>
+    public void MergeBranch(GitRepository repo, string sourceBranch, string targetBranch)
+    {
+        var sem = GetRepoLock(repo.Id);
+        sem.Wait();
+        try
+        {
+            var localPath = EnsureClonedCore(repo);
+            using var gitRepo = new Repository(localPath);
+
+            var target = gitRepo.Branches.FirstOrDefault(b =>
+                b.FriendlyName.Equals(targetBranch, StringComparison.OrdinalIgnoreCase) ||
+                b.FriendlyName.Equals($"origin/{targetBranch}", StringComparison.OrdinalIgnoreCase))
+                ?? throw new InvalidOperationException($"Target branch '{targetBranch}' not found.");
+
+            var source = gitRepo.Branches.FirstOrDefault(b =>
+                b.FriendlyName.Equals(sourceBranch, StringComparison.OrdinalIgnoreCase) ||
+                b.FriendlyName.Equals($"origin/{sourceBranch}", StringComparison.OrdinalIgnoreCase))
+                ?? throw new InvalidOperationException($"Source branch '{sourceBranch}' not found.");
+
+            // Ensure the target branch is checked out locally so we can merge into it.
+            var localTarget = gitRepo.Branches.FirstOrDefault(b =>
+                !b.IsRemote && b.FriendlyName.Equals(targetBranch, StringComparison.OrdinalIgnoreCase));
+
+            if (localTarget is null)
+            {
+                localTarget = gitRepo.CreateBranch(targetBranch, target.Tip);
+                gitRepo.Branches.Update(localTarget, b => b.TrackedBranch = target.CanonicalName);
+            }
+
+            Commands.Checkout(gitRepo, localTarget);
+
+            var signature = new Signature("IssuePit", "issuepit@localhost", DateTimeOffset.UtcNow);
+            var mergeResult = gitRepo.Merge(source, signature, new MergeOptions
+            {
+                FastForwardStrategy = FastForwardStrategy.Default,
+            });
+
+            if (mergeResult.Status == MergeStatus.Conflicts)
+                throw new InvalidOperationException("Merge resulted in conflicts. Please resolve them manually.");
+
+            if (mergeResult.Status == MergeStatus.NonFastForward || mergeResult.Status == MergeStatus.FastForward)
+            {
+                // Push the merged result to remote
+                var pushRefSpec = $"refs/heads/{targetBranch}:refs/heads/{targetBranch}";
+                gitRepo.Network.Push(gitRepo.Network.Remotes["origin"], pushRefSpec, new PushOptions
+                {
+                    CredentialsProvider = BuildFetchOptions(repo).CredentialsProvider,
+                });
+                logger.LogInformation("Pushed merged '{TargetBranch}' to remote for repo {RepoId}", targetBranch, repo.Id);
+            }
+        }
+        finally
+        {
+            sem.Release();
+        }
+    }
+
     private static Commit? ResolveCommit(Repository gitRepo, string? branchOrSha)
     {
         if (string.IsNullOrEmpty(branchOrSha))

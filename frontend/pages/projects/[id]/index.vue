@@ -133,6 +133,17 @@
           <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Review</span>
         </NuxtLink>
 
+        <NuxtLink :to="`/projects/${id}/merge-requests`"
+          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 flex items-center gap-3 transition-colors group">
+          <div class="w-8 h-8 bg-orange-900/30 rounded-lg flex items-center justify-center shrink-0">
+            <svg class="w-4 h-4 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+            </svg>
+          </div>
+          <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Merge Requests</span>
+        </NuxtLink>
+
         <NuxtLink :to="`/projects/${id}/badges`"
           class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 flex items-center gap-3 transition-colors group">
           <div class="w-8 h-8 bg-pink-900/30 rounded-lg flex items-center justify-center shrink-0">

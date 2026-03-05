@@ -512,6 +512,27 @@ export interface GitRepository {
   throttledUntil?: string
 }
 
+export enum MergeRequestStatus {
+  Open = 'open',
+  Merged = 'merged',
+  Closed = 'closed',
+}
+
+export interface MergeRequest {
+  id: string
+  projectId: string
+  title: string
+  sourceBranch: string
+  targetBranch: string
+  status: MergeRequestStatus
+  autoMerge: boolean
+  headCommitSha?: string
+  createdAt: string
+  updatedAt: string
+  mergedAt?: string
+  closedAt?: string
+}
+
 export interface GitBranch {
   name: string
   isRemote: boolean

@@ -45,6 +45,7 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<OrganizationMember> OrganizationMembers => Set<OrganizationMember>();
     public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
     public DbSet<GitRepository> GitRepositories => Set<GitRepository>();
+    public DbSet<MergeRequest> MergeRequests => Set<MergeRequest>();
     public DbSet<TelegramBot> TelegramBots => Set<TelegramBot>();
     public DbSet<ProjectMetricSnapshot> ProjectMetricSnapshots => Set<ProjectMetricSnapshot>();
     public DbSet<IssueEvent> IssueEvents => Set<IssueEvent>();
