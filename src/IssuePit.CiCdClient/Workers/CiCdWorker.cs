@@ -52,10 +52,7 @@ public class CiCdWorker(
             {
                 var result = consumer.Consume(stoppingToken);
                 logger.LogInformation("Received cicd-trigger: key={Key}", result.Message.Key);
-                // Fire-and-forget: do not await so the consumer loop continues consuming
-                // new messages while this run is in progress. Concurrency is controlled by
-                // the per-org SemaphoreSlim inside ProcessTriggerAsync.
-                _ = ProcessTriggerAsync(result.Message.Key, result.Message.Value, stoppingToken);
+                await ProcessTriggerAsync(result.Message.Key, result.Message.Value, stoppingToken);
             }
             catch (OperationCanceledException)
             {
@@ -119,19 +116,6 @@ public class CiCdWorker(
     }
 
     private async Task ProcessTriggerAsync(string key, string payload, CancellationToken stoppingToken)
-    {
-        // Wrap the entire method so fire-and-forget callers get errors logged instead of silently lost.
-        try
-        {
-            await ProcessTriggerCoreAsync(key, payload, stoppingToken);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Unhandled exception in ProcessTriggerAsync for key={Key}", key);
-        }
-    }
-
-    private async Task ProcessTriggerCoreAsync(string key, string payload, CancellationToken stoppingToken)
     {
         // Expected payload: {"projectId":"...","commitSha":"...","branch":"...","workflow":"...","agentSessionId":"..."}
         using var scope = services.CreateScope();
