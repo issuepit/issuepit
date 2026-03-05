@@ -32,6 +32,11 @@ public sealed class AspireFixture : IAsyncLifetime
     {
         Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Building Aspire AppHost...");
 
+        // Signal to the AppHost that the cicd-client should use DryRun mode so act/Docker
+        // is never invoked during E2E tests. AppHost reads this variable before configuring
+        // the cicd-client resource (see Program.cs).
+        Environment.SetEnvironmentVariable("CICD_TEST_DRY_RUN", "true");
+
         // Disable resource logging so Aspire does not relay child-process stdout/stderr through
         // ILogger — the librdkafka C library can emit verbose connection-error lines to stderr
         // during Kafka container startup/teardown, which would otherwise flood the test output.
