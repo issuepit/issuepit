@@ -169,7 +169,13 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
         if (!string.IsNullOrWhiteSpace(trigger.Workflow))
         {
             list.Add("-W");
-            list.Add(trigger.Workflow);
+            // Normalize bare filenames (e.g. "ci.yml") to ".github/workflows/ci.yml" so that
+            // act resolves the file relative to the workspace root instead of failing with
+            // "no such file or directory" when looking for /workspace/ci.yml.
+            var workflow = trigger.Workflow;
+            if (string.IsNullOrEmpty(Path.GetDirectoryName(workflow)))
+                workflow = Path.Combine(".github", "workflows", workflow);
+            list.Add(workflow);
         }
 
         foreach (var pair in ParseKeyValuePairs(trigger.ActEnv))
