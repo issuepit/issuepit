@@ -239,13 +239,14 @@ public class IssueWorker(
             await db.SaveChangesAsync(sessionCts.Token);
         }
 
+        // Collect log lines so they can be saved to the DB regardless of success or failure.
+        var logBuffer = new List<AgentSessionLog>();
+
         try
         {
             var credentials = await LoadCredentialsAsync(agent.OrgId, db, sessionCts.Token);
             var runtime = runtimeFactory.Create(runtimeType);
 
-            // Collect log lines so they can be saved to the DB regardless of success or failure.
-            var logBuffer = new List<AgentSessionLog>();
             Task onLogLine(string line, LogStream stream)
             {
                 logBuffer.Add(new AgentSessionLog
@@ -278,6 +279,12 @@ public class IssueWorker(
             logger.LogInformation("Agent session {SessionId} was cancelled before launch completed", session.Id);
             session.Status = AgentSessionStatus.Cancelled;
             session.EndedAt = DateTime.UtcNow;
+            // Flush any buffered logs so [DEBUG] diagnostics are visible even on early cancellation.
+            if (logBuffer.Count > 0)
+            {
+                db.AgentSessionLogs.AddRange(logBuffer);
+                logBuffer.Clear();
+            }
             await db.SaveChangesAsync(cancellationToken);
         }
         catch (Exception ex)
@@ -285,6 +292,13 @@ public class IssueWorker(
             logger.LogError(ex, "Failed to launch agent {AgentId} for session {SessionId}", agent.Id, session.Id);
             session.Status = AgentSessionStatus.Failed;
             session.EndedAt = DateTime.UtcNow;
+            // Flush any buffered logs (e.g. [DEBUG] lines logged before the failure) so the
+            // Details tab is populated even when LaunchAsync throws early (e.g. docker image pull failure).
+            if (logBuffer.Count > 0)
+            {
+                db.AgentSessionLogs.AddRange(logBuffer);
+                logBuffer.Clear();
+            }
             // Store the error as a log line so it's visible in the session detail UI.
             db.AgentSessionLogs.Add(new AgentSessionLog
             {
