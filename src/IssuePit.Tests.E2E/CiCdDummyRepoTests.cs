@@ -47,40 +47,11 @@ public class CiCdDummyRepoTests : IAsyncLifetime
     public async Task DummyRepo_InitialCiCdRun_CompletesSuccessfully()
     {
         using var client = CreateCookieClient();
+        var (projectId, run) = await CreateProjectAndAwaitCompletedRunAsync(client);
 
-        var tenantId = await GetDefaultTenantIdAsync();
-        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+        Assert.Equal("Succeeded", run.GetProperty("statusName").GetString());
 
-        var username = $"e2e{Guid.NewGuid():N}"[..12];
-        const string password = "TestPass1!";
-        await client.PostAsJsonAsync("/api/auth/register", new { username, password });
-
-        var orgSlug = $"e2e-cicd-{Guid.NewGuid():N}"[..16];
-        var orgResp = await client.PostAsJsonAsync("/api/orgs", new { name = "CI/CD E2E Org", slug = orgSlug });
-        orgResp.EnsureSuccessStatusCode();
-        var org = await orgResp.Content.ReadFromJsonAsync<JsonElement>();
-        var orgId = Guid.Parse(org.GetProperty("id").GetString()!);
-
-        var projectSlug = $"e2e-cd-{Guid.NewGuid():N}"[..14];
-        var projResp = await client.PostAsJsonAsync("/api/projects", new { name = "CI/CD Test Project", slug = projectSlug, orgId });
-        Assert.Equal(HttpStatusCode.Created, projResp.StatusCode);
-        var project = await projResp.Content.ReadFromJsonAsync<JsonElement>();
-        var projectId = project.GetProperty("id").GetString()!;
-
-        // Link the local dummy repo — this fires TriggerInitialCiCdAsync which publishes a Kafka trigger.
-        var repoPath = _dummyRepoPath!;
-        var repoResp = await client.PostAsJsonAsync(
-            $"/api/projects/{projectId}/git/repo",
-            new { remoteUrl = repoPath, defaultBranch = "main" });
-        Assert.Equal(HttpStatusCode.Created, repoResp.StatusCode);
-
-        // Poll until a CI/CD run appears and reaches a terminal state.
-        var run = await PollForCompletedRunAsync(client, projectId, timeoutSeconds: 90);
-
-        Assert.NotNull(run);
-        Assert.Equal("Succeeded", run.Value.GetProperty("statusName").GetString());
-
-        var runId = run.Value.GetProperty("id").GetString()!;
+        var runId = run.GetProperty("id").GetString()!;
 
         // Verify run logs are stored and contain entries for both the "build" and "test" jobs.
         var logsResp = await client.GetAsync($"/api/cicd-runs/{runId}/logs");
@@ -115,34 +86,7 @@ public class CiCdDummyRepoTests : IAsyncLifetime
     public async Task DummyRepo_GetCiCdRuns_ReturnsRunWithProjectInfo()
     {
         using var client = CreateCookieClient();
-
-        var tenantId = await GetDefaultTenantIdAsync();
-        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
-
-        var username = $"e2e{Guid.NewGuid():N}"[..12];
-        const string password = "TestPass1!";
-        await client.PostAsJsonAsync("/api/auth/register", new { username, password });
-
-        var orgSlug = $"e2e-cicd2-{Guid.NewGuid():N}"[..16];
-        var orgResp = await client.PostAsJsonAsync("/api/orgs", new { name = "CI/CD E2E Org 2", slug = orgSlug });
-        orgResp.EnsureSuccessStatusCode();
-        var org = await orgResp.Content.ReadFromJsonAsync<JsonElement>();
-        var orgId = Guid.Parse(org.GetProperty("id").GetString()!);
-
-        var projectSlug = $"e2e-cd2-{Guid.NewGuid():N}"[..14];
-        var projResp = await client.PostAsJsonAsync("/api/projects", new { name = "CI/CD Runs Project", slug = projectSlug, orgId });
-        Assert.Equal(HttpStatusCode.Created, projResp.StatusCode);
-        var project = await projResp.Content.ReadFromJsonAsync<JsonElement>();
-        var projectId = project.GetProperty("id").GetString()!;
-
-        var repoResp = await client.PostAsJsonAsync(
-            $"/api/projects/{projectId}/git/repo",
-            new { remoteUrl = _dummyRepoPath!, defaultBranch = "main" });
-        Assert.Equal(HttpStatusCode.Created, repoResp.StatusCode);
-
-        // Wait for the run to appear in the list.
-        var run = await PollForCompletedRunAsync(client, projectId, timeoutSeconds: 90);
-        Assert.NotNull(run);
+        var (projectId, run) = await CreateProjectAndAwaitCompletedRunAsync(client, "2");
 
         // Verify the run list endpoint returns the run with expected fields.
         var runsResp = await client.GetAsync($"/api/cicd-runs?projectId={projectId}");
@@ -152,14 +96,112 @@ public class CiCdDummyRepoTests : IAsyncLifetime
 
         var firstRun = runs.EnumerateArray().First();
         Assert.Equal(projectId, firstRun.GetProperty("projectId").GetString());
-        Assert.Equal("CI/CD Runs Project", firstRun.GetProperty("projectName").GetString());
+        Assert.Equal("CI/CD Project2", firstRun.GetProperty("projectName").GetString());
         Assert.NotNull(firstRun.GetProperty("statusName").GetString());
         Assert.NotNull(firstRun.GetProperty("commitSha").GetString());
+    }
+
+    /// <summary>
+    /// Verifies that artifact metadata is persisted after a dry-run completes.
+    /// The DryRunCiCdRuntime writes a "dry-run-artifact" directory to the artifact server path;
+    /// CiCdWorker.ParseAndStoreArtifactsAsync picks it up and stores it in CiCdArtifact.
+    /// </summary>
+    [Fact]
+    public async Task DummyRepo_ArtifactsArePersisted_AfterRunCompletes()
+    {
+        using var client = CreateCookieClient();
+        var (_, run) = await CreateProjectAndAwaitCompletedRunAsync(client, "art");
+        var runId = run.GetProperty("id").GetString()!;
+
+        var artifactsResp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts");
+        Assert.Equal(HttpStatusCode.OK, artifactsResp.StatusCode);
+
+        var artifacts = await artifactsResp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(artifacts.GetArrayLength() > 0, "Expected at least one artifact to be stored after the dry-run.");
+
+        var artifact = artifacts.EnumerateArray().First(a =>
+            a.GetProperty("name").GetString() == "dry-run-artifact");
+        Assert.True(artifact.GetProperty("fileCount").GetInt32() >= 1, "Expected at least one file in the artifact.");
+        Assert.True(artifact.GetProperty("sizeBytes").GetInt64() > 0, "Expected artifact to have a positive size.");
+    }
+
+    /// <summary>
+    /// Verifies that TRX test results are parsed and persisted after a dry-run completes.
+    /// The DryRunCiCdRuntime writes a minimal TRX file; CiCdWorker.ParseAndStoreTestResultsAsync
+    /// picks it up and stores it as CiCdTestSuite + CiCdTestCase rows.
+    /// </summary>
+    [Fact]
+    public async Task DummyRepo_TestResultsArePersisted_AfterRunCompletes()
+    {
+        using var client = CreateCookieClient();
+        var (_, run) = await CreateProjectAndAwaitCompletedRunAsync(client, "trx");
+        var runId = run.GetProperty("id").GetString()!;
+
+        var resultsResp = await client.GetAsync($"/api/cicd-runs/{runId}/test-results");
+        Assert.Equal(HttpStatusCode.OK, resultsResp.StatusCode);
+
+        var suites = await resultsResp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(suites.GetArrayLength() > 0, "Expected at least one test suite to be stored after the dry-run.");
+
+        var suite = suites.EnumerateArray().First();
+        Assert.Equal(2, suite.GetProperty("totalTests").GetInt32());
+        Assert.Equal(2, suite.GetProperty("passedTests").GetInt32());
+        Assert.Equal(0, suite.GetProperty("failedTests").GetInt32());
+
+        var testCases = suite.GetProperty("testCases");
+        Assert.Equal(2, testCases.GetArrayLength());
+
+        var caseNames = testCases.EnumerateArray()
+            .Select(tc => tc.GetProperty("methodName").GetString())
+            .ToHashSet();
+        Assert.Contains("DryRunTest_Build", caseNames);
+        Assert.Contains("DryRunTest_Integration", caseNames);
+
+        foreach (var tc in testCases.EnumerateArray())
+            Assert.Equal("Passed", tc.GetProperty("outcomeName").GetString());
     }
 
     // ─────────────────────────── helpers ────────────────────────────────────
 
     private const int PollIntervalSeconds = 2;
+
+    /// <summary>
+    /// Creates a new isolated project with the dummy repo linked, waits for the initial run to
+    /// complete, and returns both the project ID and the completed run element.
+    /// Shared by tests that need a completed run to inspect.
+    /// </summary>
+    private async Task<(string projectId, JsonElement run)> CreateProjectAndAwaitCompletedRunAsync(
+        HttpClient client, string orgIdSuffix = "")
+    {
+        var tenantId = await GetDefaultTenantIdAsync();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"e2e{Guid.NewGuid():N}"[..12];
+        const string password = "TestPass1!";
+        await client.PostAsJsonAsync("/api/auth/register", new { username, password });
+
+        var orgSlug = $"e2e-cicd{orgIdSuffix}-{Guid.NewGuid():N}"[..16];
+        var orgResp = await client.PostAsJsonAsync("/api/orgs", new { name = $"CI/CD E2E Org{orgIdSuffix}", slug = orgSlug });
+        orgResp.EnsureSuccessStatusCode();
+        var org = await orgResp.Content.ReadFromJsonAsync<JsonElement>();
+        var orgId = Guid.Parse(org.GetProperty("id").GetString()!);
+
+        var projectSlug = $"e2e-cd{orgIdSuffix}-{Guid.NewGuid():N}"[..14];
+        var projResp = await client.PostAsJsonAsync("/api/projects", new { name = $"CI/CD Project{orgIdSuffix}", slug = projectSlug, orgId });
+        Assert.Equal(HttpStatusCode.Created, projResp.StatusCode);
+        var project = await projResp.Content.ReadFromJsonAsync<JsonElement>();
+        var projectId = project.GetProperty("id").GetString()!;
+
+        var repoResp = await client.PostAsJsonAsync(
+            $"/api/projects/{projectId}/git/repo",
+            new { remoteUrl = _dummyRepoPath!, defaultBranch = "main" });
+        Assert.Equal(HttpStatusCode.Created, repoResp.StatusCode);
+
+        var run = await PollForCompletedRunAsync(client, projectId, timeoutSeconds: 90);
+        Assert.NotNull(run);
+
+        return (projectId, run.Value);
+    }
 
     /// <summary>Creates a minimal git repository in a temp directory with a simple CI workflow.</summary>
     private static async Task<string> CreateDummyGitRepoAsync()
