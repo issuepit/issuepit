@@ -49,6 +49,13 @@ public class CiCdRun
     [MaxLength(500)]
     public string? WorkspacePath { get; set; }
 
+    /// <summary>GitHub Actions event name that triggered this run (e.g. "push", "pull_request", "workflow_dispatch").</summary>
+    [MaxLength(100)]
+    public string? EventName { get; set; }
+
+    /// <summary>JSON-serialised dictionary of workflow_dispatch inputs supplied when triggering this run. Null for non-dispatch runs.</summary>
+    public string? InputsJson { get; set; }
+
     /// <summary>
     /// JSON-serialised workflow graph (<c>{ jobs, edges, warnings }</c>) pre-computed when the run starts.
     /// Populated by the CI/CD worker so the graph API can return data even when the workspace is no longer

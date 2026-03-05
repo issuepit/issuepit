@@ -9,18 +9,12 @@ public class CoreDataSeeder(IssuePitDbContext db, ILogger<CoreDataSeeder> logger
 {
     public async Task SeedAsync()
     {
-        if (!await db.Tenants.AnyAsync())
-        {
-            var tenant = new Tenant
-            {
-                Id = Guid.NewGuid(),
-                Hostname = "localhost",
-                Name = "Default Tenant",
-            };
-            db.Tenants.Add(tenant);
-            await db.SaveChangesAsync();
+        var (_, tenantIsNew) = await db.Tenants.AddIfNotExistsAsync(
+            t => t.Hostname == "localhost",
+            new Tenant { Id = Guid.NewGuid(), Hostname = "localhost", Name = "Default Tenant" });
+        await db.SaveChangesAsync();
+        if (tenantIsNew)
             logger.LogInformation("Seeded default tenant.");
-        }
 
         var defaultTenant = await db.Tenants.FirstAsync(t => t.Hostname == "localhost");
 

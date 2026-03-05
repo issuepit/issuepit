@@ -60,6 +60,7 @@
           <thead class="bg-gray-900">
             <tr>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Status</th>
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Trigger</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Workflow</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Branch</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Commit</th>
@@ -78,6 +79,12 @@
                   <span :class="statusDot(run.status)" class="w-1.5 h-1.5 rounded-full" />
                   {{ run.statusName }}
                 </span>
+              </td>
+              <td class="px-4 py-3">
+                <span v-if="run.eventName" class="text-xs bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded font-mono">
+                  {{ run.eventName }}
+                </span>
+                <span v-else class="text-gray-600 text-xs">—</span>
               </td>
               <td class="px-4 py-3 text-gray-300">{{ run.workflow || '—' }}</td>
               <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ run.branch || '—' }}</td>
@@ -131,6 +138,7 @@
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Commit</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Started</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Duration</th>
+              <th class="px-4 py-3" />
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-800">
@@ -155,6 +163,13 @@
               <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ session.commitSha?.slice(0, 7) || '—' }}</td>
               <td class="px-4 py-3 text-gray-400 text-xs">{{ formatDate(session.startedAt) }}</td>
               <td class="px-4 py-3 text-gray-400 text-xs">{{ duration(session.startedAt, session.endedAt) }}</td>
+              <td class="px-4 py-3 text-right">
+                <button v-if="session.status === AgentSessionStatus.Failed || session.status === AgentSessionStatus.Cancelled"
+                  class="text-xs text-brand-400 hover:text-brand-300 transition-colors"
+                  @click.stop="retrySession(session.id)">
+                  Retry
+                </button>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -186,7 +201,7 @@
 
 <script setup lang="ts">
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
-import { CiCdRunStatus } from '~/types'
+import { CiCdRunStatus, AgentSessionStatus } from '~/types'
 
 const route = useRoute()
 const id = route.params.id as string
@@ -228,6 +243,11 @@ onMounted(async () => {
 
 async function cancelRun(runId: string) {
   await store.cancelRun(runId)
+}
+
+async function retrySession(sessionId: string) {
+  await store.retrySession(sessionId)
+  await store.fetchAgentSessions(id)
 }
 
 async function retryRun(runId: string) {
