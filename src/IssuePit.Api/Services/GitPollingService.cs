@@ -1,7 +1,5 @@
-using Confluent.Kafka;
 using IssuePit.Core.Data;
 using IssuePit.Core.Enums;
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 
 namespace IssuePit.Api.Services;
@@ -13,7 +11,6 @@ namespace IssuePit.Api.Services;
 public class GitPollingService(
     ILogger<GitPollingService> logger,
     IServiceScopeFactory scopeFactory,
-    IProducer<string, string> producer,
     IConfiguration configuration) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -54,6 +51,7 @@ public class GitPollingService(
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
         var gitService = scope.ServiceProvider.GetRequiredService<GitService>();
+        var runQueue = scope.ServiceProvider.GetRequiredService<CiCdRunQueueService>();
 
         var repos = await db.GitRepositories.ToListAsync(cancellationToken);
 
@@ -102,7 +100,15 @@ public class GitPollingService(
                         "New commit {Sha} on '{Branch}' for repo {RepoId} — triggering CI/CD",
                         sha, repo.DefaultBranch, repo.Id);
 
-                    await PublishCiCdTriggerAsync(producer, repo.ProjectId, sha, repo.DefaultBranch, repo.RemoteUrl, logger);
+                    await runQueue.EnqueueAsync(
+                        projectId: repo.ProjectId,
+                        commitSha: sha,
+                        branch: repo.DefaultBranch,
+                        workflow: null,
+                        eventName: "push",
+                        inputs: null,
+                        gitRepoUrl: repo.RemoteUrl,
+                        cancellationToken: cancellationToken);
 
                     repo.LastKnownCommitSha = sha;
                 }
@@ -155,40 +161,5 @@ public class GitPollingService(
 
         // Recoverable: server-side errors.
         return (GitRepoStatus.Throttled, message);
-    }
-
-    /// <summary>Publishes a CI/CD trigger message to the 'cicd-trigger' Kafka topic.</summary>
-    public static async Task PublishCiCdTriggerAsync(
-        IProducer<string, string> producer,
-        Guid projectId,
-        string commitSha,
-        string branch,
-        string gitRepoUrl,
-        ILogger logger)
-    {
-        var payload = JsonSerializer.Serialize(new
-        {
-            projectId,
-            commitSha,
-            branch,
-            workflow = (string?)null,
-            agentSessionId = (Guid?)null,
-            gitRepoUrl,
-            eventName = "push",
-        });
-
-        try
-        {
-            await producer.ProduceAsync("cicd-trigger", new Message<string, string>
-            {
-                Key = commitSha,
-                Value = payload,
-            });
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to publish CI/CD trigger for project {ProjectId} commit {Sha}", projectId, commitSha);
-            throw;
-        }
     }
 }

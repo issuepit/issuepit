@@ -1,4 +1,3 @@
-using Confluent.Kafka;
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
@@ -11,7 +10,7 @@ namespace IssuePit.Api.Controllers;
 
 [ApiController]
 [Route("api/projects/{projectId:guid}/git")]
-public class GitController(IssuePitDbContext db, TenantContext ctx, GitService gitService, ILogger<GitController> logger, IServiceScopeFactory scopeFactory, IProducer<string, string> producer) : ControllerBase
+public class GitController(IssuePitDbContext db, TenantContext ctx, GitService gitService, ILogger<GitController> logger, IServiceScopeFactory scopeFactory) : ControllerBase
 {
     // ─────────────────────────── repository config ──────────────────────────
 
@@ -271,6 +270,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
             using var scope = scopeFactory.CreateScope();
             var gitSvc = scope.ServiceProvider.GetRequiredService<GitService>();
             var dbCtx = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+            var runQueue = scope.ServiceProvider.GetRequiredService<CiCdRunQueueService>();
 
             await gitSvc.FetchAsync(repo);
 
@@ -281,7 +281,14 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
                 return;
             }
 
-            await GitPollingService.PublishCiCdTriggerAsync(producer, repo.ProjectId, sha, repo.DefaultBranch, repo.RemoteUrl, logger);
+            await runQueue.EnqueueAsync(
+                projectId: repo.ProjectId,
+                commitSha: sha,
+                branch: repo.DefaultBranch,
+                workflow: null,
+                eventName: "push",
+                inputs: null,
+                gitRepoUrl: repo.RemoteUrl);
 
             // Record the last known SHA so the poller doesn't re-trigger immediately.
             var repoRecord = await dbCtx.GitRepositories.FindAsync(repo.Id);

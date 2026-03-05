@@ -117,7 +117,7 @@ public class CiCdWorker(
 
     private async Task ProcessTriggerAsync(string key, string payload, CancellationToken stoppingToken)
     {
-        // Expected payload: {"projectId":"...","commitSha":"...","branch":"...","workflow":"...","agentSessionId":"..."}
+        // Expected payload: {"runId":"...","projectId":"...","commitSha":"...","branch":"...","workflow":"...","agentSessionId":"..."}
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
 
@@ -160,22 +160,38 @@ public class CiCdWorker(
         var org = project?.Organization;
         var semaphore = GetOrgSemaphore(org);
 
-        var run = new CiCdRun
+        // If the API pre-created the run (RunId is present), load that record;
+        // otherwise create a new one (fallback for old payloads without RunId).
+        CiCdRun run;
+        if (trigger.RunId.HasValue)
         {
-            Id = Guid.NewGuid(),
-            ProjectId = trigger.ProjectId,
-            AgentSessionId = trigger.AgentSessionId,
-            CommitSha = trigger.CommitSha ?? key,
-            Branch = trigger.Branch,
-            Workflow = trigger.Workflow,
-            WorkspacePath = trigger.WorkspacePath,
-            EventName = trigger.EventName,
-            InputsJson = trigger.Inputs is { Count: > 0 }
-                ? TrySerializeInputs(trigger.Inputs)
-                : null,
-            Status = semaphore is not null ? CiCdRunStatus.Pending : CiCdRunStatus.Running,
-            StartedAt = DateTime.UtcNow,
-        };
+            run = await db.CiCdRuns.FirstOrDefaultAsync(r => r.Id == trigger.RunId.Value, stoppingToken)
+                  ?? throw new InvalidOperationException($"Pre-created run {trigger.RunId} not found in DB.");
+        }
+        else
+        {
+            run = new CiCdRun
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = trigger.ProjectId,
+                AgentSessionId = trigger.AgentSessionId,
+                CommitSha = trigger.CommitSha ?? key,
+                Branch = trigger.Branch,
+                Workflow = trigger.Workflow,
+                WorkspacePath = trigger.WorkspacePath,
+                EventName = trigger.EventName,
+                InputsJson = trigger.Inputs is { Count: > 0 }
+                    ? TrySerializeInputs(trigger.Inputs)
+                    : null,
+                Status = CiCdRunStatus.Pending,
+                StartedAt = DateTime.UtcNow,
+            };
+            db.CiCdRuns.Add(run);
+            await db.SaveChangesAsync(stoppingToken);
+
+            logger.LogInformation("CI/CD run {RunId} created locally (legacy path — no RunId in payload) for commit {Commit} (event={EventName})",
+                run.Id, run.CommitSha, run.EventName);
+        }
 
         // Prepare a host-side artifact directory so act's built-in artifact server can serve
         // actions/upload-artifact and actions/download-artifact without a real GitHub token.
@@ -191,30 +207,22 @@ public class CiCdWorker(
         // User-supplied ActEnv values are appended after so they can override these defaults.
         trigger = trigger with { ActEnv = PrependIssuePitEnvVars(trigger.ActEnv, run, project?.OrgId) };
 
-        db.CiCdRuns.Add(run);
-        await db.SaveChangesAsync(stoppingToken);
-
-        logger.LogInformation("CI/CD run {RunId} created for commit {Commit} (event={EventName}, status={Status})",
-            run.Id, run.CommitSha, run.EventName, run.Status);
-
-        // Notify frontend clients that a new run was created so the runs list refreshes immediately.
-        await PublishLogLineAsync(run.Id.ToString(),
-            JsonSerializer.Serialize(new { @event = "run-created", status = run.Status.ToString() }));
-
         // Create a per-run CTS linked to the host stoppingToken so we can cancel this run independently.
         using var runCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         _activeRuns[run.Id] = runCts;
 
         // Acquire a slot from the org's concurrency pool if a limit is configured.
+        // Then transition from Pending → Running.
         if (semaphore is not null && org is not null)
         {
             logger.LogInformation(
                 "Waiting for available slot in org pool (org={OrgId}, limit={Limit}) for run {RunId}",
                 org.Id, org.MaxConcurrentRunners, run.Id);
             await semaphore.WaitAsync(runCts.Token);
-            run.Status = CiCdRunStatus.Running;
-            await db.SaveChangesAsync(stoppingToken);
         }
+
+        run.Status = CiCdRunStatus.Running;
+        await db.SaveChangesAsync(stoppingToken);
 
         try
         {
