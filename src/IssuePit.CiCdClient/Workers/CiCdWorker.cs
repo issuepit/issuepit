@@ -17,7 +17,8 @@ public class CiCdWorker(
     IConfiguration configuration,
     IServiceProvider services,
     IConnectionMultiplexer redis,
-    CiCdRuntimeFactory runtimeFactory) : BackgroundService
+    CiCdRuntimeFactory runtimeFactory,
+    ArtifactStorageService artifactStorage) : BackgroundService
 {
     // Tracks CancellationTokenSources for in-flight runs so they can be cancelled on demand.
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _activeRuns = new();
@@ -398,6 +399,20 @@ public class CiCdWorker(
                     catch { return 0L; }
                 });
 
+                // Upload artifact as a ZIP to S3 and store the download URL (best-effort).
+                string? downloadUrl = null;
+                if (artifactStorage.IsConfigured)
+                {
+                    try
+                    {
+                        downloadUrl = await artifactStorage.UploadArtifactAsync(dir, name, runId, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Failed to upload artifact '{Name}' for run {RunId} to S3", name, runId);
+                    }
+                }
+
                 db.CiCdArtifacts.Add(new CiCdArtifact
                 {
                     Id = Guid.NewGuid(),
@@ -405,6 +420,7 @@ public class CiCdWorker(
                     Name = name,
                     SizeBytes = sizeBytes,
                     FileCount = files.Count,
+                    DownloadUrl = downloadUrl,
                     CreatedAt = DateTime.UtcNow,
                 });
             }

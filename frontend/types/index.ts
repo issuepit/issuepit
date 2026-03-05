@@ -722,6 +722,7 @@ export interface CiCdArtifact {
   name: string
   sizeBytes: number
   fileCount: number
+  downloadUrl?: string
   createdAt: string
 }
 
