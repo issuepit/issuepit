@@ -41,7 +41,7 @@
           </div>
           <div>
             <p class="text-xs text-gray-500 mb-1">Issue</p>
-            <NuxtLink :to="`/projects/${projectId}/issues/${store.currentSession.issueId}`"
+            <NuxtLink :to="`/projects/${projectId}/issues/${store.currentSession.issueNumber}`"
               class="text-sm text-brand-400 hover:text-brand-300 transition-colors">
               #{{ store.currentSession.issueNumber }} {{ store.currentSession.issueTitle }}
             </NuxtLink>

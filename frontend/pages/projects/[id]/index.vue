@@ -230,7 +230,7 @@
                 {{ session.statusName }}
               </span>
               <div class="flex-1 min-w-0">
-                <NuxtLink :to="`/projects/${id}/issues/${session.issueId}`"
+                <NuxtLink :to="`/projects/${id}/issues/${session.issueNumber}`"
                   class="text-sm text-gray-300 hover:text-brand-300 transition-colors truncate block"
                   @click.stop>
                   #{{ session.issueNumber }} {{ session.issueTitle }}
