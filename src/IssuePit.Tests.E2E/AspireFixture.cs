@@ -30,6 +30,12 @@ public sealed class AspireFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // Tell the AppHost to run cicd-client in DryRun mode (no real Docker operations) and to
+        // skip heavy/optional containers (registry-mirror, npm-cache) that are not needed for core
+        // E2E tests. This prevents startup hangs and OOM issues in constrained DinD environments
+        // such as the IssuePit CI/CD helper image (ghcr.io/issuepit/issuepit-helper-opencode-act).
+        Environment.SetEnvironmentVariable("CICD_TEST_DRY_RUN", "true");
+
         Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Building Aspire AppHost...");
 
         // Disable resource logging so Aspire does not relay child-process stdout/stderr through

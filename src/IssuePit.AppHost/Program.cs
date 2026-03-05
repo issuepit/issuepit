@@ -1,5 +1,12 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
+// When running under the E2E test fixture, CICD_TEST_DRY_RUN=true is set so that:
+//   1. Heavy/optional containers (registry-mirror, npm-cache) are not auto-started.
+//   2. cicd-client runs in DryRun mode (no Docker operations needed during tests).
+// This reduces resource usage in DinD environments (e.g. the IssuePit CI/CD helper image)
+// and avoids pulling images that are not needed for the core E2E test scenarios.
+var isDryRunMode = Environment.GetEnvironmentVariable("CICD_TEST_DRY_RUN") == "true";
+
 var postgresServer = builder.AddPostgres("postgres")
     .WithImage("postgres", "17.6");
 var postgresDb = postgresServer.AddDatabase("issuepit-db");
@@ -18,6 +25,8 @@ var redis = builder.AddValkey("redis")
 
 // npm package cache (Verdaccio proxy): caches npm packages across CI/CD runs to speed up builds.
 // Packages are fetched from the upstream registry on first request and served locally thereafter.
+// In DryRun mode (E2E tests) cicd-client does not execute real jobs, so the cache is not needed;
+// mark it as ExplicitStart to avoid pulling its image and consuming resources unnecessarily.
 var npmCache = builder.AddContainer("npm-cache", "verdaccio/verdaccio", "6")
     .WithHttpEndpoint(targetPort: 4873, name: "http")
     .WithVolume("verdaccio-storage", "/verdaccio/storage")
@@ -54,6 +63,7 @@ var npmCache = builder.AddContainer("npm-cache", "verdaccio/verdaccio", "6")
                 """
         }
     ]);
+if (isDryRunMode) npmCache.WithExplicitStart();
 
 // LocalStack provides local AWS services (S3 for image uploads).
 // Open source (Apache 2.0). S3 endpoint: http://localstack:4566
@@ -69,13 +79,17 @@ var storage = builder.AddContainer("localstack", "localstack/localstack", "4.3")
 // Port 5100 is fixed (not dynamic) because EnsureRegistryMirrorAsync also binds on this port
 // when running outside Aspire, and DockerCiCdRuntime builds the DinD mirror URL from
 // CiCd__Docker__RegistryMirrorPort (default 5100). Keep port consistent across both deployments.
+// In DryRun mode (E2E tests) no real CI/CD jobs are executed, so the mirror is not needed;
+// mark it as ExplicitStart to avoid pulling registry:2 and consuming resources.
 var registryMirror = builder.AddContainer("registry-mirror", "registry", "2")
     .WithContainerName("issuepit-registry-mirror")
     .WithLifetime(ContainerLifetime.Persistent)
     .WithHttpEndpoint(targetPort: 5100, port: 5100, name: "http")
     .WithVolume("issuepit-registry-cache", "/var/lib/registry")
     .WithEnvironment("REGISTRY_PROXY_REMOTEURL", "https://registry-1.docker.io");
-    //.WithExplicitStart(); // not started in CI; configure real S3/B2 via ImageStorage settings; we need it in ci/cd for e2e tests which could upload data
+    // In normal mode the mirror auto-starts (needed for DinD image caching in CI/CD jobs).
+    // In DryRun mode (E2E tests) no real jobs run, so it is skipped to save resources.
+if (isDryRunMode) registryMirror.WithExplicitStart();
 
 // Management UI tools - set to explicit start so they are not auto-started in CI and require manual start from the Aspire dashboard
 postgresServer.WithPgAdmin(admin => admin.WithExplicitStart());
@@ -146,9 +160,20 @@ var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     .WaitForCompletion(kafkaInitializer)
     .WaitFor(kafka)
     .WaitFor(redis)
-    .WaitFor(registryMirror)
     .WithEnvironment("CiCd__NpmCacheUrl", npmCache.GetEndpoint("http"))
     .WithHttpHealthCheck("/health", endpointName: "http");
+
+// In normal mode cicd-client waits for the registry mirror to be healthy before starting
+// (it needs the mirror for DinD image caching). In DryRun mode no Docker operations are
+// performed, so skip this dependency to avoid stalling startup when the mirror is not available.
+if (!isDryRunMode)
+    cicdClient.WaitFor(registryMirror);
+
+// In DryRun mode tell cicd-client to use DryRunCiCdRuntime (no Docker operations).
+// The env var CiCd__DryRun is normalised to the config key CiCd:DryRun by
+// EnvironmentVariablesConfigurationProvider which CiCdRuntimeFactory reads.
+if (isDryRunMode)
+    cicdClient.WithEnvironment("CiCd__DryRun", "true");
 
 frontend
     .WithEnvironment("NUXT_PUBLIC_API_BASE", api.GetEndpoint("http"))

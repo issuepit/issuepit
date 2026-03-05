@@ -6,7 +6,7 @@ namespace IssuePit.CiCdClient.Runtimes;
 ///
 /// Selection logic (evaluated in order):
 /// <list type="number">
-///   <item><c>CiCd__DryRun=true</c> → <see cref="DryRunCiCdRuntime"/></item>
+///   <item><c>CiCd:DryRun=true</c> (env var <c>CiCd__DryRun</c>) → <see cref="DryRunCiCdRuntime"/></item>
 ///   <item><c>CiCd__Runtime=Native</c> → <see cref="NativeCiCdRuntime"/></item>
 ///   <item>Default → <see cref="DockerCiCdRuntime"/></item>
 /// </list>
@@ -15,7 +15,9 @@ public class CiCdRuntimeFactory(IServiceProvider services, IConfiguration config
 {
     public ICiCdRuntime Create()
     {
-        if (configuration.GetValue<bool>("CiCd__DryRun"))
+        // Note: env var CiCd__DryRun is normalised to config key CiCd:DryRun by
+        // EnvironmentVariablesConfigurationProvider (__ → :).
+        if (configuration.GetValue<bool>("CiCd:DryRun"))
             return services.GetRequiredService<DryRunCiCdRuntime>();
 
         var runtimeName = configuration["CiCd__Runtime"] ?? string.Empty;
