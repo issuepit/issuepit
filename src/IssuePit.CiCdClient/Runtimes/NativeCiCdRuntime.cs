@@ -21,8 +21,8 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
         Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {
-        var actBin = configuration["CiCd__ActBinaryPath"] ?? "act";
-        var workspacePath = trigger.WorkspacePath ?? configuration["CiCd__DefaultWorkspacePath"];
+        var actBin = configuration["CiCd:ActBinaryPath"] ?? "act";
+        var workspacePath = trigger.WorkspacePath ?? configuration["CiCd:DefaultWorkspacePath"];
 
         if (string.IsNullOrWhiteSpace(workspacePath) || !Directory.Exists(workspacePath))
             throw new InvalidOperationException(
@@ -36,7 +36,7 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
         // image-selection prompt in non-TTY environments.
         var actRunnerImage = !string.IsNullOrWhiteSpace(trigger.ActRunnerImage)
             ? trigger.ActRunnerImage
-            : configuration["CiCd__ActImage"] ?? "catthehacker/ubuntu:act-latest";
+            : configuration["CiCd:ActImage"] ?? "catthehacker/ubuntu:act-latest";
         var platformLabels = new[] { "ubuntu-latest", "ubuntu-24.04", "ubuntu-22.04", "ubuntu-20.04" };
 
         var argsList = BuildActArgumentsList(trigger).ToList();
