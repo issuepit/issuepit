@@ -295,7 +295,7 @@ public partial class DockerCiCdRuntime(
         {
             await dockerClient.Images.CreateImageAsync(
                 new ImagesCreateParameters { FromImage = image },
-                null,
+                null!,
                 // Progress handler is required by the API but pull status is captured via container logs
                 new Progress<JSONMessage>(),
                 cancellationToken);
@@ -818,7 +818,7 @@ public partial class DockerCiCdRuntime(
         };
 
         using var stream = await dockerClient.Containers.GetContainerLogsAsync(
-            containerId, false, logsParams, cancellationToken);
+            containerId, logsParams, cancellationToken);
 
         await DrainMultiplexedStreamAsync(stream, onLogLine, cancellationToken);
     }
@@ -833,7 +833,7 @@ public partial class DockerCiCdRuntime(
         Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {
-        var execCreate = await dockerClient.Exec.ExecCreateContainerAsync(
+        var execCreate = await dockerClient.Exec.CreateContainerExecAsync(
             containerId,
             new ContainerExecCreateParameters
             {
@@ -844,13 +844,13 @@ public partial class DockerCiCdRuntime(
             },
             cancellationToken);
 
-        using var stream = await dockerClient.Exec.StartAndAttachContainerExecAsync(
-            execCreate.ID, tty: false, cancellationToken);
+        using var stream = await dockerClient.Exec.StartContainerExecAsync(
+            execCreate.ID, new ContainerExecStartParameters { Detach = false }, cancellationToken);
 
         await DrainMultiplexedStreamAsync(stream, onLogLine, cancellationToken);
 
         var inspect = await dockerClient.Exec.InspectContainerExecAsync(execCreate.ID, CancellationToken.None);
-        return inspect.ExitCode;
+        return inspect.ExitCode ?? 0;
     }
 
     /// <summary>
@@ -886,7 +886,7 @@ public partial class DockerCiCdRuntime(
         IList<string> cmd,
         CancellationToken cancellationToken)
     {
-        var execCreate = await dockerClient.Exec.ExecCreateContainerAsync(
+        var execCreate = await dockerClient.Exec.CreateContainerExecAsync(
             containerId,
             new ContainerExecCreateParameters
             {
@@ -897,8 +897,8 @@ public partial class DockerCiCdRuntime(
             },
             cancellationToken);
 
-        using var stream = await dockerClient.Exec.StartAndAttachContainerExecAsync(
-            execCreate.ID, tty: false, cancellationToken);
+        using var stream = await dockerClient.Exec.StartContainerExecAsync(
+            execCreate.ID, new ContainerExecStartParameters { Detach = false }, cancellationToken);
 
         var sb = new StringBuilder();
         await DrainMultiplexedStreamAsync(
@@ -1093,7 +1093,7 @@ public partial class DockerCiCdRuntime(
         await onLogLine($"[DEBUG] Registry mirror: pulling registry:2", LogStream.Stdout);
         await dockerClient.Images.CreateImageAsync(
             new ImagesCreateParameters { FromImage = "registry", Tag = "2" },
-            null,
+            null!,
             new Progress<JSONMessage>(),
             cancellationToken);
 

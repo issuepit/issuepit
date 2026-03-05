@@ -11,7 +11,7 @@ builder.AddNpgsqlDbContext<IssuePitDbContext>("issuepit-db");
 builder.AddRedisClient("redis");
 
 // Register Docker client (used by DockerCiCdRuntime)
-builder.Services.AddSingleton(_ => new DockerClientConfiguration().CreateClient());
+builder.Services.AddSingleton(_ => new DockerClientBuilder().Build());
 
 // Register CI/CD runtime implementations
 builder.Services.AddSingleton<DockerCiCdRuntime>();
