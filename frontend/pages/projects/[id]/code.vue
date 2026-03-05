@@ -442,6 +442,11 @@ watch(() => route.query, async (query) => {
 
 onMounted(async () => {
   store.reset()
+  // Restore active tab from URL query param (e.g. ?tab=commits)
+  const queryTab = route.query.tab as string
+  if (queryTab === 'commits' || queryTab === 'branches') {
+    activeTab.value = queryTab
+  }
   await store.fetchRepo(id)
   repoChecked.value = true
   if (store.repo) {
