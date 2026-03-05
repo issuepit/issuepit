@@ -546,5 +546,5 @@ public class CiCdEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
     private sealed record ArtifactEntry(Guid id, string name, long sizeBytes, int fileCount, DateTime createdAt);
     private sealed record TestSuiteEntry(Guid id, string artifactName, int totalTests, int passedTests, int failedTests, int skippedTests, double durationMs, DateTime createdAt, List<TestCaseEntry> testCases);
-    private sealed record TestCaseEntry(Guid id, string fullName, string? className, string? methodName, int outcome, string outcomeName, double durationMs, string? errorMessage, string? stackTrace);
+    private sealed record TestCaseEntry(Guid id, string fullName, string? className, string? methodName, string outcome, string outcomeName, double durationMs, string? errorMessage, string? stackTrace);
 }

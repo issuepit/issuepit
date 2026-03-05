@@ -26,7 +26,7 @@ jobs:
       - name: Run tests and generate TRX
         run: |
           mkdir -p TestResults
-          cat > TestResults/results.trx << 'EOF'
+          cat > TestResults/test-results.trx << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <TestRun id="1" name="DummyRun" start="2024-01-01T10:00:00" finish="2024-01-01T10:00:05" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
             <TestDefinitions>

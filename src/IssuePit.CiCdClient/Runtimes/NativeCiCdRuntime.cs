@@ -32,18 +32,33 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
         // Validate the workflow with actionlint before running act (best-effort — silently skipped if not installed).
         await TryRunActionlintAsync(workspacePath, trigger.Workflow, onLogLine, cancellationToken);
 
-        var args = BuildActArguments(trigger);
+        // Build argument list: base args + -P platform flags to suppress act's interactive
+        // image-selection prompt in non-TTY environments.
+        var actRunnerImage = !string.IsNullOrWhiteSpace(trigger.ActRunnerImage)
+            ? trigger.ActRunnerImage
+            : configuration["CiCd__ActImage"] ?? "catthehacker/ubuntu:act-latest";
+        var platformLabels = new[] { "ubuntu-latest", "ubuntu-24.04", "ubuntu-22.04", "ubuntu-20.04" };
 
-        logger.LogInformation("Running act (native) for run {RunId}: {ActBin} {Args}", run.Id, actBin, args);
-
-        var psi = new ProcessStartInfo(actBin, args)
+        var argsList = BuildActArgumentsList(trigger).ToList();
+        foreach (var label in platformLabels)
         {
+            argsList.Add("-P");
+            argsList.Add($"{label}={actRunnerImage}");
+        }
+
+        logger.LogInformation("Running act (native) for run {RunId}: {ActBin} {Args}", run.Id, actBin, string.Join(' ', argsList));
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = actBin,
             WorkingDirectory = workspacePath,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true,
         };
+        foreach (var arg in argsList)
+            psi.ArgumentList.Add(arg);
 
         using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
         process.Start();

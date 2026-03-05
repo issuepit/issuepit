@@ -159,6 +159,11 @@ if (!string.IsNullOrEmpty(e2eRepoPath))
 {
     cicdClient.WithEnvironment("CiCd__Runtime", "Native");
     cicdClient.WithEnvironment("CiCd__DefaultWorkspacePath", e2eRepoPath);
+    // Use a small, pre-pulled Node.js image so act can run the dummy workflow without
+    // downloading catthehacker/ubuntu:act-latest (several GB) in CI.
+    // node:20-slim has bash + Node 20 which is sufficient for simple shell steps and
+    // actions/upload-artifact@v4 (pure Node.js).
+    cicdClient.WithEnvironment("CiCd__ActImage", "node:20-slim");
 }
 
 frontend
