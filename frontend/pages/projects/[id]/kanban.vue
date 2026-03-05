@@ -98,7 +98,7 @@
             @dragstart="onDragStart($event, issue)"
             @dragend="onIssueDragEnd"
             class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-lg p-3 cursor-pointer group transition-all hover:shadow-lg hover:-translate-y-0.5"
-            @click="$router.push(`/projects/${id}/issues/${issue.id}`)">
+            @click="$router.push(`/projects/${id}/issues/${issue.number}`)">
             <div class="flex items-start justify-between gap-2 mb-2">
               <span class="text-xs text-gray-600">#{{ issue.number }}</span>
               <span :class="priorityColor(issue.priority)" class="text-xs shrink-0">

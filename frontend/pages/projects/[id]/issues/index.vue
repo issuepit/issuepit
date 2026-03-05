@@ -97,7 +97,7 @@
         <tbody>
           <tr v-for="issue in store.filteredIssues" :key="issue.id"
             class="border-b border-gray-800/50 hover:bg-gray-800/40 cursor-pointer transition-colors"
-            @click="$router.push(`/projects/${id}/issues/${issue.id}`)">
+            @click="$router.push(`/projects/${id}/issues/${issue.number}`)">
             <td class="px-4 py-3">
               <span :class="statusIcon(issue.status).color" class="w-3.5 h-3.5 rounded-full block"></span>
             </td>

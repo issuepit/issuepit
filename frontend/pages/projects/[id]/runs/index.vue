@@ -145,7 +145,7 @@
               </td>
               <td class="px-4 py-3 text-gray-300">{{ session.agentName }}</td>
               <td class="px-4 py-3">
-                <NuxtLink :to="`/projects/${id}/issues/${session.issueId}`"
+                <NuxtLink :to="`/projects/${id}/issues/${session.issueNumber}`"
                   class="text-brand-400 hover:text-brand-300 transition-colors"
                   @click.stop>
                   #{{ session.issueNumber }} {{ session.issueTitle }}

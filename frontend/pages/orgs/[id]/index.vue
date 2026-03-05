@@ -258,7 +258,7 @@
                     v-for="issue in agendaIssuesByProject[agendaProject.id]"
                     :key="issue.id"
                     class="hover:bg-gray-900/50 transition-colors cursor-pointer"
-                    @click="navigateTo(`/projects/${agendaProject.id}/issues/${issue.id}`)"
+                    @click="navigateTo(`/projects/${agendaProject.id}/issues/${issue.number}`)"
                   >
                     <td class="px-4 py-3 text-gray-500 text-xs font-mono">{{ issue.number }}</td>
                     <td class="px-4 py-3 text-white">{{ issue.title }}</td>
