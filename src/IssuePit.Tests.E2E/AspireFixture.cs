@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection;
 using Aspire.Hosting;
 using Aspire.Hosting.ApplicationModel;
@@ -28,14 +29,24 @@ public sealed class AspireFixture : IAsyncLifetime
     /// </summary>
     public string? FrontendUrl { get; private set; }
 
+    /// <summary>
+    /// Temporary git repository created from the dummy-cicd-repo for E2E CI/CD runs.
+    /// Set when the dummy repo is found and git init succeeds; null otherwise (CI/CD pipeline
+    /// tests will skip automatically when act is not available).
+    /// </summary>
+    private string? _e2eRepoPath;
+
     public async Task InitializeAsync()
     {
         Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Building Aspire AppHost...");
 
-        // Signal to the AppHost that the cicd-client should use DryRun mode so act/Docker
-        // is never invoked during E2E tests. AppHost reads this variable before configuring
-        // the cicd-client resource (see Program.cs).
-        Environment.SetEnvironmentVariable("CICD_TEST_DRY_RUN", "true");
+        // Create a temporary git repository from the dummy-cicd-repo so that act can run the
+        // workflow in a real git context. AppHost reads CICD_E2E_REPO_PATH and configures the
+        // cicd-client to use NativeCiCdRuntime with that workspace path.
+        // CI/CD pipeline E2E tests will skip automatically when act is not installed.
+        _e2eRepoPath = TryCreateDummyGitRepo();
+        if (_e2eRepoPath is not null)
+            Environment.SetEnvironmentVariable("CICD_E2E_REPO_PATH", _e2eRepoPath);
 
         // Disable resource logging so Aspire does not relay child-process stdout/stderr through
         // ILogger — the librdkafka C library can emit verbose connection-error lines to stderr
@@ -163,6 +174,13 @@ public sealed class AspireFixture : IAsyncLifetime
         ApiClient?.Dispose();
         if (App is not null)
             await App.DisposeAsync();
+
+        // Clean up the temporary git repository created for E2E CI/CD runs.
+        if (_e2eRepoPath is not null && Directory.Exists(_e2eRepoPath))
+        {
+            try { Directory.Delete(_e2eRepoPath, recursive: true); }
+            catch { /* best-effort */ }
+        }
     }
 
     /// <summary>Polls the given <paramref name="client"/> until it returns a success response or the <paramref name="timeout"/> elapses.</summary>
@@ -182,5 +200,85 @@ public sealed class AspireFixture : IAsyncLifetime
             await Task.Delay(TimeSpan.FromSeconds(2));
         }
         return false;
+    }
+
+    /// <summary>
+    /// Locates the <c>test/dummy-cicd-repo</c> directory by walking up from the test binary
+    /// directory, then initialises a fresh temporary git repository from its contents.
+    /// Returns the path to the temporary repository, or <c>null</c> if the source directory
+    /// cannot be found or <c>git</c> is not on the PATH.
+    /// </summary>
+    private static string? TryCreateDummyGitRepo()
+    {
+        try
+        {
+            // Walk up from AppContext.BaseDirectory to find the repo root that contains
+            // test/dummy-cicd-repo (handles both flat and nested output directories).
+            string? sourceDir = null;
+            var dir = new DirectoryInfo(AppContext.BaseDirectory);
+            while (dir is not null)
+            {
+                var candidate = Path.Combine(dir.FullName, "test", "dummy-cicd-repo");
+                if (Directory.Exists(candidate))
+                {
+                    sourceDir = candidate;
+                    break;
+                }
+
+                dir = dir.Parent;
+            }
+
+            if (sourceDir is null)
+            {
+                Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] test/dummy-cicd-repo not found; CI/CD pipeline E2E tests will be skipped.");
+                return null;
+            }
+
+            // Create a fresh temp directory and copy the dummy repo content into it.
+            var tempDir = Path.Combine(Path.GetTempPath(), $"issuepit-e2e-repo-{Guid.NewGuid():N}");
+            CopyDirectory(sourceDir, tempDir);
+
+            // Initialise as a git repository so act can read the event context properly.
+            const string gitUserArgs = "-c user.email=test@test.com -c user.name=Test";
+            RunGitCommand(tempDir, "init");
+            RunGitCommand(tempDir, $"{gitUserArgs} add .");
+            RunGitCommand(tempDir, $"{gitUserArgs} commit -m \"initial commit\"");
+
+            Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Dummy E2E git repo created at {tempDir}");
+            return tempDir;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Could not create dummy E2E git repo: {ex.Message}");
+            return null;
+        }
+    }
+
+    private static void CopyDirectory(string source, string destination)
+    {
+        Directory.CreateDirectory(destination);
+        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(source, file);
+            var dest = Path.Combine(destination, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+            File.Copy(file, dest, overwrite: true);
+        }
+    }
+
+    private static void RunGitCommand(string workingDir, string arguments)
+    {
+        var psi = new ProcessStartInfo("git", arguments)
+        {
+            WorkingDirectory = workingDir,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        using var process = Process.Start(psi) ?? throw new InvalidOperationException("Could not start git");
+        process.WaitForExit();
+        if (process.ExitCode != 0)
+            throw new Exception($"git {arguments} exited with code {process.ExitCode}");
     }
 }

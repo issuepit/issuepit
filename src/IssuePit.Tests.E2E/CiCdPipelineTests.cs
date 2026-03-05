@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -5,25 +6,60 @@ using System.Text.Json;
 namespace IssuePit.Tests.E2E;
 
 /// <summary>
-/// E2E tests that exercise the full CI/CD pipeline using the DryRun runtime.
+/// E2E tests that exercise the full CI/CD pipeline using the NativeCiCdRuntime against a
+/// real dummy git repository.
 ///
 /// Flow:
 /// <list type="number">
 ///   <item>Register a user, create an org and a project via the API.</item>
 ///   <item>Trigger a CI/CD run; the CiCdWorker picks up the Kafka message and executes
-///         <see cref="IssuePit.CiCdClient.Runtimes.DryRunCiCdRuntime"/> which emits scripted
-///         log lines and writes simulated artifact + TRX files.</item>
+///         <see cref="IssuePit.CiCdClient.Runtimes.NativeCiCdRuntime"/> which runs <c>act</c>
+///         against the temporary git repo created from <c>test/dummy-cicd-repo</c>.</item>
 ///   <item>Poll until the run completes, then verify logs, job states, artifacts, and TRX
 ///         test results via the REST API.</item>
 /// </list>
 ///
-/// The DryRun mode is activated by setting <c>CICD_TEST_DRY_RUN=true</c> in
-/// <see cref="AspireFixture.InitializeAsync"/> before the AppHost starts.
+/// Requirements:
+/// <list type="bullet">
+///   <item>The <c>act</c> binary must be on the PATH (tests return early if it is not).</item>
+///   <item><see cref="AspireFixture"/> must have successfully created the temporary git repo
+///         (sets <c>CICD_E2E_REPO_PATH</c>); AppHost configures the cicd-client with
+///         <c>CiCd__Runtime=Native</c> and <c>CiCd__DefaultWorkspacePath</c> accordingly.</item>
+/// </list>
 /// </summary>
 [Collection("E2E")]
 [Trait("Category", "E2E")]
 public class CiCdPipelineTests(AspireFixture fixture)
 {
+    /// <summary>Returns <c>true</c> when the <c>act</c> binary is available on the PATH.</summary>
+    private static bool IsActAvailable()
+    {
+        try
+        {
+            using var p = Process.Start(new ProcessStartInfo("act", "--version")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            });
+            p?.WaitForExit(3000);
+            return p?.ExitCode == 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> when both the act binary and the dummy E2E repo are available.
+    /// When <c>false</c>, tests return early without asserting anything.
+    /// </summary>
+    private static bool IsReady() =>
+        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CICD_E2E_REPO_PATH"))
+        && IsActAvailable();
+
     private HttpClient CreateCookieClient()
     {
         var handler = new HttpClientHandler { CookieContainer = new System.Net.CookieContainer() };
@@ -76,40 +112,44 @@ public class CiCdPipelineTests(AspireFixture fixture)
     }
 
     [Fact]
-    public async Task CiCdRun_DryRun_RunSucceeds()
+    public async Task CiCdRun_NativeAct_RunSucceeds()
     {
+        if (!IsReady()) return;
+
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
 
         var triggerResp = await client.PostAsJsonAsync("/api/cicd-runs/trigger", new
         {
             projectId = Guid.Parse(projectId),
-            commitSha = "dryrun-abc123",
+            commitSha = "e2e-abc123",
             eventName = "push",
             branch = "main",
             workflow = "ci.yml",
         });
         Assert.Equal(HttpStatusCode.Accepted, triggerResp.StatusCode);
 
-        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromSeconds(30));
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
         Assert.Equal("Succeeded", run.GetProperty("statusName").GetString());
     }
 
     [Fact]
-    public async Task CiCdRun_DryRun_CapturesLogsForBothJobs()
+    public async Task CiCdRun_NativeAct_CapturesLogsForBothJobs()
     {
+        if (!IsReady()) return;
+
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
 
         await client.PostAsJsonAsync("/api/cicd-runs/trigger", new
         {
             projectId = Guid.Parse(projectId),
-            commitSha = "dryrun-log-abc",
+            commitSha = "e2e-log-abc",
             eventName = "push",
             branch = "main",
         });
 
-        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromSeconds(30));
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
         var runId = run.GetProperty("id").GetString()!;
 
         var logsResp = await client.GetAsync($"/api/cicd-runs/{runId}/logs");
@@ -123,25 +163,29 @@ public class CiCdPipelineTests(AspireFixture fixture)
             .ToList();
 
         // Both the build and test jobs should appear in the captured logs.
-        Assert.True(logLines.Any(l => l.Contains("build")), "Expected a log line mentioning the 'build' job");
-        Assert.True(logLines.Any(l => l.Contains("test")), "Expected a log line mentioning the 'test' job");
+        Assert.True(logLines.Any(l => l.Contains("build", StringComparison.OrdinalIgnoreCase)),
+            "Expected a log line mentioning the 'build' job");
+        Assert.True(logLines.Any(l => l.Contains("test", StringComparison.OrdinalIgnoreCase)),
+            "Expected a log line mentioning the 'test' job");
     }
 
     [Fact]
-    public async Task CiCdRun_DryRun_JobLogsFilterByJobId()
+    public async Task CiCdRun_NativeAct_JobLogsFilterByJobId()
     {
+        if (!IsReady()) return;
+
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
 
         await client.PostAsJsonAsync("/api/cicd-runs/trigger", new
         {
             projectId = Guid.Parse(projectId),
-            commitSha = "dryrun-joblogs-abc",
+            commitSha = "e2e-joblogs-abc",
             eventName = "push",
             branch = "main",
         });
 
-        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromSeconds(30));
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
         var runId = run.GetProperty("id").GetString()!;
 
         // Fetch logs filtered to the 'build' job only.
@@ -160,56 +204,60 @@ public class CiCdPipelineTests(AspireFixture fixture)
     }
 
     [Fact]
-    public async Task CiCdRun_DryRun_StoresArtifacts()
+    public async Task CiCdRun_NativeAct_StoresArtifacts()
     {
+        if (!IsReady()) return;
+
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
 
         await client.PostAsJsonAsync("/api/cicd-runs/trigger", new
         {
             projectId = Guid.Parse(projectId),
-            commitSha = "dryrun-artifact-abc",
+            commitSha = "e2e-artifact-abc",
             eventName = "push",
             branch = "main",
         });
 
-        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromSeconds(30));
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
         var runId = run.GetProperty("id").GetString()!;
 
         var artifactsResp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts");
         Assert.Equal(HttpStatusCode.OK, artifactsResp.StatusCode);
         var artifacts = await artifactsResp.Content.ReadFromJsonAsync<JsonElement>();
 
-        Assert.Equal(2, artifacts.GetArrayLength());
-
+        // The dummy workflow uploads build-output and test-results artifacts.
         var names = artifacts.EnumerateArray()
             .Select(a => a.GetProperty("name").GetString())
-            .OrderBy(n => n)
             .ToList();
-        Assert.Equal(new[] { "build-output", "test-results" }, names);
+        Assert.Contains("build-output", names);
+        Assert.Contains("test-results", names);
     }
 
     [Fact]
-    public async Task CiCdRun_DryRun_StoresTrxTestResults()
+    public async Task CiCdRun_NativeAct_StoresTrxTestResults()
     {
+        if (!IsReady()) return;
+
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
 
         await client.PostAsJsonAsync("/api/cicd-runs/trigger", new
         {
             projectId = Guid.Parse(projectId),
-            commitSha = "dryrun-trx-abc",
+            commitSha = "e2e-trx-abc",
             eventName = "push",
             branch = "main",
         });
 
-        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromSeconds(30));
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
         var runId = run.GetProperty("id").GetString()!;
 
         var testResultsResp = await client.GetAsync($"/api/cicd-runs/{runId}/test-results");
         Assert.Equal(HttpStatusCode.OK, testResultsResp.StatusCode);
         var suites = await testResultsResp.Content.ReadFromJsonAsync<JsonElement>();
 
+        // The dummy workflow uploads exactly one test-results artifact with one TRX file.
         Assert.Equal(1, suites.GetArrayLength());
 
         var suite = suites[0];
