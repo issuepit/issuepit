@@ -48,7 +48,10 @@
           :class="['min-h-20 border-b border-r border-gray-800/60 p-1.5 relative cursor-pointer',
             cell.isToday ? 'bg-brand-900/20' : 'hover:bg-gray-800/30',
             cell.isCurrentMonth ? '' : 'opacity-40']"
-          @click="cell.date && onMonthCellClick(cell.date)">
+          @click="cell.date && !draggingTodo && onMonthCellClick(cell.date)"
+          @dragover="onMonthCellDragOver($event, cell.date)"
+          @dragleave="monthHoverDate = null"
+          @drop.prevent="cell.date && onMonthDrop(cell.date)">
 
           <span v-if="cell.day"
             :class="['text-xs font-medium w-5 h-5 flex items-center justify-center rounded-full mb-1',
@@ -73,13 +76,10 @@
             </div>
           </div>
 
-          <!-- Drop target overlay -->
+          <!-- Drop highlight overlay (pointer-events-none, purely visual) -->
           <div v-if="draggingTodo && cell.date"
-            @dragover.prevent="monthHoverDate = cell.date"
-            @dragleave="monthHoverDate = null"
-            @drop.prevent="onMonthDrop(cell.date)"
-            :class="['absolute inset-0 rounded transition-colors z-10',
-              monthHoverDate && isSameDay(monthHoverDate, cell.date) ? 'bg-brand-500/20 ring-1 ring-brand-500' : 'bg-transparent']">
+            class="pointer-events-none absolute inset-0 rounded transition-colors z-10"
+            :class="monthHoverDate && isSameDay(monthHoverDate, cell.date) ? 'bg-brand-500/20 ring-1 ring-brand-500' : ''">
           </div>
         </div>
       </div>
@@ -136,11 +136,11 @@
                   @dragstart.stop="onDragStart(todo)"
                   @dragend.stop="onDragEnd"
                   @click.stop="$emit('select', todo)"
-                  :class="['absolute inset-x-0.5 top-0.5 text-xs px-1 rounded truncate cursor-grab active:cursor-grabbing transition-colors z-10',
+                  :class="['absolute inset-0.5 text-xs px-1 rounded truncate cursor-grab active:cursor-grabbing transition-colors z-10 flex items-center',
                     todo.isCompleted
                       ? 'line-through text-gray-600 bg-gray-800/60'
                       : 'bg-brand-600/80 text-white hover:bg-brand-500/80']"
-                  style="font-size: 10px; line-height: 22px; height: 22px">
+                  style="font-size: 10px;">
                   {{ todo.title }}
                 </div>
               </template>
@@ -154,6 +154,7 @@
 
 <script setup lang="ts">
 import type { Todo } from '~/types'
+import { TodoRecurringInterval } from '~/types'
 
 const props = defineProps<{ todos: Todo[] }>()
 const emit = defineEmits<{
@@ -275,13 +276,25 @@ const calendarCells = computed((): CalendarCell[] => {
   const firstDay = new Date(year, month, 1).getDay()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
 
+  const rangeStart = new Date(year, month, 1)
+  const rangeEnd = new Date(year, month, daysInMonth, 23, 59, 59, 999)
+
   const todosByDate: Record<string, Todo[]> = {}
   for (const todo of props.todos) {
     if (!todo.dueDate) continue
     const d = new Date(todo.dueDate)
-    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
-    if (!todosByDate[key]) todosByDate[key] = []
-    todosByDate[key].push(todo)
+    if (todo.recurringInterval === TodoRecurringInterval.None) {
+      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+      if (!todosByDate[key]) todosByDate[key] = []
+      todosByDate[key].push(todo)
+    } else {
+      const dates = getRecurringDatesInRange(d, todo.recurringInterval, rangeStart, rangeEnd)
+      for (const date of dates) {
+        const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
+        if (!todosByDate[key]) todosByDate[key] = []
+        todosByDate[key].push(todo)
+      }
+    }
   }
 
   const cells: CalendarCell[] = []
@@ -366,14 +379,30 @@ const timeSlots = computed((): TimeSlot[] => {
 // Map: dayKey → { slotMinutes → Todo[] }
 const weekTodos = computed((): Record<string, Record<number, Todo[]>> => {
   const map: Record<string, Record<number, Todo[]>> = {}
+  const rangeStart = new Date(weekStart.value)
+  const rangeEnd = new Date(weekStart.value)
+  rangeEnd.setDate(rangeEnd.getDate() + 6)
+  rangeEnd.setHours(23, 59, 59, 999)
+
   for (const todo of props.todos) {
     if (!todo.dueDate) continue
     const d = new Date(todo.dueDate)
-    const key = dateKey(d)
-    if (!map[key]) map[key] = {}
-    const slotMins = Math.floor((d.getHours() * 60 + d.getMinutes()) / 30) * 30
-    if (!map[key][slotMins]) map[key][slotMins] = []
-    map[key][slotMins].push(todo)
+    if (todo.recurringInterval === TodoRecurringInterval.None) {
+      const key = dateKey(d)
+      if (!map[key]) map[key] = {}
+      const slotMins = Math.floor((d.getHours() * 60 + d.getMinutes()) / 30) * 30
+      if (!map[key][slotMins]) map[key][slotMins] = []
+      map[key][slotMins].push(todo)
+    } else {
+      const dates = getRecurringDatesInRange(d, todo.recurringInterval, rangeStart, rangeEnd)
+      for (const date of dates) {
+        const key = dateKey(date)
+        if (!map[key]) map[key] = {}
+        const slotMins = Math.floor((date.getHours() * 60 + date.getMinutes()) / 30) * 30
+        if (!map[key][slotMins]) map[key][slotMins] = []
+        map[key][slotMins].push(todo)
+      }
+    }
   }
   return map
 })
@@ -397,6 +426,12 @@ function onDragEnd() {
   draggingTodo.value = null
   monthHoverDate.value = null
   weekHoverSlot.value = null
+}
+
+function onMonthCellDragOver(event: DragEvent, date: Date | null) {
+  if (!draggingTodo.value || !date) return
+  event.preventDefault()
+  monthHoverDate.value = date
 }
 
 function onMonthDrop(date: Date) {
@@ -438,5 +473,53 @@ function dateKey(d: Date): string {
 
 function isSameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+}
+
+// ── Recurring helpers ──────────────────────────────────────────────────────
+function advanceDate(date: Date, interval: TodoRecurringInterval): Date {
+  const next = new Date(date)
+  switch (interval) {
+    case TodoRecurringInterval.Daily:
+      next.setDate(next.getDate() + 1)
+      break
+    case TodoRecurringInterval.Weekly:
+      next.setDate(next.getDate() + 7)
+      break
+    case TodoRecurringInterval.Monthly:
+      next.setMonth(next.getMonth() + 1)
+      break
+    case TodoRecurringInterval.Yearly:
+      next.setFullYear(next.getFullYear() + 1)
+      break
+  }
+  return next
+}
+
+function getRecurringDatesInRange(dueDate: Date, interval: TodoRecurringInterval, rangeStart: Date, rangeEnd: Date): Date[] {
+  if (interval === TodoRecurringInterval.None) return []
+  const result: Date[] = []
+  let current = new Date(dueDate)
+  if (current > rangeEnd) return result
+  // Fast-forward to just before rangeStart for high-frequency intervals
+  if (current < rangeStart) {
+    const msToStart = rangeStart.getTime() - current.getTime()
+    if (interval === TodoRecurringInterval.Daily) {
+      const daysToSkip = Math.floor(msToStart / (24 * 60 * 60 * 1000))
+      current.setDate(current.getDate() + daysToSkip)
+    } else if (interval === TodoRecurringInterval.Weekly) {
+      const weeksToSkip = Math.floor(msToStart / (7 * 24 * 60 * 60 * 1000))
+      current.setDate(current.getDate() + weeksToSkip * 7)
+    }
+    // Advance one step at a time for monthly/yearly (few iterations) and to handle any remaining gap
+    while (current < rangeStart) {
+      current = advanceDate(current, interval)
+    }
+  }
+  // Collect all occurrences in range
+  while (current <= rangeEnd) {
+    result.push(new Date(current))
+    current = advanceDate(current, interval)
+  }
+  return result
 }
 </script>
