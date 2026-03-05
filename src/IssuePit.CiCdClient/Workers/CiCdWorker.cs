@@ -185,6 +185,12 @@ public class CiCdWorker(
         Directory.CreateDirectory(artifactDir);
         trigger = trigger with { ArtifactServerPath = artifactDir };
 
+        // Prepend ISSUEPIT_* environment variables so that workflow steps can detect they are
+        // running inside IssuePit and skip operations that require external credentials
+        // (container registry push, GitHub Pages deployment, release PR creation, etc.).
+        // User-supplied ActEnv values are appended after so they can override these defaults.
+        trigger = trigger with { ActEnv = PrependIssuePitEnvVars(trigger.ActEnv, run, project?.OrgId) };
+
         db.CiCdRuns.Add(run);
         await db.SaveChangesAsync(stoppingToken);
 
@@ -574,6 +580,33 @@ public class CiCdWorker(
             logger.LogWarning(ex, "Could not serialize run inputs; inputs will not be stored");
             return null;
         }
+    }
+    
+    /// <summary>
+    /// Builds the ISSUEPIT_* env var block and prepends it to any existing <paramref name="existingActEnv"/>.
+    /// The ISSUEPIT_* vars are always injected first so that user-supplied ActEnv values can
+    /// override them by appearing later in the list (act uses last-wins semantics for duplicate keys).
+    /// </summary>
+    /// <remarks>
+    /// Exposed as <c>internal static</c> so it can be tested directly from unit tests.
+    /// </remarks>
+    internal static string PrependIssuePitEnvVars(string? existingActEnv, CiCdRun run, Guid? orgId)
+    {
+        var lines = new List<string>
+        {
+            "ISSUEPIT_RUN=true",
+            $"ISSUEPIT_PROJECT_ID={run.ProjectId}",
+            $"ISSUEPIT_RUN_ID={run.Id}",
+        };
+
+        if (orgId.HasValue)
+            lines.Add($"ISSUEPIT_ORG_ID={orgId.Value}");
+
+        var issuepitEnv = string.Join('\n', lines);
+
+        return string.IsNullOrWhiteSpace(existingActEnv)
+            ? issuepitEnv
+            : issuepitEnv + "\n" + existingActEnv;
     }
 }
 
