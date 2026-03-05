@@ -134,7 +134,7 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
 
         await dockerClient.Images.CreateImageAsync(
             new ImagesCreateParameters { FromImage = fromImage, Tag = tag },
-            authConfig: null,
+            authConfig: null!,
             new Progress<JSONMessage>(msg =>
             {
                 if (!string.IsNullOrEmpty(msg.Status))

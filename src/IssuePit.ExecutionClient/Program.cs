@@ -10,7 +10,7 @@ builder.AddKafkaHealthCheck();
 builder.AddNpgsqlDbContext<IssuePitDbContext>("issuepit-db");
 
 // Register Docker client (used by DockerAgentRuntime)
-builder.Services.AddSingleton(_ => new DockerClientConfiguration().CreateClient());
+builder.Services.AddSingleton(_ => new DockerClientBuilder().Build());
 
 // HttpClient factory (used by OpenSandboxAgentRuntime)
 builder.Services.AddHttpClient();
