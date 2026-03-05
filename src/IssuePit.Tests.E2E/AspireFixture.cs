@@ -30,6 +30,11 @@ public sealed class AspireFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // Enable dry-run mode for the cicd-client so E2E tests simulate CI/CD runs without
+        // requiring Docker or act. The AppHost reads this env var and forwards CiCd__DryRun=true
+        // to the cicd-client process (see AppHost Program.cs).
+        Environment.SetEnvironmentVariable("CICD_TEST_DRY_RUN", "true");
+
         Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Building Aspire AppHost...");
 
         // Disable resource logging so Aspire does not relay child-process stdout/stderr through

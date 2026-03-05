@@ -150,6 +150,12 @@ var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     .WithEnvironment("CiCd__NpmCacheUrl", npmCache.GetEndpoint("http"))
     .WithHttpHealthCheck("/health", endpointName: "http");
 
+// When running under the E2E test suite, enable dry-run mode so the cicd-client
+// simulates CI/CD runs without requiring Docker or act. Set CICD_TEST_DRY_RUN=true
+// in the test process (e.g. AspireFixture) before building the AppHost.
+if (Environment.GetEnvironmentVariable("CICD_TEST_DRY_RUN") == "true")
+    cicdClient.WithEnvironment("CiCd__DryRun", "true");
+
 frontend
     .WithEnvironment("NUXT_PUBLIC_API_BASE", api.GetEndpoint("http"))
     .WithEnvironment("NUXT_PUBLIC_MCP_BASE", mcpServer.GetEndpoint("http"))
