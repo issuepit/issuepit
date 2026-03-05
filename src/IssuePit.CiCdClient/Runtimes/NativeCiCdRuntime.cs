@@ -204,9 +204,8 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
         var concurrentJobs = trigger.ConcurrentJobs ?? DefaultConcurrentJobs;
         if (concurrentJobs > 0)
         {
-            // invalid and therefore disabled for now
-            //list.Add("--concurrent-jobs");
-            //list.Add(concurrentJobs.ToString());
+            list.Add("--concurrent-jobs");
+            list.Add(concurrentJobs.ToString());
         }
 
         return list;
