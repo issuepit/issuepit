@@ -779,6 +779,14 @@ const logSearchQuery = ref('')
 /** Word/line wrap for log display. Off by default for better readability of long log lines. */
 const wordWrap = ref(false)
 
+/**
+ * Per-job completion status received via backend `job-status` SignalR events.
+ * Provides authoritative real-time completion state without requiring the frontend to
+ * parse "Job succeeded" / "Job failed" strings from log lines.
+ * Keyed by resolved graph node ID (via resolveLogJobId).
+ */
+const jobStatusMap = ref(new Map<string, { isComplete: boolean; hasError: boolean }>())
+
 const streamTabs = [
   { label: 'All', value: null },
   { label: 'Stdout', value: 'stdout' },
@@ -1172,10 +1180,6 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
         bfsQueue.push(parent)
       }
     }
-  // A job is implicitly complete if any of its direct downstream jobs has started.
-  const implicitlyCompleteIds = new Set<string>()
-  for (const e of edges) {
-    if (startedIds.has(e.to)) implicitlyCompleteIds.add(e.from)
   }
 
   return Array.from(allIds).map(id => {
@@ -1183,9 +1187,12 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
     const logs = jobLogMap.value.get(id) ?? { logCount: 0, hasError: false, isComplete: false, instances: new Map() }
     const pos = posMap.get(id) ?? { x: PAD, y: PAD }
     const hasStarted = logs.logCount > 0
-    // Mark job as complete if it logged "Job succeeded/failed", if the overall run has ended,
-    // or if any downstream job has already started (cannot start until this one is done).
-    const isComplete = logs.isComplete || (hasStarted && runIsTerminal.value) || implicitlyCompleteIds.has(id)
+    // Backend-emitted job-status event takes precedence as the authoritative completion signal.
+    // Log-based detection (logs.isComplete) covers historical data loaded on page open.
+    // implicitlyCompleteIds provides heuristic coverage before the event arrives.
+    const statusEvent = jobStatusMap.value.get(id)
+    const isComplete = statusEvent?.isComplete || logs.isComplete || (hasStarted && runIsTerminal.value) || implicitlyCompleteIds.has(id)
+    const hasError = (statusEvent?.hasError ?? false) || logs.hasError
     const matrixCount = logs.rawJobIds?.size ?? (hasStarted ? 1 : 0)
 
     // Build per-instance matrix data for the grouped display.
@@ -1205,7 +1212,7 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
       name: meta?.name ?? id,
       needs: meta?.needs ?? [],
       logCount: logs.logCount,
-      hasError: logs.hasError,
+      hasError,
       hasStarted,
       isComplete,
       workflowFile: meta?.workflowFile,
@@ -1504,7 +1511,7 @@ onMounted(async () => {
     await cicdConnection.value.invoke('JoinRun', runId).catch((e: unknown) => { console.warn('Failed to join run group', e) })
     cicdConnection.value.on('LogLine', (event: { runId: string; payload: string }) => {
       try {
-        const data = JSON.parse(event.payload) as { event?: string; stream?: string; line?: string; jobId?: string; stepId?: string; timestamp?: string }
+        const data = JSON.parse(event.payload) as { event?: string; stream?: string; line?: string; jobId?: string; stepId?: string; timestamp?: string; status?: string }
         if (data.event === 'run-completed') {
           now.value = Date.now()
           // Refresh only run metadata (status, endedAt) — do NOT re-fetch logs to avoid losing scroll position
@@ -1513,6 +1520,18 @@ onMounted(async () => {
           store.fetchTestResults(runId)
           store.fetchArtifacts(runId)
         } else if (data.event === 'run-heartbeat') {
+          now.value = Date.now()
+        } else if (data.event === 'job-status' && data.jobId) {
+          // Authoritative per-job completion event emitted by the backend when act
+          // reports "Job succeeded" / "Job failed". Update jobStatusMap so enrichedJobs
+          // reflects the new state without waiting for the log line to be processed.
+          const resolvedId = resolveLogJobId(data.jobId)
+          const newMap = new Map(jobStatusMap.value)
+          newMap.set(resolvedId, {
+            isComplete: true,
+            hasError: data.status === 'failed',
+          })
+          jobStatusMap.value = newMap
           now.value = Date.now()
         } else if (data.line !== undefined) {
           store.currentRunLogs.push({
