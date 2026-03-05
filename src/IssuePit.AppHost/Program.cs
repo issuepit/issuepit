@@ -260,6 +260,13 @@ var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("exe
     .WaitFor(redis)
     .WithHttpHealthCheck("/health", endpointName: "http");
 
+// Scale cicd-client horizontally to allow multiple concurrent runs.
+// Each replica is a separate Kafka consumer in the "cicd-client" group; Kafka distributes
+// partitions across replicas so each instance processes one run at a time without blocking others.
+// Increase CICD_CLIENT_WORKERS (default 1) to allow more concurrent pipeline runs.
+var cicdClientWorkers = int.TryParse(
+    Environment.GetEnvironmentVariable("CICD_CLIENT_WORKERS"), out var w) && w > 0 ? w : 1;
+
 var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     .WithReference(postgresDb)
     .WithReference(postgresServer)
@@ -277,7 +284,8 @@ var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     // containers so DinD job containers can reach the apt and HTTP cache services on the outer host.
     // Disable by setting CiCd__InterceptAllTraffic=false (volume-based playwright cache still works).
     .WithEnvironment("CiCd__InterceptAllTraffic", "true")
-    .WithHttpHealthCheck("/health", endpointName: "http");
+    .WithHttpHealthCheck("/health", endpointName: "http")
+    .WithReplicas(cicdClientWorkers);
 
 frontend
     .WithEnvironment("NUXT_PUBLIC_API_BASE", api.GetEndpoint("http"))

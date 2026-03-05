@@ -12,6 +12,12 @@ public record TriggerPayload(
     string? WorkspacePath,
     string? EventName,
     /// <summary>
+    /// Pre-created run ID. When set, the worker looks up this existing <c>CiCdRun</c> row
+    /// (already persisted with <c>Pending</c> status by the API) instead of creating a new one.
+    /// Null for payloads produced by older callers that don't pre-create the run.
+    /// </summary>
+    Guid? RunId = null,
+    /// <summary>
     /// When true the Docker container is not removed after a failed run.
     /// Useful for debugging: inspect the container to find where act or other tooling is installed.
     /// </summary>

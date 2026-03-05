@@ -60,6 +60,7 @@
           <thead class="bg-gray-900">
             <tr>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Status</th>
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Trigger</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Workflow</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Branch</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Commit</th>
@@ -78,6 +79,12 @@
                   <span :class="statusDot(run.status)" class="w-1.5 h-1.5 rounded-full" />
                   {{ run.statusName }}
                 </span>
+              </td>
+              <td class="px-4 py-3">
+                <span v-if="run.eventName" class="text-xs bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded font-mono">
+                  {{ run.eventName }}
+                </span>
+                <span v-else class="text-gray-600 text-xs">—</span>
               </td>
               <td class="px-4 py-3 text-gray-300">{{ run.workflow || '—' }}</td>
               <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ run.branch || '—' }}</td>
