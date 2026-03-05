@@ -55,6 +55,66 @@ var npmCache = builder.AddContainer("npm-cache", "verdaccio/verdaccio", "6")
         }
     ]);
 
+// apt package cache (apt-cacher-ng proxy): caches Ubuntu/Debian apt packages across CI/CD runs.
+// All apt-get update / apt-get install requests from act job containers are transparently proxied
+// and cached so subsequent runs reuse already-downloaded .deb files without hitting the upstream mirror.
+// Port 3142 is fixed (the apt-cacher-ng default) so DockerCiCdRuntime can reference it by constant.
+// WithLifetime Persistent: cache data survives Aspire restarts.
+var aptCache = builder.AddContainer("apt-cache", "sameersbn/apt-cacher-ng", "3.3.4-20221016")
+    .WithContainerName("issuepit-apt-cache")
+    .WithLifetime(ContainerLifetime.Persistent)
+    .WithHttpEndpoint(targetPort: 3142, port: 3142, name: "http")
+    .WithVolume("issuepit-apt-cache", "/var/cache/apt-cacher-ng");
+
+// Playwright browser download cache (nginx reverse proxy): caches browser binary archives
+// downloaded from cdn.playwright.dev (Chrome, Chrome Headless Shell, FFmpeg) across CI/CD runs.
+// The first run downloads and caches each archive; subsequent runs are served locally.
+// Port 3143 is fixed so DockerCiCdRuntime can reference it by constant.
+// WithLifetime Persistent: cache data survives Aspire restarts.
+var playwrightCache = builder.AddContainer("playwright-cache", "nginx", "1.27-alpine")
+    .WithContainerName("issuepit-playwright-cache")
+    .WithLifetime(ContainerLifetime.Persistent)
+    .WithHttpEndpoint(targetPort: 3143, port: 3143, name: "http")
+    .WithVolume("issuepit-playwright-cache", "/var/cache/nginx/playwright")
+    .WithContainerFiles("/etc/nginx/conf.d", [
+        new ContainerFile
+        {
+            Name = "default.conf",
+            Contents = """
+                proxy_cache_path /var/cache/nginx/playwright
+                    levels=2:2
+                    keys_zone=playwright_cache:20m
+                    max_size=10g
+                    inactive=30d
+                    use_temp_path=off;
+
+                server {
+                    listen 3143;
+                    server_name _;
+
+                    proxy_connect_timeout 60s;
+                    proxy_read_timeout    600s;
+                    proxy_send_timeout    600s;
+
+                    location / {
+                        proxy_pass https://cdn.playwright.dev;
+                        proxy_ssl_server_name on;
+                        proxy_set_header Host cdn.playwright.dev;
+
+                        proxy_cache            playwright_cache;
+                        proxy_cache_valid      200 30d;
+                        proxy_cache_valid      any 1m;
+                        proxy_cache_use_stale  error timeout updating http_500 http_502 http_503 http_504;
+                        proxy_cache_lock       on;
+                        proxy_cache_revalidate on;
+
+                        add_header X-Cache-Status $upstream_cache_status;
+                    }
+                }
+                """
+        }
+    ]);
+
 // LocalStack provides local AWS services (S3 for image uploads).
 // Open source (Apache 2.0). S3 endpoint: http://localstack:4566
 var storage = builder.AddContainer("localstack", "localstack/localstack", "4.3")
@@ -148,6 +208,13 @@ var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     .WaitFor(redis)
     .WaitFor(registryMirror)
     .WithEnvironment("CiCd__NpmCacheUrl", npmCache.GetEndpoint("http"))
+    // Apt and Playwright cache services use fixed ports (3142 / 3143) so that
+    // DockerCiCdRuntime can set up iptables DNAT rules inside privileged act containers,
+    // routing DinD job-container traffic through host.docker.internal to each cache service.
+    // The "http://host.docker.internal:PORT" form is intentional: cicd-client runs inside
+    // a Docker container and accesses these services via the Docker host gateway.
+    .WithEnvironment("CiCd__AptCacheUrl", "http://host.docker.internal:3142")
+    .WithEnvironment("CiCd__PlaywrightCacheUrl", "http://host.docker.internal:3143")
     .WithHttpHealthCheck("/health", endpointName: "http");
 
 frontend

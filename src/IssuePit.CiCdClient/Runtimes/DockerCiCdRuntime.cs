@@ -70,6 +70,25 @@ public partial class DockerCiCdRuntime(
     // This is used when no explicit host path (CiCd__ActionCachePath / trigger.ActionCachePath) is set.
     private const string DefaultActionCacheVolume = "issuepit-action-cache";
 
+    // Default named Docker volume for the Playwright browser cache.
+    // Playwright stores downloaded browser binaries here; job containers mount this volume at
+    // /root/.cache/ms-playwright so browsers downloaded on one run are reused on subsequent runs.
+    private const string DefaultPlaywrightCacheVolume = "issuepit-playwright-cache";
+
+    // Fixed ports used by the apt-cacher-ng and Playwright CDN cache services.
+    // These must match the port numbers configured in AppHost/docker-compose so that the iptables
+    // DNAT rules written by BuildDindStartupScript can forward DinD job-container traffic to the
+    // correct outer-host service without requiring dynamic port discovery.
+    internal const int AptCachePort = 3142;
+    internal const int PlaywrightCachePort = 3143;
+
+    // Container-internal path where named package-cache volumes are mounted in the outer act
+    // container. act passes these as --volume flags to each DinD job container it creates.
+    private const string ContainerNpmCachePath = "/cache/npm";
+    private const string ContainerNuGetCachePath = "/cache/nuget";
+    private const string ContainerPlaywrightCachePath = "/cache/playwright";
+    private const string ContainerActionCachePath = "/cache/actions";
+
     private static string AppVersion =>
         Assembly.GetEntryAssembly()
             ?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
@@ -134,9 +153,15 @@ public partial class DockerCiCdRuntime(
         var nugetCacheVolume = configuration["CiCd__NuGetCacheVolume"];
         var npmCacheUrl = configuration["CiCd__NpmCacheUrl"];
 
-        const string ContainerNpmCachePath = "/cache/npm";
-        const string ContainerNuGetCachePath = "/cache/nuget";
-        const string ContainerActionCachePath = "/cache/actions";
+        // Apt and Playwright cache config. URLs use host.docker.internal so the outer act container
+        // (which has host.docker.internal in its ExtraHosts) can reach the cache services running on
+        // the Docker host. For DinD job containers, BuildDindStartupScript configures iptables DNAT
+        // rules that route traffic to the same outer-host services transparently.
+        var aptCacheUrl = configuration["CiCd__AptCacheUrl"];
+        var playwrightCacheUrl = configuration["CiCd__PlaywrightCacheUrl"];
+        var playwrightCacheVolume = configuration["CiCd__PlaywrightCacheVolume"] ?? DefaultPlaywrightCacheVolume;
+
+        var useDind = !trigger.NoDind;
 
         if (!string.IsNullOrWhiteSpace(npmCacheVolume))
         {
@@ -152,6 +177,36 @@ public partial class DockerCiCdRuntime(
         {
             actBinAndArgs.Add("--volume");
             actBinAndArgs.Add($"{ContainerNuGetCachePath}:/root/.nuget/packages");
+        }
+
+        // Playwright browser cache: mount named volume so job containers reuse already-downloaded
+        // browser binaries (Chrome, FFmpeg, etc.) across runs without re-fetching from the CDN.
+        // The volume is mounted at ContainerPlaywrightCachePath in the outer act container;
+        // act passes --volume ContainerPlaywrightCachePath:/root/.cache/ms-playwright to each job
+        // container, which is the default location Playwright looks for installed browsers.
+        if (!string.IsNullOrWhiteSpace(playwrightCacheVolume))
+        {
+            actBinAndArgs.Add("--volume");
+            actBinAndArgs.Add($"{ContainerPlaywrightCachePath}:/root/.cache/ms-playwright");
+        }
+
+        // PLAYWRIGHT_DOWNLOAD_HOST: when Playwright cannot find a browser in the filesystem cache
+        // it downloads it from this host instead of cdn.playwright.dev directly. The URL points to
+        // the nginx reverse-proxy/cache service that caches CDN responses on first request.
+        if (!string.IsNullOrWhiteSpace(playwrightCacheUrl))
+        {
+            actBinAndArgs.Add("--env");
+            actBinAndArgs.Add($"PLAYWRIGHT_DOWNLOAD_HOST={playwrightCacheUrl}");
+        }
+
+        // Apt proxy volume mount for DinD mode: BuildDindStartupScript writes
+        // /etc/apt/apt.conf.d/01proxy on the act container (using the inner Docker bridge IP)
+        // after dockerd starts. Act then mounts this file into each job container so apt-get
+        // requests are transparently proxied through apt-cacher-ng on the outer host.
+        if (!string.IsNullOrWhiteSpace(aptCacheUrl) && useDind)
+        {
+            actBinAndArgs.Add("--volume");
+            actBinAndArgs.Add("/etc/apt/apt.conf.d/01proxy:/etc/apt/apt.conf.d/01proxy");
         }
 
         // Action cache: resolve the effective cache mount.
@@ -240,6 +295,12 @@ public partial class DockerCiCdRuntime(
             await onLogLine($"[DEBUG] npm registry   : {npmCacheUrl}", LogStream.Stdout);
         if (!string.IsNullOrWhiteSpace(nugetCacheVolume))
             await onLogLine($"[DEBUG] NuGet cache vol: {nugetCacheVolume}:{ContainerNuGetCachePath} (outer container mount, passed to job containers via act --volume)", LogStream.Stdout);
+        if (!string.IsNullOrWhiteSpace(playwrightCacheVolume))
+            await onLogLine($"[DEBUG] Playwright vol : {playwrightCacheVolume}:{ContainerPlaywrightCachePath} → /root/.cache/ms-playwright (filesystem browser cache)", LogStream.Stdout);
+        if (!string.IsNullOrWhiteSpace(playwrightCacheUrl))
+            await onLogLine($"[DEBUG] Playwright CDN : {playwrightCacheUrl} (PLAYWRIGHT_DOWNLOAD_HOST)", LogStream.Stdout);
+        if (!string.IsNullOrWhiteSpace(aptCacheUrl))
+            await onLogLine($"[DEBUG] Apt cache URL  : {aptCacheUrl} (iptables DNAT + /etc/apt/apt.conf.d/01proxy in DinD mode)", LogStream.Stdout);
         if (!string.IsNullOrWhiteSpace(actionCacheHostPath))
             await onLogLine($"[DEBUG] Action cache   : {actionCacheHostPath}:{ContainerActionCachePath} (host bind-mount)", LogStream.Stdout);
         else if (!string.IsNullOrWhiteSpace(actionCacheVolumeName))
@@ -345,6 +406,8 @@ public partial class DockerCiCdRuntime(
             binds.Add($"{npmCacheVolume}:{ContainerNpmCachePath}");
         if (!string.IsNullOrWhiteSpace(nugetCacheVolume))
             binds.Add($"{nugetCacheVolume}:{ContainerNuGetCachePath}");
+        if (!string.IsNullOrWhiteSpace(playwrightCacheVolume))
+            binds.Add($"{playwrightCacheVolume}:{ContainerPlaywrightCachePath}");
 
         // Mount action/repo cache so act can reuse previously cloned actions across runs.
         // Named Docker volumes (default) persist independently of the cicd-client container lifecycle,
@@ -458,7 +521,6 @@ public partial class DockerCiCdRuntime(
                 // ── Exec model: run each step inside the container sequentially ─────────────
 
                 // Dynamically compute the number of steps so the [N/M] prefix is always correct.
-                var useDind = !trigger.NoDind;
                 var totalSteps = 2 + (useDind ? 1 : 0) + (hasGitRepo ? 1 : 0) + (!string.IsNullOrWhiteSpace(trigger.Workflow) ? 1 : 0);
                 var stepNum = 0;
 
@@ -467,9 +529,11 @@ public partial class DockerCiCdRuntime(
                 if (useDind)
                 {
                     await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: starting dockerd (DinD)", LogStream.Stdout);
+                    var aptCachePort = ParsePort(aptCacheUrl);
+                    var playwrightCachePort = ParsePort(playwrightCacheUrl);
                     var dindExitCode = await ExecCommandAsync(
                         container.ID,
-                        ["/bin/sh", "-c", BuildDindStartupScript(registryMirrorUrl)],
+                        ["/bin/sh", "-c", BuildDindStartupScript(registryMirrorUrl, aptCachePort, playwrightCachePort)],
                         onLogLine,
                         cancellationToken);
                     if (dindExitCode != 0)
@@ -1016,8 +1080,17 @@ public partial class DockerCiCdRuntime(
     /// older helper images that only shipped <c>docker-ce-cli</c>).
     /// When <paramref name="registryMirrorUrl"/> is provided, writes a <c>/etc/docker/daemon.json</c>
     /// that configures the daemon to use the specified URL as a pull-through registry mirror.
+    /// When <paramref name="aptCachePort"/> is provided, sets up iptables DNAT rules so that DinD
+    /// job containers can reach the apt-cacher-ng service on the outer Docker host, and writes
+    /// <c>/etc/apt/apt.conf.d/01proxy</c> on the act container so act can volume-mount it into
+    /// each job container (transparent apt proxy).
+    /// When <paramref name="playwrightCachePort"/> is provided, sets up iptables DNAT rules so that
+    /// DinD job containers can reach the Playwright CDN cache (nginx reverse proxy) on the outer host.
     /// </summary>
-    internal static string BuildDindStartupScript(string? registryMirrorUrl = null)
+    internal static string BuildDindStartupScript(
+        string? registryMirrorUrl = null,
+        int? aptCachePort = null,
+        int? playwrightCachePort = null)
     {
         // Start dockerd in the background, redirect its output, then poll the socket.
         // 'dockerd &' runs as PID 1's child; we give it up to 60 s to become healthy.
@@ -1040,6 +1113,29 @@ public partial class DockerCiCdRuntime(
             lines.Add($"printf '%s' '{daemonJson.Replace("'", "'\\''")}' > /etc/docker/daemon.json");
         }
 
+        // ── iptables DNAT: forward cache-service ports from DinD bridge to outer Docker host ─────────
+        //
+        // DinD job containers use the act container's inner docker0 bridge as their gateway
+        // (172.17.x.1). By adding PREROUTING DNAT rules on the act container (which runs with
+        // Privileged=true), traffic destined for those ports is forwarded to the outer Docker
+        // host where the real cache services (apt-cacher-ng, playwright-cache) are running.
+        //
+        // host.docker.internal is resolvable inside the act container via its ExtraHosts entry
+        // (added by DockerCiCdRuntime when creating the container).
+        if (aptCachePort.HasValue || playwrightCachePort.HasValue)
+        {
+            lines.Add("# Set up iptables DNAT so DinD job containers can reach outer-host cache services.");
+            lines.Add("OUTER_IP=$(getent hosts host.docker.internal 2>/dev/null | awk '{print $1}')");
+            lines.Add("if [ -n \"$OUTER_IP\" ]; then");
+            lines.Add("  echo 1 > /proc/sys/net/ipv4/ip_forward");
+            if (aptCachePort.HasValue)
+                lines.Add($"  iptables -t nat -A PREROUTING -p tcp --dport {aptCachePort.Value} -j DNAT --to-destination \"${{OUTER_IP}}:{aptCachePort.Value}\" 2>/dev/null || true");
+            if (playwrightCachePort.HasValue)
+                lines.Add($"  iptables -t nat -A PREROUTING -p tcp --dport {playwrightCachePort.Value} -j DNAT --to-destination \"${{OUTER_IP}}:{playwrightCachePort.Value}\" 2>/dev/null || true");
+            lines.Add("  iptables -t nat -A POSTROUTING -j MASQUERADE 2>/dev/null || true");
+            lines.Add("fi");
+        }
+
         lines.AddRange([
             "dockerd > /tmp/dockerd.log 2>&1 &",
             "timeout=60",
@@ -1049,7 +1145,36 @@ public partial class DockerCiCdRuntime(
             "docker info > /dev/null 2>&1 && echo '[DinD] dockerd ready' || { echo '[DinD] dockerd failed to start'; cat /tmp/dockerd.log; exit 1; }",
         ]);
 
+        // ── apt proxy config ──────────────────────────────────────────────────────────────────────────
+        //
+        // After dockerd is ready we can determine the inner Docker bridge IP (docker0 interface).
+        // Job containers reach this IP as their gateway; iptables DNAT above forwards the traffic
+        // to the outer apt-cacher-ng. Write Acquire::http::Proxy so apt-get in job containers uses
+        // the proxy transparently (the act --volume flag mounts this file into each job container).
+        if (aptCachePort.HasValue)
+        {
+            lines.Add("# Write apt proxy config for DinD job containers.");
+            lines.Add("DOCKER_BRIDGE_IP=$(ip addr show docker0 2>/dev/null | awk '/inet / {split($2,a,\"/\"); print a[1]}')");
+            lines.Add("if [ -n \"$DOCKER_BRIDGE_IP\" ]; then");
+            lines.Add("  mkdir -p /etc/apt/apt.conf.d");
+            lines.Add($"  printf 'Acquire::http::Proxy \"http://%s:{aptCachePort.Value}\";\\n' \"$DOCKER_BRIDGE_IP\" > /etc/apt/apt.conf.d/01proxy");
+            lines.Add($"  echo \"[DinD] Apt proxy: http://${{DOCKER_BRIDGE_IP}}:{aptCachePort.Value} (DNAT → ${{OUTER_IP:-outer-host}}:{aptCachePort.Value})\"");
+            lines.Add("fi");
+        }
+
         return string.Join('\n', lines);
+    }
+
+    /// <summary>
+    /// Extracts the port number from a URL string. Returns <c>null</c> if the URL is empty,
+    /// malformed, or does not contain an explicit port.
+    /// </summary>
+    private static int? ParsePort(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return null;
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Port > 0)
+            return uri.Port;
+        return null;
     }
 
     /// <summary>

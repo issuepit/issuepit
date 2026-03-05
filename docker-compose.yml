@@ -83,6 +83,8 @@ services:
       ConnectionStrings__issuepit-db: "Host=postgres;Database=issuepit;Username=issuepit;Password=issuepit"
       ConnectionStrings__redis: "redis:6379"
       Kafka__BootstrapServers: "kafka:9092"
+      CiCd__AptCacheUrl: "http://apt-cache:3142"
+      CiCd__PlaywrightCacheUrl: "http://playwright-cache:3143"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
@@ -92,6 +94,31 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+  # apt package cache: caches Ubuntu/Debian apt packages so CI/CD runs reuse
+  # already-downloaded .deb files instead of fetching them from the upstream mirror.
+  # Cache data is stored in a named volume so it survives container restarts.
+  apt-cache:
+    image: sameersbn/apt-cacher-ng:3.3.4-20221016
+    container_name: issuepit-apt-cache
+    ports:
+      - "3142:3142"
+    volumes:
+      - issuepit-apt-cache:/var/cache/apt-cacher-ng
+    restart: unless-stopped
+
+  # Playwright browser download cache: nginx reverse proxy that intercepts and caches
+  # browser binary archives (Chrome, FFmpeg, etc.) from cdn.playwright.dev.
+  # Set PLAYWRIGHT_DOWNLOAD_HOST=http://playwright-cache:3143 in job containers to use it.
+  playwright-cache:
+    image: nginx:1.27-alpine
+    container_name: issuepit-playwright-cache
+    ports:
+      - "3143:3143"
+    volumes:
+      - issuepit-playwright-cache:/var/cache/nginx/playwright
+      - ./docker/playwright-cache.nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
 
   frontend:
     build:
@@ -105,3 +132,5 @@ services:
 volumes:
   postgres_data:
   issuepit-action-cache:
+  issuepit-apt-cache:
+  issuepit-playwright-cache:
