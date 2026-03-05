@@ -32,6 +32,11 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
         // Validate the workflow with actionlint before running act (best-effort — silently skipped if not installed).
         await TryRunActionlintAsync(workspacePath, trigger.Workflow, onLogLine, cancellationToken);
 
+        // Log act version for debugging.
+        var actVersion = await TryGetActVersionAsync(actBin, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(actVersion))
+            await onLogLine($"[DEBUG] act version    : {actVersion}", LogStream.Stdout);
+
         var args = BuildActArguments(trigger);
 
         logger.LogInformation("Running act (native) for run {RunId}: {ActBin} {Args}", run.Id, actBin, args);
@@ -67,6 +72,33 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
             throw new Exception(
                 $"act exited with code {process.ExitCode} " +
                 $"(workspace: {workspacePath}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
+    }
+
+    /// <summary>
+    /// Runs <c>act --version</c> and returns the trimmed version string.
+    /// Returns <c>null</c> on any error (binary not found, non-zero exit, etc.).
+    /// </summary>
+    internal static async Task<string?> TryGetActVersionAsync(string actBin, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo(actBin, "--version")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            using var process = new Process { StartInfo = psi };
+            process.Start();
+            var output = await process.StandardOutput.ReadToEndAsync(cancellationToken);
+            await process.WaitForExitAsync(cancellationToken);
+            return process.ExitCode == 0 ? output.Trim() : null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>

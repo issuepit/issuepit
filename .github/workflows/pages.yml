@@ -20,11 +20,16 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    outputs:
+      issuepit-run: ${{ steps.env-check.outputs.issuepit_run }}
     defaults:
       run:
         working-directory: docs
 
     steps:
+      - id: env-check
+        run: echo "issuepit_run=$ISSUEPIT_RUN" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v4
 
       - name: Setup Ruby
@@ -55,7 +60,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     needs: build
-    if: env.ISSUEPIT_RUN != 'true'
+    if: needs.build.outputs.issuepit-run != 'true'
 
     steps:
       - name: Deploy to GitHub Pages

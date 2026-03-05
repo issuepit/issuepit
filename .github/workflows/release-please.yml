@@ -9,10 +9,20 @@ permissions:
   pull-requests: write
 
 jobs:
+  env-check:
+    name: Environment Check
+    runs-on: ubuntu-latest
+    outputs:
+      issuepit-run: ${{ steps.check.outputs.issuepit_run }}
+    steps:
+      - id: check
+        run: echo "issuepit_run=$ISSUEPIT_RUN" >> "$GITHUB_OUTPUT"
+
   release-please:
     name: Release Please
     runs-on: ubuntu-latest
-    if: env.ISSUEPIT_RUN != 'true'
+    needs: env-check
+    if: needs.env-check.outputs.issuepit-run != 'true'
     steps:
       - uses: googleapis/release-please-action@v4.4.0
         id: release

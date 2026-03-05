@@ -537,6 +537,16 @@ public partial class DockerCiCdRuntime(
         {
             await StartContainerWithRetryAsync(container.ID, actBin, image, containerName, onLogLine, cancellationToken);
 
+            // Log act version for debugging (best-effort — silently skipped on any error).
+            try
+            {
+                var actVersionOutput = await ExecCommandCaptureAsync(container.ID, [actBin, "--version"], cancellationToken);
+                var actVersion = actVersionOutput.Trim();
+                if (!string.IsNullOrWhiteSpace(actVersion))
+                    await onLogLine($"[DEBUG] act version    : {actVersion}", LogStream.Stdout);
+            }
+            catch { /* best-effort */ }
+
             if (useExecModel)
             {
                 // ── Exec model: run each step inside the container sequentially ─────────────
