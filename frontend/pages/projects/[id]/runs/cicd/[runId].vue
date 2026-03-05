@@ -332,6 +332,7 @@
                 <div
                   v-for="job in visibleJobs"
                   :key="job.id"
+                  :ref="(el) => registerJobBox(job.id, el as HTMLElement | null)"
                   :style="{ position: 'absolute', left: job.x + 'px', top: job.y + 'px', width: '220px' }"
                   :class="[
                     'flex flex-col items-start gap-1 px-4 py-3 rounded-xl border transition-colors text-left cursor-pointer',
@@ -770,6 +771,39 @@ const activeSection = ref<'jobs' | 'logs' | 'tests' | 'artifacts' | 'details'>('
 /** Slim mode: hides log counts, yml file names and status labels in the job graph. */
 const slimMode = ref(false)
 
+/** Actual rendered heights of job boxes, keyed by job ID. Populated by ResizeObserver. */
+const measuredBoxHeights = ref<Map<string, number>>(new Map())
+
+/** ResizeObserver instance for tracking actual box heights. */
+let boxObserver: ResizeObserver | null = null
+
+/** Map from DOM element to job ID for ResizeObserver callbacks. */
+const boxElementIds = new WeakMap<Element, string>()
+
+/** Reverse map from job ID to the currently observed DOM element (for cleanup). */
+const jobIdToBoxElement = new Map<string, HTMLElement>()
+
+/** Registers a job box element with the ResizeObserver for height measurement. */
+function registerJobBox(id: string, el: HTMLElement | null) {
+  if (!boxObserver) return
+  // Unobserve the previous element for this job (handles unmount / key change).
+  const old = jobIdToBoxElement.get(id)
+  if (old) {
+    boxObserver.unobserve(old)
+    jobIdToBoxElement.delete(id)
+  }
+  if (el) {
+    boxElementIds.set(el, id)
+    jobIdToBoxElement.set(id, el)
+    boxObserver.observe(el)
+  }
+}
+
+// Clear measured heights when slim mode changes so stale measurements are not used.
+watch(slimMode, () => {
+  measuredBoxHeights.value = new Map()
+})
+
 /** Currently hovered job ID for connection highlighting. */
 const hoveredJob = ref<string | null>(null)
 
@@ -1082,8 +1116,12 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
   const ROW_GAP = 14
   const PAD = 16
 
-  // Helper: compute box height for a job based on current log data (matrix instances).
+  // Helper: compute box height for a job.
+  // Uses the actual measured height from ResizeObserver when available,
+  // falling back to an estimate based on the current mode and matrix instance count.
   const computeBoxH = (id: string) => {
+    const measured = measuredBoxHeights.value.get(id)
+    if (measured) return measured
     const instances = jobLogMap.value.get(id)?.instances
     const instanceCount = instances ? instances.size : 0
     const matrixRows = instanceCount > 1 ? Math.ceil(instanceCount / 2) : 0
@@ -1501,6 +1539,22 @@ const { connection: cicdConnection, isConnected, connect: connectCicd } = useSig
 const { connection: projectConnection, connect: connectProject } = useSignalR('/hubs/project')
 
 onMounted(async () => {
+  // Set up ResizeObserver to track actual rendered heights of job boxes.
+  boxObserver = new ResizeObserver((entries) => {
+    const updated = new Map(measuredBoxHeights.value)
+    let changed = false
+    for (const entry of entries) {
+      const id = boxElementIds.get(entry.target)
+      if (!id) continue
+      const h = Math.round(entry.borderBoxSize?.[0]?.blockSize ?? (entry.target as HTMLElement).offsetHeight ?? entry.contentRect.height)
+      if (h > 0 && updated.get(id) !== h) {
+        updated.set(id, h)
+        changed = true
+      }
+    }
+    if (changed) measuredBoxHeights.value = updated
+  })
+
   await store.fetchRun(runId)
   await store.fetchTestResults(runId)
   await store.fetchArtifacts(runId)
@@ -1556,6 +1610,12 @@ onMounted(async () => {
       if (data.runId === runId) store.fetchRunOnly(runId)
     })
   }
+})
+
+onUnmounted(() => {
+  boxObserver?.disconnect()
+  boxObserver = null
+  jobIdToBoxElement.clear()
 })
 
 async function retryRun() {

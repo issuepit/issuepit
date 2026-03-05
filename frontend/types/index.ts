@@ -46,6 +46,10 @@ export interface Organization {
   actRunnerImage?: string
   actEnv?: string
   actSecrets?: string
+  actionCachePath?: string | null
+  useNewActionCache?: boolean
+  actionOfflineMode?: boolean
+  localRepositories?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -184,6 +188,10 @@ export interface Project {
   actEnv?: string
   actSecrets?: string
   actRunnerImage?: string
+  actionCachePath?: string | null
+  useNewActionCache?: boolean | null
+  actionOfflineMode?: boolean | null
+  localRepositories?: string | null
   createdAt: string
   updatedAt: string
 }

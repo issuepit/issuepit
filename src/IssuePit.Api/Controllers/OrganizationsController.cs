@@ -56,6 +56,10 @@ public class OrganizationsController(IssuePitDbContext db, TenantContext ctx) : 
         org.ActRunnerImage = updated.ActRunnerImage;
         org.ActEnv = updated.ActEnv;
         org.ActSecrets = updated.ActSecrets;
+        org.ActionCachePath = updated.ActionCachePath;
+        org.UseNewActionCache = updated.UseNewActionCache;
+        org.ActionOfflineMode = updated.ActionOfflineMode;
+        org.LocalRepositories = updated.LocalRepositories;
         await db.SaveChangesAsync();
         return Ok(org);
     }

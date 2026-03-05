@@ -54,4 +54,29 @@ public record TriggerPayload(
     /// Overrides the DinD image cache strategy for this run.
     /// <c>null</c> means use the system default from <c>CiCd__Docker__DindCacheStrategy</c>.
     /// </summary>
-    DindImageCacheStrategy? DindCacheStrategy = null);
+    DindImageCacheStrategy? DindCacheStrategy = null,
+    /// <summary>
+    /// Host path used as the act action/repo cache directory (passed as <c>--action-cache-path</c>).
+    /// When set, previously cloned actions are reused across runs instead of re-downloaded.
+    /// <c>null</c> means use <c>CiCd__ActionCachePath</c> config key (when present).
+    /// </summary>
+    string? ActionCachePath = null,
+    /// <summary>
+    /// When <c>true</c>, enables act's new action cache (<c>--use-new-action-cache</c>).
+    /// Requires <c>ActionCachePath</c> to be set. Provides faster OCI-based caching.
+    /// <c>null</c> means inherit from project/org settings.
+    /// </summary>
+    bool? UseNewActionCache = null,
+    /// <summary>
+    /// When <c>true</c>, passes <c>--action-offline-mode</c> to act so it uses only locally
+    /// cached actions without hitting the network. Useful for air-gapped or pre-cached setups.
+    /// <c>null</c> means inherit from project/org settings.
+    /// </summary>
+    bool? ActionOfflineMode = null,
+    /// <summary>
+    /// Newline-separated list of <c>owner/repo@ref=/local/path</c> mappings passed as
+    /// <c>--local-repository</c> arguments to <c>act</c>. Allows rerouting private or
+    /// internal reusable workflows and actions to local filesystem paths instead of
+    /// cloning from GitHub.
+    /// </summary>
+    string? LocalRepositories = null);

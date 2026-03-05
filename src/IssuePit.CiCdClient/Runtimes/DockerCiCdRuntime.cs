@@ -30,6 +30,15 @@ namespace IssuePit.CiCdClient.Runtimes;
 ///     container (default: <c>5100</c>); used by the <c>RegistryMirror</c> strategy</item>
 ///   <item><c>CiCd__Docker__RegistryMirrorVolumePath</c> — host path for registry data
 ///     (default: <c>/var/lib/issuepit-registry-cache</c>); used by the <c>RegistryMirror</c> strategy</item>
+///   <item><c>CiCd__ActionCacheVolume</c> — named Docker volume for act action/repo cache
+///     (default: <c>issuepit-action-cache</c>). Named volumes are managed by Docker and persist
+///     independently of the <c>cicd-client</c> container lifecycle, which means they survive
+///     container restarts without requiring any host-path bind mounts on the outer service.
+///     To use a host path instead, set <c>CiCd__ActionCachePath</c> (or per-project/org setting).
+///     To disable action caching entirely, set <c>CiCd__ActionCacheVolume</c> to an empty string.</item>
+///   <item><c>CiCd__ActionCachePath</c> — explicit host path for the action cache. When set, takes
+///     precedence over <c>CiCd__ActionCacheVolume</c>. Useful for development or bare-metal deployments
+///     where the cicd-client process runs directly on the host.</item>
 /// </list>
 /// </summary>
 public partial class DockerCiCdRuntime(
@@ -48,6 +57,18 @@ public partial class DockerCiCdRuntime(
     private const string RegistryMirrorContainerName = "issuepit-registry-mirror";
     private const int DefaultRegistryMirrorPort = 5100;
     private const string DefaultRegistryMirrorVolumePath = "/var/lib/issuepit-registry-cache";
+
+    // Default host path for the act action/repo cache. Used when neither the trigger nor
+    // CiCd__ActionCachePath config key specifies a path. Mirrors the naming convention of
+    // DefaultDindCacheVolumePath so operators can find and manage all IssuePit cache dirs
+    // from the same parent directory.
+    private const string DefaultActionCachePath = "/var/lib/issuepit-action-cache";
+
+    // Default named Docker volume for the act action/repo cache.
+    // Named volumes persist independently of the cicd-client container lifecycle, making them the
+    // reliable default for containerised deployments where bind-mount host paths are not accessible.
+    // This is used when no explicit host path (CiCd__ActionCachePath / trigger.ActionCachePath) is set.
+    private const string DefaultActionCacheVolume = "issuepit-action-cache";
 
     private static string AppVersion =>
         Assembly.GetEntryAssembly()
@@ -115,6 +136,7 @@ public partial class DockerCiCdRuntime(
 
         const string ContainerNpmCachePath = "/cache/npm";
         const string ContainerNuGetCachePath = "/cache/nuget";
+        const string ContainerActionCachePath = "/cache/actions";
 
         if (!string.IsNullOrWhiteSpace(npmCacheVolume))
         {
@@ -130,6 +152,52 @@ public partial class DockerCiCdRuntime(
         {
             actBinAndArgs.Add("--volume");
             actBinAndArgs.Add($"{ContainerNuGetCachePath}:/root/.nuget/packages");
+        }
+
+        // Action cache: resolve the effective cache mount.
+        //
+        // Priority (host path):   trigger.ActionCachePath → CiCd__ActionCachePath config
+        // Priority (named volume): CiCd__ActionCacheVolume config → DefaultActionCacheVolume ("issuepit-action-cache")
+        //
+        // A named Docker volume is used by default when no explicit host path is configured.
+        // Named volumes are managed by the Docker daemon and persist across cicd-client container
+        // restarts without any host-side volume mount, making them the correct choice for
+        // containerised deployments (Docker Compose, Kubernetes, etc.).
+        //
+        // If an explicit host path is set (trigger or config), it takes full precedence and the
+        // named-volume fallback is skipped.  The host path is replaced with ContainerActionCachePath
+        // inside the act command so act always writes to /cache/actions regardless of which
+        // mechanism supplies the mount.
+        //
+        // Disable caching entirely by setting CiCd__ActionCacheVolume="" and leaving ActionCachePath
+        // unset (or by setting CiCd__ActionCachePath to an empty string and ActionCachePath to null).
+        var actionCacheHostPath = !string.IsNullOrWhiteSpace(trigger.ActionCachePath)
+            ? trigger.ActionCachePath
+            : configuration["CiCd__ActionCachePath"]; // explicit host-path override only
+
+        // Resolve the named-volume fallback when no host path is configured.
+        var actionCacheVolumeName = string.IsNullOrWhiteSpace(actionCacheHostPath)
+            ? (configuration["CiCd__ActionCacheVolume"] ?? DefaultActionCacheVolume)
+            : null;
+
+        if (!string.IsNullOrWhiteSpace(actionCacheHostPath))
+        {
+            // Host path: replace the arg BuildActArgumentsList inserted with the container-internal path.
+            var idx = actBinAndArgs.IndexOf(actionCacheHostPath);
+            if (idx >= 0)
+                actBinAndArgs[idx] = ContainerActionCachePath;
+            else
+            {
+                // ActionCachePath came from config (not from trigger field) — the arg wasn't added yet.
+                actBinAndArgs.Add("--action-cache-path");
+                actBinAndArgs.Add(ContainerActionCachePath);
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(actionCacheVolumeName))
+        {
+            // Named volume: trigger.ActionCachePath was null so BuildActArgumentsList didn't add the flag.
+            actBinAndArgs.Add("--action-cache-path");
+            actBinAndArgs.Add(ContainerActionCachePath);
         }
 
         var containerName = BuildContainerName(run);
@@ -172,6 +240,14 @@ public partial class DockerCiCdRuntime(
             await onLogLine($"[DEBUG] npm registry   : {npmCacheUrl}", LogStream.Stdout);
         if (!string.IsNullOrWhiteSpace(nugetCacheVolume))
             await onLogLine($"[DEBUG] NuGet cache vol: {nugetCacheVolume}:{ContainerNuGetCachePath} (outer container mount, passed to job containers via act --volume)", LogStream.Stdout);
+        if (!string.IsNullOrWhiteSpace(actionCacheHostPath))
+            await onLogLine($"[DEBUG] Action cache   : {actionCacheHostPath}:{ContainerActionCachePath} (host bind-mount)", LogStream.Stdout);
+        else if (!string.IsNullOrWhiteSpace(actionCacheVolumeName))
+            await onLogLine($"[DEBUG] Action cache   : {actionCacheVolumeName}:{ContainerActionCachePath} (named Docker volume)", LogStream.Stdout);
+        if (trigger.UseNewActionCache == true)
+            await onLogLine($"[DEBUG] New action cache: enabled (--use-new-action-cache)", LogStream.Stdout);
+        if (trigger.ActionOfflineMode == true)
+            await onLogLine($"[DEBUG] Offline mode   : enabled (--action-offline-mode)", LogStream.Stdout);
         if (!string.IsNullOrWhiteSpace(trigger.CustomEntrypoint))
             await onLogLine($"[DEBUG] Entrypoint     : {trigger.CustomEntrypoint}", LogStream.Stdout);
 
@@ -269,7 +345,26 @@ public partial class DockerCiCdRuntime(
             binds.Add($"{npmCacheVolume}:{ContainerNpmCachePath}");
         if (!string.IsNullOrWhiteSpace(nugetCacheVolume))
             binds.Add($"{nugetCacheVolume}:{ContainerNuGetCachePath}");
-        
+
+        // Mount action/repo cache so act can reuse previously cloned actions across runs.
+        // Named Docker volumes (default) persist independently of the cicd-client container lifecycle,
+        // which is the correct choice when cicd-client itself runs inside a Docker container (e.g.,
+        // docker-compose / Kubernetes) — the volume is managed by the Docker daemon on the host,
+        // not by any filesystem path inside cicd-client.
+        // An explicit host path (actionCacheHostPath) overrides the named volume and behaves the
+        // same way as the DinD cache and artifact mounts (bind-mount to a real path on the machine
+        // running the Docker daemon — suitable for bare-metal / development setups).
+        if (!string.IsNullOrWhiteSpace(actionCacheHostPath))
+        {
+            Directory.CreateDirectory(actionCacheHostPath);
+            binds.Add($"{actionCacheHostPath}:{ContainerActionCachePath}");
+        }
+        else if (!string.IsNullOrWhiteSpace(actionCacheVolumeName))
+        {
+            // Named volume: Docker auto-creates it on first use; no Directory.CreateDirectory needed.
+            binds.Add($"{actionCacheVolumeName}:{ContainerActionCachePath}");
+        }
+
         // Apply the DinD image cache strategy: add volume mounts and/or start the registry mirror.
         string? registryMirrorUrl = null;
         var extraHosts = new List<string>();

@@ -83,6 +83,8 @@ services:
       ConnectionStrings__issuepit-db: "Host=postgres;Database=issuepit;Username=issuepit;Password=issuepit"
       ConnectionStrings__redis: "redis:6379"
       Kafka__BootstrapServers: "kafka:9092"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       postgres:
         condition: service_healthy
@@ -102,3 +104,4 @@ services:
 
 volumes:
   postgres_data:
+  issuepit-action-cache:

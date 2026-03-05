@@ -35,5 +35,30 @@ public class Organization
     /// <summary>Newline-separated KEY=VALUE pairs passed as <c>--secret</c> arguments to <c>act</c> on each run.</summary>
     public string? ActSecrets { get; set; }
 
+    /// <summary>
+    /// Host path for the act action/repo cache directory (passed as <c>--action-cache-path</c>).
+    /// When set, previously cloned actions are reused across runs. Null means use the system default.
+    /// </summary>
+    public string? ActionCachePath { get; set; }
+
+    /// <summary>
+    /// When <c>true</c>, enables act's new OCI-based action cache (<c>--use-new-action-cache</c>).
+    /// Effective only when <see cref="ActionCachePath"/> is also set.
+    /// </summary>
+    public bool UseNewActionCache { get; set; } = false;
+
+    /// <summary>
+    /// When <c>true</c>, passes <c>--action-offline-mode</c> to act so it uses only locally
+    /// cached actions without hitting the network.
+    /// </summary>
+    public bool ActionOfflineMode { get; set; } = false;
+
+    /// <summary>
+    /// Newline-separated list of <c>owner/repo@ref=/local/path</c> mappings passed as
+    /// <c>--local-repository</c> arguments to <c>act</c>. Allows rerouting private or
+    /// internal reusable workflows/actions to local paths.
+    /// </summary>
+    public string? LocalRepositories { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

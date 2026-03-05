@@ -3,6 +3,7 @@ using System;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace IssuePit.Core.Migrations
 {
     [DbContext(typeof(IssuePitDbContext))]
-    partial class IssuePitDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260304205309_AddActionCacheAndLocalRepositories")]
+    partial class AddActionCacheAndLocalRepositories
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -241,36 +244,6 @@ namespace IssuePit.Core.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("api_keys");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.CiCdArtifact", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("CiCdRunId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("FileCount")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<long>("SizeBytes")
-                        .HasColumnType("bigint");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CiCdRunId");
-
-                    b.ToTable("cicd_artifacts");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.CiCdRun", b =>
@@ -1864,17 +1837,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("Team");
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.CiCdArtifact", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.CiCdRun", "CiCdRun")
-                        .WithMany()
-                        .HasForeignKey("CiCdRunId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("CiCdRun");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.CiCdRun", b =>
