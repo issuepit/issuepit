@@ -201,7 +201,7 @@
 
 <script setup lang="ts">
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
-import { CiCdRunStatus, AgentSessionStatus } from '~/types'
+import { CiCdRunStatus, AgentSessionStatus, type AgentSessionLog } from '~/types'
 
 const route = useRoute()
 const projectId = route.params.id as string
@@ -244,6 +244,9 @@ const now = ref(Date.now())
 // SignalR: connect to project hub to receive RunsUpdated events (updates the CI/CD runs table)
 const { connection, isConnected, connect } = useSignalR('/hubs/project')
 
+// SignalR: connect to agent output hub for live log streaming
+const { connection: agentConnection, connect: connectAgent } = useSignalR('/hubs/agent-output')
+
 // Whether the session is still in an active (non-terminal) state
 const isActive = computed(() =>
   store.currentSession?.statusName === 'Pending' ||
@@ -260,6 +263,34 @@ onMounted(async () => {
     connection.value.on('RunsUpdated', async () => {
       now.value = Date.now()
       if (store.currentSession) await store.fetchAgentSession(sessionId)
+    })
+  }
+
+  // Connect to agent output hub for live log lines (published by IssueWorker via Redis)
+  await connectAgent()
+  if (agentConnection.value) {
+    await agentConnection.value.invoke('JoinSession', sessionId).catch((e: unknown) => { console.warn('Failed to join agent session group', e) })
+    agentConnection.value.on('LogLine', ({ payload }: { sessionId: string; payload: string }) => {
+      try {
+        const data = JSON.parse(payload) as { event?: string; stream?: string; line?: string; timestamp?: string; status?: string }
+        if (data.event === 'session-completed') {
+          now.value = Date.now()
+          // Refresh session metadata (status, endedAt) without replacing logs
+          store.fetchAgentSession(sessionId)
+        } else if (data.event === 'session-heartbeat') {
+          now.value = Date.now()
+        } else if (data.line !== undefined) {
+          store.currentSessionLogs.push({
+            id: crypto.randomUUID(),
+            line: data.line,
+            stream: data.stream ?? 'stdout',
+            streamName: data.stream ? (data.stream.charAt(0).toUpperCase() + data.stream.slice(1)) : 'Stdout',
+            timestamp: data.timestamp ?? new Date().toISOString(),
+          } satisfies AgentSessionLog)
+          now.value = Date.now()
+        }
+      }
+      catch (e) { console.warn('Failed to parse agent LogLine payload', e) }
     })
   }
 })

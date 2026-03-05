@@ -132,9 +132,11 @@ var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("exe
     .WithReference(postgresDb)
     .WithReference(postgresServer)
     .WithReference(kafka)
+    .WithReference(redis)
     .WaitForCompletion(migrator)
     .WaitForCompletion(kafkaInitializer)
     .WaitFor(kafka)
+    .WaitFor(redis)
     .WithHttpHealthCheck("/health", endpointName: "http");
 
 var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
