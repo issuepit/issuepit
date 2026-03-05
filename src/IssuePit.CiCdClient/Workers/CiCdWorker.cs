@@ -120,6 +120,19 @@ public class CiCdWorker(
 
     private async Task ProcessTriggerAsync(string key, string payload, CancellationToken stoppingToken)
     {
+        // Wrap the entire method so fire-and-forget callers get errors logged instead of silently lost.
+        try
+        {
+            await ProcessTriggerCoreAsync(key, payload, stoppingToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unhandled exception in ProcessTriggerAsync for key={Key}", key);
+        }
+    }
+
+    private async Task ProcessTriggerCoreAsync(string key, string payload, CancellationToken stoppingToken)
+    {
         // Expected payload: {"projectId":"...","commitSha":"...","branch":"...","workflow":"...","agentSessionId":"..."}
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
@@ -174,7 +187,7 @@ public class CiCdWorker(
             WorkspacePath = trigger.WorkspacePath,
             EventName = trigger.EventName,
             InputsJson = trigger.Inputs is { Count: > 0 }
-                ? JsonSerializer.Serialize(trigger.Inputs)
+                ? TrySerializeInputs(trigger.Inputs)
                 : null,
             Status = semaphore is not null ? CiCdRunStatus.Pending : CiCdRunStatus.Running,
             StartedAt = DateTime.UtcNow,
@@ -563,6 +576,19 @@ public class CiCdWorker(
         catch (OperationCanceledException)
         {
             // Run completed or was cancelled — stop heartbeat silently
+        }
+    }
+
+    private string? TrySerializeInputs(IReadOnlyDictionary<string, string> inputs)
+    {
+        try
+        {
+            return JsonSerializer.Serialize(inputs);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not serialize run inputs; inputs will not be stored");
+            return null;
         }
     }
 }

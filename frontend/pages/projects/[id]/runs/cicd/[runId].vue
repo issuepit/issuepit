@@ -1153,7 +1153,8 @@ const runInputs = computed<Record<string, string> | null>(() => {
   if (!json) return null
   try {
     return JSON.parse(json) as Record<string, string>
-  } catch {
+  } catch (e) {
+    console.warn('Failed to parse run inputsJson:', e)
     return null
   }
 })
