@@ -26,7 +26,10 @@ export const useProjectsStore = defineStore('projects', () => {
     loading.value = true
     error.value = null
     try {
-      const data = await api.get<Project>(`/api/projects/${id}`)
+      // Support project slugs in addition to GUIDs
+      const isGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+      const url = isGuid ? `/api/projects/${id}` : `/api/projects/by-slug/${id}`
+      const data = await api.get<Project>(url)
       currentProject.value = data
       return data
     } catch (e: unknown) {

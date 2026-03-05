@@ -82,6 +82,28 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         return issue is null ? NotFound() : Ok(issue);
     }
 
+    /// <summary>
+    /// Returns an issue by project identifier (slug or GUID) and issue number.
+    /// </summary>
+    [HttpGet("by-project/{projectIdentifier}/{issueNumber:int}")]
+    public async Task<IActionResult> GetIssueByProjectAndNumber(string projectIdentifier, int issueNumber)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var query = db.Issues
+            .Include(i => i.Labels)
+            .Include(i => i.SubIssues)
+            .Include(i => i.ParentIssue)
+            .Include(i => i.Assignees).ThenInclude(a => a.User)
+            .Include(i => i.Assignees).ThenInclude(a => a.Agent)
+            .Where(i => i.Number == issueNumber && i.Project!.Organization.TenantId == ctx.CurrentTenant.Id);
+        if (Guid.TryParse(projectIdentifier, out var projectId))
+            query = query.Where(i => i.ProjectId == projectId);
+        else
+            query = query.Where(i => i.Project!.Slug == projectIdentifier);
+        var issue = await query.FirstOrDefaultAsync();
+        return issue is null ? NotFound() : Ok(issue);
+    }
+
     [HttpGet("{id:guid}/sub-issues")]
     public async Task<IActionResult> GetSubIssues(Guid id)
     {

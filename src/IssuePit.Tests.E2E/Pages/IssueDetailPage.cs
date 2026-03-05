@@ -51,4 +51,37 @@ public class IssueDetailPage(IPage page)
             Modifiers = [KeyboardModifier.Control],
         });
     }
+
+    /// <summary>
+    /// Clicks the "Delete Issue" button and verifies the confirmation dialog appears.
+    /// </summary>
+    public async Task ClickDeleteButtonAsync()
+    {
+        await page.ClickAsync("button:has-text('Delete Issue')");
+        await page.WaitForSelectorAsync("text=Are you sure you want to delete this issue?",
+            new PageWaitForSelectorOptions { Timeout = 5_000 });
+    }
+
+    /// <summary>
+    /// Confirms deletion in the confirmation dialog.
+    /// </summary>
+    public async Task ConfirmDeleteAsync()
+    {
+        // The Delete button in the modal is inside the confirmation dialog
+        await page.Locator(".fixed >> button:has-text('Delete')").ClickAsync();
+    }
+
+    /// <summary>
+    /// Cancels deletion in the confirmation dialog.
+    /// </summary>
+    public async Task CancelDeleteAsync()
+    {
+        await page.ClickAsync("button:has-text('Cancel')");
+        await page.WaitForSelectorAsync("text=Are you sure you want to delete this issue?",
+            new PageWaitForSelectorOptions
+            {
+                State = WaitForSelectorState.Hidden,
+                Timeout = 5_000
+            });
+    }
 }

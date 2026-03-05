@@ -34,6 +34,17 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
         return project is null ? NotFound() : Ok(project);
     }
 
+    [HttpGet("by-slug/{slug}")]
+    public async Task<IActionResult> GetProjectBySlug(string slug)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var project = await ProjectsQuery()
+            .Where(p => p.Slug == slug && p.Organization.TenantId == ctx.CurrentTenant.Id)
+            .Select(ProjectDto.Selector(db))
+            .FirstOrDefaultAsync();
+        return project is null ? NotFound() : Ok(project);
+    }
+
     private IQueryable<Project> ProjectsQuery() =>
         db.Projects.Include(p => p.Organization);
 

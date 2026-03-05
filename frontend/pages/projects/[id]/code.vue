@@ -738,7 +738,7 @@ async function finishReview() {
     }
     reviewComments.value = []
     if (newIssue) {
-      router.push(`/projects/${id}/issues/${newIssue.id}`)
+      router.push(`/projects/${id}/issues/${newIssue.number}`)
     }
   } finally {
     savingReview.value = false

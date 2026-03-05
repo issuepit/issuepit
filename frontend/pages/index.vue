@@ -24,7 +24,7 @@
         </div>
         <div class="space-y-2">
           <NuxtLink v-for="issue in recentIssues" :key="issue.id"
-            :to="`/projects/${issue.projectId}/issues/${issue.id}`"
+            :to="`/projects/${issue.projectId}/issues/${issue.number}`"
             class="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-800 transition-colors block">
             <span :class="statusDot(issue.status)" class="w-2 h-2 rounded-full shrink-0"></span>
             <div class="flex-1 min-w-0">
@@ -127,6 +127,7 @@
             <thead class="bg-gray-800/50">
               <tr>
                 <th class="text-left px-3 py-2 text-xs text-gray-400 font-medium">Status</th>
+                <th class="text-left px-3 py-2 text-xs text-gray-400 font-medium hidden md:table-cell">Project</th>
                 <th class="text-left px-3 py-2 text-xs text-gray-400 font-medium">Workflow</th>
                 <th class="text-left px-3 py-2 text-xs text-gray-400 font-medium hidden md:table-cell">Branch</th>
                 <th class="text-left px-3 py-2 text-xs text-gray-400 font-medium hidden md:table-cell">Commit</th>
@@ -143,6 +144,13 @@
                     <span :class="runStatusDot(run.status)" class="w-1.5 h-1.5 rounded-full" />
                     {{ run.statusName }}
                   </span>
+                </td>
+                <td class="px-3 py-2 text-xs hidden md:table-cell">
+                  <NuxtLink :to="`/projects/${run.projectId}/runs`"
+                    class="text-brand-400 hover:text-brand-300 transition-colors"
+                    @click.stop>
+                    {{ run.projectName || '—' }}
+                  </NuxtLink>
                 </td>
                 <td class="px-3 py-2 text-gray-300 text-xs">{{ run.workflow || '—' }}</td>
                 <td class="px-3 py-2 text-gray-300 font-mono text-xs hidden md:table-cell">{{ run.branch || '—' }}</td>
@@ -182,7 +190,7 @@
                 </td>
                 <td class="px-3 py-2 text-gray-300 text-xs">{{ session.agentName }}</td>
                 <td class="px-3 py-2 text-xs">
-                  <NuxtLink :to="`/projects/${session.projectId}/issues/${session.issueId}`"
+                  <NuxtLink :to="`/projects/${session.projectId}/issues/${session.issueNumber}`"
                     class="text-brand-400 hover:text-brand-300 transition-colors"
                     @click.stop>
                     #{{ session.issueNumber }} {{ session.issueTitle }}

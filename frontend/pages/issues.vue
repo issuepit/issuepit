@@ -58,7 +58,7 @@
         <tbody>
           <tr v-for="issue in displayedIssues" :key="issue.id"
             class="border-b border-gray-800/50 hover:bg-gray-800/40 cursor-pointer transition-colors"
-            @click="$router.push(`/projects/${issue.projectId}/issues/${issue.id}`)">
+            @click="$router.push(`/projects/${issue.projectId}/issues/${issue.number}`)">
             <td class="px-4 py-3">
               <span :class="statusDotColor(issue.status)" class="w-3.5 h-3.5 rounded-full block"></span>
             </td>

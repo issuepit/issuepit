@@ -162,6 +162,27 @@ describe('resolveLogJobId', () => {
       expect(resolve('backend\\build', jobs)).toBe('backend/build')
     })
   })
+
+  describe('matrix template expression names (${{ matrix.xxx }})', () => {
+    // Jobs with unresolved template expressions in their names (as they appear in the YAML graph).
+    // act resolves these at runtime and emits log IDs with the actual values, e.g. "CI/Build (version 1)-1".
+    const jobs = [
+      job('ci/build', 'Build (version ${{ matrix.version }})', 'ci.yml'),
+    ]
+    const jobsNested = [
+      job('reusable/build', 'Build (version ${{ matrix.version }})', 'reusable.yml', 'ci.yml'),
+    ]
+
+    it('resolves matrix instance logs for a job with template name in workflowFile', () => {
+      expect(resolve('CI/Build (version 1)-1', jobs)).toBe('ci/build')
+      expect(resolve('CI/Build (version 2)-2', jobs)).toBe('ci/build')
+    })
+
+    it('resolves matrix instance logs for a nested job with template name and callerWorkflowFile', () => {
+      expect(resolve('CI/Build (version 1)-1', jobsNested)).toBe('reusable/build')
+      expect(resolve('CI/Build (version 2)-2', jobsNested)).toBe('reusable/build')
+    })
+  })
 })
 
 // ── matrixLabel ────────────────────────────────────────────────────────────────

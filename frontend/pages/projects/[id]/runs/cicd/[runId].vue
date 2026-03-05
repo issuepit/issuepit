@@ -305,13 +305,13 @@
                 :height="graphLayout.svgHeight"
                 style="z-index: 0">
                 <defs>
-                  <marker id="arrow" markerWidth="4" markerHeight="4" refX="3.5" refY="2" orient="auto">
+                  <marker id="arrow" markerWidth="4" markerHeight="4" refX="3" refY="2" orient="auto">
                     <path d="M0,0 L0,4 L4,2 z" fill="#4b5563" />
                   </marker>
-                  <marker id="arrow-hi" markerWidth="4" markerHeight="4" refX="3.5" refY="2" orient="auto">
+                  <marker id="arrow-hi" markerWidth="4" markerHeight="4" refX="3" refY="2" orient="auto">
                     <path d="M0,0 L0,4 L4,2 z" fill="#6366f1" />
                   </marker>
-                  <marker id="arrow-fail" markerWidth="4" markerHeight="4" refX="3.5" refY="2" orient="auto">
+                  <marker id="arrow-fail" markerWidth="4" markerHeight="4" refX="3" refY="2" orient="auto">
                     <path d="M0,0 L0,4 L4,2 z" fill="#ef4444" />
                   </marker>
                 </defs>
@@ -335,11 +335,11 @@
                   :ref="(el) => registerJobBox(job.id, el as HTMLElement | null)"
                   :style="{ position: 'absolute', left: job.x + 'px', top: job.y + 'px', width: '220px' }"
                   :class="[
-                    'flex flex-col items-start gap-1 px-4 py-3 rounded-xl border transition-all text-left cursor-pointer',
+                    'flex flex-col items-start gap-1 px-4 py-3 rounded-xl border transition-colors text-left cursor-pointer',
                     selectedJob === job.id
                       ? 'border-brand-500 bg-brand-950/30 ring-1 ring-brand-500/40'
                       : hoveredJob === job.id
-                        ? 'border-gray-500 bg-gray-700/60 shadow-lg shadow-gray-900/50'
+                        ? 'border-gray-400/50 bg-gray-700/40 shadow-lg shadow-black/40 ring-1 ring-white/5 backdrop-blur-sm'
                         : connectedJobIds.has(job.id)
                           ? 'border-brand-700/50 bg-gray-800/60'
                           : blockedJobIds.has(job.id)
@@ -813,6 +813,14 @@ const logSearchQuery = ref('')
 /** Word/line wrap for log display. Off by default for better readability of long log lines. */
 const wordWrap = ref(false)
 
+/**
+ * Per-job completion status received via backend `job-status` SignalR events.
+ * Provides authoritative real-time completion state without requiring the frontend to
+ * parse "Job succeeded" / "Job failed" strings from log lines.
+ * Keyed by resolved graph node ID (via resolveLogJobId).
+ */
+const jobStatusMap = ref(new Map<string, { isComplete: boolean; hasError: boolean }>())
+
 const streamTabs = [
   { label: 'All', value: null },
   { label: 'Stdout', value: 'stdout' },
@@ -1184,10 +1192,32 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
 
   // Pre-build a map of which jobs have started (have log lines) for downstream inference.
   const startedIds = new Set(Array.from(allIds).filter(id => (jobLogMap.value.get(id)?.logCount ?? 0) > 0))
-  // A job is implicitly complete if any of its direct downstream jobs has started.
+  // A job is implicitly complete if any of its downstream jobs (direct or transitive) has started.
+  // Reverse BFS: seed with direct parents of all started jobs, then walk backwards through edges (O(V+E)).
   const implicitlyCompleteIds = new Set<string>()
+  // Build reverse adjacency map (child → set of parents)
+  const reverseAdj = new Map<string, string[]>()
   for (const e of edges) {
-    if (startedIds.has(e.to)) implicitlyCompleteIds.add(e.from)
+    if (!reverseAdj.has(e.to)) reverseAdj.set(e.to, [])
+    reverseAdj.get(e.to)!.push(e.from)
+  }
+  const bfsQueue: string[] = []
+  for (const id of startedIds) {
+    for (const parent of (reverseAdj.get(id) ?? [])) {
+      if (!implicitlyCompleteIds.has(parent)) {
+        implicitlyCompleteIds.add(parent)
+        bfsQueue.push(parent)
+      }
+    }
+  }
+  while (bfsQueue.length > 0) {
+    const curr = bfsQueue.shift()!
+    for (const parent of (reverseAdj.get(curr) ?? [])) {
+      if (!implicitlyCompleteIds.has(parent)) {
+        implicitlyCompleteIds.add(parent)
+        bfsQueue.push(parent)
+      }
+    }
   }
 
   return Array.from(allIds).map(id => {
@@ -1195,9 +1225,12 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
     const logs = jobLogMap.value.get(id) ?? { logCount: 0, hasError: false, isComplete: false, instances: new Map() }
     const pos = posMap.get(id) ?? { x: PAD, y: PAD }
     const hasStarted = logs.logCount > 0
-    // Mark job as complete if it logged "Job succeeded/failed", if the overall run has ended,
-    // or if any downstream job has already started (cannot start until this one is done).
-    const isComplete = logs.isComplete || (hasStarted && runIsTerminal.value) || implicitlyCompleteIds.has(id)
+    // Backend-emitted job-status event takes precedence as the authoritative completion signal.
+    // Log-based detection (logs.isComplete) covers historical data loaded on page open.
+    // implicitlyCompleteIds provides heuristic coverage before the event arrives.
+    const statusEvent = jobStatusMap.value.get(id)
+    const isComplete = statusEvent?.isComplete || logs.isComplete || (hasStarted && runIsTerminal.value) || implicitlyCompleteIds.has(id)
+    const hasError = (statusEvent?.hasError ?? false) || logs.hasError
     const matrixCount = logs.rawJobIds?.size ?? (hasStarted ? 1 : 0)
 
     // Build per-instance matrix data for the grouped display.
@@ -1217,7 +1250,7 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
       name: meta?.name ?? id,
       needs: meta?.needs ?? [],
       logCount: logs.logCount,
-      hasError: logs.hasError,
+      hasError,
       hasStarted,
       isComplete,
       workflowFile: meta?.workflowFile,
@@ -1532,7 +1565,7 @@ onMounted(async () => {
     await cicdConnection.value.invoke('JoinRun', runId).catch((e: unknown) => { console.warn('Failed to join run group', e) })
     cicdConnection.value.on('LogLine', (event: { runId: string; payload: string }) => {
       try {
-        const data = JSON.parse(event.payload) as { event?: string; stream?: string; line?: string; jobId?: string; stepId?: string; timestamp?: string }
+        const data = JSON.parse(event.payload) as { event?: string; stream?: string; line?: string; jobId?: string; stepId?: string; timestamp?: string; status?: string }
         if (data.event === 'run-completed') {
           now.value = Date.now()
           // Refresh only run metadata (status, endedAt) — do NOT re-fetch logs to avoid losing scroll position
@@ -1541,6 +1574,18 @@ onMounted(async () => {
           store.fetchTestResults(runId)
           store.fetchArtifacts(runId)
         } else if (data.event === 'run-heartbeat') {
+          now.value = Date.now()
+        } else if (data.event === 'job-status' && data.jobId) {
+          // Authoritative per-job completion event emitted by the backend when act
+          // reports "Job succeeded" / "Job failed". Update jobStatusMap so enrichedJobs
+          // reflects the new state without waiting for the log line to be processed.
+          const resolvedId = resolveLogJobId(data.jobId)
+          const newMap = new Map(jobStatusMap.value)
+          newMap.set(resolvedId, {
+            isComplete: true,
+            hasError: data.status === 'failed',
+          })
+          jobStatusMap.value = newMap
           now.value = Date.now()
         } else if (data.line !== undefined) {
           store.currentRunLogs.push({
