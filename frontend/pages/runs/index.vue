@@ -25,27 +25,24 @@
 
     <!-- Filters -->
     <div class="flex flex-wrap gap-3 mb-6">
-      <select v-model="filterOrg"
-        class="bg-gray-900 border border-gray-700 text-sm text-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-500">
-        <option value="">All Orgs</option>
-        <option v-for="org in orgsStore.orgs" :key="org.id" :value="org.id">{{ org.name }}</option>
-      </select>
-      <select v-model="filterProject"
-        class="bg-gray-900 border border-gray-700 text-sm text-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-500">
-        <option value="">All Projects</option>
-        <option v-for="project in filteredProjectOptions" :key="project.id" :value="project.id">{{ project.name }}</option>
-      </select>
-      <select v-model="filterStatus"
-        class="bg-gray-900 border border-gray-700 text-sm text-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-500">
-        <option value="">All Statuses</option>
-        <option value="pending">Pending</option>
-        <option value="running">Running</option>
-        <option value="succeeded">Succeeded</option>
-        <option value="failed">Failed</option>
-        <option value="cancelled">Cancelled</option>
-      </select>
+      <MultiSelect
+        v-model="filterOrg"
+        :options="orgOptions"
+        placeholder="All Orgs"
+      />
+      <MultiSelect
+        v-model="filterProject"
+        :options="projectOptions"
+        placeholder="All Projects"
+      />
+      <MultiSelect
+        v-model="filterStatus"
+        :options="statusOptions"
+        placeholder="All Statuses"
+        :show-search="false"
+      />
       <input v-model="filterBranch" type="text" placeholder="Filter by branch…"
-        class="bg-gray-900 border border-gray-700 text-sm text-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-500 w-44" />
+        class="bg-gray-900 border border-gray-700 text-sm text-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-500 w-44">
       <button v-if="hasActiveFilters"
         class="text-xs text-gray-500 hover:text-gray-300 transition-colors px-2 py-1.5"
         @click="clearFilters">
@@ -258,6 +255,7 @@ import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useProjectsStore } from '~/stores/projects'
 import { useOrgsStore } from '~/stores/orgs'
 import { CiCdRunStatus, type AgentSessionStatus } from '~/types'
+import type { MultiSelectOption } from '~/components/MultiSelect.vue'
 
 const store = useCiCdRunsStore()
 const projectsStore = useProjectsStore()
@@ -281,9 +279,9 @@ function getTabFromQueryParam(query: unknown): typeof tabs[number] {
 }
 
 const activeTab = ref<typeof tabs[number]>(getTabFromQueryParam(route.query.tab))
-const filterOrg = ref((route.query.org as string) || '')
-const filterProject = ref((route.query.project as string) || '')
-const filterStatus = ref((route.query.status as string) || '')
+const filterOrg = ref<string[]>((route.query.org as string)?.split(',').filter(Boolean) ?? [])
+const filterProject = ref<string[]>((route.query.project as string)?.split(',').filter(Boolean) ?? [])
+const filterStatus = ref<string[]>((route.query.status as string)?.split(',').filter(Boolean) ?? [])
 const filterBranch = ref((route.query.branch as string) || '')
 
 function getQueryParamFromTab(tab: typeof tabs[number]): string {
@@ -298,30 +296,52 @@ watch([activeTab, filterOrg, filterProject, filterStatus, filterBranch], () => {
   router.replace({
     query: {
       tab: getQueryParamFromTab(activeTab.value),
-      ...(filterOrg.value ? { org: filterOrg.value } : {}),
-      ...(filterProject.value ? { project: filterProject.value } : {}),
-      ...(filterStatus.value ? { status: filterStatus.value } : {}),
+      ...(filterOrg.value.length ? { org: filterOrg.value.join(',') } : {}),
+      ...(filterProject.value.length ? { project: filterProject.value.join(',') } : {}),
+      ...(filterStatus.value.length ? { status: filterStatus.value.join(',') } : {}),
       ...(filterBranch.value ? { branch: filterBranch.value } : {}),
     },
   })
-})
+}, { deep: true })
 
 const hasActiveFilters = computed(() =>
-  !!(filterOrg.value || filterProject.value || filterStatus.value || filterBranch.value)
+  !!(filterOrg.value.length || filterProject.value.length || filterStatus.value.length || filterBranch.value)
 )
 
 function clearFilters() {
-  filterOrg.value = ''
-  filterProject.value = ''
-  filterStatus.value = ''
+  filterOrg.value = []
+  filterProject.value = []
+  filterStatus.value = []
   filterBranch.value = ''
 }
 
-// Projects filtered by selected org
+// Projects filtered by selected orgs
 const filteredProjectOptions = computed(() => {
-  if (!filterOrg.value) return projectsStore.projects
-  return projectsStore.projects.filter(p => p.orgId === filterOrg.value)
+  if (!filterOrg.value.length) return projectsStore.projects
+  return projectsStore.projects.filter(p => filterOrg.value.includes(p.orgId))
 })
+
+// Clear invalid project selections when org filter changes
+watch(filterOrg, () => {
+  const validIds = filteredProjectOptions.value.map(p => p.id)
+  filterProject.value = filterProject.value.filter(id => validIds.includes(id))
+})
+
+const orgOptions = computed<MultiSelectOption[]>(() =>
+  orgsStore.orgs.map(org => ({ value: org.id, label: org.name }))
+)
+
+const projectOptions = computed<MultiSelectOption[]>(() =>
+  filteredProjectOptions.value.map(p => ({ value: p.id, label: p.name }))
+)
+
+const statusOptions: MultiSelectOption[] = [
+  { value: 'pending', label: 'Pending', dotClass: 'bg-yellow-400' },
+  { value: 'running', label: 'Running', dotClass: 'bg-blue-400 animate-pulse' },
+  { value: 'succeeded', label: 'Succeeded', dotClass: 'bg-green-400' },
+  { value: 'failed', label: 'Failed', dotClass: 'bg-red-400' },
+  { value: 'cancelled', label: 'Cancelled', dotClass: 'bg-gray-500' },
+]
 
 // Case-insensitive status label matching
 function statusLabelMatches(statusName: string, filter: string): boolean {
@@ -335,9 +355,9 @@ function getProjectOrgId(projectId: string): string {
 
 const filteredCiCdRuns = computed(() => {
   return store.runs.filter(run => {
-    if (filterOrg.value && getProjectOrgId(run.projectId) !== filterOrg.value) return false
-    if (filterProject.value && run.projectId !== filterProject.value) return false
-    if (filterStatus.value && !statusLabelMatches(run.statusName, filterStatus.value)) return false
+    if (filterOrg.value.length && !filterOrg.value.includes(getProjectOrgId(run.projectId))) return false
+    if (filterProject.value.length && !filterProject.value.includes(run.projectId)) return false
+    if (filterStatus.value.length && !filterStatus.value.some(s => statusLabelMatches(run.statusName, s))) return false
     if (filterBranch.value && !(run.branch || '').toLowerCase().includes(filterBranch.value.toLowerCase())) return false
     return true
   })
@@ -345,9 +365,9 @@ const filteredCiCdRuns = computed(() => {
 
 const filteredAgentSessions = computed(() => {
   return store.dashboardSessions.filter(session => {
-    if (filterOrg.value && getProjectOrgId(session.projectId) !== filterOrg.value) return false
-    if (filterProject.value && session.projectId !== filterProject.value) return false
-    if (filterStatus.value && !statusLabelMatches(session.statusName, filterStatus.value)) return false
+    if (filterOrg.value.length && !filterOrg.value.includes(getProjectOrgId(session.projectId))) return false
+    if (filterProject.value.length && !filterProject.value.includes(session.projectId)) return false
+    if (filterStatus.value.length && !filterStatus.value.some(s => statusLabelMatches(session.statusName, s))) return false
     if (filterBranch.value && !(session.gitBranch || '').toLowerCase().includes(filterBranch.value.toLowerCase())) return false
     return true
   })
