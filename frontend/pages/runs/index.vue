@@ -274,19 +274,19 @@ const TAB_QUERY = {
   'Agent Runs': 'agent',
 } as const
 
-function tabFromQuery(query: unknown): typeof tabs[number] {
+function getTabFromQueryParam(query: unknown): typeof tabs[number] {
   if (query === TAB_QUERY['CI/CD Runs']) return 'CI/CD Runs'
   if (query === TAB_QUERY['Agent Runs']) return 'Agent Runs'
   return 'All Runs'
 }
 
-const activeTab = ref<typeof tabs[number]>(tabFromQuery(route.query.tab))
+const activeTab = ref<typeof tabs[number]>(getTabFromQueryParam(route.query.tab))
 const filterOrg = ref((route.query.org as string) || '')
 const filterProject = ref((route.query.project as string) || '')
 const filterStatus = ref((route.query.status as string) || '')
 const filterBranch = ref((route.query.branch as string) || '')
 
-function tabToQuery(tab: typeof tabs[number]): string {
+function getQueryParamFromTab(tab: typeof tabs[number]): string {
   return TAB_QUERY[tab]
 }
 
@@ -297,7 +297,7 @@ function setTab(tab: typeof tabs[number]) {
 watch([activeTab, filterOrg, filterProject, filterStatus, filterBranch], () => {
   router.replace({
     query: {
-      tab: tabToQuery(activeTab.value),
+      tab: getQueryParamFromTab(activeTab.value),
       ...(filterOrg.value ? { org: filterOrg.value } : {}),
       ...(filterProject.value ? { project: filterProject.value } : {}),
       ...(filterStatus.value ? { status: filterStatus.value } : {}),
@@ -323,12 +323,12 @@ const filteredProjectOptions = computed(() => {
   return projectsStore.projects.filter(p => p.orgId === filterOrg.value)
 })
 
-// Status label to numeric status value mapping
+// Case-insensitive status label matching
 function statusLabelMatches(statusName: string, filter: string): boolean {
   return statusName.toLowerCase() === filter.toLowerCase()
 }
 
-// Project's orgId lookup
+// Looks up a project's organization ID by project ID. Returns empty string if project not found.
 function getProjectOrgId(projectId: string): string {
   return projectsStore.projects.find(p => p.id === projectId)?.orgId ?? ''
 }
