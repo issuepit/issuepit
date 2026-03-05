@@ -8,7 +8,7 @@
 ARG BASE_IMAGE=ghcr.io/issuepit/issuepit-helper-base:latest
 FROM ${BASE_IMAGE}
 
-ARG ACT_VERSION=0.2.74
+ARG ACT_VERSION=0.2.84
 ARG ACTIONLINT_VERSION=1.7.11
 
 # Install Docker Engine (dockerd) + CLI for true DinD (isolated in-container daemon).

@@ -1172,6 +1172,10 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
         bfsQueue.push(parent)
       }
     }
+  // A job is implicitly complete if any of its direct downstream jobs has started.
+  const implicitlyCompleteIds = new Set<string>()
+  for (const e of edges) {
+    if (startedIds.has(e.to)) implicitlyCompleteIds.add(e.from)
   }
 
   return Array.from(allIds).map(id => {
