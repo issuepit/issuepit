@@ -27,8 +27,7 @@
     <template v-else-if="store.currentSession">
       <!-- Session Info -->
       <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
-        <div class="flex items-start justify-between gap-4 mb-4">
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 flex-1">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div>
             <p class="text-xs text-gray-500 mb-1">Status</p>
             <span :class="statusClass(store.currentSession.status)" class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium">
@@ -64,16 +63,17 @@
             <p class="text-sm text-gray-400">{{ duration(store.currentSession.startedAt, store.currentSession.endedAt) }}</p>
           </div>
         </div>
-          <!-- Retry button for failed/cancelled sessions -->
+        <!-- Retry button for failed/cancelled sessions -->
+        <div v-if="store.currentSession.status === AgentSessionStatus.Failed || store.currentSession.status === AgentSessionStatus.Cancelled"
+          class="mt-4 pt-4 border-t border-gray-800 flex justify-end">
           <button
-            v-if="store.currentSession.status === AgentSessionStatus.Failed || store.currentSession.status === AgentSessionStatus.Cancelled"
-            class="flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white text-sm px-3 py-1.5 rounded-lg transition-colors shrink-0"
+            class="flex items-center gap-1.5 text-sm text-brand-400 hover:text-brand-300 transition-colors"
             @click="retrySession">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            Retry
+            Retry Session
           </button>
         </div>
       </div>
