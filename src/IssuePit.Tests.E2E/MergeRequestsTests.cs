@@ -48,7 +48,7 @@ public class MergeRequestsTests : IAsyncLifetime
         var page = await _browserContext!.NewPageAsync();
         try
         {
-            var username = $"mr{Guid.NewGuid():N}"[..12];
+            var username = GenerateTestUsername();
             const string password = "TestPass1!";
             await new LoginPage(page).RegisterAsync(username, password);
             await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
@@ -71,7 +71,7 @@ public class MergeRequestsTests : IAsyncLifetime
         var tenantId = await GetDefaultTenantIdAsync();
         client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
 
-        var username = $"mr{Guid.NewGuid():N}"[..12];
+        var username = GenerateTestUsername();
         const string password = "TestPass1!";
         var regResp = await client.PostAsJsonAsync("/api/auth/register", new { username, password });
         Assert.Equal(HttpStatusCode.Created, regResp.StatusCode);
@@ -121,7 +121,7 @@ public class MergeRequestsTests : IAsyncLifetime
         var tenantId = await GetDefaultTenantIdAsync();
         client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
 
-        var username = $"mr2{Guid.NewGuid():N}"[..12];
+        var username = GenerateTestUsername("mr2");
         const string password = "TestPass1!";
         await client.PostAsJsonAsync("/api/auth/register", new { username, password });
 
@@ -164,7 +164,7 @@ public class MergeRequestsTests : IAsyncLifetime
 
             // Find the project if the user already created one, or create one
             var orgSlug = $"mr-ui-{Guid.NewGuid():N}"[..16];
-            var username = $"mru{Guid.NewGuid():N}"[..12];
+            var username = GenerateTestUsername("mru");
             const string password = "TestPass1!";
             await client.PostAsJsonAsync("/api/auth/register", new { username, password });
             var orgResp = await client.PostAsJsonAsync("/api/orgs", new { name = "MR UI Org", slug = orgSlug });
@@ -190,6 +190,9 @@ public class MergeRequestsTests : IAsyncLifetime
     }
 
     // ────────────────────────── helpers ─────────────────────────────────
+
+    private static string GenerateTestUsername(string prefix = "mr") =>
+        $"{prefix}{Guid.NewGuid():N}"[..12];
 
     private HttpClient CreateCookieClient()
     {
