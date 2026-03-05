@@ -1172,7 +1172,7 @@ public partial class DockerCiCdRuntime(
     private static int? ParsePort(string? url)
     {
         if (string.IsNullOrWhiteSpace(url)) return null;
-        if (Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Port > 0)
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Port != -1)
             return uri.Port;
         return null;
     }
