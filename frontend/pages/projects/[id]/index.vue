@@ -235,7 +235,13 @@
                   @click.stop>
                   #{{ session.issueNumber }} {{ session.issueTitle }}
                 </NuxtLink>
-                <p class="text-xs text-gray-500 truncate">{{ session.agentName }}</p>
+                <p class="text-xs text-gray-500 truncate">
+                  <NuxtLink :to="`/agents/${session.agentId}`"
+                    class="hover:text-gray-300 transition-colors"
+                    @click.stop>
+                    {{ session.agentName }}
+                  </NuxtLink>
+                </p>
               </div>
               <span class="text-xs text-gray-600 shrink-0">{{ relativeTime(session.startedAt) }}</span>
             </div>

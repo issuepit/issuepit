@@ -262,22 +262,22 @@ function duration(start: string, end?: string) {
   return `${Math.floor(m / 60)}h ${m % 60}m`
 }
 
-function statusClass(status: CiCdRunStatus) {
+function statusClass(status: CiCdRunStatus | AgentSessionStatus) {
   switch (status) {
-    case CiCdRunStatus.Succeeded: return 'bg-green-900/30 text-green-400'
-    case CiCdRunStatus.Running: return 'bg-blue-900/30 text-blue-400'
-    case CiCdRunStatus.Failed: return 'bg-red-900/30 text-red-400'
-    case CiCdRunStatus.Cancelled: return 'bg-gray-800 text-gray-400'
+    case 'succeeded': return 'bg-green-900/30 text-green-400'
+    case 'running': return 'bg-blue-900/30 text-blue-400'
+    case 'failed': return 'bg-red-900/30 text-red-400'
+    case 'cancelled': return 'bg-gray-800 text-gray-400'
     default: return 'bg-yellow-900/30 text-yellow-400'
   }
 }
 
-function statusDot(status: CiCdRunStatus) {
+function statusDot(status: CiCdRunStatus | AgentSessionStatus) {
   switch (status) {
-    case CiCdRunStatus.Succeeded: return 'bg-green-400'
-    case CiCdRunStatus.Running: return 'bg-blue-400 animate-pulse'
-    case CiCdRunStatus.Failed: return 'bg-red-400'
-    case CiCdRunStatus.Cancelled: return 'bg-gray-500'
+    case 'succeeded': return 'bg-green-400'
+    case 'running': return 'bg-blue-400 animate-pulse'
+    case 'failed': return 'bg-red-400'
+    case 'cancelled': return 'bg-gray-500'
     default: return 'bg-yellow-400'
   }
 }

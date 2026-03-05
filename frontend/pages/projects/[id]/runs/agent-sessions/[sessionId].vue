@@ -130,9 +130,35 @@
 
         <!-- Details tab -->
         <template v-else>
-          <div v-if="debugMetadata.length" class="p-4 font-mono text-xs">
+          <div class="p-4 font-mono text-xs">
             <table class="w-full">
               <tbody>
+                <!-- Always-present session metadata -->
+                <tr class="border-b border-gray-800">
+                  <td class="py-2 pr-6 text-gray-500 whitespace-nowrap align-top w-40">Agent</td>
+                  <td class="py-2 text-gray-300 break-all">{{ store.currentSession.agentName }}</td>
+                </tr>
+                <tr class="border-b border-gray-800">
+                  <td class="py-2 pr-6 text-gray-500 whitespace-nowrap align-top w-40">Issue</td>
+                  <td class="py-2 text-gray-300 break-all">#{{ store.currentSession.issueNumber }} {{ store.currentSession.issueTitle }}</td>
+                </tr>
+                <tr class="border-b border-gray-800">
+                  <td class="py-2 pr-6 text-gray-500 whitespace-nowrap align-top w-40">Status</td>
+                  <td class="py-2 text-gray-300 break-all">{{ store.currentSession.statusName }}</td>
+                </tr>
+                <tr v-if="store.currentSession.gitBranch" class="border-b border-gray-800">
+                  <td class="py-2 pr-6 text-gray-500 whitespace-nowrap align-top w-40">Branch</td>
+                  <td class="py-2 text-gray-300 break-all font-mono">{{ store.currentSession.gitBranch }}</td>
+                </tr>
+                <tr v-if="store.currentSession.commitSha" class="border-b border-gray-800">
+                  <td class="py-2 pr-6 text-gray-500 whitespace-nowrap align-top w-40">Commit</td>
+                  <td class="py-2 text-gray-300 break-all font-mono">{{ store.currentSession.commitSha }}</td>
+                </tr>
+                <tr class="border-b border-gray-800">
+                  <td class="py-2 pr-6 text-gray-500 whitespace-nowrap align-top w-40">Session ID</td>
+                  <td class="py-2 text-gray-300 break-all font-mono">{{ store.currentSession.id }}</td>
+                </tr>
+                <!-- Additional metadata from [DEBUG] log lines -->
                 <tr v-for="(entry, i) in debugMetadata" :key="i" class="border-b border-gray-800 last:border-0">
                   <td class="py-2 pr-6 text-gray-500 whitespace-nowrap align-top w-40">{{ entry.key }}</td>
                   <td class="py-2 text-gray-300 break-all">{{ entry.value }}</td>
@@ -140,7 +166,6 @@
               </tbody>
             </table>
           </div>
-          <div v-else class="py-10 text-center text-sm text-gray-500">No details available</div>
         </template>
       </div>
 
