@@ -302,6 +302,17 @@ var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     .WaitForCompletion(kafkaInitializer)
     .WaitFor(kafka)
     .WaitFor(redis)
+    .WaitFor(registryMirror)
+    .WaitFor(storage)
+    .WithEnvironment("CiCd__NpmCacheUrl", npmCache.GetEndpoint("http"))
+    .WithEnvironment("CiCd__AptCacheUrl", aptCache.GetEndpoint("http"))
+    .WithEnvironment("CiCd__HttpCacheUrl", httpCache.GetEndpoint("http"))
+    // Enable full DinD traffic interception: sets up iptables DNAT rules inside privileged act
+    // containers so DinD job containers can reach the apt and HTTP cache services on the outer host.
+    // Disable by setting CiCd__InterceptAllTraffic=false (volume-based playwright cache still works).
+    .WithEnvironment("CiCd__InterceptAllTraffic", "true")
+    // S3 storage for artifacts: reuse the same LocalStack instance as the API.
+    .WithEnvironment("ImageStorage__ServiceUrl", storage.GetEndpoint("http"))
     .WithHttpHealthCheck("/health", endpointName: "http")
     .WithReplicas(cicdClientWorkers);
 

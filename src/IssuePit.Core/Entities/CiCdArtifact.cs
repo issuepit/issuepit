@@ -25,5 +25,9 @@ public class CiCdArtifact
     /// <summary>Number of files contained in the artifact.</summary>
     public int FileCount { get; set; }
 
+    /// <summary>S3 download URL for the artifact ZIP. Null when S3 upload is not configured.</summary>
+    [MaxLength(2000)]
+    public string? DownloadUrl { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

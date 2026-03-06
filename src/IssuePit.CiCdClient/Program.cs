@@ -1,5 +1,6 @@
 using Docker.DotNet;
 using IssuePit.CiCdClient.Runtimes;
+using IssuePit.CiCdClient.Services;
 using IssuePit.CiCdClient.Workers;
 using IssuePit.Core.Data;
 
@@ -18,6 +19,9 @@ builder.Services.AddSingleton<DockerCiCdRuntime>();
 builder.Services.AddSingleton<NativeCiCdRuntime>();
 builder.Services.AddSingleton<DryRunCiCdRuntime>();
 builder.Services.AddSingleton<CiCdRuntimeFactory>();
+
+// Artifact S3 upload (reuses ImageStorage__ config keys; skipped when not configured)
+builder.Services.AddSingleton<ArtifactStorageService>();
 
 builder.Services.AddHostedService<CiCdWorker>();
 
