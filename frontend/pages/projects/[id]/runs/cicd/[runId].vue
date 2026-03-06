@@ -590,6 +590,20 @@
                     <p class="text-xs text-gray-500">{{ artifact.fileCount }} file{{ artifact.fileCount === 1 ? '' : 's' }} · {{ formatBytes(artifact.sizeBytes) }}</p>
                   </div>
                   <span class="text-xs text-gray-600 shrink-0">{{ formatDate(artifact.createdAt) }}</span>
+                  <a
+                    v-if="artifact.downloadUrl"
+                    :href="artifact.downloadUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-medium bg-brand-600 hover:bg-brand-500 text-white transition-colors shrink-0"
+                    :aria-label="`Download ${artifact.name}.zip`"
+                    :title="`Download ${artifact.name}.zip`">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Download
+                  </a>
                 </div>
               </div>
             </template>

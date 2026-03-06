@@ -17,7 +17,8 @@ public class CiCdWorker(
     IConfiguration configuration,
     IServiceProvider services,
     IConnectionMultiplexer redis,
-    CiCdRuntimeFactory runtimeFactory) : BackgroundService
+    CiCdRuntimeFactory runtimeFactory,
+    ArtifactStorageService artifactStorage) : BackgroundService
 {
     // Tracks CancellationTokenSources for in-flight runs so they can be cancelled on demand.
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _activeRuns = new();
@@ -205,7 +206,13 @@ public class CiCdWorker(
         // running inside IssuePit and skip operations that require external credentials
         // (container registry push, GitHub Pages deployment, release PR creation, etc.).
         // User-supplied ActEnv values are appended after so they can override these defaults.
-        trigger = trigger with { ActEnv = PrependIssuePitEnvVars(trigger.ActEnv, run, project?.OrgId) };
+        // The same ISSUEPIT_* vars are also injected as --var so they are accessible via
+        // ${{ vars.KEY }} in job-level if: conditions (the env context is not available there).
+        trigger = trigger with
+        {
+            ActEnv = PrependIssuePitEnvVars(trigger.ActEnv, run, project?.OrgId),
+            ActVars = PrependIssuePitEnvVars(trigger.ActVars, run, project?.OrgId),
+        };
 
         // Create a per-run CTS linked to the host stoppingToken so we can cancel this run independently.
         using var runCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
@@ -398,6 +405,20 @@ public class CiCdWorker(
                     catch { return 0L; }
                 });
 
+                // Upload artifact as a ZIP to S3 and store the download URL (best-effort).
+                string? downloadUrl = null;
+                if (artifactStorage.IsConfigured)
+                {
+                    try
+                    {
+                        downloadUrl = await artifactStorage.UploadArtifactAsync(dir, name, runId, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Failed to upload artifact '{Name}' for run {RunId} to S3", name, runId);
+                    }
+                }
+
                 db.CiCdArtifacts.Add(new CiCdArtifact
                 {
                     Id = Guid.NewGuid(),
@@ -405,6 +426,7 @@ public class CiCdWorker(
                     Name = name,
                     SizeBytes = sizeBytes,
                     FileCount = files.Count,
+                    DownloadUrl = downloadUrl,
                     CreatedAt = DateTime.UtcNow,
                 });
             }

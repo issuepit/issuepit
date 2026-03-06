@@ -157,7 +157,7 @@ public class CiCdRunsController(
     }
 
     /// <summary>
-    /// Returns artifacts produced by the given run (name, size, file count).
+    /// Returns artifacts produced by the given run (name, size, file count, download URL).
     /// </summary>
     [HttpGet("{id:guid}/artifacts")]
     public async Task<IActionResult> GetArtifacts(Guid id)
@@ -176,6 +176,7 @@ public class CiCdRunsController(
                 a.Name,
                 a.SizeBytes,
                 a.FileCount,
+                a.DownloadUrl,
                 a.CreatedAt,
             })
             .ToListAsync();
