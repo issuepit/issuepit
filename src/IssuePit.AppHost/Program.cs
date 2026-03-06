@@ -1,6 +1,7 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
 var postgresServer = builder.AddPostgres("postgres")
+    //.WithDataVolume()
     .WithImage("postgres", "17.6");
 var postgresDb = postgresServer.AddDatabase("issuepit-db");
 
@@ -61,16 +62,17 @@ var npmCache = builder.AddContainer("npm-cache", "verdaccio/verdaccio", "6")
 // Port 3142 is fixed (the apt-cacher-ng default) so DockerCiCdRuntime can reference it by constant.
 // WithLifetime Persistent: cache data survives Aspire restarts.
 // Docs: https://help.ubuntu.com/community/Apt-Cacher-NG
-var aptCache = builder.AddContainer("apt-cache", "sameersbn/apt-cacher-ng", "3.3.4-20221016")
-    .WithContainerName("issuepit-apt-cache")
-    .WithLifetime(ContainerLifetime.Persistent)
-    .WithHttpEndpoint(targetPort: 3142, port: 3142, name: "http")
-    .WithVolume("issuepit-apt-cache", "/var/cache/apt-cacher-ng")
-    .WithUrlForEndpoint("http", u =>
-    {
-        u.DisplayText = "Statistics";
-        u.Url = "/acng-report.html";
-    });
+// TODO find a working image
+// var aptCache = builder.AddContainer("apt-cache", "sameersbn/apt-cacher-ng", "3.3.4-20221016")
+//     .WithContainerName("issuepit-apt-cache")
+//     .WithLifetime(ContainerLifetime.Persistent)
+//     .WithHttpEndpoint(targetPort: 3142, port: 3142, name: "http")
+//     .WithVolume("issuepit-apt-cache", "/var/cache/apt-cacher-ng")
+//     .WithUrlForEndpoint("http", u =>
+//     {
+//         u.DisplayText = "Statistics";
+//         u.Url = "/acng-report.html";
+//     });
 
 // Generic HTTP caching reverse-proxy for CI/CD downloads.
 // Routes by Host header: cdn.playwright.dev (30-day cache), objects.githubusercontent.com (7-day + revalidation).
@@ -278,7 +280,7 @@ var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     .WaitFor(redis)
     .WaitFor(registryMirror)
     .WithEnvironment("CiCd__NpmCacheUrl", npmCache.GetEndpoint("http"))
-    .WithEnvironment("CiCd__AptCacheUrl", aptCache.GetEndpoint("http"))
+    //.WithEnvironment("CiCd__AptCacheUrl", aptCache.GetEndpoint("http"))
     .WithEnvironment("CiCd__HttpCacheUrl", httpCache.GetEndpoint("http"))
     // Enable full DinD traffic interception: sets up iptables DNAT rules inside privileged act
     // containers so DinD job containers can reach the apt and HTTP cache services on the outer host.
