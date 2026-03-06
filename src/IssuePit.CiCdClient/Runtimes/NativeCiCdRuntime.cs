@@ -57,6 +57,14 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
             argsList.Add(FindFreePort().ToString());
         }
 
+        // Use a unique container-name prefix per run so that consecutive runs against the same
+        // workspace do not collide on Docker container names. Act derives container names from a
+        // hash of the workspace path; without a unique prefix, Run N+1 may try to create a
+        // container whose name is still held by Run N's async --rm cleanup, causing an
+        // "already exists" Docker error and a non-zero act exit code.
+        argsList.Add("--container-name-prefix");
+        argsList.Add($"act-{run.Id:N}"[..16]);
+
         logger.LogInformation("Running act (native) for run {RunId}: {ActBin} {Args}", run.Id, actBin, string.Join(' ', argsList));
 
         var psi = new ProcessStartInfo
