@@ -368,8 +368,7 @@ public class CiCdWorker(
     }
 
     /// <summary>
-    /// Scans <paramref name="artifactDir"/> for artifact directories (top-level subdirectories
-    /// excluding <c>_workflows</c>), records their names and sizes as <see cref="CiCdArtifact"/>
+    /// Scans <paramref name="artifactDir"/> for artifact directories, records their names and sizes as <see cref="CiCdArtifact"/>
     /// rows linked to the given run. Best-effort: errors are logged but never propagated.
     /// </summary>
     private async Task ParseAndStoreArtifactsAsync(
@@ -382,36 +381,38 @@ public class CiCdWorker(
         {
             if (!Directory.Exists(artifactDir)) return;
 
-            // Top-level subdirectories in the artifact server path are the artifact names.
-            // The act artifact server nests files under: <artifactName>/<runNumber>/<files>.
+            // The act artifact server uses the layout: <artifactServerPath>/<runNumber>/<artifactName>/<files>.
+            // Top-level directories are run numbers; second-level directories are the artifact names.
             // We exclude _workflows (internal) and hidden directories.
-            var artifactDirs = Directory.GetDirectories(artifactDir)
-                .Where(d =>
-                {
-                    var name = Path.GetFileName(d);
-                    return !string.IsNullOrEmpty(name) && name != "_workflows" && !name.StartsWith('.');
-                })
-                .ToList();
-
-            if (artifactDirs.Count == 0) return;
-
-            foreach (var dir in artifactDirs)
+            var artifactEntries = new List<(string Dir, string Name)>();
+            foreach (var runDir in Directory.GetDirectories(artifactDir))
             {
-                var name = Path.GetFileName(dir);
-                var files = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).ToList();
-                var sizeBytes = files.Sum(f =>
+                var runDirName = Path.GetFileName(runDir);
+                if (string.IsNullOrEmpty(runDirName) || runDirName.StartsWith('.') || runDirName == "_workflows")
+                    continue;
+
+                foreach (var dir in Directory.GetDirectories(runDir))
                 {
-                    try { return new FileInfo(f).Length; }
-                    catch { return 0L; }
-                });
+                    var name = Path.GetFileName(dir);
+                    if (!string.IsNullOrEmpty(name) && !name.StartsWith('.'))
+                        artifactEntries.Add((dir, name));
+                }
+            }
+
+            if (artifactEntries.Count == 0) return;
+
+            foreach (var (dir, name) in artifactEntries)
+            {
+                var (fileCount, sizeBytes) = ArtifactStorageService.CountArtifactFiles(dir);
 
                 // Upload artifact as a ZIP to S3 and store the download URL (best-effort).
                 string? downloadUrl = null;
+                string? storageKey = null;
                 if (artifactStorage.IsConfigured)
                 {
                     try
                     {
-                        downloadUrl = await artifactStorage.UploadArtifactAsync(dir, name, runId, cancellationToken);
+                        (downloadUrl, storageKey) = await artifactStorage.UploadArtifactAsync(dir, name, runId, cancellationToken);
                     }
                     catch (Exception ex)
                     {
@@ -425,14 +426,15 @@ public class CiCdWorker(
                     CiCdRunId = runId,
                     Name = name,
                     SizeBytes = sizeBytes,
-                    FileCount = files.Count,
+                    FileCount = fileCount,
                     DownloadUrl = downloadUrl,
+                    StorageKey = storageKey,
                     CreatedAt = DateTime.UtcNow,
                 });
             }
 
             await db.SaveChangesAsync(cancellationToken);
-            logger.LogInformation("Stored {Count} artifact(s) for run {RunId}", artifactDirs.Count, runId);
+            logger.LogInformation("Stored {Count} artifact(s) for run {RunId}", artifactEntries.Count, runId);
         }
         catch (Exception ex)
         {

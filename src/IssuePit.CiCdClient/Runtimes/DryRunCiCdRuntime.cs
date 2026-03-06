@@ -43,12 +43,12 @@ public class DryRunCiCdRuntime(ILogger<DryRunCiCdRuntime> logger) : ICiCdRuntime
 
         // Write a fake artifact into ArtifactServerPath so the post-run artifact collection
         // and S3 upload can be exercised in dry-run / E2E test mode.
-        // act's artifact server uses the layout: <artifactServerPath>/<name>/<runNumber>/<files>
+        // act's artifact server uses the layout: <artifactServerPath>/<runNumber>/<name>/<files>
         if (!string.IsNullOrWhiteSpace(trigger.ArtifactServerPath))
         {
             try
             {
-                var artifactDir = Path.Combine(trigger.ArtifactServerPath, "dry-run-artifact", "1");
+                var artifactDir = Path.Combine(trigger.ArtifactServerPath, "1", "dry-run-artifact");
                 Directory.CreateDirectory(artifactDir);
                 await File.WriteAllTextAsync(
                     Path.Combine(artifactDir, "result.txt"),
