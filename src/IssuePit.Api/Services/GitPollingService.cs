@@ -1,4 +1,5 @@
 using IssuePit.Core.Data;
+using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
 using Microsoft.EntityFrameworkCore;
 
@@ -113,6 +114,9 @@ public class GitPollingService(
                     repo.LastKnownCommitSha = sha;
                 }
 
+                // Check open merge requests for this repo and trigger CI on new commits
+                await PollMergeRequestBranchesAsync(db, repo, gitService, runQueue, cancellationToken);
+
                 await db.SaveChangesAsync(cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -135,6 +139,57 @@ public class GitPollingService(
 
                 try { await db.SaveChangesAsync(cancellationToken); }
                 catch (Exception saveEx) { logger.LogError(saveEx, "Failed to persist status update for repo {RepoId}", repo.Id); }
+            }
+        }
+    }
+
+    /// <summary>
+    /// For each open merge request linked to <paramref name="repo"/>, checks whether the source branch
+    /// has a new commit and, if so, triggers a CI/CD run.
+    /// </summary>
+    private async Task PollMergeRequestBranchesAsync(
+        IssuePitDbContext db,
+        GitRepository repo,
+        GitService gitService,
+        CiCdRunQueueService runQueue,
+        CancellationToken cancellationToken)
+    {
+        var openMrs = await db.MergeRequests
+            .Where(m => m.ProjectId == repo.ProjectId && m.Status == MergeRequestStatus.Open)
+            .ToListAsync(cancellationToken);
+
+        foreach (var mr in openMrs)
+        {
+            if (cancellationToken.IsCancellationRequested) break;
+
+            var sha = gitService.GetBranchTipSha(repo, mr.SourceBranch);
+            if (sha is null) continue;
+            if (sha == mr.LastKnownSourceSha) continue;
+
+            logger.LogInformation(
+                "New commit {Sha} on MR source branch '{Branch}' (MR {MrId}) — triggering CI/CD",
+                sha, mr.SourceBranch, mr.Id);
+
+            try
+            {
+                var run = await runQueue.EnqueueAsync(
+                    projectId: repo.ProjectId,
+                    commitSha: sha,
+                    branch: mr.SourceBranch,
+                    workflow: null,
+                    eventName: "pull_request",
+                    inputs: null,
+                    gitRepoUrl: repo.RemoteUrl,
+                    extraPayload: new { mergeRequestId = mr.Id },
+                    cancellationToken: cancellationToken);
+
+                mr.LastKnownSourceSha = sha;
+                mr.LastCiCdRunId = run.Id;
+                mr.UpdatedAt = DateTime.UtcNow;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "Failed to trigger CI/CD run for MR {MrId}", mr.Id);
             }
         }
     }

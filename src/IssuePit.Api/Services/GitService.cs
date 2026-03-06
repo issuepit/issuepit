@@ -354,6 +354,74 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
         return hunks;
     }
 
+    /// <summary>
+    /// Merges <paramref name="sourceBranch"/> into <paramref name="targetBranch"/> using a merge commit.
+    /// Returns the resulting merge commit SHA, or throws on conflict / failure.
+    /// </summary>
+    public string MergeBranch(GitRepository repo, string sourceBranch, string targetBranch, string committerName = "IssuePit", string committerEmail = "issuepit@localhost")
+    {
+        var localPath = EnsureCloned(repo);
+        var sem = GetRepoLock(repo.Id);
+        sem.Wait();
+        try
+        {
+            using var gitRepo = new Repository(localPath);
+
+            // Resolve source and target commits
+            var sourceCommit = ResolveCommit(gitRepo, sourceBranch)
+                ?? throw new InvalidOperationException($"Source branch '{sourceBranch}' not found.");
+            var targetCommit = ResolveCommit(gitRepo, targetBranch)
+                ?? throw new InvalidOperationException($"Target branch '{targetBranch}' not found.");
+
+            // Checkout target branch
+            var target = gitRepo.Branches.FirstOrDefault(b =>
+                b.FriendlyName.Equals(targetBranch, StringComparison.OrdinalIgnoreCase) ||
+                b.FriendlyName.Equals($"origin/{targetBranch}", StringComparison.OrdinalIgnoreCase))
+                ?? throw new InvalidOperationException($"Target branch '{targetBranch}' not found in repository.");
+
+            // If target is a remote-tracking branch, check out or create a local tracking branch
+            Branch localTarget;
+            if (target.IsRemote)
+            {
+                var localName = targetBranch;
+                var existing = gitRepo.Branches[localName];
+                if (existing is null)
+                {
+                    existing = gitRepo.CreateBranch(localName, target.Tip);
+                    gitRepo.Branches.Update(existing, b => b.TrackedBranch = target.CanonicalName);
+                }
+                localTarget = existing;
+            }
+            else
+            {
+                localTarget = target;
+            }
+
+            Commands.Checkout(gitRepo, localTarget);
+
+            var committer = new Signature(committerName, committerEmail, DateTimeOffset.UtcNow);
+            var mergeResult = gitRepo.Merge(sourceCommit, committer, new MergeOptions
+            {
+                FastForwardStrategy = FastForwardStrategy.NoFastForward,
+                CommitOnSuccess = true,
+            });
+
+            if (mergeResult.Status == MergeStatus.Conflicts)
+                throw new InvalidOperationException("Merge resulted in conflicts and cannot be auto-merged.");
+
+            if (mergeResult.Status == MergeStatus.UpToDate)
+                return targetCommit.Sha;
+
+            return mergeResult.Commit?.Sha
+                ?? gitRepo.Head.Tip?.Sha
+                ?? throw new InvalidOperationException("Merge completed but commit SHA is unavailable.");
+        }
+        finally
+        {
+            sem.Release();
+        }
+    }
+
     private static Commit? ResolveCommit(Repository gitRepo, string? branchOrSha)
     {
         if (string.IsNullOrEmpty(branchOrSha))
