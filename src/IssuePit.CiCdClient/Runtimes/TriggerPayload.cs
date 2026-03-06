@@ -36,6 +36,8 @@ public record TriggerPayload(
     bool ForceRetry = false,
     /// <summary>Newline-separated KEY=VALUE pairs passed as <c>--env</c> arguments to <c>act</c>.</summary>
     string? ActEnv = null,
+    /// <summary>Newline-separated KEY=VALUE pairs passed as <c>--var</c> arguments to <c>act</c>, accessible via <c>${{ vars.KEY }}</c> in workflow expressions (including job-level <c>if:</c> conditions).</summary>
+    string? ActVars = null,
     /// <summary>Newline-separated KEY=VALUE pairs passed as <c>--secret</c> arguments to <c>act</c>.</summary>
     string? ActSecrets = null,
     /// <summary>Override the act runner image used by act for platform mapping (e.g. ubuntu-latest). Null means use the config or global default.</summary>
