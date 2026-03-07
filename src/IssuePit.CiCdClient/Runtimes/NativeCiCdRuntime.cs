@@ -57,15 +57,50 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
             argsList.Add(FindFreePort().ToString());
         }
 
-        // Use a unique container-name prefix per run so that consecutive runs against the same
-        // workspace do not collide on Docker container names. Act derives container names from a
-        // hash of the workspace path; without a unique prefix, Run N+1 may try to create a
-        // container whose name is still held by Run N's async --rm cleanup, causing an
-        // "already exists" Docker error and a non-zero act exit code.
-        argsList.Add("--container-name-prefix");
-        argsList.Add($"act-{run.Id:N}"[..16]);
-
         logger.LogInformation("Running act (native) for run {RunId}: {ActBin} {Args}", run.Id, actBin, string.Join(' ', argsList));
+
+        // Act derives Docker container names from a hash of the workspace path. Consecutive runs
+        // against the same workspace would collide on container names when --rm's async cleanup
+        // is still in progress. Create a git worktree at a unique temp path so each run hashes
+        // to a different container name.
+        var originalWorkspacePath = workspacePath;
+        var tempWorktree = Path.Combine(Path.GetTempPath(), $"act-{run.Id:N}");
+        var worktreeCreated = false;
+        try
+        {
+            var psiWorktree = new ProcessStartInfo("git")
+            {
+                WorkingDirectory = workspacePath,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            psiWorktree.ArgumentList.Add("worktree");
+            psiWorktree.ArgumentList.Add("add");
+            psiWorktree.ArgumentList.Add("--detach");
+            psiWorktree.ArgumentList.Add(tempWorktree);
+            using var gitAddProcess = new Process { StartInfo = psiWorktree };
+            gitAddProcess.Start();
+            var gitAddStderr = await gitAddProcess.StandardError.ReadToEndAsync(cancellationToken);
+            await gitAddProcess.WaitForExitAsync(cancellationToken);
+            if (gitAddProcess.ExitCode == 0)
+            {
+                worktreeCreated = true;
+                workspacePath = tempWorktree;
+                logger.LogDebug("Created git worktree at {Worktree} for run {RunId}", tempWorktree, run.Id);
+            }
+            else
+            {
+                logger.LogWarning(
+                    "git worktree add failed (exit {ExitCode}) for run {RunId}; proceeding with original workspace (container names may collide). stderr: {Stderr}",
+                    gitAddProcess.ExitCode, run.Id, gitAddStderr.Trim());
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not create git worktree for run {RunId}; proceeding with original workspace", run.Id);
+        }
 
         var psi = new ProcessStartInfo
         {
@@ -79,28 +114,66 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
         foreach (var arg in argsList)
             psi.ArgumentList.Add(arg);
 
-        using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
-        process.Start();
-
-        try
+        Exception? actException = null;
+        using (var process = new Process { StartInfo = psi, EnableRaisingEvents = true })
         {
-            var stdoutTask = StreamOutputAsync(process.StandardOutput, LogStream.Stdout, onLogLine, cancellationToken);
-            var stderrTask = StreamOutputAsync(process.StandardError, LogStream.Stderr, onLogLine, cancellationToken);
+            process.Start();
 
-            await Task.WhenAll(stdoutTask, stderrTask);
-            await process.WaitForExitAsync(cancellationToken);
+            try
+            {
+                var stdoutTask = StreamOutputAsync(process.StandardOutput, LogStream.Stdout, onLogLine, cancellationToken);
+                var stderrTask = StreamOutputAsync(process.StandardError, LogStream.Stderr, onLogLine, cancellationToken);
+
+                await Task.WhenAll(stdoutTask, stderrTask);
+                await process.WaitForExitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                // Kill the process when cancellation (user cancel or app shutdown) is requested.
+                try { process.Kill(entireProcessTree: true); } catch { /* best-effort */ }
+                throw;
+            }
+
+            if (process.ExitCode != 0)
+                actException = new Exception(
+                    $"act exited with code {process.ExitCode} " +
+                    $"(workspace: {workspacePath}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
         }
-        catch (OperationCanceledException)
+
+        if (worktreeCreated)
         {
-            // Kill the process when cancellation (user cancel or app shutdown) is requested.
-            try { process.Kill(entireProcessTree: true); } catch { /* best-effort */ }
-            throw;
+            try
+            {
+                var psiRemove = new ProcessStartInfo("git")
+                {
+                    WorkingDirectory = originalWorkspacePath,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                };
+                psiRemove.ArgumentList.Add("worktree");
+                psiRemove.ArgumentList.Add("remove");
+                psiRemove.ArgumentList.Add("--force");
+                psiRemove.ArgumentList.Add(tempWorktree);
+                using var gitRemoveProcess = new Process { StartInfo = psiRemove };
+                gitRemoveProcess.Start();
+                var gitRemoveStderr = await gitRemoveProcess.StandardError.ReadToEndAsync(CancellationToken.None);
+                await gitRemoveProcess.WaitForExitAsync(CancellationToken.None);
+                if (gitRemoveProcess.ExitCode != 0)
+                    logger.LogWarning(
+                        "git worktree remove exited with {ExitCode} for {Worktree}. stderr: {Stderr}",
+                        gitRemoveProcess.ExitCode, tempWorktree, gitRemoveStderr.Trim());
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to remove git worktree {Worktree}", tempWorktree);
+                // Best-effort cleanup — do not mask act exception
+            }
         }
 
-        if (process.ExitCode != 0)
-            throw new Exception(
-                $"act exited with code {process.ExitCode} " +
-                $"(workspace: {workspacePath}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
+        if (actException is not null)
+            throw actException;
     }
 
     /// <summary>
