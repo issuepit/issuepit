@@ -128,13 +128,13 @@
               <span class="text-sm font-medium text-white">Custom tag</span>
               <span v-if="customActImageActive" class="px-1.5 py-0.5 rounded text-xs font-medium bg-brand-700/80 text-white border border-brand-600">Selected</span>
             </div>
-            <p class="text-xs text-gray-500 mt-0.5">Enter any tag or full image reference.</p>
+            <p class="text-xs text-gray-500 mt-0.5">Enter any tag or full image reference. Version tags follow the format <code class="bg-gray-900 px-1 rounded">1.2.3-dotnet10-node24</code>.</p>
             <div v-if="customActImageActive" class="mt-2" @click.stop>
               <input
                 ref="customActInputRef"
                 v-model="customActImageInput"
                 type="text"
-                placeholder="e.g. sha-abc1234 or ghcr.io/issuepit/issuepit-helper-act:latest"
+                placeholder="e.g. 1.2.0-dotnet10-node24 or ghcr.io/issuepit/issuepit-helper-act:sha-abc1234"
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
                 @input="onCustomActImageInput"
               />
