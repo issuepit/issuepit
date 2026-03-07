@@ -12,6 +12,12 @@ public record TriggerPayload(
     string? WorkspacePath,
     string? EventName,
     /// <summary>
+    /// Pre-created run ID. When set, the worker looks up this existing <c>CiCdRun</c> row
+    /// (already persisted with <c>Pending</c> status by the API) instead of creating a new one.
+    /// Null for payloads produced by older callers that don't pre-create the run.
+    /// </summary>
+    Guid? RunId = null,
+    /// <summary>
     /// When true the Docker container is not removed after a failed run.
     /// Useful for debugging: inspect the container to find where act or other tooling is installed.
     /// </summary>
@@ -30,6 +36,8 @@ public record TriggerPayload(
     bool ForceRetry = false,
     /// <summary>Newline-separated KEY=VALUE pairs passed as <c>--env</c> arguments to <c>act</c>.</summary>
     string? ActEnv = null,
+    /// <summary>Newline-separated KEY=VALUE pairs passed as <c>--var</c> arguments to <c>act</c>, accessible via <c>${{ vars.KEY }}</c> in workflow expressions (including job-level <c>if:</c> conditions).</summary>
+    string? ActVars = null,
     /// <summary>Newline-separated KEY=VALUE pairs passed as <c>--secret</c> arguments to <c>act</c>.</summary>
     string? ActSecrets = null,
     /// <summary>Override the act runner image used by act for platform mapping (e.g. ubuntu-latest). Null means use the config or global default.</summary>

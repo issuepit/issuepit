@@ -40,6 +40,10 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
             ? trigger.ActRunnerImage
             : configuration["CiCd:ActImage"] ?? "catthehacker/ubuntu:act-latest";
         var platformLabels = new[] { "ubuntu-latest", "ubuntu-24.04", "ubuntu-22.04", "ubuntu-20.04" };
+        // Print act version for diagnostics before the actual run.
+        await TryLogActVersionAsync(actBin, onLogLine, cancellationToken);
+
+        var args = BuildActArguments(trigger);
 
         var argsList = BuildActArgumentsList(trigger).ToList();
         foreach (var label in platformLabels)
@@ -243,6 +247,41 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
         }
     }
 
+    /// <summary>
+    /// Runs <c>act --version</c> and emits the output as a <c>[DEBUG]</c> log line.
+    /// Best-effort: silently skipped when act is not found or fails. Never throws.
+    /// </summary>
+    internal static async Task TryLogActVersionAsync(
+        string actBin,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo(actBin, "--version")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            using var process = new Process { StartInfo = psi };
+            if (!process.Start())
+                return;
+
+            var version = (await process.StandardOutput.ReadToEndAsync(cancellationToken)).Trim();
+            await process.WaitForExitAsync(cancellationToken);
+
+            if (!string.IsNullOrEmpty(version))
+                await onLogLine($"[DEBUG] Act version    : {version}", LogStream.Stdout);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch { /* best-effort */ }
+    }
+
     private static async Task StreamOutputAsync(
         StreamReader reader,
         LogStream stream,
@@ -285,6 +324,14 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
         foreach (var pair in ParseKeyValuePairs(trigger.ActEnv))
         {
             list.Add("--env");
+            list.Add(pair);
+        }
+
+        // Variables are passed as --var so they are accessible via ${{ vars.KEY }} in workflow
+        // expressions, including job-level if: conditions where the env context is not available.
+        foreach (var pair in ParseKeyValuePairs(trigger.ActVars))
+        {
+            list.Add("--var");
             list.Add(pair);
         }
 

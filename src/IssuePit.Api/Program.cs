@@ -35,6 +35,7 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 
 builder.Services.AddHostedService<RedisLogRelayService>();
 builder.Services.AddHostedService<GitPollingService>();
+builder.Services.AddHostedService<MergeRequestAutoMergeService>();
 builder.Services.AddHostedService<MetricSnapshotService>();
 builder.Services.AddHostedService<BotNotificationDispatchService>();
 
@@ -43,6 +44,7 @@ builder.Services.AddScoped<TenantDatabaseService>();
 builder.Services.AddScoped<GitService>();
 builder.Services.AddScoped<ApiKeyResolverService>();
 builder.Services.AddScoped<IssueEnhancementService>();
+builder.Services.AddScoped<CiCdRunQueueService>();
 builder.Services.Configure<IssuePit.Api.Services.ImageStorageOptions>(
     builder.Configuration.GetSection(IssuePit.Api.Services.ImageStorageOptions.SectionName));
 builder.Services.AddSingleton<IssuePit.Api.Services.ImageStorageService>();

@@ -643,14 +643,16 @@ export interface CiCdRun {
   externalSource?: string
   externalRunId?: string
   workspacePath?: string
+  eventName?: string
+  inputsJson?: string
 }
 
 export enum AgentSessionStatus {
-  Pending = 0,
-  Running = 1,
-  Succeeded = 2,
-  Failed = 3,
-  Cancelled = 4,
+  Pending = 'pending',
+  Running = 'running',
+  Succeeded = 'succeeded',
+  Failed = 'failed',
+  Cancelled = 'cancelled',
 }
 
 export const AgentSessionStatusLabels: Record<AgentSessionStatus, string> = {
@@ -720,6 +722,7 @@ export interface CiCdArtifact {
   name: string
   sizeBytes: number
   fileCount: number
+  storageKey?: string
   createdAt: string
 }
 

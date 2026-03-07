@@ -1,5 +1,7 @@
+using Confluent.Kafka;
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
+using IssuePit.Core.Enums;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,7 +9,7 @@ namespace IssuePit.Api.Controllers;
 
 [ApiController]
 [Route("api/agent-sessions")]
-public class AgentSessionsController(IssuePitDbContext db, TenantContext tenant) : ControllerBase
+public class AgentSessionsController(IssuePitDbContext db, TenantContext tenant, IProducer<string, string> producer) : ControllerBase
 {
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetSession(Guid id)
@@ -74,5 +76,36 @@ public class AgentSessionsController(IssuePitDbContext db, TenantContext tenant)
             .ToListAsync();
 
         return Ok(logs);
+    }
+
+    [HttpPost("{id:guid}/retry")]
+    public async Task<IActionResult> RetrySession(Guid id)
+    {
+        var session = await db.AgentSessions
+            .Include(s => s.Agent)
+            .Include(s => s.Issue).ThenInclude(i => i.Project)
+            .FirstOrDefaultAsync(s => s.Id == id && s.Issue.Project!.Organization.TenantId == tenant.CurrentTenant!.Id);
+
+        if (session is null) return NotFound();
+
+        if (session.Status is not (AgentSessionStatus.Failed or AgentSessionStatus.Cancelled))
+            return Conflict(new { error = "Only failed or cancelled sessions can be retried.", session.Status, StatusName = session.Status.ToString() });
+
+        // Re-publish issue-assigned so the ExecutionClient creates a new session for the same agent and issue.
+        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            id = session.IssueId,
+            projectId = session.Issue.ProjectId,
+            title = session.Issue.Title,
+            agentId = session.AgentId,
+        });
+
+        await producer.ProduceAsync("issue-assigned", new Message<string, string>
+        {
+            Key = session.IssueId.ToString(),
+            Value = payload,
+        });
+
+        return Accepted(new { retriedSessionId = session.Id });
     }
 }

@@ -57,6 +57,13 @@
             </span>
             <span v-else class="text-sm text-gray-600">local</span>
           </div>
+          <div>
+            <p class="text-xs text-gray-500 mb-1">Trigger</p>
+            <span v-if="store.currentRun.eventName" class="text-xs bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded font-mono">
+              {{ store.currentRun.eventName }}
+            </span>
+            <span v-else class="text-sm text-gray-600">—</span>
+          </div>
           <div v-if="store.currentRun.externalRunId">
             <p class="text-xs text-gray-500 mb-1">External Run ID</p>
             <p class="text-sm text-gray-300 font-mono text-xs">{{ store.currentRun.externalRunId }}</p>
@@ -72,6 +79,17 @@
           <div>
             <p class="text-xs text-gray-500 mb-1">Duration</p>
             <p class="text-sm text-gray-400">{{ duration(store.currentRun.startedAt, store.currentRun.endedAt) }}</p>
+          </div>
+        </div>
+        <!-- Inputs for workflow_dispatch runs -->
+        <div v-if="runInputs && Object.keys(runInputs).length"
+          class="mt-4 pt-4 border-t border-gray-800">
+          <p class="text-xs text-gray-500 mb-2">Inputs</p>
+          <div class="flex flex-wrap gap-2">
+            <span v-for="(val, key) in runInputs" :key="key"
+              class="text-xs bg-gray-800 text-gray-300 px-2 py-0.5 rounded font-mono">
+              {{ key }}={{ val }}
+            </span>
           </div>
         </div>
         <div v-if="store.currentRun.status === CiCdRunStatus.Failed || store.currentRun.status === CiCdRunStatus.Cancelled"
@@ -572,6 +590,18 @@
                     <p class="text-xs text-gray-500">{{ artifact.fileCount }} file{{ artifact.fileCount === 1 ? '' : 's' }} · {{ formatBytes(artifact.sizeBytes) }}</p>
                   </div>
                   <span class="text-xs text-gray-600 shrink-0">{{ formatDate(artifact.createdAt) }}</span>
+                  <a
+                    v-if="artifact.storageKey"
+                    :href="`/api/cicd-runs/${runId}/artifacts/${artifact.id}/download`"
+                    class="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-medium bg-brand-600 hover:bg-brand-500 text-white transition-colors shrink-0"
+                    :aria-label="`Download ${artifact.name}.zip`"
+                    :title="`Download ${artifact.name}.zip`">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Download
+                  </a>
                 </div>
               </div>
             </template>
@@ -1127,6 +1157,18 @@ const jobLogMap = computed(() => {
 const runIsTerminal = computed(() => {
   const s = store.currentRun?.status
   return s === CiCdRunStatus.Succeeded || s === CiCdRunStatus.Failed || s === CiCdRunStatus.Cancelled
+})
+
+/** Parsed inputs dictionary for workflow_dispatch runs. Null when no inputs are stored. */
+const runInputs = computed<Record<string, string> | null>(() => {
+  const json = store.currentRun?.inputsJson
+  if (!json) return null
+  try {
+    return JSON.parse(json) as Record<string, string>
+  } catch (e) {
+    console.warn('Failed to parse run inputsJson:', e)
+    return null
+  }
 })
 
 // Build the enriched job list by unioning graph nodes with log-observed jobs.

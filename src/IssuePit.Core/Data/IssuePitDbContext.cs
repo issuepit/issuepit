@@ -49,6 +49,7 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<ProjectMetricSnapshot> ProjectMetricSnapshots => Set<ProjectMetricSnapshot>();
     public DbSet<IssueEvent> IssueEvents => Set<IssueEvent>();
     public DbSet<Skill> Skills => Set<Skill>();
+    public DbSet<MergeRequest> MergeRequests => Set<MergeRequest>();
     public DbSet<TodoBoard> TodoBoards => Set<TodoBoard>();
     public DbSet<TodoCategory> TodoCategories => Set<TodoCategory>();
     public DbSet<Todo> Todos => Set<Todo>();

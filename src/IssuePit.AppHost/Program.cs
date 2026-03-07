@@ -253,10 +253,19 @@ var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("exe
     .WithReference(postgresDb)
     .WithReference(postgresServer)
     .WithReference(kafka)
+    .WithReference(redis)
     .WaitForCompletion(migrator)
     .WaitForCompletion(kafkaInitializer)
     .WaitFor(kafka)
+    .WaitFor(redis)
     .WithHttpHealthCheck("/health", endpointName: "http");
+
+// Scale cicd-client horizontally to allow multiple concurrent runs.
+// Each replica is a separate Kafka consumer in the "cicd-client" group; Kafka distributes
+// partitions across replicas so each instance processes one run at a time without blocking others.
+// Increase CICD_CLIENT_WORKERS (default 1) to allow more concurrent pipeline runs.
+var cicdClientWorkers = int.TryParse(
+    Environment.GetEnvironmentVariable("CICD_CLIENT_WORKERS"), out var w) && w > 0 ? w : 1;
 
 var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     .WithReference(postgresDb)
@@ -268,6 +277,7 @@ var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     .WaitFor(kafka)
     .WaitFor(redis)
     .WaitFor(registryMirror)
+    .WaitFor(storage)
     .WithEnvironment("CiCd__NpmCacheUrl", npmCache.GetEndpoint("http"))
     .WithEnvironment("CiCd__AptCacheUrl", aptCache.GetEndpoint("http"))
     .WithEnvironment("CiCd__HttpCacheUrl", httpCache.GetEndpoint("http"))
@@ -275,7 +285,10 @@ var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     // containers so DinD job containers can reach the apt and HTTP cache services on the outer host.
     // Disable by setting CiCd__InterceptAllTraffic=false (volume-based playwright cache still works).
     .WithEnvironment("CiCd__InterceptAllTraffic", "true")
-    .WithHttpHealthCheck("/health", endpointName: "http");
+    // S3 storage for artifacts: reuse the same LocalStack instance as the API.
+    .WithEnvironment("ImageStorage__ServiceUrl", storage.GetEndpoint("http"))
+    .WithHttpHealthCheck("/health", endpointName: "http")
+    .WithReplicas(cicdClientWorkers);
 
 // Configure the CI/CD client to use NativeCiCdRuntime with the dummy git repo when running
 // under the E2E test harness. AspireFixture sets CICD_E2E_REPO_PATH to the path of a

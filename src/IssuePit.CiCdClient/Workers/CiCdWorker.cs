@@ -18,7 +18,8 @@ public class CiCdWorker(
     IConfiguration configuration,
     IServiceProvider services,
     IConnectionMultiplexer redis,
-    CiCdRuntimeFactory runtimeFactory) : BackgroundService
+    CiCdRuntimeFactory runtimeFactory,
+    ArtifactStorageService artifactStorage) : BackgroundService
 {
     // Tracks CancellationTokenSources for in-flight runs so they can be cancelled on demand.
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _activeRuns = new();
@@ -118,7 +119,7 @@ public class CiCdWorker(
 
     private async Task ProcessTriggerAsync(string key, string payload, CancellationToken stoppingToken)
     {
-        // Expected payload: {"projectId":"...","commitSha":"...","branch":"...","workflow":"...","agentSessionId":"..."}
+        // Expected payload: {"runId":"...","projectId":"...","commitSha":"...","branch":"...","workflow":"...","agentSessionId":"..."}
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
 
@@ -161,18 +162,38 @@ public class CiCdWorker(
         var org = project?.Organization;
         var semaphore = GetOrgSemaphore(org);
 
-        var run = new CiCdRun
+        // If the API pre-created the run (RunId is present), load that record;
+        // otherwise create a new one (fallback for old payloads without RunId).
+        CiCdRun run;
+        if (trigger.RunId.HasValue)
         {
-            Id = Guid.NewGuid(),
-            ProjectId = trigger.ProjectId,
-            AgentSessionId = trigger.AgentSessionId,
-            CommitSha = trigger.CommitSha ?? key,
-            Branch = trigger.Branch,
-            Workflow = trigger.Workflow,
-            WorkspacePath = trigger.WorkspacePath,
-            Status = semaphore is not null ? CiCdRunStatus.Pending : CiCdRunStatus.Running,
-            StartedAt = DateTime.UtcNow,
-        };
+            run = await db.CiCdRuns.FirstOrDefaultAsync(r => r.Id == trigger.RunId.Value, stoppingToken)
+                  ?? throw new InvalidOperationException($"Pre-created run {trigger.RunId} not found in DB.");
+        }
+        else
+        {
+            run = new CiCdRun
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = trigger.ProjectId,
+                AgentSessionId = trigger.AgentSessionId,
+                CommitSha = trigger.CommitSha ?? key,
+                Branch = trigger.Branch,
+                Workflow = trigger.Workflow,
+                WorkspacePath = trigger.WorkspacePath,
+                EventName = trigger.EventName,
+                InputsJson = trigger.Inputs is { Count: > 0 }
+                    ? TrySerializeInputs(trigger.Inputs)
+                    : null,
+                Status = CiCdRunStatus.Pending,
+                StartedAt = DateTime.UtcNow,
+            };
+            db.CiCdRuns.Add(run);
+            await db.SaveChangesAsync(stoppingToken);
+
+            logger.LogInformation("CI/CD run {RunId} created locally (legacy path — no RunId in payload) for commit {Commit} (event={EventName})",
+                run.Id, run.CommitSha, run.EventName);
+        }
 
         // Prepare a host-side artifact directory so act's built-in artifact server can serve
         // actions/upload-artifact and actions/download-artifact without a real GitHub token.
@@ -186,27 +207,30 @@ public class CiCdWorker(
         // running inside IssuePit and skip operations that require external credentials
         // (container registry push, GitHub Pages deployment, release PR creation, etc.).
         // User-supplied ActEnv values are appended after so they can override these defaults.
-        trigger = trigger with { ActEnv = PrependIssuePitEnvVars(trigger.ActEnv, run, project?.OrgId) };
-
-        db.CiCdRuns.Add(run);
-        await db.SaveChangesAsync(stoppingToken);
-
-        logger.LogInformation("CI/CD run {RunId} started for commit {Commit}", run.Id, run.CommitSha);
+        // The same ISSUEPIT_* vars are also injected as --var so they are accessible via
+        // ${{ vars.KEY }} in job-level if: conditions (the env context is not available there).
+        trigger = trigger with
+        {
+            ActEnv = PrependIssuePitEnvVars(trigger.ActEnv, run, project?.OrgId),
+            ActVars = PrependIssuePitEnvVars(trigger.ActVars, run, project?.OrgId),
+        };
 
         // Create a per-run CTS linked to the host stoppingToken so we can cancel this run independently.
         using var runCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         _activeRuns[run.Id] = runCts;
 
         // Acquire a slot from the org's concurrency pool if a limit is configured.
+        // Then transition from Pending → Running.
         if (semaphore is not null && org is not null)
         {
             logger.LogInformation(
                 "Waiting for available slot in org pool (org={OrgId}, limit={Limit}) for run {RunId}",
                 org.Id, org.MaxConcurrentRunners, run.Id);
             await semaphore.WaitAsync(runCts.Token);
-            run.Status = CiCdRunStatus.Running;
-            await db.SaveChangesAsync(stoppingToken);
         }
+
+        run.Status = CiCdRunStatus.Running;
+        await db.SaveChangesAsync(stoppingToken);
 
         try
         {
@@ -223,6 +247,17 @@ public class CiCdWorker(
             }
 
             var runtime = runtimeFactory.Create();
+
+            // Log run parameters so they are visible in the log output
+            await AppendLogAsync(run.Id,
+                $"[INFO] Run started — event: {run.EventName ?? "push"}, commit: {run.CommitSha}",
+                LogStream.Stdout, db, stoppingToken);
+            if (!string.IsNullOrEmpty(run.InputsJson))
+            {
+                await AppendLogAsync(run.Id,
+                    $"[INFO] Inputs: {run.InputsJson}",
+                    LogStream.Stdout, db, stoppingToken);
+            }
 
             // Start a periodic heartbeat so connected clients can keep the duration display live
             // without needing a client-side timer. The heartbeat is cancelled when the run finishes.
@@ -369,6 +404,9 @@ public class CiCdWorker(
     /// act v0.2.x layout where a numeric run-number directory is interposed
     /// (<c>&lt;runNumber&gt;/&lt;artifactName&gt;/&lt;files&gt;</c>).
     /// Excludes <c>_workflows</c> and hidden directories. Best-effort: errors are logged but never propagated.
+    ///
+    /// Scans <paramref name="artifactDir"/> for artifact directories, records their names and sizes as <see cref="CiCdArtifact"/>
+    /// rows linked to the given run. Best-effort: errors are logged but never propagated.
     /// </summary>
     private async Task ParseAndStoreArtifactsAsync(
         Guid runId,
@@ -380,45 +418,44 @@ public class CiCdWorker(
         {
             if (!Directory.Exists(artifactDir)) return;
 
-            // Collect artifact directories. act v0.2.x nests artifacts under a numeric run-number
-            // directory: <runNumber>/<artifactName>/<files>. Older act versions used a flat layout:
-            // <artifactName>/<files>. We handle both by checking whether the top-level dir name is
-            // purely numeric (run-number prefix) and if so, looking one level deeper.
-            var artifactDirs = new List<string>();
-            foreach (var topDir in Directory.GetDirectories(artifactDir))
+            // The act artifact server uses the layout: <artifactServerPath>/<runNumber>/<artifactName>/<files>.
+            // Top-level directories are run numbers; second-level directories are the artifact names.
+            // We exclude _workflows (internal) and hidden directories.
+            var artifactEntries = new List<(string Dir, string Name)>();
+            foreach (var runDir in Directory.GetDirectories(artifactDir))
             {
-                var topName = Path.GetFileName(topDir);
-                if (string.IsNullOrEmpty(topName) || topName == "_workflows" || topName.StartsWith('.'))
+                var runDirName = Path.GetFileName(runDir);
+                if (string.IsNullOrEmpty(runDirName) || runDirName.StartsWith('.') || runDirName == "_workflows")
                     continue;
 
-                if (long.TryParse(topName, out _))
+                foreach (var dir in Directory.GetDirectories(runDir))
                 {
-                    // New format: numeric run-number dir → descend one level for artifact name dirs.
-                    foreach (var innerDir in Directory.GetDirectories(topDir))
-                    {
-                        var innerName = Path.GetFileName(innerDir);
-                        if (!string.IsNullOrEmpty(innerName) && !innerName.StartsWith('.'))
-                            artifactDirs.Add(innerDir);
-                    }
-                }
-                else
-                {
-                    // Legacy format: top-level dir is the artifact name.
-                    artifactDirs.Add(topDir);
+                    var name = Path.GetFileName(dir);
+                    if (!string.IsNullOrEmpty(name) && !name.StartsWith('.'))
+                        artifactEntries.Add((dir, name));
                 }
             }
 
-            if (artifactDirs.Count == 0) return;
+            if (artifactEntries.Count == 0) return;
 
-            foreach (var dir in artifactDirs)
+            foreach (var (dir, name) in artifactEntries)
             {
-                var name = Path.GetFileName(dir);
-                var files = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).ToList();
-                var sizeBytes = files.Sum(f =>
+                var (fileCount, sizeBytes) = ArtifactStorageService.CountArtifactFiles(dir);
+
+                // Upload artifact as a ZIP to S3 and store the download URL (best-effort).
+                string? downloadUrl = null;
+                string? storageKey = null;
+                if (artifactStorage.IsConfigured)
                 {
-                    try { return new FileInfo(f).Length; }
-                    catch { return 0L; }
-                });
+                    try
+                    {
+                        (downloadUrl, storageKey) = await artifactStorage.UploadArtifactAsync(dir, name, runId, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Failed to upload artifact '{Name}' for run {RunId} to S3", name, runId);
+                    }
+                }
 
                 db.CiCdArtifacts.Add(new CiCdArtifact
                 {
@@ -426,13 +463,15 @@ public class CiCdWorker(
                     CiCdRunId = runId,
                     Name = name,
                     SizeBytes = sizeBytes,
-                    FileCount = files.Count,
+                    FileCount = fileCount,
+                    DownloadUrl = downloadUrl,
+                    StorageKey = storageKey,
                     CreatedAt = DateTime.UtcNow,
                 });
             }
 
             await db.SaveChangesAsync(cancellationToken);
-            logger.LogInformation("Stored {Count} artifact(s) for run {RunId}", artifactDirs.Count, runId);
+            logger.LogInformation("Stored {Count} artifact(s) for run {RunId}", artifactEntries.Count, runId);
         }
         catch (Exception ex)
         {
@@ -605,6 +644,19 @@ public class CiCdWorker(
         }
     }
 
+    private string? TrySerializeInputs(IReadOnlyDictionary<string, string> inputs)
+    {
+        try
+        {
+            return JsonSerializer.Serialize(inputs);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not serialize run inputs; inputs will not be stored");
+            return null;
+        }
+    }
+    
     /// <summary>
     /// Builds the ISSUEPIT_* env var block and prepends it to any existing <paramref name="existingActEnv"/>.
     /// The ISSUEPIT_* vars are always injected first so that user-supplied ActEnv values can

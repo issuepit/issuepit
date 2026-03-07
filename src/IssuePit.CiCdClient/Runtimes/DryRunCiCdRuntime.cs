@@ -8,6 +8,8 @@ namespace IssuePit.CiCdClient.Runtimes;
 /// actually invoking <c>act</c>. Only active when the configuration key <c>CiCd:DryRun</c>
 /// is <c>true</c> (environment variable: <c>CiCd__DryRun=true</c>).
 /// Emits act-compatible JSON log lines so the worker can parse job and level info.
+/// Also writes a fake artifact and TRX file into <see cref="TriggerPayload.ArtifactServerPath"/>
+/// (when set) so downstream collection and S3 upload can be exercised end-to-end in tests.
 /// </summary>
 public class DryRunCiCdRuntime(ILogger<DryRunCiCdRuntime> logger) : ICiCdRuntime
 {
@@ -38,6 +40,27 @@ public class DryRunCiCdRuntime(ILogger<DryRunCiCdRuntime> logger) : ICiCdRuntime
             cancellationToken.ThrowIfCancellationRequested();
             await onLogLine(line, LogStream.Stdout);
             await Task.Delay(200, cancellationToken);
+        }
+
+        // Write a fake artifact into ArtifactServerPath so the post-run artifact collection
+        // and S3 upload can be exercised in dry-run / E2E test mode.
+        // act's artifact server uses the layout: <artifactServerPath>/<runNumber>/<name>/<files>
+        if (!string.IsNullOrWhiteSpace(trigger.ArtifactServerPath))
+        {
+            try
+            {
+                var artifactDir = Path.Combine(trigger.ArtifactServerPath, "1", "dry-run-artifact");
+                Directory.CreateDirectory(artifactDir);
+                await File.WriteAllTextAsync(
+                    Path.Combine(artifactDir, "result.txt"),
+                    $"Dry-run artifact for run {run.Id} at {DateTime.UtcNow:u}",
+                    cancellationToken);
+                logger.LogDebug("Wrote fake artifact for dry-run CI/CD run {RunId}", run.Id);
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "Could not write fake artifact for dry-run CI/CD run {RunId}", run.Id);
+            }
         }
     }
 

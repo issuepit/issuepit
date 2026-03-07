@@ -16,7 +16,9 @@ public class CiCdRunsController(
     IssuePitDbContext db,
     TenantContext tenant,
     IProducer<string, string> producer,
-    IHubContext<ProjectHub> projectHub) : ControllerBase
+    IHubContext<ProjectHub> projectHub,
+    CiCdRunQueueService runQueue,
+    ImageStorageService imageStorage) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetRuns([FromQuery] Guid? projectId)
@@ -47,6 +49,8 @@ public class CiCdRunsController(
                 r.ExternalSource,
                 r.ExternalRunId,
                 r.WorkspacePath,
+                r.EventName,
+                r.InputsJson,
             })
             .Take(100)
             .ToListAsync();
@@ -75,6 +79,8 @@ public class CiCdRunsController(
                 r.ExternalSource,
                 r.ExternalRunId,
                 r.WorkspacePath,
+                r.EventName,
+                r.InputsJson,
             })
             .FirstOrDefaultAsync();
 
@@ -152,7 +158,7 @@ public class CiCdRunsController(
     }
 
     /// <summary>
-    /// Returns artifacts produced by the given run (name, size, file count).
+    /// Returns artifacts produced by the given run (name, size, file count, storage key).
     /// </summary>
     [HttpGet("{id:guid}/artifacts")]
     public async Task<IActionResult> GetArtifacts(Guid id)
@@ -171,11 +177,44 @@ public class CiCdRunsController(
                 a.Name,
                 a.SizeBytes,
                 a.FileCount,
+                a.StorageKey,
                 a.CreatedAt,
             })
             .ToListAsync();
 
         return Ok(artifacts);
+    }
+
+    /// <summary>
+    /// Downloads the artifact ZIP by proxying the S3 object through the backend.
+    /// </summary>
+    [HttpGet("{id:guid}/artifacts/{artifactId:guid}/download")]
+    public async Task<IActionResult> DownloadArtifact(Guid id, Guid artifactId, CancellationToken ct)
+    {
+        if (!imageStorage.IsConfigured)
+            return StatusCode(503, new { error = "Artifact storage is not configured." });
+
+        var artifact = await db.CiCdArtifacts
+            .Where(a => a.Id == artifactId
+                        && a.CiCdRunId == id
+                        && a.CiCdRun.Project.Organization.TenantId == tenant.CurrentTenant!.Id)
+            .Select(a => new { a.Name, a.StorageKey })
+            .FirstOrDefaultAsync(ct);
+
+        if (artifact is null) return NotFound();
+        if (string.IsNullOrEmpty(artifact.StorageKey))
+            return StatusCode(404, new { error = "Artifact has not been uploaded to storage." });
+
+        try
+        {
+            var (stream, contentType) = await imageStorage.OpenDownloadStreamAsync(artifact.StorageKey, ct);
+            var fileName = $"{artifact.Name}.zip";
+            return File(stream, contentType, fileName);
+        }
+        catch (FileNotFoundException)
+        {
+            return NotFound(new { error = "Artifact file not found in storage." });
+        }
     }
 
     /// <summary>
@@ -447,34 +486,31 @@ public class CiCdRunsController(
                 });
         }
 
-        // Publish a new trigger — the CiCdWorker will create a new run record.
         // Re-resolve the remote URL so the container can clone the latest state of the repo.
         var retryRepo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == run.ProjectId);
-        var payload = System.Text.Json.JsonSerializer.Serialize(new
-        {
-            projectId = run.ProjectId,
-            commitSha = run.CommitSha,
-            branch = run.Branch,
-            workflow = run.Workflow,
-            agentSessionId = run.AgentSessionId,
-            gitRepoUrl = retryRepo?.RemoteUrl,
-            eventName = "push",
-            keepContainerOnFailure = options?.KeepContainerOnFailure ?? false,
-            noDind = options?.NoDind ?? false,
-            noVolumeMounts = options?.NoVolumeMounts ?? false,
-            customImage = options?.CustomImage,
-            customEntrypoint = options?.CustomEntrypoint,
-            customArgs = options?.CustomArgs,
-            actRunnerImage = options?.ActRunnerImage,
-        });
 
-        await producer.ProduceAsync("cicd-trigger", new Message<string, string>
-        {
-            Key = run.CommitSha,
-            Value = payload,
-        });
+        // Create the new run record immediately (Pending) so it shows as queued in the UI.
+        var newRun = await runQueue.EnqueueAsync(
+            projectId: run.ProjectId,
+            commitSha: run.CommitSha,
+            branch: run.Branch,
+            workflow: run.Workflow,
+            eventName: run.EventName ?? "push",
+            inputs: null,
+            gitRepoUrl: retryRepo?.RemoteUrl,
+            agentSessionId: run.AgentSessionId,
+            extraPayload: new
+            {
+                keepContainerOnFailure = options?.KeepContainerOnFailure ?? false,
+                noDind = options?.NoDind ?? false,
+                noVolumeMounts = options?.NoVolumeMounts ?? false,
+                customImage = options?.CustomImage,
+                customEntrypoint = options?.CustomEntrypoint,
+                customArgs = options?.CustomArgs,
+                actRunnerImage = options?.ActRunnerImage,
+            });
 
-        return Accepted(new { retriedRunId = run.Id });
+        return Accepted(new { retriedRunId = newRun.Id });
     }
 
     /// <summary>
@@ -503,27 +539,18 @@ public class CiCdRunsController(
         // Look up the remote URL from the linked git repository (if any).
         // The container clones the repo inside itself — no host workspace path is needed.
         var repo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == request.ProjectId);
-        var gitRepoUrl = repo?.RemoteUrl;
 
-        var payload = System.Text.Json.JsonSerializer.Serialize(new
-        {
-            projectId = request.ProjectId,
-            commitSha = request.CommitSha,
-            branch = request.Branch,
-            workflow = request.Workflow,
-            agentSessionId = (Guid?)null,
-            gitRepoUrl,
-            eventName = request.EventName,
-            inputs = request.Inputs,
-        });
+        // Create the run record immediately (Pending) so it shows as queued in the UI.
+        var newRun = await runQueue.EnqueueAsync(
+            projectId: request.ProjectId,
+            commitSha: request.CommitSha,
+            branch: request.Branch,
+            workflow: request.Workflow,
+            eventName: request.EventName,
+            inputs: request.Inputs,
+            gitRepoUrl: repo?.RemoteUrl);
 
-        await producer.ProduceAsync("cicd-trigger", new Message<string, string>
-        {
-            Key = request.CommitSha,
-            Value = payload,
-        });
-
-        return Accepted(new { projectId = request.ProjectId, commitSha = request.CommitSha, eventName = request.EventName });
+        return Accepted(new { runId = newRun.Id, projectId = request.ProjectId, commitSha = request.CommitSha, eventName = request.EventName });
     }
 
     [HttpPost("{id:guid}/cancel")]

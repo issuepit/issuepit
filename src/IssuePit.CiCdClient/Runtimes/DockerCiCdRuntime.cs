@@ -542,8 +542,18 @@ public partial class DockerCiCdRuntime(
                 // ── Exec model: run each step inside the container sequentially ─────────────
 
                 // Dynamically compute the number of steps so the [N/M] prefix is always correct.
-                var totalSteps = 2 + (useDind ? 1 : 0) + (hasGitRepo ? 1 : 0) + (!string.IsNullOrWhiteSpace(trigger.Workflow) ? 1 : 0);
+                var totalSteps = 3 + (useDind ? 1 : 0) + (hasGitRepo ? 1 : 0) + (!string.IsNullOrWhiteSpace(trigger.Workflow) ? 1 : 0);
                 var stepNum = 0;
+
+                // Step: Print act version for diagnostics.
+                await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: act --version", LogStream.Stdout);
+                var capturedVersion = "";
+                await ExecShellAsync(
+                    container.ID,
+                    "act --version 2>&1 || true",
+                    (line, _) => { if (!string.IsNullOrWhiteSpace(line)) capturedVersion = line.Trim(); return Task.CompletedTask; },
+                    cancellationToken);
+                await onLogLine($"[DEBUG] Act version    : {(string.IsNullOrEmpty(capturedVersion) ? "unknown" : capturedVersion)}", LogStream.Stdout);
 
                 // Step: Start dockerd (true DinD — no host socket mount).
                 // The first exec step starts the in-container daemon and waits until it is ready.

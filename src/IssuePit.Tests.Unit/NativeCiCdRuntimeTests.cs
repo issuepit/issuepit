@@ -9,6 +9,7 @@ public class NativeCiCdRuntimeTests
         string? eventName = null,
         string? workflow = null,
         string? actEnv = null,
+        string? actVars = null,
         string? actSecrets = null) =>
         new(
             ProjectId: Guid.NewGuid(),
@@ -19,6 +20,7 @@ public class NativeCiCdRuntimeTests
             WorkspacePath: null,
             EventName: eventName,
             ActEnv: actEnv,
+            ActVars: actVars,
             ActSecrets: actSecrets);
 
     [Fact]
@@ -58,6 +60,7 @@ public class NativeCiCdRuntimeTests
     {
         var args = NativeCiCdRuntime.BuildActArgumentsList(Trigger());
         Assert.DoesNotContain("--env", args);
+        Assert.DoesNotContain("--var", args);
         Assert.DoesNotContain("--secret", args);
     }
 
@@ -71,6 +74,25 @@ public class NativeCiCdRuntimeTests
         Assert.Equal("FOO=bar", list[idx + 1]);
         Assert.Equal("--env", list[idx + 2]);
         Assert.Equal("BAZ=qux", list[idx + 3]);
+    }
+
+    [Fact]
+    public void BuildActArgumentsList_WithActVars_EmitsVarFlags()
+    {
+        var args = NativeCiCdRuntime.BuildActArgumentsList(Trigger(actVars: "ISSUEPIT_RUN=true\nISSUEPIT_PROJECT_ID=abc"));
+        var list = args.ToList();
+        Assert.Contains("--var", list);
+        var idx = list.IndexOf("--var");
+        Assert.Equal("ISSUEPIT_RUN=true", list[idx + 1]);
+        Assert.Equal("--var", list[idx + 2]);
+        Assert.Equal("ISSUEPIT_PROJECT_ID=abc", list[idx + 3]);
+    }
+
+    [Fact]
+    public void BuildActArgumentsList_NoActVars_NoVarFlags()
+    {
+        var args = NativeCiCdRuntime.BuildActArgumentsList(Trigger());
+        Assert.DoesNotContain("--var", args);
     }
 
     [Fact]
