@@ -39,20 +39,55 @@ public class ArtifactStorageService(IConfiguration configuration, ILogger<Artifa
     public bool IsConfigured => !string.IsNullOrWhiteSpace(_serviceUrl);
 
     /// <summary>
+    /// Counts the files contained in the artifact directory.
+    /// act stores each artifact file as a <c>.zip</c> entry; this method counts the entries inside
+    /// those inner zip files. Falls back to counting raw files for plain (non-zip) artifacts.
+    /// </summary>
+    /// <returns>A tuple of (fileCount, totalSizeBytes) reflecting the decompressed content.</returns>
+    public static (int FileCount, long SizeBytes) CountArtifactFiles(string artifactDir)
+    {
+        var count = 0;
+        long size = 0;
+
+        foreach (var filePath in Directory.EnumerateFiles(artifactDir, "*", SearchOption.AllDirectories))
+        {
+            if (string.Equals(Path.GetExtension(filePath), ".zip", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    using var zip = System.IO.Compression.ZipFile.OpenRead(filePath);
+                    count += zip.Entries.Count;
+                    size += zip.Entries.Sum(e => e.Length);
+                    continue;
+                }
+                catch
+                {
+                    // Not a valid zip — fall through to count as a raw file.
+                }
+            }
+
+            count++;
+            try { size += new FileInfo(filePath).Length; } catch { /* ignore */ }
+        }
+
+        return (count, size);
+    }
+
+    /// <summary>
     /// Zips the given <paramref name="artifactDir"/> and uploads it to S3.
-    /// Returns the public download URL, or <c>null</c> if the service is not configured.
+    /// Returns a tuple of (publicDownloadUrl, storageKey), or <c>(null, null)</c> if the service is not configured.
     /// </summary>
     /// <param name="artifactDir">Full path to the artifact directory (produced by the act artifact server).</param>
     /// <param name="artifactName">The artifact name (used in the S3 key).</param>
     /// <param name="runId">The CI/CD run ID (used in the S3 key for namespacing).</param>
     /// <param name="ct">Cancellation token.</param>
-    public async Task<string?> UploadArtifactAsync(
+    public async Task<(string? Url, string? Key)> UploadArtifactAsync(
         string artifactDir,
         string artifactName,
         Guid runId,
         CancellationToken ct = default)
     {
-        if (!IsConfigured) return null;
+        if (!IsConfigured) return (null, null);
 
         var safeRunId = runId.ToString("N");
         var safeName = new string(artifactName.Where(c => char.IsLetterOrDigit(c) || c is '-' or '_' or '.').ToArray());
@@ -89,9 +124,15 @@ public class ArtifactStorageService(IConfiguration configuration, ILogger<Artifa
 
         var url = BuildPublicUrl(key);
         logger.LogInformation("Uploaded artifact '{Name}' for run {RunId} to S3: {Url}", artifactName, runId, url);
-        return url;
+        return (url, key);
     }
 
+    /// <summary>
+    /// Zips the contents of <paramref name="sourceDir"/> into <paramref name="destination"/>.
+    /// Files that are themselves ZIP archives (as produced by the act artifact server) are extracted
+    /// and their entries are written directly into the output archive so the download is a clean,
+    /// single-level ZIP with the actual file names.
+    /// </summary>
     private static async Task ZipDirectoryAsync(string sourceDir, Stream destination, CancellationToken ct)
     {
         using var archive = new ZipArchive(destination, ZipArchiveMode.Create, leaveOpen: true);
@@ -99,6 +140,36 @@ public class ArtifactStorageService(IConfiguration configuration, ILogger<Artifa
         foreach (var filePath in Directory.EnumerateFiles(sourceDir, "*", SearchOption.AllDirectories))
         {
             ct.ThrowIfCancellationRequested();
+
+            // act stores artifact files as individual zip archives. Re-package their contents
+            // directly so the resulting download archive is a clean, single-level ZIP.
+            if (string.Equals(Path.GetExtension(filePath), ".zip", StringComparison.OrdinalIgnoreCase))
+            {
+                var handledAsZip = false;
+                try
+                {
+                    using var innerZip = ZipFile.OpenRead(filePath);
+                    foreach (var innerEntry in innerZip.Entries)
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        // Skip directory entries.
+                        if (innerEntry.FullName.EndsWith('/') || innerEntry.FullName.EndsWith('\\'))
+                            continue;
+                        var outEntry = archive.CreateEntry(innerEntry.FullName, CompressionLevel.Optimal);
+                        using var outStream = outEntry.Open();
+                        using var innerStream = innerEntry.Open();
+                        await innerStream.CopyToAsync(outStream, ct);
+                    }
+                    handledAsZip = true;
+                }
+                catch
+                {
+                    // Not a valid zip — fall through to add as a raw file.
+                }
+
+                if (handledAsZip) continue;
+            }
+
             var entryName = Path.GetRelativePath(sourceDir, filePath).Replace('\\', '/');
             var entry = archive.CreateEntry(entryName, CompressionLevel.Optimal);
             using var entryStream = entry.Open();
