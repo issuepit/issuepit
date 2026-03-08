@@ -28,23 +28,31 @@ Your new project appears in the project list immediately.
 
 ---
 
-## Linking a Git Repository
+## Git Origins (Multiple Remotes)
 
-Linking a repository allows IssuePit to import issues from GitHub and create branches on your behalf.
+A project can have **multiple git origins**, each with a different role:
+
+| Mode | Description |
+|------|-------------|
+| **Working** | The primary remote. Agents push feature branches and open PRs here. |
+| **Read-only** | Fetch-only mirror — never pushed to by agents or the release pipeline. |
+| **Release** | Only the default/main branch is pushed here after an agent PR is merged. |
+
+### Adding a Git Origin
 
 1. Open your project.
-2. Go to **Settings** (the gear icon or project settings tab).
-3. Under **Repository**, enter the repository URL in the format:
-   ```
-   https://github.com/<owner>/<repo>
-   ```
-   or for self-hosted GitLab:
-   ```
-   https://gitlab.example.com/<owner>/<repo>
-   ```
-4. Click **Save**.
+2. Go to **Settings**.
+3. In the **Git Origins** section, click **Add Origin**.
+4. Fill in:
+   - **Remote URL** — `https://github.com/org/repo.git` or `git@github.com:org/repo.git`
+   - **Default branch** — e.g. `main`
+   - **Mode** — choose Working, Read-only, or Release
+   - **Username** / **Token** — optional credentials for private repositories
+5. Click **Add Origin**.
 
-> **Note:** To import issues or trigger actions on GitHub, you also need to add a GitHub API key in [Configuration → API Keys](configuration#api-keys).
+You can add as many origins as needed. The first **Working** remote is used when agents clone the repository.
+
+> **Breaking change (data migration):** Existing single-repository configurations are automatically migrated to `Working` mode.
 
 ---
 

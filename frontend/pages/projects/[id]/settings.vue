@@ -99,64 +99,120 @@
 
         <!-- Repository -->
         <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
-          <h2 class="font-semibold text-white mb-1">Repository</h2>
-          <p class="text-sm text-gray-500 mb-4">Link a Git repository to this project</p>
+          <div class="flex items-center justify-between mb-1">
+            <h2 class="font-semibold text-white">Git Origins</h2>
+            <button
+              class="text-xs text-brand-400 hover:text-brand-300 px-3 py-1.5 rounded-md border border-brand-900/30 hover:bg-brand-900/20 transition-colors"
+              @click="openAddRepo"
+            >
+              Add Origin
+            </button>
+          </div>
+          <p class="text-sm text-gray-500 mb-4">Link one or more Git remotes to this project</p>
 
           <div v-if="gitStore.loading" class="flex items-center justify-center py-6">
             <div class="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
           </div>
 
-          <!-- Status banner for disabled / throttled repos -->
-          <div v-if="gitStore.repo && gitStore.repo.status !== 'Active'" class="mb-4 rounded-lg px-4 py-3 flex items-start gap-3"
-            :class="repoStatusClasses.banner">
-            <svg class="w-5 h-5 mt-0.5 flex-shrink-0" :class="repoStatusClasses.icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-            </svg>
-            <div class="flex-1 min-w-0">
-              <p class="text-sm font-medium" :class="repoStatusClasses.title">
-                {{ gitStore.repo.status === 'Disabled' ? 'Repository disabled' : 'Repository throttled' }}
-              </p>
-              <p v-if="gitStore.repo.statusMessage" class="text-xs mt-0.5 text-gray-400 break-words">{{ gitStore.repo.statusMessage }}</p>
-              <p v-if="gitStore.repo.status === 'Throttled' && gitStore.repo.throttledUntil" class="text-xs mt-0.5 text-gray-400">
-                Polling resumes at {{ new Date(gitStore.repo.throttledUntil).toLocaleString() }}
-              </p>
+          <!-- Repo list -->
+          <div v-else-if="gitStore.repos.length" class="space-y-3">
+            <div v-for="r in gitStore.repos" :key="r.id"
+              class="bg-gray-800 rounded-lg p-3 space-y-2">
+              <!-- Header row -->
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="text-sm font-mono text-gray-200 truncate max-w-xs">{{ r.remoteUrl }}</span>
+                    <span class="text-xs px-1.5 py-0.5 rounded-full font-medium"
+                      :class="modeClasses(r.mode)">
+                      {{ r.mode }}
+                    </span>
+                    <span v-if="r.status !== 'Active'" class="text-xs px-1.5 py-0.5 rounded-full"
+                      :class="r.status === 'Disabled' ? 'bg-red-900/40 text-red-400' : 'bg-yellow-900/40 text-yellow-400'">
+                      {{ r.status }}
+                    </span>
+                  </div>
+                  <p class="text-xs text-gray-500 mt-0.5">Branch: {{ r.defaultBranch }} · {{ r.hasAuth ? 'auth configured' : 'no auth' }}</p>
+                  <p v-if="r.statusMessage" class="text-xs text-gray-400 break-words mt-0.5">{{ r.statusMessage }}</p>
+                  <p v-if="r.status === 'Throttled' && r.throttledUntil" class="text-xs text-gray-400 mt-0.5">
+                    Polling resumes at {{ new Date(r.throttledUntil).toLocaleString() }}
+                  </p>
+                </div>
+                <div class="flex items-center gap-1 shrink-0">
+                  <button v-if="r.status !== 'Active'"
+                    :disabled="gitStore.loading"
+                    class="text-xs px-2 py-1 rounded border border-gray-700 text-green-400 hover:text-green-300 hover:bg-gray-700 transition-colors"
+                    @click="enableRepoById(r)">
+                    Re-enable
+                  </button>
+                  <button
+                    class="text-xs px-2 py-1 rounded border border-gray-700 text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-colors"
+                    @click="openEditRepo(r)">
+                    Edit
+                  </button>
+                  <button
+                    class="text-xs px-2 py-1 rounded border border-red-900/30 text-red-400 hover:text-red-300 hover:bg-red-900/20 transition-colors"
+                    @click="removeRepo(r.id)">
+                    Remove
+                  </button>
+                </div>
+              </div>
             </div>
-            <button
-              :disabled="gitStore.loading"
-              class="text-xs px-2.5 py-1 rounded-md font-medium transition-colors flex-shrink-0"
-              :class="repoStatusClasses.button"
-              @click="enableRepo">
-              Re-enable
-            </button>
+          </div>
+          <div v-else class="text-sm text-gray-600 py-2">
+            No git origins configured. Click <span class="text-brand-400">Add Origin</span> to link one.
           </div>
 
-          <form v-if="!gitStore.loading" class="space-y-3" @submit.prevent="saveRepo">
-            <div>
-              <label class="block text-sm font-medium text-gray-300 mb-1">Remote URL</label>
-              <input v-model="repoForm.remoteUrl" type="text" placeholder="https://github.com/org/repo.git or git@…"
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-300 mb-1">Default branch</label>
-              <input v-model="repoForm.defaultBranch" type="text" placeholder="main"
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-300 mb-1">Username <span class="text-gray-500">(optional)</span></label>
-              <input v-model="repoForm.authUsername" type="text" placeholder="git username"
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-300 mb-1">Token / Password <span class="text-gray-500">(optional)</span></label>
-              <input v-model="repoForm.authToken" type="password" placeholder="PAT or password"
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
-            </div>
-            <p v-if="gitStore.error" class="text-red-400 text-sm">{{ gitStore.error }}</p>
-            <button type="submit" :disabled="gitStore.loading"
-              class="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-              {{ gitStore.repo ? 'Update Repository' : 'Link Repository' }}
-            </button>
-          </form>
+          <p v-if="gitStore.error" class="text-red-400 text-sm mt-3">{{ gitStore.error }}</p>
+        </div>
+
+        <!-- Add / Edit Repo modal -->
+        <div v-if="showRepoModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @click.self="showRepoModal = false">
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 w-full max-w-md shadow-xl space-y-4">
+            <h3 class="font-semibold text-white">{{ editingRepoId ? 'Edit Git Origin' : 'Add Git Origin' }}</h3>
+            <form class="space-y-3" @submit.prevent="saveRepo">
+              <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1">Remote URL</label>
+                <input v-model="repoForm.remoteUrl" type="text" required placeholder="https://github.com/org/repo.git or git@…"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1">Default branch</label>
+                <input v-model="repoForm.defaultBranch" type="text" placeholder="main"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1">Mode</label>
+                <select v-model="repoForm.mode"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+                  <option value="Working">Working – agents push branches &amp; PRs here</option>
+                  <option value="ReadOnly">Read-only – fetch only, never pushed to</option>
+                  <option value="Release">Release – only main branch is pushed after merge</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1">Username <span class="text-gray-500">(optional)</span></label>
+                <input v-model="repoForm.authUsername" type="text" placeholder="git username"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1">Token / Password <span class="text-gray-500">(optional)</span></label>
+                <input v-model="repoForm.authToken" type="password" placeholder="PAT or password (leave blank to keep existing)"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+              </div>
+              <p v-if="gitStore.error" class="text-red-400 text-sm">{{ gitStore.error }}</p>
+              <div class="flex justify-end gap-2 pt-1">
+                <button type="button" @click="showRepoModal = false"
+                  class="text-sm px-4 py-2 rounded-lg border border-gray-700 text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors">
+                  Cancel
+                </button>
+                <button type="submit" :disabled="gitStore.loading"
+                  class="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+                  {{ gitStore.loading ? 'Saving…' : (editingRepoId ? 'Save Changes' : 'Add Origin') }}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
 
         <!-- Agents -->
@@ -363,7 +419,7 @@ import { useOrgsStore } from '~/stores/orgs'
 import { useGitStore } from '~/stores/git'
 import { useAgentsStore } from '~/stores/agents'
 import { useMcpServersStore } from '~/stores/mcp-servers'
-import type { AgentProject, ProjectMcpServer } from '~/types'
+import type { AgentProject, ProjectMcpServer, GitRepository, GitOriginMode } from '~/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -380,19 +436,68 @@ const form = reactive({ name: '', slug: '', description: '', gitHubRepo: '', isA
 const savingGeneral = ref(false)
 const saveGeneralError = ref<string | null>(null)
 
-// ── Repo form ─────────────────────────────────────────────────
-const repoForm = reactive({ remoteUrl: '', defaultBranch: 'main', authUsername: '', authToken: '' })
-
-// ── Repo status styling ───────────────────────────────────────
-const repoStatusClasses = computed(() => {
-  const isDisabled = gitStore.repo?.status === 'Disabled'
-  return {
-    banner: isDisabled ? 'bg-red-950/50 border border-red-800' : 'bg-yellow-950/50 border border-yellow-800',
-    icon: isDisabled ? 'text-red-400' : 'text-yellow-400',
-    title: isDisabled ? 'text-red-300' : 'text-yellow-300',
-    button: isDisabled ? 'bg-red-700 hover:bg-red-600 text-white' : 'bg-yellow-700 hover:bg-yellow-600 text-white',
-  }
+// ── Repo form (multi-origin) ──────────────────────────────────
+const showRepoModal = ref(false)
+const editingRepoId = ref<string | null>(null)
+const repoForm = reactive<{ remoteUrl: string; defaultBranch: string; authUsername: string; authToken: string; mode: GitOriginMode }>({
+  remoteUrl: '',
+  defaultBranch: 'main',
+  authUsername: '',
+  authToken: '',
+  mode: 'Working',
 })
+
+function modeClasses(mode: GitOriginMode) {
+  if (mode === 'Working') return 'bg-brand-900/40 text-brand-400'
+  if (mode === 'Release') return 'bg-purple-900/40 text-purple-400'
+  return 'bg-gray-700/60 text-gray-400'
+}
+
+function openAddRepo() {
+  editingRepoId.value = null
+  Object.assign(repoForm, { remoteUrl: '', defaultBranch: 'main', authUsername: '', authToken: '', mode: 'Working' })
+  gitStore.error = null
+  showRepoModal.value = true
+}
+
+function openEditRepo(r: GitRepository) {
+  editingRepoId.value = r.id
+  Object.assign(repoForm, {
+    remoteUrl: r.remoteUrl,
+    defaultBranch: r.defaultBranch,
+    authUsername: '',
+    authToken: '',
+    mode: r.mode,
+  })
+  gitStore.error = null
+  showRepoModal.value = true
+}
+
+async function saveRepo() {
+  if (!repoForm.remoteUrl) return
+  const payload = {
+    remoteUrl: repoForm.remoteUrl,
+    defaultBranch: repoForm.defaultBranch || 'main',
+    authUsername: repoForm.authUsername || undefined,
+    authToken: repoForm.authToken || undefined,
+    mode: repoForm.mode,
+  }
+  if (editingRepoId.value) {
+    await gitStore.updateRepo(id, editingRepoId.value, payload)
+  } else {
+    await gitStore.addRepo(id, payload)
+  }
+  if (!gitStore.error) showRepoModal.value = false
+}
+
+async function removeRepo(repoId: string) {
+  if (!confirm('Remove this git origin from the project?')) return
+  await gitStore.deleteRepo(id, repoId)
+}
+
+async function enableRepoById(r: GitRepository) {
+  await gitStore.enableRepo(id, r.id)
+}
 
 // ── Agents ───────────────────────────────────────────────────
 const loadingAgents = ref(false)
@@ -501,7 +606,7 @@ onMounted(async () => {
   await Promise.all([
     projectsStore.fetchProject(id),
     orgsStore.fetchOrgs(),
-    gitStore.fetchRepo(id),
+    gitStore.fetchRepos(id),
     agentsStore.fetchAgents(),
     fetchProjectAgents(),
     fetchProjectMcpServers(),
@@ -513,11 +618,6 @@ onMounted(async () => {
     form.description = projectsStore.currentProject.description || ''
     form.gitHubRepo = projectsStore.currentProject.gitHubRepo || ''
     form.isAgenda = projectsStore.currentProject.isAgenda ?? false
-  }
-
-  if (gitStore.repo) {
-    repoForm.remoteUrl = gitStore.repo.remoteUrl
-    repoForm.defaultBranch = gitStore.repo.defaultBranch
   }
 })
 
@@ -537,25 +637,6 @@ async function saveGeneral() {
   } finally {
     savingGeneral.value = false
   }
-}
-
-async function saveRepo() {
-  if (!repoForm.remoteUrl) return
-  const payload = {
-    remoteUrl: repoForm.remoteUrl,
-    defaultBranch: repoForm.defaultBranch || 'main',
-    authUsername: repoForm.authUsername || undefined,
-    authToken: repoForm.authToken || undefined,
-  }
-  if (gitStore.repo) {
-    await gitStore.updateRepo(id, payload)
-  } else {
-    await gitStore.createRepo(id, payload)
-  }
-}
-
-async function enableRepo() {
-  await gitStore.enableRepo(id)
 }
 
 async function moveToOrg() {

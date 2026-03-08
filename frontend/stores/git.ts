@@ -1,8 +1,10 @@
 import { defineStore } from 'pinia'
-import type { GitRepository, GitBranch, GitCommit, GitTreeEntry, GitBlob, GitDiffFile } from '~/types'
+import type { GitRepository, GitOriginMode, GitBranch, GitCommit, GitTreeEntry, GitBlob, GitDiffFile } from '~/types'
 
 export const useGitStore = defineStore('git', () => {
-  const repo = ref<GitRepository | null>(null)
+  const repos = ref<GitRepository[]>([])
+  /** The primary repo used for browsing (first Working, otherwise first). */
+  const repo = computed(() => repos.value.find(r => r.mode === 'Working') ?? repos.value[0] ?? null)
   const branches = ref<GitBranch[]>([])
   const commits = ref<GitCommit[]>([])
   const tree = ref<GitTreeEntry[]>([])
@@ -14,43 +16,69 @@ export const useGitStore = defineStore('git', () => {
 
   const api = useApi()
 
-  async function fetchRepo(projectId: string) {
+  async function fetchRepos(projectId: string) {
     loading.value = true
     error.value = null
     try {
-      repo.value = await api.get<GitRepository>(`/api/projects/${projectId}/git/repo`)
+      repos.value = await api.get<GitRepository[]>(`/api/projects/${projectId}/git/repos`)
     } catch (e: unknown) {
-      repo.value = null
-      // 404 means no repo configured – not an error we surface
+      repos.value = []
       if ((e as { statusCode?: number })?.statusCode !== 404)
-        error.value = e instanceof Error ? e.message : 'Failed to fetch git repo'
+        error.value = e instanceof Error ? e.message : 'Failed to fetch git repositories'
     } finally {
       loading.value = false
     }
   }
 
-  async function createRepo(projectId: string, payload: { remoteUrl: string; defaultBranch?: string; authUsername?: string; authToken?: string }) {
+  /** @deprecated Use fetchRepos instead. Kept for backward compatibility. */
+  async function fetchRepo(projectId: string) {
+    return fetchRepos(projectId)
+  }
+
+  async function addRepo(projectId: string, payload: { remoteUrl: string; defaultBranch?: string; authUsername?: string; authToken?: string; mode?: GitOriginMode }) {
     loading.value = true
     error.value = null
     try {
-      repo.value = await api.post<GitRepository>(`/api/projects/${projectId}/git/repo`, payload)
+      const created = await api.post<GitRepository>(`/api/projects/${projectId}/git/repos`, payload)
+      repos.value = [...repos.value, created]
+      return created
     } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : 'Failed to link git repository'
+      error.value = e instanceof Error ? e.message : 'Failed to add git repository'
     } finally {
       loading.value = false
     }
   }
 
-  async function updateRepo(projectId: string, payload: { remoteUrl: string; defaultBranch?: string; authUsername?: string; authToken?: string }) {
+  async function updateRepo(projectId: string, repoId: string, payload: { remoteUrl: string; defaultBranch?: string; authUsername?: string; authToken?: string; mode?: GitOriginMode }) {
     loading.value = true
     error.value = null
     try {
-      repo.value = await api.put<GitRepository>(`/api/projects/${projectId}/git/repo`, payload)
+      const updated = await api.put<GitRepository>(`/api/projects/${projectId}/git/repos/${repoId}`, payload)
+      repos.value = repos.value.map(r => r.id === repoId ? updated : r)
+      return updated
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Failed to update git repository'
     } finally {
       loading.value = false
     }
+  }
+
+  async function deleteRepo(projectId: string, repoId: string) {
+    loading.value = true
+    error.value = null
+    try {
+      await api.del(`/api/projects/${projectId}/git/repos/${repoId}`)
+      repos.value = repos.value.filter(r => r.id !== repoId)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to delete git repository'
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /** @deprecated Use addRepo instead. Kept for backward compatibility. */
+  async function createRepo(projectId: string, payload: { remoteUrl: string; defaultBranch?: string; authUsername?: string; authToken?: string; mode?: GitOriginMode }) {
+    return addRepo(projectId, payload)
   }
 
   async function fetchBranches(projectId: string) {
@@ -131,7 +159,6 @@ export const useGitStore = defineStore('git', () => {
     error.value = null
     try {
       await api.post(`/api/projects/${projectId}/git/fetch`, {})
-      if (repo.value) repo.value.lastFetchedAt = new Date().toISOString()
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Fetch failed'
     }
@@ -146,17 +173,18 @@ export const useGitStore = defineStore('git', () => {
     }
   }
 
-  async function enableRepo(projectId: string) {
+  async function enableRepo(projectId: string, repoId: string) {
     error.value = null
     try {
-      repo.value = await api.post<GitRepository>(`/api/projects/${projectId}/git/repo/enable`, {})
+      const updated = await api.post<GitRepository>(`/api/projects/${projectId}/git/repos/${repoId}/enable`, {})
+      repos.value = repos.value.map(r => r.id === repoId ? updated : r)
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Failed to enable repository'
     }
   }
 
   function reset() {
-    repo.value = null
+    repos.value = []
     branches.value = []
     commits.value = []
     tree.value = []
@@ -167,6 +195,7 @@ export const useGitStore = defineStore('git', () => {
   }
 
   return {
+    repos,
     repo,
     branches,
     commits,
@@ -177,8 +206,11 @@ export const useGitStore = defineStore('git', () => {
     error,
     hasMoreCommits,
     fetchRepo,
+    fetchRepos,
     createRepo,
+    addRepo,
     updateRepo,
+    deleteRepo,
     fetchBranches,
     fetchCommits,
     fetchTree,
