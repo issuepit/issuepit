@@ -13,7 +13,7 @@ This page covers the settings available under **Configuration** in the IssuePit 
 ## API Keys
 {: #api-keys }
 
-![API Keys configuration page](https://github.com/user-attachments/assets/24667f60-a068-4e43-8562-b60f9c52dd39)
+![API Keys configuration page]({{ '/assets/screenshots/api-keys.png' | relative_url }})
 
 API keys let IssuePit authenticate with external services such as GitHub, AI providers, and cloud platforms.
 
