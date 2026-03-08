@@ -11,13 +11,20 @@ FROM mcr.microsoft.com/playwright/dotnet:${PLAYWRIGHT_VERSION}-noble
 
 ARG NODE_MAJOR=24
 
-# Install Node.js via NodeSource, git, dnsmasq, and .NET Aspire workload
+# Install Node.js via NodeSource, git, and dnsmasq.
+# Note: we do NOT run "dotnet workload install aspire" here because modern Aspire (v9+) is
+# entirely NuGet-package-based at runtime. The Aspire AppHost SDK is resolved through the
+# NuGet package referenced in the csproj, so no workload installation is required.
+# Installing the Aspire workload for the .NET version bundled in the Playwright image
+# (currently .NET 9) would place an incompatible orchestration host on the PATH that
+# conflicts with the .NET 10 runtime installed at CI time via actions/setup-dotnet,
+# causing Aspire-hosted services to fail their health checks when running E2E tests
+# inside the issuepit helper image.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends curl gnupg git dnsmasq && \
     curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
-    rm -rf /var/lib/apt/lists/* && \
-    dotnet workload install aspire
+    rm -rf /var/lib/apt/lists/*
 
 # Copy the entrypoint script that handles:
 #   1. git clone (using ISSUEPIT_GIT_REMOTE_URL env var)

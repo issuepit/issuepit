@@ -165,6 +165,7 @@ jobs:
           docker pull valkey/valkey:9.0
           docker pull apache/kafka:3.9.0
           docker pull node:20-slim
+          docker pull localstack/localstack:4.3
 
       - name: Install act (for CI/CD pipeline E2E tests)
         run: |
