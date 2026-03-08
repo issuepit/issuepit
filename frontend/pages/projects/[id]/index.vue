@@ -611,27 +611,6 @@ function agentStatusDot(status: AgentSessionStatus) {
   }
 }
 
-// CI/CD run status helpers
-function cicdStatusClass(status: CiCdRunStatus) {
-  switch (status) {
-    case CiCdRunStatus.Succeeded: return 'bg-green-900/30 text-green-400'
-    case CiCdRunStatus.Running: return 'bg-blue-900/30 text-blue-400'
-    case CiCdRunStatus.Failed: return 'bg-red-900/30 text-red-400'
-    case CiCdRunStatus.Cancelled: return 'bg-gray-800 text-gray-400'
-    default: return 'bg-yellow-900/30 text-yellow-400'
-  }
-}
-
-function cicdStatusDot(status: CiCdRunStatus) {
-  switch (status) {
-    case CiCdRunStatus.Succeeded: return 'bg-green-400'
-    case CiCdRunStatus.Running: return 'bg-blue-400 animate-pulse'
-    case CiCdRunStatus.Failed: return 'bg-red-400'
-    case CiCdRunStatus.Cancelled: return 'bg-gray-500'
-    default: return 'bg-yellow-400'
-  }
-}
-
 // Chart helpers
 const chartWidth = 600
 const chartHeight = 160
