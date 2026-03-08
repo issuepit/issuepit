@@ -196,7 +196,7 @@
 
     <!-- Calendar View -->
     <div v-if="!store.loading && view === 'calendar'" class="flex-1 overflow-auto">
-      <TodoCalendar :todos="filteredTodos" @select="openEdit" @create-on-date="openCreateOnDate" @reschedule="onReschedule" />
+      <TodoCalendar :todos="filteredTodos" @select="openEdit" @create-on-date="openCreateOnDate" @reschedule="onReschedule" @resize="onResize" />
     </div>
 
     <!-- ── Modals ───────────────────────────────────────── -->
@@ -611,6 +611,20 @@ async function onReschedule(todo: Todo, newDate: Date) {
     priority: todo.priority,
     dueDate: newDate.toISOString(),
     startDate: todo.startDate,
+    recurringInterval: todo.recurringInterval,
+    isCompleted: todo.isCompleted,
+    boardIds: todo.boardMemberships.map(m => m.boardId),
+    categoryIds: todo.categoryMemberships.map(m => m.categoryId),
+  })
+}
+
+async function onResize(todo: Todo, newStartDate: Date, newDueDate: Date) {
+  await store.updateTodo(todo.id, {
+    title: todo.title,
+    body: todo.body,
+    priority: todo.priority,
+    dueDate: newDueDate.toISOString(),
+    startDate: newStartDate.toISOString(),
     recurringInterval: todo.recurringInterval,
     isCompleted: todo.isCompleted,
     boardIds: todo.boardMemberships.map(m => m.boardId),

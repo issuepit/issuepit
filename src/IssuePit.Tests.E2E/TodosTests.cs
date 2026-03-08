@@ -117,4 +117,49 @@ public class TodosTests : IAsyncLifetime
         Assert.True(await todosPage.ICalDownloadLink.CountAsync() > 0, "iCal download link should be present");
         Assert.True(await todosPage.ICalSubscribeButton.CountAsync() > 0, "iCal subscribe button should be present");
     }
+
+    [Fact]
+    public async Task Todos_CalendarView_ArrowKeyNavigatesToNextMonth()
+    {
+        var page = await _context!.NewPageAsync();
+        var todosPage = new TodosPage(page);
+        await todosPage.GotoAsync();
+        await todosPage.SwitchToCalendarViewAsync();
+
+        var initialHeader = await todosPage.GetCalendarHeaderAsync();
+        var newHeader = await todosPage.NavigateCalendarAsync("ArrowRight");
+
+        Assert.NotEqual(initialHeader, newHeader);
+    }
+
+    [Fact]
+    public async Task Todos_CalendarView_ArrowKeyNavigatesToPrevMonth()
+    {
+        var page = await _context!.NewPageAsync();
+        var todosPage = new TodosPage(page);
+        await todosPage.GotoAsync();
+        await todosPage.SwitchToCalendarViewAsync();
+
+        var headerAfterForward = await todosPage.NavigateCalendarAsync("ArrowRight");
+        var headerAfterBack = await todosPage.NavigateCalendarAsync("ArrowLeft");
+        var headerAfterBackAgain = await todosPage.NavigateCalendarAsync("ArrowLeft");
+
+        Assert.NotEqual(headerAfterForward, headerAfterBack);
+        Assert.NotEqual(headerAfterBack, headerAfterBackAgain);
+    }
+
+    [Fact]
+    public async Task Todos_CalendarView_WeekArrowKeyNavigation()
+    {
+        var page = await _context!.NewPageAsync();
+        var todosPage = new TodosPage(page);
+        await todosPage.GotoAsync();
+        await todosPage.SwitchToCalendarViewAsync();
+        await todosPage.SwitchCalendarToWeekAsync();
+
+        var initialHeader = await todosPage.GetCalendarHeaderAsync();
+        var newHeader = await todosPage.NavigateCalendarAsync("ArrowRight");
+
+        Assert.NotEqual(initialHeader, newHeader);
+    }
 }
