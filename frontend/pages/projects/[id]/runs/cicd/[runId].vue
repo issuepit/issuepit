@@ -591,10 +591,8 @@
                   </div>
                   <span class="text-xs text-gray-600 shrink-0">{{ formatDate(artifact.createdAt) }}</span>
                   <a
-                    v-if="artifact.downloadUrl"
-                    :href="artifact.downloadUrl"
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    v-if="artifact.storageKey"
+                    :href="`/api/cicd-runs/${runId}/artifacts/${artifact.id}/download`"
                     class="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-medium bg-brand-600 hover:bg-brand-500 text-white transition-colors shrink-0"
                     :aria-label="`Download ${artifact.name}.zip`"
                     :title="`Download ${artifact.name}.zip`">

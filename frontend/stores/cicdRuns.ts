@@ -169,6 +169,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     branch?: string
     workflow?: string
     inputs?: Record<string, string>
+    customImage?: string
   }) {
     await api.post('/api/cicd-runs/trigger', request)
   }
