@@ -74,4 +74,5 @@ At the end, scan similar files and evaluate if there is similar/duplicated code:
 
 - Do not add redundant information in documentation (e.g., listing what tests cover when the tests themselves are self-documenting)
 - Keep documentation focused on concepts, formats, and implementation approaches rather than test descriptions
+- **When adding a new user-facing feature, update `docs/` accordingly** — add or extend the relevant page (e.g. `docs/projects.md`, `docs/agents.md`, or create a new page). If applicable, add a screenshot entry to `scripts/take-screenshots.js` so the automated screenshot workflow covers the new page.
 
