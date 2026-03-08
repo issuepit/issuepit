@@ -158,15 +158,20 @@ public class CiCdPipelineTests(AspireFixture fixture)
 
         Assert.True(logs.GetArrayLength() > 0, "Expected at least one log line");
 
-        var logLines = logs.EnumerateArray()
-            .Select(l => l.GetProperty("line").GetString() ?? string.Empty)
-            .ToList();
+        var logEntries = logs.EnumerateArray().ToList();
 
-        // Both the build and test jobs should appear in the captured logs.
-        Assert.True(logLines.Any(l => l.Contains("build", StringComparison.OrdinalIgnoreCase)),
-            "Expected a log line mentioning the 'build' job");
-        Assert.True(logLines.Any(l => l.Contains("test", StringComparison.OrdinalIgnoreCase)),
-            "Expected a log line mentioning the 'test' job");
+        // Both the build and test jobs should have log entries captured with the correct jobId.
+        // We check the jobId field rather than the line text because act's --json msg content
+        // (e.g. "🚀 Start image=...", "Job succeeded") does not reliably contain the job name.
+        var hasBuildJobLogs = logEntries.Any(l =>
+            l.TryGetProperty("jobId", out var jId) &&
+            "build".Equals(jId.GetString(), StringComparison.OrdinalIgnoreCase));
+        var hasTestJobLogs = logEntries.Any(l =>
+            l.TryGetProperty("jobId", out var jId) &&
+            "test".Equals(jId.GetString(), StringComparison.OrdinalIgnoreCase));
+
+        Assert.True(hasBuildJobLogs, "Expected log entries from the 'build' job");
+        Assert.True(hasTestJobLogs, "Expected log entries from the 'test' job");
     }
 
     [Fact]
