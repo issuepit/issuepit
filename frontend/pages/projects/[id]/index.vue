@@ -306,11 +306,8 @@
               <div v-for="run in visibleCiCdRuns" :key="run.id"
                 class="flex items-center gap-3 py-2 border-b border-gray-800 last:border-0 cursor-pointer"
                 @click="navigateTo(`/projects/${id}/runs/cicd/${run.id}`)">
-                <span :class="cicdStatusClass(run.status)"
-                  class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium shrink-0">
-                  <span :class="cicdStatusDot(run.status)" class="w-1.5 h-1.5 rounded-full" />
-                  {{ run.statusName }}
-                </span>
+                <CiCdStatusChip :runs="[run]"
+                  class="shrink-0" />
                 <div class="flex-1 min-w-0">
                   <p class="text-sm text-gray-300 truncate">
                     {{ run.workflow || run.branch || 'Run' }}
