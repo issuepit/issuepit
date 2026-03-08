@@ -67,7 +67,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
 
         repo.RemoteUrl = req.RemoteUrl;
         repo.DefaultBranch = req.DefaultBranch ?? repo.DefaultBranch;
-        repo.AuthUsername = req.AuthUsername;
+        if (req.AuthUsername is not null) repo.AuthUsername = req.AuthUsername;
         if (req.AuthToken is not null) repo.AuthToken = req.AuthToken;
         if (req.Mode.HasValue) repo.Mode = req.Mode.Value;
         await db.SaveChangesAsync();
@@ -159,7 +159,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
 
         repo.RemoteUrl = req.RemoteUrl;
         repo.DefaultBranch = req.DefaultBranch ?? repo.DefaultBranch;
-        repo.AuthUsername = req.AuthUsername;
+        if (req.AuthUsername is not null) repo.AuthUsername = req.AuthUsername;
         if (req.AuthToken is not null) repo.AuthToken = req.AuthToken;
         if (req.Mode.HasValue) repo.Mode = req.Mode.Value;
         await db.SaveChangesAsync();

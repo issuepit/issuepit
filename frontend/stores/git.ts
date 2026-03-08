@@ -159,6 +159,8 @@ export const useGitStore = defineStore('git', () => {
     error.value = null
     try {
       await api.post(`/api/projects/${projectId}/git/fetch`, {})
+      // Refresh the repos list so lastFetchedAt timestamps are up to date.
+      await fetchRepos(projectId)
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Fetch failed'
     }

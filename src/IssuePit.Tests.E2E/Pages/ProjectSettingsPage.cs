@@ -28,10 +28,17 @@ public class ProjectSettingsPage(IPage page)
         await page.SelectOptionAsync("select", new[] { mode });
     }
 
-    /// <summary>Submits the modal form.</summary>
-    public async Task SubmitOriginFormAsync()
+    /// <summary>Submits the "Add Origin" modal form.</summary>
+    public async Task SubmitAddOriginAsync()
     {
-        await page.ClickAsync("button:has-text('Add Origin'), button:has-text('Save Changes')");
+        await page.ClickAsync("button:has-text('Add Origin')");
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+    }
+
+    /// <summary>Submits the "Save Changes" modal form (editing existing origin).</summary>
+    public async Task SubmitEditOriginAsync()
+    {
+        await page.ClickAsync("button:has-text('Save Changes')");
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
     }
 
