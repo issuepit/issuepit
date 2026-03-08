@@ -50,12 +50,14 @@ public class TodosPage(IPage page)
     {
         await page.Keyboard.PressAsync(key);
         await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
-        return await page.Locator("h2").First.InnerTextAsync();
+        return await CalendarHeader.InnerTextAsync();
     }
 
     /// <summary>Returns the header label text currently displayed in the calendar.</summary>
     public async Task<string> GetCalendarHeaderAsync()
-        => await page.Locator("h2").First.InnerTextAsync();
+        => await CalendarHeader.InnerTextAsync();
+
+    private ILocator CalendarHeader => page.Locator("h2").First;
 
     /// <summary>Returns the number of todos currently displayed in the list view.</summary>
     public async Task<int> GetTodoCountAsync()

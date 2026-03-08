@@ -241,6 +241,8 @@ function next() {
 const SLOT_HEIGHT_PX = 32
 const SLOTS_PER_HOUR = 2
 const DEFAULT_SCROLL_HOUR = 8
+const SLOT_DURATION_MINS = 30
+const MINS_PER_DAY = 24 * 60
 
 function scrollToDefaultHour() {
   if (weekScrollContainer.value) {
@@ -490,7 +492,9 @@ function getTodoColor(todo: Todo): string {
 
 function formatTimeShort(dateStr: string): string {
   const d = new Date(dateStr)
-  return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })
+  const h = String(d.getHours()).padStart(2, '0')
+  const m = String(d.getMinutes()).padStart(2, '0')
+  return `${h}:${m}`
 }
 
 // ── Week view: per-day todo map ─────────────────────────────────────────────
@@ -549,7 +553,7 @@ function getTodoEndMins(todo: Todo): number {
       return d.getHours() * 60 + d.getMinutes()
     }
   }
-  return getTodoStartMins(todo) + 30
+  return getTodoStartMins(todo) + SLOT_DURATION_MINS
 }
 
 function todoTopPx(todo: Todo): number {
@@ -596,16 +600,16 @@ function onResizePointerMove(event: PointerEvent) {
   if (!resizingTodo.value) return
   const dy = event.clientY - resizeStartY.value
   const deltaSlots = Math.round(dy / SLOT_HEIGHT_PX)
-  const deltaMins = deltaSlots * 30
+  const deltaMins = deltaSlots * SLOT_DURATION_MINS
   if (resizeType.value === 'bottom') {
     let end = resizeOriginalEndMins.value + deltaMins
-    end = Math.round(end / 30) * 30
-    end = Math.max(resizeOriginalStartMins.value + 30, Math.min(24 * 60, end))
+    end = Math.round(end / SLOT_DURATION_MINS) * SLOT_DURATION_MINS
+    end = Math.max(resizeOriginalStartMins.value + SLOT_DURATION_MINS, Math.min(MINS_PER_DAY, end))
     resizeCurrentEndMins.value = end
   } else {
     let start = resizeOriginalStartMins.value + deltaMins
-    start = Math.round(start / 30) * 30
-    start = Math.max(0, Math.min(resizeOriginalEndMins.value - 30, start))
+    start = Math.round(start / SLOT_DURATION_MINS) * SLOT_DURATION_MINS
+    start = Math.max(0, Math.min(resizeOriginalEndMins.value - SLOT_DURATION_MINS, start))
     resizeCurrentStartMins.value = start
   }
 }
