@@ -175,8 +175,8 @@ public partial class DockerCiCdRuntime(
 
         if (!string.IsNullOrWhiteSpace(npmCacheVolume))
         {
-            actBinAndArgs.Add("--volume");
-            actBinAndArgs.Add($"{ContainerNpmCachePath}:/root/.npm");
+            //actBinAndArgs.Add("--volume");
+            //actBinAndArgs.Add($"{ContainerNpmCachePath}:/root/.npm");
         }
         if (!string.IsNullOrWhiteSpace(npmCacheUrl))
         {
@@ -185,8 +185,8 @@ public partial class DockerCiCdRuntime(
         }
         if (!string.IsNullOrWhiteSpace(nugetCacheVolume))
         {
-            actBinAndArgs.Add("--volume");
-            actBinAndArgs.Add($"{ContainerNuGetCachePath}:/root/.nuget/packages");
+            //actBinAndArgs.Add("--volume");
+            //actBinAndArgs.Add($"{ContainerNuGetCachePath}:/root/.nuget/packages");
         }
 
         // Playwright browser cache: mount named volume so job containers reuse already-downloaded
@@ -197,8 +197,8 @@ public partial class DockerCiCdRuntime(
         // This filesystem cache works regardless of the InterceptAllTraffic setting.
         if (!string.IsNullOrWhiteSpace(playwrightCacheVolume))
         {
-            actBinAndArgs.Add("--volume");
-            actBinAndArgs.Add($"{ContainerPlaywrightCachePath}:/root/.cache/ms-playwright");
+            //actBinAndArgs.Add("--volume");
+            //actBinAndArgs.Add($"{ContainerPlaywrightCachePath}:/root/.cache/ms-playwright");
         }
 
         // When InterceptAllTraffic is enabled, iptables DNAT rules in BuildDindStartupScript
