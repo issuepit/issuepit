@@ -300,19 +300,19 @@
             <div>
               <label class="text-xs text-gray-400 mb-1 block">Start Date</label>
               <div class="flex gap-1">
-                <input v-model="form.startDate" type="date"
-                  class="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500" />
-                <input v-model="form.startTime" type="time"
-                  class="w-24 bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500" />
+                <input v-model="form.startDate" type="text" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}"
+                  class="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-brand-500" />
+                <input v-model="form.startTime" type="text" placeholder="HH:MM" pattern="\d{2}:\d{2}"
+                  class="w-20 bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-sm text-gray-300 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-brand-500" />
               </div>
             </div>
             <div>
               <label class="text-xs text-gray-400 mb-1 block">Due Date</label>
               <div class="flex gap-1">
-                <input v-model="form.dueDate" type="date"
-                  class="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500" />
-                <input v-model="form.dueTime" type="time"
-                  class="w-24 bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500" />
+                <input v-model="form.dueDate" type="text" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}"
+                  class="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-brand-500" />
+                <input v-model="form.dueTime" type="text" placeholder="HH:MM" pattern="\d{2}:\d{2}"
+                  class="w-20 bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-sm text-gray-300 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-brand-500" />
               </div>
             </div>
           </div>
