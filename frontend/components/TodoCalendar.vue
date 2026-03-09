@@ -303,6 +303,8 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 // ── Header label ───────────────────────────────────────────────────────────
+// toISODate uses local date components (not toISOString, which returns UTC)
+// so the displayed date always matches the user's local calendar.
 function toISODate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
@@ -376,8 +378,8 @@ const calendarCells = computed((): CalendarCell[] => {
     })
     const isExpanded = expandedDates.value[key] === true
     // Avoid showing "+1 more" when a single extra item fits – just show it
-    const effectiveMax = !isExpanded && allTodos.length === MAX_VISIBLE + 1 ? MAX_VISIBLE + 1 : MAX_VISIBLE
-    const showCount = isExpanded ? allTodos.length : effectiveMax
+    const visibleLimit = !isExpanded && allTodos.length === MAX_VISIBLE + 1 ? MAX_VISIBLE + 1 : MAX_VISIBLE
+    const showCount = isExpanded ? allTodos.length : visibleLimit
     cells.push({
       day: d,
       date,
@@ -566,10 +568,11 @@ const weekDayTodosFlat = computed((): Record<string, WeekTodoSegment[]> => {
           if (start >= rangeStart && start <= rangeEnd) {
             addSegment(start, todo, startDayMins, MINS_PER_DAY, formatTimeShort(todo.startDate))
           }
-          // Due-day segment: from midnight to due time
+          // Due-day segment: from midnight to due time.
+          // Skip when dueDate is exactly midnight (00:00) – the todo ends at the very start of the day.
           const endDayMins = d.getHours() * 60 + d.getMinutes()
-          if (d >= rangeStart && d <= rangeEnd) {
-            addSegment(d, todo, 0, endDayMins || SLOT_DURATION_MINS, formatTimeShort(todo.dueDate))
+          if (d >= rangeStart && d <= rangeEnd && endDayMins > 0) {
+            addSegment(d, todo, 0, endDayMins, formatTimeShort(todo.dueDate))
           }
           continue
         }
