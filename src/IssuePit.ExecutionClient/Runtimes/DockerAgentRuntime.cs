@@ -10,6 +10,11 @@ namespace IssuePit.ExecutionClient.Runtimes;
 /// <summary>Runs the agent inside a local Docker container with Docker-in-Docker (DinD) support.</summary>
 public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient dockerClient, IConfiguration configuration) : IAgentRuntime
 {
+    // Docker image used to run agents. Uses the IssuePit helper-opencode-act image which includes
+    // the opencode CLI, Docker Engine (DinD), act, .NET SDK, Node.js, and Playwright.
+    // Overridden by agent.DockerImage when set.
+    private const string DefaultDockerImage = "ghcr.io/issuepit/issuepit-helper-opencode-act:latest";
+
     private static string AppVersion =>
         Assembly.GetEntryAssembly()
             ?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
@@ -26,6 +31,10 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {
+        var image = !string.IsNullOrWhiteSpace(agent.DockerImage)
+            ? agent.DockerImage
+            : DefaultDockerImage;
+
         // Emit verbose diagnostics as the first log lines so they appear in the session log output.
         await onLogLine($"[DEBUG] Runner machine : {Environment.MachineName}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Runtime        : Docker", LogStream.Stdout);
@@ -33,8 +42,8 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         await onLogLine($"[DEBUG] Agent          : {agent.Name} ({agent.Id})", LogStream.Stdout);
         await onLogLine($"[DEBUG] Issue          : #{issue.Number} {issue.Title}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Session        : {session.Id}", LogStream.Stdout);
-        await onLogLine($"[DEBUG] Docker image   : {agent.DockerImage}", LogStream.Stdout);
-        await onLogLine($"[DEBUG] Mount          : /var/run/docker.sock:/var/run/docker.sock", LogStream.Stdout);
+        await onLogLine($"[DEBUG] Docker image   : {image}", LogStream.Stdout);
+        await onLogLine($"[DEBUG] DinD           : isolated (Privileged=true, in-container dockerd)", LogStream.Stdout);
         if (agent.DisableInternet)
             await onLogLine($"[DEBUG] Internet       : restricted", LogStream.Stdout);
         if (gitRepository is not null)
@@ -56,13 +65,13 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         // Step 1: Pull the container image explicitly before creating the container.
         var pullStart = DateTime.UtcNow;
         await onLogLine($"[DEBUG] Pull started   : {pullStart:u}", LogStream.Stdout);
-        await onLogLine($"[DEBUG] Pulling image  : {agent.DockerImage}", LogStream.Stdout);
-        await PullImageAsync(agent.DockerImage, cancellationToken);
+        await onLogLine($"[DEBUG] Pulling image  : {image}", LogStream.Stdout);
+        await PullImageAsync(image, cancellationToken);
         var pullDuration = (DateTime.UtcNow - pullStart).TotalSeconds;
         await onLogLine($"[DEBUG] Pull finished  : {DateTime.UtcNow:u} (took {pullDuration:F1}s)", LogStream.Stdout);
 
         // Step 2: Build environment including git repo info so the container can clone the repo on startup.
-        var env = BuildEnvironment(session, agent, issue, credentials, gitRepository);
+        var env = AgentEnvironmentBuilder.Build(session, agent, issue, credentials, gitRepository);
 
         // Step 3: Build runner-specific CMD args to override the container's default entrypoint args.
         // Tool setup (npm install, dotnet restore, etc.) is handled by the container's entrypoint script.
@@ -74,12 +83,14 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         var dns = agent.DisableInternet ? GetRestrictedDns() : null;
 
         logger.LogInformation("Creating Docker container from image {Image} for agent {AgentId} (DisableInternet={DisableInternet})",
-            agent.DockerImage, agent.Id, agent.DisableInternet);
+            image, agent.Id, agent.DisableInternet);
 
         var hostConfig = new HostConfig
         {
-            // Mount Docker socket for Docker-in-Docker (DinD) support
-            Binds = ["/var/run/docker.sock:/var/run/docker.sock"],
+            // Privileged mode is required for true DinD (in-container dockerd).
+            // The host Docker socket is never mounted — agent tools run inside the container's
+            // own isolated Docker daemon, fully isolated from the host.
+            Privileged = true,
             AutoRemove = true,
         };
 
@@ -88,7 +99,7 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
 
         var createParams = new CreateContainerParameters
         {
-            Image = agent.DockerImage,
+            Image = image,
             Env = env,
             Cmd = cmd,
             HostConfig = hostConfig,
@@ -156,50 +167,5 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
             return null;
         }
         return [dnsServer];
-    }
-
-    private static List<string> BuildEnvironment(
-        AgentSession session,
-        Agent agent,
-        Issue issue,
-        IReadOnlyDictionary<string, string> credentials,
-        GitRepository? gitRepository)
-    {
-        var env = new List<string>
-        {
-            $"ISSUEPIT_SESSION_ID={session.Id}",
-            $"ISSUEPIT_ISSUE_ID={issue.Id}",
-            $"ISSUEPIT_ISSUE_TITLE={issue.Title}",
-            $"ISSUEPIT_ISSUE_BODY={issue.Body ?? string.Empty}",
-            $"ISSUEPIT_AGENT_ID={agent.Id}",
-            $"ISSUEPIT_SYSTEM_PROMPT={agent.SystemPrompt}",
-        };
-
-        if (issue.GitBranch is not null)
-            env.Add($"ISSUEPIT_GIT_BRANCH={issue.GitBranch}");
-
-        // Inform the entrypoint whether internet access is disabled (used for DNS logging display).
-        env.Add($"ISSUEPIT_DISABLE_INTERNET={agent.DisableInternet.ToString().ToLowerInvariant()}");
-
-        // Inject git repository info so the container can clone the repo on startup.
-        if (gitRepository is not null)
-        {
-            env.Add($"ISSUEPIT_GIT_REMOTE_URL={gitRepository.RemoteUrl}");
-            env.Add($"ISSUEPIT_GIT_DEFAULT_BRANCH={gitRepository.DefaultBranch}");
-            if (!string.IsNullOrEmpty(gitRepository.AuthUsername))
-                env.Add($"ISSUEPIT_GIT_AUTH_USERNAME={gitRepository.AuthUsername}");
-            if (!string.IsNullOrEmpty(gitRepository.AuthToken))
-                env.Add($"ISSUEPIT_GIT_AUTH_TOKEN={gitRepository.AuthToken}");
-        }
-
-        // Inject agent logins / API key credentials as environment variables
-        foreach (var (key, value) in credentials)
-            env.Add($"{key}={value}");
-
-        // Runner-specific env vars (e.g. OPENCODE_SYSTEM_PROMPT, CODEX_SYSTEM_PROMPT)
-        foreach (var (key, value) in RunnerCommandBuilder.BuildRunnerEnv(agent))
-            env.Add($"{key}={value}");
-
-        return env;
     }
 }

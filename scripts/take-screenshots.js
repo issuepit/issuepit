@@ -89,7 +89,7 @@ async function seedData(apiClient, tenantId) {
       name: 'Code Agent',
       systemPrompt:
         'You are a senior TypeScript developer. Implement the described feature following existing code conventions.',
-      dockerImage: 'ghcr.io/sst/opencode:latest',
+      dockerImage: 'ghcr.io/issuepit/issuepit-helper-opencode-act:latest',
       queue: 'Code',
     }),
   });

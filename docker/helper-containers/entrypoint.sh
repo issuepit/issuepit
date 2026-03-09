@@ -6,6 +6,7 @@
 #   2. Clone the git repository (if ISSUEPIT_GIT_REMOTE_URL is provided).
 #   3. Set up tools (restore npm/dotnet dependencies found in the workspace).
 #   4. Log DNS queries via a local dnsmasq proxy (and note firewall state).
+#   4b. Start Docker daemon (DinD) if dockerd is installed and no host socket is mounted.
 #   5. Execute the CLI agent tool (passes all arguments through).
 
 set -euo pipefail
@@ -110,6 +111,29 @@ if command -v dnsmasq > /dev/null 2>&1; then
 
         echo "[entrypoint] DNS proxy started (upstream: ${UPSTREAM_DNS}, DisableInternet=${ISSUEPIT_DISABLE_INTERNET:-false})"
     fi
+fi
+
+# ─── Step 4b: Start Docker daemon (DinD) ──────────────────────────────────────
+#
+# When the helper image includes Docker Engine (dockerd binary) and the host
+# socket has NOT been bind-mounted (i.e. running in true DinD / Privileged mode),
+# start an in-container daemon so agent tools like act can spawn job containers
+# without touching the host Docker daemon.
+#
+# Skipped when:
+#   - dockerd is not installed in the image (e.g. helper-opencode, helper-base)
+#   - /var/run/docker.sock already exists (host socket was mounted — legacy mode)
+
+if command -v dockerd > /dev/null 2>&1 && [ ! -e /var/run/docker.sock ]; then
+    echo "[entrypoint] Starting dockerd (DinD)..."
+    dockerd > /tmp/dockerd.log 2>&1 &
+    TIMEOUT=60
+    while [ $TIMEOUT -gt 0 ] && ! docker info > /dev/null 2>&1; do
+        sleep 1; TIMEOUT=$((TIMEOUT-1))
+    done
+    docker info > /dev/null 2>&1 \
+        && echo "[entrypoint] dockerd ready" \
+        || { echo "[entrypoint] dockerd failed to start"; cat /tmp/dockerd.log; exit 1; }
 fi
 
 # ─── Step 5: Execute the CLI agent tool ───────────────────────────────────────
