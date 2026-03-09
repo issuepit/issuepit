@@ -128,7 +128,7 @@
             <p class="text-sm text-white">Delete this skill</p>
             <p class="text-xs text-gray-500 mt-0.5">This action cannot be undone.</p>
           </div>
-          <button @click="deleteSkill"
+          <button @click="showDeleteConfirm = true"
             class="px-4 py-2 bg-red-900/30 hover:bg-red-900/50 text-red-400 text-sm font-medium rounded-lg border border-red-900/40 transition-colors">
             Delete Skill
           </button>
@@ -138,6 +138,24 @@
 
     <div v-else-if="!store.loading" class="text-center py-20 text-gray-500">
       Skill not found.
+    </div>
+
+    <!-- Delete Confirmation Dialog -->
+    <div v-if="showDeleteConfirm" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-sm p-6 shadow-xl">
+        <h2 class="text-lg font-bold text-white mb-2">Delete Skill</h2>
+        <p class="text-sm text-gray-400 mb-6">Are you sure you want to delete <span class="text-white font-medium">{{ store.currentSkill?.name }}</span>? This action cannot be undone.</p>
+        <div class="flex gap-3">
+          <button @click="confirmDelete"
+            class="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
+            Delete
+          </button>
+          <button @click="showDeleteConfirm = false"
+            class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 rounded-lg transition-colors">
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -151,6 +169,7 @@ const router = useRouter()
 const store = useSkillsStore()
 
 const saving = ref(false)
+const showDeleteConfirm = ref(false)
 const form = ref({
   name: '',
   description: '',
@@ -212,9 +231,9 @@ async function saveGitSettings() {
   }
 }
 
-async function deleteSkill() {
+async function confirmDelete() {
   if (!store.currentSkill) return
-  if (!confirm(`Delete skill "${store.currentSkill.name}"? This cannot be undone.`)) return
+  showDeleteConfirm.value = false
   await store.deleteSkill(store.currentSkill.id)
   await router.push('/skills')
 }
