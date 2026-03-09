@@ -88,7 +88,10 @@
     <!-- Board View -->
     <div v-if="!store.loading && view === 'board'" class="flex gap-4 overflow-x-auto flex-1 pb-4">
       <!-- Uncategorized column -->
-      <div class="flex flex-col w-72 shrink-0">
+      <div class="flex flex-col w-72 shrink-0 transition-opacity duration-150"
+        :class="{
+          'opacity-40': boardDraggingTodoId && boardHoverCategoryId && boardHoverCategoryId !== '__uncategorized__',
+        }">
         <div class="flex items-center justify-between mb-3">
           <div class="flex items-center gap-2">
             <span class="w-2.5 h-2.5 rounded-full bg-gray-500"></span>
@@ -107,7 +110,7 @@
         <div class="flex-1 space-y-2 bg-gray-900/40 rounded-xl p-2 min-h-32 border border-gray-800/60 transition-colors"
           :class="{
             'border-brand-500/60 bg-brand-900/10': boardHoverCategoryId === '__uncategorized__' && boardDraggingTodoId,
-            'border-brand-500/20': boardDraggingTodoId && boardHoverCategoryId !== '__uncategorized__',
+            'border-gray-700/30 bg-gray-900/20': boardDraggingTodoId && boardHoverCategoryId !== '__uncategorized__',
           }"
           @dragover="onBoardColumnDragOver($event, null)"
           @dragleave="onBoardColumnDragLeave"
@@ -128,7 +131,11 @@
       </div>
 
       <!-- Category columns -->
-      <div v-for="cat in activeCategories" :key="cat.id" class="flex flex-col w-72 shrink-0">
+      <div v-for="cat in activeCategories" :key="cat.id"
+        class="flex flex-col w-72 shrink-0 transition-opacity duration-150"
+        :class="{
+          'opacity-40': boardDraggingTodoId && boardHoverCategoryId && boardHoverCategoryId !== cat.id,
+        }">
         <div class="flex items-center justify-between mb-3">
           <div class="flex items-center gap-2">
             <span class="w-2.5 h-2.5 rounded-full" :style="{ background: cat.color }"></span>
@@ -147,7 +154,7 @@
         <div class="flex-1 space-y-2 bg-gray-900/40 rounded-xl p-2 min-h-32 border border-gray-800/60 transition-colors"
           :class="{
             'border-brand-500/60 bg-brand-900/10': boardHoverCategoryId === cat.id && boardDraggingTodoId,
-            'border-brand-500/20': boardDraggingTodoId && boardHoverCategoryId !== cat.id,
+            'border-gray-700/30 bg-gray-900/20': boardDraggingTodoId && boardHoverCategoryId !== cat.id,
           }"
           @dragover="onBoardColumnDragOver($event, cat.id)"
           @dragleave="onBoardColumnDragLeave"
