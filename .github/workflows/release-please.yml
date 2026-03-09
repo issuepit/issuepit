@@ -24,16 +24,19 @@ jobs:
 
       - name: Trigger helper-containers build on release
         if: ${{ fromJSON(steps.release.outputs['docker/helper-containers--release_created'] || 'false') }}
-        env:
-          TAG_NAME: ${{ steps.release.outputs['docker/helper-containers--tag_name'] }}
         uses: actions/github-script@v7
         with:
           script: |
-            const tagName = process.env.TAG_NAME;
-            console.log(`Triggering helper-containers build for tag: ${tagName}`);
+            const major = '${{ steps.release.outputs['docker/helper-containers--major'] }}';
+            const minor = '${{ steps.release.outputs['docker/helper-containers--minor'] }}';
+            const patch = '${{ steps.release.outputs['docker/helper-containers--patch'] }}';
+            const version = `${major}.${minor}.${patch}`;
+            const tagName = '${{ steps.release.outputs['docker/helper-containers--tag_name'] }}';
+            console.log(`Triggering helper-containers build for ${tagName} (version ${version})`);
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'helper-containers.yml',
               ref: tagName,
+              inputs: { version },
             });
