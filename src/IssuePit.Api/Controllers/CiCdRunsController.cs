@@ -187,6 +187,7 @@ public class CiCdRunsController(
 
     /// <summary>
     /// Downloads the artifact ZIP by proxying the S3 object through the backend.
+    /// Returns 503 when artifact storage is not configured.
     /// </summary>
     [HttpGet("{id:guid}/artifacts/{artifactId:guid}/download")]
     public async Task<IActionResult> DownloadArtifact(Guid id, Guid artifactId, CancellationToken ct)

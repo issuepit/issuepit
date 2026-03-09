@@ -23,7 +23,39 @@ public static class TrxParser
         {
             var doc = new XmlDocument();
             doc.Load(trxFilePath);
+            return ParseDocument(doc, Path.GetFileNameWithoutExtension(trxFilePath));
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
+    /// <summary>
+    /// Parses a <c>.trx</c> XML stream and returns a populated <see cref="CiCdTestSuite"/>.
+    /// The <see cref="CiCdTestSuite.CiCdRunId"/> must be set by the caller before persisting.
+    /// Returns <c>null</c> if the stream cannot be parsed.
+    /// </summary>
+    /// <param name="stream">Stream containing the TRX XML content.</param>
+    /// <param name="artifactName">Name to use as <see cref="CiCdTestSuite.ArtifactName"/> (e.g. the artifact directory name).</param>
+    public static CiCdTestSuite? Parse(Stream stream, string artifactName)
+    {
+        try
+        {
+            var doc = new XmlDocument();
+            doc.Load(stream);
+            return ParseDocument(doc, artifactName);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static CiCdTestSuite? ParseDocument(XmlDocument doc, string artifactName)
+    {
+        try
+        {
             var nsmgr = new XmlNamespaceManager(doc.NameTable);
             nsmgr.AddNamespace("t", Ns);
 
@@ -102,7 +134,7 @@ public static class TrxParser
             var suite = new CiCdTestSuite
             {
                 Id = Guid.NewGuid(),
-                ArtifactName = Path.GetFileNameWithoutExtension(trxFilePath),
+                ArtifactName = artifactName,
                 TotalTests = total > 0 ? total : testCases.Count,
                 PassedTests = passed,
                 FailedTests = failed,
