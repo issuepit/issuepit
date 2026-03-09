@@ -120,7 +120,7 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
 
         // Track job outcomes so we can distinguish a real workflow failure from act's non-zero
         // exit that results from a step failure handled by continue-on-error.
-        // act --json emits {"msg":"Job succeeded",...} or {"msg":"Job failed",...} per job.
+        // act --json emits {"msg":"🏁  Job succeeded",...} or {"msg":"🏁  Job failed",...} per job.
         var anyJobFailed = false;
         var anyJobSucceeded = false;
         Func<string, LogStream, Task> trackingLogLine = async (line, stream) =>
@@ -134,8 +134,10 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
                     if (root.TryGetProperty("msg", out var msgEl))
                     {
                         var msg = msgEl.GetString();
-                        if (msg == "Job succeeded") anyJobSucceeded = true;
-                        else if (msg == "Job failed") anyJobFailed = true;
+                        // act v0.2.84 emits "🏁  Job succeeded" / "🏁  Job failed" (emoji prefix);
+                        // use EndsWith so the check works regardless of any leading characters.
+                        if (msg?.EndsWith("Job succeeded", StringComparison.Ordinal) == true) anyJobSucceeded = true;
+                        else if (msg?.EndsWith("Job failed", StringComparison.Ordinal) == true) anyJobFailed = true;
                     }
                 }
                 catch { /* non-JSON line — ignore */ }

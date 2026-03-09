@@ -604,11 +604,14 @@ public class CiCdWorker(
         // Guard on stepId: act emits these messages in the "Complete Job" teardown stage (or
         // with no stage at all). A user script could echo the same text inside a regular step,
         // so only fire when stepId is null or "Complete Job" to avoid false positives.
+        // act v0.2.84 emits "🏁  Job succeeded" / "🏁  Job failed" (emoji prefix); use EndsWith.
+        var isJobSucceeded = displayLine.EndsWith("Job succeeded", StringComparison.Ordinal);
+        var isJobFailed = displayLine.EndsWith("Job failed", StringComparison.Ordinal);
         if (!string.IsNullOrEmpty(jobId) &&
             (stepId == null || stepId == "Complete Job") &&
-            (displayLine == "Job succeeded" || displayLine == "Job failed"))
+            (isJobSucceeded || isJobFailed))
         {
-            var status = displayLine == "Job succeeded" ? "succeeded" : "failed";
+            var status = isJobSucceeded ? "succeeded" : "failed";
             await PublishLogLineAsync(runId.ToString(),
                 JsonSerializer.Serialize(new { @event = "job-status", jobId, status }));
         }
