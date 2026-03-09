@@ -253,6 +253,21 @@ export interface IssueComment {
   updatedAt: string
 }
 
+export interface IssueAttachment {
+  id: string
+  issueId: string
+  commentId?: string
+  userId?: string
+  user?: User
+  fileName: string
+  fileUrl: string
+  contentType: string
+  fileSize: number
+  isVoiceFile: boolean
+  isPublic: boolean
+  createdAt: string
+}
+
 export interface CodeReviewComment {
   id: string
   issueId: string

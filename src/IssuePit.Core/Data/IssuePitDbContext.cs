@@ -13,6 +13,7 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<IssueTask> IssueTasks => Set<IssueTask>();
     public DbSet<IssueAssignee> IssueAssignees => Set<IssueAssignee>();
     public DbSet<IssueComment> IssueComments => Set<IssueComment>();
+    public DbSet<IssueAttachment> IssueAttachments => Set<IssueAttachment>();
     public DbSet<CodeReviewComment> CodeReviewComments => Set<CodeReviewComment>();
     public DbSet<Label> Labels => Set<Label>();
     public DbSet<Milestone> Milestones => Set<Milestone>();
@@ -282,5 +283,17 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
             .HasOne(x => x.Category)
             .WithMany()
             .HasForeignKey(x => x.CategoryId);
+
+        modelBuilder.Entity<IssueAttachment>()
+            .HasOne(a => a.Issue)
+            .WithMany()
+            .HasForeignKey(a => a.IssueId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<IssueAttachment>()
+            .HasOne(a => a.User)
+            .WithMany()
+            .HasForeignKey(a => a.UserId)
+            .IsRequired(false);
     }
 }

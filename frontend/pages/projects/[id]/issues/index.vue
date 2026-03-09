@@ -281,13 +281,24 @@ async function stopVoiceRecording() {
 
 async function submitVoiceCreate() {
   const title = `Voice Issue - ${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`
-  await store.createIssue(id, {
+  const newIssue = await store.createIssue(id, {
     title,
     body: voice.transcription.value,
     status: IssueStatus.Todo,
     priority: IssuePriority.Medium,
     type: IssueType.Issue,
   })
+  // Attach the voice recording (private — only visible to the creator)
+  if (newIssue && voice.voiceUrl.value) {
+    try {
+      const audioResp = await fetch(voice.voiceUrl.value)
+      const audioBlob = await audioResp.blob()
+      const audioFile = new File([audioBlob], 'recording.wav', { type: 'audio/wav' })
+      await store.addAttachment(newIssue.id, audioFile, true, false)
+    } catch (e) {
+      console.warn('Could not attach voice file to new issue', e)
+    }
+  }
   closeVoiceModal()
 }
 
