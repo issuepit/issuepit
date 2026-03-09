@@ -146,11 +146,11 @@ public class CiCdPipelineTests(AspireFixture fixture)
         };
     }
 
-    [Theory]
+    [SkippableTheory]
     [MemberData(nameof(RuntimeModes))]
     public async Task CiCdRun_RunSucceeds(string runtimeMode)
     {
-        if (!IsReady(runtimeMode)) return;
+        Skip.IfNot(IsReady(runtimeMode));
 
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
@@ -163,11 +163,11 @@ public class CiCdPipelineTests(AspireFixture fixture)
         Assert.Equal("Succeeded", run.GetProperty("statusName").GetString());
     }
 
-    [Theory]
+    [SkippableTheory]
     [MemberData(nameof(RuntimeModes))]
     public async Task CiCdRun_CapturesLogsForBothJobs(string runtimeMode)
     {
-        if (!IsReady(runtimeMode)) return;
+        Skip.IfNot(IsReady(runtimeMode));
 
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
@@ -201,11 +201,11 @@ public class CiCdPipelineTests(AspireFixture fixture)
         Assert.True(hasTestJobLogs, "Expected log entries from the 'test' job");
     }
 
-    [Theory]
+    [SkippableTheory]
     [MemberData(nameof(RuntimeModes))]
     public async Task CiCdRun_JobLogsFilterByJobId(string runtimeMode)
     {
-        if (!IsReady(runtimeMode)) return;
+        Skip.IfNot(IsReady(runtimeMode));
 
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
@@ -231,11 +231,11 @@ public class CiCdPipelineTests(AspireFixture fixture)
         }
     }
 
-    [Theory]
+    [SkippableTheory]
     [MemberData(nameof(RuntimeModes))]
     public async Task CiCdRun_StoresArtifacts(string runtimeMode)
     {
-        if (!IsReady(runtimeMode)) return;
+        Skip.IfNot(IsReady(runtimeMode));
 
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
@@ -258,11 +258,11 @@ public class CiCdPipelineTests(AspireFixture fixture)
         Assert.Contains("test-results", names);
     }
 
-    [Theory]
+    [SkippableTheory]
     [MemberData(nameof(RuntimeModes))]
     public async Task CiCdRun_StoresTrxTestResults(string runtimeMode)
     {
-        if (!IsReady(runtimeMode)) return;
+        Skip.IfNot(IsReady(runtimeMode));
 
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
