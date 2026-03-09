@@ -13,6 +13,9 @@ jobs:
     name: Release Please
     runs-on: ubuntu-latest
     if: vars.ISSUEPIT_RUN != 'true'
+    outputs:
+      helper_containers_release_created: ${{ steps.release.outputs['docker/helper-containers--release_created'] }}
+      helper_containers_version: ${{ format('{0}.{1}.{2}', steps.release.outputs['docker/helper-containers--major'], steps.release.outputs['docker/helper-containers--minor'], steps.release.outputs['docker/helper-containers--patch']) }}
     steps:
       - uses: googleapis/release-please-action@v4.4.0
         id: release
@@ -20,3 +23,12 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+  build-helper-containers:
+    name: Build helper containers on release
+    needs: release-please
+    if: needs['release-please'].outputs.helper_containers_release_created == 'true'
+    uses: ./.github/workflows/helper-containers.yml
+    secrets: inherit
+    with:
+      version: ${{ needs['release-please'].outputs.helper_containers_version }}
