@@ -192,6 +192,7 @@ export interface Project {
   useNewActionCache?: boolean | null
   actionOfflineMode?: boolean | null
   localRepositories?: string | null
+  openMergeRequestCount: number
   createdAt: string
   updatedAt: string
 }

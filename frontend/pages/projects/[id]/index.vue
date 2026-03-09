@@ -57,8 +57,8 @@
         {{ store.currentProject.description }}
       </p>
 
-      <!-- Stats Row: Issues + Commits -->
-      <div class="grid grid-cols-2 gap-3 mb-6 max-w-sm">
+      <!-- Stats Row: Issues + Commits + Open MRs -->
+      <div class="grid grid-cols-3 gap-3 mb-6 max-w-md">
         <NuxtLink :to="`/projects/${id}/issues`"
           class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group">
           <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
@@ -73,6 +73,14 @@
             {{ commitCountLabel }}
           </p>
           <p class="text-xs text-gray-500 mt-0.5">Commits</p>
+        </NuxtLink>
+
+        <NuxtLink :to="`/projects/${id}/merge-requests`"
+          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group">
+          <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
+            {{ store.currentProject.openMergeRequestCount }}
+          </p>
+          <p class="text-xs text-gray-500 mt-0.5">Open MRs</p>
         </NuxtLink>
       </div>
 
