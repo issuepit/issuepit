@@ -17,6 +17,12 @@ on:
       version:
         description: 'Semantic version to tag images with (e.g. 1.2.3), passed by release-please'
         required: false
+  workflow_call:
+    inputs:
+      version:
+        description: 'Semantic version to tag images with (e.g. 1.2.3), passed by release-please'
+        required: false
+        type: string
 
 env:
   REGISTRY: ghcr.io

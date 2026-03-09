@@ -7,13 +7,15 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  actions: write
 
 jobs:
   release-please:
     name: Release Please
     runs-on: ubuntu-latest
     if: vars.ISSUEPIT_RUN != 'true'
+    outputs:
+      helper_containers_release_created: ${{ steps.release.outputs['docker/helper-containers--release_created'] }}
+      helper_containers_version: ${{ format('{0}.{1}.{2}', steps.release.outputs['docker/helper-containers--major'], steps.release.outputs['docker/helper-containers--minor'], steps.release.outputs['docker/helper-containers--patch']) }}
     steps:
       - uses: googleapis/release-please-action@v4.4.0
         id: release
@@ -22,21 +24,11 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-      - name: Trigger helper-containers build on release
-        if: ${{ fromJSON(steps.release.outputs['docker/helper-containers--release_created'] || 'false') }}
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const major = '${{ steps.release.outputs['docker/helper-containers--major'] }}';
-            const minor = '${{ steps.release.outputs['docker/helper-containers--minor'] }}';
-            const patch = '${{ steps.release.outputs['docker/helper-containers--patch'] }}';
-            const version = `${major}.${minor}.${patch}`;
-            const tagName = '${{ steps.release.outputs['docker/helper-containers--tag_name'] }}';
-            console.log(`Triggering helper-containers build for ${tagName} (version ${version})`);
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'helper-containers.yml',
-              ref: tagName,
-              inputs: { version },
-            });
+  build-helper-containers:
+    name: Build helper containers on release
+    needs: release-please
+    if: needs['release-please'].outputs.helper_containers_release_created == 'true'
+    uses: ./.github/workflows/helper-containers.yml
+    secrets: inherit
+    with:
+      version: ${{ needs['release-please'].outputs.helper_containers_version }}
