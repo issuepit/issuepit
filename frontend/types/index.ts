@@ -499,6 +499,8 @@ export interface PoolStatus {
   cicdPools: CiCdPoolStatus[]
 }
 
+export type GitOriginMode = 'ReadOnly' | 'Working' | 'Release'
+
 export interface GitRepository {
   id: string
   projectId: string
@@ -510,6 +512,7 @@ export interface GitRepository {
   status: 'Active' | 'Disabled' | 'Throttled'
   statusMessage?: string
   throttledUntil?: string
+  mode: GitOriginMode
 }
 
 export interface GitBranch {

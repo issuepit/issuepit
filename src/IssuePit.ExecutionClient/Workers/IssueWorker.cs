@@ -204,8 +204,10 @@ public class IssueWorker(
         var runtimeType = runtimeConfig?.Type ?? RuntimeType.Docker;
 
         // Load the git repository for the project so the container can clone it on startup.
+        // Prefer Working-mode remote so agents use the correct push target; fall back to first.
         var gitRepository = await db.GitRepositories
             .Where(r => r.ProjectId == issue.ProjectId)
+            .OrderByDescending(r => r.Mode == GitOriginMode.Working)
             .FirstOrDefaultAsync(cancellationToken);
 
         var session = new AgentSession
