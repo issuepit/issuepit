@@ -118,6 +118,31 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
         foreach (var arg in argsList)
             psi.ArgumentList.Add(arg);
 
+        // Track job outcomes so we can distinguish a real workflow failure from act's non-zero
+        // exit that results from a step failure handled by continue-on-error.
+        // act --json emits {"msg":"Job succeeded",...} or {"msg":"Job failed",...} per job.
+        var anyJobFailed = false;
+        var anyJobSucceeded = false;
+        Func<string, LogStream, Task> trackingLogLine = async (line, stream) =>
+        {
+            if (line.Length > 0 && line[0] == '{')
+            {
+                try
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(line);
+                    var root = doc.RootElement;
+                    if (root.TryGetProperty("msg", out var msgEl))
+                    {
+                        var msg = msgEl.GetString();
+                        if (msg == "Job succeeded") anyJobSucceeded = true;
+                        else if (msg == "Job failed") anyJobFailed = true;
+                    }
+                }
+                catch { /* non-JSON line — ignore */ }
+            }
+            await onLogLine(line, stream);
+        };
+
         Exception? actException = null;
         using (var process = new Process { StartInfo = psi, EnableRaisingEvents = true })
         {
@@ -125,8 +150,8 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
 
             try
             {
-                var stdoutTask = StreamOutputAsync(process.StandardOutput, LogStream.Stdout, onLogLine, cancellationToken);
-                var stderrTask = StreamOutputAsync(process.StandardError, LogStream.Stderr, onLogLine, cancellationToken);
+                var stdoutTask = StreamOutputAsync(process.StandardOutput, LogStream.Stdout, trackingLogLine, cancellationToken);
+                var stderrTask = StreamOutputAsync(process.StandardError, LogStream.Stderr, trackingLogLine, cancellationToken);
 
                 await Task.WhenAll(stdoutTask, stderrTask);
                 await process.WaitForExitAsync(cancellationToken);
@@ -139,9 +164,31 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
             }
 
             if (process.ExitCode != 0)
-                actException = new Exception(
-                    $"act exited with code {process.ExitCode} " +
-                    $"(workspace: {workspacePath}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
+            {
+                if (anyJobFailed)
+                {
+                    // At least one job explicitly reported failure — real workflow failure.
+                    actException = new Exception(
+                        $"act exited with code {process.ExitCode} " +
+                        $"(workspace: {workspacePath}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
+                }
+                else if (!anyJobSucceeded)
+                {
+                    // No jobs ran at all — act startup or configuration error (bad workflow path, missing event, etc.).
+                    actException = new Exception(
+                        $"act exited with code {process.ExitCode} and no jobs ran " +
+                        $"(workspace: {workspacePath}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
+                }
+                else
+                {
+                    // All jobs reported success; non-zero exit is from a step failure handled by
+                    // continue-on-error. Treat the run as succeeded.
+                    logger.LogWarning(
+                        "act exited with code {ExitCode} for run {RunId} but all jobs succeeded " +
+                        "(likely a step failure with continue-on-error); treating run as succeeded",
+                        process.ExitCode, run.Id);
+                }
+            }
         }
 
         if (worktreeCreated)
