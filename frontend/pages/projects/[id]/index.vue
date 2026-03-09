@@ -306,11 +306,8 @@
               <div v-for="run in visibleCiCdRuns" :key="run.id"
                 class="flex items-center gap-3 py-2 border-b border-gray-800 last:border-0 cursor-pointer"
                 @click="navigateTo(`/projects/${id}/runs/cicd/${run.id}`)">
-                <span :class="cicdStatusClass(run.status)"
-                  class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium shrink-0">
-                  <span :class="cicdStatusDot(run.status)" class="w-1.5 h-1.5 rounded-full" />
-                  {{ run.statusName }}
-                </span>
+                <CiCdStatusChip :runs="[run]"
+                  class="shrink-0" />
                 <div class="flex-1 min-w-0">
                   <p class="text-sm text-gray-300 truncate">
                     {{ run.workflow || run.branch || 'Run' }}
@@ -610,27 +607,6 @@ function agentStatusDot(status: AgentSessionStatus) {
     case AgentSessionStatus.Running: return 'bg-blue-400 animate-pulse'
     case AgentSessionStatus.Failed: return 'bg-red-400'
     case AgentSessionStatus.Cancelled: return 'bg-gray-500'
-    default: return 'bg-yellow-400'
-  }
-}
-
-// CI/CD run status helpers
-function cicdStatusClass(status: CiCdRunStatus) {
-  switch (status) {
-    case CiCdRunStatus.Succeeded: return 'bg-green-900/30 text-green-400'
-    case CiCdRunStatus.Running: return 'bg-blue-900/30 text-blue-400'
-    case CiCdRunStatus.Failed: return 'bg-red-900/30 text-red-400'
-    case CiCdRunStatus.Cancelled: return 'bg-gray-800 text-gray-400'
-    default: return 'bg-yellow-900/30 text-yellow-400'
-  }
-}
-
-function cicdStatusDot(status: CiCdRunStatus) {
-  switch (status) {
-    case CiCdRunStatus.Succeeded: return 'bg-green-400'
-    case CiCdRunStatus.Running: return 'bg-blue-400 animate-pulse'
-    case CiCdRunStatus.Failed: return 'bg-red-400'
-    case CiCdRunStatus.Cancelled: return 'bg-gray-500'
     default: return 'bg-yellow-400'
   }
 }

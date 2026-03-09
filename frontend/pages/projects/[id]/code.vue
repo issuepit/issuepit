@@ -298,6 +298,7 @@
               </p>
             </div>
             <div class="flex items-center gap-2 shrink-0">
+              <CommitCiCdStatus :commit-sha="commit.sha" :runs="cicdStore.runs" />
               <button @click="openTriggerModal(commit.sha)"
                 class="text-xs bg-gray-800 hover:bg-brand-700 border border-gray-700 text-gray-300 hover:text-white px-2 py-0.5 rounded transition-colors flex items-center gap-1"
                 title="Trigger CI/CD run for this commit">
@@ -367,6 +368,7 @@ import hljs from 'highlight.js'
 import { useGitStore } from '~/stores/git'
 import { useIssuesStore } from '~/stores/issues'
 import { useAuthStore } from '~/stores/auth'
+import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { IssueType, IssuePriority, IssueStatus } from '~/types'
 
 const route = useRoute()
@@ -375,6 +377,7 @@ const id = route.params.id as string
 const store = useGitStore()
 const issuesStore = useIssuesStore()
 const authStore = useAuthStore()
+const cicdStore = useCiCdRunsStore()
 
 const repoChecked = ref(false)
 const fetching = ref(false)
@@ -466,7 +469,8 @@ onUnmounted(() => store.reset())
 async function initRepo() {
   await Promise.all([
     store.fetchBranches(id),
-    store.fetchTree(id, store.repo?.defaultBranch, '')
+    store.fetchTree(id, store.repo?.defaultBranch, ''),
+    cicdStore.fetchRuns(id),
   ])
   // Set default branch selection
   const def = store.repo?.defaultBranch ?? 'main'
