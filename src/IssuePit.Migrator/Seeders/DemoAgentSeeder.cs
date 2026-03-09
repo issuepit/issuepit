@@ -47,7 +47,7 @@ public class DemoAgentSeeder(IssuePitDbContext db)
                 OrgId = orgId,
                 Name = "Plan Agent",
                 SystemPrompt = LoadSystemPrompt("plan-agent.md"),
-                DockerImage = "ghcr.io/sst/opencode:latest",
+                DockerImage = "ghcr.io/issuepit/issuepit-helper-opencode-act:latest",
                 AllowedTools = "[]",
                 CreatedAt = DateTime.UtcNow,
             });
@@ -59,7 +59,7 @@ public class DemoAgentSeeder(IssuePitDbContext db)
                 OrgId = orgId,
                 Name = "Code Agent",
                 SystemPrompt = LoadSystemPrompt("code-agent.md"),
-                DockerImage = "ghcr.io/sst/opencode:latest",
+                DockerImage = "ghcr.io/issuepit/issuepit-helper-opencode-act:latest",
                 AllowedTools = "[]",
                 CreatedAt = DateTime.UtcNow,
             });
@@ -71,7 +71,7 @@ public class DemoAgentSeeder(IssuePitDbContext db)
                 OrgId = orgId,
                 Name = "Evaluate Agent",
                 SystemPrompt = LoadSystemPrompt("evaluate-agent.md"),
-                DockerImage = "ghcr.io/sst/opencode:latest",
+                DockerImage = "ghcr.io/issuepit/issuepit-helper-opencode-act:latest",
                 AllowedTools = "[]",
                 CreatedAt = DateTime.UtcNow,
             });
@@ -83,7 +83,7 @@ public class DemoAgentSeeder(IssuePitDbContext db)
                 OrgId = orgId,
                 Name = "Quality Agent",
                 SystemPrompt = LoadSystemPrompt("quality-agent.md"),
-                DockerImage = "ghcr.io/sst/opencode:latest",
+                DockerImage = "ghcr.io/issuepit/issuepit-helper-opencode-act:latest",
                 AllowedTools = "[]",
                 CreatedAt = DateTime.UtcNow,
             });
