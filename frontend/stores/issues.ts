@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { Issue, IssuePriority, IssueType, IssueComment, IssueTask, IssueAssignee, Label, CodeReviewComment, IssueLink, IssueLinkType, IssueEvent } from '~/types'
+import type { Issue, IssuePriority, IssueType, IssueComment, IssueAttachment, IssueTask, IssueAssignee, Label, CodeReviewComment, IssueLink, IssueLinkType, IssueEvent } from '~/types'
 import { IssueStatus } from '~/types'
 
 interface IssueFilters {
@@ -17,6 +17,7 @@ export const useIssuesStore = defineStore('issues', () => {
   const currentIssue = ref<Issue | null>(null)
   const currentComments = ref<IssueComment[]>([])
   const currentCodeReviewComments = ref<CodeReviewComment[]>([])
+  const currentAttachments = ref<IssueAttachment[]>([])
   const currentTasks = ref<IssueTask[]>([])
   const currentLinks = ref<IssueLink[]>([])
   const currentHistory = ref<IssueEvent[]>([])
@@ -352,6 +353,56 @@ export const useIssuesStore = defineStore('issues', () => {
     }
   }
 
+  // --- Attachments ---
+
+  async function fetchAttachments(issueId: string) {
+    try {
+      const data = await api.get<IssueAttachment[]>(`/api/issues/${issueId}/attachments`)
+      currentAttachments.value = data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to fetch attachments'
+    }
+  }
+
+  async function addAttachment(issueId: string, file: File, isVoiceFile = false, isPublic = true) {
+    const config = useRuntimeConfig()
+    const baseURL = config.public.apiBase as string
+    try {
+      const body = new FormData()
+      body.append('file', file)
+      const params = new URLSearchParams({ isVoiceFile: String(isVoiceFile), isPublic: String(isPublic) })
+      const data = await $fetch<IssueAttachment>(`/api/issues/${issueId}/attachments?${params}`, {
+        baseURL,
+        method: 'POST',
+        body,
+        credentials: 'include',
+      })
+      currentAttachments.value.push(data)
+      return data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to upload attachment'
+    }
+  }
+
+  async function deleteAttachment(issueId: string, attachmentId: string) {
+    try {
+      await api.del(`/api/issues/${issueId}/attachments/${attachmentId}`)
+      currentAttachments.value = currentAttachments.value.filter(a => a.id !== attachmentId)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to delete attachment'
+    }
+  }
+
+  async function retranscribeAttachment(issueId: string, attachmentId: string) {
+    try {
+      const data = await api.post<IssueComment>(`/api/issues/${issueId}/attachments/${attachmentId}/retranscribe`, {})
+      currentComments.value.push(data)
+      return data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to retranscribe attachment'
+    }
+  }
+
   // --- Milestone on Issue ---
 
   async function clearIssueMilestone(projectId: string, issueId: string) {
@@ -379,6 +430,7 @@ export const useIssuesStore = defineStore('issues', () => {
     currentIssue,
     currentComments,
     currentCodeReviewComments,
+    currentAttachments,
     currentTasks,
     currentLinks,
     currentHistory,
@@ -401,6 +453,10 @@ export const useIssuesStore = defineStore('issues', () => {
     fetchCodeReviewComments,
     addCodeReviewComment,
     addCodeReviewCommentsBatch,
+    fetchAttachments,
+    addAttachment,
+    deleteAttachment,
+    retranscribeAttachment,
     fetchTasks,
     createTask,
     toggleTask,

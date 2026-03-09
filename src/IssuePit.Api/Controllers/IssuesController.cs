@@ -10,7 +10,7 @@ namespace IssuePit.Api.Controllers;
 
 [ApiController]
 [Route("api/issues")]
-public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer<string, string> producer, IssueEnhancementService enhancementService) : ControllerBase
+public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer<string, string> producer, IssueEnhancementService enhancementService, ImageStorageService imageStorage, VoiceTranscriptionService voiceTranscription, ILogger<IssuesController> logger) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetIssues([FromQuery] Guid? projectId, [FromQuery] Guid? orgId)
@@ -531,6 +531,125 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         db.IssueLinks.Remove(link);
         await db.SaveChangesAsync();
         return NoContent();
+    }
+
+    // --- Attachments ---
+
+    [HttpGet("{id:guid}/attachments")]
+    public async Task<IActionResult> GetAttachments(Guid id)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var currentUserId = ctx.CurrentUser?.Id;
+        var attachments = await db.IssueAttachments
+            .Include(a => a.User)
+            .Where(a => a.IssueId == id && (a.IsPublic || a.UserId == currentUserId))
+            .OrderBy(a => a.CreatedAt)
+            .ToListAsync();
+        return Ok(attachments);
+    }
+
+    [HttpPost("{id:guid}/attachments")]
+    public async Task<IActionResult> AddAttachment(Guid id, IFormFile file, [FromQuery] bool isVoiceFile = false, [FromQuery] bool isPublic = true, CancellationToken ct = default)
+    {
+        if (ctx.CurrentTenant is null || ctx.CurrentUser is null) return Unauthorized();
+        var issue = await db.Issues.FindAsync(id);
+        if (issue is null) return NotFound();
+
+        if (file is null || file.Length == 0)
+            return BadRequest(new { error = "No file provided." });
+
+        if (file.Length > 50 * 1024 * 1024) // 50 MB limit
+            return BadRequest(new { error = "File exceeds the 50 MB size limit." });
+
+        var subfolder = isVoiceFile ? "voice" : "attachments";
+        string fileUrl;
+        try
+        {
+            await using var stream = file.OpenReadStream();
+            fileUrl = await imageStorage.UploadFileAsync(stream, file.FileName, file.ContentType, subfolder, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Attachment upload to storage failed");
+            return StatusCode(500, new { error = "Upload failed", message = ex.Message });
+        }
+
+        var attachment = new IssueAttachment
+        {
+            Id = Guid.NewGuid(),
+            IssueId = id,
+            UserId = ctx.CurrentUser.Id,
+            FileName = file.FileName,
+            FileUrl = fileUrl,
+            ContentType = file.ContentType,
+            FileSize = file.Length,
+            IsVoiceFile = isVoiceFile,
+            IsPublic = isPublic,
+            CreatedAt = DateTime.UtcNow,
+        };
+        db.IssueAttachments.Add(attachment);
+        await db.SaveChangesAsync();
+        await db.Entry(attachment).Reference(a => a.User).LoadAsync();
+        return Created($"/api/issues/{id}/attachments/{attachment.Id}", attachment);
+    }
+
+    [HttpDelete("{id:guid}/attachments/{attachmentId:guid}")]
+    public async Task<IActionResult> DeleteAttachment(Guid id, Guid attachmentId)
+    {
+        if (ctx.CurrentTenant is null || ctx.CurrentUser is null) return Unauthorized();
+        var attachment = await db.IssueAttachments.FirstOrDefaultAsync(a => a.Id == attachmentId && a.IssueId == id);
+        if (attachment is null) return NotFound();
+        if (attachment.UserId != ctx.CurrentUser.Id) return Forbid();
+        db.IssueAttachments.Remove(attachment);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Retranscribes a voice attachment and posts the result as a comment on the issue.
+    /// </summary>
+    [HttpPost("{id:guid}/attachments/{attachmentId:guid}/retranscribe")]
+    public async Task<IActionResult> RetranscribeAttachment(Guid id, Guid attachmentId, CancellationToken ct)
+    {
+        if (ctx.CurrentTenant is null || ctx.CurrentUser is null) return Unauthorized();
+        var attachment = await db.IssueAttachments.FirstOrDefaultAsync(a => a.Id == attachmentId && a.IssueId == id);
+        if (attachment is null) return NotFound();
+        if (!attachment.IsVoiceFile) return BadRequest(new { error = "Attachment is not a voice file." });
+
+        // Download the voice file and retranscribe
+        string transcription;
+        try
+        {
+            using var httpClient = new System.Net.Http.HttpClient();
+            await using var audioStream = await httpClient.GetStreamAsync(attachment.FileUrl, ct);
+            using var ms = new System.IO.MemoryStream();
+            await audioStream.CopyToAsync(ms, ct);
+            ms.Position = 0;
+            transcription = await voiceTranscription.TranscribeAsync(ms, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Retranscription failed for attachment {AttachmentId}", attachmentId);
+            transcription = string.Empty;
+        }
+
+        var body = string.IsNullOrWhiteSpace(transcription)
+            ? $"🔄 Retranscription of [{attachment.FileName}]({attachment.FileUrl}) produced no text (model may not be available)."
+            : $"🔄 Retranscription of [{attachment.FileName}]({attachment.FileUrl}):\n\n{transcription}";
+
+        var comment = new IssueComment
+        {
+            Id = Guid.NewGuid(),
+            IssueId = id,
+            UserId = ctx.CurrentUser.Id,
+            Body = body,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+        db.IssueComments.Add(comment);
+        await db.SaveChangesAsync();
+        await db.Entry(comment).Reference(c => c.User).LoadAsync();
+        return Ok(comment);
     }
 
     private IssueEvent MakeEvent(Guid issueId, IssueEventType eventType, string? oldValue = null, string? newValue = null)
