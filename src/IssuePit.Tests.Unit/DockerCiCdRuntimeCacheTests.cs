@@ -207,7 +207,75 @@ public class DockerCiCdRuntimeCacheTests
         Assert.Equal(3143, DockerCiCdRuntime.HttpCachePort);
     }
 
-    // ── DindImageCacheStrategy enum ────────────────────────────────────────────
+    // ── BuildActContainerOptions ───────────────────────────────────────────────
+
+    [Fact]
+    public void BuildActContainerOptions_AllNull_ReturnsNull()
+    {
+        var result = DockerCiCdRuntime.BuildActContainerOptions(null, null, null);
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void BuildActContainerOptions_NpmCacheVolume_MountsNpmCache()
+    {
+        var result = DockerCiCdRuntime.BuildActContainerOptions("issuepit-npm-cache", null, null);
+        Assert.NotNull(result);
+        Assert.Contains("-v /cache/npm:/root/.npm", result);
+    }
+
+    [Fact]
+    public void BuildActContainerOptions_NuGetCacheVolume_MountsNuGetCache()
+    {
+        var result = DockerCiCdRuntime.BuildActContainerOptions(null, "issuepit-nuget-cache", null);
+        Assert.NotNull(result);
+        Assert.Contains("-v /cache/nuget:/root/.nuget/packages", result);
+    }
+
+    [Fact]
+    public void BuildActContainerOptions_PlaywrightCacheVolume_MountsPlaywrightCache()
+    {
+        var result = DockerCiCdRuntime.BuildActContainerOptions(null, null, "issuepit-playwright-cache");
+        Assert.NotNull(result);
+        Assert.Contains("-v /cache/playwright:/root/.cache/ms-playwright", result);
+    }
+
+    [Fact]
+    public void BuildActContainerOptions_AptProxy_MountsAptProxyFile()
+    {
+        var result = DockerCiCdRuntime.BuildActContainerOptions(null, null, null, includeAptProxy: true);
+        Assert.NotNull(result);
+        Assert.Contains("-v /etc/apt/apt.conf.d/01proxy:/etc/apt/apt.conf.d/01proxy", result);
+    }
+
+    [Fact]
+    public void BuildActContainerOptions_AllVolumes_CombinesIntoSingleString()
+    {
+        var result = DockerCiCdRuntime.BuildActContainerOptions(
+            "npm-vol", "nuget-vol", "playwright-vol", includeAptProxy: true);
+        Assert.NotNull(result);
+        Assert.Contains("-v /cache/npm:/root/.npm", result);
+        Assert.Contains("-v /cache/nuget:/root/.nuget/packages", result);
+        Assert.Contains("-v /cache/playwright:/root/.cache/ms-playwright", result);
+        Assert.Contains("-v /etc/apt/apt.conf.d/01proxy:/etc/apt/apt.conf.d/01proxy", result);
+    }
+
+    [Fact]
+    public void BuildActContainerOptions_NoAptProxy_DoesNotContainAptProxy()
+    {
+        var result = DockerCiCdRuntime.BuildActContainerOptions("npm-vol", "nuget-vol", "playwright-vol");
+        Assert.NotNull(result);
+        Assert.DoesNotContain("01proxy", result);
+    }
+
+    [Fact]
+    public void BuildActContainerOptions_EmptyVolumeName_IsSkipped()
+    {
+        var result = DockerCiCdRuntime.BuildActContainerOptions("", "   ", null);
+        Assert.Null(result);
+    }
+
+
 
     [Theory]
     [InlineData("Off", DindImageCacheStrategy.Off)]

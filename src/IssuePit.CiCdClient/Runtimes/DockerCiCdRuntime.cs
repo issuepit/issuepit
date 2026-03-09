@@ -172,32 +172,10 @@ public partial class DockerCiCdRuntime(
 
         var useDind = !trigger.NoDind;
 
-        if (!string.IsNullOrWhiteSpace(npmCacheVolume))
-        {
-            actBinAndArgs.Add("--volume");
-            actBinAndArgs.Add($"{ContainerNpmCachePath}:/root/.npm");
-        }
         if (!string.IsNullOrWhiteSpace(npmCacheUrl))
         {
             actBinAndArgs.Add("--env");
             actBinAndArgs.Add($"NPM_CONFIG_REGISTRY={npmCacheUrl}");
-        }
-        if (!string.IsNullOrWhiteSpace(nugetCacheVolume))
-        {
-            actBinAndArgs.Add("--volume");
-            actBinAndArgs.Add($"{ContainerNuGetCachePath}:/root/.nuget/packages");
-        }
-
-        // Playwright browser cache: mount named volume so job containers reuse already-downloaded
-        // browser binaries (Chrome, FFmpeg, etc.) across runs without re-fetching from the CDN.
-        // The volume is mounted at ContainerPlaywrightCachePath in the outer act container;
-        // act passes --volume ContainerPlaywrightCachePath:/root/.cache/ms-playwright to each job
-        // container, which is the default location Playwright looks for installed browsers.
-        // This filesystem cache works regardless of the InterceptAllTraffic setting.
-        if (!string.IsNullOrWhiteSpace(playwrightCacheVolume))
-        {
-            actBinAndArgs.Add("--volume");
-            actBinAndArgs.Add($"{ContainerPlaywrightCachePath}:/root/.cache/ms-playwright");
         }
 
         // When InterceptAllTraffic is enabled, iptables DNAT rules in BuildDindStartupScript
@@ -214,15 +192,16 @@ public partial class DockerCiCdRuntime(
             actBinAndArgs.Add($"PLAYWRIGHT_DOWNLOAD_HOST=http://{dindBridgeIp}:{HttpCachePort}");
         }
 
-        // Apt proxy volume mount for DinD mode (InterceptAllTraffic required):
-        // BuildDindStartupScript writes /etc/apt/apt.conf.d/01proxy on the act container
-        // (using the inner Docker bridge IP) after dockerd starts. Act then mounts this file
-        // into each job container so apt-get requests are transparently proxied through
-        // apt-cacher-ng on the outer host via iptables DNAT.
-        if (interceptAllTraffic && !string.IsNullOrWhiteSpace(aptCacheUrl) && useDind)
+        // Pass volume mounts to act job containers via --container-options "-v src:dst".
+        // act does not have a --volume flag; --container-options forwards raw Docker options to each
+        // job container act creates (npm/NuGet/Playwright caches and the apt proxy config file).
+        var containerOptions = BuildActContainerOptions(
+            npmCacheVolume, nugetCacheVolume, playwrightCacheVolume,
+            interceptAllTraffic && !string.IsNullOrWhiteSpace(aptCacheUrl) && useDind);
+        if (containerOptions is not null)
         {
-            actBinAndArgs.Add("--volume");
-            actBinAndArgs.Add("/etc/apt/apt.conf.d/01proxy:/etc/apt/apt.conf.d/01proxy");
+            actBinAndArgs.Add("--container-options");
+            actBinAndArgs.Add(containerOptions);
         }
 
         // Action cache: resolve the effective cache mount.
@@ -306,11 +285,11 @@ public partial class DockerCiCdRuntime(
         else await onLogLine($"[DEBUG] DinD           : isolated (Privileged=true, in-container dockerd)", LogStream.Stdout);
         if (trigger.NoVolumeMounts) await onLogLine($"[DEBUG] Volume mounts  : disabled", LogStream.Stdout);
         if (!string.IsNullOrWhiteSpace(npmCacheVolume))
-            await onLogLine($"[DEBUG] npm cache vol  : {npmCacheVolume}:{ContainerNpmCachePath} (outer container mount, passed to job containers via act --volume)", LogStream.Stdout);
+            await onLogLine($"[DEBUG] npm cache vol  : {npmCacheVolume}:{ContainerNpmCachePath} (outer container mount, passed to job containers via --container-options)", LogStream.Stdout);
         if (!string.IsNullOrWhiteSpace(npmCacheUrl))
             await onLogLine($"[DEBUG] npm registry   : {npmCacheUrl}", LogStream.Stdout);
         if (!string.IsNullOrWhiteSpace(nugetCacheVolume))
-            await onLogLine($"[DEBUG] NuGet cache vol: {nugetCacheVolume}:{ContainerNuGetCachePath} (outer container mount, passed to job containers via act --volume)", LogStream.Stdout);
+            await onLogLine($"[DEBUG] NuGet cache vol: {nugetCacheVolume}:{ContainerNuGetCachePath} (outer container mount, passed to job containers via --container-options)", LogStream.Stdout);
         if (!string.IsNullOrWhiteSpace(playwrightCacheVolume))
             await onLogLine($"[DEBUG] Playwright vol : {playwrightCacheVolume}:{ContainerPlaywrightCachePath} → /root/.cache/ms-playwright (filesystem browser cache)", LogStream.Stdout);
         if (!string.IsNullOrWhiteSpace(httpCacheUrl))
@@ -1102,6 +1081,39 @@ public partial class DockerCiCdRuntime(
         var flushed = remainder.TrimEnd('\r');
         if (!string.IsNullOrEmpty(flushed))
             await onLogLine(flushed, lastTarget);
+    }
+
+    /// <summary>
+    /// Builds the <c>--container-options</c> value that is passed to <c>act</c> so it forwards
+    /// the specified volume mounts to every job container it creates.
+    /// act does not have a <c>--volume</c> flag; all volume mounts must be expressed as
+    /// Docker <c>-v</c> flags inside a single <c>--container-options</c> string.
+    /// Returns <c>null</c> when no volumes need to be mounted.
+    /// </summary>
+    /// <param name="npmCacheVolume">Named volume or host path for the npm package cache (mounted at /cache/npm).</param>
+    /// <param name="nugetCacheVolume">Named volume or host path for the NuGet package cache (mounted at /cache/nuget).</param>
+    /// <param name="playwrightCacheVolume">Named volume or host path for the Playwright browser cache (mounted at /cache/playwright).</param>
+    /// <param name="includeAptProxy">
+    ///   When <c>true</c>, also mounts the apt proxy config file
+    ///   (<c>/etc/apt/apt.conf.d/01proxy</c>) that <see cref="BuildDindStartupScript"/> writes
+    ///   on the act container so every job container picks up the transparent apt proxy.
+    /// </param>
+    internal static string? BuildActContainerOptions(
+        string? npmCacheVolume,
+        string? nugetCacheVolume,
+        string? playwrightCacheVolume,
+        bool includeAptProxy = false)
+    {
+        var opts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(npmCacheVolume))
+            opts.Add($"-v {ContainerNpmCachePath}:/root/.npm");
+        if (!string.IsNullOrWhiteSpace(nugetCacheVolume))
+            opts.Add($"-v {ContainerNuGetCachePath}:/root/.nuget/packages");
+        if (!string.IsNullOrWhiteSpace(playwrightCacheVolume))
+            opts.Add($"-v {ContainerPlaywrightCachePath}:/root/.cache/ms-playwright");
+        if (includeAptProxy)
+            opts.Add("-v /etc/apt/apt.conf.d/01proxy:/etc/apt/apt.conf.d/01proxy");
+        return opts.Count > 0 ? string.Join(" ", opts) : null;
     }
 
     /// <summary>
