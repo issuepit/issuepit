@@ -9,7 +9,7 @@
       <!-- Breadcrumb + action buttons -->
       <div class="flex items-center justify-between mb-5">
         <div class="flex items-center gap-2 text-sm text-gray-500">
-          <NuxtLink :to="`/projects/${id}`" class="hover:text-gray-300">Project</NuxtLink>
+          <NuxtLink :to="`/projects/${id}`" class="hover:text-gray-300">{{ projectsStore.currentProject?.name || 'Project' }}</NuxtLink>
           <span>/</span>
           <NuxtLink :to="`/projects/${id}/issues`" class="hover:text-gray-300">Issues</NuxtLink>
           <template v-if="store.currentIssue.parentIssue">

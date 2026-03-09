@@ -1,12 +1,14 @@
 <template>
   <div class="p-8">
-    <!-- Header -->
+    <!-- Breadcrumb + Header -->
+    <div class="flex items-center gap-2 text-sm text-gray-500 mb-2">
+      <NuxtLink :to="`/projects/${projectId}`" class="hover:text-gray-300">{{ projectsStore.currentProject?.name }}</NuxtLink>
+      <span>/</span>
+      <NuxtLink :to="`/projects/${projectId}/runs?tab=agent`" class="hover:text-gray-300">Runs</NuxtLink>
+      <span>/</span>
+      <span class="text-gray-400">Agent Session</span>
+    </div>
     <div class="flex items-center gap-3 mb-6">
-      <NuxtLink :to="`/projects/${projectId}/runs?tab=agent`" class="text-gray-500 hover:text-gray-300 transition-colors">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-        </svg>
-      </NuxtLink>
       <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
           d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2" />
@@ -238,6 +240,7 @@
 
 <script setup lang="ts">
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
+import { useProjectsStore } from '~/stores/projects'
 import { CiCdRunStatus, AgentSessionStatus, type AgentSessionLog } from '~/types'
 
 const route = useRoute()
@@ -245,6 +248,7 @@ const projectId = route.params.id as string
 const sessionId = route.params.sessionId as string
 
 const store = useCiCdRunsStore()
+const projectsStore = useProjectsStore()
 
 const sectionTabs = [
   { label: 'Logs', value: 'logs' },
@@ -291,6 +295,7 @@ const isActive = computed(() =>
 )
 
 onMounted(async () => {
+  projectsStore.fetchProject(projectId)
   await store.fetchAgentSession(sessionId)
 
   // Connect to project hub so the session and its CI/CD runs table refresh in real time

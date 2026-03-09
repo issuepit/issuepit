@@ -1,12 +1,14 @@
 <template>
   <div class="p-8">
-    <!-- Header -->
+    <!-- Breadcrumb + Header -->
+    <div class="flex items-center gap-2 text-sm text-gray-500 mb-2">
+      <NuxtLink :to="`/projects/${id}`" class="hover:text-gray-300">{{ projectsStore.currentProject?.name }}</NuxtLink>
+      <span>/</span>
+      <NuxtLink :to="`/projects/${id}/merge-requests`" class="hover:text-gray-300">Merge Requests</NuxtLink>
+      <span>/</span>
+      <span class="text-gray-400 truncate max-w-xs">{{ mr?.title }}</span>
+    </div>
     <div class="flex items-center gap-3 mb-6">
-      <NuxtLink :to="`/projects/${id}/merge-requests`" class="text-gray-500 hover:text-gray-300 transition-colors">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-        </svg>
-      </NuxtLink>
       <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
           d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
@@ -255,11 +257,13 @@
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
 import type { GitDiffFile } from '~/types'
+import { useProjectsStore } from '~/stores/projects'
 
 const route = useRoute()
 const id = route.params.id as string
 const mrId = route.params.mrId as string
 const api = useApi()
+const projectsStore = useProjectsStore()
 
 interface MergeRequestDto {
   id: string
@@ -511,6 +515,7 @@ function highlightLine(filePath: string, line: { content: string }): string {
 }
 
 onMounted(async () => {
+  projectsStore.fetchProject(id)
   await fetchMr()
   if (mr.value) {
     await loadDiff()
