@@ -170,7 +170,7 @@ jobs:
       - name: Install act (for CI/CD pipeline E2E tests)
         run: |
           # Install a pinned release of act to avoid fetching untrusted scripts from master.
-          ACT_VERSION=v0.2.74
+          ACT_VERSION=v0.2.84
           curl -fsSL "https://github.com/nektos/act/releases/download/${ACT_VERSION}/act_Linux_x86_64.tar.gz" \
             -o /tmp/act.tar.gz
           sudo tar xz -C /usr/local/bin -f /tmp/act.tar.gz act
