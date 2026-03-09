@@ -115,35 +115,14 @@ public class SshDockerAgentRuntime(ILogger<SshDockerAgentRuntime> logger) : IAge
     {
         var envArgs = new StringBuilder();
 
-        void AppendEnv(string key, string value) =>
-            envArgs.Append($" -e {EscapeShell(SanitizeValue(key))}={EscapeShell(SanitizeValue(value))}");
-
-        AppendEnv("ISSUEPIT_SESSION_ID", session.Id.ToString());
-        AppendEnv("ISSUEPIT_ISSUE_ID", issue.Id.ToString());
-        AppendEnv("ISSUEPIT_ISSUE_TITLE", issue.Title);
-        AppendEnv("ISSUEPIT_ISSUE_BODY", issue.Body ?? string.Empty);
-        AppendEnv("ISSUEPIT_AGENT_ID", agent.Id.ToString());
-        AppendEnv("ISSUEPIT_SYSTEM_PROMPT", agent.SystemPrompt);
-
-        if (issue.GitBranch is not null)
-            AppendEnv("ISSUEPIT_GIT_BRANCH", issue.GitBranch);
-
-        if (gitRepository is not null)
+        // Build env vars using the shared helper and append as -e KEY=VALUE shell args.
+        foreach (var entry in AgentEnvironmentBuilder.Build(session, agent, issue, credentials, gitRepository))
         {
-            AppendEnv("ISSUEPIT_GIT_REMOTE_URL", gitRepository.RemoteUrl);
-            AppendEnv("ISSUEPIT_GIT_DEFAULT_BRANCH", gitRepository.DefaultBranch);
-            if (!string.IsNullOrEmpty(gitRepository.AuthUsername))
-                AppendEnv("ISSUEPIT_GIT_AUTH_USERNAME", gitRepository.AuthUsername);
-            if (!string.IsNullOrEmpty(gitRepository.AuthToken))
-                AppendEnv("ISSUEPIT_GIT_AUTH_TOKEN", gitRepository.AuthToken);
+            var eqIdx = entry.IndexOf('=');
+            var key = entry[..eqIdx];
+            var value = entry[(eqIdx + 1)..];
+            envArgs.Append($" -e {EscapeShell(SanitizeValue(key))}={EscapeShell(SanitizeValue(value))}");
         }
-
-        foreach (var (key, value) in credentials)
-            AppendEnv(key, value);
-
-        // Runner-specific env vars (e.g. OPENCODE_SYSTEM_PROMPT, CODEX_SYSTEM_PROMPT)
-        foreach (var (key, value) in RunnerCommandBuilder.BuildRunnerEnv(agent))
-            AppendEnv(key, value);
 
         var labels =
             $"--label issuepit.session-id={session.Id} " +
@@ -156,8 +135,8 @@ public class SshDockerAgentRuntime(ILogger<SshDockerAgentRuntime> logger) : IAge
             ? EscapeShell(agent.DockerImage)
             : $"{EscapeShell(agent.DockerImage)} {runnerArgs}";
 
-        // -d = detached; --rm = auto-remove on exit
-        return $"docker run -d --rm {labels}{envArgs} {imageAndArgs}";
+        // -d = detached; --rm = auto-remove on exit; --privileged = true DinD (in-container dockerd)
+        return $"docker run -d --rm --privileged {labels}{envArgs} {imageAndArgs}";
     }
 
     /// <summary>Removes control characters (null bytes, newlines, etc.) that could break shell argument parsing.</summary>

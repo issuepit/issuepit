@@ -38,11 +38,21 @@ Extends `helper-base` with [nektos/act](https://github.com/nektos/act), which le
 
 ### `issuepit-helper-opencode`
 
-Extends `helper-base` with the [opencode CLI](https://github.com/anomalyco/opencode), an AI-powered coding agent — used by `IssuePit.ExecutionClient` for agent runs.
+Extends `helper-base` with the [opencode CLI](https://github.com/anomalyco/opencode), an AI-powered coding agent.
 
 **Includes:** everything in `helper-base` + `opencode-ai` (npm global)
 
 **Registry:** `ghcr.io/issuepit/issuepit-helper-opencode`
+
+---
+
+### `issuepit-helper-opencode-act`
+
+Combines `helper-act` with the opencode CLI — the **default image for agent runs**. Provides full support for Docker-in-Docker (DinD) so agent tools can spawn containers, run CI workflows via `act`, and access all build tooling.
+
+**Includes:** everything in `helper-act` (Docker Engine, act, actionlint) + `opencode-ai` (npm global)
+
+**Registry:** `ghcr.io/issuepit/issuepit-helper-opencode-act`
 
 ---
 
@@ -69,9 +79,9 @@ The Dockerfiles accept build arguments that you can override when building local
 |----------|-------|---------|-------------|
 | `PLAYWRIGHT_VERSION` | `helper-base` | `v1.51.0` | Playwright .NET image tag (e.g. `v1.54.0`) |
 | `NODE_MAJOR` | `helper-base` | `24` | Node.js major version |
-| `BASE_IMAGE` | `helper-act`, `helper-opencode` | `ghcr.io/issuepit/issuepit-helper-base:latest` | Base image reference |
+| `BASE_IMAGE` | `helper-act`, `helper-opencode`, `helper-opencode-act` | `ghcr.io/issuepit/issuepit-helper-base:latest` | Base image reference |
 | `ACT_VERSION` | `helper-act` | `0.2.74` | nektos/act release version |
-| `OPENCODE_VERSION` | `helper-opencode` | `latest` | opencode-ai npm package version |
+| `OPENCODE_VERSION` | `helper-opencode`, `helper-opencode-act` | `latest` | opencode-ai npm package version |
 
 ### Building locally
 
@@ -97,6 +107,13 @@ docker build \
   --build-arg BASE_IMAGE=issuepit-helper-base:local \
   -f docker/Dockerfile.helper-opencode \
   -t issuepit-helper-opencode:local \
+  .
+
+# Build the opencode-act combined image (default for agent runs)
+docker build \
+  --build-arg BASE_IMAGE=issuepit-helper-act:local \
+  -f docker/Dockerfile.helper-opencode-act \
+  -t issuepit-helper-opencode-act:local \
   .
 ```
 
