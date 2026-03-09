@@ -18,8 +18,7 @@ public class CiCdRunsController(
     IProducer<string, string> producer,
     IHubContext<ProjectHub> projectHub,
     CiCdRunQueueService runQueue,
-    ImageStorageService imageStorage,
-    IConfiguration configuration) : ControllerBase
+    ImageStorageService imageStorage) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetRuns([FromQuery] Guid? projectId)
@@ -187,12 +186,15 @@ public class CiCdRunsController(
     }
 
     /// <summary>
-    /// Downloads the artifact ZIP by proxying the S3 object through the backend,
-    /// or by serving a locally-stored artifact when S3 is not configured.
+    /// Downloads the artifact ZIP by proxying the S3 object through the backend.
+    /// Returns 503 when artifact storage is not configured.
     /// </summary>
     [HttpGet("{id:guid}/artifacts/{artifactId:guid}/download")]
     public async Task<IActionResult> DownloadArtifact(Guid id, Guid artifactId, CancellationToken ct)
     {
+        if (!imageStorage.IsConfigured)
+            return StatusCode(503, new { error = "Artifact storage is not configured." });
+
         var artifact = await db.CiCdArtifacts
             .Where(a => a.Id == artifactId
                         && a.CiCdRunId == id
@@ -203,39 +205,6 @@ public class CiCdRunsController(
         if (artifact is null) return NotFound();
         if (string.IsNullOrEmpty(artifact.StorageKey))
             return StatusCode(404, new { error = "Artifact has not been uploaded to storage." });
-
-        // Local file storage: used when S3 is not configured (e.g. single-machine Aspire deployments).
-        if (artifact.StorageKey.StartsWith("local:", StringComparison.Ordinal))
-        {
-            var relativePath = artifact.StorageKey["local:".Length..];
-
-            // Validate that the relative path matches the expected pattern <runId>/<name>.zip to ensure
-            // the stored key refers to this run only. The DB query already enforces tenant/run ownership
-            // but this provides an extra defence-in-depth layer.
-            var expectedPrefix = id.ToString("N") + "/";
-            if (!relativePath.StartsWith(expectedPrefix, StringComparison.Ordinal)
-                || relativePath.EndsWith('/')
-                || relativePath.Contains("..", StringComparison.Ordinal))
-                return StatusCode(400, new { error = "Invalid artifact path." });
-
-            // Normalise and validate to prevent path traversal.
-            var localStorePath = configuration["CiCd__LocalArtifactStorePath"]
-                ?? Path.Combine(Path.GetTempPath(), "issuepit-artifact-store");
-            var fullPath = Path.GetFullPath(Path.Combine(localStorePath, relativePath));
-            if (!fullPath.StartsWith(Path.GetFullPath(localStorePath) + Path.DirectorySeparatorChar,
-                    StringComparison.OrdinalIgnoreCase))
-                return StatusCode(400, new { error = "Invalid artifact path." });
-
-            if (!System.IO.File.Exists(fullPath))
-                return NotFound(new { error = "Artifact file not found in local storage." });
-
-            var fileStream = System.IO.File.OpenRead(fullPath);
-            return File(fileStream, "application/zip", $"{artifact.Name}.zip");
-        }
-
-        // S3 storage.
-        if (!imageStorage.IsConfigured)
-            return StatusCode(503, new { error = "Artifact storage is not configured." });
 
         try
         {

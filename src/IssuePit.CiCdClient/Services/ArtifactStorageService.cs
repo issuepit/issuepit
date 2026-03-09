@@ -30,12 +30,6 @@ public class ArtifactStorageService(IConfiguration configuration, ILogger<Artifa
     private readonly string? _publicBaseUrl = configuration["ImageStorage__PublicBaseUrl"];
     private readonly string _region = configuration["ImageStorage__Region"] ?? "us-east-1";
 
-    // Local fallback storage path used when S3 is not configured.
-    // Both the cicd-client and the API must resolve the same default so downloads work.
-    private readonly string _localStorePath =
-        configuration["CiCd__LocalArtifactStorePath"]
-        ?? Path.Combine(Path.GetTempPath(), "issuepit-artifact-store");
-
     private volatile bool _bucketEnsured;
 
     /// <summary>
@@ -128,36 +122,6 @@ public class ArtifactStorageService(IConfiguration configuration, ILogger<Artifa
         var url = BuildPublicUrl(key);
         logger.LogInformation("Uploaded artifact '{Name}' for run {RunId} to S3: {Url}", artifactName, runId, url);
         return (url, key);
-    }
-
-    /// <summary>
-    /// Saves the artifact as a ZIP file to the local artifact store path.
-    /// Used as a fallback when S3 storage is not configured so that artifacts remain downloadable
-    /// on single-machine (e.g. Aspire) deployments where the API and cicd-client share the filesystem.
-    /// Returns a tuple of (null, storageKey) where storageKey has the prefix <c>local:</c>.
-    /// </summary>
-    public async Task<(string? Url, string? Key)> SaveLocallyAsync(
-        string artifactDir,
-        string artifactName,
-        Guid runId,
-        CancellationToken ct = default)
-    {
-        var safeRunId = runId.ToString("N");
-        var safeName = SanitizeArtifactName(artifactName);
-
-        var runDir = Path.Combine(_localStorePath, safeRunId);
-        Directory.CreateDirectory(runDir);
-
-        var zipPath = Path.Combine(runDir, $"{safeName}.zip");
-        using (var fileStream = new FileStream(zipPath, FileMode.Create, FileAccess.Write, FileShare.None,
-                   bufferSize: 65536, useAsync: true))
-        {
-            await ZipDirectoryAsync(artifactDir, fileStream, ct);
-        }
-
-        var key = $"local:{safeRunId}/{safeName}.zip";
-        logger.LogInformation("Saved artifact '{Name}' for run {RunId} locally: {Path}", artifactName, runId, zipPath);
-        return (null, key);
     }
 
     /// <summary>

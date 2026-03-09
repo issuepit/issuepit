@@ -464,7 +464,6 @@ public class CiCdWorker(
                 var (fileCount, sizeBytes) = ArtifactStorageService.CountArtifactFiles(dir);
 
                 // Upload artifact as a ZIP to S3 and store the download URL (best-effort).
-                // Fall back to local file storage so artifacts remain downloadable when S3 is not configured.
                 string? downloadUrl = null;
                 string? storageKey = null;
                 if (artifactStorage.IsConfigured)
@@ -480,14 +479,7 @@ public class CiCdWorker(
                 }
                 else
                 {
-                    try
-                    {
-                        (downloadUrl, storageKey) = await artifactStorage.SaveLocallyAsync(dir, name, runId, cancellationToken);
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.LogWarning(ex, "Failed to save artifact '{Name}' for run {RunId} locally", name, runId);
-                    }
+                    logger.LogWarning("Artifact '{Name}' for run {RunId} will not be downloadable: artifact storage (S3) is not configured", name, runId);
                 }
 
                 db.CiCdArtifacts.Add(new CiCdArtifact

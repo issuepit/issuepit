@@ -602,6 +602,16 @@
                     </svg>
                     Download
                   </a>
+                  <span
+                    v-else
+                    class="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-medium bg-gray-700 text-gray-500 cursor-not-allowed shrink-0"
+                    title="Artifact storage (S3) is not configured">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Storage not configured
+                  </span>
                 </div>
               </div>
             </template>
