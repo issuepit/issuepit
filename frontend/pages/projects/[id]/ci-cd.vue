@@ -10,7 +10,7 @@
       <div class="flex items-center gap-2 text-sm text-gray-500 mb-4">
         <NuxtLink :to="`/projects/${id}`" class="hover:text-gray-300">{{ projectsStore.currentProject.name }}</NuxtLink>
         <span>/</span>
-        <span class="text-gray-400">Settings</span>
+        <span class="text-gray-400">CI/CD</span>
       </div>
 
       <!-- Tabs -->
