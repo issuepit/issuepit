@@ -13,12 +13,14 @@ namespace IssuePit.CiCdClient.Runtimes;
 /// </summary>
 public class CiCdRuntimeFactory(IServiceProvider services, IConfiguration configuration)
 {
-    public ICiCdRuntime Create()
+    public ICiCdRuntime Create(string? runtimeOverride = null)
     {
         if (configuration.GetValue<bool>("CiCd:DryRun"))
             return services.GetRequiredService<DryRunCiCdRuntime>();
 
-        var runtimeName = configuration["CiCd:Runtime"] ?? string.Empty;
+        var runtimeName = runtimeOverride
+            ?? configuration["CiCd:Runtime"]
+            ?? string.Empty;
 
         return runtimeName.Equals("Native", StringComparison.OrdinalIgnoreCase)
             ? services.GetRequiredService<NativeCiCdRuntime>()

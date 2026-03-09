@@ -246,7 +246,7 @@ public class CiCdWorker(
                 return;
             }
 
-            var runtime = runtimeFactory.Create();
+            var runtime = runtimeFactory.Create(trigger.RuntimeOverride);
 
             // Log run parameters so they are visible in the log output
             await AppendLogAsync(run.Id,

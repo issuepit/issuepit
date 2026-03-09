@@ -87,4 +87,11 @@ public record TriggerPayload(
     /// internal reusable workflows and actions to local filesystem paths instead of
     /// cloning from GitHub.
     /// </summary>
-    string? LocalRepositories = null);
+    string? LocalRepositories = null,
+    /// <summary>
+    /// Overrides the CI/CD runtime for this individual run. Accepted values are
+    /// <c>"Native"</c> (runs <c>act</c> directly on the host) and <c>"Docker"</c>
+    /// (runs <c>act</c> inside a Docker container). When <c>null</c> the global
+    /// <c>CiCd:Runtime</c> configuration value is used.
+    /// </summary>
+    string? RuntimeOverride = null);
