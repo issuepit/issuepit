@@ -17,6 +17,14 @@ namespace IssuePit.CiCdClient.Runtimes;
 /// </summary>
 public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration configuration) : ICiCdRuntime
 {
+    /// <summary>Maximum number of times to attempt running act before giving up.</summary>
+    private const int MaxActAttempts = 2;
+
+    /// <summary>
+    /// Seconds to wait between act retry attempts. Used when act exits with no jobs having run,
+    /// which typically indicates a Docker container name collision due to async --rm cleanup.
+    /// </summary>
+    private const int ActRetryDelaySeconds = 5;
     public async Task RunAsync(
         CiCdRun run,
         TriggerPayload trigger,
@@ -126,8 +134,7 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
         // with the same names ("container name already in use"). In that case act exits non-zero
         // without running any jobs. Retry once after a brief pause so Docker can finish cleanup.
         Exception? actException = null;
-        const int maxAttempts = 2;
-        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        for (var attempt = 1; attempt <= MaxActAttempts; attempt++)
         {
             var anyJobFailed = false;
             var anyJobSucceeded = false;
@@ -205,13 +212,13 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
                     $"act exited with code {process.ExitCode} and no jobs ran " +
                     $"(workspace: {workspacePath}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
 
-                if (attempt < maxAttempts)
+                if (attempt < MaxActAttempts)
                 {
                     logger.LogWarning(
                         "act exited with code {ExitCode} and no jobs ran for run {RunId} " +
                         "(attempt {Attempt}/{MaxAttempts}); waiting for Docker cleanup before retry",
-                        process.ExitCode, run.Id, attempt, maxAttempts);
-                    await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+                        process.ExitCode, run.Id, attempt, MaxActAttempts);
+                    await Task.Delay(TimeSpan.FromSeconds(ActRetryDelaySeconds), cancellationToken);
                 }
             }
         }
