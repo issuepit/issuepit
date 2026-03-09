@@ -289,11 +289,9 @@ async function submitVoiceCreate() {
     type: IssueType.Issue,
   })
   // Attach the voice recording (private — only visible to the creator)
-  if (newIssue && voice.voiceUrl.value) {
+  if (newIssue && voice.lastWavBlob.value) {
     try {
-      const audioResp = await fetch(voice.voiceUrl.value)
-      const audioBlob = await audioResp.blob()
-      const audioFile = new File([audioBlob], 'recording.wav', { type: 'audio/wav' })
+      const audioFile = new File([voice.lastWavBlob.value], 'recording.wav', { type: 'audio/wav' })
       await store.addAttachment(newIssue.id, audioFile, true, false)
     } catch (e) {
       console.warn('Could not attach voice file to new issue', e)

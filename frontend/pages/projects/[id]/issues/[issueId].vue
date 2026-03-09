@@ -691,6 +691,7 @@ import { useLabelsStore } from '~/stores/labels'
 import { useAgentsStore } from '~/stores/agents'
 import { useMilestonesStore } from '~/stores/milestones'
 import { useProjectsStore } from '~/stores/projects'
+
 const route = useRoute()
 const router = useRouter()
 const id = route.params.id as string
@@ -1142,11 +1143,9 @@ async function submitVoiceCreate() {
     type: IssueType.Issue,
   })
   // Attach the voice file (private — only visible to the creator)
-  if (newIssue && voice.voiceUrl.value) {
+  if (newIssue && voice.lastWavBlob.value) {
     try {
-      const audioResp = await fetch(voice.voiceUrl.value)
-      const audioBlob = await audioResp.blob()
-      const audioFile = new File([audioBlob], 'recording.wav', { type: 'audio/wav' })
+      const audioFile = new File([voice.lastWavBlob.value], 'recording.wav', { type: 'audio/wav' })
       await store.addAttachment(newIssue.id, audioFile, true, false)
     } catch (e) {
       console.warn('Could not attach voice file to new issue', e)
