@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.IO.Compression;
 using System.Text.Json;
 using Confluent.Kafka;
 using IssuePit.CiCdClient.Runtimes;
@@ -330,6 +331,8 @@ public class CiCdWorker(
     /// <summary>
     /// Scans <paramref name="artifactDir"/> for <c>.trx</c> files, parses each one, and
     /// persists the results as <see cref="CiCdTestSuite"/> rows linked to the given run.
+    /// Handles both bare <c>.trx</c> files on disk and <c>.trx</c> files packed inside
+    /// <c>.zip</c> archives as produced by the act artifact server.
     /// Best-effort: errors are logged but never propagated.
     /// </summary>
     private async Task ParseAndStoreTestResultsAsync(
@@ -340,12 +343,13 @@ public class CiCdWorker(
     {
         try
         {
-            var trxFiles = TrxParser.FindTrxFiles(artifactDir).ToList();
-            if (trxFiles.Count == 0) return;
+            if (!Directory.Exists(artifactDir)) return;
 
-            logger.LogInformation("Found {Count} TRX file(s) for run {RunId}; parsing test results", trxFiles.Count, runId);
+            var suiteCount = 0;
 
-            foreach (var trxFile in trxFiles)
+            // 1. Bare .trx files on disk (produced by non-act environments or plain uploads).
+            var bareTrxFiles = TrxParser.FindTrxFiles(artifactDir).ToList();
+            foreach (var trxFile in bareTrxFiles)
             {
                 var suite = TrxParser.Parse(trxFile);
                 if (suite is null)
@@ -356,8 +360,62 @@ public class CiCdWorker(
 
                 suite.CiCdRunId = runId;
                 db.CiCdTestSuites.Add(suite);
+                suiteCount++;
             }
 
+            // 2. .trx files packed inside .zip archives under the act artifact server layout:
+            //    artifactDir/<runNumber>/<artifactName>/<file>.zip  (contains <file>.trx)
+            foreach (var runDir in Directory.GetDirectories(artifactDir))
+            {
+                var runDirName = Path.GetFileName(runDir);
+                if (string.IsNullOrEmpty(runDirName) || runDirName.StartsWith('.') || runDirName == "_workflows")
+                    continue;
+
+                foreach (var artifactSubDir in Directory.GetDirectories(runDir))
+                {
+                    var artifactName = Path.GetFileName(artifactSubDir);
+                    if (string.IsNullOrEmpty(artifactName) || artifactName.StartsWith('.'))
+                        continue;
+
+                    foreach (var zipFile in Directory.EnumerateFiles(artifactSubDir, "*.zip", SearchOption.AllDirectories))
+                    {
+                        try
+                        {
+                            using var zip = ZipFile.OpenRead(zipFile);
+                            foreach (var entry in zip.Entries)
+                            {
+                                if (!entry.FullName.EndsWith(".trx", StringComparison.OrdinalIgnoreCase))
+                                    continue;
+
+                                using var stream = entry.Open();
+                                var suite = TrxParser.Parse(stream, artifactName);
+                                if (suite is null)
+                                {
+                                    logger.LogWarning("Failed to parse TRX entry {Entry} in {ZipFile} for run {RunId}",
+                                        entry.FullName, zipFile, runId);
+                                    continue;
+                                }
+
+                                suite.CiCdRunId = runId;
+                                db.CiCdTestSuites.Add(suite);
+                                suiteCount++;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            logger.LogWarning(ex, "Failed to inspect zip {ZipFile} for TRX entries for run {RunId}", zipFile, runId);
+                        }
+                    }
+                }
+            }
+
+            if (suiteCount == 0)
+            {
+                logger.LogInformation("No TRX file(s) found for run {RunId}", runId);
+                return;
+            }
+
+            logger.LogInformation("Parsed {Count} TRX file(s) for run {RunId}; storing test results", suiteCount, runId);
             await db.SaveChangesAsync(cancellationToken);
             logger.LogInformation("Stored test results for run {RunId}", runId);
         }
@@ -406,6 +464,7 @@ public class CiCdWorker(
                 var (fileCount, sizeBytes) = ArtifactStorageService.CountArtifactFiles(dir);
 
                 // Upload artifact as a ZIP to S3 and store the download URL (best-effort).
+                // Fall back to local file storage so artifacts remain downloadable when S3 is not configured.
                 string? downloadUrl = null;
                 string? storageKey = null;
                 if (artifactStorage.IsConfigured)
@@ -417,6 +476,17 @@ public class CiCdWorker(
                     catch (Exception ex)
                     {
                         logger.LogWarning(ex, "Failed to upload artifact '{Name}' for run {RunId} to S3", name, runId);
+                    }
+                }
+                else
+                {
+                    try
+                    {
+                        (downloadUrl, storageKey) = await artifactStorage.SaveLocallyAsync(dir, name, runId, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Failed to save artifact '{Name}' for run {RunId} locally", name, runId);
                     }
                 }
 
