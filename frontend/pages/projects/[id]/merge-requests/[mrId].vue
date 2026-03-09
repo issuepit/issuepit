@@ -517,3 +517,5 @@ onMounted(async () => {
   }
 })
 </script>
+
+<style>@import 'highlight.js/styles/github-dark.css';</style>
