@@ -71,9 +71,11 @@ public class MergeRequestsController(
 
         if (project is null) return NotFound();
 
-        var repo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == projectId);
-
         var targetBranch = req.TargetBranch;
+        var repo = await db.GitRepositories
+            .Where(r => r.ProjectId == projectId)
+            .OrderByDescending(r => r.Mode == GitOriginMode.Working)
+            .FirstOrDefaultAsync();
         if (string.IsNullOrEmpty(targetBranch) && repo is not null)
             targetBranch = repo.DefaultBranch;
         targetBranch ??= "main";
@@ -219,7 +221,10 @@ public class MergeRequestsController(
         if (mr is null) return NotFound();
         if (mr.Status != MergeRequestStatus.Open) return BadRequest(new { error = "MR is not open." });
 
-        var repo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == projectId);
+        var repo = await db.GitRepositories
+            .Where(r => r.ProjectId == projectId)
+            .OrderByDescending(r => r.Mode == GitOriginMode.Working)
+            .FirstOrDefaultAsync();
         if (repo is null) return BadRequest(new { error = "No git repository linked to this project." });
 
         try
