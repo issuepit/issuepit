@@ -29,5 +29,9 @@ public class CiCdArtifact
     [MaxLength(2000)]
     public string? DownloadUrl { get; set; }
 
+    /// <summary>S3 object key for the artifact ZIP (e.g. artifacts/{runId}/{name}.zip). Used by the backend download proxy.</summary>
+    [MaxLength(2000)]
+    public string? StorageKey { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

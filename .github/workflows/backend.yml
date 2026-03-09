@@ -164,6 +164,7 @@ jobs:
           docker pull postgres:17.6
           docker pull valkey/valkey:9.0
           docker pull apache/kafka:3.9.0
+          docker pull localstack/localstack:4.3
 
       - name: Build E2E test project
         run: dotnet build src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj --configuration Release

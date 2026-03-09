@@ -17,7 +17,8 @@ public class CiCdRunsController(
     TenantContext tenant,
     IProducer<string, string> producer,
     IHubContext<ProjectHub> projectHub,
-    CiCdRunQueueService runQueue) : ControllerBase
+    CiCdRunQueueService runQueue,
+    ImageStorageService imageStorage) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetRuns([FromQuery] Guid? projectId)
@@ -157,7 +158,7 @@ public class CiCdRunsController(
     }
 
     /// <summary>
-    /// Returns artifacts produced by the given run (name, size, file count, download URL).
+    /// Returns artifacts produced by the given run (name, size, file count, storage key).
     /// </summary>
     [HttpGet("{id:guid}/artifacts")]
     public async Task<IActionResult> GetArtifacts(Guid id)
@@ -176,12 +177,44 @@ public class CiCdRunsController(
                 a.Name,
                 a.SizeBytes,
                 a.FileCount,
-                a.DownloadUrl,
+                a.StorageKey,
                 a.CreatedAt,
             })
             .ToListAsync();
 
         return Ok(artifacts);
+    }
+
+    /// <summary>
+    /// Downloads the artifact ZIP by proxying the S3 object through the backend.
+    /// </summary>
+    [HttpGet("{id:guid}/artifacts/{artifactId:guid}/download")]
+    public async Task<IActionResult> DownloadArtifact(Guid id, Guid artifactId, CancellationToken ct)
+    {
+        if (!imageStorage.IsConfigured)
+            return StatusCode(503, new { error = "Artifact storage is not configured." });
+
+        var artifact = await db.CiCdArtifacts
+            .Where(a => a.Id == artifactId
+                        && a.CiCdRunId == id
+                        && a.CiCdRun.Project.Organization.TenantId == tenant.CurrentTenant!.Id)
+            .Select(a => new { a.Name, a.StorageKey })
+            .FirstOrDefaultAsync(ct);
+
+        if (artifact is null) return NotFound();
+        if (string.IsNullOrEmpty(artifact.StorageKey))
+            return StatusCode(404, new { error = "Artifact has not been uploaded to storage." });
+
+        try
+        {
+            var (stream, contentType) = await imageStorage.OpenDownloadStreamAsync(artifact.StorageKey, ct);
+            var fileName = $"{artifact.Name}.zip";
+            return File(stream, contentType, fileName);
+        }
+        catch (FileNotFoundException)
+        {
+            return NotFound(new { error = "Artifact file not found in storage." });
+        }
     }
 
     /// <summary>
@@ -515,7 +548,8 @@ public class CiCdRunsController(
             workflow: request.Workflow,
             eventName: request.EventName,
             inputs: request.Inputs,
-            gitRepoUrl: repo?.RemoteUrl);
+            gitRepoUrl: repo?.RemoteUrl,
+            extraPayload: string.IsNullOrWhiteSpace(request.CustomImage) ? null : new { customImage = request.CustomImage });
 
         return Accepted(new { runId = newRun.Id, projectId = request.ProjectId, commitSha = request.CommitSha, eventName = request.EventName });
     }
@@ -610,4 +644,6 @@ public record TriggerRunRequest(
     string? Branch = null,
     string? Workflow = null,
     /// <summary>Input key-value pairs for workflow_dispatch events.</summary>
-    Dictionary<string, string>? Inputs = null);
+    Dictionary<string, string>? Inputs = null,
+    /// <summary>Override the Docker image used for the CI/CD container (the container that runs act). Null or empty = use configured default.</summary>
+    string? CustomImage = null);

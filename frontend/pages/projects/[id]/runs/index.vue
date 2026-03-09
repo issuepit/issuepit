@@ -75,10 +75,7 @@
               class="hover:bg-gray-900/50 transition-colors cursor-pointer"
               @click="navigateTo(`/projects/${id}/runs/cicd/${run.id}`)">
               <td class="px-4 py-3">
-                <span :class="statusClass(run.status)" class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium">
-                  <span :class="statusDot(run.status)" class="w-1.5 h-1.5 rounded-full" />
-                  {{ run.statusName }}
-                </span>
+                <CiCdStatusChip :runs="[run]" />
               </td>
               <td class="px-4 py-3">
                 <span v-if="run.eventName" class="text-xs bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded font-mono">

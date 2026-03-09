@@ -136,6 +136,79 @@ public class ImageStorageService(IOptions<ImageStorageOptions> options, ILogger<
         return BuildPublicUrl(key);
     }
 
+    /// <summary>
+    /// Returns true when the storage service is configured (i.e. an S3 service URL is set).
+    /// </summary>
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(_opts.ServiceUrl);
+
+    /// <summary>
+    /// Opens the S3 object at <paramref name="key"/> for reading and returns the stream together
+    /// with the reported content type. The caller is responsible for disposing the returned stream.
+    /// Throws <see cref="FileNotFoundException"/> when the key does not exist in the bucket.
+    /// </summary>
+    public async Task<(Stream Stream, string ContentType)> OpenDownloadStreamAsync(string key, CancellationToken ct = default)
+    {
+        var s3 = CreateClient();
+        try
+        {
+            GetObjectResponse response;
+            try
+            {
+                response = await s3.GetObjectAsync(new GetObjectRequest
+                {
+                    BucketName = _opts.BucketName,
+                    Key = key,
+                }, ct);
+            }
+            catch (AmazonS3Exception ex) when (ex.ErrorCode == "NoSuchKey")
+            {
+                s3.Dispose();
+                throw new FileNotFoundException($"Artifact key '{key}' not found in S3 bucket '{_opts.BucketName}'.", ex);
+            }
+
+            // Wrap the response stream so the S3 client is disposed when the stream is closed.
+            var contentType = response.Headers.ContentType ?? "application/octet-stream";
+            var wrapped = new CompositeDisposeStream(response.ResponseStream, s3, response);
+            return (wrapped, contentType);
+        }
+        catch
+        {
+            s3.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Wraps a stream and disposes additional resources when the stream is closed.
+    /// </summary>
+    private sealed class CompositeDisposeStream(Stream inner, params IDisposable[] disposables) : Stream
+    {
+        public override bool CanRead => inner.CanRead;
+        public override bool CanSeek => inner.CanSeek;
+        public override bool CanWrite => inner.CanWrite;
+        public override long Length => inner.Length;
+        public override long Position { get => inner.Position; set => inner.Position = value; }
+        public override void Flush() => inner.Flush();
+        public override int Read(byte[] buffer, int offset, int count) => inner.Read(buffer, offset, count);
+        public override long Seek(long offset, SeekOrigin origin) => inner.Seek(offset, origin);
+        public override void SetLength(long value) => inner.SetLength(value);
+        public override void Write(byte[] buffer, int offset, int count) => inner.Write(buffer, offset, count);
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken ct) =>
+            inner.ReadAsync(buffer, offset, count, ct);
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default) =>
+            inner.ReadAsync(buffer, ct);
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                inner.Dispose();
+                foreach (var d in disposables) d.Dispose();
+            }
+            base.Dispose(disposing);
+        }
+    }
+
     private async Task EnsureBucketExistsAsync(IAmazonS3 s3, CancellationToken ct)
     {
         const int maxAttempts = 5;

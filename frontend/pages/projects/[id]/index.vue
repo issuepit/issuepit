@@ -133,6 +133,17 @@
           <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Review</span>
         </NuxtLink>
 
+        <NuxtLink :to="`/projects/${id}/merge-requests`"
+          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 flex items-center gap-3 transition-colors group">
+          <div class="w-8 h-8 bg-green-900/30 rounded-lg flex items-center justify-center shrink-0">
+            <svg class="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+            </svg>
+          </div>
+          <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Merge Requests</span>
+        </NuxtLink>
+
         <NuxtLink :to="`/projects/${id}/badges`"
           class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 flex items-center gap-3 transition-colors group">
           <div class="w-8 h-8 bg-pink-900/30 rounded-lg flex items-center justify-center shrink-0">
@@ -295,11 +306,8 @@
               <div v-for="run in visibleCiCdRuns" :key="run.id"
                 class="flex items-center gap-3 py-2 border-b border-gray-800 last:border-0 cursor-pointer"
                 @click="navigateTo(`/projects/${id}/runs/cicd/${run.id}`)">
-                <span :class="cicdStatusClass(run.status)"
-                  class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium shrink-0">
-                  <span :class="cicdStatusDot(run.status)" class="w-1.5 h-1.5 rounded-full" />
-                  {{ run.statusName }}
-                </span>
+                <CiCdStatusChip :runs="[run]"
+                  class="shrink-0" />
                 <div class="flex-1 min-w-0">
                   <p class="text-sm text-gray-300 truncate">
                     {{ run.workflow || run.branch || 'Run' }}
@@ -599,27 +607,6 @@ function agentStatusDot(status: AgentSessionStatus) {
     case AgentSessionStatus.Running: return 'bg-blue-400 animate-pulse'
     case AgentSessionStatus.Failed: return 'bg-red-400'
     case AgentSessionStatus.Cancelled: return 'bg-gray-500'
-    default: return 'bg-yellow-400'
-  }
-}
-
-// CI/CD run status helpers
-function cicdStatusClass(status: CiCdRunStatus) {
-  switch (status) {
-    case CiCdRunStatus.Succeeded: return 'bg-green-900/30 text-green-400'
-    case CiCdRunStatus.Running: return 'bg-blue-900/30 text-blue-400'
-    case CiCdRunStatus.Failed: return 'bg-red-900/30 text-red-400'
-    case CiCdRunStatus.Cancelled: return 'bg-gray-800 text-gray-400'
-    default: return 'bg-yellow-900/30 text-yellow-400'
-  }
-}
-
-function cicdStatusDot(status: CiCdRunStatus) {
-  switch (status) {
-    case CiCdRunStatus.Succeeded: return 'bg-green-400'
-    case CiCdRunStatus.Running: return 'bg-blue-400 animate-pulse'
-    case CiCdRunStatus.Failed: return 'bg-red-400'
-    case CiCdRunStatus.Cancelled: return 'bg-gray-500'
     default: return 'bg-yellow-400'
   }
 }
