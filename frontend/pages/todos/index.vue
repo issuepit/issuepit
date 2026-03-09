@@ -299,13 +299,37 @@
           <div class="grid grid-cols-2 gap-3">
             <div>
               <label class="text-xs text-gray-400 mb-1 block">Start Date</label>
-              <input v-model="form.startDate" type="datetime-local"
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500" />
+              <div class="flex gap-1">
+                <input v-model="form.startDate" type="date"
+                  class="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500" />
+                <input v-model="form.startTime" type="time"
+                  class="w-24 bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500" />
+              </div>
             </div>
             <div>
               <label class="text-xs text-gray-400 mb-1 block">Due Date</label>
-              <input v-model="form.dueDate" type="datetime-local"
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500" />
+              <div class="flex gap-1">
+                <input v-model="form.dueDate" type="date"
+                  class="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500" />
+                <input v-model="form.dueTime" type="time"
+                  class="w-24 bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500" />
+              </div>
+            </div>
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 mb-1 block">Duration</label>
+            <div class="flex items-center gap-2">
+              <input v-model.number="durationHours" type="number" min="0" placeholder="0"
+                @change="applyDuration"
+                class="w-20 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500" />
+              <span class="text-xs text-gray-500">h</span>
+              <input v-model.number="durationMinutes" type="number" min="0" max="59" placeholder="0"
+                @change="applyDuration"
+                class="w-20 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500" />
+              <span class="text-xs text-gray-500">min</span>
+              <span v-if="durationHours > 0 || durationMinutes > 0" class="text-xs text-gray-600 ml-1">
+                ({{ [durationHours > 0 ? durationHours + 'h' : '', durationMinutes > 0 ? durationMinutes + 'm' : ''].filter(Boolean).join(' ') }})
+              </span>
             </div>
           </div>
           <!-- Board / Category selection -->
@@ -549,14 +573,72 @@ const defaultForm = () => ({
   title: '',
   body: '',
   priority: TodoPriority.NoPriority,
-  dueDate: '',
-  startDate: '',
+  startDate: '',  // YYYY-MM-DD
+  startTime: '',  // HH:MM
+  dueDate: '',    // YYYY-MM-DD
+  dueTime: '',    // HH:MM
   recurringInterval: TodoRecurringInterval.None,
   boardIds: activeBoardId.value ? [activeBoardId.value] : [] as string[],
   categoryIds: [] as string[],
 })
 
 const form = reactive(defaultForm())
+
+// Split an ISO datetime string into local date (YYYY-MM-DD) and time (HH:MM) parts.
+function splitDatetime(isoStr: string | null | undefined): { date: string; time: string } {
+  if (!isoStr) return { date: '', time: '' }
+  const d = new Date(isoStr)
+  if (isNaN(d.getTime())) return { date: '', time: '' }
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return {
+    date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+    time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+  }
+}
+
+// Combine local date + time parts to an ISO string for the API.
+function combineDatetime(date: string, time: string): string | undefined {
+  if (!date) return undefined
+  const t = time || '00:00'
+  const d = new Date(`${date}T${t}`)
+  return isNaN(d.getTime()) ? undefined : d.toISOString()
+}
+
+// ── Duration helpers ──────────────────────────────────────────────────────
+const durationHours = ref(0)
+const durationMinutes = ref(0)
+// Guard against circular update: when applyDuration sets form.dueDate/dueTime,
+// the watcher below should not overwrite the duration values that the user just typed.
+let _applyingDuration = false
+
+watch([() => form.startDate, () => form.startTime, () => form.dueDate, () => form.dueTime], () => {
+  if (_applyingDuration) return
+  const startStr = form.startDate ? `${form.startDate}T${form.startTime || '00:00'}` : ''
+  const dueStr = form.dueDate ? `${form.dueDate}T${form.dueTime || '00:00'}` : ''
+  const diffMs = (startStr && dueStr) ? new Date(dueStr).getTime() - new Date(startStr).getTime() : 0
+  if (diffMs > 0) {
+    const totalMins = Math.round(diffMs / 60000)
+    durationHours.value = Math.floor(totalMins / 60)
+    durationMinutes.value = totalMins % 60
+  } else {
+    durationHours.value = 0
+    durationMinutes.value = 0
+  }
+})
+
+function applyDuration() {
+  const startStr = form.startDate ? `${form.startDate}T${form.startTime || '00:00'}` : ''
+  if (!startStr) return
+  const totalMins = (durationHours.value || 0) * 60 + (durationMinutes.value || 0)
+  if (totalMins <= 0) return
+  const dueMs = new Date(startStr).getTime() + totalMins * 60000
+  const due = new Date(dueMs)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  _applyingDuration = true
+  form.dueDate = `${due.getFullYear()}-${pad(due.getMonth() + 1)}-${pad(due.getDate())}`
+  form.dueTime = `${pad(due.getHours())}:${pad(due.getMinutes())}`
+  nextTick(() => { _applyingDuration = false })
+}
 
 function openCreate() {
   Object.assign(form, defaultForm())
@@ -573,7 +655,9 @@ function openCreateWithCategory(categoryId: string | null) {
 
 function openCreateOnDate(date: Date) {
   Object.assign(form, defaultForm())
-  form.dueDate = formatLocalDatetime(date)
+  const { date: d, time: t } = splitDatetime(date.toISOString())
+  form.dueDate = d
+  form.dueTime = t
   editingTodo.value = null
   showTodoForm.value = true
 }
@@ -583,8 +667,12 @@ function openEdit(todo: Todo) {
   form.title = todo.title
   form.body = todo.body ?? ''
   form.priority = todo.priority
-  form.dueDate = todo.dueDate ? formatLocalDatetime(new Date(todo.dueDate)) : ''
-  form.startDate = todo.startDate ? formatLocalDatetime(new Date(todo.startDate)) : ''
+  const start = splitDatetime(todo.startDate)
+  const due = splitDatetime(todo.dueDate)
+  form.startDate = start.date
+  form.startTime = start.time
+  form.dueDate = due.date
+  form.dueTime = due.time
   form.recurringInterval = todo.recurringInterval
   form.boardIds = todo.boardMemberships.map(m => m.boardId)
   form.categoryIds = todo.categoryMemberships.map(m => m.categoryId)
@@ -604,8 +692,8 @@ async function saveTodo() {
       title: form.title.trim(),
       body: form.body.trim() || undefined,
       priority: form.priority,
-      dueDate: form.dueDate ? new Date(form.dueDate).toISOString() : undefined,
-      startDate: form.startDate ? new Date(form.startDate).toISOString() : undefined,
+      dueDate: combineDatetime(form.dueDate, form.dueTime),
+      startDate: combineDatetime(form.startDate, form.startTime),
       recurringInterval: form.recurringInterval,
       isCompleted: editingTodo.value?.isCompleted ?? false,
       boardIds: form.boardIds,
@@ -703,12 +791,6 @@ async function onBoardColumnDrop(event: DragEvent, categoryId: string | null) {
   })
   boardDraggingTodoId.value = null
   boardHoverCategoryId.value = null
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────
-function formatLocalDatetime(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────
