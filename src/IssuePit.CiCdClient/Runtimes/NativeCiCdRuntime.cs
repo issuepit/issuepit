@@ -150,11 +150,14 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
 
             Func<string, LogStream, Task> trackingLogLine = async (line, stream) =>
             {
-                // Detect Docker "container name already in use" error (Docker Conflict message).
-                // Check requires both "container name" AND "already in use" to avoid false positives
-                // from workflow steps that might mention "already in use" in a different context.
-                if (line.Contains("container name", StringComparison.OrdinalIgnoreCase) &&
-                    line.Contains("already in use", StringComparison.OrdinalIgnoreCase))
+                // Detect Docker "container name already in use" collision errors.
+                // Docker daemon returns: "Conflict. The container name ... is already in use by container..."
+                // Act may also surface this in shorter forms. Check two patterns to catch both:
+                //   1. Full Docker message: "container name" + "already in use"
+                //   2. Shorter form:        "Conflict"       + "already in use"
+                if (line.Contains("already in use", StringComparison.OrdinalIgnoreCase) &&
+                    (line.Contains("container name", StringComparison.OrdinalIgnoreCase) ||
+                     line.Contains("Conflict", StringComparison.OrdinalIgnoreCase)))
                 {
                     Interlocked.Exchange(ref containerCollisionDetected, 1);
                 }
@@ -207,23 +210,23 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
                 }
 
                 var isContainerCollision = containerCollisionDetected != 0;
+                var isMixedOutcome = anyJobFailed != 0 && anyJobSucceeded != 0;
 
                 // Docker container name collision is an infrastructure error — always retry
                 // regardless of anyJobFailed/anyJobSucceeded, because act reports the job as
                 // "failed" when it cannot create a container (same signal as a real workflow failure).
                 if (!isContainerCollision)
                 {
-                    if (anyJobFailed != 0)
+                    if (anyJobFailed != 0 && anyJobSucceeded == 0)
                     {
-                        // At least one job explicitly reported failure (not a container collision) —
-                        // real workflow failure, do not retry.
+                        // Only job failures, no successes — real workflow failure, do not retry.
                         actException = new Exception(
                             $"act exited with code {process.ExitCode} " +
                             $"(workspace: {workspacePath}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
                         break;
                     }
 
-                    if (anyJobSucceeded != 0)
+                    if (anyJobFailed == 0 && anyJobSucceeded != 0)
                     {
                         // All jobs reported success; non-zero exit is from a step failure handled by
                         // continue-on-error. Treat the run as succeeded.
@@ -234,11 +237,21 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
                         actException = null;
                         break;
                     }
+
+                    // isMixedOutcome: earlier jobs succeeded but a later job failed. This is consistent
+                    // with a partial Docker container collision where a later job's container is still
+                    // being removed from a prior run. Fall through to the retry path so Docker has time
+                    // to finish cleanup. On the final attempt this will also fall through, set
+                    // actException, and exit the loop.
                 }
 
-                // Docker container collision or no jobs ran (no successful/failed job signals) —
+                // Docker container collision, mixed outcome (partial collision), or no jobs ran —
                 // build the exception message for potential re-throw and retry if possible.
-                var reason = isContainerCollision ? "Docker container name collision" : "no jobs ran";
+                var reason = isContainerCollision
+                    ? "Docker container name collision"
+                    : isMixedOutcome
+                        ? "partial Docker container collision (some jobs succeeded, later job failed)"
+                        : "no jobs ran";
                 actException = new Exception(
                     $"act exited with code {process.ExitCode} ({reason}) " +
                     $"(workspace: {workspacePath}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");

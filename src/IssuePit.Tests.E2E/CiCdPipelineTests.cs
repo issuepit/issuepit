@@ -176,6 +176,7 @@ public class CiCdPipelineTests(AspireFixture fixture)
             BuildTriggerPayload(projectId, "e2e-log-abc", runtimeMode));
 
         var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        Assert.Equal("Succeeded", run.GetProperty("statusName").GetString());
         var runId = run.GetProperty("id").GetString()!;
 
         var logsResp = await client.GetAsync($"/api/cicd-runs/{runId}/logs");
