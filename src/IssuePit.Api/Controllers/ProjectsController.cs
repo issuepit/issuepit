@@ -394,7 +394,8 @@ public record ProjectDto(
     bool IsAgenda,
     string? ActEnv, string? ActSecrets, string? ActRunnerImage,
     string? ActionCachePath, bool? UseNewActionCache, bool? ActionOfflineMode,
-    string? LocalRepositories)
+    string? LocalRepositories,
+    int OpenMergeRequestCount)
 {
     public static Expression<Func<Project, ProjectDto>> Selector(IssuePitDbContext db) =>
         p => new ProjectDto(
@@ -406,5 +407,6 @@ public record ProjectDto(
             p.IsAgenda,
             p.ActEnv, p.ActSecrets, p.ActRunnerImage,
             p.ActionCachePath, p.UseNewActionCache, p.ActionOfflineMode,
-            p.LocalRepositories);
+            p.LocalRepositories,
+            db.MergeRequests.Count(mr => mr.ProjectId == p.Id && mr.Status == MergeRequestStatus.Open));
 }
