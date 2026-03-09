@@ -63,10 +63,12 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
 
         logger.LogInformation("Running act (native) for run {RunId}: {ActBin} {Args}", run.Id, actBin, string.Join(' ', argsList));
 
-        // Act derives Docker container names from a hash of the workspace path. Consecutive runs
-        // against the same workspace would collide on container names when --rm's async cleanup
-        // is still in progress. Create a git worktree at a unique temp path so each run hashes
-        // to a different container name.
+        // Act derives Docker container names from the workflow and job names (not the workspace
+        // path). Consecutive runs against the same workflow therefore get the same container
+        // names. When Docker's async --rm cleanup from the previous run is still in progress the
+        // next run's "docker create" call fails with "container name already in use". The git
+        // worktree below does NOT change the container name hash (it is workspace-path
+        // independent), but it still provides a clean, isolated working directory per run.
         var originalWorkspacePath = workspacePath;
         var tempWorktree = Path.Combine(Path.GetTempPath(), $"act-{run.Id:N}");
         var worktreeCreated = false;
@@ -118,70 +120,74 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
         foreach (var arg in argsList)
             psi.ArgumentList.Add(arg);
 
-        // Track job outcomes so we can distinguish a real workflow failure from act's non-zero
-        // exit that results from a step failure handled by continue-on-error.
-        // act --json emits {"msg":"🏁  Job succeeded",...} or {"msg":"🏁  Job failed",...} per job.
-        var anyJobFailed = false;
-        var anyJobSucceeded = false;
-        Func<string, LogStream, Task> trackingLogLine = async (line, stream) =>
+        // Act's container names are derived from the workflow name + job name and are therefore
+        // identical across consecutive runs of the same workflow. Docker's async --rm cleanup from
+        // the previous run can still be in-progress when the next run tries to create containers
+        // with the same names ("container name already in use"). In that case act exits non-zero
+        // without running any jobs. Retry once after a brief pause so Docker can finish cleanup.
+        Exception? actException = null;
+        const int maxAttempts = 2;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            if (line.Length > 0 && line[0] == '{')
+            var anyJobFailed = false;
+            var anyJobSucceeded = false;
+            Func<string, LogStream, Task> trackingLogLine = async (line, stream) =>
             {
+                if (line.Length > 0 && line[0] == '{')
+                {
+                    try
+                    {
+                        using var doc = System.Text.Json.JsonDocument.Parse(line);
+                        var root = doc.RootElement;
+                        if (root.TryGetProperty("msg", out var msgEl))
+                        {
+                            var msg = msgEl.GetString();
+                            // act v0.2.84 emits "🏁  Job succeeded" / "🏁  Job failed" (emoji prefix);
+                            // use EndsWith so the check works regardless of any leading characters.
+                            if (msg?.EndsWith("Job succeeded", StringComparison.Ordinal) == true) anyJobSucceeded = true;
+                            else if (msg?.EndsWith("Job failed", StringComparison.Ordinal) == true) anyJobFailed = true;
+                        }
+                    }
+                    catch { /* non-JSON line — ignore */ }
+                }
+                await onLogLine(line, stream);
+            };
+
+            using (var process = new Process { StartInfo = psi, EnableRaisingEvents = true })
+            {
+                process.Start();
+
                 try
                 {
-                    using var doc = System.Text.Json.JsonDocument.Parse(line);
-                    var root = doc.RootElement;
-                    if (root.TryGetProperty("msg", out var msgEl))
-                    {
-                        var msg = msgEl.GetString();
-                        // act v0.2.84 emits "🏁  Job succeeded" / "🏁  Job failed" (emoji prefix);
-                        // use EndsWith so the check works regardless of any leading characters.
-                        if (msg?.EndsWith("Job succeeded", StringComparison.Ordinal) == true) anyJobSucceeded = true;
-                        else if (msg?.EndsWith("Job failed", StringComparison.Ordinal) == true) anyJobFailed = true;
-                    }
+                    var stdoutTask = StreamOutputAsync(process.StandardOutput, LogStream.Stdout, trackingLogLine, cancellationToken);
+                    var stderrTask = StreamOutputAsync(process.StandardError, LogStream.Stderr, trackingLogLine, cancellationToken);
+
+                    await Task.WhenAll(stdoutTask, stderrTask);
+                    await process.WaitForExitAsync(cancellationToken);
                 }
-                catch { /* non-JSON line — ignore */ }
-            }
-            await onLogLine(line, stream);
-        };
+                catch (OperationCanceledException)
+                {
+                    // Kill the process when cancellation (user cancel or app shutdown) is requested.
+                    try { process.Kill(entireProcessTree: true); } catch { /* best-effort */ }
+                    throw;
+                }
 
-        Exception? actException = null;
-        using (var process = new Process { StartInfo = psi, EnableRaisingEvents = true })
-        {
-            process.Start();
+                if (process.ExitCode == 0)
+                {
+                    actException = null;
+                    break;
+                }
 
-            try
-            {
-                var stdoutTask = StreamOutputAsync(process.StandardOutput, LogStream.Stdout, trackingLogLine, cancellationToken);
-                var stderrTask = StreamOutputAsync(process.StandardError, LogStream.Stderr, trackingLogLine, cancellationToken);
-
-                await Task.WhenAll(stdoutTask, stderrTask);
-                await process.WaitForExitAsync(cancellationToken);
-            }
-            catch (OperationCanceledException)
-            {
-                // Kill the process when cancellation (user cancel or app shutdown) is requested.
-                try { process.Kill(entireProcessTree: true); } catch { /* best-effort */ }
-                throw;
-            }
-
-            if (process.ExitCode != 0)
-            {
                 if (anyJobFailed)
                 {
-                    // At least one job explicitly reported failure — real workflow failure.
+                    // At least one job explicitly reported failure — real workflow failure, do not retry.
                     actException = new Exception(
                         $"act exited with code {process.ExitCode} " +
                         $"(workspace: {workspacePath}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
+                    break;
                 }
-                else if (!anyJobSucceeded)
-                {
-                    // No jobs ran at all — act startup or configuration error (bad workflow path, missing event, etc.).
-                    actException = new Exception(
-                        $"act exited with code {process.ExitCode} and no jobs ran " +
-                        $"(workspace: {workspacePath}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
-                }
-                else
+
+                if (anyJobSucceeded)
                 {
                     // All jobs reported success; non-zero exit is from a step failure handled by
                     // continue-on-error. Treat the run as succeeded.
@@ -189,6 +195,23 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
                         "act exited with code {ExitCode} for run {RunId} but all jobs succeeded " +
                         "(likely a step failure with continue-on-error); treating run as succeeded",
                         process.ExitCode, run.Id);
+                    actException = null;
+                    break;
+                }
+
+                // No jobs ran at all — likely a Docker container name collision from async --rm
+                // cleanup of the previous run. Build the exception message for potential re-throw.
+                actException = new Exception(
+                    $"act exited with code {process.ExitCode} and no jobs ran " +
+                    $"(workspace: {workspacePath}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
+
+                if (attempt < maxAttempts)
+                {
+                    logger.LogWarning(
+                        "act exited with code {ExitCode} and no jobs ran for run {RunId} " +
+                        "(attempt {Attempt}/{MaxAttempts}); waiting for Docker cleanup before retry",
+                        process.ExitCode, run.Id, attempt, maxAttempts);
+                    await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
                 }
             }
         }
