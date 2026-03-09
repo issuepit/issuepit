@@ -229,6 +229,7 @@ public class CiCdWorker(
         }
 
         run.Status = CiCdRunStatus.Running;
+        run.StartedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(stoppingToken);
 
         try
