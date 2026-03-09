@@ -353,7 +353,30 @@ import { TodoPriority, TodoPriorityLabels, TodoRecurringInterval, TodoRecurringI
 const store = useTodosStore()
 
 // ── View state ────────────────────────────────────────────────────────────
-const view = ref<'board' | 'list' | 'calendar'>('board')
+const route = useRoute()
+const router = useRouter()
+
+const VALID_VIEWS = ['board', 'list', 'calendar'] as const
+type ViewMode = typeof VALID_VIEWS[number]
+
+const view = ref<ViewMode>(
+  VALID_VIEWS.includes(route.query.view as ViewMode)
+    ? (route.query.view as ViewMode)
+    : 'board',
+)
+
+watch(view, (newView) => {
+  if (route.query.view !== newView) {
+    router.push({ query: { ...route.query, view: newView } })
+  }
+})
+
+watch(() => route.query.view, (newView) => {
+  if (newView && VALID_VIEWS.includes(newView as ViewMode) && newView !== view.value) {
+    view.value = newView as ViewMode
+  }
+})
+
 const activeBoardId = ref<string>('')
 
 // ── Filters ───────────────────────────────────────────────────────────────
