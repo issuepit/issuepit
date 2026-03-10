@@ -51,6 +51,15 @@ public partial class DockerCiCdRuntime(
     //private const string DefaultImage = "ghcr.io/issuepit/issuepit-helper-act:latest";
     private const string DefaultImage = "ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24";
 
+    // Maximum number of times to invoke act before giving up.
+    // One retry is enough to survive a Docker container-name cleanup race from a prior run.
+    private const int MaxActAttempts = 2;
+
+    // Seconds to wait between act invocation attempts.
+    // Docker's async --rm container removal typically completes within 2-3 seconds;
+    // 5 s gives enough headroom while keeping E2E test latency acceptable.
+    private const int ActRetryDelaySeconds = 5;
+
     // Default DinD image cache settings.
     private const DindImageCacheStrategy DefaultDindCacheStrategy = DindImageCacheStrategy.RegistryMirror;
     private const string DefaultDindCacheVolumePath = "/var/lib/issuepit-dind-cache";
@@ -613,41 +622,64 @@ public partial class DockerCiCdRuntime(
                     await ExecShellAsync(container.ID, BuildActionlintExecScript(trigger.Workflow), onLogLine, cancellationToken);
                 }
 
-                // Step: Run act.
+                // Step: Run act (with retry for Docker container-name cleanup races).
                 await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: {string.Join(' ', actCmd)}", LogStream.Stdout);
 
-                // Track job outcomes from act's --json output so that a non-zero exit caused by
-                // continue-on-error (e.g. upload-artifact step failing) is not treated as a workflow failure.
-                var anyJobFailed = 0;
-                var anyJobSucceeded = 0;
-                Func<string, LogStream, Task> trackingLogLine = async (line, stream) =>
+                // Act's container names are derived from workflow name + job name and are therefore
+                // identical across consecutive runs of the same workflow. Docker's async --rm cleanup
+                // from the previous run (including a Native-runtime run that happened just before
+                // this Docker-runtime run) can still be in-progress when act tries to create
+                // containers with the same names. Retry once after a brief pause so Docker can finish.
+                Exception? actException = null;
+                for (var attempt = 1; attempt <= MaxActAttempts; attempt++)
                 {
-                    if (line.Length > 0 && line[0] == '{')
+                    // NOTE: anyJobFailed, anyJobSucceeded, and containerCollisionDetected are written
+                    // from the trackingLogLine callback which may be invoked concurrently during
+                    // asynchronous log streaming. Use int + Interlocked to avoid torn reads/writes.
+                    var anyJobFailed = 0;
+                    var anyJobSucceeded = 0;
+                    var containerCollisionDetected = 0;
+
+                    Func<string, LogStream, Task> trackingLogLine = async (line, stream) =>
                     {
-                        try
+                        // Detect Docker "container name already in use" collision errors.
+                        if (line.Contains("already in use", StringComparison.OrdinalIgnoreCase) &&
+                            (line.Contains("container name", StringComparison.OrdinalIgnoreCase) ||
+                             line.Contains("Conflict", StringComparison.OrdinalIgnoreCase)))
                         {
-                            using var doc = JsonDocument.Parse(line);
-                            var root = doc.RootElement;
-                            if (root.TryGetProperty("msg", out var msgEl))
-                            {
-                                var msg = msgEl.GetString();
-                                // act v0.2.84 emits "🏁  Job succeeded" / "🏁  Job failed" (emoji prefix);
-                                // use EndsWith so the check works regardless of any leading characters.
-                                if (msg?.EndsWith("Job succeeded", StringComparison.Ordinal) == true)
-                                    Interlocked.Exchange(ref anyJobSucceeded, 1);
-                                else if (msg?.EndsWith("Job failed", StringComparison.Ordinal) == true)
-                                    Interlocked.Exchange(ref anyJobFailed, 1);
-                            }
+                            Interlocked.Exchange(ref containerCollisionDetected, 1);
                         }
-                        catch { /* non-JSON line — ignore */ }
+
+                        if (line.Length > 0 && line[0] == '{')
+                        {
+                            try
+                            {
+                                using var doc = JsonDocument.Parse(line);
+                                var root = doc.RootElement;
+                                if (root.TryGetProperty("msg", out var msgEl))
+                                {
+                                    var msg = msgEl.GetString();
+                                    // act v0.2.84 emits "🏁  Job succeeded" / "🏁  Job failed" (emoji prefix);
+                                    // use EndsWith so the check works regardless of any leading characters.
+                                    if (msg?.EndsWith("Job succeeded", StringComparison.Ordinal) == true)
+                                        Interlocked.Exchange(ref anyJobSucceeded, 1);
+                                    else if (msg?.EndsWith("Job failed", StringComparison.Ordinal) == true)
+                                        Interlocked.Exchange(ref anyJobFailed, 1);
+                                }
+                            }
+                            catch { /* non-JSON line — ignore */ }
+                        }
+                        await onLogLine(line, stream);
+                    };
+
+                    var actExitCode = await ExecCommandAsync(container.ID, actCmd, trackingLogLine, cancellationToken);
+
+                    if (actExitCode == 0)
+                    {
+                        actException = null;
+                        break;
                     }
-                    await onLogLine(line, stream);
-                };
 
-                var actExitCode = await ExecCommandAsync(container.ID, actCmd, trackingLogLine, cancellationToken);
-
-                if (actExitCode != 0)
-                {
                     if (anyJobFailed == 0 && anyJobSucceeded != 0)
                     {
                         // All jobs reported success; non-zero exit is from a step failure handled by
@@ -656,14 +688,37 @@ public partial class DockerCiCdRuntime(
                             "act exited with code {ExitCode} (Docker) for run {RunId} but all jobs succeeded " +
                             "(likely a step failure with continue-on-error); treating run as succeeded",
                             actExitCode, run.Id);
+                        actException = null;
+                        break;
                     }
-                    else
+
+                    // For all other non-zero exit cases fall through to the retry path.
+                    // See NativeCiCdRuntime for the full explanation of why we retry unconditionally.
+                    var isContainerCollision = containerCollisionDetected != 0;
+                    var isMixedOutcome = anyJobFailed != 0 && anyJobSucceeded != 0;
+                    var reason = isContainerCollision
+                        ? "Docker container name collision"
+                        : isMixedOutcome
+                            ? "partial Docker container collision (some jobs succeeded, later job failed)"
+                            : anyJobFailed != 0
+                                ? "job failure (may be undetected container collision)"
+                                : "no jobs ran";
+                    actException = new Exception(
+                        $"act exited with code {actExitCode} ({reason}) " +
+                        $"(image: {image}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
+
+                    if (attempt < MaxActAttempts)
                     {
-                        throw new Exception(
-                            $"act exited with code {actExitCode} " +
-                            $"(image: {image}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
+                        logger.LogWarning(
+                            "act exited with code {ExitCode} (Docker) for run {RunId} ({Reason}) " +
+                            "(attempt {Attempt}/{MaxAttempts}); waiting for Docker cleanup before retry",
+                            actExitCode, run.Id, reason, attempt, MaxActAttempts);
+                        await Task.Delay(TimeSpan.FromSeconds(ActRetryDelaySeconds), cancellationToken);
                     }
                 }
+
+                if (actException != null)
+                    throw actException;
             }
             else
             {
