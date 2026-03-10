@@ -1,18 +1,12 @@
 <template>
   <div class="p-8">
     <!-- Breadcrumb + Header -->
-    <div class="flex items-center gap-2 text-sm text-gray-500 mb-2">
-      <NuxtLink :to="`/projects/${projectId}`" class="hover:text-gray-300">{{ projectsStore.currentProject?.name }}</NuxtLink>
-      <span>/</span>
-      <NuxtLink :to="`/projects/${projectId}/runs`" class="hover:text-gray-300">Runs</NuxtLink>
-      <span>/</span>
-      <span class="text-gray-400">CI/CD Run</span>
-    </div>
-    <div class="flex items-center gap-3 mb-6">
-      <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-      </svg>
-      <h1 class="text-xl font-bold text-white">CI/CD Run</h1>
+    <div class="flex items-center gap-2 mb-6">
+      <NuxtLink :to="`/projects/${projectId}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name }}</NuxtLink>
+      <span class="text-gray-600">/</span>
+      <NuxtLink :to="`/projects/${projectId}/runs`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">Runs</NuxtLink>
+      <span class="text-gray-600">/</span>
+      <NuxtLink :to="`/projects/${projectId}/runs/cicd/${runId}`" class="text-xl font-bold text-white">CI/CD Run</NuxtLink>
       <!-- WS connection indicator -->
       <span v-if="isConnected" class="flex items-center gap-1 text-xs text-green-400 font-normal ml-1">
         <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />

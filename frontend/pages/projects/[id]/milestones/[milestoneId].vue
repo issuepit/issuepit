@@ -7,29 +7,24 @@
 
     <template v-else-if="progress">
       <!-- Breadcrumb -->
-      <div class="flex items-center gap-2 text-sm text-gray-500 mb-5">
-        <NuxtLink :to="`/projects/${id}`" class="hover:text-gray-300">{{ projectsStore.currentProject?.name || 'Project' }}</NuxtLink>
-        <span>/</span>
-        <NuxtLink :to="`/projects/${id}/milestones`" class="hover:text-gray-300">Milestones</NuxtLink>
-        <span>/</span>
-        <span class="text-gray-400">{{ progress.title }}</span>
+      <div class="flex items-center gap-2 mb-6">
+        <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name || 'Project' }}</NuxtLink>
+        <span class="text-gray-600">/</span>
+        <NuxtLink :to="`/projects/${id}/milestones`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">Milestones</NuxtLink>
+        <span class="text-gray-600">/</span>
+        <NuxtLink :to="`/projects/${id}/milestones/${milestoneId}`" class="text-xl font-bold text-white">{{ progress.title }}</NuxtLink>
+        <span :class="progress.status === 'open' ? 'bg-green-900/40 text-green-400' : 'bg-gray-800 text-gray-500'"
+          class="text-xs px-2 py-0.5 rounded-full font-medium">
+          {{ progress.status === 'open' ? 'Open' : 'Closed' }}
+        </span>
       </div>
 
-      <!-- Header -->
-      <div class="flex items-start justify-between gap-4 mb-6">
-        <div>
-          <div class="flex items-center gap-3 mb-1">
-            <span :class="progress.status === 'open' ? 'bg-green-900/40 text-green-400' : 'bg-gray-800 text-gray-500'"
-              class="text-xs px-2 py-0.5 rounded-full font-medium">
-              {{ progress.status === 'open' ? 'Open' : 'Closed' }}
-            </span>
-            <h1 class="text-2xl font-bold text-white">{{ progress.title }}</h1>
-          </div>
-          <p v-if="progress.description" class="text-gray-400 mt-1">{{ progress.description }}</p>
-          <p v-if="progress.dueDate" class="text-sm text-gray-500 mt-1">
-            Due {{ formatDate(progress.dueDate) }}
-          </p>
-        </div>
+      <!-- Sub-header: description + due date -->
+      <div v-if="progress.description || progress.dueDate" class="mb-6 -mt-4">
+        <p v-if="progress.description" class="text-gray-400">{{ progress.description }}</p>
+        <p v-if="progress.dueDate" class="text-sm text-gray-500 mt-1">
+          Due {{ formatDate(progress.dueDate) }}
+        </p>
       </div>
 
       <!-- Progress Card -->

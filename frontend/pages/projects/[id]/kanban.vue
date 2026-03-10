@@ -3,12 +3,9 @@
     <!-- Header -->
     <div class="flex items-center justify-between mb-6 shrink-0">
       <div class="flex items-center gap-2">
-        <NuxtLink :to="`/projects/${id}`" class="text-gray-500 hover:text-gray-300 transition-colors">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-          </svg>
-        </NuxtLink>
-        <h1 class="text-xl font-bold text-white">Kanban</h1>
+        <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name }}</NuxtLink>
+        <span class="text-gray-600">/</span>
+        <NuxtLink :to="`/projects/${id}/kanban`" class="text-xl font-bold text-white">Kanban</NuxtLink>
       </div>
       <div class="flex items-center gap-2">
         <!-- Board selector -->
@@ -312,12 +309,14 @@ import type { Issue, KanbanColumn } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
 import { useKanbanStore } from '~/stores/kanban'
 import { useMilestonesStore } from '~/stores/milestones'
+import { useProjectsStore } from '~/stores/projects'
 
 const route = useRoute()
 const id = route.params.id as string
 const issueStore = useIssuesStore()
 const kanban = useKanbanStore()
 const milestonesStore = useMilestonesStore()
+const projectsStore = useProjectsStore()
 const { priorityIcon, priorityColor } = usePriority()
 
 // ── Issue create state ────────────────────────────────────────────────────

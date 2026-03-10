@@ -3,9 +3,9 @@
     <!-- Header -->
     <div class="flex items-center justify-between mb-6">
       <div class="flex items-center gap-2">
-        <NuxtLink :to="`/projects/${id}`" class="text-sm text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name }}</NuxtLink>
+        <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name }}</NuxtLink>
         <span class="text-gray-600">/</span>
-        <h1 class="text-xl font-bold text-white">Milestones</h1>
+        <NuxtLink :to="`/projects/${id}/milestones`" class="text-xl font-bold text-white">Milestones</NuxtLink>
         <span class="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">
           {{ store.milestones.length }}
         </span>

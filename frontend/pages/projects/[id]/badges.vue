@@ -1,23 +1,10 @@
 <template>
   <div class="p-8">
     <!-- Header -->
-    <div class="flex items-center gap-3 mb-6">
-      <NuxtLink :to="`/projects/${id}`" class="text-gray-500 hover:text-gray-300 transition-colors">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-        </svg>
-      </NuxtLink>
-      <div class="w-8 h-8 bg-pink-900/30 rounded-lg flex items-center justify-center">
-        <svg class="w-4 h-4 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path
-            stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-            d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-        </svg>
-      </div>
-      <div>
-        <h1 class="text-xl font-bold text-white">Status Badges</h1>
-        <p class="text-gray-500 text-sm">Embed live status badges into your README</p>
-      </div>
+    <div class="flex items-center gap-2 mb-6">
+      <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name }}</NuxtLink>
+      <span class="text-gray-600">/</span>
+      <NuxtLink :to="`/projects/${id}/badges`" class="text-xl font-bold text-white">Status Badges</NuxtLink>
     </div>
 
     <!-- Badge Builder -->
@@ -197,10 +184,12 @@
 </template>
 
 <script setup lang="ts">
+import { useProjectsStore } from '~/stores/projects'
 const route = useRoute()
 const id = route.params.id as string
 const config = useRuntimeConfig()
 const apiBase = config.public.apiBase as string
+const projectsStore = useProjectsStore()
 
 // --- state ---
 const metric = ref('agents')
