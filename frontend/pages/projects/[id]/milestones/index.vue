@@ -142,11 +142,11 @@
         <div v-else class="overflow-x-auto">
           <!-- Month header -->
           <div class="flex border-b border-gray-800" style="min-width: 800px">
-            <div class="w-48 shrink-0 px-4 py-2 text-xs text-gray-500 font-medium border-r border-gray-800">Milestone</div>
+            <div class="w-48 shrink-0 px-2 py-2 text-xs text-gray-500 font-medium border-r border-gray-800">Milestone</div>
             <div class="flex-1 flex h-8">
               <div v-for="month in ganttMonths" :key="month.label"
                 :style="{ width: month.widthPct + '%' }"
-                class="border-r border-gray-800 flex items-center px-2 text-xs text-gray-500 font-medium shrink-0">
+                class="border-r border-gray-800 flex items-center px-1.5 text-xs text-gray-500 font-medium shrink-0">
                 {{ month.label }}
               </div>
             </div>
@@ -158,7 +158,7 @@
               class="flex border-b border-gray-800/50 hover:bg-gray-800/20 transition-colors"
               style="height: 52px">
               <!-- Label column -->
-              <div class="w-48 shrink-0 flex items-center px-4 border-r border-gray-800 gap-2">
+              <div class="w-48 shrink-0 flex items-center px-2 border-r border-gray-800 gap-1.5">
                 <span :class="milestone.status === 'open' ? 'bg-green-500' : 'bg-gray-600'"
                   class="w-2 h-2 rounded-full shrink-0"></span>
                 <button class="text-xs text-gray-300 hover:text-white transition-colors truncate text-left"
