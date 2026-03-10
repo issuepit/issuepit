@@ -108,6 +108,7 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
                 Name = "Frontend",
                 Slug = "frontend",
                 Description = "Vue 3 / Nuxt 3 web application",
+                IssueKey = "FE",
                 //GitHubRepo = "https://github.com/acme/frontend", // disabled
                 CreatedAt = DateTime.UtcNow,
             });
@@ -120,6 +121,7 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
                 Name = "Backend API",
                 Slug = "backend-api",
                 Description = "ASP.NET Core REST API",
+                IssueKey = "BA",
                 //GitHubRepo = "https://github.com/acme/backend", // disabled
                 CreatedAt = DateTime.UtcNow,
             });
@@ -214,6 +216,7 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
                 Slug = "issuepit",
                 Description = "IssuePit — AI-powered issue tracker and agent orchestration platform",
                 GitHubRepo = "https://github.com/issuepit/issuepit",
+                IssueKey = "IP",
                 CreatedAt = DateTime.UtcNow,
             });
         await db.SaveChangesAsync();
