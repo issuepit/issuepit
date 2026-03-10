@@ -566,10 +566,10 @@
             <textarea v-model="voice.transcription.value" rows="4" placeholder="Transcription will appear here…"
               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"></textarea>
           </div>
-          <!-- Empty transcript notice (no model configured or silence) -->
-          <p v-if="showEmptyTranscriptNotice"
+          <!-- Transcription warning (no model configured, no speech detected, or error from backend) -->
+          <p v-if="voice.transcriptionWarning.value && !voice.transcription.value"
             class="text-xs text-amber-400">
-            No transcription returned — the speech model may not be configured on this server, or no speech was detected. You can type your description above, or drop another recording to retry.
+            {{ voice.transcriptionWarning.value }}
           </p>
         </div>
 
@@ -650,10 +650,6 @@ const voiceDragOver = ref(false)
 const modalDragOver = ref(false)
 
 const voice = useVoiceRecorder()
-
-const showEmptyTranscriptNotice = computed(
-  () => voiceRecordingDone.value && !voice.transcription.value && !voice.uploading.value && !voice.error.value,
-)
 
 async function startVoiceRecording() {
   voiceRecordingDone.value = false

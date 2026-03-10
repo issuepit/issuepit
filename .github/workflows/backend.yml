@@ -166,6 +166,24 @@ jobs:
           docker pull apache/kafka:3.9.0
           docker pull localstack/localstack:4.3
 
+      - name: Cache Vosk model
+        id: cache-vosk
+        uses: actions/cache@v4
+        with:
+          path: ~/.vosk/vosk-model-small-en-us-0.15
+          key: vosk-model-small-en-us-0.15
+
+      - name: Download Vosk model
+        if: steps.cache-vosk.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.vosk
+          curl -L https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip -o /tmp/vosk-model.zip
+          unzip /tmp/vosk-model.zip -d ~/.vosk
+          rm /tmp/vosk-model.zip
+
+      - name: Set Vosk model path
+        run: echo "VoiceTranscription__ModelPath=$HOME/.vosk/vosk-model-small-en-us-0.15" >> $GITHUB_ENV
+
       - name: Build E2E test project
         run: dotnet build src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj --configuration Release
 

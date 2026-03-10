@@ -116,6 +116,16 @@ public class VoiceIssueTests : IAsyncLifetime
         // When Vosk is configured the transcription must match at least matchThreshold of the expected keywords.
         // When no model is available, the service returns empty string (best-effort), which is also acceptable.
         var text = transcription.GetString() ?? string.Empty;
+
+        // If a model path is explicitly set in the environment (e.g. CI), transcription must be non-empty
+        var modelPath = Environment.GetEnvironmentVariable("VoiceTranscription__ModelPath");
+        if (!string.IsNullOrWhiteSpace(modelPath) && Directory.Exists(modelPath))
+        {
+            Assert.False(string.IsNullOrWhiteSpace(text),
+                $"Vosk model is present at '{modelPath}' but transcription was empty for '{fixture}'. " +
+                "Ensure the WAV is a valid 16-bit PCM mono file at 16 kHz.");
+        }
+
         if (!string.IsNullOrWhiteSpace(text))
         {
             var keywords = expectedKeywords.Split(' ', StringSplitOptions.RemoveEmptyEntries);
