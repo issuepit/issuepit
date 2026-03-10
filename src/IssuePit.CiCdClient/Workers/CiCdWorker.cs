@@ -586,7 +586,19 @@ public class CiCdWorker(
         };
 
         db.CiCdRunLogs.Add(log);
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // A transient DB error must not propagate out of the log-line callback:
+            // if it did, it would exit the act retry loop and mark the entire run as Failed
+            // even though the CI workflow itself may be running correctly.
+            logger.LogWarning(ex, "Failed to persist log line for run {RunId}; line may be lost", runId);
+            db.ChangeTracker.Clear();
+            return;
+        }
 
         // Publish to Redis so the API relay pushes it to SignalR clients
         var payload = JsonSerializer.Serialize(new
@@ -597,7 +609,15 @@ public class CiCdWorker(
             stepId,
             timestamp = log.Timestamp,
         });
-        await PublishLogLineAsync(runId.ToString(), payload);
+        try
+        {
+            await PublishLogLineAsync(runId.ToString(), payload);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Redis publish failure must not abort the act retry loop.
+            logger.LogWarning(ex, "Failed to publish log line to Redis for run {RunId}; continuing", runId);
+        }
 
         // When act reports a job as complete, emit a dedicated job-status event so the
         // frontend can update job completion state in real time without parsing log lines.
@@ -612,8 +632,15 @@ public class CiCdWorker(
             (isJobSucceeded || isJobFailed))
         {
             var status = isJobSucceeded ? "succeeded" : "failed";
-            await PublishLogLineAsync(runId.ToString(),
-                JsonSerializer.Serialize(new { @event = "job-status", jobId, status }));
+            try
+            {
+                await PublishLogLineAsync(runId.ToString(),
+                    JsonSerializer.Serialize(new { @event = "job-status", jobId, status }));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Failed to publish job-status event to Redis for run {RunId}; continuing", runId);
+            }
         }
     }
 

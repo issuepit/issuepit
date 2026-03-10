@@ -18,13 +18,13 @@ namespace IssuePit.CiCdClient.Runtimes;
 public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration configuration) : ICiCdRuntime
 {
     /// <summary>Maximum number of times to attempt running act before giving up.</summary>
-    private const int MaxActAttempts = 2;
+    private const int MaxActAttempts = 3;
 
     /// <summary>
     /// Seconds to wait between act retry attempts. Used when act exits with no jobs having run,
     /// which typically indicates a Docker container name collision due to async --rm cleanup.
     /// </summary>
-    private const int ActRetryDelaySeconds = 5;
+    private const int ActRetryDelaySeconds = 10;
     public async Task RunAsync(
         CiCdRun run,
         TriggerPayload trigger,
@@ -254,6 +254,9 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
                         "(attempt {Attempt}/{MaxAttempts}); waiting for Docker cleanup before retry",
                         process.ExitCode, run.Id, reason, attempt, MaxActAttempts);
                     await Task.Delay(TimeSpan.FromSeconds(ActRetryDelaySeconds), cancellationToken);
+                    // Best-effort: force-remove any act containers still in Docker cleanup
+                    // so that the next attempt can create containers with the same names.
+                    TryRemoveStaleActContainers();
                 }
             }
         }
@@ -524,5 +527,46 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         listener.Stop();
         return port;
+    }
+
+    /// <summary>
+    /// Best-effort: removes any Docker containers whose names start with "act-" that are in a
+    /// stopped, dead, or exited state (orphaned from a previous run's Docker async --rm cleanup).
+    /// Errors are logged at Debug level and never propagated to the caller.
+    /// </summary>
+    /// <summary>
+    /// Best-effort: removes stale Docker containers whose names contain "act-" and are in a
+    /// stopped, dead, or exited state (orphaned from a previous run's Docker async --rm cleanup).
+    /// Uses a single shell command to avoid stdout-buffer deadlocks that can occur when reading
+    /// process output before the process has exited.
+    /// Errors are logged at Debug level and never propagated to the caller.
+    /// </summary>
+    private void TryRemoveStaleActContainers()
+    {
+        try
+        {
+            // Run the ps | xargs rm pipeline in a single shell invocation to avoid the
+            // ReadToEnd()-before-WaitForExit() deadlock pattern.
+            var psi = new ProcessStartInfo("/bin/sh")
+            {
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            psi.ArgumentList.Add("-c");
+            psi.ArgumentList.Add(
+                "docker ps -aq --filter name=act- --filter status=exited " +
+                "--filter status=dead --filter status=created " +
+                "| xargs -r docker rm -f 2>/dev/null || true");
+
+            using var process = new Process { StartInfo = psi };
+            process.Start();
+            process.WaitForExit(10000);
+            logger.LogDebug("Stale act container cleanup completed (exit code: {ExitCode})", process.ExitCode);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Could not clean up stale act containers before retry (best-effort)");
+        }
     }
 }

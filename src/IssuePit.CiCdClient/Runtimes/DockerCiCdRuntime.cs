@@ -53,12 +53,12 @@ public partial class DockerCiCdRuntime(
 
     // Maximum number of times to invoke act before giving up.
     // One retry is enough to survive a Docker container-name cleanup race from a prior run.
-    private const int MaxActAttempts = 2;
+    private const int MaxActAttempts = 3;
 
     // Seconds to wait between act invocation attempts.
     // Docker's async --rm container removal typically completes within 2-3 seconds;
     // 5 s gives enough headroom while keeping E2E test latency acceptable.
-    private const int ActRetryDelaySeconds = 5;
+    private const int ActRetryDelaySeconds = 10;
 
     // Default DinD image cache settings.
     private const DindImageCacheStrategy DefaultDindCacheStrategy = DindImageCacheStrategy.RegistryMirror;
@@ -714,6 +714,13 @@ public partial class DockerCiCdRuntime(
                             "(attempt {Attempt}/{MaxAttempts}); waiting for Docker cleanup before retry",
                             actExitCode, run.Id, reason, attempt, MaxActAttempts);
                         await Task.Delay(TimeSpan.FromSeconds(ActRetryDelaySeconds), cancellationToken);
+                        // Best-effort: remove any lingering act containers inside the DinD daemon
+                        // before retrying so the same names can be reused by the next act attempt.
+                        await ExecShellAsync(
+                            container.ID,
+                            "docker ps -aq --filter name=act- | xargs -r docker rm -f 2>/dev/null || true",
+                            onLogLine,
+                            cancellationToken);
                     }
                 }
 
@@ -1274,6 +1281,16 @@ public partial class DockerCiCdRuntime(
             "  sleep 1; timeout=$((timeout-1))",
             "done",
             "docker info > /dev/null 2>&1 && echo '[DinD] dockerd ready' || { echo '[DinD] dockerd failed to start'; cat /tmp/dockerd.log; exit 1; }",
+            // Remove any containers left over from a previous killed DinD instance so that act can
+            // create job containers with the same names without hitting "container name already in use".
+            "# Remove orphaned act containers from a previous killed DinD session (if any).",
+            "_orphaned=$(docker ps -aq --filter name=act- 2>/dev/null)",
+            "if [ -n \"$_orphaned\" ]; then",
+            "  echo \"[DinD] Removing orphaned act containers from previous DinD instance: $_orphaned\"",
+            "  echo \"$_orphaned\" | xargs docker rm -f 2>/dev/null || true",
+            "else",
+            "  echo '[DinD] No orphaned act containers'",
+            "fi",
         ]);
 
         // ── apt proxy config ──────────────────────────────────────────────────────────────────────────
