@@ -795,6 +795,24 @@ export interface AgentSessionDetail extends AgentSession {
   ciCdRuns: CiCdRun[]
 }
 
+export interface IssueAgentSession {
+  id: string
+  agentId: string
+  agentName: string
+  issueId: string
+  commitSha?: string
+  gitBranch?: string
+  status: AgentSessionStatus
+  statusName: string
+  startedAt: string
+  endedAt?: string
+  ciCdRuns: CiCdRun[]
+}
+
+export interface IssueRuns {
+  agentSessions: IssueAgentSession[]
+}
+
 export interface IssueHistoryEntry {
   date: string
   open: number
