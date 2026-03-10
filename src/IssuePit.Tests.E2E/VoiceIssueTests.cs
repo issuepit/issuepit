@@ -77,14 +77,17 @@ public class VoiceIssueTests : IAsyncLifetime
 
     /// <summary>
     /// API test: POST /api/uploads/voice with a real speech recording should return 200 and—when a Vosk
-    /// model is configured—a non-empty transcription matching the recorded phrase.
+    /// model is configured—a non-empty transcription that matches at least <paramref name="matchThreshold"/>
+    /// of the space-separated <paramref name="expectedKeywords"/>.
     /// When no model is available the transcription is allowed to be empty (best-effort).
     /// </summary>
     [Theory]
-    [InlineData("Voice_TaskCar.wav", "car")]
-    [InlineData("Voice_TicketRefactorTests.wav", "refactor")]
+    // Voice_TaskCar.wav — "Create a task to call the car mechanic replacing the right door of the car"
+    [InlineData("Voice_TaskCar.wav", "task car mechanic door", 0.5)]
+    // Voice_TicketRefactorTests.wav — "Create a Ticket to refactor the tests to use a Page Object Model approach"
+    [InlineData("Voice_TicketRefactorTests.wav", "ticket refactor tests page object model", 0.5)]
     public async Task Api_UploadVoice_WithSpeechRecording_ReturnsVoiceUrlAndOptionalTranscription(
-        string fixture, string expectedKeyword)
+        string fixture, string expectedKeywords, double matchThreshold)
     {
         using var client = CreateCookieClient();
         var tenantId = await GetDefaultTenantIdAsync();
@@ -110,11 +113,19 @@ public class VoiceIssueTests : IAsyncLifetime
         Assert.True(body.TryGetProperty("voiceUrl", out _), "Response must contain 'voiceUrl'");
         Assert.True(body.TryGetProperty("transcription", out var transcription), "Response must contain 'transcription'");
 
-        // When Vosk is configured the transcription must contain the expected keyword.
+        // When Vosk is configured the transcription must match at least matchThreshold of the expected keywords.
         // When no model is available, the service returns empty string (best-effort), which is also acceptable.
         var text = transcription.GetString() ?? string.Empty;
         if (!string.IsNullOrWhiteSpace(text))
-            Assert.Contains(expectedKeyword, text, StringComparison.OrdinalIgnoreCase);
+        {
+            var keywords = expectedKeywords.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var matchedCount = keywords.Count(k => text.Contains(k, StringComparison.OrdinalIgnoreCase));
+            var matchRatio = (double)matchedCount / keywords.Length;
+            Assert.True(
+                matchRatio >= matchThreshold,
+                $"Expected at least {matchThreshold:P0} of keywords [{expectedKeywords}] in transcription '{text}', " +
+                $"but only {matchedCount}/{keywords.Length} matched ({matchRatio:P0}).");
+        }
     }
 
     /// <summary>
