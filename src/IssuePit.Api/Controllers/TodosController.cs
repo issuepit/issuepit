@@ -204,7 +204,11 @@ public class TodosController(IssuePitDbContext db, TenantContext ctx) : Controll
         }
 
         await db.SaveChangesAsync();
-        return Created($"/api/todos/{todo.Id}", todo);
+        var created = await db.Todos
+            .Include(t => t.BoardMemberships).ThenInclude(m => m.Board)
+            .Include(t => t.CategoryMemberships).ThenInclude(m => m.Category)
+            .FirstAsync(t => t.Id == todo.Id);
+        return Created($"/api/todos/{todo.Id}", created);
     }
 
     [HttpPut("{id:guid}")]
@@ -247,7 +251,11 @@ public class TodosController(IssuePitDbContext db, TenantContext ctx) : Controll
         }
 
         await db.SaveChangesAsync();
-        return Ok(todo);
+        var updated = await db.Todos
+            .Include(t => t.BoardMemberships).ThenInclude(m => m.Board)
+            .Include(t => t.CategoryMemberships).ThenInclude(m => m.Category)
+            .FirstAsync(t => t.Id == id);
+        return Ok(updated);
     }
 
     [HttpDelete("{id:guid}")]

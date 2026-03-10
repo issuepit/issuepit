@@ -92,7 +92,9 @@
             'border-brand-500/60 bg-brand-900/10': isValidDropTarget(col.id) && draggedId,
             'border-gray-700/30 bg-gray-900/20': draggedId && !draggedColId && !isValidDropTarget(col.id),
           }"
-          @dragover.prevent @drop="onIssueDrop($event, col)">
+          @dragover.prevent="onIssueDragOver($event, col.id)"
+          @dragleave="onIssueDragLeave"
+          @drop="onIssueDrop($event, col)">
           <div v-for="issue in issuesByStatus[col.issueStatus]" :key="issue.id"
             draggable="true"
             @dragstart="onDragStart($event, issue)"
@@ -117,8 +119,14 @@
             </div>
           </div>
 
+          <!-- Drop zone placeholder -->
+          <div v-if="draggedId && !draggedColId && isValidDropTarget(col.id) && dragHoverColId === col.id"
+            role="status" aria-label="Drop zone"
+            class="rounded-lg border-2 border-dashed border-brand-500/50 bg-brand-900/10 h-14 animate-pulse">
+          </div>
+
           <!-- Empty placeholder -->
-          <div v-if="!issuesByStatus[col.issueStatus]?.length"
+          <div v-if="!issuesByStatus[col.issueStatus]?.length && !(draggedId && !draggedColId && isValidDropTarget(col.id) && dragHoverColId === col.id)"
             class="flex items-center justify-center h-16 text-gray-700 text-xs">
             Drop issues here
           </div>
@@ -331,6 +339,7 @@ const filterMilestone = ref<string>('')
 const draggedId = ref<string | null>(null)
 const draggedIssueStatus = ref<IssueStatus | null>(null)
 const transitionsButtonAlert = ref(false)
+const dragHoverColId = ref<string | null>(null)
 
 // ── Column drag state (board view) ─────────────────────────────────────────
 const draggedColId = ref<string | null>(null)
@@ -423,6 +432,7 @@ function onDragStart(e: DragEvent, issue: Issue) {
 function onIssueDragEnd() {
   draggedId.value = null
   draggedIssueStatus.value = null
+  dragHoverColId.value = null
   transitionsButtonAlert.value = false
 }
 
@@ -445,7 +455,20 @@ async function onIssueDrop(e: DragEvent, targetCol: KanbanColumn) {
   await issueStore.updateIssueStatus(id, draggedId.value, targetCol.issueStatus)
   draggedId.value = null
   draggedIssueStatus.value = null
+  dragHoverColId.value = null
   transitionsButtonAlert.value = false
+}
+
+function onIssueDragOver(e: DragEvent, colId: string) {
+  if (draggedId.value && !draggedColId.value) {
+    dragHoverColId.value = colId
+  }
+}
+
+function onIssueDragLeave(e: DragEvent) {
+  const relatedTarget = e.relatedTarget as Node | null
+  if (relatedTarget && (e.currentTarget as Node)?.contains(relatedTarget)) return
+  dragHoverColId.value = null
 }
 
 // ── Column drag & drop (main board reorder) ────────────────────────────────
