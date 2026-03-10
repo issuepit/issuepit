@@ -15,11 +15,11 @@
           <template v-if="store.currentIssue.parentIssue">
             <span class="text-gray-600">/</span>
             <NuxtLink :to="`/projects/${id}/issues/${store.currentIssue.parentIssue.number}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">
-              #{{ store.currentIssue.parentIssue.number }} {{ store.currentIssue.parentIssue.title }}
+              {{ formatIssueId(store.currentIssue.parentIssue.number, projectsStore.currentProject) }} {{ store.currentIssue.parentIssue.title }}
             </NuxtLink>
           </template>
           <span class="text-gray-600">/</span>
-          <NuxtLink :to="`/projects/${id}/issues/${store.currentIssue.number}`" class="text-xl font-bold text-white">#{{ store.currentIssue.number }}</NuxtLink>
+          <NuxtLink :to="`/projects/${id}/issues/${store.currentIssue.number}`" class="text-xl font-bold text-white">{{ formatIssueId(store.currentIssue.number, projectsStore.currentProject) }}</NuxtLink>
         </div>
         <!-- Issue creation buttons -->
         <div class="flex items-center gap-2">
@@ -159,7 +159,7 @@
                 :to="`/projects/${id}/issues/${sub.number}`"
                 class="flex items-center gap-2 text-sm text-gray-300 hover:text-white group py-1 px-2 rounded-lg hover:bg-gray-800/60 transition-colors">
                 <span :class="statusColor(sub.status)" class="w-2.5 h-2.5 rounded-full shrink-0"></span>
-                <span class="text-xs text-gray-600 shrink-0">#{{ sub.number }}</span>
+                <span class="text-xs text-gray-600 shrink-0">{{ formatIssueId(sub.number, projectsStore.currentProject) }}</span>
                 <span>{{ sub.title }}</span>
               </NuxtLink>
             </div>
@@ -211,7 +211,7 @@
                 <span class="text-xs text-brand-400 shrink-0 min-w-[70px]">{{ IssueLinkTypeLabels[link.linkType] }}</span>
                 <NuxtLink :to="`/projects/${link.targetIssue?.projectId ?? id}/issues/${link.targetIssue?.number ?? link.targetIssueId}`"
                   class="flex items-center gap-1.5 text-sm text-gray-300 hover:text-white flex-1 min-w-0">
-                  <span class="text-xs text-gray-600 shrink-0">#{{ link.targetIssue?.number }}</span>
+                  <span class="text-xs text-gray-600 shrink-0">{{ link.targetIssue?.number != null ? formatIssueId(link.targetIssue.number, projectsStore.projects.find(p => p.id === link.targetIssue?.projectId)) : '' }}</span>
                   <span class="truncate">{{ link.targetIssue?.title }}</span>
                   <span v-if="link.targetIssue?.projectId && link.targetIssue.projectId !== actualProjectId" class="text-xs text-gray-600 shrink-0 ml-1">↗ cross-project</span>
                 </NuxtLink>
@@ -691,6 +691,7 @@ import { useLabelsStore } from '~/stores/labels'
 import { useAgentsStore } from '~/stores/agents'
 import { useMilestonesStore } from '~/stores/milestones'
 import { useProjectsStore } from '~/stores/projects'
+import { formatIssueId } from '~/composables/useIssueFormat'
 
 const route = useRoute()
 const router = useRouter()

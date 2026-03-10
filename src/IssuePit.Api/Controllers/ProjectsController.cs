@@ -59,6 +59,63 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
         return Created($"/api/projects/{project.Id}", project);
     }
 
+    [HttpGet("suggest-issue-key")]
+    public async Task<IActionResult> SuggestIssueKey([FromQuery] string name, [FromQuery] Guid orgId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var org = await db.Organizations.FirstOrDefaultAsync(o => o.Id == orgId && o.TenantId == ctx.CurrentTenant.Id);
+        if (org is null) return NotFound();
+
+        var candidate = GenerateIssueKey(name);
+        var taken = await db.Projects
+            .Where(p => p.OrgId == orgId)
+            .Select(p => p.IssueKey)
+            .ToListAsync();
+
+        candidate = EnsureUniqueKey(candidate, taken!, name);
+        return Ok(new { issueKey = candidate });
+    }
+
+    private static string GenerateIssueKey(string name)
+    {
+        // Build initials from words separated by space, dash, or underscore
+        var words = name.Split([' ', '-', '_'], StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length == 0) return "P";
+        var key = string.Concat(words.Select(w => char.ToUpperInvariant(w[0])));
+        if (key.Length == 1)
+        {
+            // Single word: take first 2-3 characters
+            key = name.Length >= 3
+                ? name[..3].ToUpperInvariant()
+                : name.ToUpperInvariant();
+        }
+        return key.Length > 10 ? key[..10] : key;
+    }
+
+    private static string EnsureUniqueKey(string candidate, IList<string?> taken, string fullName)
+    {
+        var normalized = taken.Where(k => k is not null).Select(k => k!.ToUpperInvariant()).ToHashSet();
+        if (!normalized.Contains(candidate.ToUpperInvariant())) return candidate;
+
+        // Try extending with more characters from the name
+        var upper = new string(fullName.Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
+        for (var len = candidate.Length + 1; len <= Math.Min(upper.Length, 10); len++)
+        {
+            var extended = upper[..len];
+            if (!normalized.Contains(extended)) return extended;
+        }
+
+        // Fall back to appending a numeric suffix
+        for (var i = 2; i <= 99; i++)
+        {
+            var suffix = $"{candidate}{i}";
+            if (suffix.Length > 10) suffix = suffix[..10];
+            if (!normalized.Contains(suffix.ToUpperInvariant())) return suffix;
+        }
+
+        return candidate; // Should never reach here in practice
+    }
+
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> UpdateProject(Guid id, [FromBody] Project updated)
     {
@@ -82,6 +139,8 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
         project.UseNewActionCache = updated.UseNewActionCache;
         project.ActionOfflineMode = updated.ActionOfflineMode;
         project.LocalRepositories = updated.LocalRepositories;
+        project.IssueKey = string.IsNullOrWhiteSpace(updated.IssueKey) ? null : updated.IssueKey.Trim().ToUpperInvariant();
+        project.IssueNumberOffset = updated.IssueNumberOffset;
         await db.SaveChangesAsync();
         return Ok(project);
     }
@@ -395,7 +454,9 @@ public record ProjectDto(
     string? ActEnv, string? ActSecrets, string? ActRunnerImage,
     string? ActionCachePath, bool? UseNewActionCache, bool? ActionOfflineMode,
     string? LocalRepositories,
-    int OpenMergeRequestCount)
+    int OpenMergeRequestCount,
+    string? IssueKey,
+    int IssueNumberOffset)
 {
     public static Expression<Func<Project, ProjectDto>> Selector(IssuePitDbContext db) =>
         p => new ProjectDto(
@@ -408,5 +469,7 @@ public record ProjectDto(
             p.ActEnv, p.ActSecrets, p.ActRunnerImage,
             p.ActionCachePath, p.UseNewActionCache, p.ActionOfflineMode,
             p.LocalRepositories,
-            db.MergeRequests.Count(mr => mr.ProjectId == p.Id && mr.Status == MergeRequestStatus.Open));
+            db.MergeRequests.Count(mr => mr.ProjectId == p.Id && mr.Status == MergeRequestStatus.Open),
+            p.IssueKey,
+            p.IssueNumberOffset);
 }

@@ -99,7 +99,7 @@
             class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-lg p-3 cursor-pointer group transition-all hover:shadow-lg hover:-translate-y-0.5"
             @click="$router.push(`/projects/${id}/issues/${issue.number}`)">
             <div class="flex items-start justify-between gap-2 mb-2">
-              <span class="text-xs text-gray-600">#{{ issue.number }}</span>
+              <span class="text-xs text-gray-600">{{ formatIssueId(issue.number, projectsStore.currentProject) }}</span>
               <span :class="priorityColor(issue.priority)" class="text-xs shrink-0">
                 {{ priorityIcon(issue.priority) }}
               </span>
@@ -318,6 +318,7 @@ import { useIssuesStore } from '~/stores/issues'
 import { useKanbanStore } from '~/stores/kanban'
 import { useMilestonesStore } from '~/stores/milestones'
 import { useProjectsStore } from '~/stores/projects'
+import { formatIssueId } from '~/composables/useIssueFormat'
 
 const route = useRoute()
 const id = route.params.id as string

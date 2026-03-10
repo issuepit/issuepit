@@ -257,7 +257,7 @@
                   <NuxtLink :to="`/projects/${id}/issues/${session.issueNumber}`"
                     class="text-sm text-gray-300 hover:text-brand-300 transition-colors truncate block"
                     @click.stop>
-                    #{{ session.issueNumber }} {{ session.issueTitle }}
+                    #{{ formatIssueId(session.issueNumber, store.currentProject) }} {{ session.issueTitle }}
                   </NuxtLink>
                   <p class="text-xs text-gray-500 truncate">{{ session.agentName }}</p>
                 </div>
@@ -443,6 +443,7 @@ import type { ProjectMetricSnapshot, Milestone, GitCommit } from '~/types'
 import { AgentSessionStatus, CiCdRunStatus } from '~/types'
 import { useProjectsStore } from '~/stores/projects'
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
+import { formatIssueId } from '~/composables/useIssueFormat'
 
 const route = useRoute()
 const id = route.params.id as string
