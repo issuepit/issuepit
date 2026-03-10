@@ -186,18 +186,25 @@
 
         <!-- Recording controls -->
         <div class="flex flex-col items-center gap-4 mb-5">
-          <!-- Mic button -->
+          <!-- Mic button (also a drop zone for audio files) -->
           <button
             v-if="!voice.recording.value && !voice.uploading.value && !voice.transcription.value"
             @click="startVoiceRecording"
-            class="w-16 h-16 rounded-full bg-brand-600 hover:bg-brand-700 flex items-center justify-center transition-colors shadow-lg">
+            @dragover.prevent="modalDragOver = true"
+            @dragleave="modalDragOver = false"
+            @drop.prevent="handleModalVoiceFileDrop"
+            :class="[
+              'w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg',
+              modalDragOver ? 'bg-brand-500 ring-4 ring-brand-300 scale-110' : 'bg-brand-600 hover:bg-brand-700'
+            ]"
+            title="Click to record or drop an audio file">
             <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 016 0v6a3 3 0 01-3 3z" />
             </svg>
           </button>
           <p v-if="!voice.recording.value && !voice.uploading.value && !voice.transcription.value"
-            class="text-sm text-gray-400">Click to start recording</p>
+            class="text-sm text-gray-400">Click to start recording or drop an audio file</p>
 
           <!-- Recording indicator -->
           <div v-if="voice.recording.value" class="flex flex-col items-center gap-3">
@@ -227,6 +234,11 @@
             <textarea v-model="voice.transcription.value" rows="4" placeholder="Transcription will appear here…"
               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"></textarea>
           </div>
+          <!-- Empty transcript notice (no model configured or silence) -->
+          <p v-if="showEmptyTranscriptNotice"
+            class="text-xs text-amber-400">
+            No speech detected. You can type your description above, or drop another audio file to retry.
+          </p>
         </div>
 
         <!-- Error -->
@@ -264,6 +276,7 @@ const showCreate = ref(false)
 const showVoiceCreate = ref(false)
 const voiceRecordingDone = ref(false)
 const voiceDragOver = ref(false)
+const modalDragOver = ref(false)
 const search = ref('')
 const filterStatus = ref<IssueStatus | ''>('')
 const filterPriority = ref<IssuePriority | ''>('')
@@ -272,17 +285,16 @@ const filterMilestone = ref<string>('')
 
 const voice = useVoiceRecorder()
 
+const showEmptyTranscriptNotice = computed(
+  () => voiceRecordingDone.value && !voice.transcription.value && !voice.uploading.value && !voice.error.value
+)
+
 async function startVoiceRecording() {
   voiceRecordingDone.value = false
   await voice.startRecording()
 }
 
-async function handleVoiceFileDrop(e: DragEvent) {
-  voiceDragOver.value = false
-  const file = e.dataTransfer?.files[0]
-  if (!file) return
-  if (!file.type.startsWith('audio/') && !file.name.toLowerCase().endsWith('.wav')) return
-  showVoiceCreate.value = true
+async function uploadVoiceFile(file: File | Blob) {
   voiceRecordingDone.value = true
   try {
     await voice.uploadRecording(file)
@@ -291,11 +303,29 @@ async function handleVoiceFileDrop(e: DragEvent) {
   }
 }
 
+async function handleVoiceFileDrop(e: DragEvent) {
+  voiceDragOver.value = false
+  const file = e.dataTransfer?.files[0]
+  if (!file) return
+  if (!file.type.startsWith('audio/') && !file.name.toLowerCase().endsWith('.wav')) return
+  showVoiceCreate.value = true
+  await uploadVoiceFile(file)
+}
+
+async function handleModalVoiceFileDrop(e: DragEvent) {
+  modalDragOver.value = false
+  const file = e.dataTransfer?.files[0]
+  if (!file) return
+  if (!file.type.startsWith('audio/') && !file.name.toLowerCase().endsWith('.wav')) return
+  await uploadVoiceFile(file)
+}
+
 async function stopVoiceRecording() {
   const wavBlob = voice.stopRecording()
-  voiceRecordingDone.value = true
   if (wavBlob) {
-    await voice.uploadRecording(wavBlob)
+    await uploadVoiceFile(wavBlob)
+  } else {
+    voiceRecordingDone.value = true
   }
 }
 
