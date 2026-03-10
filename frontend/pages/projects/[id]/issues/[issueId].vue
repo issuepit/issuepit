@@ -1,5 +1,5 @@
 <template>
-  <div class="p-6">
+  <div class="p-8">
     <!-- Loading -->
     <div v-if="store.loading && !store.currentIssue" class="flex items-center justify-center py-20">
       <div class="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
@@ -9,8 +9,16 @@
       <!-- Breadcrumb + action buttons -->
       <div class="flex items-center justify-between mb-5">
         <PageBreadcrumb :items="issueBreadcrumbItems" />
-        <!-- Issue creation buttons -->
+        <!-- Issue action buttons -->
         <div class="flex items-center gap-2">
+          <button @click="startEditTitle"
+            class="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
+            title="Rename issue">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+          </button>
           <button @click="showVoiceCreate = true"
             class="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
             title="Create issue from voice">
@@ -30,22 +38,15 @@
         </div>
       </div>
 
+      <!-- Inline title edit -->
+      <div v-if="editingTitle" class="mb-5">
+        <input v-model="titleEdit" @blur="saveTitle" @keyup.enter="saveTitle" autofocus
+          class="w-full bg-gray-800 border border-brand-500 rounded-lg px-3 py-2 text-base font-semibold text-white focus:outline-none focus:ring-2 focus:ring-brand-500" />
+      </div>
+
       <div class="flex gap-6">
         <!-- Main Content -->
         <div class="flex-1 min-w-0 space-y-5">
-          <!-- Title -->
-          <div class="flex items-start gap-3">
-            <span :class="statusColor(store.currentIssue.status)" class="w-3 h-3 rounded-full mt-2 shrink-0"></span>
-            <div class="flex-1">
-              <h1 v-if="!editingTitle" @click="editingTitle = true"
-                class="text-2xl font-bold text-white cursor-text hover:text-brand-300 transition-colors leading-tight">
-                {{ store.currentIssue.title }}
-              </h1>
-              <input v-else v-model="titleEdit" @blur="saveTitle" @keyup.enter="saveTitle"
-                class="w-full text-2xl font-bold bg-transparent border-b border-brand-500 text-white focus:outline-none pb-0.5" />
-            </div>
-          </div>
-
           <!-- Description -->
           <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
             <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Description</h2>
@@ -843,7 +844,7 @@ const issueBreadcrumbItems = computed(() => {
     items.push({ label: `#${store.currentIssue.parentIssue.number} ${store.currentIssue.parentIssue.title}`, to: `/projects/${id}/issues/${store.currentIssue.parentIssue.number}`, icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' })
   }
   if (store.currentIssue) {
-    items.push({ label: `#${store.currentIssue.number}`, to: `/projects/${id}/issues/${store.currentIssue.number}`, icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' })
+    items.push({ label: `#${store.currentIssue.number} ${store.currentIssue.title}`, to: `/projects/${id}/issues/${store.currentIssue.number}`, icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' })
   }
   return items
 })
@@ -978,6 +979,13 @@ async function saveTitle() {
   editingTitle.value = false
   if (titleEdit.value && titleEdit.value !== store.currentIssue?.title) {
     await store.updateIssue(id, resolvedIssueId.value, { title: titleEdit.value })
+  }
+}
+
+function startEditTitle() {
+  if (store.currentIssue) {
+    titleEdit.value = store.currentIssue.title
+    editingTitle.value = true
   }
 }
 
