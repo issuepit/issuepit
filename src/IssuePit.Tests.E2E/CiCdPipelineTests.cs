@@ -157,7 +157,7 @@ public class CiCdPipelineTests(AspireFixture fixture)
             BuildTriggerPayload(projectId, "e2e-abc123", runtimeMode, "ci.yml"));
         Assert.Equal(HttpStatusCode.Accepted, triggerResp.StatusCode);
 
-        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromSeconds(50));
         Assert.Equal("Succeeded", run.GetProperty("statusName").GetString());
     }
 
@@ -173,7 +173,7 @@ public class CiCdPipelineTests(AspireFixture fixture)
         await client.PostAsJsonAsync("/api/cicd-runs/trigger",
             BuildTriggerPayload(projectId, "e2e-log-abc", runtimeMode));
 
-        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromSeconds(50));
         Assert.Equal("Succeeded", run.GetProperty("statusName").GetString());
         var runId = run.GetProperty("id").GetString()!;
 
@@ -211,7 +211,7 @@ public class CiCdPipelineTests(AspireFixture fixture)
         await client.PostAsJsonAsync("/api/cicd-runs/trigger",
             BuildTriggerPayload(projectId, "e2e-joblogs-abc", runtimeMode));
 
-        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromSeconds(50));
         var runId = run.GetProperty("id").GetString()!;
 
         // Fetch logs filtered to the 'build' job only.
@@ -241,7 +241,7 @@ public class CiCdPipelineTests(AspireFixture fixture)
         await client.PostAsJsonAsync("/api/cicd-runs/trigger",
             BuildTriggerPayload(projectId, "e2e-artifact-abc", runtimeMode));
 
-        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromSeconds(50));
         var runId = run.GetProperty("id").GetString()!;
 
         var artifactsResp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts");
@@ -268,7 +268,7 @@ public class CiCdPipelineTests(AspireFixture fixture)
         await client.PostAsJsonAsync("/api/cicd-runs/trigger",
             BuildTriggerPayload(projectId, "e2e-trx-abc", runtimeMode));
 
-        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromSeconds(50));
         var runId = run.GetProperty("id").GetString()!;
 
         var testResultsResp = await client.GetAsync($"/api/cicd-runs/{runId}/test-results");
@@ -293,32 +293,44 @@ public class CiCdPipelineTests(AspireFixture fixture)
     /// <summary>
     /// Polls <c>GET /api/cicd-runs?projectId={id}</c> until the most-recent run reaches a
     /// terminal status (Succeeded, Failed, or Cancelled) or the timeout elapses.
+    /// All HTTP calls are bound by a <see cref="CancellationTokenSource"/> derived from the
+    /// overall timeout so that a hung HTTP connection cannot prevent the deadline from firing
+    /// (which would otherwise cause xUnit blame to kill the process instead of failing the test).
     /// </summary>
     private static async Task<JsonElement> WaitForRunOfProjectAsync(
         HttpClient client,
         string projectId,
         TimeSpan timeout)
     {
-        var deadline = DateTime.UtcNow + timeout;
-        while (DateTime.UtcNow < deadline)
+        using var cts = new CancellationTokenSource(timeout);
+        var ct = cts.Token;
+        try
         {
-            var listResp = await client.GetAsync($"/api/cicd-runs?projectId={projectId}");
-            listResp.EnsureSuccessStatusCode();
-            var runs = await listResp.Content.ReadFromJsonAsync<JsonElement>();
-            if (runs.GetArrayLength() > 0)
+            while (!ct.IsCancellationRequested)
             {
-                var runId = runs[0].GetProperty("id").GetString()!;
-                var runResp = await client.GetAsync($"/api/cicd-runs/{runId}");
-                runResp.EnsureSuccessStatusCode();
-                var run = await runResp.Content.ReadFromJsonAsync<JsonElement>();
-                var statusName = run.GetProperty("statusName").GetString();
-                if (statusName is "Succeeded" or "Failed" or "Cancelled")
-                    return run;
-            }
+                var listResp = await client.GetAsync($"/api/cicd-runs?projectId={projectId}", ct);
+                listResp.EnsureSuccessStatusCode();
+                var runs = await listResp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: ct);
+                if (runs.GetArrayLength() > 0)
+                {
+                    var runId = runs[0].GetProperty("id").GetString()!;
+                    var runResp = await client.GetAsync($"/api/cicd-runs/{runId}", ct);
+                    runResp.EnsureSuccessStatusCode();
+                    var run = await runResp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: ct);
+                    var statusName = run.GetProperty("statusName").GetString();
+                    if (statusName is "Succeeded" or "Failed" or "Cancelled")
+                        return run;
+                }
 
-            await Task.Delay(TimeSpan.FromMilliseconds(500));
+                await Task.Delay(TimeSpan.FromMilliseconds(500), ct);
+            }
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            // Deadline elapsed — fall through to the failure below.
         }
 
-        throw new TimeoutException($"No completed CI/CD run found for project {projectId} within {timeout}.");
+        throw new TimeoutException($"No completed CI/CD run found for project {projectId} within {timeout}. " +
+                                   "The CI/CD run did not reach a terminal state in time.");
     }
 }
