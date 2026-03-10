@@ -12,8 +12,14 @@
       </div>
       <div class="flex items-center gap-2">
         <button @click="showVoiceCreate = true"
-          class="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-          title="Create issue from voice">
+          @dragover.prevent="voiceDragOver = true"
+          @dragleave="voiceDragOver = false"
+          @drop.prevent="handleVoiceFileDrop"
+          :class="[
+            'flex items-center gap-2 text-gray-300 text-sm font-medium px-4 py-2 rounded-lg transition-colors',
+            voiceDragOver ? 'bg-brand-700 ring-2 ring-brand-400' : 'bg-gray-800 hover:bg-gray-700'
+          ]"
+          title="Create issue from voice (or drop an audio file here)">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
               d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 016 0v6a3 3 0 01-3 3z" />
@@ -257,6 +263,7 @@ const projectsStore = useProjectsStore()
 const showCreate = ref(false)
 const showVoiceCreate = ref(false)
 const voiceRecordingDone = ref(false)
+const voiceDragOver = ref(false)
 const search = ref('')
 const filterStatus = ref<IssueStatus | ''>('')
 const filterPriority = ref<IssuePriority | ''>('')
@@ -268,6 +275,20 @@ const voice = useVoiceRecorder()
 async function startVoiceRecording() {
   voiceRecordingDone.value = false
   await voice.startRecording()
+}
+
+async function handleVoiceFileDrop(e: DragEvent) {
+  voiceDragOver.value = false
+  const file = e.dataTransfer?.files[0]
+  if (!file) return
+  if (!file.type.startsWith('audio/') && !file.name.toLowerCase().endsWith('.wav')) return
+  showVoiceCreate.value = true
+  voiceRecordingDone.value = true
+  try {
+    await voice.uploadRecording(file)
+  } catch {
+    // voice.error is already set by uploadRecording; the modal stays open so the user sees it
+  }
 }
 
 async function stopVoiceRecording() {

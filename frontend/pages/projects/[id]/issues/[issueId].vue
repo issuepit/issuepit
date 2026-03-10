@@ -420,7 +420,7 @@
                   </p>
                 </div>
                 <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button v-if="att.isVoiceFile" @click="retranscribeVoice(att.id)"
+                  <button v-if="att.isVoiceFile || att.contentType?.startsWith('audio/')" @click="retranscribeVoice(att.id)"
                     :disabled="retranscribingId === att.id"
                     class="text-xs text-brand-400 hover:text-brand-300 disabled:opacity-40 transition-colors"
                     title="Retry transcription">
@@ -1054,8 +1054,9 @@ async function handleFileUpload(e: Event) {
   if (!file) return
   uploadingAttachment.value = true
   attachmentError.value = null
+  const isVoiceFile = file.type.startsWith('audio/')
   try {
-    await store.addAttachment(resolvedIssueId.value, file, false, true)
+    await store.addAttachment(resolvedIssueId.value, file, isVoiceFile, true)
   } catch (err: unknown) {
     attachmentError.value = err instanceof Error ? err.message : 'Upload failed'
   } finally {
