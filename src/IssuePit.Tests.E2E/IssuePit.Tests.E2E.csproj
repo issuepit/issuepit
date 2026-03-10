@@ -26,7 +26,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="TestFixtures\test-voice.wav">
+    <None Update="TestFixtures\Voice_Empty.wav">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="TestFixtures\Voice_TaskCar.wav">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="TestFixtures\Voice_TicketRefactorTests.wav">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

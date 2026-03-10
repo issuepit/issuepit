@@ -53,13 +53,13 @@ public class VoiceIssueTests : IAsyncLifetime
         var username = $"v{Guid.NewGuid():N}"[..12];
         await client.PostAsJsonAsync("/api/auth/register", new { username, password = "TestPass1!" });
 
-        // Load the pre-recorded dummy WAV fixture (16 kHz, 16-bit PCM, mono, 1 second of silence)
-        var wavBytes = LoadVoiceFixture();
+        // Load the pre-recorded silent WAV fixture (16 kHz, 16-bit PCM, mono, 1 second of silence)
+        var wavBytes = LoadVoiceFixture("Voice_Empty.wav");
         using var content = new MultipartFormDataContent();
         content.Add(new ByteArrayContent(wavBytes)
         {
             Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("audio/wav") }
-        }, "file", "test.wav");
+        }, "file", "Voice_Empty.wav");
 
         var response = await client.PostAsync("/api/uploads/voice", content);
 
@@ -70,7 +70,51 @@ public class VoiceIssueTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(rawBody);
         Assert.True(body.TryGetProperty("voiceUrl", out _), "Response must contain 'voiceUrl'");
-        Assert.True(body.TryGetProperty("transcription", out _), "Response must contain 'transcription'");
+        Assert.True(body.TryGetProperty("transcription", out var transcription), "Response must contain 'transcription'");
+        // Silence produces no speech — transcription must be empty
+        Assert.Equal(string.Empty, transcription.GetString());
+    }
+
+    /// <summary>
+    /// API test: POST /api/uploads/voice with a real speech recording should return 200 and—when a Vosk
+    /// model is configured—a non-empty transcription matching the recorded phrase.
+    /// When no model is available the transcription is allowed to be empty (best-effort).
+    /// </summary>
+    [Theory]
+    [InlineData("Voice_TaskCar.wav", "car")]
+    [InlineData("Voice_TicketRefactorTests.wav", "refactor")]
+    public async Task Api_UploadVoice_WithSpeechRecording_ReturnsVoiceUrlAndOptionalTranscription(
+        string fixture, string expectedKeyword)
+    {
+        using var client = CreateCookieClient();
+        var tenantId = await GetDefaultTenantIdAsync();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"v{Guid.NewGuid():N}"[..12];
+        await client.PostAsJsonAsync("/api/auth/register", new { username, password = "TestPass1!" });
+
+        var wavBytes = LoadVoiceFixture(fixture);
+        using var content = new MultipartFormDataContent();
+        content.Add(new ByteArrayContent(wavBytes)
+        {
+            Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("audio/wav") }
+        }, "file", fixture);
+
+        var response = await client.PostAsync("/api/uploads/voice", content);
+
+        var rawBody = await response.Content.ReadAsStringAsync();
+        if (response.StatusCode != HttpStatusCode.OK)
+            Console.WriteLine($"[Voice Upload] Failed with {response.StatusCode}: {rawBody}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(rawBody);
+        Assert.True(body.TryGetProperty("voiceUrl", out _), "Response must contain 'voiceUrl'");
+        Assert.True(body.TryGetProperty("transcription", out var transcription), "Response must contain 'transcription'");
+
+        // When Vosk is configured the transcription must contain the expected keyword.
+        // When no model is available, the service returns empty string (best-effort), which is also acceptable.
+        var text = transcription.GetString() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(text))
+            Assert.Contains(expectedKeyword, text, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -281,13 +325,12 @@ public class VoiceIssueTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Loads the pre-recorded dummy WAV fixture file from the test output directory.
-    /// The file is a 1-second silent 16-bit PCM WAV at 16 kHz, suitable for testing
-    /// the voice upload API without requiring a real microphone.
+    /// Loads a WAV fixture file by name from the test output directory.
+    /// Available fixtures are documented in <c>TestFixtures/voice.MD</c>.
     /// </summary>
-    private static byte[] LoadVoiceFixture()
+    private static byte[] LoadVoiceFixture(string fileName)
     {
-        var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TestFixtures", "test-voice.wav");
+        var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TestFixtures", fileName);
         return File.ReadAllBytes(path);
     }
 
