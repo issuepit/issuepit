@@ -125,6 +125,90 @@ public class ArtifactStorageService(IConfiguration configuration, ILogger<Artifa
     }
 
     /// <summary>
+    /// Downloads all raw artifact files uploaded by the container from
+    /// <c>artifacts-raw/{runId}/</c> in S3 to <paramref name="localDir"/>,
+    /// preserving the sub-directory structure produced by the act artifact server.
+    /// Returns the number of objects downloaded.
+    /// No-op when S3 is not configured.
+    /// </summary>
+    public async Task<int> DownloadRawArtifactsAsync(Guid runId, string localDir, CancellationToken ct = default)
+    {
+        if (!IsConfigured) return 0;
+
+        var prefix = $"artifacts-raw/{runId:N}/";
+        using var s3 = CreateClient();
+        var downloaded = 0;
+
+        string? continuationToken = null;
+        do
+        {
+            var listResponse = await s3.ListObjectsV2Async(new ListObjectsV2Request
+            {
+                BucketName = _bucketName,
+                Prefix = prefix,
+                ContinuationToken = continuationToken,
+            }, ct);
+
+            foreach (var obj in listResponse.S3Objects)
+            {
+                ct.ThrowIfCancellationRequested();
+                var relativeKey = obj.Key[prefix.Length..];
+                if (string.IsNullOrEmpty(relativeKey))
+                    continue;
+                // S3 keys always use forward slashes; split and recombine via Path.Combine
+                // so the local path uses the OS-appropriate separator (handles Windows).
+                var segments = relativeKey.Split('/');
+                var localPath = Path.Combine([localDir, .. segments]);
+                Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
+                using var getResponse = await s3.GetObjectAsync(obj.BucketName, obj.Key, ct);
+                await using var fileStream = File.Create(localPath);
+                await getResponse.ResponseStream.CopyToAsync(fileStream, ct);
+                downloaded++;
+            }
+
+            continuationToken = listResponse.IsTruncated == true ? listResponse.NextContinuationToken : null;
+        } while (continuationToken is not null);
+
+        return downloaded;
+    }
+
+    /// <summary>
+    /// Deletes all raw artifact objects uploaded by the container from
+    /// <c>artifacts-raw/{runId}/</c> in S3 after they have been processed.
+    /// Best-effort: does not throw on individual delete failures.
+    /// No-op when S3 is not configured.
+    /// </summary>
+    public async Task DeleteRawArtifactsAsync(Guid runId, CancellationToken ct = default)
+    {
+        if (!IsConfigured) return;
+
+        var prefix = $"artifacts-raw/{runId:N}/";
+        using var s3 = CreateClient();
+
+        string? continuationToken = null;
+        do
+        {
+            var listResponse = await s3.ListObjectsV2Async(new ListObjectsV2Request
+            {
+                BucketName = _bucketName,
+                Prefix = prefix,
+                ContinuationToken = continuationToken,
+            }, ct);
+
+            if (listResponse.S3Objects.Count > 0)
+            {
+                await RetryS3Async(() => s3.DeleteObjectsAsync(new DeleteObjectsRequest
+                {
+                    BucketName = _bucketName,
+                    Objects = listResponse.S3Objects.Select(o => new KeyVersion { Key = o.Key }).ToList(),
+                }, ct), ct);
+            }
+
+            continuationToken = listResponse.IsTruncated == true ? listResponse.NextContinuationToken : null;
+        } while (continuationToken is not null);
+    }
+
+    /// <summary>
     /// Returns a sanitized artifact name safe for use in file paths and S3 keys.
     /// Strips characters that are not letters, digits, hyphens, underscores or dots;
     /// collapses consecutive dots to prevent path traversal; falls back to "artifact".

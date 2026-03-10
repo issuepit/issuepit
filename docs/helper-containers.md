@@ -21,6 +21,7 @@ A shared base image that all other helper images extend.
 - [.NET SDK](https://dot.net) (via `mcr.microsoft.com/playwright/dotnet`)
 - [Playwright](https://playwright.dev) + Chrome/Chromium
 - [Node.js](https://nodejs.org) / npm (NodeSource LTS)
+- [AWS CLI](https://aws.amazon.com/cli/) (`awscli`) — used by CI/CD runs to upload artifacts directly to S3-compatible storage (LocalStack, AWS S3, Backblaze B2)
 
 **Registry:** `ghcr.io/issuepit/issuepit-helper-base`
 
