@@ -124,7 +124,12 @@
               @edit="openEdit(todo)"
               @delete="confirmDelete(todo.id)" />
           </div>
-          <div v-if="!uncategorizedTodos.length" class="py-4 text-center text-xs text-gray-600">
+          <!-- Drop zone placeholder -->
+          <div v-if="boardDraggingTodoId && boardHoverCategoryId === '__uncategorized__'"
+            role="status" aria-label="Drop zone"
+            class="rounded-lg border-2 border-dashed border-brand-500/50 bg-brand-900/10 h-14 animate-pulse">
+          </div>
+          <div v-if="!uncategorizedTodos.length && !(boardDraggingTodoId && boardHoverCategoryId === '__uncategorized__')" class="py-4 text-center text-xs text-gray-600">
             No todos
           </div>
         </div>
@@ -168,7 +173,12 @@
               @edit="openEdit(todo)"
               @delete="confirmDelete(todo.id)" />
           </div>
-          <div v-if="!todosByCategory[cat.id]?.length" class="py-4 text-center text-xs text-gray-600">
+          <!-- Drop zone placeholder -->
+          <div v-if="boardDraggingTodoId && boardHoverCategoryId === cat.id"
+            role="status" aria-label="Drop zone"
+            class="rounded-lg border-2 border-dashed border-brand-500/50 bg-brand-900/10 h-14 animate-pulse">
+          </div>
+          <div v-if="!todosByCategory[cat.id]?.length && !(boardDraggingTodoId && boardHoverCategoryId === cat.id)" class="py-4 text-center text-xs text-gray-600">
             No todos
           </div>
         </div>
