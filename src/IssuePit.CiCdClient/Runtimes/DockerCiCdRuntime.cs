@@ -713,14 +713,15 @@ public partial class DockerCiCdRuntime(
                             "act exited with code {ExitCode} (Docker) for run {RunId} ({Reason}) " +
                             "(attempt {Attempt}/{MaxAttempts}); waiting for Docker cleanup before retry",
                             actExitCode, run.Id, reason, attempt, MaxActAttempts);
+                        // Wait for Docker's async --rm cleanup to finish before retrying.
+                        // NOTE: We intentionally do NOT call ExecShellAsync to force-remove act containers
+                        // inside DinD here. The `docker rm -f` command can hang indefinitely when containers
+                        // have processes in uninterruptible sleep (D-state), which would cause
+                        // DrainMultiplexedStreamAsync to block forever and the run to never reach a terminal
+                        // status. The DinD startup cleanup script already removes orphaned containers from
+                        // PREVIOUS DinD instances; within the same DinD instance, Docker's async --rm
+                        // (triggered when act's job containers exit) completes well within ActRetryDelaySeconds.
                         await Task.Delay(TimeSpan.FromSeconds(ActRetryDelaySeconds), cancellationToken);
-                        // Best-effort: remove any lingering act containers inside the DinD daemon
-                        // before retrying so the same names can be reused by the next act attempt.
-                        await ExecShellAsync(
-                            container.ID,
-                            "docker ps -aq --filter name=act- | xargs -r docker rm -f 2>/dev/null || true",
-                            onLogLine,
-                            cancellationToken);
                     }
                 }
 
@@ -1284,10 +1285,11 @@ public partial class DockerCiCdRuntime(
             // Remove any containers left over from a previous killed DinD instance so that act can
             // create job containers with the same names without hitting "container name already in use".
             "# Remove orphaned act containers from a previous killed DinD session (if any).",
+            "# Use 'timeout 5' so this cleanup never hangs the startup even if a container is stuck.",
             "_orphaned=$(docker ps -aq --filter name=act- 2>/dev/null)",
             "if [ -n \"$_orphaned\" ]; then",
             "  echo \"[DinD] Removing orphaned act containers from previous DinD instance: $_orphaned\"",
-            "  echo \"$_orphaned\" | xargs docker rm -f 2>/dev/null || true",
+            "  echo \"$_orphaned\" | timeout 5 xargs -r docker rm -f 2>/dev/null || true",
             "else",
             "  echo '[DinD] No orphaned act containers'",
             "fi",
