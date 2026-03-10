@@ -7,7 +7,7 @@
         { label: 'Merge Requests', to: `/projects/${id}/merge-requests`, icon: 'M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4' },
         { label: mr.title, to: `/projects/${id}/merge-requests/${mrId}`, icon: 'M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4' },
       ]" />
-      <div v-else class="h-8 w-80 bg-gray-800 rounded animate-pulse"></div>
+      <div v-else class="h-8 w-64 bg-gray-800 rounded animate-pulse"></div>
     </div>
 
     <!-- Loading MR -->
