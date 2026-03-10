@@ -149,7 +149,7 @@ async function submitCreate() {
   if (!form.name || !form.orgId) return
   await store.createProject({
     ...form,
-    issueKey: form.issueKey.trim().toUpperCase() || undefined,
+    issueKey: form.issueKey?.trim().toUpperCase() || undefined,
   })
   showCreate.value = false
   resetForm()

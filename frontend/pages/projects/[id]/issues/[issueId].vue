@@ -211,7 +211,7 @@
                 <span class="text-xs text-brand-400 shrink-0 min-w-[70px]">{{ IssueLinkTypeLabels[link.linkType] }}</span>
                 <NuxtLink :to="`/projects/${link.targetIssue?.projectId ?? id}/issues/${link.targetIssue?.number ?? link.targetIssueId}`"
                   class="flex items-center gap-1.5 text-sm text-gray-300 hover:text-white flex-1 min-w-0">
-                  <span class="text-xs text-gray-600 shrink-0">{{ link.targetIssue?.number != null ? formatIssueId(link.targetIssue.number, projectsStore.projects.find(p => p.id === link.targetIssue?.projectId)) : '' }}</span>
+                  <span class="text-xs text-gray-600 shrink-0">{{ link.targetIssue?.number != null ? formatLinkedIssueId(link.targetIssue.number, link.targetIssue.projectId) : '' }}</span>
                   <span class="truncate">{{ link.targetIssue?.title }}</span>
                   <span v-if="link.targetIssue?.projectId && link.targetIssue.projectId !== actualProjectId" class="text-xs text-gray-600 shrink-0 ml-1">↗ cross-project</span>
                 </NuxtLink>
@@ -710,6 +710,11 @@ const { uploading: uploadingImage, uploadError: uploadImageError, handlePaste: h
 
 // Resolved project GUID (falls back to URL param before issue is loaded)
 const actualProjectId = computed(() => store.currentIssue?.projectId ?? id)
+
+function formatLinkedIssueId(number: number, projectId: string | undefined): string {
+  const proj = projectsStore.projects.find(p => p.id === projectId)
+  return formatIssueId(number, proj)
+}
 
 const showDeleteConfirm = ref(false)
 

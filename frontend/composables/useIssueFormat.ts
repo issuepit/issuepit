@@ -16,7 +16,3 @@ export function formatIssueId(number: number, project: Pick<Project, 'issueKey' 
   const key = project?.issueKey
   return key ? `${key}-${displayed}` : `#${displayed}`
 }
-
-export function useIssueFormat() {
-  return { formatIssueId }
-}
