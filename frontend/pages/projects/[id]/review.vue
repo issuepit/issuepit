@@ -1,17 +1,10 @@
 <template>
   <div class="p-8">
     <!-- Header -->
-    <div class="flex items-center gap-3 mb-6">
-      <NuxtLink :to="`/projects/${id}`" class="text-gray-500 hover:text-gray-300 transition-colors">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-        </svg>
-      </NuxtLink>
-      <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7" />
-      </svg>
-      <h1 class="text-xl font-bold text-white">Code Review</h1>
+    <div class="flex items-center gap-2 mb-6">
+      <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name }}</NuxtLink>
+      <span class="text-gray-600">/</span>
+      <NuxtLink :to="`/projects/${id}/review`" class="text-xl font-bold text-white">Code Review</NuxtLink>
     </div>
 
     <!-- Loading initial -->
@@ -466,6 +459,7 @@ import { useIssuesStore } from '~/stores/issues'
 import { useAuthStore } from '~/stores/auth'
 import { IssueType, IssuePriority, IssueStatus } from '~/types'
 import type { GitDiffFile, GitDiffHunk, GitDiffLine } from '~/types'
+import { useProjectsStore } from '~/stores/projects'
 
 const route = useRoute()
 const router = useRouter()
@@ -473,6 +467,7 @@ const id = route.params.id as string
 const store = useGitStore()
 const issuesStore = useIssuesStore()
 const authStore = useAuthStore()
+const projectsStore = useProjectsStore()
 
 const { uploading: uploadingImage, uploadError: uploadImageError, handlePaste: handleImagePaste } = useImageUpload()
 

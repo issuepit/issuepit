@@ -179,7 +179,7 @@ public class MergeRequestsTests : IAsyncLifetime
             var mrPage = new MergeRequestsPage(page);
             await mrPage.GotoAsync(projectId);
 
-            Assert.True(await page.Locator("h1:has-text('Merge Requests')").CountAsync() > 0);
+            Assert.True(await page.Locator("a:text-is('Merge Requests')").CountAsync() > 0);
             // The "New Merge Request" button should be present
             Assert.True(await page.Locator("button:has-text('New Merge Request')").CountAsync() > 0);
         }

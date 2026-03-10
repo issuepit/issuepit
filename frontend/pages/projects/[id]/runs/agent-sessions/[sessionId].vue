@@ -1,19 +1,12 @@
 <template>
   <div class="p-8">
     <!-- Breadcrumb + Header -->
-    <div class="flex items-center gap-2 text-sm text-gray-500 mb-2">
-      <NuxtLink :to="`/projects/${projectId}`" class="hover:text-gray-300">{{ projectsStore.currentProject?.name }}</NuxtLink>
-      <span>/</span>
-      <NuxtLink :to="`/projects/${projectId}/runs?tab=agent`" class="hover:text-gray-300">Runs</NuxtLink>
-      <span>/</span>
-      <span class="text-gray-400">Agent Session</span>
-    </div>
-    <div class="flex items-center gap-3 mb-6">
-      <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-          d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2" />
-      </svg>
-      <h1 class="text-xl font-bold text-white">Agent Session</h1>
+    <div class="flex items-center gap-2 mb-6">
+      <NuxtLink :to="`/projects/${projectId}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name }}</NuxtLink>
+      <span class="text-gray-600">/</span>
+      <NuxtLink :to="`/projects/${projectId}/runs?tab=agent`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">Runs</NuxtLink>
+      <span class="text-gray-600">/</span>
+      <NuxtLink :to="`/projects/${projectId}/runs/agent-sessions/${sessionId}`" class="text-xl font-bold text-white">Agent Session</NuxtLink>
       <!-- Live indicator when session is active -->
       <span v-if="isActive && isConnected" class="flex items-center gap-1 text-xs text-green-400 font-normal ml-1">
         <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
