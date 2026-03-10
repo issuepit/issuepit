@@ -27,4 +27,13 @@ public class MilestonesPage(IPage page)
         await page.ClickAsync("button:has-text('Create Milestone')");
         await page.WaitForSelectorAsync($"text={title}", new PageWaitForSelectorOptions { Timeout = 10_000 });
     }
+
+    /// <summary>
+    /// Clicks on a milestone row by its title, navigating to the detail page.
+    /// </summary>
+    public async Task ClickMilestoneAsync(string title)
+    {
+        await page.ClickAsync($"a:has-text('{title}')");
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+    }
 }
