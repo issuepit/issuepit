@@ -56,6 +56,31 @@ public class TenantsController(IssuePitDbContext db, TenantDatabaseService dbSer
         return Ok(tenant);
     }
 
+    [HttpGet("{id:guid}/config-repo")]
+    public async Task<IActionResult> GetConfigRepo(Guid id)
+    {
+        var tenant = await db.Tenants.FindAsync(id);
+        if (tenant is null) return NotFound();
+        return Ok(new ConfigRepoRequest(
+            tenant.ConfigRepoUrl,
+            tenant.ConfigRepoToken,
+            tenant.ConfigRepoUsername,
+            tenant.ConfigStrictMode));
+    }
+
+    [HttpPut("{id:guid}/config-repo")]
+    public async Task<IActionResult> UpdateConfigRepo(Guid id, [FromBody] ConfigRepoRequest req)
+    {
+        var tenant = await db.Tenants.FindAsync(id);
+        if (tenant is null) return NotFound();
+        tenant.ConfigRepoUrl = req.Url;
+        tenant.ConfigRepoToken = req.Token;
+        tenant.ConfigRepoUsername = req.Username;
+        tenant.ConfigStrictMode = req.StrictMode;
+        await db.SaveChangesAsync();
+        return Ok(tenant);
+    }
+
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> DeleteTenant(Guid id)
     {
@@ -68,3 +93,4 @@ public class TenantsController(IssuePitDbContext db, TenantDatabaseService dbSer
 }
 
 public record TenantRequest(string Name, string Hostname, bool ProvisionDatabase = false);
+public record ConfigRepoRequest(string? Url, string? Token, string? Username, bool StrictMode);

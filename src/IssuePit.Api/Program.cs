@@ -38,6 +38,7 @@ builder.Services.AddHostedService<GitPollingService>();
 builder.Services.AddHostedService<MergeRequestAutoMergeService>();
 builder.Services.AddHostedService<MetricSnapshotService>();
 builder.Services.AddHostedService<BotNotificationDispatchService>();
+builder.Services.AddHostedService<ConfigRepoSyncService>();
 
 builder.Services.AddScoped<TenantContext>();
 builder.Services.AddScoped<TenantDatabaseService>();
