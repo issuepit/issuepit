@@ -193,6 +193,10 @@ export interface Project {
   actionOfflineMode?: boolean | null
   localRepositories?: string | null
   openMergeRequestCount: number
+  /** Short project key used as prefix for issue IDs in the UI (e.g. "IP" yields "IP-123"). */
+  issueKey?: string | null
+  /** Offset added to issue numbers when displayed in the UI. Defaults to 0. */
+  issueNumberOffset: number
   createdAt: string
   updatedAt: string
 }
@@ -793,6 +797,24 @@ export interface AgentSessionDetail extends AgentSession {
   projectId: string
   projectName: string
   ciCdRuns: CiCdRun[]
+}
+
+export interface IssueAgentSession {
+  id: string
+  agentId: string
+  agentName: string
+  issueId: string
+  commitSha?: string
+  gitBranch?: string
+  status: AgentSessionStatus
+  statusName: string
+  startedAt: string
+  endedAt?: string
+  ciCdRuns: CiCdRun[]
+}
+
+export interface IssueRuns {
+  agentSessions: IssueAgentSession[]
 }
 
 export interface IssueHistoryEntry {

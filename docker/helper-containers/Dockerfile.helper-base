@@ -26,6 +26,23 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
 
+# Install s5cmd — a FOSS S3-compatible CLI used by CI/CD runs to upload artifacts
+# directly from inside the container to S3-compatible storage (LocalStack, AWS, B2).
+# awscli is not available in Ubuntu Noble (24.04) apt repos; s5cmd is a lightweight
+# static binary that covers all s3 sync needs.
+ARG S5CMD_VERSION=2.3.0
+RUN set -eux; \
+    ARCH=$(dpkg --print-architecture); \
+    case "${ARCH}" in \
+      amd64) S5CMD_ARCH=Linux-64bit ;; \
+      arm64) S5CMD_ARCH=Linux-arm64 ;; \
+      *) echo "Unsupported arch: ${ARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl --proto '=https' --tlsv1.2 -fsSL \
+        "https://github.com/peak/s5cmd/releases/download/v${S5CMD_VERSION}/s5cmd_${S5CMD_VERSION}_${S5CMD_ARCH}.tar.gz" | \
+    tar -xz -C /usr/local/bin s5cmd; \
+    s5cmd version
+
 # Copy the entrypoint script that handles:
 #   1. git clone (using ISSUEPIT_GIT_REMOTE_URL env var)
 #   2. tool setup (npm install / dotnet restore)
@@ -42,4 +59,5 @@ ARG NODE_MAJOR
 LABEL org.opencontainers.image.title="issuepit-helper-base" \
       org.opencontainers.image.description="IssuePit helper base: .NET SDK + Playwright + Chrome + Node.js" \
       issuepit.node.major="${NODE_MAJOR}" \
-      issuepit.playwright.version="${PLAYWRIGHT_VERSION}"
+      issuepit.playwright.version="${PLAYWRIGHT_VERSION}" \
+      issuepit.s5cmd.version="${S5CMD_VERSION}"

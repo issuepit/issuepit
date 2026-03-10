@@ -15,11 +15,11 @@
           <template v-if="store.currentIssue.parentIssue">
             <span class="text-gray-600">/</span>
             <NuxtLink :to="`/projects/${id}/issues/${store.currentIssue.parentIssue.number}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">
-              #{{ store.currentIssue.parentIssue.number }} {{ store.currentIssue.parentIssue.title }}
+              {{ formatIssueId(store.currentIssue.parentIssue.number, projectsStore.currentProject) }} {{ store.currentIssue.parentIssue.title }}
             </NuxtLink>
           </template>
           <span class="text-gray-600">/</span>
-          <NuxtLink :to="`/projects/${id}/issues/${store.currentIssue.number}`" class="text-xl font-bold text-white">#{{ store.currentIssue.number }}</NuxtLink>
+          <NuxtLink :to="`/projects/${id}/issues/${store.currentIssue.number}`" class="text-xl font-bold text-white">{{ formatIssueId(store.currentIssue.number, projectsStore.currentProject) }}</NuxtLink>
         </div>
         <!-- Issue creation buttons -->
         <div class="flex items-center gap-2">
@@ -159,7 +159,7 @@
                 :to="`/projects/${id}/issues/${sub.number}`"
                 class="flex items-center gap-2 text-sm text-gray-300 hover:text-white group py-1 px-2 rounded-lg hover:bg-gray-800/60 transition-colors">
                 <span :class="statusColor(sub.status)" class="w-2.5 h-2.5 rounded-full shrink-0"></span>
-                <span class="text-xs text-gray-600 shrink-0">#{{ sub.number }}</span>
+                <span class="text-xs text-gray-600 shrink-0">{{ formatIssueId(sub.number, projectsStore.currentProject) }}</span>
                 <span>{{ sub.title }}</span>
               </NuxtLink>
             </div>
@@ -211,7 +211,7 @@
                 <span class="text-xs text-brand-400 shrink-0 min-w-[70px]">{{ IssueLinkTypeLabels[link.linkType] }}</span>
                 <NuxtLink :to="`/projects/${link.targetIssue?.projectId ?? id}/issues/${link.targetIssue?.number ?? link.targetIssueId}`"
                   class="flex items-center gap-1.5 text-sm text-gray-300 hover:text-white flex-1 min-w-0">
-                  <span class="text-xs text-gray-600 shrink-0">#{{ link.targetIssue?.number }}</span>
+                  <span class="text-xs text-gray-600 shrink-0">{{ link.targetIssue?.number != null ? formatLinkedIssueId(link.targetIssue.number, link.targetIssue.projectId) : '' }}</span>
                   <span class="truncate">{{ link.targetIssue?.title }}</span>
                   <span v-if="link.targetIssue?.projectId && link.targetIssue.projectId !== actualProjectId" class="text-xs text-gray-600 shrink-0 ml-1">↗ cross-project</span>
                 </NuxtLink>
@@ -431,6 +431,80 @@
                 </div>
               </div>
             </div>
+          </div>
+
+          <!-- Runs -->
+          <div v-show="isTabActive('runs')" class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-4">Runs</h2>
+
+            <!-- Agent Sessions -->
+            <div v-if="store.currentRuns && store.currentRuns.agentSessions.length">
+              <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">Agent Runs</h3>
+              <div class="rounded-lg border border-gray-800 overflow-hidden mb-5">
+                <table class="w-full text-sm">
+                  <thead class="bg-gray-800/50">
+                    <tr>
+                      <th class="text-left px-3 py-2 text-gray-400 font-medium text-xs">Status</th>
+                      <th class="text-left px-3 py-2 text-gray-400 font-medium text-xs">Agent</th>
+                      <th class="text-left px-3 py-2 text-gray-400 font-medium text-xs">Branch</th>
+                      <th class="text-left px-3 py-2 text-gray-400 font-medium text-xs">Started</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-800">
+                    <tr v-for="session in store.currentRuns.agentSessions" :key="session.id"
+                      class="hover:bg-gray-800/30 transition-colors cursor-pointer"
+                      @click="navigateTo(`/projects/${actualProjectId}/runs/agent-sessions/${session.id}`)">
+                      <td class="px-3 py-2">
+                        <span :class="agentStatusClass(session.status)" class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium">
+                          <span :class="agentStatusDot(session.status)" class="w-1.5 h-1.5 rounded-full" />
+                          {{ session.statusName }}
+                        </span>
+                      </td>
+                      <td class="px-3 py-2 text-gray-300 text-xs">{{ session.agentName }}</td>
+                      <td class="px-3 py-2 text-gray-400 font-mono text-xs">{{ session.gitBranch || '—' }}</td>
+                      <td class="px-3 py-2 text-gray-400 text-xs">{{ formatDate(session.startedAt) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- CI/CD Runs (from agent sessions) -->
+            <template v-if="store.currentRuns">
+              <div v-if="allCiCdRuns.length">
+                <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">CI/CD Runs</h3>
+                <div class="rounded-lg border border-gray-800 overflow-hidden">
+                  <table class="w-full text-sm">
+                    <thead class="bg-gray-800/50">
+                      <tr>
+                        <th class="text-left px-3 py-2 text-gray-400 font-medium text-xs">Status</th>
+                        <th class="text-left px-3 py-2 text-gray-400 font-medium text-xs">Workflow</th>
+                        <th class="text-left px-3 py-2 text-gray-400 font-medium text-xs">Branch</th>
+                        <th class="text-left px-3 py-2 text-gray-400 font-medium text-xs">Commit</th>
+                        <th class="text-left px-3 py-2 text-gray-400 font-medium text-xs">Started</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-800">
+                      <tr v-for="run in allCiCdRuns" :key="run.id"
+                        class="hover:bg-gray-800/30 transition-colors cursor-pointer"
+                        @click="navigateTo(`/projects/${run.projectId}/runs/cicd/${run.id}`)">
+                        <td class="px-3 py-2">
+                          <CiCdStatusChip :runs="[run]" />
+                        </td>
+                        <td class="px-3 py-2 text-gray-300 text-xs">{{ run.workflow || '—' }}</td>
+                        <td class="px-3 py-2 text-gray-400 font-mono text-xs">{{ run.branch || '—' }}</td>
+                        <td class="px-3 py-2 text-gray-400 font-mono text-xs">{{ run.commitSha?.slice(0, 7) || '—' }}</td>
+                        <td class="px-3 py-2 text-gray-400 text-xs">{{ formatDate(run.startedAt) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div v-if="!store.currentRuns.agentSessions.length && !allCiCdRuns.length" class="text-sm text-gray-600">
+                No runs yet.
+              </div>
+            </template>
+            <div v-else class="text-sm text-gray-600">No runs yet.</div>
           </div>
 
         </div>
@@ -684,13 +758,14 @@
 <script setup lang="ts">
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { IssueStatus, IssueType, IssueLinkType, IssueLinkTypeLabels, IssueEventTypeLabels } from '~/types'
+import { IssueStatus, IssueType, IssueLinkType, IssueLinkTypeLabels, IssueEventTypeLabels, AgentSessionStatus } from '~/types'
 import type { IssuePriority } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
 import { useLabelsStore } from '~/stores/labels'
 import { useAgentsStore } from '~/stores/agents'
 import { useMilestonesStore } from '~/stores/milestones'
 import { useProjectsStore } from '~/stores/projects'
+import { formatIssueId } from '~/composables/useIssueFormat'
 
 const route = useRoute()
 const router = useRouter()
@@ -710,6 +785,11 @@ const { uploading: uploadingImage, uploadError: uploadImageError, handlePaste: h
 // Resolved project GUID (falls back to URL param before issue is loaded)
 const actualProjectId = computed(() => store.currentIssue?.projectId ?? id)
 
+function formatLinkedIssueId(number: number, projectId: string | undefined): string {
+  const proj = projectsStore.projects.find(p => p.id === projectId)
+  return formatIssueId(number, proj)
+}
+
 const showDeleteConfirm = ref(false)
 
 const editingTitle = ref(false)
@@ -725,7 +805,7 @@ const editingCommentId = ref<string | null>(null)
 const commentEdit = ref('')
 
 // Issue view tabs
-type IssueTab = 'tasks' | 'subissues' | 'linked' | 'history' | 'comments' | 'attachments'
+type IssueTab = 'tasks' | 'subissues' | 'linked' | 'history' | 'comments' | 'attachments' | 'runs'
 const TABS_STORAGE_KEY = 'issue-view-tabs'
 const DEFAULT_TABS: IssueTab[] = ['tasks', 'comments']
 
@@ -772,11 +852,20 @@ const allTabs = computed(() => [
   { id: 'history' as IssueTab, label: 'History', count: store.currentHistory.length },
   { id: 'comments' as IssueTab, label: 'Comments', count: totalCommentsCount.value },
   { id: 'attachments' as IssueTab, label: 'Attachments', count: store.currentAttachments.length },
+  { id: 'runs' as IssueTab, label: 'Runs', count: runsCount.value },
 ])
 
 // Total comments includes regular and code review comments
 const totalCommentsCount = computed(() =>
   store.currentComments.length + store.currentCodeReviewComments.length
+)
+
+// Runs - flatten all CI/CD runs from agent sessions
+const allCiCdRuns = computed(() =>
+  store.currentRuns?.agentSessions.flatMap(s => s.ciCdRuns) ?? []
+)
+const runsCount = computed(() =>
+  (store.currentRuns?.agentSessions.length ?? 0) + allCiCdRuns.value.length
 )
 
 // Links
@@ -835,6 +924,7 @@ onMounted(async () => {
     store.fetchTasks(resolvedIssueId.value),
     store.fetchLinks(resolvedIssueId.value),
     store.fetchHistory(resolvedIssueId.value),
+    store.fetchIssueRuns(resolvedIssueId.value),
     labelsStore.fetchLabels(actualProjectId.value),
     agentsStore.fetchAgents(),
     fetchTenantUsers(),
@@ -1032,6 +1122,26 @@ function statusColor(status: IssueStatus) {
     [IssueStatus.Cancelled]: 'bg-red-400'
   }
   return map[status] ?? 'bg-gray-500'
+}
+
+function agentStatusClass(status: AgentSessionStatus) {
+  switch (status) {
+    case AgentSessionStatus.Succeeded: return 'bg-green-900/30 text-green-400'
+    case AgentSessionStatus.Running: return 'bg-blue-900/30 text-blue-400'
+    case AgentSessionStatus.Failed: return 'bg-red-900/30 text-red-400'
+    case AgentSessionStatus.Cancelled: return 'bg-gray-800 text-gray-400'
+    default: return 'bg-yellow-900/30 text-yellow-400'
+  }
+}
+
+function agentStatusDot(status: AgentSessionStatus) {
+  switch (status) {
+    case AgentSessionStatus.Succeeded: return 'bg-green-400'
+    case AgentSessionStatus.Running: return 'bg-blue-400 animate-pulse'
+    case AgentSessionStatus.Failed: return 'bg-red-400'
+    case AgentSessionStatus.Cancelled: return 'bg-gray-500'
+    default: return 'bg-yellow-400'
+  }
 }
 
 function formatDate(d: string) {

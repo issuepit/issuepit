@@ -653,6 +653,53 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         return Ok(comment);
     }
 
+    /// <summary>
+    /// Returns all runs related to the issue: agent sessions and their associated CI/CD runs.
+    /// </summary>
+    [HttpGet("{id:guid}/runs")]
+    public async Task<IActionResult> GetIssueRuns(Guid id)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+
+        var agentSessions = await db.AgentSessions
+            .Include(s => s.Agent)
+            .Include(s => s.CiCdRuns)
+            .Where(s => s.IssueId == id && s.Issue.Project!.Organization.TenantId == ctx.CurrentTenant.Id)
+            .OrderByDescending(s => s.StartedAt)
+            .Select(s => new
+            {
+                s.Id,
+                s.AgentId,
+                AgentName = s.Agent.Name,
+                s.IssueId,
+                s.CommitSha,
+                s.GitBranch,
+                s.Status,
+                StatusName = s.Status.ToString(),
+                s.StartedAt,
+                s.EndedAt,
+                CiCdRuns = s.CiCdRuns.Select(r => new
+                {
+                    r.Id,
+                    r.ProjectId,
+                    r.AgentSessionId,
+                    r.CommitSha,
+                    r.Branch,
+                    r.Workflow,
+                    r.Status,
+                    StatusName = r.Status.ToString(),
+                    r.StartedAt,
+                    r.EndedAt,
+                    r.ExternalSource,
+                    r.ExternalRunId,
+                    r.EventName,
+                }).ToList(),
+            })
+            .ToListAsync();
+
+        return Ok(new { agentSessions });
+    }
+
     private IssueEvent MakeEvent(Guid issueId, IssueEventType eventType, string? oldValue = null, string? newValue = null)
         => new() { Id = Guid.NewGuid(), IssueId = issueId, EventType = eventType, OldValue = oldValue, NewValue = newValue, ActorUserId = ctx.CurrentUser?.Id, CreatedAt = DateTime.UtcNow };
 }
