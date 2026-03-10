@@ -548,10 +548,12 @@
             <div>
               <p class="text-xs text-gray-500 uppercase tracking-wide mb-1.5">Milestone</p>
               <div v-if="store.currentIssue.milestoneId" class="flex items-center gap-1 mb-1.5">
-                <span class="text-xs text-indigo-300 bg-indigo-900/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+                <button
+                  class="text-xs text-indigo-300 bg-indigo-900/30 hover:bg-indigo-900/50 px-2 py-0.5 rounded-full flex items-center gap-1 transition-colors"
+                  @click="navigateTo(`/projects/${actualProjectId}/milestones/${store.currentIssue.milestoneId}`)">
                   🏁 {{ milestonesStore.milestones.find(m => m.id === store.currentIssue!.milestoneId)?.title ?? 'Milestone' }}
-                  <button @click="updateMilestone(null)" class="hover:opacity-70 ml-0.5">×</button>
-                </span>
+                </button>
+                <button @click="updateMilestone(null)" class="text-xs text-gray-500 hover:text-gray-300 hover:opacity-70">×</button>
               </div>
               <select @change="onSetMilestone($event)"
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-400 focus:outline-none focus:ring-1 focus:ring-brand-500">
