@@ -20,7 +20,7 @@
       </div>
 
       <!-- Sub-header: description + due date -->
-      <div v-if="progress.description || progress.dueDate" class="mb-6 -mt-4">
+      <div v-if="progress.description || progress.dueDate" class="mb-6 mt-2">
         <p v-if="progress.description" class="text-gray-400">{{ progress.description }}</p>
         <p v-if="progress.dueDate" class="text-sm text-gray-500 mt-1">
           Due {{ formatDate(progress.dueDate) }}

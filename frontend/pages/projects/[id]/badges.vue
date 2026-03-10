@@ -1,11 +1,12 @@
 <template>
   <div class="p-8">
     <!-- Header -->
-    <div class="flex items-center gap-2 mb-6">
+    <div class="flex items-center gap-2 mb-2">
       <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name }}</NuxtLink>
       <span class="text-gray-600">/</span>
       <NuxtLink :to="`/projects/${id}/badges`" class="text-xl font-bold text-white">Status Badges</NuxtLink>
     </div>
+    <p class="text-gray-500 text-sm mb-6">Embed live status badges into your README</p>
 
     <!-- Badge Builder -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
