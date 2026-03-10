@@ -24,8 +24,7 @@ namespace IssuePit.Tests.E2E;
 ///   <item>For the <c>Native</c> runtime: the <c>act</c> binary must be on the PATH and
 ///         <see cref="AspireFixture"/> must have created the temporary git repo
 ///         (sets <c>CICD_E2E_REPO_PATH</c>).</item>
-///   <item>For the <c>Docker</c> runtime: the <c>CICD_E2E_DOCKER_MODE=true</c> environment
-///         variable must be set; the test is skipped otherwise.</item>
+///   <item>For the <c>Docker</c> runtime: always runs; no extra environment variable required.</item>
 /// </list>
 /// </summary>
 [Collection("E2E")]
@@ -63,13 +62,12 @@ public class CiCdPipelineTests(AspireFixture fixture)
     /// Returns <c>true</c> when the given <paramref name="runtimeMode"/> is ready for E2E testing.
     /// <list type="bullet">
     ///   <item><c>Native</c>: requires the <c>act</c> binary and <c>CICD_E2E_REPO_PATH</c>.</item>
-    ///   <item><c>Docker</c>: requires <c>CICD_E2E_DOCKER_MODE=true</c>.</item>
+    ///   <item><c>Docker</c>: always ready.</item>
     /// </list>
     /// </summary>
     private static bool IsReady(string runtimeMode) => runtimeMode switch
     {
-        DockerRuntime => string.Equals(Environment.GetEnvironmentVariable("CICD_E2E_DOCKER_MODE"), "true",
-                             StringComparison.OrdinalIgnoreCase),
+        DockerRuntime => true,
         NativeRuntime => !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CICD_E2E_REPO_PATH"))
                          && IsActAvailable(),
         _ => throw new ArgumentException($"Unknown runtime mode: {runtimeMode}", nameof(runtimeMode)),
