@@ -1276,48 +1276,23 @@ public partial class DockerCiCdRuntime(
         }
 
         lines.AddRange([
-            // ── Pre-clean orphaned container metadata ────────────────────────────────────────────────
-            // When the DinD cache volume (/var/lib/docker) is shared across runs, a previous DinD
-            // instance that was killed (SIGKILL) may have left stale container metadata in
-            // /var/lib/docker/containers/. When dockerd starts with that stale data it tries to
-            // reconcile the orphaned containers, which can take 60+ seconds. During that window
-            // `docker info` (even with `timeout 2`) fails on every poll, so the readiness loop
-            // burns its full 60 iterations (180 s) before the final check fails. That adds 3+ minutes
-            // to the DinD startup and pushes the total Docker CI/CD run past the 5-minute xUnit
-            // blame threshold.
-            //
-            // Fix: remove the orphaned container metadata directories *before* starting dockerd,
-            // using plain filesystem operations (no docker commands). This prevents the reconciliation
-            // delay entirely while preserving the image layer cache (overlay2/image directories).
-            // The network metadata is also stale after a kill, so we clean that too to let dockerd
-            // recreate it from scratch.
-            //
-            // This is safe because:
-            //   • We are the only DinD instance about to run on this volume right now.
-            //   • Stale container dirs from a killed instance are useless — those containers can
-            //     never be recovered.
-            //   • Image layers (overlay2/image) are not touched; the pull cache is preserved.
-            "echo '[DinD] Removing orphaned container/network metadata before starting dockerd...'",
-            "find /var/lib/docker/containers -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true",
-            "rm -rf /var/lib/docker/network/files/local-kv.db 2>/dev/null || true",
-            "echo '[DinD] Pre-clean done.'",
             "dockerd > /tmp/dockerd.log 2>&1 &",
             // Use a separate variable name to avoid confusion with the shell `timeout` command below.
             // Each iteration checks whether dockerd is reachable via `timeout 2 docker info`:
-            // the `timeout 2` guard is critical — `docker info` can still block briefly even after
-            // the pre-clean when dockerd is initializing. Without it, the loop could hang if
-            // dockerd's socket is slow to accept connections on the first attempt.
+            // the `timeout 2` guard is critical — `docker info` can block indefinitely when dockerd
+            // is reconciling orphaned container metadata from a previous DinD instance that shared
+            // the /var/lib/issuepit-dind-cache volume. Without it, the loop hangs forever because
+            // the timeout counter never decrements (sleep 1 never runs while docker info is blocked).
             "dind_ready_timeout=60",
             "while [ $dind_ready_timeout -gt 0 ] && ! timeout 2 docker info > /dev/null 2>&1; do",
             "  sleep 1; dind_ready_timeout=$((dind_ready_timeout-1))",
             "done",
             // Final readiness check — also protected by timeout for the same reason.
             "timeout 10 docker info > /dev/null 2>&1 && echo '[DinD] dockerd ready' || { echo '[DinD] dockerd failed to start'; cat /tmp/dockerd.log; exit 1; }",
-            // NOTE: docker ps / docker rm -f are intentionally NOT used for post-start cleanup.
+            // NOTE: docker ps / docker rm -f are intentionally NOT used here.
             // docker ps can block when dockerd is reconciling state; docker rm -f can block when
-            // containers have processes in uninterruptible sleep (D-state). The pre-start filesystem
-            // cleanup above (rm -rf /var/lib/docker/containers/…) is the safe alternative.
-            // Any remaining act container-name collisions are handled by the act retry loop.
+            // containers have processes in uninterruptible sleep (D-state).
+            // Any act container-name collisions are handled by the act retry loop in RunAsync.
         ]);
 
         // ── apt proxy config ──────────────────────────────────────────────────────────────────────────
