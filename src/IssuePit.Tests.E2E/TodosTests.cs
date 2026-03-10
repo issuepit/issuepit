@@ -64,7 +64,7 @@ public class TodosTests : IAsyncLifetime
         var todosPage = new TodosPage(page);
         await todosPage.GotoAsync();
 
-        Assert.True(await page.Locator("h1:has-text('Todos')").CountAsync() > 0);
+        Assert.True(await page.Locator("a:has-text('Todos')").CountAsync() > 0);
     }
 
     [Fact]
