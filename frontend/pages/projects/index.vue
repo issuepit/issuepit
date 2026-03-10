@@ -88,7 +88,7 @@
             <label class="block text-sm font-medium text-gray-300 mb-1.5">Project Key <span class="text-gray-500 font-normal">(optional)</span></label>
             <input v-model="form.issueKey" type="text" maxlength="10" placeholder="e.g. IP"
               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 uppercase" />
-            <p class="text-xs text-gray-600 mt-1">Short key for issue IDs — issues will display as <span class="font-mono text-gray-400">{{ form.issueKey ? `${form.issueKey.toUpperCase()}-1` : '#1' }}</span></p>
+            <p class="text-xs text-gray-600 mt-1">Short key for issue IDs — issues will display as <span class="font-mono text-gray-400">{{ form.issueKey ? `#${form.issueKey.toUpperCase()}-1` : '#1' }}</span></p>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-300 mb-1.5">Organization</label>

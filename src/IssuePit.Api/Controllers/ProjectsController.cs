@@ -54,6 +54,8 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
         if (ctx.CurrentTenant is null) return Unauthorized();
         project.Id = Guid.NewGuid();
         project.CreatedAt = DateTime.UtcNow;
+        if (!string.IsNullOrWhiteSpace(project.IssueKey))
+            project.IssueKey = project.IssueKey.Trim().ToUpperInvariant();
         db.Projects.Add(project);
         await db.SaveChangesAsync();
         return Created($"/api/projects/{project.Id}", project);

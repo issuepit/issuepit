@@ -101,7 +101,7 @@
                       {{ suggestingIssueKey ? '…' : 'Suggest' }}
                     </button>
                   </div>
-                  <p class="text-xs text-gray-600 mt-1">Short key prefix — issues display as <span class="font-mono text-gray-400">{{ form.issueKey ? `${form.issueKey.toUpperCase()}-${(form.issueNumberOffset || 0) + 1}` : '#1' }}</span></p>
+                  <p class="text-xs text-gray-600 mt-1">Short key prefix — issues display as <span class="font-mono text-gray-400">{{ form.issueKey ? `#${form.issueKey.toUpperCase()}-${(form.issueNumberOffset || 0) + 1}` : '#1' }}</span></p>
                 </div>
                 <div>
                   <label class="block text-sm font-medium text-gray-300 mb-1.5">Number Offset</label>
