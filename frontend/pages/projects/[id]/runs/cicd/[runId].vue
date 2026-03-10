@@ -3,6 +3,7 @@
     <!-- Breadcrumb + Header -->
     <div class="flex items-center gap-2 mb-6">
       <PageBreadcrumb :items="[
+        { label: 'Projects', to: '/projects', icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10' },
         { label: projectsStore.currentProject?.name || 'Project', to: `/projects/${projectId}`, color: projectsStore.currentProject?.color || '#4c6ef5' },
         { label: 'Runs', to: `/projects/${projectId}/runs`, icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
         { label: 'CI/CD Run', to: `/projects/${projectId}/runs/cicd/${runId}`, icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
