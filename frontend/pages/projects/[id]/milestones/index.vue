@@ -154,9 +154,9 @@
 
           <!-- Milestone rows -->
           <div style="min-width: 800px">
-            <div v-for="milestone in store.milestones" :key="milestone.id"
+              <div v-for="milestone in store.milestones" :key="milestone.id"
               class="flex border-b border-gray-800/50 hover:bg-gray-800/20 transition-colors"
-              style="height: 52px">
+              style="height: 48px">
               <!-- Label column -->
               <div class="w-48 shrink-0 flex items-center px-2 border-r border-gray-800 gap-1.5">
                 <span :class="milestone.status === 'open' ? 'bg-green-500' : 'bg-gray-600'"
@@ -178,7 +178,7 @@
                   :style="{ left: month.leftPct + '%' }"></div>
                 <!-- Milestone bar (draggable) -->
                 <div v-if="ganttBarDisplay(milestone)"
-                  class="absolute top-[14px] h-6 rounded flex items-stretch select-none"
+                  class="absolute top-[8px] h-8 rounded flex items-stretch select-none"
                   :class="[
                     milestone.status === 'open' ? 'bg-indigo-600' : 'bg-gray-600',
                     dragging?.milestoneId === milestone.id ? 'opacity-80 shadow-lg z-20' : 'hover:opacity-90 z-10',
@@ -197,7 +197,7 @@
                   </div>
                   <!-- Label (click to navigate when not dragging) -->
                   <span v-if="ganttBarDisplay(milestone)!.width > 6"
-                    class="flex-1 flex items-center px-0.5 text-xs text-white font-medium truncate cursor-move"
+                    class="flex-1 flex items-center px-2 text-xs text-white font-medium truncate cursor-move"
                     @mousedown.stop="startBarDrag($event, milestone, 'move')">
                     {{ milestone.title }}
                   </span>
@@ -209,7 +209,7 @@
                 </div>
                 <!-- No-date indicator -->
                 <div v-else class="absolute flex items-center text-xs text-gray-600 italic"
-                  style="top: 14px"
+                  style="top: 8px"
                   :style="{ left: todayPct + '%', transform: 'translateX(4px)' }">
                   no dates
                 </div>
