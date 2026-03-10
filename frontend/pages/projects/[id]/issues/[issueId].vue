@@ -1069,17 +1069,29 @@ async function handleCommentFileAttach(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
   try {
-    const config = useRuntimeConfig()
-    const baseURL = config.public.apiBase as string
-    const body = new FormData()
-    body.append('file', file)
-    const result = await $fetch<{ url: string }>('/api/uploads/file', {
-      baseURL,
-      method: 'POST',
-      body,
-      credentials: 'include',
-    })
-    newComment.value += (newComment.value ? '\n' : '') + `[${file.name}](${result.url})`
+    let url: string
+    if (file.type.startsWith('audio/')) {
+      // Audio files: store as a proper IssueAttachment so retranscription is available
+      const att = await store.addAttachment(resolvedIssueId.value, file, /* isVoiceFile */ true, /* isPublic */ true)
+      url = att?.fileUrl ?? ''
+    } else {
+      const config = useRuntimeConfig()
+      const baseURL = config.public.apiBase as string
+      const body = new FormData()
+      body.append('file', file)
+      const result = await $fetch<{ url: string }>('/api/uploads/file', {
+        baseURL,
+        method: 'POST',
+        body,
+        credentials: 'include',
+      })
+      url = result.url
+    }
+    if (url) {
+      newComment.value += (newComment.value ? '\n' : '') + `[${file.name}](${url})`
+    } else {
+      console.error('Audio attachment upload returned no URL')
+    }
   } catch (err: unknown) {
     console.error('Comment file attach failed', err)
   } finally {

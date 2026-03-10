@@ -614,7 +614,8 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         if (ctx.CurrentTenant is null || ctx.CurrentUser is null) return Unauthorized();
         var attachment = await db.IssueAttachments.FirstOrDefaultAsync(a => a.Id == attachmentId && a.IssueId == id);
         if (attachment is null) return NotFound();
-        if (!attachment.IsVoiceFile) return BadRequest(new { error = "Attachment is not a voice file." });
+        if (!attachment.IsVoiceFile && !attachment.ContentType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { error = "Attachment is not a voice or audio file." });
 
         // Download the voice file and retranscribe
         string transcription;
