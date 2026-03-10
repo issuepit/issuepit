@@ -4,6 +4,7 @@
     <div class="flex items-center justify-between mb-8">
       <div>
         <PageBreadcrumb :items="[
+          { label: 'Agents', to: '/agents', icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2' },
           { label: 'Skills', to: '/skills', icon: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z' },
         ]" />
         <p class="text-gray-400 mt-1 text-sm">{{ store.skills.length }} skill{{ store.skills.length !== 1 ? 's' : '' }} configured</p>

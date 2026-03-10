@@ -5,8 +5,7 @@
       <div>
         <PageBreadcrumb :items="[
           { label: 'Agents', to: '/agents', icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2' },
-        ]" />
-        <p class="text-gray-400 mt-1 text-sm">{{ store.agents.length }} agent modes configured</p>
+          { label: 'Modes', to: '/agents', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
       </div>
       <button @click="openCreate"
         class="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
