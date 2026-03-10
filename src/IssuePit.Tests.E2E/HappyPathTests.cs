@@ -432,6 +432,10 @@ public class HappyPathTests : IAsyncLifetime
             var milestonesPage = new MilestonesPage(page);
             await milestonesPage.GotoAsync(projectId);
             await milestonesPage.CreateMilestoneAsync("UI E2E Sprint 1");
+
+            // Click on the milestone card and verify navigation to the detail page
+            await milestonesPage.ClickMilestoneAsync("UI E2E Sprint 1");
+            await page.WaitForURLAsync($"**/milestones/**", new PageWaitForURLOptions { Timeout = 10_000 });
         }
         finally
         {
