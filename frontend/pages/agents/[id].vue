@@ -10,7 +10,8 @@
       <div class="flex items-center justify-between gap-3 mb-6">
         <PageBreadcrumb :items="[
           { label: 'Agents', to: '/agents', icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2' },
-          { label: 'Modes', to: '/agents', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },, to: `/agents/${store.currentAgent.id}`, icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2' },
+          { label: 'Modes', to: '/agents', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
+          { label: store.currentAgent.name, to: `/agents/${store.currentAgent.id}`, icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2' },
         ]" />
         <button @click="store.toggleAgent(store.currentAgent.id, !store.currentAgent.isActive)"
           :class="store.currentAgent.isActive ? 'text-yellow-400 hover:text-yellow-300 border-yellow-900/40' : 'text-green-400 hover:text-green-300 border-green-900/40'"

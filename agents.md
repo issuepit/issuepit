@@ -40,6 +40,7 @@ this file descripes rules on how agenting coding tools work with this repository
 ## Git Usage
 
 - Create commits after each step/task
+- **Commits MUST be made after each complete task/step in an implementation session** — do not batch all changes into a single commit at the end
 - Commit messages must follow [Conventional Commits](https://www.conventionalcommits.org/) style
 
 # Agent Workflow
