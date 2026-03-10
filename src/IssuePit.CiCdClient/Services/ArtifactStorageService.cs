@@ -10,30 +10,30 @@ namespace IssuePit.CiCdClient.Services;
 /// Uploads CI/CD artifacts to S3-compatible storage and returns public download URLs.
 /// Reuses the <c>ImageStorage__*</c> configuration keys that the API project uses.
 ///
-/// Reads from:
+/// Reads from (env var name → configuration key):
 /// <list type="bullet">
-///   <item><c>ImageStorage__ServiceUrl</c> — S3 service URL (empty = AWS default; LocalStack: http://localhost:4566)</item>
-///   <item><c>ImageStorage__AccessKey</c> — AWS access key ID (default: <c>test</c>)</item>
-///   <item><c>ImageStorage__SecretKey</c> — AWS secret access key (default: <c>test</c>)</item>
-///   <item><c>ImageStorage__BucketName</c> — S3 bucket name (default: <c>issuepit-uploads</c>)</item>
-///   <item><c>ImageStorage__PublicBaseUrl</c> — public base URL for generated links (optional)</item>
-///   <item><c>ImageStorage__Region</c> — AWS region (default: <c>us-east-1</c>)</item>
+///   <item><c>ImageStorage__ServiceUrl</c> → <c>ImageStorage:ServiceUrl</c> — S3 service URL (empty = AWS default; LocalStack: http://localhost:4566)</item>
+///   <item><c>ImageStorage__AccessKey</c> → <c>ImageStorage:AccessKey</c> — AWS access key ID (default: <c>test</c>)</item>
+///   <item><c>ImageStorage__SecretKey</c> → <c>ImageStorage:SecretKey</c> — AWS secret access key (default: <c>test</c>)</item>
+///   <item><c>ImageStorage__BucketName</c> → <c>ImageStorage:BucketName</c> — S3 bucket name (default: <c>issuepit-uploads</c>)</item>
+///   <item><c>ImageStorage__PublicBaseUrl</c> → <c>ImageStorage:PublicBaseUrl</c> — public base URL for generated links (optional)</item>
+///   <item><c>ImageStorage__Region</c> → <c>ImageStorage:Region</c> — AWS region (default: <c>us-east-1</c>)</item>
 /// </list>
-/// When <c>ImageStorage__ServiceUrl</c> is not configured, S3 upload is skipped and <c>null</c> is returned.
+/// When <c>ImageStorage:ServiceUrl</c> is not configured, S3 upload is skipped and <c>null</c> is returned.
 /// </summary>
 public class ArtifactStorageService(IConfiguration configuration, ILogger<ArtifactStorageService> logger)
 {
-    private readonly string? _serviceUrl = configuration["ImageStorage__ServiceUrl"];
-    private readonly string _accessKey = configuration["ImageStorage__AccessKey"] ?? "test";
-    private readonly string _secretKey = configuration["ImageStorage__SecretKey"] ?? "test";
-    private readonly string _bucketName = configuration["ImageStorage__BucketName"] ?? "issuepit-uploads";
-    private readonly string? _publicBaseUrl = configuration["ImageStorage__PublicBaseUrl"];
-    private readonly string _region = configuration["ImageStorage__Region"] ?? "us-east-1";
+    private readonly string? _serviceUrl = configuration["ImageStorage:ServiceUrl"];
+    private readonly string _accessKey = configuration["ImageStorage:AccessKey"] ?? "test";
+    private readonly string _secretKey = configuration["ImageStorage:SecretKey"] ?? "test";
+    private readonly string _bucketName = configuration["ImageStorage:BucketName"] ?? "issuepit-uploads";
+    private readonly string? _publicBaseUrl = configuration["ImageStorage:PublicBaseUrl"];
+    private readonly string _region = configuration["ImageStorage:Region"] ?? "us-east-1";
 
     private volatile bool _bucketEnsured;
 
     /// <summary>
-    /// Returns true when the storage service is configured (i.e. an S3 service URL is set).
+    /// Returns true when the storage service is configured (i.e. an S3 service URL is set via <c>ImageStorage:ServiceUrl</c>).
     /// When false, uploads are skipped and <c>UploadArtifactAsync</c> returns <c>null</c>.
     /// </summary>
     public bool IsConfigured => !string.IsNullOrWhiteSpace(_serviceUrl);
