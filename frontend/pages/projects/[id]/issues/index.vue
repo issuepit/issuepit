@@ -237,7 +237,7 @@
           <!-- Empty transcript notice (no model configured or silence) -->
           <p v-if="showEmptyTranscriptNotice"
             class="text-xs text-amber-400">
-            No speech detected. You can type your description above, or drop another audio file to retry.
+            No transcription returned — the speech model may not be configured on this server, or no speech was detected. You can type your description above, or drop another recording to retry.
           </p>
         </div>
 
@@ -246,7 +246,7 @@
 
         <!-- Actions -->
         <div class="flex gap-3">
-          <button v-if="voice.transcription.value" @click="submitVoiceCreate"
+          <button v-if="voiceRecordingDone && !voice.uploading.value" @click="submitVoiceCreate"
             class="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
             Create Issue
           </button>
