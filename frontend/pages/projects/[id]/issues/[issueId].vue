@@ -8,8 +8,7 @@
     <template v-else-if="store.currentIssue">
       <!-- Breadcrumb + action buttons -->
       <div class="flex items-center justify-between mb-5">
-        <div class="flex items-center gap-2">
-          <PageBreadcrumb :items="issueBreadcrumbItems" />
+        <PageBreadcrumb :items="issueBreadcrumbItems" />
         <!-- Issue creation buttons -->
         <div class="flex items-center gap-2">
           <button @click="showVoiceCreate = true"

@@ -47,7 +47,7 @@
           </NuxtLink>
         </div>
       </div>
-      <p v-if="store.currentProject.description" class="text-gray-400 text-sm mb-6 ml-16">
+      <p v-if="store.currentProject.description" class="text-gray-400 text-sm mb-6">
         {{ store.currentProject.description }}
       </p>
 
