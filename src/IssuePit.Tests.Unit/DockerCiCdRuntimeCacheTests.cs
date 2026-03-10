@@ -30,6 +30,58 @@ public class DockerCiCdRuntimeCacheTests
         Assert.Contains("docker info > /dev/null 2>&1", script);
     }
 
+    /// <summary>
+    /// Regression test: docker info in the readiness loop must be wrapped with 'timeout 2' to
+    /// prevent the startup script from hanging indefinitely when dockerd reconciles orphaned
+    /// container metadata from a previously-killed DinD instance sharing the cache volume.
+    /// Without this guard, DrainMultiplexedStreamAsync blocks forever and the E2E test eventually
+    /// triggers xUnit's --blame-hang-timeout collector after 5 minutes of inactivity.
+    /// </summary>
+    [Fact]
+    public void BuildDindStartupScript_DockerInfoInLoop_IsProtectedByTimeout()
+    {
+        var script = DockerCiCdRuntime.BuildDindStartupScript();
+        // The while-loop check must use 'timeout 2 docker info' to bound each iteration.
+        Assert.Contains("timeout 2 docker info", script);
+        // The final readiness check must also be bounded.
+        Assert.Contains("timeout 10 docker info", script);
+    }
+
+    /// <summary>
+    /// Regression test: the counter variable must be named 'dind_ready_timeout', NOT 'timeout'.
+    /// Using 'timeout' as a variable name shadows the shell built-in 'timeout' command, causing
+    /// 'timeout 2 docker info' to expand to '&lt;int&gt; 2 docker info' (a syntax error or unexpected
+    /// execution) instead of running the coreutils timeout binary.
+    /// </summary>
+    [Fact]
+    public void BuildDindStartupScript_UsesNamedCounterVariable_NotTimeoutVariable()
+    {
+        var script = DockerCiCdRuntime.BuildDindStartupScript();
+        // Must use dind_ready_timeout (not a bare 'timeout') as the loop counter.
+        Assert.Contains("dind_ready_timeout=60", script);
+        Assert.Contains("$dind_ready_timeout -gt 0", script);
+        // A bare 'timeout=60' assignment (not as part of 'dind_ready_timeout=60') must not exist.
+        // Split lines to avoid matching 'dind_ready_timeout=60' as a false positive.
+        var lines = script.Split('\n');
+        Assert.DoesNotContain(lines, l => l.Trim() == "timeout=60" || l.Trim().StartsWith("timeout=", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Regression test: the DinD startup script must NOT contain orphaned-container cleanup
+    /// (docker ps -aq --filter name=act-). Running docker ps against a newly-started dockerd
+    /// that inherits state from a previous killed DinD instance can block indefinitely while
+    /// dockerd reconciles orphaned container metadata — causing DrainMultiplexedStreamAsync
+    /// to block forever and the CI/CD run to never reach a terminal status.
+    /// Container-name collisions are handled by the act retry loop in RunAsync instead.
+    /// </summary>
+    [Fact]
+    public void BuildDindStartupScript_DoesNotContainOrphanedContainerCleanup()
+    {
+        var script = DockerCiCdRuntime.BuildDindStartupScript();
+        // docker ps in the startup script was removed because it can block indefinitely.
+        Assert.DoesNotContain("docker ps", script);
+    }
+
     [Fact]
     public void BuildDindStartupScript_WithMirrorUrl_WritesDaemonJson()
     {
