@@ -10,17 +10,36 @@
           {{ store.milestones.length }}
         </span>
       </div>
-      <button @click="showCreate = true"
-        class="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-        </svg>
-        New Milestone
-      </button>
+      <div class="flex items-center gap-3">
+        <!-- View toggle -->
+        <div class="flex items-center bg-gray-800 rounded-lg p-0.5">
+          <button @click="viewMode = 'list'"
+            :class="['flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors', viewMode === 'list' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-200']">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+            </svg>
+            List
+          </button>
+          <button @click="viewMode = 'gantt'"
+            :class="['flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors', viewMode === 'gantt' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-200']">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            Gantt
+          </button>
+        </div>
+        <button @click="showCreate = true"
+          class="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          New Milestone
+        </button>
+      </div>
     </div>
 
-    <!-- Filter tabs -->
-    <div class="flex gap-2 mb-5">
+    <!-- Filter tabs (list view only) -->
+    <div v-if="viewMode === 'list'" class="flex gap-2 mb-5">
       <button v-for="tab in tabs" :key="tab.value" @click="activeTab = tab.value"
         :class="[
           'text-sm px-3 py-1.5 rounded-lg transition-colors',
@@ -39,59 +58,146 @@
       <div class="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
     </div>
 
-    <!-- Milestones List -->
-    <div v-else class="space-y-3">
-      <div v-if="filteredMilestones.length === 0" class="py-16 text-center bg-gray-900 border border-gray-800 rounded-xl">
-        <p class="text-gray-400">No milestones found</p>
-        <button @click="showCreate = true" class="mt-3 text-brand-400 hover:text-brand-300 text-sm">
-          Create the first milestone →
-        </button>
-      </div>
+    <template v-else>
+      <!-- List View -->
+      <div v-if="viewMode === 'list'" class="space-y-3">
+        <div v-if="filteredMilestones.length === 0" class="py-16 text-center bg-gray-900 border border-gray-800 rounded-xl">
+          <p class="text-gray-400">No milestones found</p>
+          <button @click="showCreate = true" class="mt-3 text-brand-400 hover:text-brand-300 text-sm">
+            Create the first milestone →
+          </button>
+        </div>
 
-      <div v-for="milestone in filteredMilestones" :key="milestone.id"
-        class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 transition-colors cursor-pointer"
-        @click="$router.push(`/projects/${id}/milestones/${milestone.id}`)">
-        <div class="flex items-start justify-between gap-4">
-          <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-2 mb-1">
-              <span :class="milestone.status === 'open' ? 'bg-green-900/40 text-green-400' : 'bg-gray-800 text-gray-500'"
-                class="text-xs px-2 py-0.5 rounded-full font-medium">
-                {{ milestone.status === 'open' ? 'Open' : 'Closed' }}
-              </span>
-              <NuxtLink :to="`/projects/${id}/milestones/${milestone.id}`"
-                class="text-base font-semibold text-white hover:text-brand-300 transition-colors">
-                {{ milestone.title }}
-              </NuxtLink>
+        <div v-for="milestone in filteredMilestones" :key="milestone.id"
+          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 transition-colors cursor-pointer"
+          @click="$router.push(`/projects/${id}/milestones/${milestone.id}`)">
+          <div class="flex items-start justify-between gap-4">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-1">
+                <span :class="milestone.status === 'open' ? 'bg-green-900/40 text-green-400' : 'bg-gray-800 text-gray-500'"
+                  class="text-xs px-2 py-0.5 rounded-full font-medium">
+                  {{ milestone.status === 'open' ? 'Open' : 'Closed' }}
+                </span>
+                <NuxtLink :to="`/projects/${id}/milestones/${milestone.id}`"
+                  class="text-base font-semibold text-white hover:text-brand-300 transition-colors">
+                  {{ milestone.title }}
+                </NuxtLink>
+              </div>
+              <p v-if="milestone.description" class="text-sm text-gray-400 mt-1 line-clamp-2">
+                {{ milestone.description }}
+              </p>
+              <div class="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                <span v-if="milestone.startDate">
+                  Start {{ formatDate(milestone.startDate) }}
+                </span>
+                <span v-if="milestone.dueDate">
+                  Due {{ formatDate(milestone.dueDate) }}
+                </span>
+                <span>Created {{ formatDate(milestone.createdAt) }}</span>
+              </div>
             </div>
-            <p v-if="milestone.description" class="text-sm text-gray-400 mt-1 line-clamp-2">
-              {{ milestone.description }}
-            </p>
-            <div class="flex items-center gap-4 mt-2 text-xs text-gray-500">
-              <span v-if="milestone.dueDate">
-                Due {{ formatDate(milestone.dueDate) }}
-              </span>
-              <span>Created {{ formatDate(milestone.createdAt) }}</span>
+            <div class="flex items-center gap-2 shrink-0">
+              <button @click.stop="openEdit(milestone)"
+                class="text-gray-500 hover:text-gray-300 transition-colors p-1.5 rounded hover:bg-gray-800">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </button>
+              <button @click.stop="confirmDelete(milestone.id)"
+                class="text-gray-500 hover:text-red-400 transition-colors p-1.5 rounded hover:bg-red-900/20">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
             </div>
-          </div>
-          <div class="flex items-center gap-2 shrink-0">
-            <button @click.stop="openEdit(milestone)"
-              class="text-gray-500 hover:text-gray-300 transition-colors p-1.5 rounded hover:bg-gray-800">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-            </button>
-            <button @click.stop="confirmDelete(milestone.id)"
-              class="text-gray-500 hover:text-red-400 transition-colors p-1.5 rounded hover:bg-red-900/20">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </button>
           </div>
         </div>
       </div>
-    </div>
+
+      <!-- Gantt View -->
+      <div v-else class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <div v-if="store.milestones.length === 0" class="py-16 text-center">
+          <p class="text-gray-400">No milestones yet</p>
+          <button @click="showCreate = true" class="mt-3 text-brand-400 hover:text-brand-300 text-sm">
+            Create the first milestone →
+          </button>
+        </div>
+
+        <div v-else class="overflow-x-auto">
+          <!-- Month header -->
+          <div class="flex border-b border-gray-800" style="min-width: 800px">
+            <div class="w-48 shrink-0 px-4 py-2 text-xs text-gray-500 font-medium border-r border-gray-800">Milestone</div>
+            <div class="flex-1 relative h-8">
+              <div class="flex h-full">
+                <div v-for="month in ganttMonths" :key="month.label"
+                  :style="{ width: month.widthPct + '%' }"
+                  class="border-r border-gray-800 flex items-center px-2 text-xs text-gray-500 font-medium shrink-0">
+                  {{ month.label }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Milestone rows -->
+          <div style="min-width: 800px">
+            <div v-for="milestone in store.milestones" :key="milestone.id"
+              class="flex border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors group"
+              style="height: 44px">
+              <!-- Label column -->
+              <div class="w-48 shrink-0 flex items-center px-4 border-r border-gray-800 gap-2">
+                <span :class="milestone.status === 'open' ? 'bg-green-500' : 'bg-gray-600'"
+                  class="w-2 h-2 rounded-full shrink-0"></span>
+                <button @click="$router.push(`/projects/${id}/milestones/${milestone.id}`)"
+                  class="text-xs text-gray-300 group-hover:text-white transition-colors truncate text-left">
+                  {{ milestone.title }}
+                </button>
+              </div>
+              <!-- Bar area -->
+              <div class="flex-1 relative flex items-center">
+                <!-- Today line -->
+                <div class="absolute top-0 bottom-0 w-px bg-brand-500/60 z-10 pointer-events-none"
+                  :style="{ left: todayPct + '%' }"></div>
+                <!-- Grid lines for months -->
+                <div v-for="month in ganttMonths" :key="month.label"
+                  class="absolute top-0 bottom-0 w-px bg-gray-800/80 pointer-events-none"
+                  :style="{ left: month.leftPct + '%' }"></div>
+                <!-- Milestone bar -->
+                <div v-if="ganttBar(milestone)"
+                  class="absolute h-6 rounded cursor-pointer transition-opacity hover:opacity-80"
+                  :class="milestone.status === 'open' ? 'bg-indigo-600' : 'bg-gray-600'"
+                  :style="{ left: ganttBar(milestone)!.left + '%', width: Math.max(ganttBar(milestone)!.width, 1) + '%' }"
+                  :title="`${milestone.title}${milestone.dueDate ? ' · Due ' + formatDate(milestone.dueDate) : ''}`"
+                  @click="$router.push(`/projects/${id}/milestones/${milestone.id}`)">
+                  <span v-if="ganttBar(milestone)!.width > 8" class="px-2 text-xs text-white font-medium leading-6 truncate block">
+                    {{ milestone.title }}
+                  </span>
+                </div>
+                <!-- No-date indicator -->
+                <div v-else class="absolute flex items-center gap-1 text-xs text-gray-600 italic"
+                  :style="{ left: todayPct + '%', transform: 'translateX(4px)' }">
+                  no dates
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Legend -->
+          <div class="flex items-center gap-6 px-4 py-3 border-t border-gray-800">
+            <div class="flex items-center gap-1.5 text-xs text-gray-500">
+              <span class="w-3 h-3 rounded bg-indigo-600 block"></span> Open
+            </div>
+            <div class="flex items-center gap-1.5 text-xs text-gray-500">
+              <span class="w-3 h-3 rounded bg-gray-600 block"></span> Closed
+            </div>
+            <div class="flex items-center gap-1.5 text-xs text-gray-500">
+              <span class="w-px h-3 bg-brand-500/60 block"></span> Today
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
 
     <!-- Create Modal -->
     <div v-if="showCreate" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
@@ -108,10 +214,17 @@
             <textarea v-model="form.description" rows="3" placeholder="Describe this milestone..."
               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"></textarea>
           </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-300 mb-1.5">Due Date</label>
-            <input v-model="form.dueDate" type="date"
-              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">Start Date</label>
+              <input v-model="form.startDate" type="date"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">Due Date</label>
+              <input v-model="form.dueDate" type="date"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
           </div>
         </div>
         <div class="flex gap-3 mt-6">
@@ -142,10 +255,17 @@
             <textarea v-model="editForm.description" rows="3"
               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"></textarea>
           </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-300 mb-1.5">Due Date</label>
-            <input v-model="editForm.dueDate" type="date"
-              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">Start Date</label>
+              <input v-model="editForm.startDate" type="date"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">Due Date</label>
+              <input v-model="editForm.dueDate" type="date"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-300 mb-1.5">Status</label>
@@ -183,10 +303,11 @@ const projectsStore = useProjectsStore()
 
 const showCreate = ref(false)
 const activeTab = ref<'all' | 'open' | 'closed'>('open')
+const viewMode = ref<'list' | 'gantt'>('list')
 const editMilestone = ref<Milestone | null>(null)
 
-const form = reactive({ title: '', description: '', dueDate: '' })
-const editForm = reactive({ title: '', description: '', dueDate: '', status: 'open' as 'open' | 'closed' })
+const form = reactive({ title: '', description: '', startDate: '', dueDate: '' })
+const editForm = reactive({ title: '', description: '', startDate: '', dueDate: '', status: 'open' as 'open' | 'closed' })
 
 const openCount = computed(() => store.milestones.filter(m => m.status === 'open').length)
 const closedCount = computed(() => store.milestones.filter(m => m.status === 'closed').length)
@@ -203,6 +324,70 @@ const filteredMilestones = computed(() => {
   return store.milestones
 })
 
+// ── Gantt chart helpers ──────────────────────────────────────────
+
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
+const GANTT_PADDING_RATIO = 0.05
+
+/** Returns the effective start timestamp for a milestone (startDate → createdAt fallback). */
+function milestoneStartTime(m: Milestone): number {
+  return new Date(m.startDate ?? m.createdAt).getTime()
+}
+
+/** Returns the effective end timestamp for a milestone (dueDate → start + 7 days fallback). */
+function milestoneEndTime(m: Milestone): number {
+  if (m.dueDate) return new Date(m.dueDate).getTime()
+  return milestoneStartTime(m) + SEVEN_DAYS_MS
+}
+
+const ganttRange = computed(() => {
+  if (!store.milestones.length) return { min: Date.now(), max: Date.now() }
+  const starts = store.milestones.map(milestoneStartTime)
+  const ends = store.milestones.map(milestoneEndTime)
+  const minTs = Math.min(...starts)
+  const maxTs = Math.max(...ends)
+  // Add padding on each side so bars don't touch the edge
+  const pad = (maxTs - minTs) * GANTT_PADDING_RATIO || SEVEN_DAYS_MS
+  return { min: minTs - pad, max: maxTs + pad }
+})
+
+const todayPct = computed(() => {
+  const { min, max } = ganttRange.value
+  return Math.max(0, Math.min(100, ((Date.now() - min) / (max - min)) * 100))
+})
+
+const ganttMonths = computed(() => {
+  const { min, max } = ganttRange.value
+  const months: { label: string; leftPct: number; widthPct: number }[] = []
+  const start = new Date(min)
+  // align to first of the month
+  const cur = new Date(start.getFullYear(), start.getMonth(), 1)
+  const total = max - min
+  while (cur.getTime() < max) {
+    const nextMonth = new Date(cur.getFullYear(), cur.getMonth() + 1, 1)
+    const left = Math.max(0, (cur.getTime() - min) / total * 100)
+    const right = Math.min(100, (nextMonth.getTime() - min) / total * 100)
+    months.push({
+      label: cur.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+      leftPct: left,
+      widthPct: right - left,
+    })
+    cur.setMonth(cur.getMonth() + 1)
+  }
+  return months
+})
+
+function ganttBar(m: Milestone) {
+  const { min, max } = ganttRange.value
+  const total = max - min
+  if (total <= 0) return null
+  const left = ((milestoneStartTime(m) - min) / total) * 100
+  const width = ((milestoneEndTime(m) - milestoneStartTime(m)) / total) * 100
+  return { left, width }
+}
+
+// ── Actions ──────────────────────────────────────────────────────
+
 onMounted(() => {
   projectsStore.fetchProject(id)
   store.fetchMilestones(id)
@@ -213,16 +398,18 @@ async function submitCreate() {
   await store.createMilestone(id, {
     title: form.title,
     description: form.description || undefined,
+    startDate: form.startDate || undefined,
     dueDate: form.dueDate || undefined,
   })
   showCreate.value = false
-  Object.assign(form, { title: '', description: '', dueDate: '' })
+  Object.assign(form, { title: '', description: '', startDate: '', dueDate: '' })
 }
 
 function openEdit(milestone: Milestone) {
   editMilestone.value = milestone
   editForm.title = milestone.title
   editForm.description = milestone.description ?? ''
+  editForm.startDate = milestone.startDate ? milestone.startDate.split('T')[0] : ''
   editForm.dueDate = milestone.dueDate ? milestone.dueDate.split('T')[0] : ''
   editForm.status = milestone.status
 }
@@ -232,6 +419,7 @@ async function submitEdit() {
   await store.updateMilestone(id, editMilestone.value.id, {
     title: editForm.title,
     description: editForm.description || undefined,
+    startDate: editForm.startDate || undefined,
     dueDate: editForm.dueDate || undefined,
     status: editForm.status,
   })

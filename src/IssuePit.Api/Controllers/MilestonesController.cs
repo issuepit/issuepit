@@ -53,6 +53,7 @@ public class MilestonesController(IssuePitDbContext db, TenantContext ctx) : Con
             milestone.Id,
             milestone.Title,
             milestone.Description,
+            milestone.StartDate,
             milestone.DueDate,
             milestone.Status,
             Total = total,
@@ -73,6 +74,7 @@ public class MilestonesController(IssuePitDbContext db, TenantContext ctx) : Con
             ProjectId = projectId,
             Title = req.Title,
             Description = req.Description,
+            StartDate = req.StartDate,
             DueDate = req.DueDate,
             Status = MilestoneStatus.Open,
             CreatedAt = DateTime.UtcNow,
@@ -90,6 +92,7 @@ public class MilestonesController(IssuePitDbContext db, TenantContext ctx) : Con
         if (milestone is null) return NotFound();
         milestone.Title = req.Title;
         milestone.Description = req.Description;
+        milestone.StartDate = req.StartDate;
         milestone.DueDate = req.DueDate;
         if (req.Status.HasValue) milestone.Status = req.Status.Value;
         milestone.UpdatedAt = DateTime.UtcNow;
@@ -108,4 +111,4 @@ public class MilestonesController(IssuePitDbContext db, TenantContext ctx) : Con
     }
 }
 
-public record MilestoneRequest(string Title, string? Description, DateTime? DueDate, MilestoneStatus? Status);
+public record MilestoneRequest(string Title, string? Description, DateTime? StartDate, DateTime? DueDate, MilestoneStatus? Status);
