@@ -1282,17 +1282,15 @@ public partial class DockerCiCdRuntime(
             "  sleep 1; timeout=$((timeout-1))",
             "done",
             "docker info > /dev/null 2>&1 && echo '[DinD] dockerd ready' || { echo '[DinD] dockerd failed to start'; cat /tmp/dockerd.log; exit 1; }",
-            // Remove any containers left over from a previous killed DinD instance so that act can
-            // create job containers with the same names without hitting "container name already in use".
-            "# Remove orphaned act containers from a previous killed DinD session (if any).",
-            "# Use 'timeout 5' so this cleanup never hangs the startup even if a container is stuck.",
-            "_orphaned=$(docker ps -aq --filter name=act- 2>/dev/null)",
-            "if [ -n \"$_orphaned\" ]; then",
-            "  echo \"[DinD] Removing orphaned act containers from previous DinD instance: $_orphaned\"",
-            "  echo \"$_orphaned\" | timeout 5 xargs -r docker rm -f 2>/dev/null || true",
-            "else",
-            "  echo '[DinD] No orphaned act containers'",
-            "fi",
+            // NOTE: Orphaned container cleanup is intentionally omitted here.
+            // Running `docker ps` against a newly-started dockerd that inherits state from a
+            // previously-killed DinD instance (via the shared /var/lib/issuepit-dind-cache volume)
+            // can hang indefinitely — the dockerd may be reconciling orphaned container metadata.
+            // A hanging `docker ps` in the startup script blocks DrainMultiplexedStreamAsync forever,
+            // causing the entire CI/CD run to never reach a terminal status (5-minute test hang).
+            // Container-name collisions are handled by the act retry loop in RunAsync instead:
+            // up to MaxActAttempts retries with ActRetryDelaySeconds between attempts gives Docker
+            // enough time to finish its own async --rm cleanup before the next attempt.
         ]);
 
         // ── apt proxy config ──────────────────────────────────────────────────────────────────────────

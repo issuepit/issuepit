@@ -36,6 +36,7 @@ this file descripes rules on how agenting coding tools work with this repository
 - One class per file (except for small private nested classes used only within the parent class)
 - EF Core properties should be defined as attributes and not in `DbContext.OnModelCreating`
 - **Preserve commented-out code that provides context** (e.g., old implementations, alternative approaches, protocol examples) — such code serves as documentation and should not be removed during refactoring
+- **Do not swallow exceptions silently** — catching exceptions and logging at `Warning`/`Debug` level is acceptable only when the failure is explicitly expected to be transient and non-fatal (e.g., a Redis publish in a fire-and-forget log relay). In all other cases, let the exception propagate or re-throw a domain exception with context. Hiding failures with empty `catch {}` or catch-log-return patterns makes bugs invisible and causes incorrect state in callers.
 
 ## Git Usage
 
