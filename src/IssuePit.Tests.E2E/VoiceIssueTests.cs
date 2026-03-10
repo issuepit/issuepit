@@ -53,8 +53,8 @@ public class VoiceIssueTests : IAsyncLifetime
         var username = $"v{Guid.NewGuid():N}"[..12];
         await client.PostAsJsonAsync("/api/auth/register", new { username, password = "TestPass1!" });
 
-        // Build a minimal valid WAV file (PCM 16-bit, 16 kHz, mono, 1 second of silence)
-        var wavBytes = BuildSilentWav(sampleRate: 16000, durationSeconds: 1);
+        // Load the pre-recorded dummy WAV fixture (16 kHz, 16-bit PCM, mono, 1 second of silence)
+        var wavBytes = LoadVoiceFixture();
         using var content = new MultipartFormDataContent();
         content.Add(new ByteArrayContent(wavBytes)
         {
@@ -150,6 +150,115 @@ public class VoiceIssueTests : IAsyncLifetime
         }
     }
 
+    /// <summary>
+    /// UI test: complete voice-to-issue creation flow.
+    /// Mocks getUserMedia to supply audio via an oscillator so that the ScriptProcessorNode
+    /// receives audio data and stopRecording returns a valid WAV blob.
+    /// Routes the /api/uploads/voice endpoint to return a deterministic transcription, then
+    /// verifies that clicking "Create Issue" creates and lists the new voice issue.
+    /// </summary>
+    [Fact]
+    public async Task Ui_VoiceRecording_CreatesIssue()
+    {
+        if (FrontendUrl is null) return; // skip if frontend is not running
+
+        // Minimum recording duration to allow the ScriptProcessorNode's onaudioprocess to fire
+        // at least once (4096 samples / 16000 Hz ≈ 256 ms per callback; 700 ms gives ~2 callbacks).
+        const int MinRecordingDurationMs = 700;
+
+        var context = await _browser!.NewContextAsync(new BrowserNewContextOptions
+        {
+            BaseURL = FrontendUrl,
+            Permissions = ["microphone"],
+        });
+        var page = await context.NewPageAsync();
+
+        // Mock navigator.mediaDevices.getUserMedia to return a stream driven by an oscillator
+        // so that the ScriptProcessorNode's onaudioprocess fires and audio chunks accumulate.
+        await page.AddInitScriptAsync("""
+            if (navigator.mediaDevices) {
+                Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+                    configurable: true,
+                    value: async function(constraints) {
+                        if (constraints && constraints.audio) {
+                            const sampleRate = (typeof constraints.audio === 'object' && constraints.audio.sampleRate) || 16000;
+                            const ctx = new AudioContext({ sampleRate: sampleRate });
+                            try { if (ctx.state === 'suspended') await ctx.resume(); } catch {}
+                            const osc = ctx.createOscillator();
+                            osc.type = 'sine';
+                            osc.frequency.value = 440;
+                            const dest = ctx.createMediaStreamDestination();
+                            osc.connect(dest);
+                            osc.start();
+                            window.__voiceTestCtx = ctx;
+                            return dest.stream;
+                        }
+                        throw new Error('Test mock: only audio getUserMedia is supported');
+                    }
+                });
+            }
+        """);
+
+        // Intercept the voice upload API to return a deterministic transcription without
+        // requiring a real Vosk model in the test environment.
+        const string fakeTranscription = "voice issue from recording";
+        await page.RouteAsync("**/api/uploads/voice", async route =>
+        {
+            await route.FulfillAsync(new RouteFulfillOptions
+            {
+                Status = 200,
+                ContentType = "application/json",
+                Body = $$"""{"voiceUrl":"https://cdn.example.com/test.wav","transcription":"{{fakeTranscription}}"}"""
+            });
+        });
+
+        try
+        {
+            var username = $"v{Guid.NewGuid():N}"[..12];
+            const string password = "TestPass1!";
+
+            // 1. Register via the UI
+            await new LoginPage(page).RegisterAsync(username, password);
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+
+            // 2. Create org and project via the API using the same session
+            var tenantId = await GetDefaultTenantIdAsync();
+            using var apiClient = CreateCookieClient();
+            apiClient.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+            await apiClient.PostAsJsonAsync("/api/auth/login", new { username, password });
+
+            var orgSlug = $"v-org-{Guid.NewGuid():N}"[..16];
+            var orgResp = await apiClient.PostAsJsonAsync("/api/orgs", new { name = "Voice Org 2", slug = orgSlug });
+            Assert.Equal(System.Net.HttpStatusCode.Created, orgResp.StatusCode);
+            var org = await orgResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+            var orgId = org.GetProperty("id").GetString()!;
+
+            var projectSlug = $"v-proj-{Guid.NewGuid():N}"[..16];
+            var projResp = await apiClient.PostAsJsonAsync("/api/projects",
+                new { name = "Voice Project 2", slug = projectSlug, orgId });
+            Assert.Equal(System.Net.HttpStatusCode.Created, projResp.StatusCode);
+            var project = await projResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+            var projectId = project.GetProperty("id").GetString()!;
+
+            // 3. Record voice, intercept upload, create issue from the returned transcription
+            var issuesPage = new IssuesPage(page);
+            await issuesPage.GotoAsync(projectId);
+            await issuesPage.OpenVoiceModalAsync();
+            await issuesPage.StartVoiceRecordingAsync();
+            await Task.Delay(MinRecordingDurationMs); // Allow at least one audio chunk to be captured
+            await issuesPage.StopVoiceRecordingAsync();
+            await issuesPage.WaitForVoiceTranscriptionAsync(fakeTranscription);
+            await issuesPage.SubmitVoiceCreateAsync();
+
+            // 4. Verify the voice issue now appears in the issues list
+            await page.WaitForSelectorAsync("text=Voice Issue", new PageWaitForSelectorOptions { Timeout = 10_000 });
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
+
     // --- Helpers ---
 
     private HttpClient CreateCookieClient()
@@ -169,6 +278,17 @@ public class VoiceIssueTests : IAsyncLifetime
                 return tenant.GetProperty("id").GetString()!;
         }
         throw new InvalidOperationException("Default 'localhost' tenant not found. Ensure the migrator has run.");
+    }
+
+    /// <summary>
+    /// Loads the pre-recorded dummy WAV fixture file from the test output directory.
+    /// The file is a 1-second silent 16-bit PCM WAV at 16 kHz, suitable for testing
+    /// the voice upload API without requiring a real microphone.
+    /// </summary>
+    private static byte[] LoadVoiceFixture()
+    {
+        var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TestFixtures", "test-voice.wav");
+        return File.ReadAllBytes(path);
     }
 
     /// <summary>Builds a minimal PCM 16-bit WAV file filled with silence.</summary>
