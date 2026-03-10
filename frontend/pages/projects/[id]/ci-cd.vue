@@ -8,9 +8,10 @@
     <template v-else-if="projectsStore.currentProject">
       <!-- Breadcrumb -->
       <div class="flex items-center gap-2 mb-4">
-        <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject.name }}</NuxtLink>
-        <span class="text-gray-600">/</span>
-        <NuxtLink :to="`/projects/${id}/ci-cd`" class="text-xl font-bold text-white">CI/CD</NuxtLink>
+        <PageBreadcrumb :items="[
+          { label: projectsStore.currentProject.name, to: `/projects/${id}`, color: projectsStore.currentProject.color || '#4c6ef5' },
+          { label: 'CI/CD', to: `/projects/${id}/ci-cd`, icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
+        ]" />
       </div>
 
       <!-- Tabs -->

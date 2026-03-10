@@ -2,9 +2,10 @@
   <div class="p-8">
     <!-- Header -->
     <div class="flex items-center gap-2 mb-6">
-      <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name }}</NuxtLink>
-      <span class="text-gray-600">/</span>
-      <NuxtLink :to="`/projects/${id}/code`" class="text-xl font-bold text-white">Code</NuxtLink>
+      <PageBreadcrumb :items="[
+        { label: projectsStore.currentProject?.name || 'Project', to: `/projects/${id}`, color: projectsStore.currentProject?.color || '#4c6ef5' },
+        { label: 'Code', to: `/projects/${id}/code`, icon: 'M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4' },
+      ]" />
     </div>
 
     <!-- Loading -->

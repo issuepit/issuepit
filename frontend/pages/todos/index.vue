@@ -3,7 +3,9 @@
     <!-- Header -->
     <div class="flex items-center justify-between mb-6 shrink-0">
       <div class="flex items-center gap-3">
-        <h1 class="text-xl font-bold text-white">Todos</h1>
+        <PageBreadcrumb :items="[
+          { label: 'Todos', to: '/todos', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4' },
+        ]" />
         <span class="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full font-normal">
           {{ filteredTodos.length }}
         </span>

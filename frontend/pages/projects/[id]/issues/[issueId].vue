@@ -9,18 +9,7 @@
       <!-- Breadcrumb + action buttons -->
       <div class="flex items-center justify-between mb-5">
         <div class="flex items-center gap-2">
-          <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name || 'Project' }}</NuxtLink>
-          <span class="text-gray-600">/</span>
-          <NuxtLink :to="`/projects/${id}/issues`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">Issues</NuxtLink>
-          <template v-if="store.currentIssue.parentIssue">
-            <span class="text-gray-600">/</span>
-            <NuxtLink :to="`/projects/${id}/issues/${store.currentIssue.parentIssue.number}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">
-              #{{ store.currentIssue.parentIssue.number }} {{ store.currentIssue.parentIssue.title }}
-            </NuxtLink>
-          </template>
-          <span class="text-gray-600">/</span>
-          <NuxtLink :to="`/projects/${id}/issues/${store.currentIssue.number}`" class="text-xl font-bold text-white">#{{ store.currentIssue.number }}</NuxtLink>
-        </div>
+          <PageBreadcrumb :items="issueBreadcrumbItems" />
         <!-- Issue creation buttons -->
         <div class="flex items-center gap-2">
           <button @click="showVoiceCreate = true"
@@ -764,6 +753,20 @@ function toggleTab(tab: IssueTab, event: MouseEvent): void {
     localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(activeTabs.value))
   }
 }
+
+const issueBreadcrumbItems = computed(() => {
+  const items: { label: string, to: string, icon?: string, color?: string }[] = [
+    { label: projectsStore.currentProject?.name || 'Project', to: `/projects/${id}`, color: projectsStore.currentProject?.color || '#4c6ef5' },
+    { label: 'Issues', to: `/projects/${id}/issues`, icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
+  ]
+  if (store.currentIssue?.parentIssue) {
+    items.push({ label: `#${store.currentIssue.parentIssue.number} ${store.currentIssue.parentIssue.title}`, to: `/projects/${id}/issues/${store.currentIssue.parentIssue.number}`, icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' })
+  }
+  if (store.currentIssue) {
+    items.push({ label: `#${store.currentIssue.number}`, to: `/projects/${id}/issues/${store.currentIssue.number}`, icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' })
+  }
+  return items
+})
 
 const allTabs = computed(() => [
   { id: 'tasks' as IssueTab, label: 'Tasks', count: store.currentTasks.length },

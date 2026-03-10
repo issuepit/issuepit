@@ -7,12 +7,12 @@
 
     <template v-else-if="progress">
       <!-- Breadcrumb -->
-      <div class="flex items-center gap-2 mb-6">
-        <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name || 'Project' }}</NuxtLink>
-        <span class="text-gray-600">/</span>
-        <NuxtLink :to="`/projects/${id}/milestones`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">Milestones</NuxtLink>
-        <span class="text-gray-600">/</span>
-        <NuxtLink :to="`/projects/${id}/milestones/${milestoneId}`" class="text-xl font-bold text-white">{{ progress.title }}</NuxtLink>
+      <div class="flex items-center gap-3 mb-6">
+        <PageBreadcrumb :items="[
+          { label: projectsStore.currentProject?.name || 'Project', to: `/projects/${id}`, color: projectsStore.currentProject?.color || '#4c6ef5' },
+          { label: 'Milestones', to: `/projects/${id}/milestones`, icon: 'M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9' },
+          { label: progress.title, to: `/projects/${id}/milestones/${milestoneId}`, icon: 'M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9' },
+        ]" />
         <span :class="progress.status === 'open' ? 'bg-green-900/40 text-green-400' : 'bg-gray-800 text-gray-500'"
           class="text-xs px-2 py-0.5 rounded-full font-medium">
           {{ progress.status === 'open' ? 'Open' : 'Closed' }}

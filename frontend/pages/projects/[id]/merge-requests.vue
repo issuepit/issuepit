@@ -1,10 +1,11 @@
 <template>
   <div class="p-8">
     <!-- Header -->
-    <div class="flex items-center gap-2 mb-6">
-      <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name }}</NuxtLink>
-      <span class="text-gray-600">/</span>
-      <NuxtLink :to="`/projects/${id}/merge-requests`" class="text-xl font-bold text-white">Merge Requests</NuxtLink>
+    <div class="flex items-center gap-3 mb-6">
+      <PageBreadcrumb :items="[
+        { label: projectsStore.currentProject?.name || 'Project', to: `/projects/${id}`, color: projectsStore.currentProject?.color || '#4c6ef5' },
+        { label: 'Merge Requests', to: `/projects/${id}/merge-requests`, icon: 'M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4' },
+      ]" />
       <span class="ml-auto">
         <button @click="showCreateModal = true"
           class="flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white text-sm px-4 py-2 rounded-lg transition-colors">

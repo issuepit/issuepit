@@ -1,13 +1,13 @@
 <template>
   <div class="p-8">
     <!-- Breadcrumb + Header -->
-    <div class="flex items-center gap-2 mb-6">
-      <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name }}</NuxtLink>
-      <span class="text-gray-600">/</span>
-      <NuxtLink :to="`/projects/${id}/merge-requests`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">Merge Requests</NuxtLink>
-      <span class="text-gray-600">/</span>
-      <NuxtLink v-if="mr" :to="`/projects/${id}/merge-requests/${mrId}`" class="text-xl font-bold text-white truncate max-w-xs">{{ mr.title }}</NuxtLink>
-      <div v-else class="h-7 w-48 bg-gray-800 rounded animate-pulse"></div>
+    <div class="flex items-center gap-2.5 mb-6 flex-wrap">
+      <PageBreadcrumb v-if="mr" :items="[
+        { label: projectsStore.currentProject?.name || 'Project', to: `/projects/${id}`, color: projectsStore.currentProject?.color || '#4c6ef5' },
+        { label: 'Merge Requests', to: `/projects/${id}/merge-requests`, icon: 'M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4' },
+        { label: mr.title, to: `/projects/${id}/merge-requests/${mrId}`, icon: 'M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4' },
+      ]" />
+      <div v-else class="h-8 w-80 bg-gray-800 rounded animate-pulse"></div>
     </div>
 
     <!-- Loading MR -->

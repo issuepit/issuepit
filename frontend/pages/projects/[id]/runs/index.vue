@@ -2,9 +2,10 @@
   <div class="p-8">
     <!-- Header -->
     <div class="flex items-center gap-2 mb-6">
-      <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name }}</NuxtLink>
-      <span class="text-gray-600">/</span>
-      <NuxtLink :to="`/projects/${id}/runs`" class="text-xl font-bold text-white">Runs</NuxtLink>
+      <PageBreadcrumb :items="[
+        { label: projectsStore.currentProject?.name || 'Project', to: `/projects/${id}`, color: projectsStore.currentProject?.color || '#4c6ef5' },
+        { label: 'Runs', to: `/projects/${id}/runs`, icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
+      ]" />
       <!-- WS connection indicator -->
       <span v-if="isConnected" class="flex items-center gap-1 text-xs text-green-400 font-normal ml-1">
         <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />

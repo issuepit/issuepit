@@ -8,17 +8,11 @@
     <template v-else-if="store.currentProject">
       <!-- Header -->
       <div class="flex items-center justify-between gap-3 mb-2">
-        <div class="flex items-center gap-3 min-w-0">
-          <NuxtLink to="/projects" class="text-gray-500 hover:text-gray-300 transition-colors shrink-0">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-            </svg>
-          </NuxtLink>
-          <div :style="{ background: store.currentProject.color || '#4c6ef5' }"
-            class="w-8 h-8 rounded-md flex items-center justify-center text-white font-bold shrink-0">
-            {{ store.currentProject.name.charAt(0).toUpperCase() }}
-          </div>
-          <h1 class="text-2xl font-bold text-white truncate">{{ store.currentProject.name }}</h1>
+        <div class="flex items-center gap-3 min-w-0 flex-wrap">
+          <PageBreadcrumb :items="[
+            { label: 'Projects', to: '/projects', icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10' },
+            { label: store.currentProject.name, to: `/projects/${id}`, color: store.currentProject.color || '#4c6ef5' },
+          ]" />
           <span v-if="store.currentProject.isPrivate"
             class="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full shrink-0">Private</span>
           <!-- Small badges for members and MCP servers -->
@@ -39,7 +33,7 @@
             {{ mcpCount }} MCP
           </span>
         </div>
-        <!-- Header actions: Settings (with tabs for Members + CI/CD) -->
+        <!-- Header actions: Settings -->
         <div class="flex items-center gap-2 shrink-0">
           <NuxtLink :to="`/projects/${id}/settings`"
             class="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-800 transition-colors"
