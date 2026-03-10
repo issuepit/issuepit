@@ -121,8 +121,8 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     }
   }
 
-  async function retrySession(sessionId: string) {
-    await api.post(`/api/agent-sessions/${sessionId}/retry`, {})
+  async function retrySession(sessionId: string, options?: { dockerImageOverride?: string }) {
+    await api.post(`/api/agent-sessions/${sessionId}/retry`, options ?? {})
   }
 
   async function retryRun(runId: string, options?: {

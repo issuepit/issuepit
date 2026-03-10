@@ -176,12 +176,13 @@ public class IssueWorker(
 
         // Launch all assigned agents in parallel; each task manages its own DB scope
         await Task.WhenAll(agentIds.Select(agentId =>
-            LaunchAgentAsync(agentId, message.Id, cancellationToken)));
+            LaunchAgentAsync(agentId, message.Id, message.DockerImageOverride, cancellationToken)));
     }
 
     private async Task LaunchAgentAsync(
         Guid agentId,
         Guid issueId,
+        string? dockerImageOverride,
         CancellationToken cancellationToken)
     {
         using var scope = services.CreateScope();
@@ -194,6 +195,13 @@ public class IssueWorker(
         {
             logger.LogWarning("Agent {AgentId} or Issue {IssueId} not found, skipping launch", agentId, issueId);
             return;
+        }
+
+        // Apply image override if specified. Detach the entity so the change is never saved to the database.
+        if (!string.IsNullOrWhiteSpace(dockerImageOverride))
+        {
+            db.Entry(agent).State = EntityState.Detached;
+            agent.DockerImage = dockerImageOverride;
         }
 
         // Resolve runtime: use the org's default configuration or fall back to Docker
@@ -402,5 +410,5 @@ public class IssueWorker(
         }
     }
 
-    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null);
+    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, string? DockerImageOverride = null);
 }

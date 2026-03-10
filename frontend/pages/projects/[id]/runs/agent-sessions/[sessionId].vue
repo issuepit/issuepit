@@ -98,6 +98,39 @@
               </div>
             </div>
 
+            <!-- Docker image selection -->
+            <div class="mb-4">
+              <label class="block text-xs text-gray-500 mb-2">Docker Image</label>
+              <div class="space-y-2">
+                <label v-for="opt in agentImageOptions" :key="opt.value" class="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    v-model="retryDockerImage"
+                    type="radio"
+                    :value="opt.value"
+                    class="mt-0.5 text-brand-500 focus:ring-brand-500 bg-gray-800 border-gray-600" />
+                  <span class="text-sm">
+                    <span class="text-gray-300 font-mono text-xs">{{ opt.value }}</span>
+                    <span v-if="opt.isDefault" class="ml-1.5 text-xs text-gray-600">(default)</span>
+                    <span class="block text-xs text-gray-500 mt-0.5">{{ opt.description }}</span>
+                  </span>
+                </label>
+                <label class="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    v-model="retryDockerImage"
+                    type="radio"
+                    value="custom"
+                    class="mt-0.5 text-brand-500 focus:ring-brand-500 bg-gray-800 border-gray-600" />
+                  <span class="text-sm text-gray-300">Custom image</span>
+                </label>
+                <input
+                  v-if="retryDockerImage === 'custom'"
+                  v-model="retryCustomDockerImage"
+                  type="text"
+                  placeholder="e.g. ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-300 px-2.5 py-1.5 placeholder-gray-600 focus:outline-none focus:border-brand-500" />
+              </div>
+            </div>
+
             <p class="text-xs text-gray-500 mb-5">A new session will be started for the same issue and agent.</p>
 
             <div class="flex justify-end gap-2">
@@ -340,11 +373,34 @@ onMounted(async () => {
 const retrying = ref(false)
 const showRetryModal = ref(false)
 
+const agentImageOptions = [
+  {
+    value: 'ghcr.io/issuepit/issuepit-helper-opencode-act:latest',
+    description: 'Most recent stable release — recommended for production use.',
+    isDefault: true,
+  },
+  {
+    value: 'ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24',
+    description: 'Latest build from the main branch — may include unreleased changes.',
+    isDefault: false,
+  },
+]
+
+// Default to the first (stable/latest) option
+const retryDockerImage = ref(agentImageOptions[0].value)
+const retryCustomDockerImage = ref('')
+
 async function retrySession() {
   showRetryModal.value = false
   retrying.value = true
   try {
-    await store.retrySession(sessionId)
+    let imageOverride: string | undefined
+    if (retryDockerImage.value === 'custom') {
+      imageOverride = retryCustomDockerImage.value.trim() || undefined
+    } else if (retryDockerImage.value !== agentImageOptions[0].value) {
+      imageOverride = retryDockerImage.value
+    }
+    await store.retrySession(sessionId, imageOverride ? { dockerImageOverride: imageOverride } : undefined)
     await store.fetchAgentSessions(projectId)
     navigateTo(`/projects/${projectId}/runs?tab=agent`)
   } finally {
