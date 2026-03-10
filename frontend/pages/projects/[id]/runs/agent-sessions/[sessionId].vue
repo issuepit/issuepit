@@ -1,19 +1,12 @@
 <template>
   <div class="p-8">
     <!-- Breadcrumb + Header -->
-    <div class="flex items-center gap-2 text-sm text-gray-500 mb-2">
-      <NuxtLink :to="`/projects/${projectId}`" class="hover:text-gray-300">{{ projectsStore.currentProject?.name }}</NuxtLink>
-      <span>/</span>
-      <NuxtLink :to="`/projects/${projectId}/runs?tab=agent`" class="hover:text-gray-300">Runs</NuxtLink>
-      <span>/</span>
-      <span class="text-gray-400">Agent Session</span>
-    </div>
-    <div class="flex items-center gap-3 mb-6">
-      <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-          d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2" />
-      </svg>
-      <h1 class="text-xl font-bold text-white">Agent Session</h1>
+    <div class="flex items-center gap-2 mb-6">
+      <NuxtLink :to="`/projects/${projectId}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name }}</NuxtLink>
+      <span class="text-gray-600">/</span>
+      <NuxtLink :to="`/projects/${projectId}/runs?tab=agent`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">Runs</NuxtLink>
+      <span class="text-gray-600">/</span>
+      <NuxtLink :to="`/projects/${projectId}/runs/agent-sessions/${sessionId}`" class="text-xl font-bold text-white">Agent Session</NuxtLink>
       <!-- Live indicator when session is active -->
       <span v-if="isActive && isConnected" class="flex items-center gap-1 text-xs text-green-400 font-normal ml-1">
         <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
@@ -95,6 +88,39 @@
               <div class="flex gap-2">
                 <span class="text-gray-500 w-16 shrink-0">Agent</span>
                 <span class="text-gray-300">{{ store.currentSession.agentName }}</span>
+              </div>
+            </div>
+
+            <!-- Docker image selection -->
+            <div class="mb-4">
+              <label class="block text-xs text-gray-500 mb-2">Docker Image</label>
+              <div class="space-y-2">
+                <label v-for="opt in agentImageOptions" :key="opt.value" class="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    v-model="retryDockerImage"
+                    type="radio"
+                    :value="opt.value"
+                    class="mt-0.5 text-brand-500 focus:ring-brand-500 bg-gray-800 border-gray-600" />
+                  <span class="text-sm">
+                    <span class="text-gray-300 font-mono text-xs">{{ opt.value }}</span>
+                    <span v-if="opt.isDefault" class="ml-1.5 text-xs text-gray-600">(default)</span>
+                    <span class="block text-xs text-gray-500 mt-0.5">{{ opt.description }}</span>
+                  </span>
+                </label>
+                <label class="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    v-model="retryDockerImage"
+                    type="radio"
+                    value="custom"
+                    class="mt-0.5 text-brand-500 focus:ring-brand-500 bg-gray-800 border-gray-600" />
+                  <span class="text-sm text-gray-300">Custom image</span>
+                </label>
+                <input
+                  v-if="retryDockerImage === 'custom'"
+                  v-model="retryCustomDockerImage"
+                  type="text"
+                  placeholder="e.g. ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-300 px-2.5 py-1.5 placeholder-gray-600 focus:outline-none focus:border-brand-500" />
               </div>
             </div>
 
@@ -340,11 +366,34 @@ onMounted(async () => {
 const retrying = ref(false)
 const showRetryModal = ref(false)
 
+const agentImageOptions = [
+  {
+    value: 'ghcr.io/issuepit/issuepit-helper-opencode-act:latest',
+    description: 'Most recent stable release — recommended for production use.',
+    isDefault: true,
+  },
+  {
+    value: 'ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24',
+    description: 'Latest build from the main branch — may include unreleased changes.',
+    isDefault: false,
+  },
+]
+
+// Default to the first (stable/latest) option
+const retryDockerImage = ref(agentImageOptions[0].value)
+const retryCustomDockerImage = ref('')
+
 async function retrySession() {
   showRetryModal.value = false
   retrying.value = true
   try {
-    await store.retrySession(sessionId)
+    let imageOverride: string | undefined
+    if (retryDockerImage.value === 'custom') {
+      imageOverride = retryCustomDockerImage.value.trim() || undefined
+    } else if (retryDockerImage.value !== agentImageOptions[0].value) {
+      imageOverride = retryDockerImage.value
+    }
+    await store.retrySession(sessionId, imageOverride ? { dockerImageOverride: imageOverride } : undefined)
     await store.fetchAgentSessions(projectId)
     navigateTo(`/projects/${projectId}/runs?tab=agent`)
   } finally {

@@ -23,6 +23,11 @@
             Week
           </button>
         </div>
+        <!-- Today button -->
+        <button @click="goToToday"
+          class="text-xs text-gray-400 hover:text-gray-200 px-2 py-0.5 rounded border border-gray-700 bg-gray-800 hover:bg-gray-700 transition-colors">
+          Today
+        </button>
       </div>
       <button @click="next"
         class="text-gray-400 hover:text-gray-200 transition-colors p-1 rounded">
@@ -248,6 +253,16 @@ function next() {
     const d = new Date(weekStart.value)
     d.setDate(d.getDate() + 7)
     weekStart.value = d
+  }
+}
+
+function goToToday() {
+  if (calendarMode.value === 'month') {
+    currentYear.value = today.getFullYear()
+    currentMonth.value = today.getMonth()
+  } else {
+    weekStart.value = getMondayOf(today)
+    nextTick(() => { scrollToDefaultHour() })
   }
 }
 

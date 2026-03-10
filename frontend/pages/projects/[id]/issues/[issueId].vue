@@ -8,18 +8,18 @@
     <template v-else-if="store.currentIssue">
       <!-- Breadcrumb + action buttons -->
       <div class="flex items-center justify-between mb-5">
-        <div class="flex items-center gap-2 text-sm text-gray-500">
-          <NuxtLink :to="`/projects/${id}`" class="hover:text-gray-300">{{ projectsStore.currentProject?.name || 'Project' }}</NuxtLink>
-          <span>/</span>
-          <NuxtLink :to="`/projects/${id}/issues`" class="hover:text-gray-300">Issues</NuxtLink>
+        <div class="flex items-center gap-2">
+          <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name || 'Project' }}</NuxtLink>
+          <span class="text-gray-600">/</span>
+          <NuxtLink :to="`/projects/${id}/issues`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">Issues</NuxtLink>
           <template v-if="store.currentIssue.parentIssue">
-            <span>/</span>
-            <NuxtLink :to="`/projects/${id}/issues/${store.currentIssue.parentIssue.number}`" class="hover:text-gray-300">
+            <span class="text-gray-600">/</span>
+            <NuxtLink :to="`/projects/${id}/issues/${store.currentIssue.parentIssue.number}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">
               #{{ store.currentIssue.parentIssue.number }} {{ store.currentIssue.parentIssue.title }}
             </NuxtLink>
           </template>
-          <span>/</span>
-          <span class="text-gray-400">#{{ store.currentIssue.number }}</span>
+          <span class="text-gray-600">/</span>
+          <NuxtLink :to="`/projects/${id}/issues/${store.currentIssue.number}`" class="text-xl font-bold text-white">#{{ store.currentIssue.number }}</NuxtLink>
         </div>
         <!-- Issue creation buttons -->
         <div class="flex items-center gap-2">

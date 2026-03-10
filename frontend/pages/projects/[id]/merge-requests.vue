@@ -1,14 +1,10 @@
 <template>
   <div class="p-8">
     <!-- Header -->
-    <div class="flex items-center gap-3 mb-6">
-      <NuxtLink :to="`/projects/${id}`" class="text-sm text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name }}</NuxtLink>
+    <div class="flex items-center gap-2 mb-6">
+      <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name }}</NuxtLink>
       <span class="text-gray-600">/</span>
-      <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-      </svg>
-      <h1 class="text-xl font-bold text-white">Merge Requests</h1>
+      <NuxtLink :to="`/projects/${id}/merge-requests`" class="text-xl font-bold text-white">Merge Requests</NuxtLink>
       <span class="ml-auto">
         <button @click="showCreateModal = true"
           class="flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white text-sm px-4 py-2 rounded-lg transition-colors">

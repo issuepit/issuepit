@@ -13,11 +13,29 @@ public class ArtifactStorageServiceTests
         return new ArtifactStorageService(config, NullLogger<ArtifactStorageService>.Instance);
     }
 
+    private static ArtifactStorageService CreateServiceWithUrl(string serviceUrl)
+    {
+        // ASP.NET Core env vars use __ as separator which maps to : in the config system.
+        // The configuration key must use : (colon) separator, not __ (double-underscore).
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["ImageStorage:ServiceUrl"] = serviceUrl })
+            .Build();
+        return new ArtifactStorageService(config, NullLogger<ArtifactStorageService>.Instance);
+    }
+
     [Fact]
     public void IsConfigured_WithoutServiceUrl_ReturnsFalse()
     {
         var svc = CreateService();
         Assert.False(svc.IsConfigured);
+    }
+
+    [Fact]
+    public void IsConfigured_WithServiceUrl_ReturnsTrue()
+    {
+        // Verifies the colon-separator config key is used (not the double-underscore env-var name).
+        var svc = CreateServiceWithUrl("http://localhost:4566");
+        Assert.True(svc.IsConfigured);
     }
 
     [Fact]

@@ -14,7 +14,7 @@ public class MilestonesPage(IPage page)
     {
         await page.GotoAsync($"/projects/{projectId}/milestones");
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        await page.WaitForSelectorAsync("h1:has-text('Milestones')", new PageWaitForSelectorOptions { Timeout = 10_000 });
+        await page.WaitForSelectorAsync("a:text-is('Milestones')", new PageWaitForSelectorOptions { Timeout = 10_000 });
     }
 
     /// <summary>

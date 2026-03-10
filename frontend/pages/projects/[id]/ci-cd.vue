@@ -7,10 +7,10 @@
 
     <template v-else-if="projectsStore.currentProject">
       <!-- Breadcrumb -->
-      <div class="flex items-center gap-2 text-sm text-gray-500 mb-4">
-        <NuxtLink :to="`/projects/${id}`" class="hover:text-gray-300">{{ projectsStore.currentProject.name }}</NuxtLink>
-        <span>/</span>
-        <span class="text-gray-400">CI/CD</span>
+      <div class="flex items-center gap-2 mb-4">
+        <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject.name }}</NuxtLink>
+        <span class="text-gray-600">/</span>
+        <NuxtLink :to="`/projects/${id}/ci-cd`" class="text-xl font-bold text-white">CI/CD</NuxtLink>
       </div>
 
       <!-- Tabs -->
