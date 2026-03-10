@@ -13,6 +13,9 @@ namespace IssuePit.Tests.E2E;
 [Trait("Category", "E2E")]
 public class IssueKeyFormatTests : IAsyncLifetime
 {
+    private const int DefaultTimeoutMs = 15_000;
+    private const int SelectorTimeoutMs = 10_000;
+
     private readonly AspireFixture _fixture;
     private IPlaywright? _playwright;
     private IBrowser? _browser;
@@ -229,18 +232,18 @@ public class IssueKeyFormatTests : IAsyncLifetime
         var issueNumber = issue.GetProperty("number").GetInt32();
 
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
-        context.SetDefaultTimeout(15_000);
+        context.SetDefaultTimeout(DefaultTimeoutMs);
         var page = await context.NewPageAsync();
         try
         {
             await new LoginPage(page).LoginAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = DefaultTimeoutMs });
 
             await new IssuesPage(page).GotoAsync(projectId);
 
             var expectedId = $"#TK-{issueNumber}";
             await page.WaitForSelectorAsync($"text={expectedId}",
-                new PageWaitForSelectorOptions { Timeout = 10_000 });
+                new PageWaitForSelectorOptions { Timeout = SelectorTimeoutMs });
 
             Assert.True(await page.Locator($"text={expectedId}").IsVisibleAsync(),
                 $"Expected formatted issue ID '{expectedId}' to be visible in the issues list");
@@ -279,12 +282,12 @@ public class IssueKeyFormatTests : IAsyncLifetime
         var projectId = proj.GetProperty("id").GetString()!;
 
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
-        context.SetDefaultTimeout(15_000);
+        context.SetDefaultTimeout(DefaultTimeoutMs);
         var page = await context.NewPageAsync();
         try
         {
             await new LoginPage(page).LoginAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = DefaultTimeoutMs });
 
             var settingsPage = new ProjectSettingsPage(page);
             await settingsPage.GotoAsync(projectId);
