@@ -1,12 +1,14 @@
 <template>
   <div class="p-8">
-    <!-- Header -->
+    <!-- Breadcrumb + Header -->
+    <div class="flex items-center gap-2 text-sm text-gray-500 mb-2">
+      <NuxtLink :to="`/projects/${projectId}`" class="hover:text-gray-300">{{ projectsStore.currentProject?.name }}</NuxtLink>
+      <span>/</span>
+      <NuxtLink :to="`/projects/${projectId}/runs`" class="hover:text-gray-300">Runs</NuxtLink>
+      <span>/</span>
+      <span class="text-gray-400">CI/CD Run</span>
+    </div>
     <div class="flex items-center gap-3 mb-6">
-      <NuxtLink :to="`/projects/${projectId}/runs`" class="text-gray-500 hover:text-gray-300 transition-colors">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-        </svg>
-      </NuxtLink>
       <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
       </svg>
@@ -602,6 +604,16 @@
                     </svg>
                     Download
                   </a>
+                  <span
+                    v-else
+                    class="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-medium bg-gray-700 text-gray-500 cursor-not-allowed shrink-0"
+                    title="Artifact storage (S3) is not configured">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Storage not configured
+                  </span>
                 </div>
               </div>
             </template>
@@ -731,6 +743,7 @@
 <script setup lang="ts">
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useIssuesStore } from '~/stores/issues'
+import { useProjectsStore } from '~/stores/projects'
 import { CiCdRunStatus, type CiCdRunLog } from '~/types'
 import { parseAnsiToHtml, stripAnsiCodes } from '~/composables/useAnsiParser'
 import { buildGraphJobIndexes, resolveLogJobId as resolveLogJobIdFn, matrixLabel as matrixLabelFn } from '~/utils/cicdLogMapper'
@@ -741,6 +754,7 @@ const runId = route.params.runId as string
 
 const store = useCiCdRunsStore()
 const issuesStore = useIssuesStore()
+const projectsStore = useProjectsStore()
 const { prefs } = useUserPreferences()
 
 /**
@@ -1629,6 +1643,7 @@ onMounted(async () => {
   await store.fetchRun(runId)
   await store.fetchTestResults(runId)
   await store.fetchArtifacts(runId)
+  projectsStore.fetchProject(projectId)
 
   // Connect to the CiCd output hub to receive live log lines and run-completed events
   await connectCicd()

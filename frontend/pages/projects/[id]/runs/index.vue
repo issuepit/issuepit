@@ -1,12 +1,9 @@
 <template>
   <div class="p-8">
     <!-- Header -->
-    <div class="flex items-center gap-3 mb-6">
-      <NuxtLink :to="`/projects/${id}`" class="text-gray-500 hover:text-gray-300 transition-colors">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-        </svg>
-      </NuxtLink>
+    <div class="flex items-center gap-2 mb-6">
+      <NuxtLink :to="`/projects/${id}`" class="text-sm text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name }}</NuxtLink>
+      <span class="text-gray-600">/</span>
       <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
           d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -198,12 +195,14 @@
 
 <script setup lang="ts">
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
+import { useProjectsStore } from '~/stores/projects'
 import { CiCdRunStatus, AgentSessionStatus } from '~/types'
 
 const route = useRoute()
 const id = route.params.id as string
 
 const store = useCiCdRunsStore()
+const projectsStore = useProjectsStore()
 const tabs = ['CI/CD Runs', 'Agent Runs'] as const
 const activeTab = ref<typeof tabs[number]>(route.query.tab === 'agent' ? 'Agent Runs' : 'CI/CD Runs')
 
@@ -228,6 +227,7 @@ async function refreshRunsData() {
 }
 
 onMounted(async () => {
+  projectsStore.fetchProject(id)
   await refreshRunsData()
 
   // Connect to SignalR for live run updates

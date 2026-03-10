@@ -220,4 +220,64 @@ public class TrxParserTests
         var args = IssuePit.CiCdClient.Runtimes.NativeCiCdRuntime.BuildActArgumentsList(trigger);
         Assert.DoesNotContain("--artifact-server-path", args);
     }
+
+    [Fact]
+    public void Parse_FromStream_ReturnsSuiteWithArtifactName()
+    {
+        using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(SimpleTrx));
+        var suite = TrxParser.Parse(ms, "unit-test-results");
+        Assert.NotNull(suite);
+        Assert.Equal("unit-test-results", suite!.ArtifactName);
+        Assert.Equal(2, suite.TotalTests);
+        Assert.Equal(1, suite.PassedTests);
+        Assert.Equal(1, suite.FailedTests);
+    }
+
+    [Fact]
+    public void Parse_FromStream_InvalidXml_ReturnsNull()
+    {
+        using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("<not valid xml <<"));
+        var suite = TrxParser.Parse(ms, "some-artifact");
+        Assert.Null(suite);
+    }
+
+    [Fact]
+    public void Parse_TrxInsideZip_ReturnsCorrectSuite()
+    {
+        // Simulate the act artifact server structure:
+        // artifactDir/<runNumber>/<artifactName>/<trxFile>.zip  (contains <trxFile>.trx)
+        var artifactDir = Path.Combine(Path.GetTempPath(), $"trx-zip-test-{Guid.NewGuid():N}");
+        var artifactSubDir = Path.Combine(artifactDir, "1", "unit-test-results");
+        Directory.CreateDirectory(artifactSubDir);
+
+        // Create a zip containing a .trx file (act artifact server format).
+        var zipPath = Path.Combine(artifactSubDir, "TestResults.trx.zip");
+        using (var zip = System.IO.Compression.ZipFile.Open(zipPath, System.IO.Compression.ZipArchiveMode.Create))
+        {
+            var entry = zip.CreateEntry("TestResults.trx");
+            using var entryStream = entry.Open();
+            using var writer = new System.IO.StreamWriter(entryStream);
+            writer.Write(SimpleTrx);
+        }
+
+        try
+        {
+            // The TrxParser.FindTrxFiles should NOT find the .trx (it's inside a zip).
+            var bareTrx = TrxParser.FindTrxFiles(artifactDir).ToList();
+            Assert.Empty(bareTrx);
+
+            // But TrxParser.Parse(stream, name) should parse it correctly after extraction.
+            using var zip2 = System.IO.Compression.ZipFile.OpenRead(zipPath);
+            var entry = zip2.Entries.First(e => e.FullName.EndsWith(".trx", StringComparison.OrdinalIgnoreCase));
+            using var stream = entry.Open();
+            var suite = TrxParser.Parse(stream, "unit-test-results");
+            Assert.NotNull(suite);
+            Assert.Equal("unit-test-results", suite!.ArtifactName);
+            Assert.Equal(2, suite.TotalTests);
+        }
+        finally
+        {
+            Directory.Delete(artifactDir, recursive: true);
+        }
+    }
 }

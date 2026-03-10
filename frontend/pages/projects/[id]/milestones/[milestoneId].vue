@@ -8,7 +8,7 @@
     <template v-else-if="progress">
       <!-- Breadcrumb -->
       <div class="flex items-center gap-2 text-sm text-gray-500 mb-5">
-        <NuxtLink :to="`/projects/${id}`" class="hover:text-gray-300">Project</NuxtLink>
+        <NuxtLink :to="`/projects/${id}`" class="hover:text-gray-300">{{ projectsStore.currentProject?.name || 'Project' }}</NuxtLink>
         <span>/</span>
         <NuxtLink :to="`/projects/${id}/milestones`" class="hover:text-gray-300">Milestones</NuxtLink>
         <span>/</span>
@@ -108,12 +108,14 @@
 <script setup lang="ts">
 import type { Issue } from '~/types'
 import { IssueStatus } from '~/types'
+import { useProjectsStore } from '~/stores/projects'
 
 const route = useRoute()
 const id = route.params.id as string
 const milestoneId = route.params.milestoneId as string
 
 const api = useApi()
+const projectsStore = useProjectsStore()
 const loading = ref(true)
 const progress = ref<{
   id: string; title: string; description?: string; dueDate?: string; status: string;
@@ -122,6 +124,7 @@ const progress = ref<{
 const issues = ref<Issue[]>([])
 
 onMounted(async () => {
+  projectsStore.fetchProject(id)
   try {
     const [prog, issueList] = await Promise.all([
       api.get<typeof progress.value>(`/api/projects/${id}/milestones/${milestoneId}/progress`),

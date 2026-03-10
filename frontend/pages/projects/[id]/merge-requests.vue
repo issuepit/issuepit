@@ -2,11 +2,8 @@
   <div class="p-8">
     <!-- Header -->
     <div class="flex items-center gap-3 mb-6">
-      <NuxtLink :to="`/projects/${id}`" class="text-gray-500 hover:text-gray-300 transition-colors">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-        </svg>
-      </NuxtLink>
+      <NuxtLink :to="`/projects/${id}`" class="text-sm text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name }}</NuxtLink>
+      <span class="text-gray-600">/</span>
       <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
           d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
@@ -68,9 +65,9 @@
 
     <!-- List -->
     <div v-else class="space-y-2">
-      <div v-for="mr in filteredMrs" :key="mr.id"
-        class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 transition-colors cursor-pointer"
-        @click="selectedMr = mr">
+      <NuxtLink v-for="mr in filteredMrs" :key="mr.id"
+        :to="`/projects/${id}/merge-requests/${mr.id}`"
+        class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 transition-colors cursor-pointer block">
         <div class="flex items-start gap-3">
           <!-- Status icon -->
           <div class="mt-0.5 shrink-0">
@@ -113,93 +110,27 @@
           </div>
 
           <!-- Actions for open MRs -->
-          <div v-if="mr.statusName === 'Open'" class="flex items-center gap-2 shrink-0" @click.stop>
-            <button @click="mergeMr(mr)"
+          <div v-if="mr.statusName === 'Open'" class="flex items-center gap-2 shrink-0" @click.prevent>
+            <button @click.prevent="mergeMr(mr)"
               :disabled="actionLoading === mr.id"
               class="text-xs bg-purple-700 hover:bg-purple-600 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
               Merge
             </button>
-            <button @click="closeMr(mr)"
+            <button @click.prevent="closeMr(mr)"
               :disabled="actionLoading === mr.id"
               class="text-xs text-gray-400 hover:text-gray-200 px-2 py-1.5 rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50">
               Close
             </button>
           </div>
-          <div v-else-if="mr.statusName === 'Closed'" class="shrink-0" @click.stop>
-            <button @click="reopenMr(mr)"
+          <div v-else-if="mr.statusName === 'Closed'" class="shrink-0" @click.prevent>
+            <button @click.prevent="reopenMr(mr)"
               :disabled="actionLoading === mr.id"
               class="text-xs text-gray-400 hover:text-gray-200 px-2 py-1.5 rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50">
               Reopen
             </button>
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- Detail panel -->
-    <div v-if="selectedMr"
-      class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
-      @click.self="selectedMr = null">
-      <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-lg p-6 space-y-4">
-        <div class="flex items-start justify-between gap-2">
-          <h2 class="text-lg font-bold text-white">{{ selectedMr.title }}</h2>
-          <button @click="selectedMr = null" class="text-gray-500 hover:text-gray-300 transition-colors">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        <div class="text-sm text-gray-400 space-y-2">
-          <p v-if="selectedMr.description">{{ selectedMr.description }}</p>
-          <p>
-            <span class="text-gray-500">Branch:</span>
-            <code class="bg-gray-800 px-1 rounded text-gray-300 ml-1">{{ selectedMr.sourceBranch }}</code>
-            <span class="mx-1 text-gray-500">→</span>
-            <code class="bg-gray-800 px-1 rounded text-gray-300">{{ selectedMr.targetBranch }}</code>
-          </p>
-          <p>
-            <span class="text-gray-500">Status:</span>
-            <span class="ml-1 text-white">{{ selectedMr.statusName }}</span>
-          </p>
-          <p v-if="selectedMr.lastCiCdRunStatusName">
-            <span class="text-gray-500">CI Status:</span>
-            <span :class="ciStatusClass(selectedMr.lastCiCdRunStatusName)" class="ml-1 text-xs px-1.5 py-0.5 rounded-full">
-              {{ selectedMr.lastCiCdRunStatusName }}
-            </span>
-          </p>
-          <p v-if="selectedMr.mergeCommitSha">
-            <span class="text-gray-500">Merge commit:</span>
-            <code class="bg-gray-800 px-1 rounded text-gray-300 ml-1">{{ selectedMr.mergeCommitSha.slice(0, 8) }}</code>
-          </p>
-          <p>
-            <span class="text-gray-500">Auto-merge:</span>
-            <span class="ml-1 text-white">{{ selectedMr.autoMergeEnabled ? 'Enabled' : 'Disabled' }}</span>
-          </p>
-          <p>
-            <span class="text-gray-500">Created:</span>
-            <span class="ml-1 text-white">{{ formatDate(selectedMr.createdAt) }}</span>
-          </p>
-          <p v-if="selectedMr.mergedAt">
-            <span class="text-gray-500">Merged:</span>
-            <span class="ml-1 text-white">{{ formatDate(selectedMr.mergedAt) }}</span>
-          </p>
-        </div>
-
-        <!-- Action buttons -->
-        <div v-if="selectedMr.statusName === 'Open'" class="flex gap-2 pt-2">
-          <button @click="mergeMr(selectedMr!); selectedMr = null"
-            :disabled="actionLoading === selectedMr.id"
-            class="flex-1 bg-purple-700 hover:bg-purple-600 text-white text-sm py-2 rounded-lg transition-colors disabled:opacity-50">
-            Merge
-          </button>
-          <button @click="closeMr(selectedMr!); selectedMr = null"
-            :disabled="actionLoading === selectedMr.id"
-            class="flex-1 bg-gray-800 hover:bg-gray-700 text-white text-sm py-2 rounded-lg transition-colors disabled:opacity-50">
-            Close
-          </button>
-        </div>
-      </div>
+      </NuxtLink>
     </div>
 
     <!-- Create MR Modal -->
@@ -302,7 +233,6 @@ const mergeRequests = ref<MergeRequestDto[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 const actionLoading = ref<string | null>(null)
-const selectedMr = ref<MergeRequestDto | null>(null)
 
 const activeTab = ref<'Open' | 'Merged' | 'Closed'>('Open')
 const tabs = [
@@ -323,6 +253,7 @@ const showCreateModal = ref(false)
 const creating = ref(false)
 const createError = ref<string | null>(null)
 const branches = ref<GitBranch[]>([])
+const defaultBranch = ref<string>('')
 const form = reactive({
   title: '',
   description: '',
@@ -335,7 +266,7 @@ function resetForm() {
   form.title = ''
   form.description = ''
   form.sourceBranch = ''
-  form.targetBranch = ''
+  form.targetBranch = defaultBranch.value
   form.autoMergeEnabled = false
   createError.value = null
 }
@@ -344,12 +275,26 @@ watch(showCreateModal, async (val) => {
   if (val) {
     resetForm()
     await loadBranches()
+    // Update targetBranch after branches load in case defaultBranch was just resolved
+    if (form.targetBranch === '' && defaultBranch.value) {
+      form.targetBranch = defaultBranch.value
+    }
   }
 })
 
 async function loadBranches() {
   try {
     branches.value = await api.get<GitBranch[]>(`/api/projects/${id}/git/branches`)
+    // Resolve default branch from the git repo config if not yet known
+    if (!defaultBranch.value) {
+      const repos = await api.get<{ defaultBranch: string }[]>(`/api/projects/${id}/git/repos`)
+      if (repos.length > 0) {
+        defaultBranch.value = repos[0].defaultBranch ?? 'main'
+      }
+    }
+    if (!form.targetBranch) {
+      form.targetBranch = defaultBranch.value
+    }
   } catch {
     branches.value = []
   }
@@ -394,7 +339,6 @@ async function mergeMr(mr: MergeRequestDto) {
     const updated = await api.post<MergeRequestDto>(`/api/projects/${id}/merge-requests/${mr.id}/merge`, {})
     const idx = mergeRequests.value.findIndex(m => m.id === mr.id)
     if (idx !== -1) mergeRequests.value[idx] = updated
-    if (selectedMr.value?.id === mr.id) selectedMr.value = updated
   } catch (e: unknown) {
     alert(e instanceof Error ? e.message : 'Merge failed')
   } finally {
@@ -408,7 +352,6 @@ async function closeMr(mr: MergeRequestDto) {
     const updated = await api.post<MergeRequestDto>(`/api/projects/${id}/merge-requests/${mr.id}/close`, {})
     const idx = mergeRequests.value.findIndex(m => m.id === mr.id)
     if (idx !== -1) mergeRequests.value[idx] = updated
-    if (selectedMr.value?.id === mr.id) selectedMr.value = updated
   } catch (e: unknown) {
     alert(e instanceof Error ? e.message : 'Failed to close MR')
   } finally {
@@ -422,7 +365,6 @@ async function reopenMr(mr: MergeRequestDto) {
     const updated = await api.post<MergeRequestDto>(`/api/projects/${id}/merge-requests/${mr.id}/reopen`, {})
     const idx = mergeRequests.value.findIndex(m => m.id === mr.id)
     if (idx !== -1) mergeRequests.value[idx] = updated
-    if (selectedMr.value?.id === mr.id) selectedMr.value = updated
   } catch (e: unknown) {
     alert(e instanceof Error ? e.message : 'Failed to reopen MR')
   } finally {

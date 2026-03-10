@@ -1,12 +1,14 @@
 <template>
   <div class="p-8">
-    <!-- Header -->
+    <!-- Breadcrumb + Header -->
+    <div class="flex items-center gap-2 text-sm text-gray-500 mb-2">
+      <NuxtLink :to="`/projects/${projectId}`" class="hover:text-gray-300">{{ projectsStore.currentProject?.name }}</NuxtLink>
+      <span>/</span>
+      <NuxtLink :to="`/projects/${projectId}/runs?tab=agent`" class="hover:text-gray-300">Runs</NuxtLink>
+      <span>/</span>
+      <span class="text-gray-400">Agent Session</span>
+    </div>
     <div class="flex items-center gap-3 mb-6">
-      <NuxtLink :to="`/projects/${projectId}/runs?tab=agent`" class="text-gray-500 hover:text-gray-300 transition-colors">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-        </svg>
-      </NuxtLink>
       <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
           d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2" />
@@ -67,16 +69,53 @@
         <div v-if="store.currentSession.status === AgentSessionStatus.Failed || store.currentSession.status === AgentSessionStatus.Cancelled"
           class="mt-4 pt-4 border-t border-gray-800 flex justify-end">
           <button
-            class="flex items-center gap-1.5 text-sm text-brand-400 hover:text-brand-300 transition-colors"
-            @click="retrySession">
+            :disabled="retrying"
+            class="flex items-center gap-1.5 text-sm text-brand-400 hover:text-brand-300 disabled:opacity-50 transition-colors"
+            @click="showRetryModal = true">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            Retry Session
+            {{ retrying ? 'Retrying…' : 'Retry Session' }}
           </button>
         </div>
       </div>
+
+      <!-- Retry options modal -->
+      <Teleport to="body">
+        <div v-if="showRetryModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @click.self="showRetryModal = false">
+          <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-xl p-6 w-full max-w-md">
+            <h3 class="text-base font-semibold text-white mb-4">Retry Session</h3>
+
+            <div class="mb-4 space-y-2 text-sm text-gray-400">
+              <div class="flex gap-2">
+                <span class="text-gray-500 w-16 shrink-0">Issue</span>
+                <span class="text-gray-300">#{{ store.currentSession.issueNumber }} {{ store.currentSession.issueTitle }}</span>
+              </div>
+              <div class="flex gap-2">
+                <span class="text-gray-500 w-16 shrink-0">Agent</span>
+                <span class="text-gray-300">{{ store.currentSession.agentName }}</span>
+              </div>
+            </div>
+
+            <p class="text-xs text-gray-500 mb-5">A new session will be started for the same issue and agent.</p>
+
+            <div class="flex justify-end gap-2">
+              <button
+                class="px-4 py-1.5 text-sm text-gray-400 hover:text-gray-200 transition-colors"
+                @click="showRetryModal = false">
+                Cancel
+              </button>
+              <button
+                :disabled="retrying"
+                class="px-4 py-1.5 text-sm bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white rounded-md transition-colors"
+                @click="retrySession">
+                {{ retrying ? 'Retrying…' : 'Retry Session' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Teleport>
 
       <!-- Logs / Details -->
       <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden mb-6">
@@ -201,6 +240,7 @@
 
 <script setup lang="ts">
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
+import { useProjectsStore } from '~/stores/projects'
 import { CiCdRunStatus, AgentSessionStatus, type AgentSessionLog } from '~/types'
 
 const route = useRoute()
@@ -208,6 +248,7 @@ const projectId = route.params.id as string
 const sessionId = route.params.sessionId as string
 
 const store = useCiCdRunsStore()
+const projectsStore = useProjectsStore()
 
 const sectionTabs = [
   { label: 'Logs', value: 'logs' },
@@ -254,6 +295,7 @@ const isActive = computed(() =>
 )
 
 onMounted(async () => {
+  projectsStore.fetchProject(projectId)
   await store.fetchAgentSession(sessionId)
 
   // Connect to project hub so the session and its CI/CD runs table refresh in real time
@@ -262,7 +304,7 @@ onMounted(async () => {
     await connection.value.invoke('JoinProject', projectId).catch((e: unknown) => { console.warn('Failed to join project group', e) })
     connection.value.on('RunsUpdated', async () => {
       now.value = Date.now()
-      if (store.currentSession) await store.fetchAgentSession(sessionId)
+      if (store.currentSession) await store.fetchAgentSessionOnly(sessionId)
     })
   }
 
@@ -276,7 +318,7 @@ onMounted(async () => {
         if (data.event === 'session-completed') {
           now.value = Date.now()
           // Refresh session metadata (status, endedAt) without replacing logs
-          store.fetchAgentSession(sessionId)
+          store.fetchAgentSessionOnly(sessionId)
         } else if (data.event === 'session-heartbeat') {
           now.value = Date.now()
         } else if (data.line !== undefined) {
@@ -295,10 +337,19 @@ onMounted(async () => {
   }
 })
 
+const retrying = ref(false)
+const showRetryModal = ref(false)
+
 async function retrySession() {
-  await store.retrySession(sessionId)
-  await store.fetchAgentSessions(projectId)
-  navigateTo(`/projects/${projectId}/runs?tab=agent`)
+  showRetryModal.value = false
+  retrying.value = true
+  try {
+    await store.retrySession(sessionId)
+    await store.fetchAgentSessions(projectId)
+    navigateTo(`/projects/${projectId}/runs?tab=agent`)
+  } finally {
+    retrying.value = false
+  }
 }
 
 async function copyLogsToClipboard() {

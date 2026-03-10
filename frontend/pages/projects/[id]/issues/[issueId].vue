@@ -6,19 +6,40 @@
     </div>
 
     <template v-else-if="store.currentIssue">
-      <!-- Breadcrumb -->
-      <div class="flex items-center gap-2 text-sm text-gray-500 mb-5">
-        <NuxtLink :to="`/projects/${id}`" class="hover:text-gray-300">Project</NuxtLink>
-        <span>/</span>
-        <NuxtLink :to="`/projects/${id}/issues`" class="hover:text-gray-300">Issues</NuxtLink>
-        <template v-if="store.currentIssue.parentIssue">
+      <!-- Breadcrumb + action buttons -->
+      <div class="flex items-center justify-between mb-5">
+        <div class="flex items-center gap-2 text-sm text-gray-500">
+          <NuxtLink :to="`/projects/${id}`" class="hover:text-gray-300">{{ projectsStore.currentProject?.name || 'Project' }}</NuxtLink>
           <span>/</span>
-          <NuxtLink :to="`/projects/${id}/issues/${store.currentIssue.parentIssue.number}`" class="hover:text-gray-300">
-            #{{ store.currentIssue.parentIssue.number }} {{ store.currentIssue.parentIssue.title }}
-          </NuxtLink>
-        </template>
-        <span>/</span>
-        <span class="text-gray-400">#{{ store.currentIssue.number }}</span>
+          <NuxtLink :to="`/projects/${id}/issues`" class="hover:text-gray-300">Issues</NuxtLink>
+          <template v-if="store.currentIssue.parentIssue">
+            <span>/</span>
+            <NuxtLink :to="`/projects/${id}/issues/${store.currentIssue.parentIssue.number}`" class="hover:text-gray-300">
+              #{{ store.currentIssue.parentIssue.number }} {{ store.currentIssue.parentIssue.title }}
+            </NuxtLink>
+          </template>
+          <span>/</span>
+          <span class="text-gray-400">#{{ store.currentIssue.number }}</span>
+        </div>
+        <!-- Issue creation buttons -->
+        <div class="flex items-center gap-2">
+          <button @click="showVoiceCreate = true"
+            class="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
+            title="Create issue from voice">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 016 0v6a3 3 0 01-3 3z" />
+            </svg>
+            Voice
+          </button>
+          <button @click="showCreate = true"
+            class="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            New Issue
+          </button>
+        </div>
       </div>
 
       <div class="flex gap-6">
@@ -336,9 +357,17 @@
               <textarea v-model="newComment" rows="3" placeholder="Leave a comment..."
                 class="w-full bg-gray-800 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none resize-none"
                 @paste="e => handleImagePaste(e, md => newComment += md)" />
-              <div class="flex justify-end bg-gray-800/50 px-3 py-2 border-t border-gray-700">
+              <div class="flex justify-end bg-gray-800/50 px-3 py-2 border-t border-gray-700 gap-2">
                 <p v-if="uploadingImage" class="text-xs text-gray-400 mr-auto self-center">Uploading image…</p>
                 <p v-else-if="uploadImageError" class="text-xs text-red-400 mr-auto self-center">{{ uploadImageError }}</p>
+                <!-- File attachment for comment -->
+                <label class="cursor-pointer text-xs text-gray-400 hover:text-gray-200 flex items-center gap-1 mr-auto self-center" title="Attach file">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                  </svg>
+                  Attach
+                  <input type="file" class="hidden" @change="handleCommentFileAttach" />
+                </label>
                 <button @click="submitComment" :disabled="!newComment.trim()"
                   class="text-xs bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-3 py-1.5 rounded transition-colors">
                   Comment
@@ -346,6 +375,64 @@
               </div>
             </div>
           </div>
+
+          <!-- Attachments -->
+          <div v-show="isTabActive('attachments')" class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <div class="flex items-center justify-between mb-4">
+              <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                Attachments
+                <span v-if="store.currentAttachments.length" class="ml-1 text-gray-600">{{ store.currentAttachments.length }}</span>
+              </h2>
+              <label class="cursor-pointer flex items-center gap-1.5 text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+                Upload File
+                <input type="file" class="hidden" @change="handleFileUpload" />
+              </label>
+            </div>
+            <p v-if="uploadingAttachment" class="text-xs text-gray-400 mb-3">Uploading…</p>
+            <p v-if="attachmentError" class="text-xs text-red-400 mb-3">{{ attachmentError }}</p>
+            <div v-if="store.currentAttachments.length === 0 && !uploadingAttachment" class="text-sm text-gray-600">
+              No attachments yet.
+            </div>
+            <div v-else class="space-y-2">
+              <div v-for="att in store.currentAttachments" :key="att.id"
+                class="flex items-center gap-3 p-3 bg-gray-800/50 rounded-lg group">
+                <!-- File icon / voice icon -->
+                <div class="shrink-0">
+                  <svg v-if="att.isVoiceFile" class="w-5 h-5 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 016 0v6a3 3 0 01-3 3z" />
+                  </svg>
+                  <svg v-else class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                  </svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <a :href="att.fileUrl" target="_blank" rel="noopener"
+                    class="text-sm text-brand-400 hover:text-brand-300 truncate block">{{ att.fileName }}</a>
+                  <p class="text-xs text-gray-500">
+                    {{ formatFileSize(att.fileSize) }} · {{ att.contentType }}
+                    <span v-if="!att.isPublic" class="ml-1 text-yellow-600" title="Private — only visible to you">🔒 Private</span>
+                    · {{ formatDate(att.createdAt) }}
+                  </p>
+                </div>
+                <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button v-if="att.isVoiceFile" @click="retranscribeVoice(att.id)"
+                    :disabled="retranscribingId === att.id"
+                    class="text-xs text-brand-400 hover:text-brand-300 disabled:opacity-40 transition-colors"
+                    title="Retry transcription">
+                    {{ retranscribingId === att.id ? 'Transcribing…' : '🔄 Retranscribe' }}
+                  </button>
+                  <button @click="store.deleteAttachment(resolvedIssueId, att.id)"
+                    class="text-xs text-gray-600 hover:text-red-400 transition-colors">Delete</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
         </div>
 
         <!-- Sidebar -->
@@ -501,6 +588,96 @@
         </div>
       </div>
     </div>
+
+    <!-- Create Issue Modal -->
+    <div v-if="showCreate" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-lg p-6 shadow-xl">
+        <h2 class="text-lg font-bold text-white mb-5">Create Issue</h2>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Title</label>
+            <input v-model="createForm.title" type="text" placeholder="Issue title"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Description</label>
+            <textarea v-model="createForm.body" rows="4" placeholder="Describe the issue..."
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"></textarea>
+          </div>
+        </div>
+        <div class="flex gap-3 mt-6">
+          <button @click="submitCreate" :disabled="!createForm.title.trim()"
+            class="flex-1 bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white text-sm font-medium py-2 rounded-lg transition-colors">
+            Create Issue
+          </button>
+          <button @click="showCreate = false"
+            class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 rounded-lg transition-colors">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Voice Create Modal -->
+    <div v-if="showVoiceCreate" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-lg p-6 shadow-xl">
+        <h2 class="text-lg font-bold text-white mb-5">Create Issue from Voice</h2>
+
+        <!-- Recording controls -->
+        <div class="flex flex-col items-center gap-4 mb-5">
+          <button
+            v-if="!voice.recording.value && !voice.uploading.value && !voice.transcription.value"
+            @click="startVoiceRecording"
+            class="w-16 h-16 rounded-full bg-brand-600 hover:bg-brand-700 flex items-center justify-center transition-colors shadow-lg">
+            <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 016 0v6a3 3 0 01-3 3z" />
+            </svg>
+          </button>
+          <p v-if="!voice.recording.value && !voice.uploading.value && !voice.transcription.value"
+            class="text-sm text-gray-400">Click to start recording</p>
+
+          <div v-if="voice.recording.value" class="flex flex-col items-center gap-3">
+            <div class="relative w-16 h-16">
+              <div class="absolute inset-0 rounded-full bg-red-500/20 animate-ping"></div>
+              <button @click="stopVoiceRecording"
+                class="relative w-16 h-16 rounded-full bg-red-600 hover:bg-red-700 flex items-center justify-center transition-colors shadow-lg">
+                <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
+                  <rect x="6" y="6" width="12" height="12" rx="1" />
+                </svg>
+              </button>
+            </div>
+            <p class="text-sm text-red-400 font-medium">Recording… click to stop</p>
+          </div>
+
+          <div v-if="voice.uploading.value" class="flex flex-col items-center gap-2">
+            <div class="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
+            <p class="text-sm text-gray-400">Transcribing…</p>
+          </div>
+        </div>
+
+        <div v-if="voice.transcription.value || voiceRecordingDone" class="space-y-3 mb-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Transcription (editable)</label>
+            <textarea v-model="voice.transcription.value" rows="4" placeholder="Transcription will appear here…"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"></textarea>
+          </div>
+        </div>
+
+        <p v-if="voice.error.value" class="text-sm text-red-400 mb-4">{{ voice.error.value }}</p>
+
+        <div class="flex gap-3">
+          <button v-if="voice.transcription.value" @click="submitVoiceCreate"
+            class="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
+            Create Issue
+          </button>
+          <button @click="closeVoiceModal"
+            class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 rounded-lg transition-colors">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -548,7 +725,7 @@ const editingCommentId = ref<string | null>(null)
 const commentEdit = ref('')
 
 // Issue view tabs
-type IssueTab = 'tasks' | 'subissues' | 'linked' | 'history' | 'comments'
+type IssueTab = 'tasks' | 'subissues' | 'linked' | 'history' | 'comments' | 'attachments'
 const TABS_STORAGE_KEY = 'issue-view-tabs'
 const DEFAULT_TABS: IssueTab[] = ['tasks', 'comments']
 
@@ -594,6 +771,7 @@ const allTabs = computed(() => [
   { id: 'linked' as IssueTab, label: 'Linked Issues', count: store.currentLinks.length },
   { id: 'history' as IssueTab, label: 'History', count: store.currentHistory.length },
   { id: 'comments' as IssueTab, label: 'Comments', count: totalCommentsCount.value },
+  { id: 'attachments' as IssueTab, label: 'Attachments', count: store.currentAttachments.length },
 ])
 
 // Total comments includes regular and code review comments
@@ -653,6 +831,7 @@ onMounted(async () => {
   await Promise.all([
     store.fetchComments(resolvedIssueId.value),
     store.fetchCodeReviewComments(resolvedIssueId.value),
+    store.fetchAttachments(resolvedIssueId.value),
     store.fetchTasks(resolvedIssueId.value),
     store.fetchLinks(resolvedIssueId.value),
     store.fetchHistory(resolvedIssueId.value),
@@ -857,5 +1036,127 @@ function statusColor(status: IssueStatus) {
 
 function formatDate(d: string) {
   return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+// Attachment upload state
+const uploadingAttachment = ref(false)
+const attachmentError = ref<string | null>(null)
+const retranscribingId = ref<string | null>(null)
+
+async function handleFileUpload(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  uploadingAttachment.value = true
+  attachmentError.value = null
+  try {
+    await store.addAttachment(resolvedIssueId.value, file, false, true)
+  } catch (err: unknown) {
+    attachmentError.value = err instanceof Error ? err.message : 'Upload failed'
+  } finally {
+    uploadingAttachment.value = false
+    ;(e.target as HTMLInputElement).value = ''
+  }
+}
+
+async function handleCommentFileAttach(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  try {
+    const config = useRuntimeConfig()
+    const baseURL = config.public.apiBase as string
+    const body = new FormData()
+    body.append('file', file)
+    const result = await $fetch<{ url: string }>('/api/uploads/file', {
+      baseURL,
+      method: 'POST',
+      body,
+      credentials: 'include',
+    })
+    newComment.value += (newComment.value ? '\n' : '') + `[${file.name}](${result.url})`
+  } catch (err: unknown) {
+    console.error('Comment file attach failed', err)
+  } finally {
+    ;(e.target as HTMLInputElement).value = ''
+  }
+}
+
+async function retranscribeVoice(attachmentId: string) {
+  retranscribingId.value = attachmentId
+  try {
+    await store.retranscribeAttachment(resolvedIssueId.value, attachmentId)
+  } finally {
+    retranscribingId.value = null
+  }
+}
+
+// New issue creation from issue detail page
+const showCreate = ref(false)
+const showVoiceCreate = ref(false)
+const voiceRecordingDone = ref(false)
+const voice = useVoiceRecorder()
+const createForm = reactive({
+  title: '',
+  body: '',
+  status: IssueStatus.Todo,
+  priority: 'medium' as string,
+  type: IssueType.Issue
+})
+
+async function submitCreate() {
+  if (!createForm.title.trim()) return
+  await store.createIssue(actualProjectId.value, {
+    title: createForm.title.trim(),
+    body: createForm.body || undefined,
+    status: createForm.status,
+    type: createForm.type,
+  })
+  showCreate.value = false
+  createForm.title = ''
+  createForm.body = ''
+}
+
+async function startVoiceRecording() {
+  voiceRecordingDone.value = false
+  await voice.startRecording()
+}
+
+async function stopVoiceRecording() {
+  const wavBlob = voice.stopRecording()
+  voiceRecordingDone.value = true
+  if (wavBlob) {
+    await voice.uploadRecording(wavBlob)
+  }
+}
+
+async function submitVoiceCreate() {
+  const title = `Voice Issue - ${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+  const newIssue = await store.createIssue(actualProjectId.value, {
+    title,
+    body: voice.transcription.value,
+    status: IssueStatus.Todo,
+    type: IssueType.Issue,
+  })
+  // Attach the voice file (private — only visible to the creator)
+  if (newIssue && voice.lastWavBlob.value) {
+    try {
+      const audioFile = new File([voice.lastWavBlob.value], 'recording.wav', { type: 'audio/wav' })
+      await store.addAttachment(newIssue.id, audioFile, true, false)
+    } catch (e) {
+      console.warn('Could not attach voice file to new issue', e)
+    }
+  }
+  closeVoiceModal()
+}
+
+function closeVoiceModal() {
+  voice.reset()
+  voiceRecordingDone.value = false
+  showVoiceCreate.value = false
 }
 </script>

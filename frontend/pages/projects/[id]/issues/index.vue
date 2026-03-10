@@ -3,11 +3,8 @@
     <!-- Header -->
     <div class="flex items-center justify-between mb-6">
       <div class="flex items-center gap-2">
-        <NuxtLink :to="`/projects/${id}`" class="text-gray-500 hover:text-gray-300 transition-colors">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-          </svg>
-        </NuxtLink>
+        <NuxtLink :to="`/projects/${id}`" class="text-sm text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name }}</NuxtLink>
+        <span class="text-gray-600">/</span>
         <h1 class="text-xl font-bold text-white">Issues</h1>
         <span class="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">
           {{ store.filteredIssues.length }}
@@ -249,11 +246,13 @@
 import { IssueStatus, IssuePriority, IssueType } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
 import { useMilestonesStore } from '~/stores/milestones'
+import { useProjectsStore } from '~/stores/projects'
 
 const route = useRoute()
 const id = route.params.id as string
 const store = useIssuesStore()
 const milestonesStore = useMilestonesStore()
+const projectsStore = useProjectsStore()
 
 const showCreate = ref(false)
 const showVoiceCreate = ref(false)
@@ -281,13 +280,22 @@ async function stopVoiceRecording() {
 
 async function submitVoiceCreate() {
   const title = `Voice Issue - ${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`
-  await store.createIssue(id, {
+  const newIssue = await store.createIssue(id, {
     title,
     body: voice.transcription.value,
     status: IssueStatus.Todo,
     priority: IssuePriority.Medium,
     type: IssueType.Issue,
   })
+  // Attach the voice recording (private — only visible to the creator)
+  if (newIssue && voice.lastWavBlob.value) {
+    try {
+      const audioFile = new File([voice.lastWavBlob.value], 'recording.wav', { type: 'audio/wav' })
+      await store.addAttachment(newIssue.id, audioFile, true, false)
+    } catch (e) {
+      console.warn('Could not attach voice file to new issue', e)
+    }
+  }
   closeVoiceModal()
 }
 
@@ -339,6 +347,7 @@ watch([search, filterStatus, filterPriority, filterType, filterMilestone], () =>
 onMounted(() => {
   store.fetchIssues(id)
   milestonesStore.fetchMilestones(id)
+  projectsStore.fetchProject(id)
 })
 
 function clearFilters() {

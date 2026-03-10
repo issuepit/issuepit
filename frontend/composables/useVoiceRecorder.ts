@@ -54,6 +54,7 @@ export const useVoiceRecorder = () => {
   const transcription = ref('')
   const voiceUrl = ref('')
   const error = ref<string | null>(null)
+  const lastWavBlob = ref<Blob | null>(null)
 
   // Internal recorder state
   let audioContext: AudioContext | null = null
@@ -120,6 +121,7 @@ export const useVoiceRecorder = () => {
   async function uploadRecording(wavBlob: Blob): Promise<void> {
     uploading.value = true
     error.value = null
+    lastWavBlob.value = wavBlob
     try {
       const body = new FormData()
       body.append('file', wavBlob, 'recording.wav')
@@ -144,11 +146,12 @@ export const useVoiceRecorder = () => {
     transcription.value = ''
     voiceUrl.value = ''
     error.value = null
+    lastWavBlob.value = null
     chunks = []
     processor = null
     audioContext = null
     stream = null
   }
 
-  return { recording, uploading, transcription, voiceUrl, error, startRecording, stopRecording, uploadRecording, reset }
+  return { recording, uploading, transcription, voiceUrl, lastWavBlob, error, startRecording, stopRecording, uploadRecording, reset }
 }

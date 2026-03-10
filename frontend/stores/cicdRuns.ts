@@ -112,6 +112,15 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     }
   }
 
+  /** Refreshes only the session metadata (status, endedAt) without replacing logs or causing a loading flash. */
+  async function fetchAgentSessionOnly(sessionId: string) {
+    try {
+      currentSession.value = await api.get<AgentSessionDetail>(`/api/agent-sessions/${sessionId}`)
+    } catch {
+      // best-effort
+    }
+  }
+
   async function retrySession(sessionId: string) {
     await api.post(`/api/agent-sessions/${sessionId}/retry`, {})
   }
@@ -195,6 +204,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     fetchArtifacts,
     fetchAgentSessions,
     fetchAgentSession,
+    fetchAgentSessionOnly,
     retrySession,
     retryRun,
     cancelRun,

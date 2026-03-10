@@ -192,6 +192,7 @@ export interface Project {
   useNewActionCache?: boolean | null
   actionOfflineMode?: boolean | null
   localRepositories?: string | null
+  openMergeRequestCount: number
   createdAt: string
   updatedAt: string
 }
@@ -251,6 +252,21 @@ export interface IssueComment {
   body: string
   createdAt: string
   updatedAt: string
+}
+
+export interface IssueAttachment {
+  id: string
+  issueId: string
+  commentId?: string
+  userId?: string
+  user?: User
+  fileName: string
+  fileUrl: string
+  contentType: string
+  fileSize: number
+  isVoiceFile: boolean
+  isPublic: boolean
+  createdAt: string
 }
 
 export interface CodeReviewComment {
