@@ -50,7 +50,7 @@ public class DockerCiCdRuntimeCacheTests
     /// <summary>
     /// Regression test: the counter variable must be named 'dind_ready_timeout', NOT 'timeout'.
     /// Using 'timeout' as a variable name shadows the shell built-in 'timeout' command, causing
-    /// 'timeout 2 docker info' to expand to '&lt;int&gt; 2 docker info' (a syntax error or unexpected
+    /// 'timeout 2 docker info' to expand to '{int} 2 docker info' (a syntax error or unexpected
     /// execution) instead of running the coreutils timeout binary.
     /// </summary>
     [Fact]
@@ -63,7 +63,11 @@ public class DockerCiCdRuntimeCacheTests
         // A bare 'timeout=60' assignment (not as part of 'dind_ready_timeout=60') must not exist.
         // Split lines to avoid matching 'dind_ready_timeout=60' as a false positive.
         var lines = script.Split('\n');
-        Assert.DoesNotContain(lines, l => l.Trim() == "timeout=60" || l.Trim().StartsWith("timeout=", StringComparison.Ordinal));
+        Assert.DoesNotContain(lines, l =>
+        {
+            var trimmed = l.Trim();
+            return trimmed == "timeout=60" || trimmed.StartsWith("timeout=", StringComparison.Ordinal);
+        });
     }
 
     /// <summary>
