@@ -142,12 +142,12 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
         await db.SaveChangesAsync();
 
         // --- Milestones ---
-        await db.Milestones.AddIfNotExistsAsync(m => m.ProjectId == frontendProject.Id && m.Title == "v1.0 Launch",
-            new Milestone { Id = Guid.NewGuid(), ProjectId = frontendProject.Id, Title = "v1.0 Launch", Description = "Initial public release", DueDate = DateTime.UtcNow.AddDays(30), CreatedAt = DateTime.UtcNow });
-        await db.Milestones.AddIfNotExistsAsync(m => m.ProjectId == backendProject.Id && m.Title == "API Hardening",
-            new Milestone { Id = Guid.NewGuid(), ProjectId = backendProject.Id, Title = "API Hardening", Description = "Rate limiting, input validation, and security hardening", DueDate = DateTime.UtcNow.AddDays(14), CreatedAt = DateTime.UtcNow.AddDays(-7) });
-        await db.Milestones.AddIfNotExistsAsync(m => m.ProjectId == backendProject.Id && m.Title == "Observability",
-            new Milestone { Id = Guid.NewGuid(), ProjectId = backendProject.Id, Title = "Observability", Description = "Structured logging, health checks, and correlation IDs", DueDate = DateTime.UtcNow.AddDays(45), Status = MilestoneStatus.Open, CreatedAt = DateTime.UtcNow.AddDays(-3) });
+        var (feMilestone, _) = await db.Milestones.AddIfNotExistsAsync(m => m.ProjectId == frontendProject.Id && m.Title == "v1.0 Launch",
+            new Milestone { Id = Guid.NewGuid(), ProjectId = frontendProject.Id, Title = "v1.0 Launch", Description = "Initial public release", StartDate = DateTime.UtcNow.AddDays(-14), DueDate = DateTime.UtcNow.AddDays(30), CreatedAt = DateTime.UtcNow.AddDays(-20) });
+        var (beMilestoneHardening, _) = await db.Milestones.AddIfNotExistsAsync(m => m.ProjectId == backendProject.Id && m.Title == "API Hardening",
+            new Milestone { Id = Guid.NewGuid(), ProjectId = backendProject.Id, Title = "API Hardening", Description = "Rate limiting, input validation, and security hardening", StartDate = DateTime.UtcNow.AddDays(-7), DueDate = DateTime.UtcNow.AddDays(14), CreatedAt = DateTime.UtcNow.AddDays(-7) });
+        var (beMilestoneObs, _) = await db.Milestones.AddIfNotExistsAsync(m => m.ProjectId == backendProject.Id && m.Title == "Observability",
+            new Milestone { Id = Guid.NewGuid(), ProjectId = backendProject.Id, Title = "Observability", Description = "Structured logging, health checks, and correlation IDs", StartDate = DateTime.UtcNow.AddDays(14), DueDate = DateTime.UtcNow.AddDays(45), Status = MilestoneStatus.Open, CreatedAt = DateTime.UtcNow.AddDays(-3) });
         await db.SaveChangesAsync();
 
         // --- Kanban boards ---
@@ -200,6 +200,21 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
         if (beIssue3IsNew) beIssue3.Labels.Add(labelBackend);
         if (beIssue4IsNew) beIssue4.Labels.Add(labelBackend);
         if (beIssue5IsNew) beIssue5.Labels.Add(labelBackend);
+        await db.SaveChangesAsync();
+
+        // Assign issues to milestones (idempotent: only set when MilestoneId is currently null)
+        if (feIssue1.MilestoneId is null) { feIssue1.MilestoneId = feMilestone.Id; }
+        if (feIssue2.MilestoneId is null) { feIssue2.MilestoneId = feMilestone.Id; }
+        if (feIssue3.MilestoneId is null) { feIssue3.MilestoneId = feMilestone.Id; }
+        if (feIssue4.MilestoneId is null) { feIssue4.MilestoneId = feMilestone.Id; }
+        if (feIssue5.MilestoneId is null) { feIssue5.MilestoneId = feMilestone.Id; }
+        if (feIssue6.MilestoneId is null) { feIssue6.MilestoneId = feMilestone.Id; }
+        if (beIssue1.MilestoneId is null) { beIssue1.MilestoneId = beMilestoneHardening.Id; }
+        if (beIssue2.MilestoneId is null) { beIssue2.MilestoneId = beMilestoneHardening.Id; }
+        if (beIssue4.MilestoneId is null) { beIssue4.MilestoneId = beMilestoneHardening.Id; }
+        if (beIssue5.MilestoneId is null) { beIssue5.MilestoneId = beMilestoneObs.Id; }
+        if (beIssue6.MilestoneId is null) { beIssue6.MilestoneId = beMilestoneObs.Id; }
+        if (beIssue7.MilestoneId is null) { beIssue7.MilestoneId = beMilestoneObs.Id; }
         await db.SaveChangesAsync();
 
         // --- Agents + MCP Servers (delegated to DemoAgentSeeder) ---
@@ -273,10 +288,10 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
         await db.SaveChangesAsync();
 
         // --- IssuePit milestones ---
-        await db.Milestones.AddIfNotExistsAsync(m => m.ProjectId == issuePitProject.Id && m.Title == "v0.1 Private Beta",
-            new Milestone { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Title = "v0.1 Private Beta", Description = "Core issue tracking, kanban, and agent sessions working end-to-end", DueDate = DateTime.UtcNow.AddDays(-7), Status = MilestoneStatus.Closed, CreatedAt = DateTime.UtcNow.AddDays(-30) });
-        await db.Milestones.AddIfNotExistsAsync(m => m.ProjectId == issuePitProject.Id && m.Title == "v0.2 CI/CD & Code Review",
-            new Milestone { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Title = "v0.2 CI/CD & Code Review", Description = "CI/CD run tracking, code review comments, and GitHub integration", DueDate = DateTime.UtcNow.AddDays(21), CreatedAt = DateTime.UtcNow.AddDays(-14) });
+        var (ipMilestoneBeta, _) = await db.Milestones.AddIfNotExistsAsync(m => m.ProjectId == issuePitProject.Id && m.Title == "v0.1 Private Beta",
+            new Milestone { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Title = "v0.1 Private Beta", Description = "Core issue tracking, kanban, and agent sessions working end-to-end", StartDate = DateTime.UtcNow.AddDays(-37), DueDate = DateTime.UtcNow.AddDays(-7), Status = MilestoneStatus.Closed, CreatedAt = DateTime.UtcNow.AddDays(-30) });
+        var (ipMilestoneCiCd, _) = await db.Milestones.AddIfNotExistsAsync(m => m.ProjectId == issuePitProject.Id && m.Title == "v0.2 CI/CD & Code Review",
+            new Milestone { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Title = "v0.2 CI/CD & Code Review", Description = "CI/CD run tracking, code review comments, and GitHub integration", StartDate = DateTime.UtcNow.AddDays(-14), DueDate = DateTime.UtcNow.AddDays(21), CreatedAt = DateTime.UtcNow.AddDays(-14) });
         await db.SaveChangesAsync();
 
         // IssuePit issues — dates spread across 14 days
@@ -298,6 +313,17 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
         if (ipIssue6IsNew) ipIssue6.Labels.Add(ipLabelBug);
         if (ipIssue7IsNew) ipIssue7.Labels.Add(ipLabelFeature);
         if (ipIssue8IsNew) ipIssue8.Labels.Add(ipLabelDocs);
+        await db.SaveChangesAsync();
+
+        // Assign IssuePit issues to milestones (idempotent)
+        if (ipIssue1.MilestoneId is null) ipIssue1.MilestoneId = ipMilestoneBeta.Id;
+        if (ipIssue2.MilestoneId is null) ipIssue2.MilestoneId = ipMilestoneBeta.Id;
+        if (ipIssue3.MilestoneId is null) ipIssue3.MilestoneId = ipMilestoneCiCd.Id;
+        if (ipIssue4.MilestoneId is null) ipIssue4.MilestoneId = ipMilestoneCiCd.Id;
+        if (ipIssue5.MilestoneId is null) ipIssue5.MilestoneId = ipMilestoneBeta.Id;
+        if (ipIssue6.MilestoneId is null) ipIssue6.MilestoneId = ipMilestoneCiCd.Id;
+        if (ipIssue7.MilestoneId is null) ipIssue7.MilestoneId = ipMilestoneCiCd.Id;
+        if (ipIssue8.MilestoneId is null) ipIssue8.MilestoneId = ipMilestoneCiCd.Id;
         await db.SaveChangesAsync();
 
         // Add tasks to ipIssue1 (only if newly created)
