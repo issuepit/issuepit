@@ -1056,8 +1056,9 @@ public partial class DockerCiCdRuntime(
     }
 
     /// <summary>
-    /// Builds the shell script that checks for the AWS CLI, installs it if missing, and then
+    /// Builds the shell script that checks for s5cmd, installs it if missing, and then
     /// syncs <c>/artifacts</c> to <c>s3://{bucket}/artifacts-raw/{runId}/</c>.
+    /// Uses <c>s5cmd</c> (FOSS, MIT-licensed) instead of the AWS CLI.
     /// Environment variables expected: <c>AWS_ACCESS_KEY_ID</c>, <c>AWS_SECRET_ACCESS_KEY</c>,
     /// <c>AWS_DEFAULT_REGION</c>, <c>ISSUEPIT_S3_BUCKET</c>, <c>ISSUEPIT_S3_ENDPOINT_URL</c>,
     /// <c>ISSUEPIT_RUN_ID</c>.
@@ -1069,19 +1070,24 @@ public partial class DockerCiCdRuntime(
             echo '[S3-UPLOAD] No artifacts to upload'
             exit 0
         fi
-        # The IssuePit helper-base image ships awscli pre-installed via apt.
-        # For non-standard images that do not include awscli, attempt a runtime
+        # The IssuePit helper-base image ships s5cmd pre-installed.
+        # For non-standard images that do not include s5cmd, attempt a runtime
         # installation as a safety net before running the upload.
-        if ! command -v aws > /dev/null 2>&1; then
-            echo '[S3-UPLOAD] aws CLI not found, installing...'
-            pip3 install --break-system-packages --no-cache-dir awscli 2>&1 || \
-            apt-get install -y --no-install-recommends awscli 2>&1
+        if ! command -v s5cmd > /dev/null 2>&1; then
+            echo '[S3-UPLOAD] s5cmd not found, installing...'
+            ARCH=$(uname -m)
+            case "$ARCH" in
+              x86_64)  S5CMD_ARCH=Linux-64bit ;;
+              aarch64) S5CMD_ARCH=Linux-arm64 ;;
+              *) echo "[S3-UPLOAD] Unsupported architecture: $ARCH"; exit 1 ;;
+            esac
+            curl --proto '=https' --tlsv1.2 -fsSL \
+                "https://github.com/peak/s5cmd/releases/download/v2.3.0/s5cmd_2.3.0_${S5CMD_ARCH}.tar.gz" | \
+            tar -xz -C /usr/local/bin s5cmd
         fi
         echo "[S3-UPLOAD] Uploading artifacts to s3://${ISSUEPIT_S3_BUCKET}/artifacts-raw/${ISSUEPIT_RUN_ID}/"
-        aws s3 sync /artifacts/ "s3://${ISSUEPIT_S3_BUCKET}/artifacts-raw/${ISSUEPIT_RUN_ID}/" \
-            --endpoint-url "${ISSUEPIT_S3_ENDPOINT_URL}" \
-            --region "${AWS_DEFAULT_REGION}" \
-            --no-progress 2>&1
+        s5cmd --endpoint-url "${ISSUEPIT_S3_ENDPOINT_URL}" \
+            sync /artifacts/ "s3://${ISSUEPIT_S3_BUCKET}/artifacts-raw/${ISSUEPIT_RUN_ID}/"
         echo '[S3-UPLOAD] Upload complete'
         """;
 
