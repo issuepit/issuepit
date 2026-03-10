@@ -11,7 +11,7 @@
         </span>
       </div>
       <div class="flex items-center gap-3">
-        <!-- View toggle -->
+        <!-- View toggle: List | Both | Gantt -->
         <div class="flex items-center bg-gray-800 rounded-lg p-0.5">
           <button @click="viewMode = 'list'"
             :class="['flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors', viewMode === 'list' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-200']">
@@ -20,7 +20,14 @@
             </svg>
             List
           </button>
-          <button @click="viewMode = 'gantt'"
+          <button @click="viewMode = 'split'"
+            :class="['flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors', viewMode === 'split' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-200']">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+            Both
+          </button>
+          <button @click="viewMode = 'gantt'" data-testid="gantt-view-button"
             :class="['flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors', viewMode === 'gantt' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-200']">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -38,8 +45,8 @@
       </div>
     </div>
 
-    <!-- Filter tabs (list view only) -->
-    <div v-if="viewMode === 'list'" class="flex gap-2 mb-5">
+    <!-- Filter tabs (list or split mode only) -->
+    <div v-if="viewMode !== 'gantt'" class="flex gap-2 mb-5">
       <button v-for="tab in tabs" :key="tab.value" @click="activeTab = tab.value"
         :class="[
           'text-sm px-3 py-1.5 rounded-lg transition-colors',
@@ -59,8 +66,8 @@
     </div>
 
     <template v-else>
-      <!-- List View -->
-      <div v-if="viewMode === 'list'" class="space-y-3">
+      <!-- List Section (shown in 'list' and 'split') -->
+      <div v-if="viewMode !== 'gantt'" :class="viewMode === 'split' ? 'mb-8' : ''" class="space-y-3">
         <div v-if="filteredMilestones.length === 0" class="py-16 text-center bg-gray-900 border border-gray-800 rounded-xl">
           <p class="text-gray-400">No milestones found</p>
           <button @click="showCreate = true" class="mt-3 text-brand-400 hover:text-brand-300 text-sm">
@@ -69,8 +76,9 @@
         </div>
 
         <div v-for="milestone in filteredMilestones" :key="milestone.id"
+          data-testid="milestone-row"
           class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 transition-colors cursor-pointer"
-          @click="$router.push(`/projects/${id}/milestones/${milestone.id}`)">
+          @click="navigateTo(`/projects/${id}/milestones/${milestone.id}`)">
           <div class="flex items-start justify-between gap-4">
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2 mb-1">
@@ -78,10 +86,9 @@
                   class="text-xs px-2 py-0.5 rounded-full font-medium">
                   {{ milestone.status === 'open' ? 'Open' : 'Closed' }}
                 </span>
-                <NuxtLink :to="`/projects/${id}/milestones/${milestone.id}`"
-                  class="text-base font-semibold text-white hover:text-brand-300 transition-colors">
+                <span class="milestone-row-title text-base font-semibold text-white hover:text-brand-300 transition-colors">
                   {{ milestone.title }}
-                </NuxtLink>
+                </span>
               </div>
               <p v-if="milestone.description" class="text-sm text-gray-400 mt-1 line-clamp-2">
                 {{ milestone.description }}
@@ -116,8 +123,15 @@
         </div>
       </div>
 
-      <!-- Gantt View -->
-      <div v-else class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <!-- Split-mode divider -->
+      <div v-if="viewMode === 'split'" class="flex items-center gap-3 mb-5">
+        <div class="flex-1 border-t border-gray-800"></div>
+        <span class="text-xs text-gray-600 uppercase tracking-wider font-medium">Gantt</span>
+        <div class="flex-1 border-t border-gray-800"></div>
+      </div>
+
+      <!-- Gantt Section (shown in 'gantt' and 'split') -->
+      <div v-if="viewMode !== 'list'" class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
         <div v-if="store.milestones.length === 0" class="py-16 text-center">
           <p class="text-gray-400">No milestones yet</p>
           <button @click="showCreate = true" class="mt-3 text-brand-400 hover:text-brand-300 text-sm">
@@ -129,13 +143,11 @@
           <!-- Month header -->
           <div class="flex border-b border-gray-800" style="min-width: 800px">
             <div class="w-48 shrink-0 px-4 py-2 text-xs text-gray-500 font-medium border-r border-gray-800">Milestone</div>
-            <div class="flex-1 relative h-8">
-              <div class="flex h-full">
-                <div v-for="month in ganttMonths" :key="month.label"
-                  :style="{ width: month.widthPct + '%' }"
-                  class="border-r border-gray-800 flex items-center px-2 text-xs text-gray-500 font-medium shrink-0">
-                  {{ month.label }}
-                </div>
+            <div class="flex-1 flex h-8">
+              <div v-for="month in ganttMonths" :key="month.label"
+                :style="{ width: month.widthPct + '%' }"
+                class="border-r border-gray-800 flex items-center px-2 text-xs text-gray-500 font-medium shrink-0">
+                {{ month.label }}
               </div>
             </div>
           </div>
@@ -143,19 +155,20 @@
           <!-- Milestone rows -->
           <div style="min-width: 800px">
             <div v-for="milestone in store.milestones" :key="milestone.id"
-              class="flex border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors group"
+              class="flex border-b border-gray-800/50 hover:bg-gray-800/20 transition-colors"
               style="height: 44px">
               <!-- Label column -->
               <div class="w-48 shrink-0 flex items-center px-4 border-r border-gray-800 gap-2">
                 <span :class="milestone.status === 'open' ? 'bg-green-500' : 'bg-gray-600'"
                   class="w-2 h-2 rounded-full shrink-0"></span>
-                <button @click="$router.push(`/projects/${id}/milestones/${milestone.id}`)"
-                  class="text-xs text-gray-300 group-hover:text-white transition-colors truncate text-left">
+                <button class="text-xs text-gray-300 hover:text-white transition-colors truncate text-left"
+                  data-testid="gantt-label-btn"
+                  @click="navigateTo(`/projects/${id}/milestones/${milestone.id}`)">
                   {{ milestone.title }}
                 </button>
               </div>
               <!-- Bar area -->
-              <div class="flex-1 relative flex items-center">
+              <div class="bar-area-container flex-1 relative overflow-hidden">
                 <!-- Today line -->
                 <div class="absolute top-0 bottom-0 w-px bg-brand-500/60 z-10 pointer-events-none"
                   :style="{ left: todayPct + '%' }"></div>
@@ -163,19 +176,40 @@
                 <div v-for="month in ganttMonths" :key="month.label"
                   class="absolute top-0 bottom-0 w-px bg-gray-800/80 pointer-events-none"
                   :style="{ left: month.leftPct + '%' }"></div>
-                <!-- Milestone bar -->
-                <div v-if="ganttBar(milestone)"
-                  class="absolute h-6 rounded cursor-pointer transition-opacity hover:opacity-80"
-                  :class="milestone.status === 'open' ? 'bg-indigo-600' : 'bg-gray-600'"
-                  :style="{ left: ganttBar(milestone)!.left + '%', width: Math.max(ganttBar(milestone)!.width, 1) + '%' }"
+                <!-- Milestone bar (draggable) -->
+                <div v-if="ganttBarDisplay(milestone)"
+                  class="absolute top-[10px] h-6 rounded flex items-stretch select-none"
+                  :class="[
+                    milestone.status === 'open' ? 'bg-indigo-600' : 'bg-gray-600',
+                    dragging?.milestoneId === milestone.id ? 'opacity-80 shadow-lg z-20' : 'hover:opacity-90 z-10',
+                  ]"
+                  :style="{
+                    left: Math.max(0, ganttBarDisplay(milestone)!.left) + '%',
+                    width: Math.max(0.5, ganttBarDisplay(milestone)!.width) + '%',
+                    minWidth: '4px',
+                  }"
                   :title="`${milestone.title}${milestone.dueDate ? ' · Due ' + formatDate(milestone.dueDate) : ''}`"
-                  @click="$router.push(`/projects/${id}/milestones/${milestone.id}`)">
-                  <span v-if="ganttBar(milestone)!.width > 8" class="px-2 text-xs text-white font-medium leading-6 truncate block">
+                  @mousedown="startBarDrag($event, milestone, 'move')">
+                  <!-- Left resize handle -->
+                  <div
+                    class="w-2 shrink-0 cursor-ew-resize rounded-l hover:bg-black/30 z-10"
+                    @mousedown.stop="startBarDrag($event, milestone, 'resize-left')">
+                  </div>
+                  <!-- Label (click to navigate when not dragging) -->
+                  <span v-if="ganttBarDisplay(milestone)!.width > 6"
+                    class="flex-1 flex items-center px-0.5 text-xs text-white font-medium truncate cursor-move"
+                    @mousedown.stop="startBarDrag($event, milestone, 'move')">
                     {{ milestone.title }}
                   </span>
+                  <!-- Right resize handle -->
+                  <div
+                    class="w-2 shrink-0 cursor-ew-resize rounded-r hover:bg-black/30 z-10"
+                    @mousedown.stop="startBarDrag($event, milestone, 'resize-right')">
+                  </div>
                 </div>
                 <!-- No-date indicator -->
-                <div v-else class="absolute flex items-center gap-1 text-xs text-gray-600 italic"
+                <div v-else class="absolute flex items-center text-xs text-gray-600 italic"
+                  style="top: 14px"
                   :style="{ left: todayPct + '%', transform: 'translateX(4px)' }">
                   no dates
                 </div>
@@ -194,6 +228,7 @@
             <div class="flex items-center gap-1.5 text-xs text-gray-500">
               <span class="w-px h-3 bg-brand-500/60 block"></span> Today
             </div>
+            <div class="ml-auto text-xs text-gray-600 italic">Drag bars to adjust dates · Click label to open</div>
           </div>
         </div>
       </div>
@@ -303,7 +338,7 @@ const projectsStore = useProjectsStore()
 
 const showCreate = ref(false)
 const activeTab = ref<'all' | 'open' | 'closed'>('open')
-const viewMode = ref<'list' | 'gantt'>('list')
+const viewMode = ref<'list' | 'split' | 'gantt'>('list')
 const editMilestone = ref<Milestone | null>(null)
 
 const form = reactive({ title: '', description: '', startDate: '', dueDate: '' })
@@ -346,7 +381,6 @@ const ganttRange = computed(() => {
   const ends = store.milestones.map(milestoneEndTime)
   const minTs = Math.min(...starts)
   const maxTs = Math.max(...ends)
-  // Add padding on each side so bars don't touch the edge
   const pad = (maxTs - minTs) * GANTT_PADDING_RATIO || SEVEN_DAYS_MS
   return { min: minTs - pad, max: maxTs + pad }
 })
@@ -359,9 +393,9 @@ const todayPct = computed(() => {
 const ganttMonths = computed(() => {
   const { min, max } = ganttRange.value
   const months: { label: string; leftPct: number; widthPct: number }[] = []
-  const start = new Date(min)
-  // align to first of the month
-  const cur = new Date(start.getFullYear(), start.getMonth(), 1)
+  const cur = new Date(min)
+  cur.setDate(1)
+  cur.setHours(0, 0, 0, 0)
   const total = max - min
   while (cur.getTime() < max) {
     const nextMonth = new Date(cur.getFullYear(), cur.getMonth() + 1, 1)
@@ -377,6 +411,7 @@ const ganttMonths = computed(() => {
   return months
 })
 
+/** Compute bar position from a milestone's stored dates. */
 function ganttBar(m: Milestone) {
   const { min, max } = ganttRange.value
   const total = max - min
@@ -386,12 +421,143 @@ function ganttBar(m: Milestone) {
   return { left, width }
 }
 
-// ── Actions ──────────────────────────────────────────────────────
+// ── Drag-and-drop ────────────────────────────────────────────────
+
+interface DragState {
+  milestoneId: string
+  type: 'move' | 'resize-left' | 'resize-right'
+  startX: number
+  originalBarLeft: number
+  originalBarWidth: number
+  containerWidth: number
+}
+
+const dragging = ref<DragState | null>(null)
+/** True once the pointer has moved enough to count as a drag (vs a click). */
+const wasDragged = ref(false)
+/** Per-milestone bar overrides while dragging; keyed by milestone id. */
+const dragPreview = reactive<Record<string, { left: number; width: number } | undefined>>({})
+
+/** Bar position to render — overridden during drag. */
+function ganttBarDisplay(m: Milestone) {
+  return dragPreview[m.id] ?? ganttBar(m)
+}
+
+function startBarDrag(event: MouseEvent, m: Milestone, type: DragState['type']) {
+  event.preventDefault()
+  const containerEl = (event.currentTarget as HTMLElement).closest<HTMLElement>('.bar-area-container')
+  if (!containerEl) return
+  const bar = ganttBar(m)
+  if (!bar) return
+
+  wasDragged.value = false
+  dragging.value = {
+    milestoneId: m.id,
+    type,
+    startX: event.clientX,
+    originalBarLeft: bar.left,
+    originalBarWidth: bar.width,
+    containerWidth: containerEl.getBoundingClientRect().width,
+  }
+
+  document.addEventListener('mousemove', onDragMove)
+  document.addEventListener('mouseup', onDragEnd)
+}
+
+function onDragMove(event: MouseEvent) {
+  if (!dragging.value) return
+  const d = dragging.value
+  const deltaX = event.clientX - d.startX
+  if (Math.abs(deltaX) > 3) wasDragged.value = true
+
+  const deltaPct = (deltaX / d.containerWidth) * 100
+
+  if (d.type === 'move') {
+    dragPreview[d.milestoneId] = {
+      left: Math.max(0, Math.min(100 - d.originalBarWidth, d.originalBarLeft + deltaPct)),
+      width: d.originalBarWidth,
+    }
+  } else if (d.type === 'resize-right') {
+    dragPreview[d.milestoneId] = {
+      left: d.originalBarLeft,
+      width: Math.max(0.5, d.originalBarWidth + deltaPct), // 0.5% minimum width to keep bar visible
+    }
+  } else {
+    // resize-left: constrain so bar doesn't collapse below minimum width
+    const minBarWidth = 0.5
+    const newLeft = Math.max(0, Math.min(d.originalBarLeft + d.originalBarWidth - minBarWidth, d.originalBarLeft + deltaPct))
+    dragPreview[d.milestoneId] = {
+      left: newLeft,
+      width: d.originalBarLeft + d.originalBarWidth - newLeft,
+    }
+  }
+}
+
+async function onDragEnd(_event: MouseEvent) {
+  document.removeEventListener('mousemove', onDragMove)
+  document.removeEventListener('mouseup', onDragEnd)
+
+  if (!dragging.value) return
+  const d = dragging.value
+
+  if (!wasDragged.value) {
+    // Plain click on bar → navigate to detail
+    dragging.value = null
+    navigateTo(`/projects/${id}/milestones/${d.milestoneId}`)
+    return
+  }
+
+  const preview = dragPreview[d.milestoneId]
+  const milestone = store.milestones.find(m => m.id === d.milestoneId)
+
+  if (preview && milestone) {
+    const { min, max } = ganttRange.value
+    const totalMs = max - min
+    const pctToDate = (pct: number) =>
+      new Date(min + (pct / 100) * totalMs).toISOString().split('T')[0]
+
+    let newStartDate = milestone.startDate
+    let newDueDate = milestone.dueDate
+
+    if (d.type === 'move') {
+      newStartDate = pctToDate(preview.left)
+      newDueDate = pctToDate(preview.left + preview.width)
+    } else if (d.type === 'resize-left') {
+      newStartDate = pctToDate(preview.left)
+    } else {
+      newDueDate = pctToDate(preview.left + preview.width)
+    }
+
+    await store.updateMilestone(id, milestone.id, {
+      title: milestone.title,
+      description: milestone.description,
+      startDate: newStartDate,
+      dueDate: newDueDate,
+      status: milestone.status,
+    })
+  }
+
+  dragPreview[d.milestoneId] = undefined
+  dragging.value = null
+  wasDragged.value = false
+}
+
+// ── Lifecycle ────────────────────────────────────────────────────
 
 onMounted(() => {
+  // Default to split view on large screens (height ≥ 900px)
+  if (window.innerHeight >= 900) viewMode.value = 'split'
+
   projectsStore.fetchProject(id)
   store.fetchMilestones(id)
 })
+
+onBeforeUnmount(() => {
+  document.removeEventListener('mousemove', onDragMove)
+  document.removeEventListener('mouseup', onDragEnd)
+})
+
+// ── CRUD ─────────────────────────────────────────────────────────
 
 async function submitCreate() {
   if (!form.title) return

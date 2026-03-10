@@ -29,11 +29,26 @@ public class MilestonesPage(IPage page)
     }
 
     /// <summary>
-    /// Clicks on a milestone row by its title, navigating to the detail page.
+    /// Switches the milestones page to the Gantt-only view by clicking the "Gantt" toggle button.
     /// </summary>
+    public async Task SwitchToGanttViewAsync()
+    {
+        await page.ClickAsync("[data-testid='gantt-view-button']");
+        await page.WaitForSelectorAsync(".bar-area-container", new PageWaitForSelectorOptions { Timeout = 10_000 });
+    }
+
+    /// <summary>
+    /// Clicks the milestone label inside the Gantt chart's label column to navigate to the detail page.
+    /// </summary>
+    public async Task ClickGanttLabelAsync(string title)
+    {
+        await page.Locator("[data-testid='gantt-label-btn']").Filter(new LocatorFilterOptions { HasText = title }).ClickAsync();
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+    }
+
     public async Task ClickMilestoneAsync(string title)
     {
-        await page.ClickAsync($"a:has-text('{title}')");
+        await page.Locator("[data-testid='milestone-row']").Filter(new LocatorFilterOptions { HasText = title }).ClickAsync();
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
     }
 }
