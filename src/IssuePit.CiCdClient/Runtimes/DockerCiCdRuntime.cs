@@ -615,12 +615,55 @@ public partial class DockerCiCdRuntime(
 
                 // Step: Run act.
                 await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: {string.Join(' ', actCmd)}", LogStream.Stdout);
-                var actExitCode = await ExecCommandAsync(container.ID, actCmd, onLogLine, cancellationToken);
+
+                // Track job outcomes from act's --json output so that a non-zero exit caused by
+                // continue-on-error (e.g. upload-artifact step failing) is not treated as a workflow failure.
+                var anyJobFailed = 0;
+                var anyJobSucceeded = 0;
+                Func<string, LogStream, Task> trackingLogLine = async (line, stream) =>
+                {
+                    if (line.Length > 0 && line[0] == '{')
+                    {
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(line);
+                            var root = doc.RootElement;
+                            if (root.TryGetProperty("msg", out var msgEl))
+                            {
+                                var msg = msgEl.GetString();
+                                // act v0.2.84 emits "🏁  Job succeeded" / "🏁  Job failed" (emoji prefix);
+                                // use EndsWith so the check works regardless of any leading characters.
+                                if (msg?.EndsWith("Job succeeded", StringComparison.Ordinal) == true)
+                                    Interlocked.Exchange(ref anyJobSucceeded, 1);
+                                else if (msg?.EndsWith("Job failed", StringComparison.Ordinal) == true)
+                                    Interlocked.Exchange(ref anyJobFailed, 1);
+                            }
+                        }
+                        catch { /* non-JSON line — ignore */ }
+                    }
+                    await onLogLine(line, stream);
+                };
+
+                var actExitCode = await ExecCommandAsync(container.ID, actCmd, trackingLogLine, cancellationToken);
 
                 if (actExitCode != 0)
-                    throw new Exception(
-                        $"act exited with code {actExitCode} " +
-                        $"(image: {image}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
+                {
+                    if (anyJobFailed == 0 && anyJobSucceeded != 0)
+                    {
+                        // All jobs reported success; non-zero exit is from a step failure handled by
+                        // continue-on-error. Treat the run as succeeded.
+                        logger.LogWarning(
+                            "act exited with code {ExitCode} (Docker) for run {RunId} but all jobs succeeded " +
+                            "(likely a step failure with continue-on-error); treating run as succeeded",
+                            actExitCode, run.Id);
+                    }
+                    else
+                    {
+                        throw new Exception(
+                            $"act exited with code {actExitCode} " +
+                            $"(image: {image}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
+                    }
+                }
             }
             else
             {
