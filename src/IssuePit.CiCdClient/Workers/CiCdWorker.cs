@@ -310,6 +310,17 @@ public class CiCdWorker(
             run.EndedAt = DateTime.UtcNow;
             await db.SaveChangesAsync(stoppingToken);
 
+            // For Docker runs the artifact directory is intentionally empty (no volume mount).
+            // The container has already uploaded the raw artifact files to S3 under
+            // artifacts-raw/{runId}/. Download them now so the subsequent parsing steps
+            // (TRX test results, artifact metadata, workflow graph) can proceed as normal.
+            if (artifactStorage.IsConfigured && !Directory.EnumerateFileSystemEntries(artifactDir).Any())
+            {
+                var downloaded = await DownloadRawArtifactsFromS3Async(run.Id, artifactDir, stoppingToken);
+                if (downloaded > 0)
+                    logger.LogInformation("Downloaded {Count} raw artifact file(s) from S3 for run {RunId}", downloaded, run.Id);
+            }
+
             // Collect and store test results from any .trx files produced during the run.
             await ParseAndStoreTestResultsAsync(run.Id, artifactDir, db, stoppingToken);
 
@@ -323,9 +334,38 @@ public class CiCdWorker(
             try { Directory.Delete(artifactDir, recursive: true); }
             catch (Exception ex) { logger.LogDebug(ex, "Could not clean up artifact directory {Dir} for run {RunId}", artifactDir, run.Id); }
 
+            // Delete the raw S3 artifacts that were downloaded; the processed ZIPs uploaded by
+            // ParseAndStoreArtifactsAsync are the canonical download artifacts.
+            if (artifactStorage.IsConfigured)
+            {
+                try { await artifactStorage.DeleteRawArtifactsAsync(run.Id, stoppingToken); }
+                catch (Exception ex) { logger.LogDebug(ex, "Could not delete raw S3 artifacts for run {RunId}", run.Id); }
+            }
+
             // Notify clients that the run has completed
             await PublishLogLineAsync(run.Id.ToString(),
                 JsonSerializer.Serialize(new { @event = "run-completed", status = run.Status.ToString() }));
+        }
+    }
+
+    /// <summary>
+    /// Downloads raw artifact files from S3 (<c>artifacts-raw/{runId}/</c>) into
+    /// <paramref name="artifactDir"/> so the local parsing steps can process them.
+    /// Best-effort: errors are logged but never propagated.
+    /// </summary>
+    private async Task<int> DownloadRawArtifactsFromS3Async(
+        Guid runId,
+        string artifactDir,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await artifactStorage.DownloadRawArtifactsAsync(runId, artifactDir, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to download raw artifacts from S3 for run {RunId}", runId);
+            return 0;
         }
     }
 

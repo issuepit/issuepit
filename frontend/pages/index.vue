@@ -190,7 +190,7 @@
                   <NuxtLink :to="`/projects/${session.projectId}/issues/${session.issueNumber}`"
                     class="text-brand-400 hover:text-brand-300 transition-colors"
                     @click.stop>
-                    #{{ session.issueNumber }} {{ session.issueTitle }}
+                    #{{ formatIssueId(session.issueNumber, projectsStore.projects.find(p => p.id === session.projectId)) }} {{ session.issueTitle }}
                   </NuxtLink>
                 </td>
                 <td class="px-3 py-2 text-gray-400 text-xs hidden md:table-cell">{{ session.projectName }}</td>
@@ -212,6 +212,7 @@ import { useProjectsStore } from '~/stores/projects'
 import { useIssuesStore } from '~/stores/issues'
 import { useAgentsStore } from '~/stores/agents'
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
+import { formatIssueId } from '~/composables/useIssueFormat'
 
 const projectsStore = useProjectsStore()
 const issuesStore = useIssuesStore()

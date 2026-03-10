@@ -64,7 +64,7 @@
             </td>
             <td class="px-4 py-3">
               <div class="flex items-center gap-2">
-                <span class="text-xs text-gray-600">#{{ issue.number }}</span>
+                <span class="text-xs text-gray-600">{{ formatIssueId(issue.number, projectsStore.projects.find(p => p.id === issue.projectId)) }}</span>
                 <span class="text-sm text-gray-200 hover:text-white">{{ issue.title }}</span>
               </div>
             </td>
@@ -93,6 +93,7 @@ import { IssueStatus } from '~/types'
 import type { IssuePriority } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
 import { useProjectsStore } from '~/stores/projects'
+import { formatIssueId } from '~/composables/useIssueFormat'
 
 const store = useIssuesStore()
 const projectsStore = useProjectsStore()

@@ -89,13 +89,50 @@ To reorder or rename columns, go to **Project Settings → Board**.
 
 Milestones let you group issues into time-boxed deliverables and track progress towards a goal.
 
+### Creating a milestone
+
 1. Open your project.
-2. Go to **Milestones** in the project sidebar.
-3. Click **New Milestone**.
-4. Set a **Title**, optional **Description**, and **Due Date**.
-5. Click **Create**.
+2. Click **Milestones** in the Quick Navigation panel on the project overview, or navigate to the Milestones page from the sidebar.
+3. Click **+ New Milestone**.
+4. Set a **Title**, optional **Description**, **Start Date**, and **Due Date**.
+5. Click **Create Milestone**.
 
 Once a milestone exists, you can assign any issue to it from the issue detail page using the **Milestone** selector.
+
+### List and Gantt views
+
+The milestone list page has three view modes controlled by the toggle in the top-right corner:
+
+| Mode | Description |
+|------|-------------|
+| **List** | Card-based list of milestones with status, dates, and actions |
+| **Both** | List and Gantt chart shown simultaneously (default on larger screens) |
+| **Gantt** | Timeline chart only |
+
+![Milestones list and Gantt view](https://github.com/user-attachments/assets/05ea3a1d-6a2e-4295-909a-c78a66b4a7c6)
+
+#### Gantt chart
+
+Each milestone is rendered as a horizontal bar spanning its start–due date range. Open milestones are shown in indigo; closed milestones in gray. A vertical line marks today.
+
+**Interaction:**
+- **Click** a bar or its label to open the milestone detail page.
+- **Drag** the middle of a bar to shift its start and due dates.
+- **Drag** the left or right edge of a bar to resize it (changing only the start or due date).
+  All date changes are saved automatically via the API.
+
+### Milestone detail page
+
+Click any milestone row or Gantt bar to open the detail page.
+
+![Milestone detail page](https://github.com/user-attachments/assets/05ea3a1d-6a2e-4295-909a-c78a66b4a7c6)
+
+The detail page shows:
+- **Progress bar** with percentage of issues completed
+- **Open / In Progress / Done** issue counts
+- **Issues table** listing all issues assigned to this milestone
+- **Edit** button — opens an inline modal to change the title, description, start date, and due date
+- **Close milestone / Reopen milestone** button — toggles the milestone status
 
 ---
 
