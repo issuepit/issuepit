@@ -71,20 +71,40 @@ public class DockerCiCdRuntimeCacheTests
     }
 
     /// <summary>
-    /// Regression test: the DinD startup script must NOT contain orphaned-container cleanup
-    /// (docker ps -aq --filter name=act-). Running docker ps against a newly-started dockerd
-    /// that inherits state from a previous killed DinD instance can block indefinitely while
-    /// dockerd reconciles orphaned container metadata — causing DrainMultiplexedStreamAsync
-    /// to block forever and the CI/CD run to never reach a terminal status.
-    /// Container-name collisions are handled by the act retry loop in RunAsync instead.
+    /// Regression test: the DinD startup script must NOT contain `docker ps` for orphaned-container
+    /// cleanup. Running docker ps against a newly-started dockerd that inherits state from a
+    /// previous killed DinD instance can block indefinitely while dockerd reconciles orphaned
+    /// container metadata — causing DrainMultiplexedStreamAsync to block forever.
+    /// Cleanup is done via `find … rm -rf` on the filesystem BEFORE dockerd starts (no docker CLI).
     /// </summary>
     [Fact]
-    public void BuildDindStartupScript_DoesNotContainOrphanedContainerCleanup()
+    public void BuildDindStartupScript_DoesNotContainDockerPsOrphanCleanup()
     {
         var script = DockerCiCdRuntime.BuildDindStartupScript();
         // docker ps in the startup script was removed because it can block indefinitely.
         Assert.DoesNotContain("docker ps", script);
     }
+
+    /// <summary>
+    /// The DinD startup script must remove orphaned container metadata from the filesystem
+    /// BEFORE starting dockerd so that dockerd does not spend time reconciling stale state.
+    /// This prevents the readiness loop from burning all 60 iterations (3+ minutes) and
+    /// pushing the Docker CI/CD run past the 5-minute xUnit blame threshold.
+    /// </summary>
+    [Fact]
+    public void BuildDindStartupScript_RemovesOrphanedContainerMetadataBeforeDockerd()
+    {
+        var script = DockerCiCdRuntime.BuildDindStartupScript();
+        // Must use filesystem cleanup (not docker ps) to remove orphaned container metadata.
+        Assert.Contains("find /var/lib/docker/containers -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} +", script);
+        // The cleanup must happen BEFORE dockerd starts.
+        var cleanupIdx = script.IndexOf("find /var/lib/docker/containers", StringComparison.Ordinal);
+        var dockerdIdx = script.IndexOf("dockerd > /tmp/dockerd.log", StringComparison.Ordinal);
+        Assert.True(cleanupIdx >= 0, "Cleanup command not found");
+        Assert.True(dockerdIdx >= 0, "dockerd start command not found");
+        Assert.True(cleanupIdx < dockerdIdx, "Filesystem cleanup must happen before dockerd starts");
+    }
+
 
     [Fact]
     public void BuildDindStartupScript_WithMirrorUrl_WritesDaemonJson()
