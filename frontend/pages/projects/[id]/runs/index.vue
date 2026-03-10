@@ -148,7 +148,7 @@
                 <NuxtLink :to="`/projects/${id}/issues/${session.issueNumber}`"
                   class="text-brand-400 hover:text-brand-300 transition-colors"
                   @click.stop>
-                  #{{ session.issueNumber }} {{ session.issueTitle }}
+                  #{{ formatIssueId(session.issueNumber, projectsStore.currentProject) }} {{ session.issueTitle }}
                 </NuxtLink>
               </td>
               <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ session.gitBranch || '—' }}</td>
@@ -195,6 +195,7 @@
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useProjectsStore } from '~/stores/projects'
 import { CiCdRunStatus, AgentSessionStatus } from '~/types'
+import { formatIssueId } from '~/composables/useIssueFormat'
 
 const route = useRoute()
 const id = route.params.id as string

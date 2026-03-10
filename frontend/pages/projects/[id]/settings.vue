@@ -88,6 +88,31 @@
                 />
               </button>
             </div>
+            <!-- Issue ID Format -->
+            <div class="border-t border-gray-800 pt-4 mt-2">
+              <h3 class="text-sm font-semibold text-gray-300 mb-3">Issue ID Format</h3>
+              <p class="text-xs text-gray-500 mb-4">Customize how issue numbers are displayed. Useful when syncing with external trackers like Jira or GitHub to avoid ID collisions.</p>
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm font-medium text-gray-300 mb-1.5">Project Key</label>
+                  <div class="flex gap-2">
+                    <input v-model="form.issueKey" type="text" maxlength="10" placeholder="e.g. IP"
+                      class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 uppercase" />
+                    <button type="button" :disabled="suggestingIssueKey" @click="suggestIssueKey"
+                      class="px-3 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-gray-300 text-xs rounded-lg transition-colors whitespace-nowrap">
+                      {{ suggestingIssueKey ? '…' : 'Suggest' }}
+                    </button>
+                  </div>
+                  <p class="text-xs text-gray-600 mt-1">Short key prefix — issues display as <span class="font-mono text-gray-400">{{ form.issueKey ? `#${form.issueKey.toUpperCase()}-${(form.issueNumberOffset || 0) + 1}` : '#1' }}</span></p>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-300 mb-1.5">Number Offset</label>
+                  <input v-model.number="form.issueNumberOffset" type="number" min="0" placeholder="0"
+                    class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                  <p class="text-xs text-gray-600 mt-1">Added to every issue number (e.g. 10000 for Jira sync)</p>
+                </div>
+              </div>
+            </div>
             <p v-if="saveGeneralError" class="text-red-400 text-sm">{{ saveGeneralError }}</p>
             <button type="submit" :disabled="savingGeneral"
               class="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
@@ -431,9 +456,10 @@ const agentsStore = useAgentsStore()
 const mcpServersStore = useMcpServersStore()
 
 // ── General form ──────────────────────────────────────────────
-const form = reactive({ name: '', slug: '', description: '', gitHubRepo: '', isAgenda: false })
+const form = reactive({ name: '', slug: '', description: '', gitHubRepo: '', isAgenda: false, issueKey: '', issueNumberOffset: 0 })
 const savingGeneral = ref(false)
 const saveGeneralError = ref<string | null>(null)
+const suggestingIssueKey = ref(false)
 
 // ── Repo form (multi-origin) ──────────────────────────────────
 const showRepoModal = ref(false)
@@ -617,6 +643,8 @@ onMounted(async () => {
     form.description = projectsStore.currentProject.description || ''
     form.gitHubRepo = projectsStore.currentProject.gitHubRepo || ''
     form.isAgenda = projectsStore.currentProject.isAgenda ?? false
+    form.issueKey = projectsStore.currentProject.issueKey || ''
+    form.issueNumberOffset = projectsStore.currentProject.issueNumberOffset ?? 0
   }
 })
 
@@ -630,11 +658,29 @@ async function saveGeneral() {
       description: form.description,
       gitHubRepo: form.gitHubRepo.trim() || undefined,
       isAgenda: form.isAgenda,
+      issueKey: form.issueKey.trim() || undefined,
+      issueNumberOffset: form.issueNumberOffset,
     })
   } catch (e: unknown) {
     saveGeneralError.value = e instanceof Error ? e.message : 'Failed to save'
   } finally {
     savingGeneral.value = false
+  }
+}
+
+async function suggestIssueKey() {
+  if (!projectsStore.currentProject?.orgId || !form.name) return
+  suggestingIssueKey.value = true
+  try {
+    const api = useApi()
+    const result = await api.get<{ issueKey: string }>(
+      `/api/projects/suggest-issue-key?name=${encodeURIComponent(form.name)}&orgId=${projectsStore.currentProject.orgId}`
+    )
+    form.issueKey = result.issueKey
+  } catch {
+    // silently ignore
+  } finally {
+    suggestingIssueKey.value = false
   }
 }
 

@@ -76,7 +76,7 @@
               </td>
               <td class="px-4 py-3">
                 <div class="flex items-center gap-2">
-                  <span class="text-xs text-gray-600">#{{ issue.number }}</span>
+                  <span class="text-xs text-gray-600">{{ formatIssueId(issue.number, projectsStore.currentProject) }}</span>
                   <span class="text-sm text-gray-200">{{ issue.title }}</span>
                 </div>
               </td>
@@ -105,6 +105,7 @@
 import type { Issue } from '~/types'
 import { IssueStatus } from '~/types'
 import { useProjectsStore } from '~/stores/projects'
+import { formatIssueId } from '~/composables/useIssueFormat'
 
 const route = useRoute()
 const id = route.params.id as string

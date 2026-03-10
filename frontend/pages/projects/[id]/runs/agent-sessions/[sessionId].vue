@@ -39,7 +39,7 @@
             <p class="text-xs text-gray-500 mb-1">Issue</p>
             <NuxtLink :to="`/projects/${projectId}/issues/${store.currentSession.issueNumber}`"
               class="text-sm text-brand-400 hover:text-brand-300 transition-colors">
-              #{{ store.currentSession.issueNumber }} {{ store.currentSession.issueTitle }}
+              #{{ formatIssueId(store.currentSession.issueNumber, projectsStore.currentProject) }} {{ store.currentSession.issueTitle }}
             </NuxtLink>
           </div>
           <div>
@@ -84,7 +84,7 @@
             <div class="mb-4 space-y-2 text-sm text-gray-400">
               <div class="flex gap-2">
                 <span class="text-gray-500 w-16 shrink-0">Issue</span>
-                <span class="text-gray-300">#{{ store.currentSession.issueNumber }} {{ store.currentSession.issueTitle }}</span>
+                <span class="text-gray-300">#{{ formatIssueId(store.currentSession.issueNumber, projectsStore.currentProject) }} {{ store.currentSession.issueTitle }}</span>
               </div>
               <div class="flex gap-2">
                 <span class="text-gray-500 w-16 shrink-0">Agent</span>
@@ -269,6 +269,7 @@
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useProjectsStore } from '~/stores/projects'
 import { CiCdRunStatus, AgentSessionStatus, type AgentSessionLog } from '~/types'
+import { formatIssueId } from '~/composables/useIssueFormat'
 
 const route = useRoute()
 const projectId = route.params.id as string
