@@ -212,46 +212,37 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
                 var isContainerCollision = containerCollisionDetected != 0;
                 var isMixedOutcome = anyJobFailed != 0 && anyJobSucceeded != 0;
 
-                // Docker container name collision is an infrastructure error — always retry
-                // regardless of anyJobFailed/anyJobSucceeded, because act reports the job as
-                // "failed" when it cannot create a container (same signal as a real workflow failure).
-                if (!isContainerCollision)
+                if (anyJobFailed == 0 && anyJobSucceeded != 0)
                 {
-                    if (anyJobFailed != 0 && anyJobSucceeded == 0)
-                    {
-                        // Only job failures, no successes — real workflow failure, do not retry.
-                        actException = new Exception(
-                            $"act exited with code {process.ExitCode} " +
-                            $"(workspace: {workspacePath}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
-                        break;
-                    }
-
-                    if (anyJobFailed == 0 && anyJobSucceeded != 0)
-                    {
-                        // All jobs reported success; non-zero exit is from a step failure handled by
-                        // continue-on-error. Treat the run as succeeded.
-                        logger.LogWarning(
-                            "act exited with code {ExitCode} for run {RunId} but all jobs succeeded " +
-                            "(likely a step failure with continue-on-error); treating run as succeeded",
-                            process.ExitCode, run.Id);
-                        actException = null;
-                        break;
-                    }
-
-                    // isMixedOutcome: earlier jobs succeeded but a later job failed. This is consistent
-                    // with a partial Docker container collision where a later job's container is still
-                    // being removed from a prior run. Fall through to the retry path so Docker has time
-                    // to finish cleanup. On the final attempt this will also fall through, set
-                    // actException, and exit the loop.
+                    // All jobs reported success; non-zero exit is from a step failure handled by
+                    // continue-on-error. Treat the run as succeeded.
+                    logger.LogWarning(
+                        "act exited with code {ExitCode} for run {RunId} but all jobs succeeded " +
+                        "(likely a step failure with continue-on-error); treating run as succeeded",
+                        process.ExitCode, run.Id);
+                    actException = null;
+                    break;
                 }
 
-                // Docker container collision, mixed outcome (partial collision), or no jobs ran —
-                // build the exception message for potential re-throw and retry if possible.
+                // For all other non-zero exit cases (container collision detected, mixed outcome,
+                // all jobs failed, or no jobs ran) fall through to the retry path.
+                //
+                // NOTE: We intentionally do NOT break early when anyJobFailed=1 && anyJobSucceeded=0
+                // without a detected collision. When Docker's async --rm cleanup from a prior run
+                // (including a Docker-runtime test that ran just before a Native-runtime test) is still
+                // in progress, act cannot create containers with the same names and reports the job as
+                // "failed" — identical to a real workflow failure. The Docker SDK error may not appear
+                // in act's --json output (it can arrive as raw stderr before act's JSON logger), so
+                // containerCollisionDetected may be 0 even though the cause is infrastructure.
+                // Retrying once (with ActRetryDelaySeconds delay) is safe: real failures will fail again
+                // on the retry; collision-induced failures will succeed once Docker finishes cleanup.
                 var reason = isContainerCollision
                     ? "Docker container name collision"
                     : isMixedOutcome
                         ? "partial Docker container collision (some jobs succeeded, later job failed)"
-                        : "no jobs ran";
+                        : anyJobFailed != 0
+                            ? "job failure (may be undetected container collision)"
+                            : "no jobs ran";
                 actException = new Exception(
                     $"act exited with code {process.ExitCode} ({reason}) " +
                     $"(workspace: {workspacePath}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
