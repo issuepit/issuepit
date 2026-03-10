@@ -1277,17 +1277,21 @@ public partial class DockerCiCdRuntime(
 
         lines.AddRange([
             "dockerd > /tmp/dockerd.log 2>&1 &",
-            "timeout=60",
-            "while [ $timeout -gt 0 ] && ! docker info > /dev/null 2>&1; do",
-            "  sleep 1; timeout=$((timeout-1))",
+            // Use a separate variable name to avoid confusion with the shell `timeout` command below.
+            // Each iteration checks whether dockerd is reachable via `timeout 2 docker info`:
+            // the `timeout 2` guard is critical — `docker info` can block indefinitely when dockerd
+            // is reconciling orphaned container metadata from a previous DinD instance that shared
+            // the /var/lib/issuepit-dind-cache volume. Without it, the loop hangs forever because
+            // the timeout counter never decrements (sleep 1 never runs while docker info is blocked).
+            "dind_ready_timeout=60",
+            "while [ $dind_ready_timeout -gt 0 ] && ! timeout 2 docker info > /dev/null 2>&1; do",
+            "  sleep 1; dind_ready_timeout=$((dind_ready_timeout-1))",
             "done",
-            "docker info > /dev/null 2>&1 && echo '[DinD] dockerd ready' || { echo '[DinD] dockerd failed to start'; cat /tmp/dockerd.log; exit 1; }",
-            // NOTE: Orphaned container cleanup is intentionally omitted here.
-            // Running `docker ps` against a newly-started dockerd that inherits state from a
-            // previously-killed DinD instance (via the shared /var/lib/issuepit-dind-cache volume)
-            // can hang indefinitely — the dockerd may be reconciling orphaned container metadata.
-            // A hanging `docker ps` in the startup script blocks DrainMultiplexedStreamAsync forever,
-            // causing the entire CI/CD run to never reach a terminal status (5-minute test hang).
+            // Final readiness check — also protected by timeout for the same reason.
+            "timeout 10 docker info > /dev/null 2>&1 && echo '[DinD] dockerd ready' || { echo '[DinD] dockerd failed to start'; cat /tmp/dockerd.log; exit 1; }",
+            // NOTE: Orphaned container cleanup (docker ps -aq --filter name=act- | xargs docker rm -f)
+            // is intentionally omitted here. Both `docker ps` and `docker info` can block when dockerd
+            // is reconciling orphaned state from the shared /var/lib/issuepit-dind-cache volume.
             // Container-name collisions are handled by the act retry loop in RunAsync instead:
             // up to MaxActAttempts retries with ActRetryDelaySeconds between attempts gives Docker
             // enough time to finish its own async --rm cleanup before the next attempt.
