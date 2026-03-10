@@ -156,7 +156,7 @@
           <div style="min-width: 800px">
             <div v-for="milestone in store.milestones" :key="milestone.id"
               class="flex border-b border-gray-800/50 hover:bg-gray-800/20 transition-colors"
-              style="height: 44px">
+              style="height: 52px">
               <!-- Label column -->
               <div class="w-48 shrink-0 flex items-center px-4 border-r border-gray-800 gap-2">
                 <span :class="milestone.status === 'open' ? 'bg-green-500' : 'bg-gray-600'"
@@ -178,13 +178,13 @@
                   :style="{ left: month.leftPct + '%' }"></div>
                 <!-- Milestone bar (draggable) -->
                 <div v-if="ganttBarDisplay(milestone)"
-                  class="absolute top-[10px] h-6 rounded flex items-stretch select-none"
+                  class="absolute top-[14px] h-6 rounded flex items-stretch select-none"
                   :class="[
                     milestone.status === 'open' ? 'bg-indigo-600' : 'bg-gray-600',
                     dragging?.milestoneId === milestone.id ? 'opacity-80 shadow-lg z-20' : 'hover:opacity-90 z-10',
                   ]"
                   :style="{
-                    left: Math.max(0, ganttBarDisplay(milestone)!.left) + '%',
+                    left: ganttBarDisplay(milestone)!.left + '%',
                     width: Math.max(0.5, ganttBarDisplay(milestone)!.width) + '%',
                     minWidth: '4px',
                   }"
@@ -362,7 +362,7 @@ const filteredMilestones = computed(() => {
 // ── Gantt chart helpers ──────────────────────────────────────────
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
-const GANTT_PADDING_RATIO = 0.05
+const GANTT_PADDING_RATIO = 0.15
 
 /** Returns the effective start timestamp for a milestone (startDate → createdAt fallback). */
 function milestoneStartTime(m: Milestone): number {
@@ -474,7 +474,7 @@ function onDragMove(event: MouseEvent) {
 
   if (d.type === 'move') {
     dragPreview[d.milestoneId] = {
-      left: Math.max(0, Math.min(100 - d.originalBarWidth, d.originalBarLeft + deltaPct)),
+      left: d.originalBarLeft + deltaPct,
       width: d.originalBarWidth,
     }
   } else if (d.type === 'resize-right') {
@@ -483,9 +483,9 @@ function onDragMove(event: MouseEvent) {
       width: Math.max(0.5, d.originalBarWidth + deltaPct), // 0.5% minimum width to keep bar visible
     }
   } else {
-    // resize-left: constrain so bar doesn't collapse below minimum width
+    // resize-left: allow dragging outside the visible range, same as resize-right; only prevent collapsing below min width
     const minBarWidth = 0.5
-    const newLeft = Math.max(0, Math.min(d.originalBarLeft + d.originalBarWidth - minBarWidth, d.originalBarLeft + deltaPct))
+    const newLeft = Math.min(d.originalBarLeft + d.originalBarWidth - minBarWidth, d.originalBarLeft + deltaPct)
     dragPreview[d.milestoneId] = {
       left: newLeft,
       width: d.originalBarLeft + d.originalBarWidth - newLeft,
