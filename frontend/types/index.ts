@@ -163,6 +163,7 @@ export interface Milestone {
   projectId: string
   title: string
   description?: string
+  startDate?: string
   dueDate?: string
   status: 'open' | 'closed'
   createdAt: string
