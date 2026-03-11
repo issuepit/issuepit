@@ -184,9 +184,6 @@ jobs:
       - name: Set Vosk model path
         run: echo "VoiceTranscription__ModelPath=$HOME/.vosk/vosk-model-small-en-us-0.15" >> $GITHUB_ENV
 
-      - name: Install ffmpeg
-        run: sudo apt-get install -y ffmpeg
-
       - name: Build E2E test project
         run: dotnet build src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj --configuration Release
 

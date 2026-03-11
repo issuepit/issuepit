@@ -1,4 +1,7 @@
 using System.Text.Json.Serialization;
+using FFMpegCore;
+using FFMpegCore.Extensions.Downloader;
+using FFMpegCore.Extensions.Downloader.Enums;
 using IssuePit.Api.Hubs;
 using IssuePit.Api.Middleware;
 using IssuePit.Api.Services;
@@ -155,6 +158,34 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+// Auto-download ffmpeg via FFMpegCore if enabled (default: true).
+// Downloads ffmpeg to a subfolder next to the executable and configures GlobalFFOptions.
+// Set VoiceTranscription:DownloadFfmpeg=false to skip (e.g. when ffmpeg is pre-installed on PATH).
+var voiceTranscriptionOptions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<VoiceTranscriptionOptions>>().Value;
+if (voiceTranscriptionOptions.DownloadFfmpeg)
+{
+    var ffmpegBinDir = Path.Combine(AppContext.BaseDirectory, "ffmpeg-bin");
+    Directory.CreateDirectory(ffmpegBinDir);
+    GlobalFFOptions.Configure(new FFOptions { BinaryFolder = ffmpegBinDir });
+    var startupLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("IssuePit.Api.Startup.FFMpegDownload");
+    var ffmpegExe = OperatingSystem.IsWindows()
+        ? Path.Combine(ffmpegBinDir, "ffmpeg.exe")
+        : Path.Combine(ffmpegBinDir, "ffmpeg");
+    if (!File.Exists(ffmpegExe))
+    {
+        try
+        {
+            startupLogger.LogInformation("Downloading ffmpeg to {FfmpegBinDir}...", ffmpegBinDir);
+            await FFMpegDownloader.DownloadBinaries(FFMpegVersions.LatestAvailable, FFMpegBinaries.FFMpeg, GlobalFFOptions.Current);
+            startupLogger.LogInformation("ffmpeg downloaded successfully");
+        }
+        catch (Exception ex)
+        {
+            startupLogger.LogWarning(ex, "Failed to auto-download ffmpeg — transcription will fall back to WAV-header parsing if ffmpeg is unavailable");
+        }
+    }
+}
 
 app.MapDefaultEndpoints();
 
