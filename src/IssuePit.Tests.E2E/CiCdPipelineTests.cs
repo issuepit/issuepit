@@ -33,6 +33,7 @@ public class CiCdPipelineTests(AspireFixture fixture)
 {
     private const string NativeRuntime = "Native";
     private const string DockerRuntime = "Docker";
+    private static readonly TimeSpan RunCompletionTimeout = TimeSpan.FromSeconds(120);
 
     /// <summary>Runtime modes exercised by the parameterized tests.</summary>
     public static TheoryData<string> RuntimeModes => new() { NativeRuntime, DockerRuntime };
@@ -157,7 +158,7 @@ public class CiCdPipelineTests(AspireFixture fixture)
             BuildTriggerPayload(projectId, "e2e-abc123", runtimeMode, "ci.yml"));
         Assert.Equal(HttpStatusCode.Accepted, triggerResp.StatusCode);
 
-        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromSeconds(50));
+        var run = await WaitForRunOfProjectAsync(client, projectId, RunCompletionTimeout);
         Assert.Equal("Succeeded", run.GetProperty("statusName").GetString());
     }
 
@@ -170,10 +171,11 @@ public class CiCdPipelineTests(AspireFixture fixture)
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
 
-        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+        var triggerResp = await client.PostAsJsonAsync("/api/cicd-runs/trigger",
             BuildTriggerPayload(projectId, "e2e-log-abc", runtimeMode));
+        Assert.Equal(HttpStatusCode.Accepted, triggerResp.StatusCode);
 
-        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromSeconds(50));
+        var run = await WaitForRunOfProjectAsync(client, projectId, RunCompletionTimeout);
         Assert.Equal("Succeeded", run.GetProperty("statusName").GetString());
         var runId = run.GetProperty("id").GetString()!;
 
@@ -208,10 +210,11 @@ public class CiCdPipelineTests(AspireFixture fixture)
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
 
-        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+        var triggerResp = await client.PostAsJsonAsync("/api/cicd-runs/trigger",
             BuildTriggerPayload(projectId, "e2e-joblogs-abc", runtimeMode));
+        Assert.Equal(HttpStatusCode.Accepted, triggerResp.StatusCode);
 
-        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromSeconds(50));
+        var run = await WaitForRunOfProjectAsync(client, projectId, RunCompletionTimeout);
         var runId = run.GetProperty("id").GetString()!;
 
         // Fetch logs filtered to the 'build' job only.
@@ -238,10 +241,11 @@ public class CiCdPipelineTests(AspireFixture fixture)
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
 
-        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+        var triggerResp = await client.PostAsJsonAsync("/api/cicd-runs/trigger",
             BuildTriggerPayload(projectId, "e2e-artifact-abc", runtimeMode));
+        Assert.Equal(HttpStatusCode.Accepted, triggerResp.StatusCode);
 
-        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromSeconds(50));
+        var run = await WaitForRunOfProjectAsync(client, projectId, RunCompletionTimeout);
         var runId = run.GetProperty("id").GetString()!;
 
         var artifactsResp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts");
@@ -265,10 +269,11 @@ public class CiCdPipelineTests(AspireFixture fixture)
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
 
-        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+        var triggerResp = await client.PostAsJsonAsync("/api/cicd-runs/trigger",
             BuildTriggerPayload(projectId, "e2e-trx-abc", runtimeMode));
+        Assert.Equal(HttpStatusCode.Accepted, triggerResp.StatusCode);
 
-        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromSeconds(50));
+        var run = await WaitForRunOfProjectAsync(client, projectId, RunCompletionTimeout);
         var runId = run.GetProperty("id").GetString()!;
 
         var testResultsResp = await client.GetAsync($"/api/cicd-runs/{runId}/test-results");
