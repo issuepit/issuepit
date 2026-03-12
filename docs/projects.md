@@ -12,7 +12,7 @@ Projects are the main organizational unit in IssuePit. Each project belongs to a
 
 ## Creating a Project
 
-![Projects page](https://github.com/user-attachments/assets/3fbde9ad-827a-4be3-a87d-880626634340)
+![Projects page]({{ '/assets/screenshots/projects.png' | relative_url }})
 
 1. Navigate to the **Projects** section in the sidebar.
 2. Click **New Project**.
@@ -28,23 +28,31 @@ Your new project appears in the project list immediately.
 
 ---
 
-## Linking a Git Repository
+## Git Origins (Multiple Remotes)
 
-Linking a repository allows IssuePit to import issues from GitHub and create branches on your behalf.
+A project can have **multiple git origins**, each with a different role:
+
+| Mode | Description |
+|------|-------------|
+| **Working** | The primary remote. Agents push feature branches and open PRs here. |
+| **Read-only** | Fetch-only mirror — never pushed to by agents or the release pipeline. |
+| **Release** | Only the default/main branch is pushed here after an agent PR is merged. |
+
+### Adding a Git Origin
 
 1. Open your project.
-2. Go to **Settings** (the gear icon or project settings tab).
-3. Under **Repository**, enter the repository URL in the format:
-   ```
-   https://github.com/<owner>/<repo>
-   ```
-   or for self-hosted GitLab:
-   ```
-   https://gitlab.example.com/<owner>/<repo>
-   ```
-4. Click **Save**.
+2. Go to **Settings**.
+3. In the **Git Origins** section, click **Add Origin**.
+4. Fill in:
+   - **Remote URL** — `https://github.com/org/repo.git` or `git@github.com:org/repo.git`
+   - **Default branch** — e.g. `main`
+   - **Mode** — choose Working, Read-only, or Release
+   - **Username** / **Token** — optional credentials for private repositories
+5. Click **Add Origin**.
 
-> **Note:** To import issues or trigger actions on GitHub, you also need to add a GitHub API key in [Configuration → API Keys](configuration#api-keys).
+You can add as many origins as needed. The first **Working** remote is used when agents clone the repository.
+
+> **Breaking change (data migration):** Existing single-repository configurations are automatically migrated to `Working` mode.
 
 ---
 
@@ -63,7 +71,7 @@ Once a repository is linked, you can import individual issues by their GitHub is
 
 Each project has a **Kanban board** with the following columns by default:
 
-![Kanban board](https://github.com/user-attachments/assets/19c72963-a4c9-463f-a692-f6e2d6aeea1d)
+![Kanban board]({{ '/assets/screenshots/kanban.png' | relative_url }})
 
 | Column | Meaning |
 |--------|---------|
@@ -77,7 +85,155 @@ To reorder or rename columns, go to **Project Settings → Board**.
 
 ---
 
+## Milestones
+
+Milestones let you group issues into time-boxed deliverables and track progress towards a goal.
+
+### Creating a milestone
+
+1. Open your project.
+2. Click **Milestones** in the Quick Navigation panel on the project overview, or navigate to the Milestones page from the sidebar.
+3. Click **+ New Milestone**.
+4. Set a **Title**, optional **Description**, **Start Date**, and **Due Date**.
+5. Click **Create Milestone**.
+
+Once a milestone exists, you can assign any issue to it from the issue detail page using the **Milestone** selector.
+
+### List and Gantt views
+
+The milestone list page has three view modes controlled by the toggle in the top-right corner:
+
+| Mode | Description |
+|------|-------------|
+| **List** | Card-based list of milestones with status, dates, and actions |
+| **Both** | List and Gantt chart shown simultaneously (default on larger screens) |
+| **Gantt** | Timeline chart only |
+
+![Milestones list and Gantt view](https://github.com/user-attachments/assets/05ea3a1d-6a2e-4295-909a-c78a66b4a7c6)
+
+#### Gantt chart
+
+Each milestone is rendered as a horizontal bar spanning its start–due date range. Open milestones are shown in indigo; closed milestones in gray. A vertical line marks today.
+
+**Interaction:**
+- **Click** a bar or its label to open the milestone detail page.
+- **Drag** the middle of a bar to shift its start and due dates.
+- **Drag** the left or right edge of a bar to resize it (changing only the start or due date).
+  All date changes are saved automatically via the API.
+
+### Milestone detail page
+
+Click any milestone row or Gantt bar to open the detail page.
+
+![Milestone detail page](https://github.com/user-attachments/assets/05ea3a1d-6a2e-4295-909a-c78a66b4a7c6)
+
+The detail page shows:
+- **Progress bar** with percentage of issues completed
+- **Open / In Progress / Done** issue counts
+- **Issues table** listing all issues assigned to this milestone
+- **Edit** button — opens an inline modal to change the title, description, start date, and due date
+- **Close milestone / Reopen milestone** button — toggles the milestone status
+
+---
+
+## Sub-issues
+
+Any issue can have child issues (sub-issues) to break large tasks into smaller pieces.
+
+1. Open an issue.
+2. Scroll to the **Sub-issues** section.
+3. Click **Add Sub-issue**.
+4. Search for an existing issue or create a new one inline.
+
+Sub-issues appear indented under their parent and their completion is reflected in a progress indicator on the parent issue.
+
+---
+
+## Issue Linking
+
+Issues can be related to each other using typed links that capture the nature of the relationship.
+
+On any issue detail page:
+
+1. Scroll to **Linked Issues**.
+2. Click **Add link**.
+3. Choose a **Link type**:
+
+   | Type | Meaning |
+   |------|---------|
+   | **blocks** | This issue must be resolved before the linked issue can start |
+   | **blocked by** | This issue cannot start until the linked issue is resolved |
+   | **causes** | This issue is the root cause of the linked issue |
+   | **caused by** | This issue is caused by the linked issue |
+   | **solves** | This issue provides the solution for the linked issue |
+   | **duplicates** | This issue is a duplicate of the linked issue |
+   | **requires** | This issue depends on the linked issue |
+   | **implements** | This issue implements the requirement in the linked issue |
+   | **linked to** | A general relationship with no specific directionality |
+
+4. Search for and select the target issue (cross-project search is supported).
+5. Click **Add**.
+
+Links are always shown on both issues and are clearly labelled with a **↗ cross-project** badge when the linked issue belongs to a different project.
+
+---
+
+## Issue History
+
+Every change to an issue is recorded in the **History** tab of the issue detail page. The audit trail includes:
+
+- Status changes
+- Assignee additions and removals
+- Priority changes
+- Title and description edits
+- Comments and reactions
+
+Open any issue and switch to the **History** tab to see the full timeline of changes.
+
+---
+
+## Code Review
+
+When a project has a linked Git repository, the **Code Review** tab gives you a side-by-side diff viewer to review changed files between branches.
+
+1. Open your project.
+2. Go to **Code Review**.
+3. Select a **Base branch** and a **Compare branch** — the diff loads automatically on branch change.
+4. Click any file in the sidebar to view its diff.
+5. Click any line in the diff to leave an inline comment.
+
+---
+
+## Merge Requests
+
+The **Merge Requests** tab shows lightweight merge request proposals for your linked repository.
+
+1. Open your project.
+2. Go to **Merge Requests**.
+3. Click **New Merge Request**.
+4. Select the **Source branch** and **Target branch**.
+5. Add a title and description, then click **Create**.
+
+IssuePit can auto-merge a merge request when all required checks pass.
+
+---
+
+## Runs
+{: #runs }
+
+The **Runs** tab shows a combined list of all agent sessions and CI/CD pipeline runs for the project.
+
+- **Agent runs** — show the status and duration of each work agent session
+- **CI/CD runs** — show the status of each pipeline execution with a link to the detail view
+
+Click any run to open its detail page with logs, artifacts, and job status.
+
+You can also view runs across all projects from the global **Runs** page in the sidebar.
+
+---
+
 ## Next Steps
 
 - [Configure AI agents →](agents)
 - [Set up API keys →](configuration)
+- [CI/CD Integration →](cicd)

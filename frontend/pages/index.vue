@@ -140,10 +140,7 @@
                 class="hover:bg-gray-800/40 transition-colors cursor-pointer"
                 @click="navigateTo(`/projects/${run.projectId}/runs/cicd/${run.id}`)">
                 <td class="px-3 py-2">
-                  <span :class="runStatusClass(run.status)" class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium">
-                    <span :class="runStatusDot(run.status)" class="w-1.5 h-1.5 rounded-full" />
-                    {{ run.statusName }}
-                  </span>
+                  <CiCdStatusChip :runs="[run]" />
                 </td>
                 <td class="px-3 py-2 text-xs hidden md:table-cell">
                   <NuxtLink :to="`/projects/${run.projectId}/runs`"
@@ -193,7 +190,7 @@
                   <NuxtLink :to="`/projects/${session.projectId}/issues/${session.issueNumber}`"
                     class="text-brand-400 hover:text-brand-300 transition-colors"
                     @click.stop>
-                    #{{ session.issueNumber }} {{ session.issueTitle }}
+                    #{{ formatIssueId(session.issueNumber, projectsStore.projects.find(p => p.id === session.projectId)) }} {{ session.issueTitle }}
                   </NuxtLink>
                 </td>
                 <td class="px-3 py-2 text-gray-400 text-xs hidden md:table-cell">{{ session.projectName }}</td>
@@ -215,6 +212,7 @@ import { useProjectsStore } from '~/stores/projects'
 import { useIssuesStore } from '~/stores/issues'
 import { useAgentsStore } from '~/stores/agents'
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
+import { formatIssueId } from '~/composables/useIssueFormat'
 
 const projectsStore = useProjectsStore()
 const issuesStore = useIssuesStore()

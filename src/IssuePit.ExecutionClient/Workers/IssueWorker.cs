@@ -176,12 +176,13 @@ public class IssueWorker(
 
         // Launch all assigned agents in parallel; each task manages its own DB scope
         await Task.WhenAll(agentIds.Select(agentId =>
-            LaunchAgentAsync(agentId, message.Id, cancellationToken)));
+            LaunchAgentAsync(agentId, message.Id, message.DockerImageOverride, cancellationToken)));
     }
 
     private async Task LaunchAgentAsync(
         Guid agentId,
         Guid issueId,
+        string? dockerImageOverride,
         CancellationToken cancellationToken)
     {
         using var scope = services.CreateScope();
@@ -196,6 +197,13 @@ public class IssueWorker(
             return;
         }
 
+        // Apply image override if specified. Detach the entity so the change is never saved to the database.
+        if (!string.IsNullOrWhiteSpace(dockerImageOverride))
+        {
+            db.Entry(agent).State = EntityState.Detached;
+            agent.DockerImage = dockerImageOverride;
+        }
+
         // Resolve runtime: use the org's default configuration or fall back to Docker
         var runtimeConfig = await db.RuntimeConfigurations
             .Where(r => r.OrgId == agent.OrgId && r.IsDefault)
@@ -204,8 +212,10 @@ public class IssueWorker(
         var runtimeType = runtimeConfig?.Type ?? RuntimeType.Docker;
 
         // Load the git repository for the project so the container can clone it on startup.
+        // Prefer Working-mode remote so agents use the correct push target; fall back to first.
         var gitRepository = await db.GitRepositories
             .Where(r => r.ProjectId == issue.ProjectId)
+            .OrderByDescending(r => r.Mode == GitOriginMode.Working)
             .FirstOrDefaultAsync(cancellationToken);
 
         var session = new AgentSession
@@ -400,5 +410,5 @@ public class IssueWorker(
         }
     }
 
-    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null);
+    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, string? DockerImageOverride = null);
 }

@@ -79,7 +79,7 @@ public class AgentSessionsController(IssuePitDbContext db, TenantContext tenant,
     }
 
     [HttpPost("{id:guid}/retry")]
-    public async Task<IActionResult> RetrySession(Guid id)
+    public async Task<IActionResult> RetrySession(Guid id, [FromBody] RetrySessionRequest? body = null)
     {
         var session = await db.AgentSessions
             .Include(s => s.Agent)
@@ -98,6 +98,7 @@ public class AgentSessionsController(IssuePitDbContext db, TenantContext tenant,
             projectId = session.Issue.ProjectId,
             title = session.Issue.Title,
             agentId = session.AgentId,
+            dockerImageOverride = body?.DockerImageOverride,
         });
 
         await producer.ProduceAsync("issue-assigned", new Message<string, string>
@@ -109,3 +110,5 @@ public class AgentSessionsController(IssuePitDbContext db, TenantContext tenant,
         return Accepted(new { retriedSessionId = session.Id });
     }
 }
+
+public record RetrySessionRequest(string? DockerImageOverride = null);

@@ -21,7 +21,7 @@ export const useMilestonesStore = defineStore('milestones', () => {
     }
   }
 
-  async function createMilestone(projectId: string, payload: { title: string; description?: string; dueDate?: string }) {
+  async function createMilestone(projectId: string, payload: { title: string; description?: string; startDate?: string; dueDate?: string }) {
     try {
       const data = await api.post<Milestone>(`/api/projects/${projectId}/milestones`, payload)
       milestones.value.push(data)

@@ -19,7 +19,7 @@ public class MergeRequestsPage(IPage page)
         {
             await page.GotoAsync($"/projects/{projectId}/merge-requests");
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-            await page.WaitForSelectorAsync("h1:has-text('Merge Requests')",
+            await page.WaitForSelectorAsync("a:text-is('Merge Requests')",
                 new PageWaitForSelectorOptions { Timeout = NavigationFirstAttemptTimeoutMs });
         }
         catch (Exception ex) when (ex is TimeoutException || (ex is PlaywrightException pe && pe.Message.Contains("ERR_ABORTED")))
@@ -27,7 +27,7 @@ public class MergeRequestsPage(IPage page)
             await Task.Delay(NavigationRetryDelayMs);
             await page.GotoAsync($"/projects/{projectId}/merge-requests");
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-            await page.WaitForSelectorAsync("h1:has-text('Merge Requests')");
+            await page.WaitForSelectorAsync("a:text-is('Merge Requests')");
         }
     }
 

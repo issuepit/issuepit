@@ -57,8 +57,8 @@
         {{ store.currentProject.description }}
       </p>
 
-      <!-- Stats Row: Issues + Commits -->
-      <div class="grid grid-cols-2 gap-3 mb-6 max-w-sm">
+      <!-- Stats Row: Issues + Commits + Open MRs -->
+      <div class="grid grid-cols-3 gap-3 mb-6 max-w-md">
         <NuxtLink :to="`/projects/${id}/issues`"
           class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group">
           <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
@@ -73,6 +73,14 @@
             {{ commitCountLabel }}
           </p>
           <p class="text-xs text-gray-500 mt-0.5">Commits</p>
+        </NuxtLink>
+
+        <NuxtLink :to="`/projects/${id}/merge-requests`"
+          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group">
+          <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
+            {{ store.currentProject.openMergeRequestCount }}
+          </p>
+          <p class="text-xs text-gray-500 mt-0.5">Open MRs</p>
         </NuxtLink>
       </div>
 
@@ -153,6 +161,17 @@
             </svg>
           </div>
           <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Badges</span>
+        </NuxtLink>
+
+        <NuxtLink :to="`/projects/${id}/milestones`"
+          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 flex items-center gap-3 transition-colors group">
+          <div class="w-8 h-8 bg-indigo-900/30 rounded-lg flex items-center justify-center shrink-0">
+            <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
+            </svg>
+          </div>
+          <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Milestones</span>
         </NuxtLink>
       </div>
 
@@ -249,7 +268,7 @@
                   <NuxtLink :to="`/projects/${id}/issues/${session.issueNumber}`"
                     class="text-sm text-gray-300 hover:text-brand-300 transition-colors truncate block"
                     @click.stop>
-                    #{{ session.issueNumber }} {{ session.issueTitle }}
+                    #{{ formatIssueId(session.issueNumber, store.currentProject) }} {{ session.issueTitle }}
                   </NuxtLink>
                   <p class="text-xs text-gray-500 truncate">{{ session.agentName }}</p>
                 </div>
@@ -306,11 +325,8 @@
               <div v-for="run in visibleCiCdRuns" :key="run.id"
                 class="flex items-center gap-3 py-2 border-b border-gray-800 last:border-0 cursor-pointer"
                 @click="navigateTo(`/projects/${id}/runs/cicd/${run.id}`)">
-                <span :class="cicdStatusClass(run.status)"
-                  class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium shrink-0">
-                  <span :class="cicdStatusDot(run.status)" class="w-1.5 h-1.5 rounded-full" />
-                  {{ run.statusName }}
-                </span>
+                <CiCdStatusChip :runs="[run]"
+                  class="shrink-0" />
                 <div class="flex-1 min-w-0">
                   <p class="text-sm text-gray-300 truncate">
                     {{ run.workflow || run.branch || 'Run' }}
@@ -438,6 +454,7 @@ import type { ProjectMetricSnapshot, Milestone, GitCommit } from '~/types'
 import { AgentSessionStatus, CiCdRunStatus } from '~/types'
 import { useProjectsStore } from '~/stores/projects'
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
+import { formatIssueId } from '~/composables/useIssueFormat'
 
 const route = useRoute()
 const id = route.params.id as string
@@ -610,27 +627,6 @@ function agentStatusDot(status: AgentSessionStatus) {
     case AgentSessionStatus.Running: return 'bg-blue-400 animate-pulse'
     case AgentSessionStatus.Failed: return 'bg-red-400'
     case AgentSessionStatus.Cancelled: return 'bg-gray-500'
-    default: return 'bg-yellow-400'
-  }
-}
-
-// CI/CD run status helpers
-function cicdStatusClass(status: CiCdRunStatus) {
-  switch (status) {
-    case CiCdRunStatus.Succeeded: return 'bg-green-900/30 text-green-400'
-    case CiCdRunStatus.Running: return 'bg-blue-900/30 text-blue-400'
-    case CiCdRunStatus.Failed: return 'bg-red-900/30 text-red-400'
-    case CiCdRunStatus.Cancelled: return 'bg-gray-800 text-gray-400'
-    default: return 'bg-yellow-900/30 text-yellow-400'
-  }
-}
-
-function cicdStatusDot(status: CiCdRunStatus) {
-  switch (status) {
-    case CiCdRunStatus.Succeeded: return 'bg-green-400'
-    case CiCdRunStatus.Running: return 'bg-blue-400 animate-pulse'
-    case CiCdRunStatus.Failed: return 'bg-red-400'
-    case CiCdRunStatus.Cancelled: return 'bg-gray-500'
     default: return 'bg-yellow-400'
   }
 }

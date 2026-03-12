@@ -10,30 +10,30 @@ namespace IssuePit.CiCdClient.Services;
 /// Uploads CI/CD artifacts to S3-compatible storage and returns public download URLs.
 /// Reuses the <c>ImageStorage__*</c> configuration keys that the API project uses.
 ///
-/// Reads from:
+/// Reads from (env var name → configuration key):
 /// <list type="bullet">
-///   <item><c>ImageStorage__ServiceUrl</c> — S3 service URL (empty = AWS default; LocalStack: http://localhost:4566)</item>
-///   <item><c>ImageStorage__AccessKey</c> — AWS access key ID (default: <c>test</c>)</item>
-///   <item><c>ImageStorage__SecretKey</c> — AWS secret access key (default: <c>test</c>)</item>
-///   <item><c>ImageStorage__BucketName</c> — S3 bucket name (default: <c>issuepit-uploads</c>)</item>
-///   <item><c>ImageStorage__PublicBaseUrl</c> — public base URL for generated links (optional)</item>
-///   <item><c>ImageStorage__Region</c> — AWS region (default: <c>us-east-1</c>)</item>
+///   <item><c>ImageStorage__ServiceUrl</c> → <c>ImageStorage:ServiceUrl</c> — S3 service URL (empty = AWS default; LocalStack: http://localhost:4566)</item>
+///   <item><c>ImageStorage__AccessKey</c> → <c>ImageStorage:AccessKey</c> — AWS access key ID (default: <c>test</c>)</item>
+///   <item><c>ImageStorage__SecretKey</c> → <c>ImageStorage:SecretKey</c> — AWS secret access key (default: <c>test</c>)</item>
+///   <item><c>ImageStorage__BucketName</c> → <c>ImageStorage:BucketName</c> — S3 bucket name (default: <c>issuepit-uploads</c>)</item>
+///   <item><c>ImageStorage__PublicBaseUrl</c> → <c>ImageStorage:PublicBaseUrl</c> — public base URL for generated links (optional)</item>
+///   <item><c>ImageStorage__Region</c> → <c>ImageStorage:Region</c> — AWS region (default: <c>us-east-1</c>)</item>
 /// </list>
-/// When <c>ImageStorage__ServiceUrl</c> is not configured, S3 upload is skipped and <c>null</c> is returned.
+/// When <c>ImageStorage:ServiceUrl</c> is not configured, S3 upload is skipped and <c>null</c> is returned.
 /// </summary>
 public class ArtifactStorageService(IConfiguration configuration, ILogger<ArtifactStorageService> logger)
 {
-    private readonly string? _serviceUrl = configuration["ImageStorage__ServiceUrl"];
-    private readonly string _accessKey = configuration["ImageStorage__AccessKey"] ?? "test";
-    private readonly string _secretKey = configuration["ImageStorage__SecretKey"] ?? "test";
-    private readonly string _bucketName = configuration["ImageStorage__BucketName"] ?? "issuepit-uploads";
-    private readonly string? _publicBaseUrl = configuration["ImageStorage__PublicBaseUrl"];
-    private readonly string _region = configuration["ImageStorage__Region"] ?? "us-east-1";
+    private readonly string? _serviceUrl = configuration["ImageStorage:ServiceUrl"];
+    private readonly string _accessKey = configuration["ImageStorage:AccessKey"] ?? "test";
+    private readonly string _secretKey = configuration["ImageStorage:SecretKey"] ?? "test";
+    private readonly string _bucketName = configuration["ImageStorage:BucketName"] ?? "issuepit-uploads";
+    private readonly string? _publicBaseUrl = configuration["ImageStorage:PublicBaseUrl"];
+    private readonly string _region = configuration["ImageStorage:Region"] ?? "us-east-1";
 
     private volatile bool _bucketEnsured;
 
     /// <summary>
-    /// Returns true when the storage service is configured (i.e. an S3 service URL is set).
+    /// Returns true when the storage service is configured (i.e. an S3 service URL is set via <c>ImageStorage:ServiceUrl</c>).
     /// When false, uploads are skipped and <c>UploadArtifactAsync</c> returns <c>null</c>.
     /// </summary>
     public bool IsConfigured => !string.IsNullOrWhiteSpace(_serviceUrl);
@@ -90,10 +90,7 @@ public class ArtifactStorageService(IConfiguration configuration, ILogger<Artifa
         if (!IsConfigured) return (null, null);
 
         var safeRunId = runId.ToString("N");
-        var safeName = new string(artifactName.Where(c => char.IsLetterOrDigit(c) || c is '-' or '_' or '.').ToArray());
-        // Prevent path-traversal: replace consecutive dots and reject empty result.
-        safeName = System.Text.RegularExpressions.Regex.Replace(safeName, @"\.{2,}", "_");
-        if (string.IsNullOrEmpty(safeName) || safeName.TrimStart('.').Length == 0) safeName = "artifact";
+        var safeName = SanitizeArtifactName(artifactName);
         var key = $"artifacts/{safeRunId}/{safeName}.zip";
 
         using var memStream = new MemoryStream();
@@ -125,6 +122,103 @@ public class ArtifactStorageService(IConfiguration configuration, ILogger<Artifa
         var url = BuildPublicUrl(key);
         logger.LogInformation("Uploaded artifact '{Name}' for run {RunId} to S3: {Url}", artifactName, runId, url);
         return (url, key);
+    }
+
+    /// <summary>
+    /// Downloads all raw artifact files uploaded by the container from
+    /// <c>artifacts-raw/{runId}/</c> in S3 to <paramref name="localDir"/>,
+    /// preserving the sub-directory structure produced by the act artifact server.
+    /// Returns the number of objects downloaded.
+    /// No-op when S3 is not configured.
+    /// </summary>
+    public async Task<int> DownloadRawArtifactsAsync(Guid runId, string localDir, CancellationToken ct = default)
+    {
+        if (!IsConfigured) return 0;
+
+        var prefix = $"artifacts-raw/{runId:N}/";
+        using var s3 = CreateClient();
+        var downloaded = 0;
+
+        string? continuationToken = null;
+        do
+        {
+            var listResponse = await s3.ListObjectsV2Async(new ListObjectsV2Request
+            {
+                BucketName = _bucketName,
+                Prefix = prefix,
+                ContinuationToken = continuationToken,
+            }, ct);
+
+            foreach (var obj in listResponse.S3Objects)
+            {
+                ct.ThrowIfCancellationRequested();
+                var relativeKey = obj.Key[prefix.Length..];
+                if (string.IsNullOrEmpty(relativeKey))
+                    continue;
+                // S3 keys always use forward slashes; split and recombine via Path.Combine
+                // so the local path uses the OS-appropriate separator (handles Windows).
+                var segments = relativeKey.Split('/');
+                var localPath = Path.Combine([localDir, .. segments]);
+                Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
+                using var getResponse = await s3.GetObjectAsync(obj.BucketName, obj.Key, ct);
+                await using var fileStream = File.Create(localPath);
+                await getResponse.ResponseStream.CopyToAsync(fileStream, ct);
+                downloaded++;
+            }
+
+            continuationToken = listResponse.IsTruncated == true ? listResponse.NextContinuationToken : null;
+        } while (continuationToken is not null);
+
+        return downloaded;
+    }
+
+    /// <summary>
+    /// Deletes all raw artifact objects uploaded by the container from
+    /// <c>artifacts-raw/{runId}/</c> in S3 after they have been processed.
+    /// Best-effort: does not throw on individual delete failures.
+    /// No-op when S3 is not configured.
+    /// </summary>
+    public async Task DeleteRawArtifactsAsync(Guid runId, CancellationToken ct = default)
+    {
+        if (!IsConfigured) return;
+
+        var prefix = $"artifacts-raw/{runId:N}/";
+        using var s3 = CreateClient();
+
+        string? continuationToken = null;
+        do
+        {
+            var listResponse = await s3.ListObjectsV2Async(new ListObjectsV2Request
+            {
+                BucketName = _bucketName,
+                Prefix = prefix,
+                ContinuationToken = continuationToken,
+            }, ct);
+
+            if (listResponse.S3Objects.Count > 0)
+            {
+                await RetryS3Async(() => s3.DeleteObjectsAsync(new DeleteObjectsRequest
+                {
+                    BucketName = _bucketName,
+                    Objects = listResponse.S3Objects.Select(o => new KeyVersion { Key = o.Key }).ToList(),
+                }, ct), ct);
+            }
+
+            continuationToken = listResponse.IsTruncated == true ? listResponse.NextContinuationToken : null;
+        } while (continuationToken is not null);
+    }
+
+    /// <summary>
+    /// Returns a sanitized artifact name safe for use in file paths and S3 keys.
+    /// Strips characters that are not letters, digits, hyphens, underscores or dots;
+    /// collapses consecutive dots to prevent path traversal; falls back to "artifact".
+    /// </summary>
+    private static string SanitizeArtifactName(string name)
+    {
+        var safe = new string(name.Where(c => char.IsLetterOrDigit(c) || c is '-' or '_' or '.').ToArray());
+        // Prevent path-traversal: replace runs of two or more dots.
+        safe = System.Text.RegularExpressions.Regex.Replace(safe, @"\.{2,}", "_");
+        return string.IsNullOrEmpty(safe) || safe.TrimStart('.').Length == 0 ? "artifact" : safe;
     }
 
     /// <summary>
