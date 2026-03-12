@@ -18,13 +18,13 @@ namespace IssuePit.CiCdClient.Runtimes;
 public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration configuration) : ICiCdRuntime
 {
     /// <summary>Maximum number of times to attempt running act before giving up.</summary>
-    private const int MaxActAttempts = 2;
+    private const int MaxActAttempts = 3;
 
     /// <summary>
-    /// Seconds to wait between act retry attempts. Used when act exits with no jobs having run,
-    /// which typically indicates a Docker container name collision due to async --rm cleanup.
+    /// Seconds to wait between act retry attempts. Used when act exits non-zero, which may
+    /// indicate a Docker container name collision due to async --rm cleanup from a prior run.
     /// </summary>
-    private const int ActRetryDelaySeconds = 5;
+    private const int ActRetryDelaySeconds = 10;
     public async Task RunAsync(
         CiCdRun run,
         TriggerPayload trigger,
@@ -212,46 +212,29 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
                 var isContainerCollision = containerCollisionDetected != 0;
                 var isMixedOutcome = anyJobFailed != 0 && anyJobSucceeded != 0;
 
-                // Docker container name collision is an infrastructure error — always retry
-                // regardless of anyJobFailed/anyJobSucceeded, because act reports the job as
-                // "failed" when it cannot create a container (same signal as a real workflow failure).
-                if (!isContainerCollision)
+                if (anyJobFailed == 0 && anyJobSucceeded != 0)
                 {
-                    if (anyJobFailed != 0 && anyJobSucceeded == 0)
-                    {
-                        // Only job failures, no successes — real workflow failure, do not retry.
-                        actException = new Exception(
-                            $"act exited with code {process.ExitCode} " +
-                            $"(workspace: {workspacePath}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
-                        break;
-                    }
-
-                    if (anyJobFailed == 0 && anyJobSucceeded != 0)
-                    {
-                        // All jobs reported success; non-zero exit is from a step failure handled by
-                        // continue-on-error. Treat the run as succeeded.
-                        logger.LogWarning(
-                            "act exited with code {ExitCode} for run {RunId} but all jobs succeeded " +
-                            "(likely a step failure with continue-on-error); treating run as succeeded",
-                            process.ExitCode, run.Id);
-                        actException = null;
-                        break;
-                    }
-
-                    // isMixedOutcome: earlier jobs succeeded but a later job failed. This is consistent
-                    // with a partial Docker container collision where a later job's container is still
-                    // being removed from a prior run. Fall through to the retry path so Docker has time
-                    // to finish cleanup. On the final attempt this will also fall through, set
-                    // actException, and exit the loop.
+                    // All jobs reported success; non-zero exit is from a step failure handled by
+                    // continue-on-error. Treat the run as succeeded.
+                    logger.LogWarning(
+                        "act exited with code {ExitCode} for run {RunId} but all jobs succeeded " +
+                        "(likely a step failure with continue-on-error); treating run as succeeded",
+                        process.ExitCode, run.Id);
+                    actException = null;
+                    break;
                 }
 
-                // Docker container collision, mixed outcome (partial collision), or no jobs ran —
-                // build the exception message for potential re-throw and retry if possible.
+                // Always retry on any act failure. Docker SDK conflict errors can arrive as
+                // raw stderr before act's JSON logger, so containerCollisionDetected may be 0
+                // even for real container-name collisions. Retrying is safe: on genuine workflow
+                // failures act will fail again and we give up after MaxActAttempts.
                 var reason = isContainerCollision
                     ? "Docker container name collision"
                     : isMixedOutcome
                         ? "partial Docker container collision (some jobs succeeded, later job failed)"
-                        : "no jobs ran";
+                        : anyJobFailed != 0
+                            ? "job failure (possible undetected container collision)"
+                            : "no jobs ran";
                 actException = new Exception(
                     $"act exited with code {process.ExitCode} ({reason}) " +
                     $"(workspace: {workspacePath}, event: {trigger.EventName ?? "push"}, workflow: {trigger.Workflow ?? "default"})");
@@ -262,6 +245,7 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
                         "act exited with code {ExitCode} for run {RunId} ({Reason}) " +
                         "(attempt {Attempt}/{MaxAttempts}); waiting for Docker cleanup before retry",
                         process.ExitCode, run.Id, reason, attempt, MaxActAttempts);
+                    await TryRemoveStaleActContainersAsync(cancellationToken);
                     await Task.Delay(TimeSpan.FromSeconds(ActRetryDelaySeconds), cancellationToken);
                 }
             }
@@ -518,6 +502,42 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
             var eqIdx = trimmed.IndexOf('=');
             if (eqIdx > 0)
                 yield return trimmed;
+        }
+    }
+
+    /// <summary>
+    /// Attempts to remove any stale Docker containers whose names start with <c>act-</c>
+    /// and are in an exited, dead, or created (not-yet-started) state. These containers are
+    /// left behind when a previous act run is forcefully interrupted or when Docker's async
+    /// <c>--rm</c> cleanup has not yet completed. Silently ignored on failure (best-effort).
+    /// Only supported on Unix-like systems (requires <c>/bin/sh</c> and <c>docker</c> on PATH).
+    /// </summary>
+    private async Task TryRemoveStaleActContainersAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Use /bin/sh pipeline: docker ps lists stale act containers; xargs -r docker rm
+            // removes them. -r prevents xargs from running docker rm with no arguments.
+            // Do NOT redirect stdout or stderr — avoids buffer-deadlock when output is large.
+            var psi = new ProcessStartInfo("/bin/sh")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            psi.ArgumentList.Add("-c");
+            psi.ArgumentList.Add(
+                "docker ps -aq --filter name=act- --filter status=exited --filter status=dead --filter status=created " +
+                "| xargs -r docker rm -f");
+
+            using var process = new Process { StartInfo = psi };
+            process.Start();
+            await process.WaitForExitAsync(cancellationToken);
+            if (process.ExitCode != 0)
+                logger.LogDebug("TryRemoveStaleActContainers: shell exited with code {Code}", process.ExitCode);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "TryRemoveStaleActContainers: best-effort cleanup failed (ignored)");
         }
     }
 
