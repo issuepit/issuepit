@@ -166,6 +166,7 @@ jobs:
           docker pull apache/kafka:3.9.0
           docker pull node:20-slim
           docker pull localstack/localstack:4.3
+          docker pull ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24
 
       - name: Install act (for CI/CD pipeline E2E tests)
         run: |

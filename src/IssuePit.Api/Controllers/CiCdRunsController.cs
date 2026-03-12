@@ -541,6 +541,10 @@ public class CiCdRunsController(
         var repo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == request.ProjectId);
 
         // Create the run record immediately (Pending) so it shows as queued in the UI.
+        // Pass runtimeOverride and workspacePath as extra payload so the worker can honour them.
+        var extraPayload = (request.RuntimeOverride is not null || request.WorkspacePath is not null)
+            ? new { runtimeOverride = request.RuntimeOverride, workspacePath = request.WorkspacePath }
+            : (object?)null;
         var newRun = await runQueue.EnqueueAsync(
             projectId: request.ProjectId,
             commitSha: request.CommitSha,
@@ -548,7 +552,8 @@ public class CiCdRunsController(
             workflow: request.Workflow,
             eventName: request.EventName,
             inputs: request.Inputs,
-            gitRepoUrl: repo?.RemoteUrl);
+            gitRepoUrl: repo?.RemoteUrl,
+            extraPayload: extraPayload);
 
         return Accepted(new { runId = newRun.Id, projectId = request.ProjectId, commitSha = request.CommitSha, eventName = request.EventName });
     }
@@ -643,4 +648,14 @@ public record TriggerRunRequest(
     string? Branch = null,
     string? Workflow = null,
     /// <summary>Input key-value pairs for workflow_dispatch events.</summary>
-    Dictionary<string, string>? Inputs = null);
+    Dictionary<string, string>? Inputs = null,
+    /// <summary>
+    /// Overrides the CI/CD runtime for this run. Accepted values are <c>"Native"</c> and <c>"Docker"</c>.
+    /// When <c>null</c> the global <c>CiCd:Runtime</c> configuration value is used.
+    /// </summary>
+    string? RuntimeOverride = null,
+    /// <summary>
+    /// Host filesystem path to the workspace (git repository). Used by the Native runtime when
+    /// a per-run workspace is required instead of the configured default.
+    /// </summary>
+    string? WorkspacePath = null);

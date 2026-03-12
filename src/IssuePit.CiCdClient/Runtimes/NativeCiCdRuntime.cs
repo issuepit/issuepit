@@ -23,8 +23,10 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
     /// <summary>
     /// Seconds to wait between act retry attempts. Used when act exits with no jobs having run,
     /// which typically indicates a Docker container name collision due to async --rm cleanup.
+    /// Kept short (3 s) so that the total retry budget (3 attempts × ~4 s + 2 × 3 s ≈ 18 s)
+    /// stays well within the E2E test timeout of 50 s.
     /// </summary>
-    private const int ActRetryDelaySeconds = 10;
+    private const int ActRetryDelaySeconds = 3;
     public async Task RunAsync(
         CiCdRun run,
         TriggerPayload trigger,
@@ -132,7 +134,10 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
         // identical across consecutive runs of the same workflow. Docker's async --rm cleanup from
         // the previous run can still be in-progress when the next run tries to create containers
         // with the same names ("container name already in use"). In that case act exits non-zero
-        // without running any jobs. Retry once after a brief pause so Docker can finish cleanup.
+        // without running any jobs. Pre-clean any stale act containers before the first attempt
+        // so that the collision window is eliminated; retries with a short delay handle the rare
+        // case where Docker is still removing a container when act tries to create it.
+        TryRemoveStaleActContainers();
         Exception? actException = null;
         for (var attempt = 1; attempt <= MaxActAttempts; attempt++)
         {
