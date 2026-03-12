@@ -5,12 +5,18 @@
 #   ACT_COMMIT          — issuepit/act git commit hash to build from
 #   ACTIONLINT_VERSION  — rhysd/actionlint release version to install (default: 1.7.11)
 
+# ARGs used in FROM instructions must be declared in the global scope (before the first FROM)
+# so they are available to the build engine when it resolves the base image reference.
+# They must also be re-declared inside each stage that needs them as regular build args.
+ARG BASE_IMAGE=ghcr.io/issuepit/issuepit-helper-base:latest
+ARG ACT_COMMIT=cb02232605fa5f914986ce6eb3500db85c06c0ce
+
 # Stage 1: Build act from source at the specified commit of the issuepit/act fork.
 # The module name in go.mod is still github.com/nektos/act so "go install" with the
 # fork URL does not work; we clone and build manually instead.
 FROM golang:1.24 AS act-builder
 
-ARG ACT_COMMIT=cb02232605fa5f914986ce6eb3500db85c06c0ce
+ARG ACT_COMMIT
 
 RUN set -eux; \
     git clone https://github.com/issuepit/act.git /act && \
@@ -20,10 +26,9 @@ RUN set -eux; \
     act --version
 
 # Stage 2: Final image — extend helper-base with Docker Engine (DinD), the pre-built act, and actionlint.
-ARG BASE_IMAGE=ghcr.io/issuepit/issuepit-helper-base:latest
 FROM ${BASE_IMAGE}
 
-ARG ACT_COMMIT=cb02232605fa5f914986ce6eb3500db85c06c0ce
+ARG ACT_COMMIT
 ARG ACTIONLINT_VERSION=1.7.11
 
 # Install Docker Engine (dockerd) + CLI for true DinD (isolated in-container daemon).
