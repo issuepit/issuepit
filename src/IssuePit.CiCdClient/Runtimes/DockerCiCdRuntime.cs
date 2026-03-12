@@ -250,6 +250,12 @@ public partial class DockerCiCdRuntime(
             actBinAndArgs.Add(ContainerActionCachePath);
         }
 
+        // Append a short suffix derived from the run ID so act job containers inside the DinD
+        // daemon are identifiable by run (issuepit/act --container-name-suffix).
+        var actContainerNameSuffix = "-" + $"{run.Id:N}"[..NativeCiCdRuntime.ContainerNameSuffixLength];
+        actBinAndArgs.Add("--container-name-suffix");
+        actBinAndArgs.Add(actContainerNameSuffix);
+
         var containerName = BuildContainerName(run);
 
         // Read the act runner image that is injected into actrc to prevent the interactive

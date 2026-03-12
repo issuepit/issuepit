@@ -35,14 +35,15 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
         // Print act version for diagnostics before the actual run.
         await TryLogActVersionAsync(actBin, onLogLine, cancellationToken);
 
-        // Derive a short unique prefix from the run ID so that act job containers created on the
-        // host Docker daemon never collide across parallel runs (issuepit/act --container-name-prefix).
-        // The prefix contains only alphanumeric chars and hyphens (hex UUID digits + "run-" literal),
-        // so no shell escaping is needed when it is joined into the args string below.
-        var containerNamePrefix = $"run-{run.Id:N}"[..ContainerNamePrefixLength] + "-";
+        // Append a short suffix derived from the run ID so that act job containers created on the
+        // host Docker daemon are identifiable by run and never collide across parallel runs
+        // (issuepit/act --container-name-suffix). Using a suffix preserves the "act-" name prefix
+        // that stale-container cleanup filters rely on.
+        // The suffix contains only a hyphen and hex digits (UUID chars), no shell escaping needed.
+        var containerNameSuffix = "-" + $"{run.Id:N}"[..ContainerNameSuffixLength];
         var argsList = BuildActArgumentsList(trigger).ToList();
-        argsList.Add("--container-name-prefix");
-        argsList.Add(containerNamePrefix);
+        argsList.Add("--container-name-suffix");
+        argsList.Add(containerNameSuffix);
         var args = string.Join(' ', argsList);
 
         logger.LogInformation("Running act (native) for run {RunId}: {ActBin} {Args}", run.Id, actBin, args);
@@ -203,11 +204,11 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
     internal const int DefaultConcurrentJobs = 4;
 
     /// <summary>
-    /// Length (in chars) used when truncating <c>"run-{runId:N}"</c> for the <c>--container-name-prefix</c> flag.
-    /// Produces "run-" (4 chars) followed by 10 hex digits from the UUID — enough uniqueness while
-    /// keeping container names well below Docker's 63-character limit.
+    /// Length (in hex chars) used when truncating the run UUID for the <c>--container-name-suffix</c> flag.
+    /// Produces a suffix like "-3f2a91b0c4" — enough uniqueness while keeping container names
+    /// well below Docker's 63-character limit.
     /// </summary>
-    internal const int ContainerNamePrefixLength = 14;
+    internal const int ContainerNameSuffixLength = 10;
 
     internal static IReadOnlyList<string> BuildActArgumentsList(TriggerPayload trigger)
     {
