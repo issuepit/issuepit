@@ -106,19 +106,38 @@ public class VoiceTranscriptionService(IOptions<VoiceTranscriptionOptions> optio
                 rec.SetMaxAlternatives(0);
                 rec.SetWords(false);
 
+                // Accumulate text from all utterances. Vosk's VAD may emit multiple utterance
+                // boundaries during silence gaps; AcceptWaveform returns true at each boundary
+                // and the text for that utterance must be retrieved via Result(). FinalResult()
+                // only covers remaining audio after the last boundary, so ignoring Result()
+                // silently discards all recognised text when the audio ends with silence.
+                var accumulated = new System.Text.StringBuilder();
+
+                static void AppendText(System.Text.StringBuilder sb, string json)
+                {
+                    using var doc = JsonDocument.Parse(json);
+                    if (doc.RootElement.TryGetProperty("text", out var t))
+                    {
+                        var s = t.GetString();
+                        if (!string.IsNullOrWhiteSpace(s))
+                        {
+                            if (sb.Length > 0) sb.Append(' ');
+                            sb.Append(s);
+                        }
+                    }
+                }
+
                 var buffer = new byte[4096];
                 int bytesRead;
                 while ((bytesRead = pcm.Read(buffer, 0, buffer.Length)) > 0)
                 {
                     ct.ThrowIfCancellationRequested();
-                    rec.AcceptWaveform(buffer, bytesRead);
+                    if (rec.AcceptWaveform(buffer, bytesRead))
+                        AppendText(accumulated, rec.Result());
                 }
 
-                var resultJson = rec.FinalResult();
-                using var doc = JsonDocument.Parse(resultJson);
-                return doc.RootElement.TryGetProperty("text", out var text)
-                    ? text.GetString() ?? string.Empty
-                    : string.Empty;
+                AppendText(accumulated, rec.FinalResult());
+                return accumulated.ToString();
             }, ct);
         }
     }
