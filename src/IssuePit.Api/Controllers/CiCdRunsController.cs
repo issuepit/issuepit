@@ -549,17 +549,12 @@ public class CiCdRunsController(
             eventName: request.EventName,
             inputs: request.Inputs,
             gitRepoUrl: repo?.RemoteUrl,
+            workspacePath: request.WorkspacePath,
             extraPayload: new
             {
                 workspacePath = request.WorkspacePath,
                 runtimeOverride = request.RuntimeOverride,
             });
-
-        if (!string.IsNullOrWhiteSpace(request.WorkspacePath))
-        {
-            newRun.WorkspacePath = request.WorkspacePath;
-            await db.SaveChangesAsync();
-        }
 
         return Accepted(new { runId = newRun.Id, projectId = request.ProjectId, commitSha = request.CommitSha, eventName = request.EventName });
     }

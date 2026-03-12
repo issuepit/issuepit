@@ -169,12 +169,6 @@ public class CiCdWorker(
         {
             run = await db.CiCdRuns.FirstOrDefaultAsync(r => r.Id == trigger.RunId.Value, stoppingToken)
                   ?? throw new InvalidOperationException($"Pre-created run {trigger.RunId} not found in DB.");
-
-            if (!string.IsNullOrWhiteSpace(trigger.WorkspacePath) &&
-                !string.Equals(run.WorkspacePath, trigger.WorkspacePath, StringComparison.Ordinal))
-            {
-                run.WorkspacePath = trigger.WorkspacePath;
-            }
         }
         else
         {

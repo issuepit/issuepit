@@ -34,6 +34,7 @@ public sealed class CiCdRunQueueService(
         string? eventName,
         Dictionary<string, string>? inputs,
         string? gitRepoUrl,
+        string? workspacePath = null,
         Guid? agentSessionId = null,
         object? extraPayload = null,
         CancellationToken cancellationToken = default)
@@ -50,6 +51,7 @@ public sealed class CiCdRunQueueService(
             CommitSha = commitSha,
             Branch = branch,
             Workflow = workflow,
+            WorkspacePath = workspacePath,
             EventName = eventName,
             InputsJson = inputsJson,
             Status = CiCdRunStatus.Pending,
