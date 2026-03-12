@@ -247,7 +247,7 @@ public class CiCdWorker(
                 return;
             }
 
-            var runtime = runtimeFactory.Create();
+            var runtime = runtimeFactory.Create(trigger.RuntimeOverride);
 
             // Log run parameters so they are visible in the log output
             await AppendLogAsync(run.Id,
@@ -264,10 +264,28 @@ public class CiCdWorker(
             // without needing a client-side timer. The heartbeat is cancelled when the run finishes.
             _ = PublishHeartbeatAsync(run.Id.ToString(), runCts.Token);
 
+            // act streams stdout and stderr in parallel (Task.WhenAll). Both streams invoke this
+            // callback concurrently, but EF Core DbContext is not thread-safe. Serialise all
+            // SaveChangesAsync calls with a per-run lock so the two reader tasks never overlap.
+            using var logLock = new SemaphoreSlim(1, 1);
+
             await runtime.RunAsync(
                 run,
                 trigger,
-                (line, stream) => AppendLogAsync(run.Id, line, stream, db, stoppingToken),
+                async (line, stream) =>
+                {
+                    var acquired = false;
+                    try
+                    {
+                        await logLock.WaitAsync(stoppingToken);
+                        acquired = true;
+                        await AppendLogAsync(run.Id, line, stream, db, stoppingToken);
+                    }
+                    finally
+                    {
+                        if (acquired) logLock.Release();
+                    }
+                },
                 runCts.Token);
 
             run.Status = CiCdRunStatus.Succeeded;
@@ -709,11 +727,14 @@ public class CiCdWorker(
         // Guard on stepId: act emits these messages in the "Complete Job" teardown stage (or
         // with no stage at all). A user script could echo the same text inside a regular step,
         // so only fire when stepId is null or "Complete Job" to avoid false positives.
+        // act v0.2.84 emits "🏁  Job succeeded" / "🏁  Job failed" (emoji prefix); use EndsWith.
+        var isJobSucceeded = displayLine.EndsWith("Job succeeded", StringComparison.Ordinal);
+        var isJobFailed = displayLine.EndsWith("Job failed", StringComparison.Ordinal);
         if (!string.IsNullOrEmpty(jobId) &&
             (stepId == null || stepId == "Complete Job") &&
-            (displayLine == "Job succeeded" || displayLine == "Job failed"))
+            (isJobSucceeded || isJobFailed))
         {
-            var status = displayLine == "Job succeeded" ? "succeeded" : "failed";
+            var status = isJobSucceeded ? "succeeded" : "failed";
             await PublishLogLineAsync(runId.ToString(),
                 JsonSerializer.Serialize(new { @event = "job-status", jobId, status }));
         }

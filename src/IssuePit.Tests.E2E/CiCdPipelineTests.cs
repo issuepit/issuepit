@@ -6,31 +6,39 @@ using System.Text.Json;
 namespace IssuePit.Tests.E2E;
 
 /// <summary>
-/// E2E tests that exercise the full CI/CD pipeline using the NativeCiCdRuntime against a
-/// real dummy git repository.
+/// E2E tests that exercise the full CI/CD pipeline against a real dummy git repository,
+/// parameterized by runtime so the same test logic runs against every supported runtime.
 ///
 /// Flow:
 /// <list type="number">
 ///   <item>Register a user, create an org and a project via the API.</item>
 ///   <item>Trigger a CI/CD run; the CiCdWorker picks up the Kafka message and executes
-///         <see cref="IssuePit.CiCdClient.Runtimes.NativeCiCdRuntime"/> which runs <c>act</c>
-///         against the temporary git repo created from <c>test/dummy-cicd-repo</c>.</item>
+///         the selected runtime against the temporary git repo created from
+///         <c>test/dummy-cicd-repo</c>.</item>
 ///   <item>Poll until the run completes, then verify logs, job states, artifacts, and TRX
 ///         test results via the REST API.</item>
 /// </list>
 ///
 /// Requirements:
 /// <list type="bullet">
-///   <item>The <c>act</c> binary must be on the PATH (tests return early if it is not).</item>
-///   <item><see cref="AspireFixture"/> must have successfully created the temporary git repo
-///         (sets <c>CICD_E2E_REPO_PATH</c>); AppHost configures the cicd-client with
-///         <c>CiCd__Runtime=Native</c> and <c>CiCd__DefaultWorkspacePath</c> accordingly.</item>
+///   <item>For the <c>Native</c> runtime: the <c>act</c> binary must be on the PATH and
+///         <see cref="AspireFixture"/> must have created the temporary git repo
+///         (sets <c>CICD_E2E_REPO_PATH</c>).</item>
+///   <item>For the <c>Docker</c> runtime: Docker must be available on the host; the test
+///         always runs and is only skipped if <c>CICD_E2E_REPO_PATH</c> was not set
+///         (Docker runtime also requires the dummy repo as the workspace source).</item>
 /// </list>
 /// </summary>
 [Collection("E2E")]
 [Trait("Category", "E2E")]
 public class CiCdPipelineTests(AspireFixture fixture)
 {
+    private const string NativeRuntime = "Native";
+    private const string DockerRuntime = "Docker";
+
+    /// <summary>Runtime modes exercised by the parameterized tests.</summary>
+    public static TheoryData<string> RuntimeModes => new() { NativeRuntime, DockerRuntime };
+
     /// <summary>Returns <c>true</c> when the <c>act</c> binary is available on the PATH.</summary>
     private static bool IsActAvailable()
     {
@@ -53,12 +61,20 @@ public class CiCdPipelineTests(AspireFixture fixture)
     }
 
     /// <summary>
-    /// Returns <c>true</c> when both the act binary and the dummy E2E repo are available.
-    /// When <c>false</c>, tests return early without asserting anything.
+    /// Returns <c>true</c> when the given <paramref name="runtimeMode"/> is ready for E2E testing.
+    /// <list type="bullet">
+    ///   <item><c>Native</c>: requires the <c>act</c> binary and <c>CICD_E2E_REPO_PATH</c>.</item>
+    ///   <item><c>Docker</c>: requires <c>CICD_E2E_REPO_PATH</c> (the workspace is mounted
+    ///         into the helper-act container); Docker itself is always assumed to be available.</item>
+    /// </list>
     /// </summary>
-    private static bool IsReady() =>
-        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CICD_E2E_REPO_PATH"))
-        && IsActAvailable();
+    private static bool IsReady(string runtimeMode) => runtimeMode switch
+    {
+        DockerRuntime => !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CICD_E2E_REPO_PATH")),
+        NativeRuntime => !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CICD_E2E_REPO_PATH"))
+                         && IsActAvailable(),
+        _ => throw new ArgumentException($"Unknown runtime mode: {runtimeMode}", nameof(runtimeMode)),
+    };
 
     private HttpClient CreateCookieClient()
     {
@@ -111,46 +127,59 @@ public class CiCdPipelineTests(AspireFixture fixture)
         return (client, projectId);
     }
 
-    [Fact]
-    public async Task CiCdRun_NativeAct_RunSucceeds()
+    /// <summary>Builds the trigger body for the given runtime mode.</summary>
+    private static object BuildTriggerPayload(string projectId, string commitSha, string runtimeMode,
+        string? workflow = null)
     {
-        if (!IsReady()) return;
+        var workspacePath = runtimeMode == NativeRuntime
+            ? Environment.GetEnvironmentVariable("CICD_E2E_REPO_PATH")
+            : null;
+
+        return new
+        {
+            projectId = Guid.Parse(projectId),
+            commitSha,
+            eventName = "push",
+            branch = "main",
+            workflow,
+            workspacePath,
+            runtimeOverride = runtimeMode,
+        };
+    }
+
+    [Theory]
+    [MemberData(nameof(RuntimeModes))]
+    public async Task CiCdRun_RunSucceeds(string runtimeMode)
+    {
+        if (!IsReady(runtimeMode)) return;
 
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
 
-        var triggerResp = await client.PostAsJsonAsync("/api/cicd-runs/trigger", new
-        {
-            projectId = Guid.Parse(projectId),
-            commitSha = "e2e-abc123",
-            eventName = "push",
-            branch = "main",
-            workflow = "ci.yml",
-        });
+        var triggerResp = await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+            BuildTriggerPayload(projectId, "e2e-abc123", runtimeMode, "ci.yml"));
         Assert.Equal(HttpStatusCode.Accepted, triggerResp.StatusCode);
 
         var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
-        Assert.Equal("Succeeded", run.GetProperty("statusName").GetString());
+        var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
     }
 
-    [Fact]
-    public async Task CiCdRun_NativeAct_CapturesLogsForBothJobs()
+    [Theory]
+    [MemberData(nameof(RuntimeModes))]
+    public async Task CiCdRun_CapturesLogsForBothJobs(string runtimeMode)
     {
-        if (!IsReady()) return;
+        if (!IsReady(runtimeMode)) return;
 
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
 
-        await client.PostAsJsonAsync("/api/cicd-runs/trigger", new
-        {
-            projectId = Guid.Parse(projectId),
-            commitSha = "e2e-log-abc",
-            eventName = "push",
-            branch = "main",
-        });
+        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+            BuildTriggerPayload(projectId, "e2e-log-abc", runtimeMode, "ci.yml"));
 
         var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
         var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
 
         var logsResp = await client.GetAsync($"/api/cicd-runs/{runId}/logs");
         Assert.Equal(HttpStatusCode.OK, logsResp.StatusCode);
@@ -174,24 +203,21 @@ public class CiCdPipelineTests(AspireFixture fixture)
         Assert.True(hasTestJobLogs, "Expected log entries from the 'test' job");
     }
 
-    [Fact]
-    public async Task CiCdRun_NativeAct_JobLogsFilterByJobId()
+    [Theory]
+    [MemberData(nameof(RuntimeModes))]
+    public async Task CiCdRun_JobLogsFilterByJobId(string runtimeMode)
     {
-        if (!IsReady()) return;
+        if (!IsReady(runtimeMode)) return;
 
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
 
-        await client.PostAsJsonAsync("/api/cicd-runs/trigger", new
-        {
-            projectId = Guid.Parse(projectId),
-            commitSha = "e2e-joblogs-abc",
-            eventName = "push",
-            branch = "main",
-        });
+        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+            BuildTriggerPayload(projectId, "e2e-joblogs-abc", runtimeMode));
 
         var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
         var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
 
         // Fetch logs filtered to the 'build' job only.
         var buildLogsResp = await client.GetAsync($"/api/cicd-runs/{runId}/jobs/build/logs");
@@ -208,24 +234,21 @@ public class CiCdPipelineTests(AspireFixture fixture)
         }
     }
 
-    [Fact]
-    public async Task CiCdRun_NativeAct_StoresArtifacts()
+    [Theory]
+    [MemberData(nameof(RuntimeModes))]
+    public async Task CiCdRun_StoresArtifacts(string runtimeMode)
     {
-        if (!IsReady()) return;
+        if (!IsReady(runtimeMode)) return;
 
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
 
-        await client.PostAsJsonAsync("/api/cicd-runs/trigger", new
-        {
-            projectId = Guid.Parse(projectId),
-            commitSha = "e2e-artifact-abc",
-            eventName = "push",
-            branch = "main",
-        });
+        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+            BuildTriggerPayload(projectId, "e2e-artifact-abc", runtimeMode));
 
         var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
         var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
 
         var artifactsResp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts");
         Assert.Equal(HttpStatusCode.OK, artifactsResp.StatusCode);
@@ -239,24 +262,21 @@ public class CiCdPipelineTests(AspireFixture fixture)
         Assert.Contains("test-results", names);
     }
 
-    [Fact]
-    public async Task CiCdRun_NativeAct_StoresTrxTestResults()
+    [Theory]
+    [MemberData(nameof(RuntimeModes))]
+    public async Task CiCdRun_StoresTrxTestResults(string runtimeMode)
     {
-        if (!IsReady()) return;
+        if (!IsReady(runtimeMode)) return;
 
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
 
-        await client.PostAsJsonAsync("/api/cicd-runs/trigger", new
-        {
-            projectId = Guid.Parse(projectId),
-            commitSha = "e2e-trx-abc",
-            eventName = "push",
-            branch = "main",
-        });
+        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+            BuildTriggerPayload(projectId, "e2e-trx-abc", runtimeMode));
 
         var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
         var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
 
         var testResultsResp = await client.GetAsync($"/api/cicd-runs/{runId}/test-results");
         Assert.Equal(HttpStatusCode.OK, testResultsResp.StatusCode);
@@ -307,5 +327,49 @@ public class CiCdPipelineTests(AspireFixture fixture)
         }
 
         throw new TimeoutException($"No completed CI/CD run found for project {projectId} within {timeout}.");
+    }
+
+    /// <summary>
+    /// Asserts that <paramref name="run"/> has <c>statusName == "Succeeded"</c>.
+    /// On failure, fetches the last act log lines from the API and includes them in the
+    /// assertion message so the root cause is visible in the test output without needing
+    /// to dig into CI artifacts.
+    /// </summary>
+    private static async Task AssertRunSucceededAsync(HttpClient client, JsonElement run, string runId)
+    {
+        var statusName = run.GetProperty("statusName").GetString();
+        if (statusName == "Succeeded")
+            return;
+
+        // Fetch the last act log lines to surface the failure cause.
+        string logTail;
+        try
+        {
+            var logsResp = await client.GetAsync($"/api/cicd-runs/{runId}/logs");
+            if (logsResp.IsSuccessStatusCode)
+            {
+                var logs = await logsResp.Content.ReadFromJsonAsync<JsonElement>();
+                var lines = logs.EnumerateArray()
+                    .Select(l => l.TryGetProperty("line", out var ln) ? ln.GetString() : null)
+                    .Where(l => !string.IsNullOrEmpty(l))
+                    .TakeLast(30)
+                    .ToList();
+                logTail = lines.Count > 0
+                    ? string.Join('\n', lines)
+                    : "(no log lines captured)";
+            }
+            else
+            {
+                logTail = $"(logs endpoint returned {logsResp.StatusCode})";
+            }
+        }
+        catch (Exception ex)
+        {
+            logTail = $"(failed to fetch logs: {ex.Message})";
+        }
+
+        Assert.Fail(
+            $"Expected run status 'Succeeded' but was '{statusName}' (runId: {runId}).\n" +
+            $"Last act log lines:\n{logTail}");
     }
 }

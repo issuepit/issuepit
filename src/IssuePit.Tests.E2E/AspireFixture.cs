@@ -245,7 +245,7 @@ public sealed class AspireFixture : IAsyncLifetime
             RunGitCommand(tempDir, $"{gitUserArgs} commit -m \"initial commit\"");
             // Add a fake origin so act can resolve GITHUB_REPOSITORY from the remote URL.
             // Without a remote, act cannot set GITHUB_REPOSITORY, which causes
-            // actions/upload-artifact@v4 to fail with "context.repo requires GITHUB_REPOSITORY".
+            // actions/upload-artifact to fail with "context.repo requires GITHUB_REPOSITORY".
             RunGitCommand(tempDir, "remote add origin https://github.com/local/issuepit.git");
 
             Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Dummy E2E git repo created at {tempDir}");
