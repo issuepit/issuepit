@@ -159,6 +159,13 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Pre-pull Docker images
         run: |
           docker pull postgres:17.6
@@ -166,15 +173,20 @@ jobs:
           docker pull apache/kafka:3.9.0
           docker pull node:20-slim
           docker pull localstack/localstack:4.3
+          docker pull ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24
 
-      - name: Install act (for CI/CD pipeline E2E tests)
+      - name: Build act from issuepit/act fork
         run: |
-          # Install a pinned release of act to avoid fetching untrusted scripts from master.
-          ACT_VERSION=v0.2.84
-          curl -fsSL "https://github.com/nektos/act/releases/download/${ACT_VERSION}/act_Linux_x86_64.tar.gz" \
-            -o /tmp/act.tar.gz
-          sudo tar xz -C /usr/local/bin -f /tmp/act.tar.gz act
-          rm /tmp/act.tar.gz
+          # Build from the same issuepit/act commit used in Dockerfile.helper-act.
+          # The issuepit/act fork adds --container-name-suffix (used by NativeCiCdRuntime)
+          # which is not present in the official nektos/act releases.
+          ACT_COMMIT=cb02232605fa5f914986ce6eb3500db85c06c0ce
+          git clone https://github.com/issuepit/act.git /tmp/issuepit-act
+          cd /tmp/issuepit-act
+          git checkout "$ACT_COMMIT"
+          go build -ldflags "-X main.version=${ACT_COMMIT}" -o /tmp/act-bin main.go
+          sudo mv /tmp/act-bin /usr/local/bin/act
+          rm -rf /tmp/issuepit-act
           act --version
 
       - name: Build E2E test project
@@ -186,6 +198,8 @@ jobs:
           pwsh "$PLAYWRIGHT_SCRIPT" install --with-deps chromium
 
       - name: E2E Tests
+        env:
+          CICD_E2E_HELPER_ACT_IMAGE: ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24
         run: >
           dotnet test src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj
           --no-build

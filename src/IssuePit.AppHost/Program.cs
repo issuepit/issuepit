@@ -308,6 +308,13 @@ if (!string.IsNullOrEmpty(e2eRepoPath))
     cicdClient.WithEnvironment("CiCd__ActImage", "node:20-slim");
 }
 
+// When CICD_E2E_HELPER_ACT_IMAGE is set (populated by the E2E CI step), configure the
+// Docker runtime to use that specific image so Docker-mode tests run against a known,
+// pre-pulled helper-act image rather than the default :latest tag.
+var e2eHelperActImage = Environment.GetEnvironmentVariable("CICD_E2E_HELPER_ACT_IMAGE");
+if (!string.IsNullOrEmpty(e2eHelperActImage))
+    cicdClient.WithEnvironment("CiCd__Docker__Image", e2eHelperActImage);
+
 frontend
     .WithEnvironment("NUXT_PUBLIC_API_BASE", api.GetEndpoint("http"))
     .WithEnvironment("NUXT_PUBLIC_MCP_BASE", mcpServer.GetEndpoint("http"))
