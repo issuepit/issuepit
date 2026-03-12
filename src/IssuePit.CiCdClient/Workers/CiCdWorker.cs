@@ -264,10 +264,28 @@ public class CiCdWorker(
             // without needing a client-side timer. The heartbeat is cancelled when the run finishes.
             _ = PublishHeartbeatAsync(run.Id.ToString(), runCts.Token);
 
+            // act streams stdout and stderr in parallel (Task.WhenAll). Both streams invoke this
+            // callback concurrently, but EF Core DbContext is not thread-safe. Serialise all
+            // SaveChangesAsync calls with a per-run lock so the two reader tasks never overlap.
+            using var logLock = new SemaphoreSlim(1, 1);
+
             await runtime.RunAsync(
                 run,
                 trigger,
-                (line, stream) => AppendLogAsync(run.Id, line, stream, db, stoppingToken),
+                async (line, stream) =>
+                {
+                    var acquired = false;
+                    try
+                    {
+                        await logLock.WaitAsync(stoppingToken);
+                        acquired = true;
+                        await AppendLogAsync(run.Id, line, stream, db, stoppingToken);
+                    }
+                    finally
+                    {
+                        if (acquired) logLock.Release();
+                    }
+                },
                 runCts.Token);
 
             run.Status = CiCdRunStatus.Succeeded;
