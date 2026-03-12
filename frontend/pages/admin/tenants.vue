@@ -3,8 +3,11 @@
     <!-- Header -->
     <div class="flex items-center justify-between mb-8">
       <div>
-        <h1 class="text-2xl font-bold text-white">Tenant Manager</h1>
-        <p class="text-gray-400 mt-1">{{ store.tenants.length }} tenant{{ store.tenants.length === 1 ? '' : 's' }} registered</p>
+        <PageBreadcrumb :items="[
+          { label: 'Admin', to: '/admin/tenants', icon: 'M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4' },
+          { label: 'Tenants', to: '/admin/tenants', icon: 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4' },
+        ]" />
+        <p class="text-gray-400 mt-1 text-sm">{{ store.tenants.length }} tenant{{ store.tenants.length === 1 ? '' : 's' }} registered</p>
       </div>
       <button
         class="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"

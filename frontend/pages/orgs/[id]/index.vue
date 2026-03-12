@@ -8,15 +8,11 @@
     <template v-else-if="orgsStore.currentOrg">
       <!-- Header -->
       <div class="flex items-center gap-3 mb-6">
-        <NuxtLink to="/orgs" class="text-gray-500 hover:text-gray-300 transition-colors">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-          </svg>
-        </NuxtLink>
-        <div>
-          <h1 class="text-2xl font-bold text-white">{{ orgsStore.currentOrg.name }}</h1>
-          <p class="text-gray-500 text-sm font-mono">{{ orgsStore.currentOrg.slug }}</p>
-        </div>
+        <PageBreadcrumb :items="[
+          { label: 'Orgs', to: '/orgs', icon: 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4' },
+          { label: orgsStore.currentOrg.name, to: `/orgs/${orgId}`, icon: 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4' },
+        ]" />
+        <span class="text-xs text-gray-500 font-mono ml-1">{{ orgsStore.currentOrg.slug }}</span>
       </div>
 
       <!-- Tabs -->

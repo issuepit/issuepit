@@ -1,7 +1,9 @@
 <template>
   <div class="p-8 max-w-3xl">
-    <h1 class="text-2xl font-bold text-white mb-2">Profile</h1>
-    <p class="text-gray-400 mb-8">Manage your account settings and memberships.</p>
+    <PageBreadcrumb :items="[
+      { label: 'Profile', to: '/profile', icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' },
+    ]" class="mb-2" />
+    <p class="text-gray-400 mb-8 text-sm">Manage your account settings and memberships.</p>
 
     <div class="space-y-6">
       <!-- User Info -->

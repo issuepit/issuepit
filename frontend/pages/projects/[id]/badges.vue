@@ -2,9 +2,11 @@
   <div class="p-8">
     <!-- Header -->
     <div class="flex items-center gap-2 mb-2">
-      <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name }}</NuxtLink>
-      <span class="text-gray-600">/</span>
-      <NuxtLink :to="`/projects/${id}/badges`" class="text-xl font-bold text-white">Status Badges</NuxtLink>
+      <PageBreadcrumb :items="[
+        { label: 'Projects', to: '/projects', icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10' },
+        { label: projectsStore.currentProject?.name || 'Project', to: `/projects/${id}`, color: projectsStore.currentProject?.color || '#4c6ef5' },
+        { label: 'Status Badges', to: `/projects/${id}/badges`, icon: 'M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z' },
+      ]" />
     </div>
     <p class="text-gray-500 text-sm mb-6">Embed live status badges into your README</p>
 

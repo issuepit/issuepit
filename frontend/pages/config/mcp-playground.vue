@@ -1,8 +1,11 @@
 <template>
-  <div>
+  <div class="p-8">
     <div class="flex items-center justify-between mb-6">
       <div>
-        <h2 class="text-lg font-semibold text-white">MCP Playground</h2>
+        <PageBreadcrumb :items="[
+          { label: 'Agents', to: '/agents', icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2' },
+          { label: 'MCP Playground', to: '/config/mcp-playground', icon: 'M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
+        ]" />
         <p class="text-sm text-gray-400 mt-0.5">
           Interactively test tools on the built-in IssuePit MCP server.
           Endpoint: <code class="text-green-300 font-mono text-xs">{{ mcpBase }}/mcp</code>
