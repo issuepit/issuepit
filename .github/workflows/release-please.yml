@@ -5,7 +5,7 @@ on:
     branches: [main]
   merge_group:
   pull_request:
-    types: [auto_merge_enabled] # only run on auto merge so we have less cicd runs for each commit; this does not trigger currently, maybe because auto merge itself is blocked by ruleset;
+    #types: [auto_merge_enabled] # only run on auto merge so we have less cicd runs for each commit; this does not trigger currently, maybe because auto merge itself is blocked by ruleset;
     #branches: [main]
 
 
