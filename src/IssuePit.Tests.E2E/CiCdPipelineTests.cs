@@ -161,7 +161,8 @@ public class CiCdPipelineTests(AspireFixture fixture)
         Assert.Equal(HttpStatusCode.Accepted, triggerResp.StatusCode);
 
         var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
-        Assert.Equal("Succeeded", run.GetProperty("statusName").GetString());
+        var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
     }
 
     [Theory]
@@ -174,11 +175,11 @@ public class CiCdPipelineTests(AspireFixture fixture)
         using var _ = client;
 
         await client.PostAsJsonAsync("/api/cicd-runs/trigger",
-            BuildTriggerPayload(projectId, "e2e-log-abc", runtimeMode));
+            BuildTriggerPayload(projectId, "e2e-log-abc", runtimeMode, "ci.yml"));
 
         var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
-        Assert.Equal("Succeeded", run.GetProperty("statusName").GetString());
         var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
 
         var logsResp = await client.GetAsync($"/api/cicd-runs/{runId}/logs");
         Assert.Equal(HttpStatusCode.OK, logsResp.StatusCode);
@@ -216,6 +217,7 @@ public class CiCdPipelineTests(AspireFixture fixture)
 
         var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
         var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
 
         // Fetch logs filtered to the 'build' job only.
         var buildLogsResp = await client.GetAsync($"/api/cicd-runs/{runId}/jobs/build/logs");
@@ -246,6 +248,7 @@ public class CiCdPipelineTests(AspireFixture fixture)
 
         var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
         var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
 
         var artifactsResp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts");
         Assert.Equal(HttpStatusCode.OK, artifactsResp.StatusCode);
@@ -273,6 +276,7 @@ public class CiCdPipelineTests(AspireFixture fixture)
 
         var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
         var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
 
         var testResultsResp = await client.GetAsync($"/api/cicd-runs/{runId}/test-results");
         Assert.Equal(HttpStatusCode.OK, testResultsResp.StatusCode);
@@ -323,5 +327,49 @@ public class CiCdPipelineTests(AspireFixture fixture)
         }
 
         throw new TimeoutException($"No completed CI/CD run found for project {projectId} within {timeout}.");
+    }
+
+    /// <summary>
+    /// Asserts that <paramref name="run"/> has <c>statusName == "Succeeded"</c>.
+    /// On failure, fetches the last act log lines from the API and includes them in the
+    /// assertion message so the root cause is visible in the test output without needing
+    /// to dig into CI artifacts.
+    /// </summary>
+    private static async Task AssertRunSucceededAsync(HttpClient client, JsonElement run, string runId)
+    {
+        var statusName = run.GetProperty("statusName").GetString();
+        if (statusName == "Succeeded")
+            return;
+
+        // Fetch the last act log lines to surface the failure cause.
+        string logTail;
+        try
+        {
+            var logsResp = await client.GetAsync($"/api/cicd-runs/{runId}/logs");
+            if (logsResp.IsSuccessStatusCode)
+            {
+                var logs = await logsResp.Content.ReadFromJsonAsync<JsonElement>();
+                var lines = logs.EnumerateArray()
+                    .Select(l => l.TryGetProperty("line", out var ln) ? ln.GetString() : null)
+                    .Where(l => !string.IsNullOrEmpty(l))
+                    .TakeLast(30)
+                    .ToList();
+                logTail = lines.Count > 0
+                    ? string.Join('\n', lines)
+                    : "(no log lines captured)";
+            }
+            else
+            {
+                logTail = $"(logs endpoint returned {logsResp.StatusCode})";
+            }
+        }
+        catch (Exception ex)
+        {
+            logTail = $"(failed to fetch logs: {ex.Message})";
+        }
+
+        Assert.Fail(
+            $"Expected run status 'Succeeded' but was '{statusName}' (runId: {runId}).\n" +
+            $"Last act log lines:\n{logTail}");
     }
 }
