@@ -31,7 +31,7 @@ env:
   DOTNET_MAJOR: "10"
   NODE_MAJOR: "24"
   PLAYWRIGHT_VERSION: "v1.51.0"
-  ACT_VERSION: "0.2.74"
+  ACT_COMMIT: "cb02232605fa5f914986ce6eb3500db85c06c0ce"
   ACTIONLINT_VERSION: "1.7.11"
   OPENCODE_VERSION: "latest"
 
@@ -159,7 +159,7 @@ jobs:
           labels: ${{ steps.meta-act.outputs.labels }}
           build-args: |
             BASE_IMAGE=helper-base:local
-            ACT_VERSION=${{ env.ACT_VERSION }}
+            ACT_COMMIT=${{ env.ACT_COMMIT }}
             ACTIONLINT_VERSION=${{ env.ACTIONLINT_VERSION }}
 
       - name: Build helper-opencode
