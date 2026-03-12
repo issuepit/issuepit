@@ -85,6 +85,7 @@ public class ImageStorageService(IOptions<ImageStorageOptions> options, ILogger<
             Key = key,
             InputStream = content,
             ContentType = contentType,
+            AutoCloseStream = false, // The caller manages the stream lifetime; don't close it after upload
         };
 
         await RetryS3Async(() =>

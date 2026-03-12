@@ -14,8 +14,14 @@
       </div>
       <div class="flex items-center gap-2">
         <button @click="showVoiceCreate = true"
-          class="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-          title="Create issue from voice">
+          @dragover.prevent="voiceDragOver = true"
+          @dragleave="voiceDragOver = false"
+          @drop.prevent="handleVoiceFileDrop"
+          :class="[
+            'flex items-center gap-2 text-gray-300 text-sm font-medium px-4 py-2 rounded-lg transition-colors',
+            voiceDragOver ? 'bg-brand-700 ring-2 ring-brand-400' : 'bg-gray-800 hover:bg-gray-700'
+          ]"
+          title="Create issue from voice (or drop an audio file here)">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
               d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 016 0v6a3 3 0 01-3 3z" />
@@ -182,18 +188,25 @@
 
         <!-- Recording controls -->
         <div class="flex flex-col items-center gap-4 mb-5">
-          <!-- Mic button -->
+          <!-- Mic button (also a drop zone for audio files) -->
           <button
             v-if="!voice.recording.value && !voice.uploading.value && !voice.transcription.value"
             @click="startVoiceRecording"
-            class="w-16 h-16 rounded-full bg-brand-600 hover:bg-brand-700 flex items-center justify-center transition-colors shadow-lg">
+            @dragover.prevent="modalDragOver = true"
+            @dragleave="modalDragOver = false"
+            @drop.prevent="handleModalVoiceFileDrop"
+            :class="[
+              'w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg',
+              modalDragOver ? 'bg-brand-500 ring-4 ring-brand-300 scale-110' : 'bg-brand-600 hover:bg-brand-700'
+            ]"
+            title="Click to record or drop an audio file">
             <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 016 0v6a3 3 0 01-3 3z" />
             </svg>
           </button>
           <p v-if="!voice.recording.value && !voice.uploading.value && !voice.transcription.value"
-            class="text-sm text-gray-400">Click to start recording</p>
+            class="text-sm text-gray-400">Click to start recording or drop an audio file</p>
 
           <!-- Recording indicator -->
           <div v-if="voice.recording.value" class="flex flex-col items-center gap-3">
@@ -223,6 +236,11 @@
             <textarea v-model="voice.transcription.value" rows="4" placeholder="Transcription will appear here…"
               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"></textarea>
           </div>
+          <!-- Transcription warning (no model configured, no speech detected, or error from backend) -->
+          <p v-if="voice.transcriptionWarning.value && !voice.transcription.value"
+            class="text-xs text-amber-400">
+            {{ voice.transcriptionWarning.value }}
+          </p>
         </div>
 
         <!-- Error -->
@@ -230,7 +248,7 @@
 
         <!-- Actions -->
         <div class="flex gap-3">
-          <button v-if="voice.transcription.value" @click="submitVoiceCreate"
+          <button v-if="voiceRecordingDone && !voice.uploading.value" @click="submitVoiceCreate"
             class="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
             Create Issue
           </button>
@@ -260,6 +278,8 @@ const projectsStore = useProjectsStore()
 const showCreate = ref(false)
 const showVoiceCreate = ref(false)
 const voiceRecordingDone = ref(false)
+const voiceDragOver = ref(false)
+const modalDragOver = ref(false)
 const search = ref('')
 const filterStatus = ref<IssueStatus | ''>('')
 const filterPriority = ref<IssuePriority | ''>('')
@@ -273,11 +293,38 @@ async function startVoiceRecording() {
   await voice.startRecording()
 }
 
+async function uploadVoiceFile(file: File | Blob) {
+  voiceRecordingDone.value = true
+  try {
+    await voice.uploadRecording(file)
+  } catch {
+    // voice.error is already set by uploadRecording; the modal stays open so the user sees it
+  }
+}
+
+async function handleVoiceFileDrop(e: DragEvent) {
+  voiceDragOver.value = false
+  const file = e.dataTransfer?.files[0]
+  if (!file) return
+  if (!file.type.startsWith('audio/') && !file.name.toLowerCase().endsWith('.wav')) return
+  showVoiceCreate.value = true
+  await uploadVoiceFile(file)
+}
+
+async function handleModalVoiceFileDrop(e: DragEvent) {
+  modalDragOver.value = false
+  const file = e.dataTransfer?.files[0]
+  if (!file) return
+  if (!file.type.startsWith('audio/') && !file.name.toLowerCase().endsWith('.wav')) return
+  await uploadVoiceFile(file)
+}
+
 async function stopVoiceRecording() {
   const wavBlob = voice.stopRecording()
-  voiceRecordingDone.value = true
   if (wavBlob) {
-    await voice.uploadRecording(wavBlob)
+    await uploadVoiceFile(wavBlob)
+  } else {
+    voiceRecordingDone.value = true
   }
 }
 
