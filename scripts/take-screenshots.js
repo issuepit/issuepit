@@ -89,7 +89,7 @@ async function seedData(apiClient, tenantId) {
       name: 'Code Agent',
       systemPrompt:
         'You are a senior TypeScript developer. Implement the described feature following existing code conventions.',
-      dockerImage: 'ghcr.io/sst/opencode:latest',
+      dockerImage: 'ghcr.io/issuepit/issuepit-helper-opencode-act:latest',
       queue: 'Code',
     }),
   });
@@ -182,6 +182,21 @@ async function main() {
 
   await page.goto(`${FRONTEND_URL}/config/keys`);
   await screenshot(page, 'api-keys');
+
+  await page.goto(`${FRONTEND_URL}/todos`);
+  await screenshot(page, 'todos');
+
+  await page.goto(`${FRONTEND_URL}/runs`);
+  await screenshot(page, 'runs');
+
+  if (Array.isArray(projects) && projects.length > 0) {
+    const proj = projects[0];
+    await page.goto(`${FRONTEND_URL}/projects/${proj.id}/ci-cd`);
+    await screenshot(page, 'cicd');
+
+    await page.goto(`${FRONTEND_URL}/projects/${proj.id}/milestones`);
+    await screenshot(page, 'milestones');
+  }
 
   await browser.close();
   console.log('Done.');

@@ -112,8 +112,17 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     }
   }
 
-  async function retrySession(sessionId: string) {
-    await api.post(`/api/agent-sessions/${sessionId}/retry`, {})
+  /** Refreshes only the session metadata (status, endedAt) without replacing logs or causing a loading flash. */
+  async function fetchAgentSessionOnly(sessionId: string) {
+    try {
+      currentSession.value = await api.get<AgentSessionDetail>(`/api/agent-sessions/${sessionId}`)
+    } catch {
+      // best-effort
+    }
+  }
+
+  async function retrySession(sessionId: string, options?: { dockerImageOverride?: string }) {
+    await api.post(`/api/agent-sessions/${sessionId}/retry`, options ?? {})
   }
 
   async function retryRun(runId: string, options?: {
@@ -169,6 +178,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     branch?: string
     workflow?: string
     inputs?: Record<string, string>
+    customImage?: string
   }) {
     await api.post('/api/cicd-runs/trigger', request)
   }
@@ -194,6 +204,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     fetchArtifacts,
     fetchAgentSessions,
     fetchAgentSession,
+    fetchAgentSessionOnly,
     retrySession,
     retryRun,
     cancelRun,

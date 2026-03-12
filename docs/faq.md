@@ -21,9 +21,9 @@ Any provider accessible via a compatible CLI agent (e.g. `opencode`, `codex`, Gi
 
 ---
 
-## Can I run IssuePit without Docker?
+## Does IssuePit require Docker?
 
-For development, you can use [.NET Aspire](https://aspire.dev) which orchestrates all services locally. For production deployments, Docker Compose is the recommended approach.
+Yes. Docker (or Podman) is required in all environments. For development, [.NET Aspire](https://learn.microsoft.com/dotnet/aspire/) orchestrates the services but still relies on Docker to run the required infrastructure containers (PostgreSQL, Kafka, Redis). For production, Docker Compose is the recommended deployment approach.
 
 ---
 

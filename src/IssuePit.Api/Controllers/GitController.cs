@@ -12,7 +12,99 @@ namespace IssuePit.Api.Controllers;
 [Route("api/projects/{projectId:guid}/git")]
 public class GitController(IssuePitDbContext db, TenantContext ctx, GitService gitService, ILogger<GitController> logger, IServiceScopeFactory scopeFactory) : ControllerBase
 {
-    // ─────────────────────────── repository config ──────────────────────────
+    // ──────────────────────── repository config (multi-origin) ──────────────────────
+
+    [HttpGet("repos")]
+    public async Task<IActionResult> ListRepos(Guid projectId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var project = await GetProjectAsync(projectId);
+        if (project is null) return NotFound();
+
+        var repos = await db.GitRepositories
+            .Where(r => r.ProjectId == projectId)
+            .OrderBy(r => r.CreatedAt)
+            .ToListAsync();
+        return Ok(repos.Select(ToDto));
+    }
+
+    [HttpPost("repos")]
+    public async Task<IActionResult> AddRepo(Guid projectId, [FromBody] GitRepoRequest req)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var project = await GetProjectAsync(projectId);
+        if (project is null) return NotFound();
+
+        var repo = new GitRepository
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = projectId,
+            RemoteUrl = req.RemoteUrl,
+            DefaultBranch = req.DefaultBranch ?? "main",
+            AuthUsername = req.AuthUsername,
+            AuthToken = req.AuthToken,
+            Mode = req.Mode ?? GitOriginMode.Working,
+            CreatedAt = DateTime.UtcNow
+        };
+        db.GitRepositories.Add(repo);
+        await db.SaveChangesAsync();
+
+        // Fire-and-forget: clone, fetch and trigger an initial CI/CD run for the default branch.
+        _ = TriggerInitialCiCdAsync(repo);
+
+        return Created($"/api/projects/{projectId}/git/repos/{repo.Id}", ToDto(repo));
+    }
+
+    [HttpPut("repos/{repoId:guid}")]
+    public async Task<IActionResult> UpdateRepo(Guid projectId, Guid repoId, [FromBody] GitRepoRequest req)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var project = await GetProjectAsync(projectId);
+        if (project is null) return NotFound();
+
+        var repo = await db.GitRepositories.FirstOrDefaultAsync(r => r.Id == repoId && r.ProjectId == projectId);
+        if (repo is null) return NotFound();
+
+        repo.RemoteUrl = req.RemoteUrl;
+        repo.DefaultBranch = req.DefaultBranch ?? repo.DefaultBranch;
+        if (req.AuthUsername is not null) repo.AuthUsername = req.AuthUsername;
+        if (req.AuthToken is not null) repo.AuthToken = req.AuthToken;
+        if (req.Mode.HasValue) repo.Mode = req.Mode.Value;
+        await db.SaveChangesAsync();
+        return Ok(ToDto(repo));
+    }
+
+    [HttpDelete("repos/{repoId:guid}")]
+    public async Task<IActionResult> DeleteRepo(Guid projectId, Guid repoId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var project = await GetProjectAsync(projectId);
+        if (project is null) return NotFound();
+
+        var repo = await db.GitRepositories.FirstOrDefaultAsync(r => r.Id == repoId && r.ProjectId == projectId);
+        if (repo is null) return NotFound();
+
+        db.GitRepositories.Remove(repo);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpPost("repos/{repoId:guid}/enable")]
+    public async Task<IActionResult> EnableRepoById(Guid projectId, Guid repoId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var repo = await db.GitRepositories.FirstOrDefaultAsync(r => r.Id == repoId && r.ProjectId == projectId);
+        if (repo is null) return NotFound();
+
+        repo.Status = GitRepoStatus.Active;
+        repo.StatusMessage = null;
+        repo.ThrottledUntil = null;
+        await db.SaveChangesAsync();
+
+        return Ok(ToDto(repo));
+    }
+
+    // ──────────────────── legacy single-repo endpoints (kept for backward compat) ────────────────────
 
     [HttpGet("repo")]
     public async Task<IActionResult> GetRepo(Guid projectId)
@@ -33,7 +125,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         if (project is null) return NotFound();
 
         var existing = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == projectId);
-        if (existing is not null) return Conflict("A git repository is already linked to this project.");
+        if (existing is not null) return Conflict("A git repository is already linked to this project. Use POST /repos to add additional origins.");
 
         var repo = new GitRepository
         {
@@ -43,6 +135,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
             DefaultBranch = req.DefaultBranch ?? "main",
             AuthUsername = req.AuthUsername,
             AuthToken = req.AuthToken,
+            Mode = req.Mode ?? GitOriginMode.Working,
             CreatedAt = DateTime.UtcNow
         };
         db.GitRepositories.Add(repo);
@@ -55,7 +148,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
     }
 
     [HttpPut("repo")]
-    public async Task<IActionResult> UpdateRepo(Guid projectId, [FromBody] GitRepoRequest req)
+    public async Task<IActionResult> UpdateRepoLegacy(Guid projectId, [FromBody] GitRepoRequest req)
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
         var project = await GetProjectAsync(projectId);
@@ -66,8 +159,9 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
 
         repo.RemoteUrl = req.RemoteUrl;
         repo.DefaultBranch = req.DefaultBranch ?? repo.DefaultBranch;
-        repo.AuthUsername = req.AuthUsername;
-        repo.AuthToken = req.AuthToken;
+        if (req.AuthUsername is not null) repo.AuthUsername = req.AuthUsername;
+        if (req.AuthToken is not null) repo.AuthToken = req.AuthToken;
+        if (req.Mode.HasValue) repo.Mode = req.Mode.Value;
         await db.SaveChangesAsync();
         return Ok(ToDto(repo));
     }
@@ -259,7 +353,8 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         repo.LastFetchedAt,
         status = repo.Status.ToString(),
         repo.StatusMessage,
-        repo.ThrottledUntil
+        repo.ThrottledUntil,
+        mode = repo.Mode.ToString()
     };
 
     /// <summary>Background task: clones/fetches the newly linked repo and triggers an initial CI/CD run.</summary>
@@ -306,4 +401,4 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
     }
 }
 
-public record GitRepoRequest(string RemoteUrl, string? DefaultBranch, string? AuthUsername, string? AuthToken);
+public record GitRepoRequest(string RemoteUrl, string? DefaultBranch, string? AuthUsername, string? AuthToken, GitOriginMode? Mode);

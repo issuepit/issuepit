@@ -1,17 +1,10 @@
 <template>
   <div class="p-8">
     <!-- Header -->
-    <div class="flex items-center gap-3 mb-6">
-      <NuxtLink :to="`/projects/${id}`" class="text-gray-500 hover:text-gray-300 transition-colors">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-        </svg>
-      </NuxtLink>
-      <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M13 10V3L4 14h7v7l9-11h-7z" />
-      </svg>
-      <h1 class="text-xl font-bold text-white">Runs</h1>
+    <div class="flex items-center gap-2 mb-6">
+      <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name }}</NuxtLink>
+      <span class="text-gray-600">/</span>
+      <NuxtLink :to="`/projects/${id}/runs`" class="text-xl font-bold text-white">Runs</NuxtLink>
       <!-- WS connection indicator -->
       <span v-if="isConnected" class="flex items-center gap-1 text-xs text-green-400 font-normal ml-1">
         <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
@@ -75,10 +68,7 @@
               class="hover:bg-gray-900/50 transition-colors cursor-pointer"
               @click="navigateTo(`/projects/${id}/runs/cicd/${run.id}`)">
               <td class="px-4 py-3">
-                <span :class="statusClass(run.status)" class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium">
-                  <span :class="statusDot(run.status)" class="w-1.5 h-1.5 rounded-full" />
-                  {{ run.statusName }}
-                </span>
+                <CiCdStatusChip :runs="[run]" />
               </td>
               <td class="px-4 py-3">
                 <span v-if="run.eventName" class="text-xs bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded font-mono">
@@ -156,7 +146,7 @@
                 <NuxtLink :to="`/projects/${id}/issues/${session.issueNumber}`"
                   class="text-brand-400 hover:text-brand-300 transition-colors"
                   @click.stop>
-                  #{{ session.issueNumber }} {{ session.issueTitle }}
+                  #{{ formatIssueId(session.issueNumber, projectsStore.currentProject) }} {{ session.issueTitle }}
                 </NuxtLink>
               </td>
               <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ session.gitBranch || '—' }}</td>
@@ -201,12 +191,15 @@
 
 <script setup lang="ts">
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
+import { useProjectsStore } from '~/stores/projects'
 import { CiCdRunStatus, AgentSessionStatus } from '~/types'
+import { formatIssueId } from '~/composables/useIssueFormat'
 
 const route = useRoute()
 const id = route.params.id as string
 
 const store = useCiCdRunsStore()
+const projectsStore = useProjectsStore()
 const tabs = ['CI/CD Runs', 'Agent Runs'] as const
 const activeTab = ref<typeof tabs[number]>(route.query.tab === 'agent' ? 'Agent Runs' : 'CI/CD Runs')
 
@@ -231,6 +224,7 @@ async function refreshRunsData() {
 }
 
 onMounted(async () => {
+  projectsStore.fetchProject(id)
   await refreshRunsData()
 
   // Connect to SignalR for live run updates

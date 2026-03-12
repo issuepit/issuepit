@@ -122,6 +122,8 @@ const emit = defineEmits<{
   triggered: []
 }>()
 
+const ACT_CONTAINER_STORAGE_KEY = 'cicd-act-container-image'
+
 const cicdStore = useCiCdRunsStore()
 
 const eventOptions = [
@@ -207,6 +209,7 @@ async function triggerRun() {
       branch: props.branch,
       workflow: selectedWorkflow.value || undefined,
       inputs,
+      customImage: import.meta.client ? (localStorage.getItem(ACT_CONTAINER_STORAGE_KEY) ?? undefined) : undefined,
     })
     emit('triggered')
   } catch (e: unknown) {

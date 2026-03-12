@@ -187,6 +187,7 @@ public class CiCdRunsController(
 
     /// <summary>
     /// Downloads the artifact ZIP by proxying the S3 object through the backend.
+    /// Returns 503 when artifact storage is not configured.
     /// </summary>
     [HttpGet("{id:guid}/artifacts/{artifactId:guid}/download")]
     public async Task<IActionResult> DownloadArtifact(Guid id, Guid artifactId, CancellationToken ct)
@@ -548,7 +549,8 @@ public class CiCdRunsController(
             workflow: request.Workflow,
             eventName: request.EventName,
             inputs: request.Inputs,
-            gitRepoUrl: repo?.RemoteUrl);
+            gitRepoUrl: repo?.RemoteUrl,
+            extraPayload: string.IsNullOrWhiteSpace(request.CustomImage) ? null : new { customImage = request.CustomImage });
 
         return Accepted(new { runId = newRun.Id, projectId = request.ProjectId, commitSha = request.CommitSha, eventName = request.EventName });
     }
@@ -643,4 +645,6 @@ public record TriggerRunRequest(
     string? Branch = null,
     string? Workflow = null,
     /// <summary>Input key-value pairs for workflow_dispatch events.</summary>
-    Dictionary<string, string>? Inputs = null);
+    Dictionary<string, string>? Inputs = null,
+    /// <summary>Override the Docker image used for the CI/CD container (the container that runs act). Null or empty = use configured default.</summary>
+    string? CustomImage = null);

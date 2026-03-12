@@ -48,8 +48,7 @@ public partial class DockerCiCdRuntime(
 {
     // Docker image used to run act. Uses the IssuePit helper-act image which includes
     // .NET SDK, Node.js, Playwright, Docker CLI, and act pre-installed.
-    //private const string DefaultImage = "ghcr.io/issuepit/issuepit-helper-act:latest";
-    private const string DefaultImage = "ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24";
+    private const string DefaultImage = "ghcr.io/issuepit/issuepit-helper-act:latest";
 
     // Default DinD image cache settings.
     private const DindImageCacheStrategy DefaultDindCacheStrategy = DindImageCacheStrategy.RegistryMirror;
@@ -173,32 +172,10 @@ public partial class DockerCiCdRuntime(
 
         var useDind = !trigger.NoDind;
 
-        if (!string.IsNullOrWhiteSpace(npmCacheVolume))
-        {
-            actBinAndArgs.Add("--volume");
-            actBinAndArgs.Add($"{ContainerNpmCachePath}:/root/.npm");
-        }
         if (!string.IsNullOrWhiteSpace(npmCacheUrl))
         {
             actBinAndArgs.Add("--env");
             actBinAndArgs.Add($"NPM_CONFIG_REGISTRY={npmCacheUrl}");
-        }
-        if (!string.IsNullOrWhiteSpace(nugetCacheVolume))
-        {
-            actBinAndArgs.Add("--volume");
-            actBinAndArgs.Add($"{ContainerNuGetCachePath}:/root/.nuget/packages");
-        }
-
-        // Playwright browser cache: mount named volume so job containers reuse already-downloaded
-        // browser binaries (Chrome, FFmpeg, etc.) across runs without re-fetching from the CDN.
-        // The volume is mounted at ContainerPlaywrightCachePath in the outer act container;
-        // act passes --volume ContainerPlaywrightCachePath:/root/.cache/ms-playwright to each job
-        // container, which is the default location Playwright looks for installed browsers.
-        // This filesystem cache works regardless of the InterceptAllTraffic setting.
-        if (!string.IsNullOrWhiteSpace(playwrightCacheVolume))
-        {
-            actBinAndArgs.Add("--volume");
-            actBinAndArgs.Add($"{ContainerPlaywrightCachePath}:/root/.cache/ms-playwright");
         }
 
         // When InterceptAllTraffic is enabled, iptables DNAT rules in BuildDindStartupScript
@@ -215,15 +192,16 @@ public partial class DockerCiCdRuntime(
             actBinAndArgs.Add($"PLAYWRIGHT_DOWNLOAD_HOST=http://{dindBridgeIp}:{HttpCachePort}");
         }
 
-        // Apt proxy volume mount for DinD mode (InterceptAllTraffic required):
-        // BuildDindStartupScript writes /etc/apt/apt.conf.d/01proxy on the act container
-        // (using the inner Docker bridge IP) after dockerd starts. Act then mounts this file
-        // into each job container so apt-get requests are transparently proxied through
-        // apt-cacher-ng on the outer host via iptables DNAT.
-        if (interceptAllTraffic && !string.IsNullOrWhiteSpace(aptCacheUrl) && useDind)
+        // Pass volume mounts to act job containers via --container-options "-v src:dst".
+        // act does not have a --volume flag; --container-options forwards raw Docker options to each
+        // job container act creates (npm/NuGet/Playwright caches and the apt proxy config file).
+        var containerOptions = BuildActContainerOptions(
+            npmCacheVolume, nugetCacheVolume, playwrightCacheVolume,
+            interceptAllTraffic && !string.IsNullOrWhiteSpace(aptCacheUrl) && useDind);
+        if (containerOptions is not null)
         {
-            actBinAndArgs.Add("--volume");
-            actBinAndArgs.Add("/etc/apt/apt.conf.d/01proxy:/etc/apt/apt.conf.d/01proxy");
+            actBinAndArgs.Add("--container-options");
+            actBinAndArgs.Add(containerOptions);
         }
 
         // Action cache: resolve the effective cache mount.
@@ -272,6 +250,12 @@ public partial class DockerCiCdRuntime(
             actBinAndArgs.Add(ContainerActionCachePath);
         }
 
+        // Append a short suffix derived from the run ID so act job containers inside the DinD
+        // daemon are identifiable by run (issuepit/act --container-name-suffix).
+        var actContainerNameSuffix = "-" + $"{run.Id:N}"[..NativeCiCdRuntime.ContainerNameSuffixLength];
+        actBinAndArgs.Add("--container-name-suffix");
+        actBinAndArgs.Add(actContainerNameSuffix);
+
         var containerName = BuildContainerName(run);
 
         // Read the act runner image that is injected into actrc to prevent the interactive
@@ -307,11 +291,11 @@ public partial class DockerCiCdRuntime(
         else await onLogLine($"[DEBUG] DinD           : isolated (Privileged=true, in-container dockerd)", LogStream.Stdout);
         if (trigger.NoVolumeMounts) await onLogLine($"[DEBUG] Volume mounts  : disabled", LogStream.Stdout);
         if (!string.IsNullOrWhiteSpace(npmCacheVolume))
-            await onLogLine($"[DEBUG] npm cache vol  : {npmCacheVolume}:{ContainerNpmCachePath} (outer container mount, passed to job containers via act --volume)", LogStream.Stdout);
+            await onLogLine($"[DEBUG] npm cache vol  : {npmCacheVolume}:{ContainerNpmCachePath} (outer container mount, passed to job containers via --container-options)", LogStream.Stdout);
         if (!string.IsNullOrWhiteSpace(npmCacheUrl))
             await onLogLine($"[DEBUG] npm registry   : {npmCacheUrl}", LogStream.Stdout);
         if (!string.IsNullOrWhiteSpace(nugetCacheVolume))
-            await onLogLine($"[DEBUG] NuGet cache vol: {nugetCacheVolume}:{ContainerNuGetCachePath} (outer container mount, passed to job containers via act --volume)", LogStream.Stdout);
+            await onLogLine($"[DEBUG] NuGet cache vol: {nugetCacheVolume}:{ContainerNuGetCachePath} (outer container mount, passed to job containers via --container-options)", LogStream.Stdout);
         if (!string.IsNullOrWhiteSpace(playwrightCacheVolume))
             await onLogLine($"[DEBUG] Playwright vol : {playwrightCacheVolume}:{ContainerPlaywrightCachePath} → /root/.cache/ms-playwright (filesystem browser cache)", LogStream.Stdout);
         if (!string.IsNullOrWhiteSpace(httpCacheUrl))
@@ -410,15 +394,11 @@ public partial class DockerCiCdRuntime(
             binds.Add($"{workspacePath}:/workspace");
         }
 
-        // Mount the artifact server directory from the host so artifacts are accessible after the run.
-        // ArtifactServerPath is always an absolute temp-directory path set by the CiCdWorker
-        // (Path.Combine(Path.GetTempPath(), "issuepit-artifacts-{runId}")), so it is safe to use directly.
-        if (!string.IsNullOrWhiteSpace(trigger.ArtifactServerPath))
-        {
-            Directory.CreateDirectory(trigger.ArtifactServerPath);
-            binds.Add($"{trigger.ArtifactServerPath}:{ContainerArtifactPath}");
-            await onLogLine($"[DEBUG] Artifact mount : {trigger.ArtifactServerPath}:{ContainerArtifactPath}", LogStream.Stdout);
-        }
+        // Artifacts are no longer volume-mounted. Instead, after the run the container uploads
+        // the /artifacts directory directly to S3 using the AWS CLI. This removes the requirement
+        // for a shared filesystem path between the cicd-client process and the Docker host, enabling
+        // fully containerised deployments (Docker Compose, Kubernetes, etc.) where bind-mounting a
+        // path from inside the cicd-client container is not possible.
 
         // Mount named Docker volumes for package caches so their contents persist across CI/CD runs.
         // The paths inside the container match what act's job containers (DinD) will bind-mount
@@ -542,7 +522,9 @@ public partial class DockerCiCdRuntime(
                 // ── Exec model: run each step inside the container sequentially ─────────────
 
                 // Dynamically compute the number of steps so the [N/M] prefix is always correct.
-                var totalSteps = 3 + (useDind ? 1 : 0) + (hasGitRepo ? 1 : 0) + (!string.IsNullOrWhiteSpace(trigger.Workflow) ? 1 : 0);
+                var hasArtifacts = !string.IsNullOrWhiteSpace(trigger.ArtifactServerPath);
+                var hasS3 = !string.IsNullOrWhiteSpace(configuration["ImageStorage:ServiceUrl"]);
+                var totalSteps = 3 + (useDind ? 1 : 0) + (hasGitRepo ? 1 : 0) + (!string.IsNullOrWhiteSpace(trigger.Workflow) ? 1 : 0) + (hasArtifacts && hasS3 ? 1 : 0);
                 var stepNum = 0;
 
                 // Step: Print act version for diagnostics.
@@ -616,6 +598,15 @@ public partial class DockerCiCdRuntime(
                 // Step: Run act.
                 await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: {string.Join(' ', actCmd)}", LogStream.Stdout);
                 var actExitCode = await ExecCommandAsync(container.ID, actCmd, onLogLine, cancellationToken);
+
+                // Step: Upload artifacts to S3 from inside the container (best-effort, regardless of act exit code).
+                // This replaces the previous volume-mount approach: the container pushes artifacts
+                // directly so no shared filesystem path is required between the cicd-client and the host.
+                if (hasArtifacts && hasS3)
+                {
+                    await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: uploading artifacts to S3", LogStream.Stdout);
+                    await UploadArtifactsToS3Async(container.ID, run.Id, onLogLine, cancellationToken);
+                }
 
                 if (actExitCode != 0)
                     throw new Exception(
@@ -928,7 +919,8 @@ public partial class DockerCiCdRuntime(
         string containerId,
         IList<string> cmd,
         Func<string, LogStream, Task> onLogLine,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IList<string>? env = null)
     {
         var execCreate = await dockerClient.Exec.CreateContainerExecAsync(
             containerId,
@@ -938,6 +930,7 @@ public partial class DockerCiCdRuntime(
                 AttachStderr = true,
                 Cmd = cmd,
                 WorkingDir = "/workspace",
+                Env = env,
             },
             cancellationToken);
 
@@ -1005,6 +998,104 @@ public partial class DockerCiCdRuntime(
 
         return sb.ToString();
     }
+
+    /// <summary>
+    /// Uploads the contents of <c>/artifacts</c> inside the container to S3-compatible storage
+    /// using the AWS CLI, replacing the previous volume-mount approach.
+    ///
+    /// The method is best-effort: a failed upload is logged as a warning but never aborts the run.
+    ///
+    /// If the AWS CLI is not present in the container it is installed automatically
+    /// (pip3 install awscli → apt-get install awscli fallback).
+    ///
+    /// Credentials and endpoint are injected as exec-scoped environment variables so they are
+    /// never visible in the container's environment or in act's job containers.
+    /// </summary>
+    private async Task UploadArtifactsToS3Async(
+        string containerId,
+        Guid runId,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        var serviceUrl = configuration["ImageStorage:ServiceUrl"];
+        if (string.IsNullOrWhiteSpace(serviceUrl))
+            return;
+
+        var accessKey = configuration["ImageStorage:AccessKey"] ?? "test";
+        var secretKey = configuration["ImageStorage:SecretKey"] ?? "test";
+        var region = configuration["ImageStorage:Region"] ?? "us-east-1";
+        var bucket = configuration["ImageStorage:BucketName"] ?? "issuepit-uploads";
+        var runIdHex = runId.ToString("N");
+
+        var env = new List<string>
+        {
+            $"AWS_ACCESS_KEY_ID={accessKey}",
+            $"AWS_SECRET_ACCESS_KEY={secretKey}",
+            $"AWS_DEFAULT_REGION={region}",
+            $"ISSUEPIT_S3_BUCKET={bucket}",
+            $"ISSUEPIT_S3_ENDPOINT_URL={serviceUrl}",
+            $"ISSUEPIT_RUN_ID={runIdHex}",
+        };
+
+        var script = BuildArtifactUploadScript();
+
+        try
+        {
+            var exitCode = await ExecCommandAsync(
+                containerId,
+                ["/bin/sh", "-c", script],
+                onLogLine,
+                cancellationToken,
+                env);
+
+            if (exitCode != 0)
+                await onLogLine($"[WARN] Artifact S3 upload exited with code {exitCode} — artifacts may not be available for download", LogStream.Stdout);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            await onLogLine($"[WARN] Artifact S3 upload failed (non-fatal): {ex.Message}", LogStream.Stdout);
+        }
+    }
+
+    /// <summary>
+    /// Builds the shell script that checks for s5cmd, installs it if missing, and then
+    /// syncs <c>/artifacts</c> to <c>s3://{bucket}/artifacts-raw/{runId}/</c>.
+    /// Uses <c>s5cmd</c> (FOSS, MIT-licensed) instead of the AWS CLI.
+    /// Environment variables expected: <c>AWS_ACCESS_KEY_ID</c>, <c>AWS_SECRET_ACCESS_KEY</c>,
+    /// <c>AWS_DEFAULT_REGION</c>, <c>ISSUEPIT_S3_BUCKET</c>, <c>ISSUEPIT_S3_ENDPOINT_URL</c>,
+    /// <c>ISSUEPIT_RUN_ID</c>.
+    /// </summary>
+    private static string BuildArtifactUploadScript() => """
+        set -e
+        # Exit early if the artifacts directory is empty.
+        if [ ! -d /artifacts ] || [ -z "$(ls -A /artifacts 2>/dev/null)" ]; then
+            echo '[S3-UPLOAD] No artifacts to upload'
+            exit 0
+        fi
+        # The IssuePit helper-base image ships s5cmd pre-installed.
+        # For non-standard images that do not include s5cmd, attempt a runtime
+        # installation as a safety net before running the upload.
+        if ! command -v s5cmd > /dev/null 2>&1; then
+            echo '[S3-UPLOAD] s5cmd not found, installing...'
+            ARCH=$(uname -m)
+            case "$ARCH" in
+              x86_64)  S5CMD_ARCH=Linux-64bit ;;
+              aarch64) S5CMD_ARCH=Linux-arm64 ;;
+              *) echo "[S3-UPLOAD] Unsupported architecture: $ARCH"; exit 1 ;;
+            esac
+            curl --proto '=https' --tlsv1.2 -fsSL \
+                "https://github.com/peak/s5cmd/releases/download/v2.3.0/s5cmd_2.3.0_${S5CMD_ARCH}.tar.gz" | \
+            tar -xz -C /usr/local/bin s5cmd
+        fi
+        echo "[S3-UPLOAD] Uploading artifacts to s3://${ISSUEPIT_S3_BUCKET}/artifacts-raw/${ISSUEPIT_RUN_ID}/"
+        s5cmd --endpoint-url "${ISSUEPIT_S3_ENDPOINT_URL}" \
+            sync /artifacts/ "s3://${ISSUEPIT_S3_BUCKET}/artifacts-raw/${ISSUEPIT_RUN_ID}/"
+        echo '[S3-UPLOAD] Upload complete'
+        """;
 
     /// <summary>
     /// Reads the workflow YAML files from the cloned repo inside the container using <c>cat</c>,
@@ -1103,6 +1194,39 @@ public partial class DockerCiCdRuntime(
         var flushed = remainder.TrimEnd('\r');
         if (!string.IsNullOrEmpty(flushed))
             await onLogLine(flushed, lastTarget);
+    }
+
+    /// <summary>
+    /// Builds the <c>--container-options</c> value that is passed to <c>act</c> so it forwards
+    /// the specified volume mounts to every job container it creates.
+    /// act does not have a <c>--volume</c> flag; all volume mounts must be expressed as
+    /// Docker <c>-v</c> flags inside a single <c>--container-options</c> string.
+    /// Returns <c>null</c> when no volumes need to be mounted.
+    /// </summary>
+    /// <param name="npmCacheVolume">Named volume or host path for the npm package cache (mounted at /cache/npm).</param>
+    /// <param name="nugetCacheVolume">Named volume or host path for the NuGet package cache (mounted at /cache/nuget).</param>
+    /// <param name="playwrightCacheVolume">Named volume or host path for the Playwright browser cache (mounted at /cache/playwright).</param>
+    /// <param name="includeAptProxy">
+    ///   When <c>true</c>, also mounts the apt proxy config file
+    ///   (<c>/etc/apt/apt.conf.d/01proxy</c>) that <see cref="BuildDindStartupScript"/> writes
+    ///   on the act container so every job container picks up the transparent apt proxy.
+    /// </param>
+    internal static string? BuildActContainerOptions(
+        string? npmCacheVolume,
+        string? nugetCacheVolume,
+        string? playwrightCacheVolume,
+        bool includeAptProxy = false)
+    {
+        var opts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(npmCacheVolume))
+            opts.Add($"-v {ContainerNpmCachePath}:/root/.npm");
+        if (!string.IsNullOrWhiteSpace(nugetCacheVolume))
+            opts.Add($"-v {ContainerNuGetCachePath}:/root/.nuget/packages");
+        if (!string.IsNullOrWhiteSpace(playwrightCacheVolume))
+            opts.Add($"-v {ContainerPlaywrightCachePath}:/root/.cache/ms-playwright");
+        if (includeAptProxy)
+            opts.Add("-v /etc/apt/apt.conf.d/01proxy:/etc/apt/apt.conf.d/01proxy");
+        return opts.Count > 0 ? string.Join(" ", opts) : null;
     }
 
     /// <summary>

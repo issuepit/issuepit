@@ -23,6 +23,11 @@
             Week
           </button>
         </div>
+        <!-- Today button -->
+        <button @click="goToToday"
+          class="text-xs text-gray-400 hover:text-gray-200 px-2 py-0.5 rounded border border-gray-700 bg-gray-800 hover:bg-gray-700 transition-colors">
+          Today
+        </button>
       </div>
       <button @click="next"
         class="text-gray-400 hover:text-gray-200 transition-colors p-1 rounded">
@@ -67,11 +72,15 @@
               @dragend.stop="onDragEnd"
               @click.stop="$emit('select', todo)"
               :class="['text-xs px-1.5 py-0.5 rounded truncate cursor-grab active:cursor-grabbing transition-colors',
-                todo.isCompleted ? 'line-through text-gray-600 bg-gray-800/40' : 'bg-brand-900/60 text-brand-300 hover:bg-brand-900']">
-              {{ todo.title }}
+                todo.isCompleted ? 'line-through text-gray-500' : 'text-white']"
+              :style="todo.isCompleted
+                ? { background: 'rgba(55,65,81,0.5)' }
+                : { background: getTodoColor(todo) + 'cc', borderLeft: '2px solid ' + getTodoColor(todo) }">
+              <span v-if="todo.dueDate" class="opacity-70 mr-1 hidden sm:inline">{{ formatTimeShort(todo.dueDate) }}</span>{{ todo.title }}
             </div>
             <div v-if="(cell.extraCount ?? 0) > 0"
-              class="text-xs text-gray-500 px-1">
+              class="text-xs text-gray-500 px-1 cursor-pointer hover:text-gray-300"
+              @click.stop="cell.dateKey && expandCell(cell.dateKey)">
               +{{ cell.extraCount }} more
             </div>
           </div>
@@ -103,7 +112,8 @@
       </div>
 
       <!-- Time grid (scrollable) -->
-      <div class="flex-1 overflow-y-auto" ref="weekScrollContainer">
+      <div class="flex-1 overflow-y-auto relative" ref="weekScrollContainer">
+        <!-- Background grid with drop zones -->
         <div class="grid"
           style="grid-template-columns: 52px repeat(7, 1fr)">
           <template v-for="slot in timeSlots" :key="slot.minutes">
@@ -116,7 +126,7 @@
               </span>
             </div>
 
-            <!-- Day cells for this slot -->
+            <!-- Drop zone cells (no todo rendering here) -->
             <div v-for="day in weekDays" :key="day.key + slot.minutes"
               :class="['border-r border-b border-gray-800/40 last:border-r-0 relative',
                 slot.isHour ? 'border-b-gray-800' : 'border-b-gray-800/20',
@@ -124,28 +134,50 @@
                   ? 'bg-brand-500/10'
                   : day.isToday ? 'bg-brand-900/10' : 'hover:bg-gray-800/20 cursor-pointer']"
               style="height: 32px; min-width: 0"
-              @click="!draggingTodo && onWeekSlotClick(day.date, slot.minutes)"
+              @click="!draggingTodo && !resizingTodo && onWeekSlotClick(day.date, slot.minutes)"
               @dragover.prevent="weekHoverSlot = { dayKey: day.key, minutes: slot.minutes }"
               @dragleave="onWeekDragLeave($event)"
               @drop.prevent="onWeekSlotDrop(day.date, slot.minutes)">
-
-              <!-- Todos in this slot -->
-              <template v-for="todo in (weekTodos[day.key]?.[slot.minutes] ?? [])" :key="todo.id">
-                <div
-                  draggable="true"
-                  @dragstart.stop="onDragStart(todo)"
-                  @dragend.stop="onDragEnd"
-                  @click.stop="$emit('select', todo)"
-                  :class="['absolute inset-0.5 text-xs px-1 rounded truncate cursor-grab active:cursor-grabbing transition-colors z-10 flex items-center',
-                    todo.isCompleted
-                      ? 'line-through text-gray-600 bg-gray-800/60'
-                      : 'bg-brand-600/80 text-white hover:bg-brand-500/80']"
-                  style="font-size: 10px;">
-                  {{ todo.title }}
-                </div>
-              </template>
             </div>
           </template>
+        </div>
+
+        <!-- Todo overlay: absolutely positioned blocks per day column -->
+        <div class="absolute inset-0 grid pointer-events-none"
+          style="grid-template-columns: 52px repeat(7, 1fr)">
+          <div></div>
+          <div v-for="day in weekDays" :key="'ov-' + day.key" class="relative">
+            <template v-for="segment in (weekDayTodosFlat[day.key] ?? [])" :key="'ov-' + segment.todo.id + '-' + segment.startMins">
+              <div class="absolute left-0.5 right-0.5 rounded pointer-events-auto select-none overflow-hidden"
+                draggable="true"
+                @dragstart.stop="onDragStart(segment.todo)"
+                @dragend.stop="onDragEnd"
+                :style="{
+                  top: todoTopPx(segment.todo, segment.startMins) + 'px',
+                  height: todoHeightPx(segment.todo, segment.startMins, segment.endMins) + 'px',
+                  background: segment.todo.isCompleted ? 'rgba(55,65,81,0.7)' : (getTodoColor(segment.todo) + 'cc'),
+                  borderLeft: '3px solid ' + (segment.todo.isCompleted ? '#6b7280' : getTodoColor(segment.todo)),
+                  zIndex: resizingTodo?.id === segment.todo.id ? 30 : 10,
+                }">
+                <!-- Top resize handle -->
+                <div class="absolute inset-x-0 top-0 h-2 cursor-n-resize z-20 hover:bg-white/20 rounded-t"
+                  @pointerdown.stop.prevent="startResize(segment.todo, 'top', $event, day.date)">
+                </div>
+                <!-- Content -->
+                <div class="px-1 pt-2 pb-2 overflow-hidden h-full flex flex-col justify-start cursor-pointer"
+                  @click.stop="$emit('select', segment.todo)">
+                  <span :class="['leading-tight truncate', segment.todo.isCompleted ? 'line-through text-gray-400' : 'text-white']"
+                    style="font-size: 10px; font-weight: 500;">
+                    {{ segment.labelTime }} {{ segment.todo.title }}
+                  </span>
+                </div>
+                <!-- Bottom resize handle -->
+                <div class="absolute inset-x-0 bottom-0 h-2 cursor-s-resize z-20 hover:bg-white/20 rounded-b"
+                  @pointerdown.stop.prevent="startResize(segment.todo, 'bottom', $event, day.date)">
+                </div>
+              </div>
+            </template>
+          </div>
         </div>
       </div>
     </template>
@@ -161,10 +193,24 @@ const emit = defineEmits<{
   select: [todo: Todo]
   'create-on-date': [date: Date]
   reschedule: [todo: Todo, newDate: Date]
+  resize: [todo: Todo, newStartDate: Date, newDueDate: Date]
 }>()
 
 // ── View mode ──────────────────────────────────────────────────────────────
-const calendarMode = ref<'month' | 'week'>('month')
+const route = useRoute()
+const router = useRouter()
+
+const calendarMode = ref<'month' | 'week'>(
+  (['month', 'week'].includes(route.query.calendarMode as string))
+    ? (route.query.calendarMode as 'month' | 'week')
+    : 'month',
+)
+
+// ── Expand state for month cells ───────────────────────────────────────────
+const expandedDates = ref<Record<string, boolean>>({})
+function expandCell(key: string) {
+  expandedDates.value = { ...expandedDates.value, [key]: true }
+}
 
 // ── Shared ─────────────────────────────────────────────────────────────────
 const today = new Date()
@@ -210,10 +256,22 @@ function next() {
   }
 }
 
+function goToToday() {
+  if (calendarMode.value === 'month') {
+    currentYear.value = today.getFullYear()
+    currentMonth.value = today.getMonth()
+  } else {
+    weekStart.value = getMondayOf(today)
+    nextTick(() => { scrollToDefaultHour() })
+  }
+}
+
 // When switching to week view, sync week to currently viewed month
 const SLOT_HEIGHT_PX = 32
 const SLOTS_PER_HOUR = 2
 const DEFAULT_SCROLL_HOUR = 8
+const SLOT_DURATION_MINS = 30
+const MINS_PER_DAY = 24 * 60
 
 function scrollToDefaultHour() {
   if (weekScrollContainer.value) {
@@ -222,6 +280,9 @@ function scrollToDefaultHour() {
 }
 
 watch(calendarMode, (mode) => {
+  if (route.query.calendarMode !== mode) {
+    router.push({ query: { ...route.query, calendarMode: mode } })
+  }
   if (mode === 'week') {
     // If the current month contains today, jump to today's week; else first week of month
     const midMonth = new Date(currentYear.value, currentMonth.value, 15)
@@ -234,33 +295,52 @@ watch(calendarMode, (mode) => {
   }
 })
 
-onMounted(() => {
-  nextTick(() => { scrollToDefaultHour() })
+watch(() => route.query.calendarMode, (newMode) => {
+  if (newMode && ['month', 'week'].includes(newMode as string) && newMode !== calendarMode.value) {
+    calendarMode.value = newMode as 'month' | 'week'
+  }
 })
 
+onMounted(() => {
+  nextTick(() => { scrollToDefaultHour() })
+  window.addEventListener('keydown', onKeydown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeydown)
+  window.removeEventListener('pointermove', onResizePointerMove)
+  window.removeEventListener('pointerup', onResizePointerUp)
+})
+
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'ArrowLeft') prev()
+  else if (e.key === 'ArrowRight') next()
+}
+
 // ── Header label ───────────────────────────────────────────────────────────
+// toISODate uses local date components (not toISOString, which returns UTC)
+// so the displayed date always matches the user's local calendar.
+function toISODate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 const headerLabel = computed(() => {
   if (calendarMode.value === 'month') {
     return new Date(currentYear.value, currentMonth.value, 1).toLocaleDateString(undefined, {
       month: 'long', year: 'numeric',
     })
   }
-  // Week range
+  // Week range in ISO format
   const end = new Date(weekStart.value)
   end.setDate(end.getDate() + 6)
-  const startStr = weekStart.value.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-  const endStr = end.toLocaleDateString(undefined, {
-    month: weekStart.value.getMonth() === end.getMonth() ? undefined : 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
-  return `${startStr} – ${endStr}`
+  return `${toISODate(weekStart.value)} – ${toISODate(end)}`
 })
 
 // ── Monthly data ───────────────────────────────────────────────────────────
 interface CalendarCell {
   day: number | null
   date: Date | null
+  dateKey: string | null
   isToday: boolean
   isCurrentMonth: boolean
   todos: Todo[]
@@ -299,24 +379,34 @@ const calendarCells = computed((): CalendarCell[] => {
 
   const cells: CalendarCell[] = []
   for (let i = 0; i < firstDay; i++) {
-    cells.push({ day: null, date: null, isToday: false, isCurrentMonth: false, todos: [], extraCount: 0 })
+    cells.push({ day: null, date: null, dateKey: null, isToday: false, isCurrentMonth: false, todos: [], extraCount: 0 })
   }
   for (let d = 1; d <= daysInMonth; d++) {
     const date = new Date(year, month, d)
     const key = `${year}-${month}-${d}`
     const isToday = d === today.getDate() && month === today.getMonth() && year === today.getFullYear()
-    const allTodos = todosByDate[key] ?? []
+    // Sort todos by startDate then dueDate so order is stable after drag & drop
+    const allTodos = (todosByDate[key] ?? []).slice().sort((a, b) => {
+      const aTime = new Date(a.startDate ?? a.dueDate ?? 0).getTime()
+      const bTime = new Date(b.startDate ?? b.dueDate ?? 0).getTime()
+      return aTime - bTime
+    })
+    const isExpanded = expandedDates.value[key] === true
+    // Avoid showing "+1 more" when a single extra item fits – just show it
+    const visibleLimit = !isExpanded && allTodos.length === MAX_VISIBLE + 1 ? MAX_VISIBLE + 1 : MAX_VISIBLE
+    const showCount = isExpanded ? allTodos.length : visibleLimit
     cells.push({
       day: d,
       date,
+      dateKey: key,
       isToday,
       isCurrentMonth: true,
-      todos: allTodos.slice(0, MAX_VISIBLE),
-      extraCount: Math.max(0, allTodos.length - MAX_VISIBLE),
+      todos: allTodos.slice(0, showCount),
+      extraCount: isExpanded ? 0 : Math.max(0, allTodos.length - showCount),
     })
   }
   while (cells.length % 7 !== 0) {
-    cells.push({ day: null, date: null, isToday: false, isCurrentMonth: false, todos: [], extraCount: 0 })
+    cells.push({ day: null, date: null, dateKey: null, isToday: false, isCurrentMonth: false, todos: [], extraCount: 0 })
   }
   return cells
 })
@@ -374,37 +464,6 @@ const timeSlots = computed((): TimeSlot[] => {
     }
   }
   return slots
-})
-
-// Map: dayKey → { slotMinutes → Todo[] }
-const weekTodos = computed((): Record<string, Record<number, Todo[]>> => {
-  const map: Record<string, Record<number, Todo[]>> = {}
-  const rangeStart = new Date(weekStart.value)
-  const rangeEnd = new Date(weekStart.value)
-  rangeEnd.setDate(rangeEnd.getDate() + 6)
-  rangeEnd.setHours(23, 59, 59, 999)
-
-  for (const todo of props.todos) {
-    if (!todo.dueDate) continue
-    const d = new Date(todo.dueDate)
-    if (todo.recurringInterval === TodoRecurringInterval.None) {
-      const key = dateKey(d)
-      if (!map[key]) map[key] = {}
-      const slotMins = Math.floor((d.getHours() * 60 + d.getMinutes()) / 30) * 30
-      if (!map[key][slotMins]) map[key][slotMins] = []
-      map[key][slotMins].push(todo)
-    } else {
-      const dates = getRecurringDatesInRange(d, todo.recurringInterval, rangeStart, rangeEnd)
-      for (const date of dates) {
-        const key = dateKey(date)
-        if (!map[key]) map[key] = {}
-        const slotMins = Math.floor((date.getHours() * 60 + date.getMinutes()) / 30) * 30
-        if (!map[key][slotMins]) map[key][slotMins] = []
-        map[key][slotMins].push(todo)
-      }
-    }
-  }
-  return map
 })
 
 function onWeekSlotClick(date: Date, slotMinutes: number) {
@@ -473,6 +532,185 @@ function dateKey(d: Date): string {
 
 function isSameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+}
+
+// ── Category color helpers ─────────────────────────────────────────────────
+function getTodoColor(todo: Todo): string {
+  return todo.categoryMemberships?.[0]?.category?.color ?? '#3b82f6'
+}
+
+function formatTimeShort(dateStr: string): string {
+  const d = new Date(dateStr)
+  const h = String(d.getHours()).padStart(2, '0')
+  const m = String(d.getMinutes()).padStart(2, '0')
+  return `${h}:${m}`
+}
+
+// ── Week view: per-day todo map ─────────────────────────────────────────────
+interface WeekTodoSegment {
+  todo: Todo
+  startMins: number  // display start within the day (0–1440)
+  endMins: number    // display end within the day (0–1440)
+  labelTime: string  // HH:MM label shown inside the block
+}
+
+const weekDayTodosFlat = computed((): Record<string, WeekTodoSegment[]> => {
+  const map: Record<string, WeekTodoSegment[]> = {}
+  const rangeStart = new Date(weekStart.value)
+  rangeStart.setHours(0, 0, 0, 0)
+  const rangeEnd = new Date(weekStart.value)
+  rangeEnd.setDate(rangeEnd.getDate() + 6)
+  rangeEnd.setHours(23, 59, 59, 999)
+
+  function addSegment(dayDate: Date, todo: Todo, startMins: number, endMins: number, label: string) {
+    const key = dateKey(dayDate)
+    if (!map[key]) map[key] = []
+    map[key].push({ todo, startMins, endMins, labelTime: label })
+  }
+
+  for (const todo of props.todos) {
+    if (!todo.dueDate) continue
+    const d = new Date(todo.dueDate)
+    if (todo.recurringInterval === TodoRecurringInterval.None) {
+      if (d < rangeStart || d > rangeEnd) continue
+      // Detect cross-midnight: startDate on a different day than dueDate and duration < 24 h
+      if (todo.startDate) {
+        const start = new Date(todo.startDate)
+        const durationMs = d.getTime() - start.getTime()
+        if (!isSameDay(start, d) && durationMs > 0 && durationMs < 24 * 60 * 60 * 1000) {
+          // Start-day segment: from start time to midnight
+          const startDayMins = start.getHours() * 60 + start.getMinutes()
+          if (start >= rangeStart && start <= rangeEnd) {
+            addSegment(start, todo, startDayMins, MINS_PER_DAY, formatTimeShort(todo.startDate))
+          }
+          // Due-day segment: from midnight to due time.
+          // Skip when dueDate is exactly midnight (00:00) – the todo ends at the very start of the day.
+          const endDayMins = d.getHours() * 60 + d.getMinutes()
+          if (d >= rangeStart && d <= rangeEnd && endDayMins > 0) {
+            addSegment(d, todo, 0, endDayMins, formatTimeShort(todo.dueDate))
+          }
+          continue
+        }
+      }
+      addSegment(d, todo, getTodoStartMins(todo), getTodoEndMins(todo), formatTimeShort(todo.dueDate))
+    } else {
+      const dates = getRecurringDatesInRange(d, todo.recurringInterval, rangeStart, rangeEnd)
+      for (const date of dates) {
+        addSegment(date, todo, getTodoStartMins(todo), getTodoEndMins(todo), formatTimeShort(todo.dueDate))
+      }
+    }
+  }
+  return map
+})
+
+// ── Week view: todo positioning ────────────────────────────────────────────
+function getTodoStartMins(todo: Todo): number {
+  // If startDate and dueDate are on the same day and startDate < dueDate, use startDate as block start
+  if (todo.startDate && todo.dueDate) {
+    const s = new Date(todo.startDate)
+    const d = new Date(todo.dueDate)
+    if (isSameDay(s, d) && s < d) {
+      return s.getHours() * 60 + s.getMinutes()
+    }
+  }
+  if (todo.dueDate) {
+    const d = new Date(todo.dueDate)
+    return d.getHours() * 60 + d.getMinutes()
+  }
+  return 0
+}
+
+function getTodoEndMins(todo: Todo): number {
+  // If startDate and dueDate are on the same day and dueDate > startDate, use dueDate as block end
+  if (todo.startDate && todo.dueDate) {
+    const s = new Date(todo.startDate)
+    const d = new Date(todo.dueDate)
+    if (isSameDay(s, d) && d > s) {
+      return d.getHours() * 60 + d.getMinutes()
+    }
+  }
+  return getTodoStartMins(todo) + SLOT_DURATION_MINS
+}
+
+function todoTopPx(todo: Todo, displayStartMins?: number): number {
+  if (resizingTodo.value?.id === todo.id) {
+    return (resizeCurrentStartMins.value / 30) * SLOT_HEIGHT_PX
+  }
+  const mins = displayStartMins ?? getTodoStartMins(todo)
+  return (mins / 30) * SLOT_HEIGHT_PX
+}
+
+function todoHeightPx(todo: Todo, displayStartMins?: number, displayEndMins?: number): number {
+  if (resizingTodo.value?.id === todo.id) {
+    const mins = resizeCurrentEndMins.value - resizeCurrentStartMins.value
+    return Math.max(SLOT_HEIGHT_PX, (mins / 30) * SLOT_HEIGHT_PX)
+  }
+  const start = displayStartMins ?? getTodoStartMins(todo)
+  const end = displayEndMins ?? getTodoEndMins(todo)
+  const mins = end - start
+  return Math.max(SLOT_HEIGHT_PX, (mins / 30) * SLOT_HEIGHT_PX)
+}
+
+// ── Resize ─────────────────────────────────────────────────────────────────
+const resizingTodo = ref<Todo | null>(null)
+const resizeType = ref<'top' | 'bottom' | null>(null)
+const resizeStartY = ref(0)
+const resizeOriginalStartMins = ref(0)
+const resizeOriginalEndMins = ref(0)
+const resizeCurrentStartMins = ref(0)
+const resizeCurrentEndMins = ref(0)
+const resizeDayDate = ref<Date | null>(null)
+
+function startResize(todo: Todo, type: 'top' | 'bottom', event: PointerEvent, dayDate: Date) {
+  resizingTodo.value = todo
+  resizeType.value = type
+  resizeStartY.value = event.clientY
+  resizeOriginalStartMins.value = getTodoStartMins(todo)
+  resizeOriginalEndMins.value = getTodoEndMins(todo)
+  resizeCurrentStartMins.value = resizeOriginalStartMins.value
+  resizeCurrentEndMins.value = resizeOriginalEndMins.value
+  resizeDayDate.value = new Date(dayDate)
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+  window.addEventListener('pointermove', onResizePointerMove)
+  window.addEventListener('pointerup', onResizePointerUp, { once: true })
+}
+
+function onResizePointerMove(event: PointerEvent) {
+  if (!resizingTodo.value) return
+  const dy = event.clientY - resizeStartY.value
+  const deltaSlots = Math.round(dy / SLOT_HEIGHT_PX)
+  const deltaMins = deltaSlots * SLOT_DURATION_MINS
+  if (resizeType.value === 'bottom') {
+    let end = resizeOriginalEndMins.value + deltaMins
+    end = Math.round(end / SLOT_DURATION_MINS) * SLOT_DURATION_MINS
+    end = Math.max(resizeOriginalStartMins.value + SLOT_DURATION_MINS, Math.min(MINS_PER_DAY, end))
+    resizeCurrentEndMins.value = end
+  } else {
+    let start = resizeOriginalStartMins.value + deltaMins
+    start = Math.round(start / SLOT_DURATION_MINS) * SLOT_DURATION_MINS
+    start = Math.max(0, Math.min(resizeOriginalEndMins.value - SLOT_DURATION_MINS, start))
+    resizeCurrentStartMins.value = start
+  }
+}
+
+function onResizePointerUp(_event: PointerEvent) {
+  window.removeEventListener('pointermove', onResizePointerMove)
+  if (!resizingTodo.value || !resizeDayDate.value) {
+    resizingTodo.value = null
+    resizeType.value = null
+    resizeDayDate.value = null
+    return
+  }
+  const todo = resizingTodo.value
+  const dayDate = resizeDayDate.value
+  const newStartDate = new Date(dayDate)
+  newStartDate.setHours(Math.floor(resizeCurrentStartMins.value / 60), resizeCurrentStartMins.value % 60, 0, 0)
+  const newDueDate = new Date(dayDate)
+  newDueDate.setHours(Math.floor(resizeCurrentEndMins.value / 60), resizeCurrentEndMins.value % 60, 0, 0)
+  emit('resize', todo, newStartDate, newDueDate)
+  resizingTodo.value = null
+  resizeType.value = null
+  resizeDayDate.value = null
 }
 
 // ── Recurring helpers ──────────────────────────────────────────────────────

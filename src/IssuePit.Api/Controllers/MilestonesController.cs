@@ -53,6 +53,7 @@ public class MilestonesController(IssuePitDbContext db, TenantContext ctx) : Con
             milestone.Id,
             milestone.Title,
             milestone.Description,
+            milestone.StartDate,
             milestone.DueDate,
             milestone.Status,
             Total = total,
@@ -73,7 +74,8 @@ public class MilestonesController(IssuePitDbContext db, TenantContext ctx) : Con
             ProjectId = projectId,
             Title = req.Title,
             Description = req.Description,
-            DueDate = req.DueDate,
+            StartDate = ToUtc(req.StartDate),
+            DueDate = ToUtc(req.DueDate),
             Status = MilestoneStatus.Open,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
@@ -90,7 +92,8 @@ public class MilestonesController(IssuePitDbContext db, TenantContext ctx) : Con
         if (milestone is null) return NotFound();
         milestone.Title = req.Title;
         milestone.Description = req.Description;
-        milestone.DueDate = req.DueDate;
+        milestone.StartDate = ToUtc(req.StartDate);
+        milestone.DueDate = ToUtc(req.DueDate);
         if (req.Status.HasValue) milestone.Status = req.Status.Value;
         milestone.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
@@ -106,6 +109,10 @@ public class MilestonesController(IssuePitDbContext db, TenantContext ctx) : Con
         await db.SaveChangesAsync();
         return NoContent();
     }
+
+    /// <summary>Ensures a DateTime value is stored as UTC, regardless of the Kind sent by the client.</summary>
+    private static DateTime? ToUtc(DateTime? dt) =>
+        dt.HasValue ? DateTime.SpecifyKind(dt.Value, DateTimeKind.Utc) : null;
 }
 
-public record MilestoneRequest(string Title, string? Description, DateTime? DueDate, MilestoneStatus? Status);
+public record MilestoneRequest(string Title, string? Description, DateTime? StartDate, DateTime? DueDate, MilestoneStatus? Status);

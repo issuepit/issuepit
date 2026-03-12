@@ -621,6 +621,9 @@ namespace IssuePit.Core.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
+                    b.Property<int>("Mode")
+                        .HasColumnType("integer");
+
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uuid");
 
@@ -731,6 +734,56 @@ namespace IssuePit.Core.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("issue_assignees");
+                });
+
+            modelBuilder.Entity("IssuePit.Core.Entities.IssueAttachment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("CommentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<long>("FileSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("FileUrl")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsPublic")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsVoiceFile")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("IssueId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IssueId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("issue_attachments");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.IssueComment", b =>
@@ -1176,6 +1229,9 @@ namespace IssuePit.Core.Migrations
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("StartDate")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
@@ -1303,6 +1359,13 @@ namespace IssuePit.Core.Migrations
 
                     b.Property<bool>("IsAgenda")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("IssueKey")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<int>("IssueNumberOffset")
+                        .HasColumnType("integer");
 
                     b.Property<string>("LocalRepositories")
                         .HasColumnType("text");
@@ -2121,6 +2184,23 @@ namespace IssuePit.Core.Migrations
                         .HasForeignKey("UserId");
 
                     b.Navigation("Agent");
+
+                    b.Navigation("Issue");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("IssuePit.Core.Entities.IssueAttachment", b =>
+                {
+                    b.HasOne("IssuePit.Core.Entities.Issue", "Issue")
+                        .WithMany()
+                        .HasForeignKey("IssueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("IssuePit.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId");
 
                     b.Navigation("Issue");
 

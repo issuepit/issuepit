@@ -163,6 +163,7 @@ export interface Milestone {
   projectId: string
   title: string
   description?: string
+  startDate?: string
   dueDate?: string
   status: 'open' | 'closed'
   createdAt: string
@@ -192,6 +193,11 @@ export interface Project {
   useNewActionCache?: boolean | null
   actionOfflineMode?: boolean | null
   localRepositories?: string | null
+  openMergeRequestCount: number
+  /** Short project key used as prefix for issue IDs in the UI (e.g. "IP" yields "IP-123"). */
+  issueKey?: string | null
+  /** Offset added to issue numbers when displayed in the UI. Defaults to 0. */
+  issueNumberOffset: number
   createdAt: string
   updatedAt: string
 }
@@ -251,6 +257,21 @@ export interface IssueComment {
   body: string
   createdAt: string
   updatedAt: string
+}
+
+export interface IssueAttachment {
+  id: string
+  issueId: string
+  commentId?: string
+  userId?: string
+  user?: User
+  fileName: string
+  fileUrl: string
+  contentType: string
+  fileSize: number
+  isVoiceFile: boolean
+  isPublic: boolean
+  createdAt: string
 }
 
 export interface CodeReviewComment {
@@ -499,6 +520,8 @@ export interface PoolStatus {
   cicdPools: CiCdPoolStatus[]
 }
 
+export type GitOriginMode = 'ReadOnly' | 'Working' | 'Release'
+
 export interface GitRepository {
   id: string
   projectId: string
@@ -510,6 +533,7 @@ export interface GitRepository {
   status: 'Active' | 'Disabled' | 'Throttled'
   statusMessage?: string
   throttledUntil?: string
+  mode: GitOriginMode
 }
 
 export interface GitBranch {
@@ -774,6 +798,24 @@ export interface AgentSessionDetail extends AgentSession {
   projectId: string
   projectName: string
   ciCdRuns: CiCdRun[]
+}
+
+export interface IssueAgentSession {
+  id: string
+  agentId: string
+  agentName: string
+  issueId: string
+  commitSha?: string
+  gitBranch?: string
+  status: AgentSessionStatus
+  statusName: string
+  startedAt: string
+  endedAt?: string
+  ciCdRuns: CiCdRun[]
+}
+
+export interface IssueRuns {
+  agentSessions: IssueAgentSession[]
 }
 
 export interface IssueHistoryEntry {

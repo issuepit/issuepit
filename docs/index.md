@@ -18,28 +18,35 @@ nav_order: 1
 - 🔗 **Link GitHub repositories** to your projects
 - 🏷 **Labels, milestones, assignees** (users or agents)
 - 🎯 **Common Agenda** — org-wide goal tracker for cross-cutting initiatives across all projects
+- 🔄 **CI/CD integration** — run GitHub Actions workflows locally via [nektos/act](https://github.com/nektos/act) with real-time logs and artifact downloads
+- ✅ **Todo Tracker** — personal task board and weekly calendar with iCal subscription
+- 🔍 **Code review** — side-by-side diff viewer with inline comments
+- 🔗 **Issue linking** — relate issues with typed links (blocks, implements, duplicates, and more)
+- 📜 **Issue history** — full audit trail of every change made to an issue
+- 🔀 **Merge requests** — lightweight merge request workflow on top of your linked Git repository
+- 🎤 **Voice input** — create issues by dictating them using voice recognition (Vosk)
 
 ---
 
 ## Screenshots
 
-![IssuePit Dashboard](https://github.com/user-attachments/assets/1a80823d-41f0-4bf5-bf7a-3ca8f01dfab2)
+![IssuePit Dashboard]({{ '/assets/screenshots/dashboard.png' | relative_url }})
 
 *Dashboard — overview of projects, open issues, and agent count.*
 
-![Projects list](https://github.com/user-attachments/assets/3fbde9ad-827a-4be3-a87d-880626634340)
+![Projects list]({{ '/assets/screenshots/projects.png' | relative_url }})
 
 *Projects page — each project card shows its slug and description.*
 
-![Issue list](https://github.com/user-attachments/assets/63af9ac8-f5e7-49c7-9254-894e6172fc05)
+![Issue list]({{ '/assets/screenshots/issues.png' | relative_url }})
 
 *Issue list — filterable by status, priority, and type.*
 
-![Kanban board](https://github.com/user-attachments/assets/19c72963-a4c9-463f-a692-f6e2d6aeea1d)
+![Kanban board]({{ '/assets/screenshots/kanban.png' | relative_url }})
 
 *Kanban board — issues organised across Backlog → To Do → In Progress → In Review → Done.*
 
-![Agents page](https://github.com/user-attachments/assets/221ddf9b-6e1b-49e3-8302-5d47dbecbf0a)
+![Agents page]({{ '/assets/screenshots/agents.png' | relative_url }})
 
 *Agents — Plan, Code, and Evaluate agent modes ready to be activated.*
 
@@ -52,6 +59,8 @@ nav_order: 1
 | [Getting Started](getting-started) | Install and start IssuePit with Podman or Docker Compose |
 | [Projects](projects) | Create projects and link Git repositories |
 | [Common Agenda](agenda) | Org-wide goal tracker for cross-cutting initiatives |
+| [CI/CD Integration](cicd) | Run GitHub Actions workflows locally with real-time logs |
+| [Todo Tracker](todos) | Personal task board and weekly calendar with iCal subscription |
 | [Agents](agents) | Configure agent modes (system prompt, MCP tools, auth keys) |
 | [Configuration](configuration) | API keys, MCP servers, and other settings |
 | [Releases](releases) | Release notes, changelog, and upgrade instructions |

@@ -13,7 +13,7 @@ This page covers the settings available under **Configuration** in the IssuePit 
 ## API Keys
 {: #api-keys }
 
-![API Keys configuration page](https://github.com/user-attachments/assets/24667f60-a068-4e43-8562-b60f9c52dd39)
+![API Keys configuration page]({{ '/assets/screenshots/api-keys.png' | relative_url }})
 
 API keys let IssuePit authenticate with external services such as GitHub, AI providers, and cloud platforms.
 
@@ -67,6 +67,41 @@ MCP (Model Context Protocol) servers extend agents with external tools and data 
 4. Click **Save**.
 
 After adding a server, you can link it to specific agents in the agent settings.
+
+---
+
+## Telegram Bots
+
+IssuePit can send notifications about issue events and agent run results to Telegram.
+
+1. Go to **Configuration → Telegram Bots**.
+2. Click **Add Bot**.
+3. Fill in:
+   - **Name** — display name for this bot configuration
+   - **Bot Token** — the token obtained from [@BotFather](https://t.me/BotFather)
+   - **Chat ID** — the Telegram chat or channel ID where notifications are sent
+4. Click **Save**.
+
+Once configured, IssuePit dispatches notifications whenever issues are created, updated, or assigned, and when agent runs complete.
+
+---
+
+## Voice Input
+
+IssuePit supports creating issues via voice using [Vosk](https://alphacephei.com/vosk/) for offline speech recognition.
+
+When voice input is enabled, a microphone icon appears on the issue creation form. Click it to start recording — spoken text is transcribed and inserted into the issue title and description fields automatically.
+
+To enable voice recognition, the Vosk model must be available to the API service. Set the path via the `Vosk__ModelPath` environment variable in your `docker-compose.yml`:
+
+```yaml
+environment:
+  Vosk__ModelPath: /models/vosk-model-small-en-us-0.15
+volumes:
+  - ./models:/models:ro
+```
+
+Download a Vosk model from [alphacephei.com/vosk/models](https://alphacephei.com/vosk/models) and place it at the configured path.
 
 ---
 
