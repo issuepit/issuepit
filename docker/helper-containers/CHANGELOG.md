@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.2.3](https://github.com/issuepit/issuepit/compare/helper-containers-v1.2.2...helper-containers-v1.2.3) (2026-03-09)
+
+
+### Bug Fixes
+
+* agent runs should match cicd backend logic ([#440](https://github.com/issuepit/issuepit/issues/440)) ([3385b06](https://github.com/issuepit/issuepit/commit/3385b068ec371d7b79221822517a06320e871a5d))
+
+## [1.2.2](https://github.com/issuepit/issuepit/compare/helper-containers-v1.2.1...helper-containers-v1.2.2) (2026-03-08)
+
+
+### Bug Fixes
+
+* remove dotnet Aspire workload from helper image, pre-pull localstack for E2E ([#418](https://github.com/issuepit/issuepit/issues/418)) ([073291f](https://github.com/issuepit/issuepit/commit/073291f6ddef822455e96c0caec4712162e5a1a9))
+
 ## [1.2.1](https://github.com/issuepit/issuepit/compare/helper-containers-v1.2.0...helper-containers-v1.2.1) (2026-03-04)
 
 

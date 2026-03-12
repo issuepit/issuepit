@@ -3,12 +3,9 @@
     <!-- Header -->
     <div class="flex items-center justify-between mb-6 shrink-0">
       <div class="flex items-center gap-2">
-        <NuxtLink :to="`/projects/${id}`" class="text-gray-500 hover:text-gray-300 transition-colors">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-          </svg>
-        </NuxtLink>
-        <h1 class="text-xl font-bold text-white">Kanban</h1>
+        <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name }}</NuxtLink>
+        <span class="text-gray-600">/</span>
+        <NuxtLink :to="`/projects/${id}/kanban`" class="text-xl font-bold text-white">Kanban</NuxtLink>
       </div>
       <div class="flex items-center gap-2">
         <!-- Board selector -->
@@ -92,7 +89,9 @@
             'border-brand-500/60 bg-brand-900/10': isValidDropTarget(col.id) && draggedId,
             'border-gray-700/30 bg-gray-900/20': draggedId && !draggedColId && !isValidDropTarget(col.id),
           }"
-          @dragover.prevent @drop="onIssueDrop($event, col)">
+          @dragover.prevent="onIssueDragOver($event, col.id)"
+          @dragleave="onIssueDragLeave"
+          @drop="onIssueDrop($event, col)">
           <div v-for="issue in issuesByStatus[col.issueStatus]" :key="issue.id"
             draggable="true"
             @dragstart="onDragStart($event, issue)"
@@ -100,7 +99,7 @@
             class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-lg p-3 cursor-pointer group transition-all hover:shadow-lg hover:-translate-y-0.5"
             @click="$router.push(`/projects/${id}/issues/${issue.number}`)">
             <div class="flex items-start justify-between gap-2 mb-2">
-              <span class="text-xs text-gray-600">#{{ issue.number }}</span>
+              <span class="text-xs text-gray-600">{{ formatIssueId(issue.number, projectsStore.currentProject) }}</span>
               <span :class="priorityColor(issue.priority)" class="text-xs shrink-0">
                 {{ priorityIcon(issue.priority) }}
               </span>
@@ -117,8 +116,14 @@
             </div>
           </div>
 
+          <!-- Drop zone placeholder -->
+          <div v-if="draggedId && !draggedColId && isValidDropTarget(col.id) && dragHoverColId === col.id"
+            role="status" aria-label="Drop zone"
+            class="rounded-lg border-2 border-dashed border-brand-500/50 bg-brand-900/10 h-14 animate-pulse">
+          </div>
+
           <!-- Empty placeholder -->
-          <div v-if="!issuesByStatus[col.issueStatus]?.length"
+          <div v-if="!issuesByStatus[col.issueStatus]?.length && !(draggedId && !draggedColId && isValidDropTarget(col.id) && dragHoverColId === col.id)"
             class="flex items-center justify-center h-16 text-gray-700 text-xs">
             Drop issues here
           </div>
@@ -312,12 +317,15 @@ import type { Issue, KanbanColumn } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
 import { useKanbanStore } from '~/stores/kanban'
 import { useMilestonesStore } from '~/stores/milestones'
+import { useProjectsStore } from '~/stores/projects'
+import { formatIssueId } from '~/composables/useIssueFormat'
 
 const route = useRoute()
 const id = route.params.id as string
 const issueStore = useIssuesStore()
 const kanban = useKanbanStore()
 const milestonesStore = useMilestonesStore()
+const projectsStore = useProjectsStore()
 const { priorityIcon, priorityColor } = usePriority()
 
 // ── Issue create state ────────────────────────────────────────────────────
@@ -331,6 +339,7 @@ const filterMilestone = ref<string>('')
 const draggedId = ref<string | null>(null)
 const draggedIssueStatus = ref<IssueStatus | null>(null)
 const transitionsButtonAlert = ref(false)
+const dragHoverColId = ref<string | null>(null)
 
 // ── Column drag state (board view) ─────────────────────────────────────────
 const draggedColId = ref<string | null>(null)
@@ -423,6 +432,7 @@ function onDragStart(e: DragEvent, issue: Issue) {
 function onIssueDragEnd() {
   draggedId.value = null
   draggedIssueStatus.value = null
+  dragHoverColId.value = null
   transitionsButtonAlert.value = false
 }
 
@@ -445,7 +455,20 @@ async function onIssueDrop(e: DragEvent, targetCol: KanbanColumn) {
   await issueStore.updateIssueStatus(id, draggedId.value, targetCol.issueStatus)
   draggedId.value = null
   draggedIssueStatus.value = null
+  dragHoverColId.value = null
   transitionsButtonAlert.value = false
+}
+
+function onIssueDragOver(e: DragEvent, colId: string) {
+  if (draggedId.value && !draggedColId.value) {
+    dragHoverColId.value = colId
+  }
+}
+
+function onIssueDragLeave(e: DragEvent) {
+  const relatedTarget = e.relatedTarget as Node | null
+  if (relatedTarget && (e.currentTarget as Node)?.contains(relatedTarget)) return
+  dragHoverColId.value = null
 }
 
 // ── Column drag & drop (main board reorder) ────────────────────────────────

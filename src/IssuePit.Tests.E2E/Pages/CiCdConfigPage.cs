@@ -96,4 +96,53 @@ public class CiCdConfigPage(IPage page)
     /// <summary>Clicks the Save Default button.</summary>
     public async Task SaveAsync() =>
         await page.ClickAsync("button:has-text('Save Default')");
+
+    // ── Act Container Image ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Clicks the act container tag option matching the given full image reference.
+    /// </summary>
+    public async Task SelectActContainerTagAsync(string imageRef)
+    {
+        // Scope to the Act Container Image card for precision.
+        var section = await page.QuerySelectorAsync("div.rounded-xl:has-text('Act Container Image')");
+        if (section is null)
+            throw new InvalidOperationException("Act Container Image section not found.");
+        var codeEl = await section.QuerySelectorAsync($"code:has-text('{imageRef}')");
+        if (codeEl is null)
+            throw new InvalidOperationException($"Tag '{imageRef}' not found in act container section.");
+        await codeEl.ClickAsync();
+    }
+
+    /// <summary>
+    /// Returns the currently selected act container image reference shown in the act container section,
+    /// or null when using the default.
+    /// </summary>
+    public async Task<string?> GetSelectedActContainerImageAsync()
+    {
+        var section = await page.QuerySelectorAsync("div.rounded-xl:has-text('Act Container Image')");
+        if (section is null) return null;
+        // The selected item shows a "Selected" badge; read the sibling code element's text.
+        var badges = await section.QuerySelectorAllAsync("span:has-text('Selected')");
+        foreach (var badge in badges)
+        {
+            var container = await badge.EvaluateHandleAsync("el => el.closest('div.flex')");
+            var code = await container.AsElement()!.QuerySelectorAsync("code");
+            if (code is not null)
+                return (await code.InnerTextAsync()).Trim();
+        }
+        return null;
+    }
+
+    /// <summary>Clicks the Save Default button in the Act Container Image section.</summary>
+    public async Task SaveActContainerAsync()
+    {
+        // Find the card that contains the "Act Container Image" heading, then click its Save button.
+        var section = await page.QuerySelectorAsync("div.rounded-xl:has-text('Act Container Image')");
+        if (section is not null)
+        {
+            var saveBtn = await section.QuerySelectorAsync("button:has-text('Save Default')");
+            if (saveBtn is not null) await saveBtn.ClickAsync();
+        }
+    }
 }

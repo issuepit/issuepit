@@ -43,7 +43,16 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
         // Print act version for diagnostics before the actual run.
         await TryLogActVersionAsync(actBin, onLogLine, cancellationToken);
 
-        var args = BuildActArguments(trigger);
+        // Append a short suffix derived from the run ID so that act job containers created on the
+        // host Docker daemon are identifiable by run and never collide across parallel runs
+        // (issuepit/act --container-name-suffix). Using a suffix preserves the "act-" name prefix
+        // that stale-container cleanup filters rely on.
+        // The suffix contains only a hyphen and hex digits (UUID chars), no shell escaping needed.
+        var containerNameSuffix = "-" + $"{run.Id:N}"[..ContainerNameSuffixLength];
+        var argsList = BuildActArgumentsList(trigger).ToList();
+        argsList.Add("--container-name-suffix");
+        argsList.Add(containerNameSuffix);
+        var args = string.Join(' ', argsList);
 
         var argsList = BuildActArgumentsList(trigger).ToList();
         foreach (var label in platformLabels)
@@ -298,6 +307,16 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
 
     internal static string BuildActArguments(TriggerPayload trigger) =>
         string.Join(' ', BuildActArgumentsList(trigger));
+
+    /// <summary>Default number of concurrent jobs passed to <c>--concurrent-jobs</c> when neither project nor org specifies a value.</summary>
+    internal const int DefaultConcurrentJobs = 4;
+
+    /// <summary>
+    /// Length (in hex chars) used when truncating the run UUID for the <c>--container-name-suffix</c> flag.
+    /// Produces a suffix like "-3f2a91b0c4" — enough uniqueness while keeping container names
+    /// well below Docker's 63-character limit.
+    /// </summary>
+    internal const int ContainerNameSuffixLength = 10;
 
     internal static IReadOnlyList<string> BuildActArgumentsList(TriggerPayload trigger)
     {

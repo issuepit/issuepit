@@ -53,4 +53,7 @@ public class GitRepository
 
     /// <summary>When set, the repo will be skipped by the poller until this time (throttle window).</summary>
     public DateTime? ThrottledUntil { get; set; }
+
+    /// <summary>How this remote is used by agents and the release pipeline.</summary>
+    public GitOriginMode Mode { get; set; } = GitOriginMode.Working;
 }

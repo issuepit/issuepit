@@ -1,17 +1,10 @@
 <template>
   <div class="p-8">
     <!-- Header -->
-    <div class="flex items-center gap-3 mb-6">
-      <NuxtLink :to="`/projects/${id}`" class="text-gray-500 hover:text-gray-300 transition-colors">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-        </svg>
-      </NuxtLink>
-      <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-      </svg>
-      <h1 class="text-xl font-bold text-white">Code</h1>
+    <div class="flex items-center gap-2 mb-6">
+      <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name }}</NuxtLink>
+      <span class="text-gray-600">/</span>
+      <NuxtLink :to="`/projects/${id}/code`" class="text-xl font-bold text-white">Code</NuxtLink>
     </div>
 
     <!-- Loading -->
@@ -298,6 +291,7 @@
               </p>
             </div>
             <div class="flex items-center gap-2 shrink-0">
+              <CommitCiCdStatus :commit-sha="commit.sha" :runs="cicdStore.runs" />
               <button @click="openTriggerModal(commit.sha)"
                 class="text-xs bg-gray-800 hover:bg-brand-700 border border-gray-700 text-gray-300 hover:text-white px-2 py-0.5 rounded transition-colors flex items-center gap-1"
                 title="Trigger CI/CD run for this commit">
@@ -367,7 +361,9 @@ import hljs from 'highlight.js'
 import { useGitStore } from '~/stores/git'
 import { useIssuesStore } from '~/stores/issues'
 import { useAuthStore } from '~/stores/auth'
+import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { IssueType, IssuePriority, IssueStatus } from '~/types'
+import { useProjectsStore } from '~/stores/projects'
 
 const route = useRoute()
 const router = useRouter()
@@ -375,6 +371,8 @@ const id = route.params.id as string
 const store = useGitStore()
 const issuesStore = useIssuesStore()
 const authStore = useAuthStore()
+const cicdStore = useCiCdRunsStore()
+const projectsStore = useProjectsStore()
 
 const repoChecked = ref(false)
 const fetching = ref(false)
@@ -466,7 +464,8 @@ onUnmounted(() => store.reset())
 async function initRepo() {
   await Promise.all([
     store.fetchBranches(id),
-    store.fetchTree(id, store.repo?.defaultBranch, '')
+    store.fetchTree(id, store.repo?.defaultBranch, ''),
+    cicdStore.fetchRuns(id),
   ])
   // Set default branch selection
   const def = store.repo?.defaultBranch ?? 'main'

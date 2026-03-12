@@ -199,4 +199,24 @@ public class FrontendSmokeTests : IAsyncLifetime
         await ciCd.SetCustomImageAsync("my-registry.example.com/runner:v2");
         Assert.True(await ciCd.IsCustomImageSelectedAsync(), "Custom image card should show as selected");
     }
+
+    [Fact]
+    public async Task CiCdConfig_ActContainerImage_CanBeSelectedAndSaved()
+    {
+        var page = await _context!.NewPageAsync();
+        var ciCd = new CiCdConfigPage(page);
+        await ciCd.GotoAsync();
+        await ciCd.WaitForLoadAsync();
+
+        // Select the main-branch act container image
+        await ciCd.SelectActContainerTagAsync("ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24");
+
+        // Save and verify persistence via localStorage
+        await ciCd.SaveActContainerAsync();
+        await page.ReloadAsync();
+        await ciCd.WaitForLoadAsync();
+
+        var selected = await ciCd.GetSelectedActContainerImageAsync();
+        Assert.Contains("main-dotnet10-node24", selected ?? string.Empty);
+    }
 }

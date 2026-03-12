@@ -11,6 +11,7 @@ public class UploadsController(ImageStorageService imageStorage, VoiceTranscript
     private static readonly string[] AllowedVoiceContentTypes = ["audio/wav", "audio/wave", "audio/x-wav"];
     private const long MaxFileSizeBytes = 10 * 1024 * 1024; // 10 MB
     private const long MaxVoiceFileSizeBytes = 25 * 1024 * 1024; // 25 MB
+    private const long MaxGeneralFileSizeBytes = 50 * 1024 * 1024; // 50 MB
 
     [HttpPost("image")]
     public async Task<IActionResult> UploadImage(IFormFile file, CancellationToken ct)
@@ -81,5 +82,35 @@ public class UploadsController(ImageStorageService imageStorage, VoiceTranscript
         }
 
         return Ok(new { voiceUrl, transcription });
+    }
+
+    /// <summary>
+    /// Accepts any file and stores it in S3/B2, returning the public URL.
+    /// </summary>
+    [HttpPost("file")]
+    public async Task<IActionResult> UploadFile(IFormFile file, CancellationToken ct)
+    {
+        if (tenantContext.CurrentTenant is null) return Unauthorized();
+
+        if (file is null || file.Length == 0)
+            return BadRequest(new { error = "No file provided." });
+
+        if (file.Length > MaxGeneralFileSizeBytes)
+            return BadRequest(new { error = "File exceeds the 50 MB size limit." });
+
+        await using var stream = file.OpenReadStream();
+        string url;
+        try
+        {
+            url = await imageStorage.UploadFileAsync(stream, file.FileName, file.ContentType, "attachments", ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "File upload to S3 failed");
+            var msg = ex.InnerException is null ? ex.Message : $"{ex.Message} | {ex.InnerException.GetType().Name}: {ex.InnerException.Message}";
+            return StatusCode(500, new { error = ex.GetType().Name, message = msg });
+        }
+
+        return Ok(new { url });
     }
 }

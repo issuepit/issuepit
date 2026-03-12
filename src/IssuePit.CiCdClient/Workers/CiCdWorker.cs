@@ -230,6 +230,7 @@ public class CiCdWorker(
         }
 
         run.Status = CiCdRunStatus.Running;
+        run.StartedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(stoppingToken);
 
         try
@@ -309,6 +310,17 @@ public class CiCdWorker(
             run.EndedAt = DateTime.UtcNow;
             await db.SaveChangesAsync(stoppingToken);
 
+            // For Docker runs the artifact directory is intentionally empty (no volume mount).
+            // The container has already uploaded the raw artifact files to S3 under
+            // artifacts-raw/{runId}/. Download them now so the subsequent parsing steps
+            // (TRX test results, artifact metadata, workflow graph) can proceed as normal.
+            if (artifactStorage.IsConfigured && !Directory.EnumerateFileSystemEntries(artifactDir).Any())
+            {
+                var downloaded = await DownloadRawArtifactsFromS3Async(run.Id, artifactDir, stoppingToken);
+                if (downloaded > 0)
+                    logger.LogInformation("Downloaded {Count} raw artifact file(s) from S3 for run {RunId}", downloaded, run.Id);
+            }
+
             // Collect and store test results from any .trx files produced during the run.
             await ParseAndStoreTestResultsAsync(run.Id, artifactDir, db, stoppingToken);
 
@@ -322,6 +334,14 @@ public class CiCdWorker(
             try { Directory.Delete(artifactDir, recursive: true); }
             catch (Exception ex) { logger.LogDebug(ex, "Could not clean up artifact directory {Dir} for run {RunId}", artifactDir, run.Id); }
 
+            // Delete the raw S3 artifacts that were downloaded; the processed ZIPs uploaded by
+            // ParseAndStoreArtifactsAsync are the canonical download artifacts.
+            if (artifactStorage.IsConfigured)
+            {
+                try { await artifactStorage.DeleteRawArtifactsAsync(run.Id, stoppingToken); }
+                catch (Exception ex) { logger.LogDebug(ex, "Could not delete raw S3 artifacts for run {RunId}", run.Id); }
+            }
+
             // Notify clients that the run has completed
             await PublishLogLineAsync(run.Id.ToString(),
                 JsonSerializer.Serialize(new { @event = "run-completed", status = run.Status.ToString() }));
@@ -329,9 +349,32 @@ public class CiCdWorker(
     }
 
     /// <summary>
+    /// Downloads raw artifact files from S3 (<c>artifacts-raw/{runId}/</c>) into
+    /// <paramref name="artifactDir"/> so the local parsing steps can process them.
+    /// Best-effort: errors are logged but never propagated.
+    /// </summary>
+    private async Task<int> DownloadRawArtifactsFromS3Async(
+        Guid runId,
+        string artifactDir,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await artifactStorage.DownloadRawArtifactsAsync(runId, artifactDir, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to download raw artifacts from S3 for run {RunId}", runId);
+            return 0;
+        }
+    }
+
+    /// <summary>
     /// Scans <paramref name="artifactDir"/> for <c>.trx</c> files, parses each one, and
     /// persists the results as <see cref="CiCdTestSuite"/> rows linked to the given run.
     /// Also searches inside <c>.zip</c> archives (act stores artifact uploads as zipped files).
+    /// Handles both bare <c>.trx</c> files on disk and <c>.trx</c> files packed inside
+    /// <c>.zip</c> archives as produced by the act artifact server.
     /// Best-effort: errors are logged but never propagated.
     /// </summary>
     private async Task ParseAndStoreTestResultsAsync(
@@ -364,10 +407,14 @@ public class CiCdWorker(
             }
 
             if (trxFiles.Count == 0) return;
+            
+            if (!Directory.Exists(artifactDir)) return;
 
-            logger.LogInformation("Found {Count} TRX file(s) for run {RunId}; parsing test results", trxFiles.Count, runId);
+            var suiteCount = 0;
 
-            foreach (var trxFile in trxFiles)
+            // 1. Bare .trx files on disk (produced by non-act environments or plain uploads).
+            var bareTrxFiles = TrxParser.FindTrxFiles(artifactDir).ToList();
+            foreach (var trxFile in bareTrxFiles)
             {
                 var suite = TrxParser.Parse(trxFile);
                 if (suite is null)
@@ -378,8 +425,62 @@ public class CiCdWorker(
 
                 suite.CiCdRunId = runId;
                 db.CiCdTestSuites.Add(suite);
+                suiteCount++;
             }
 
+            // 2. .trx files packed inside .zip archives under the act artifact server layout:
+            //    artifactDir/<runNumber>/<artifactName>/<file>.zip  (contains <file>.trx)
+            foreach (var runDir in Directory.GetDirectories(artifactDir))
+            {
+                var runDirName = Path.GetFileName(runDir);
+                if (string.IsNullOrEmpty(runDirName) || runDirName.StartsWith('.') || runDirName == "_workflows")
+                    continue;
+
+                foreach (var artifactSubDir in Directory.GetDirectories(runDir))
+                {
+                    var artifactName = Path.GetFileName(artifactSubDir);
+                    if (string.IsNullOrEmpty(artifactName) || artifactName.StartsWith('.'))
+                        continue;
+
+                    foreach (var zipFile in Directory.EnumerateFiles(artifactSubDir, "*.zip", SearchOption.AllDirectories))
+                    {
+                        try
+                        {
+                            using var zip = ZipFile.OpenRead(zipFile);
+                            foreach (var entry in zip.Entries)
+                            {
+                                if (!entry.FullName.EndsWith(".trx", StringComparison.OrdinalIgnoreCase))
+                                    continue;
+
+                                using var stream = entry.Open();
+                                var suite = TrxParser.Parse(stream, artifactName);
+                                if (suite is null)
+                                {
+                                    logger.LogWarning("Failed to parse TRX entry {Entry} in {ZipFile} for run {RunId}",
+                                        entry.FullName, zipFile, runId);
+                                    continue;
+                                }
+
+                                suite.CiCdRunId = runId;
+                                db.CiCdTestSuites.Add(suite);
+                                suiteCount++;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            logger.LogWarning(ex, "Failed to inspect zip {ZipFile} for TRX entries for run {RunId}", zipFile, runId);
+                        }
+                    }
+                }
+            }
+
+            if (suiteCount == 0)
+            {
+                logger.LogInformation("No TRX file(s) found for run {RunId}", runId);
+                return;
+            }
+
+            logger.LogInformation("Parsed {Count} TRX file(s) for run {RunId}; storing test results", suiteCount, runId);
             await db.SaveChangesAsync(cancellationToken);
             logger.LogInformation("Stored test results for run {RunId}", runId);
         }
@@ -455,6 +556,10 @@ public class CiCdWorker(
                     {
                         logger.LogWarning(ex, "Failed to upload artifact '{Name}' for run {RunId} to S3", name, runId);
                     }
+                }
+                else
+                {
+                    logger.LogWarning("Artifact '{Name}' for run {RunId} will not be downloadable: artifact storage (S3) is not configured", name, runId);
                 }
 
                 db.CiCdArtifacts.Add(new CiCdArtifact

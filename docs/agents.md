@@ -39,7 +39,7 @@ When an issue is assigned to an agent mode, `IssuePit.ExecutionClient` spawns a 
 
 ## Creating an Agent Mode
 
-![Agents page](https://github.com/user-attachments/assets/221ddf9b-6e1b-49e3-8302-5d47dbecbf0a)
+![Agents page]({{ '/assets/screenshots/agents.png' | relative_url }})
 
 1. Go to **Configuration → Agents** (or **Agents** in the sidebar).
 2. Click **New Agent**.
@@ -141,6 +141,40 @@ When an agent mode is assigned to an issue, `IssuePit.ExecutionClient` handles t
 
 1. Consumes the `cicd-trigger` Kafka topic.
 2. Runs GitHub Actions workflows locally via [nektos/act](https://github.com/nektos/act).
+
+---
+
+## Coding Agent Guidelines
+
+When working as a coding agent on this repository, follow these conventions:
+
+### Frontend Changes
+
+- **Always run the frontend linter before closing a session:**
+  ```sh
+  cd frontend && node_modules/.bin/eslint .
+  ```
+  Fix all lint **errors** (unused variables, type-only imports, etc.). Pre-existing warnings from unrelated code do not need to be resolved.
+
+### PR Screenshots
+
+Screenshots in PRs and documentation must show the actual UI **after authentication** — the login page is not useful. The `scripts/take-screenshots.js` script handles this by:
+
+1. Logging in (or registering) a user before taking any screenshots.
+2. Accepting a pre-seeded user via `SCREENSHOT_USERNAME` / `SCREENSHOT_PASSWORD` environment variables (the Aspire Migrator seeds `alice`/`alice` for the Acme Corp org).
+
+To take screenshots manually during development:
+
+```sh
+# Start the full stack first (Aspire), then:
+FRONTEND_URL=http://localhost:3000 \
+API_URL=http://localhost:5000 \
+SCREENSHOT_USERNAME=alice \
+SCREENSHOT_PASSWORD=alice \
+node scripts/take-screenshots.js /tmp/screenshots
+```
+
+Always verify that uploaded screenshots show the intended UI (not a blank page, wrong page, or the login screen).
 
 ---
 

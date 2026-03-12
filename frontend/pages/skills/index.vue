@@ -6,13 +6,13 @@
         <h1 class="text-2xl font-bold text-white">Skills</h1>
         <p class="text-gray-400 mt-1">{{ store.skills.length }} skill{{ store.skills.length !== 1 ? 's' : '' }} configured</p>
       </div>
-      <button @click="openCreate"
+      <NuxtLink to="/skills/create"
         class="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
         </svg>
         New Skill
-      </button>
+      </NuxtLink>
     </div>
 
     <!-- Error -->
@@ -50,7 +50,7 @@
               class="text-xs text-gray-400 hover:text-gray-200 px-3 py-1.5 rounded-md border border-gray-700 hover:bg-gray-800 transition-colors">
               Edit
             </NuxtLink>
-            <button @click="store.deleteSkill(skill.id)"
+            <button @click="confirmDeleteSkill(skill)"
               class="text-xs text-red-400 hover:text-red-300 px-3 py-1.5 rounded-md border border-red-900/30 hover:bg-red-900/20 transition-colors">
               Delete
             </button>
@@ -82,49 +82,26 @@
         </div>
         <p class="text-gray-400 font-medium">No skills yet</p>
         <p class="text-gray-600 text-sm mt-1">Create a skill to define reusable system prompts for your agents.</p>
-        <button @click="openCreate"
+        <button @click="navigateTo('/skills/create')"
           class="mt-4 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm rounded-lg transition-colors">
           Create your first skill
         </button>
       </div>
     </div>
 
-    <!-- Create Modal -->
-    <div v-if="showCreate" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 w-full max-w-lg">
-        <h2 class="text-lg font-semibold text-white mb-5">New Skill</h2>
-        <div class="space-y-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-300 mb-1.5">Name <span class="text-red-400">*</span></label>
-            <input v-model="form.name" type="text" placeholder="e.g. Python Expert"
-              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-300 mb-1.5">Description</label>
-            <input v-model="form.description" type="text" placeholder="Short description of this skill"
-              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-300 mb-1.5">Content <span class="text-red-400">*</span></label>
-            <textarea v-model="form.content" rows="5" placeholder="You are an expert in..."
-              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none" />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-300 mb-1.5">Organization</label>
-            <select v-model="form.orgId"
-              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
-              <option v-for="org in orgsStore.orgs" :key="org.id" :value="org.id">{{ org.name }}</option>
-            </select>
-          </div>
-        </div>
-        <div class="flex justify-end gap-3 mt-6">
-          <button @click="showCreate = false"
-            class="px-4 py-2 text-sm text-gray-400 hover:text-gray-200 transition-colors">
-            Cancel
+    <!-- Delete Confirmation Dialog -->
+    <div v-if="showDeleteConfirm" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-sm p-6 shadow-xl">
+        <h2 class="text-lg font-bold text-white mb-2">Delete Skill</h2>
+        <p class="text-sm text-gray-400 mb-6">Are you sure you want to delete <span class="text-white font-medium">{{ skillToDelete?.name }}</span>? This action cannot be undone.</p>
+        <div class="flex gap-3">
+          <button @click="doDeleteSkill"
+            class="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
+            Delete
           </button>
-          <button @click="submitCreate" :disabled="!form.name || !form.content || creating"
-            class="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors">
-            {{ creating ? 'Creating…' : 'Create Skill' }}
+          <button @click="showDeleteConfirm = false"
+            class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 rounded-lg transition-colors">
+            Cancel
           </button>
         </div>
       </div>
@@ -134,47 +111,28 @@
 
 <script setup lang="ts">
 import { useSkillsStore } from '~/stores/skills'
-import { useOrgsStore } from '~/stores/orgs'
 import { SkillSyncStatus } from '~/types'
+import type { Skill } from '~/types'
 
 const store = useSkillsStore()
-const orgsStore = useOrgsStore()
 
-const showCreate = ref(false)
-const creating = ref(false)
-const form = ref({
-  name: '',
-  description: '',
-  content: '',
-  orgId: '',
-})
+const showDeleteConfirm = ref(false)
+const skillToDelete = ref<Skill | null>(null)
 
 onMounted(async () => {
-  await Promise.all([store.fetchSkills(), orgsStore.fetchOrgs()])
-  if (orgsStore.orgs.length > 0 && !form.value.orgId) {
-    form.value.orgId = orgsStore.orgs[0].id
-  }
+  await store.fetchSkills()
 })
 
-function openCreate() {
-  form.value = { name: '', description: '', content: '', orgId: orgsStore.orgs[0]?.id ?? '' }
-  showCreate.value = true
+function confirmDeleteSkill(skill: Skill) {
+  skillToDelete.value = skill
+  showDeleteConfirm.value = true
 }
 
-async function submitCreate() {
-  if (!form.value.name || !form.value.content) return
-  creating.value = true
-  try {
-    await store.createSkill({
-      name: form.value.name,
-      description: form.value.description || undefined,
-      content: form.value.content,
-      orgId: form.value.orgId,
-    })
-    showCreate.value = false
-  } finally {
-    creating.value = false
-  }
+async function doDeleteSkill() {
+  if (!skillToDelete.value) return
+  await store.deleteSkill(skillToDelete.value.id)
+  showDeleteConfirm.value = false
+  skillToDelete.value = null
 }
 
 function syncStatusClass(status: SkillSyncStatus) {
