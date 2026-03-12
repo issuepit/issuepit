@@ -302,8 +302,14 @@ if (!string.IsNullOrEmpty(e2eRepoPath))
     // Use a small, pre-pulled Node.js image so act can run the dummy workflow without
     // downloading catthehacker/ubuntu:act-latest (several GB) in CI.
     // node:20-slim has bash + Node 20 which is sufficient for simple shell steps and
-    // actions/upload-artifact@v7.0.0 (pure Node.js).
+    // actions/upload-artifact (pure Node.js).
     cicdClient.WithEnvironment("CiCd__ActImage", "node:20-slim");
+    // Cache action repositories (upload-artifact etc.) across runs in the same test session
+    // so subsequent runs reuse already-downloaded actions instead of fetching from GitHub
+    // each time.  This eliminates the per-run download latency and keeps E2E pipeline tests
+    // well within their timeout budget even for the very first run.
+    cicdClient.WithEnvironment("CiCd__ActionCachePath", Path.Combine(Path.GetTempPath(), "issuepit-e2e-action-cache"));
+    cicdClient.WithEnvironment("CiCd__UseNewActionCache", "true");
 }
 
 frontend

@@ -51,9 +51,22 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
         // Print act version for diagnostics before the actual run.
         await TryLogActVersionAsync(actBin, onLogLine, cancellationToken);
 
-        var args = BuildActArguments(trigger);
+        // Apply global config fallbacks for action cache settings, mirroring DockerCiCdRuntime
+        // behaviour. This ensures that CiCd__ActionCachePath (set in AppHost for E2E tests or by
+        // operators for bare-metal deployments) is honoured even when the per-project / per-org
+        // ActionCachePath is not configured.
+        var effectiveTrigger = trigger with
+        {
+            ActionCachePath = !string.IsNullOrWhiteSpace(trigger.ActionCachePath)
+                ? trigger.ActionCachePath
+                : configuration["CiCd:ActionCachePath"],
+            UseNewActionCache = trigger.UseNewActionCache
+                ?? configuration.GetValue<bool?>("CiCd:UseNewActionCache"),
+            ActionOfflineMode = trigger.ActionOfflineMode
+                ?? configuration.GetValue<bool?>("CiCd:ActionOfflineMode"),
+        };
 
-        var argsList = BuildActArgumentsList(trigger).ToList();
+        var argsList = BuildActArgumentsList(effectiveTrigger).ToList();
         foreach (var label in platformLabels)
         {
             argsList.Add("-P");
@@ -63,7 +76,7 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
         // Each run must use its own artifact-server port so that consecutive runs do not
         // collide when act's default port (34567) is briefly in TCP TIME_WAIT after a prior run.
         // We probe for a free port and pass it explicitly; the slight TOCTOU gap is acceptable.
-        if (!string.IsNullOrWhiteSpace(trigger.ArtifactServerPath))
+        if (!string.IsNullOrWhiteSpace(effectiveTrigger.ArtifactServerPath))
         {
             argsList.Add("--artifact-server-port");
             argsList.Add(FindFreePort().ToString());
