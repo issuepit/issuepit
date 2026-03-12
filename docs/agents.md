@@ -148,7 +148,11 @@ When an agent mode is assigned to an issue, `IssuePit.ExecutionClient` handles t
 
 When working as a coding agent on this repository, follow these conventions:
 
-### Frontend Changes
+### Testing Conventions
+
+- **Tests must never be silently skipped to hide failures.** A test that returns without asserting (e.g. `if (condition) return;`) counts as a passing test even when the feature under test is completely broken. This masks real failures.
+- If a test genuinely cannot run in a given environment, use `Skip.If` / `Skip.Unless` (or `Assert.Skip`) with an **explicit, human-readable reason** so the skip is visible in test results and CI logs.
+- Prefer fixing the underlying precondition (e.g. downloading a required asset at test start) over skipping.
 
 - **Always run the frontend linter before closing a session:**
   ```sh

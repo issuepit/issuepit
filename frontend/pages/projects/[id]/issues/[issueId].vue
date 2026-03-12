@@ -78,9 +78,13 @@
                   :class="descTab === 'preview' ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'">Preview</button>
               </div>
               <textarea v-if="descTab === 'write'" v-model="bodyEdit" rows="15" autofocus
-                class="w-full bg-transparent text-sm text-gray-300 focus:outline-none resize-y font-mono min-h-[15rem]"
+                class="w-full bg-transparent text-sm text-gray-300 focus:outline-none resize-y font-mono min-h-[15rem] transition-colors"
+                :class="{ 'ring-2 ring-brand-500 bg-brand-500/10': descDragOver }"
                 placeholder="Describe this issue... (Markdown supported)"
-                @paste="e => handleImagePaste(e, md => bodyEdit += md)"></textarea>
+                @paste="e => handleImagePaste(e, md => bodyEdit += md)"
+                @dragover.prevent="descDragOver = true"
+                @dragleave="descDragOver = false"
+                @drop.prevent="e => { descDragOver = false; handleDropAttach(e, md => bodyEdit += md) }"></textarea>
               <div v-else class="prose prose-invert prose-sm max-w-none min-h-16 text-sm"
                 v-html="renderedBodyEdit"></div>
               <div class="flex gap-2 mt-3">
@@ -353,10 +357,15 @@
             </div>
 
             <!-- Add comment -->
-            <div class="border border-gray-700 rounded-lg overflow-hidden">
+            <div class="border border-gray-700 rounded-lg overflow-hidden"
+              :class="{ 'ring-2 ring-brand-500': commentDragOver }">
               <textarea v-model="newComment" rows="3" placeholder="Leave a comment..."
-                class="w-full bg-gray-800 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none resize-none"
-                @paste="e => handleImagePaste(e, md => newComment += md)" />
+                class="w-full bg-gray-800 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none resize-none transition-colors"
+                :class="{ 'bg-brand-500/10': commentDragOver }"
+                @paste="e => handleImagePaste(e, md => newComment += md)"
+                @dragover.prevent="commentDragOver = true"
+                @dragleave="commentDragOver = false"
+                @drop.prevent="e => { commentDragOver = false; handleDropAttach(e, md => newComment += md) }" />
               <div class="flex justify-end bg-gray-800/50 px-3 py-2 border-t border-gray-700 gap-2">
                 <p v-if="uploadingImage" class="text-xs text-gray-400 mr-auto self-center">Uploading image…</p>
                 <p v-else-if="uploadImageError" class="text-xs text-red-400 mr-auto self-center">{{ uploadImageError }}</p>
@@ -420,7 +429,7 @@
                   </p>
                 </div>
                 <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button v-if="att.isVoiceFile" @click="retranscribeVoice(att.id)"
+                  <button v-if="att.isVoiceFile || att.contentType?.startsWith('audio/')" @click="retranscribeVoice(att.id)"
                     :disabled="retranscribingId === att.id"
                     class="text-xs text-brand-400 hover:text-brand-300 disabled:opacity-40 transition-colors"
                     title="Retry transcription">
@@ -783,6 +792,9 @@ const milestonesStore = useMilestonesStore()
 const projectsStore = useProjectsStore()
 const api = useApi()
 const { uploading: uploadingImage, uploadError: uploadImageError, handlePaste: handleImagePaste } = useImageUpload()
+
+const descDragOver = ref(false)
+const commentDragOver = ref(false)
 
 // Resolved project GUID (falls back to URL param before issue is loaded)
 const actualProjectId = computed(() => store.currentIssue?.projectId ?? id)
@@ -1166,8 +1178,9 @@ async function handleFileUpload(e: Event) {
   if (!file) return
   uploadingAttachment.value = true
   attachmentError.value = null
+  const isVoiceFile = file.type.startsWith('audio/')
   try {
-    await store.addAttachment(resolvedIssueId.value, file, false, true)
+    await store.addAttachment(resolvedIssueId.value, file, isVoiceFile, true)
   } catch (err: unknown) {
     attachmentError.value = err instanceof Error ? err.message : 'Upload failed'
   } finally {
@@ -1176,21 +1189,61 @@ async function handleFileUpload(e: Event) {
   }
 }
 
+async function uploadFileTo(endpoint: string, file: File): Promise<string> {
+  const config = useRuntimeConfig()
+  const baseURL = config.public.apiBase as string
+  const body = new FormData()
+  body.append('file', file)
+  const result = await $fetch<{ url: string }>(endpoint, { baseURL, method: 'POST', body, credentials: 'include' })
+  return result.url
+}
+
+async function handleDropAttach(e: DragEvent, insertText: (md: string) => void) {
+  const file = e.dataTransfer?.files[0]
+  if (!file) return
+  try {
+    if (file.type.startsWith('image/')) {
+      const url = await uploadFileTo('/api/uploads/image', file)
+      insertText(`![${file.name}](${url})`)
+    } else if (file.type.startsWith('audio/')) {
+      const att = await store.addAttachment(resolvedIssueId.value, file, /* isVoiceFile */ true, /* isPublic */ true)
+      if (att?.fileUrl) insertText(`[${file.name}](${att.fileUrl})`)
+    } else {
+      const url = await uploadFileTo('/api/uploads/file', file)
+      if (url) insertText(`[${file.name}](${url})`)
+    }
+  } catch (err: unknown) {
+    console.error('Drop file attach failed', err)
+  }
+}
+
 async function handleCommentFileAttach(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
   try {
-    const config = useRuntimeConfig()
-    const baseURL = config.public.apiBase as string
-    const body = new FormData()
-    body.append('file', file)
-    const result = await $fetch<{ url: string }>('/api/uploads/file', {
-      baseURL,
-      method: 'POST',
-      body,
-      credentials: 'include',
-    })
-    newComment.value += (newComment.value ? '\n' : '') + `[${file.name}](${result.url})`
+    let url: string
+    if (file.type.startsWith('audio/')) {
+      // Audio files: store as a proper IssueAttachment so retranscription is available
+      const att = await store.addAttachment(resolvedIssueId.value, file, /* isVoiceFile */ true, /* isPublic */ true)
+      url = att?.fileUrl ?? ''
+    } else {
+      const config = useRuntimeConfig()
+      const baseURL = config.public.apiBase as string
+      const body = new FormData()
+      body.append('file', file)
+      const result = await $fetch<{ url: string }>('/api/uploads/file', {
+        baseURL,
+        method: 'POST',
+        body,
+        credentials: 'include',
+      })
+      url = result.url
+    }
+    if (url) {
+      newComment.value += (newComment.value ? '\n' : '') + `[${file.name}](${url})`
+    } else {
+      console.error('Audio attachment upload returned no URL')
+    }
   } catch (err: unknown) {
     console.error('Comment file attach failed', err)
   } finally {

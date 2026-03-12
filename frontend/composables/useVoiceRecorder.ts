@@ -52,6 +52,7 @@ export const useVoiceRecorder = () => {
   const recording = ref(false)
   const uploading = ref(false)
   const transcription = ref('')
+  const transcriptionWarning = ref<string | null>(null)
   const voiceUrl = ref('')
   const error = ref<string | null>(null)
   const lastWavBlob = ref<Blob | null>(null)
@@ -66,6 +67,7 @@ export const useVoiceRecorder = () => {
   async function startRecording(): Promise<void> {
     error.value = null
     transcription.value = ''
+    transcriptionWarning.value = null
     voiceUrl.value = ''
     chunks = []
 
@@ -121,11 +123,12 @@ export const useVoiceRecorder = () => {
   async function uploadRecording(wavBlob: Blob): Promise<void> {
     uploading.value = true
     error.value = null
+    transcriptionWarning.value = null
     lastWavBlob.value = wavBlob
     try {
       const body = new FormData()
       body.append('file', wavBlob, 'recording.wav')
-      const result = await $fetch<{ voiceUrl: string; transcription: string }>('/api/uploads/voice', {
+      const result = await $fetch<{ voiceUrl: string; transcription: string; transcriptionWarning?: string | null }>('/api/uploads/voice', {
         baseURL,
         method: 'POST',
         body,
@@ -133,6 +136,7 @@ export const useVoiceRecorder = () => {
       })
       voiceUrl.value = result.voiceUrl
       transcription.value = result.transcription
+      transcriptionWarning.value = result.transcriptionWarning ?? null
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Upload failed'
     } finally {
@@ -144,6 +148,7 @@ export const useVoiceRecorder = () => {
     recording.value = false
     uploading.value = false
     transcription.value = ''
+    transcriptionWarning.value = null
     voiceUrl.value = ''
     error.value = null
     lastWavBlob.value = null
@@ -153,5 +158,5 @@ export const useVoiceRecorder = () => {
     stream = null
   }
 
-  return { recording, uploading, transcription, voiceUrl, lastWavBlob, error, startRecording, stopRecording, uploadRecording, reset }
+  return { recording, uploading, transcription, transcriptionWarning, voiceUrl, lastWavBlob, error, startRecording, stopRecording, uploadRecording, reset }
 }
