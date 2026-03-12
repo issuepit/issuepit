@@ -67,4 +67,50 @@ public class IssuesPage(IPage page)
             Timeout = 5_000
         });
     }
+
+    /// <summary>
+    /// Starts voice recording by clicking the microphone button inside the already-open voice modal.
+    /// Waits for the recording indicator to appear.
+    /// </summary>
+    public async Task StartVoiceRecordingAsync()
+    {
+        // The mic button is the preceding sibling of the "Click to start recording" paragraph.
+        await page.ClickAsync("xpath=//p[contains(.,'Click to start recording')]/preceding-sibling::button");
+        await page.WaitForSelectorAsync("text=Recording", new PageWaitForSelectorOptions { Timeout = 5_000 });
+    }
+
+    /// <summary>
+    /// Stops voice recording by clicking the red stop button inside the voice modal.
+    /// </summary>
+    public async Task StopVoiceRecordingAsync()
+    {
+        // The stop button is inside the div that precedes the "Recording… click to stop" paragraph.
+        await page.ClickAsync("xpath=//p[contains(.,'Recording')][contains(.,'click to stop')]/preceding-sibling::div//button");
+    }
+
+    /// <summary>
+    /// Waits for the expected transcription text to appear in the transcription textarea.
+    /// </summary>
+    public async Task WaitForVoiceTranscriptionAsync(string transcription)
+    {
+        await page.WaitForFunctionAsync(
+            $"() => {{ const ta = document.querySelector('textarea'); return ta && ta.value.includes({System.Text.Json.JsonSerializer.Serialize(transcription)}); }}",
+            null,
+            new PageWaitForFunctionOptions { Timeout = 10_000 });
+    }
+
+    /// <summary>
+    /// Submits the voice-created issue by clicking the "Create Issue" button and waiting for the modal to close.
+    /// Assumes a transcription is already present so the button is visible.
+    /// </summary>
+    public async Task SubmitVoiceCreateAsync()
+    {
+        await page.WaitForSelectorAsync("button:has-text('Create Issue')", new PageWaitForSelectorOptions { Timeout = 5_000 });
+        await page.ClickAsync("button:has-text('Create Issue')");
+        await page.WaitForSelectorAsync("text=Create Issue from Voice", new PageWaitForSelectorOptions
+        {
+            State = WaitForSelectorState.Hidden,
+            Timeout = 10_000
+        });
+    }
 }
