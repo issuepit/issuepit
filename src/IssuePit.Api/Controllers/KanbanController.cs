@@ -169,14 +169,16 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
         // Reorder issues within the target column if a position is specified
         if (req.Position.HasValue)
         {
+            // Fetch all other issues in the target column, sorted by current rank
             var siblings = await db.Issues
                 .Where(i => i.ProjectId == issue.ProjectId && i.Status == column.IssueStatus && i.Id != issue.Id)
                 .OrderBy(i => i.KanbanRank)
                 .ThenBy(i => i.CreatedAt)
                 .ToListAsync();
+            // Insert the moved issue at the requested position, then assign sequential ranks to all
             siblings.Insert(Math.Clamp(req.Position.Value, 0, siblings.Count), issue);
             for (var i = 0; i < siblings.Count; i++)
-                siblings[i].KanbanRank = i;
+                siblings[i].KanbanRank = i; // also updates issue.KanbanRank (tracked entity in siblings)
         }
 
         await db.SaveChangesAsync();

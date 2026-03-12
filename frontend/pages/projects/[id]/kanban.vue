@@ -489,9 +489,11 @@ async function onIssueDrop(e: DragEvent, targetCol: KanbanColumn) {
   const issues = issueStore.issues.filter(i => i.status === targetCol.issueStatus).sort((a, b) => a.kanbanRank - b.kanbanRank || a.createdAt.localeCompare(b.createdAt))
   const moved = issues.find(i => i.id === draggedId.value)
   if (moved) {
-    const rest = issues.filter(i => i.id !== draggedId.value)
-    rest.splice(Math.min(insertIdx, rest.length), 0, moved)
-    rest.forEach((issue, idx) => { issue.kanbanRank = idx })
+    // Build reordered list: all siblings without the moved item, then splice moved in at target index
+    const reordered = issues.filter(i => i.id !== draggedId.value)
+    reordered.splice(Math.min(insertIdx, reordered.length), 0, moved)
+    // Assign sequential ranks to all items including the moved one (moved is a reference in reordered)
+    reordered.forEach((issue, idx) => { issue.kanbanRank = idx })
   }
   draggedId.value = null
   draggedIssueStatus.value = null
