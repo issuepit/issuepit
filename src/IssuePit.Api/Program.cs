@@ -167,22 +167,28 @@ if (voiceTranscriptionOptions.DownloadFfmpeg)
 {
     var ffmpegBinDir = Path.Combine(AppContext.BaseDirectory, "ffmpeg-bin");
     Directory.CreateDirectory(ffmpegBinDir);
-    GlobalFFOptions.Configure(new FFOptions { BinaryFolder = ffmpegBinDir });
     var startupLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("IssuePit.Api.Startup.FFMpegDownload");
     var ffmpegExe = OperatingSystem.IsWindows()
         ? Path.Combine(ffmpegBinDir, "ffmpeg.exe")
         : Path.Combine(ffmpegBinDir, "ffmpeg");
-    if (!File.Exists(ffmpegExe))
+    if (File.Exists(ffmpegExe))
+    {
+        // Already downloaded in a previous run — configure GlobalFFOptions to use the cached binary.
+        GlobalFFOptions.Configure(new FFOptions { BinaryFolder = ffmpegBinDir });
+    }
+    else
     {
         try
         {
             startupLogger.LogInformation("Downloading ffmpeg to {FfmpegBinDir}...", ffmpegBinDir);
-            await FFMpegDownloader.DownloadBinaries(FFMpegVersions.LatestAvailable, FFMpegBinaries.FFMpeg, GlobalFFOptions.Current);
+            var downloadOpts = new FFOptions { BinaryFolder = ffmpegBinDir };
+            await FFMpegDownloader.DownloadBinaries(FFMpegVersions.LatestAvailable, FFMpegBinaries.FFMpeg, downloadOpts);
+            GlobalFFOptions.Configure(downloadOpts);
             startupLogger.LogInformation("ffmpeg downloaded successfully");
         }
         catch (Exception ex)
         {
-            startupLogger.LogWarning(ex, "Failed to auto-download ffmpeg — transcription will fall back to WAV-header parsing if ffmpeg is unavailable");
+            startupLogger.LogWarning(ex, "Failed to auto-download ffmpeg — using system ffmpeg from PATH instead");
         }
     }
 }
