@@ -92,32 +92,42 @@
           @dragover.prevent="onIssueDragOver($event, col.id)"
           @dragleave="onIssueDragLeave"
           @drop="onIssueDrop($event, col)">
-          <div v-for="issue in issuesByStatus[col.issueStatus]" :key="issue.id"
-            draggable="true"
-            @dragstart="onDragStart($event, issue)"
-            @dragend="onIssueDragEnd"
-            class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-lg p-3 cursor-pointer group transition-all hover:shadow-lg hover:-translate-y-0.5"
-            @click="$router.push(`/projects/${id}/issues/${issue.number}`)">
-            <div class="flex items-start justify-between gap-2 mb-2">
-              <span class="text-xs text-gray-600">{{ formatIssueId(issue.number, projectsStore.currentProject) }}</span>
-              <span :class="priorityColor(issue.priority)" class="text-xs shrink-0">
-                {{ priorityIcon(issue.priority) }}
-              </span>
+          <template v-for="(issue, idx) in issuesByStatus[col.issueStatus]" :key="issue.id">
+            <!-- Placeholder before this item -->
+            <div v-if="draggedId && !draggedColId && isValidDropTarget(col.id) && dragHoverColId === col.id && dragHoverInsertIdx === idx"
+              role="status" aria-label="Drop zone"
+              class="rounded-lg border-2 border-dashed border-brand-500/50 bg-brand-900/10 h-14 animate-pulse">
             </div>
-            <p class="text-sm text-gray-200 leading-snug mb-3 group-hover:text-white transition-colors">
-              {{ issue.title }}
-            </p>
-            <div class="flex items-center justify-between">
-              <span :class="typeBadge(issue.type)"
-                class="text-xs px-1.5 py-0.5 rounded font-medium capitalize">
-                {{ issue.type }}
-              </span>
-              <span v-if="issue.estimate" class="text-xs text-gray-600">{{ issue.estimate }}pt</span>
+            <div
+              :class="[
+                'bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-lg p-3 cursor-pointer group transition-all hover:shadow-lg hover:-translate-y-0.5',
+                issue.id === draggedId ? 'invisible h-14' : '',
+              ]"
+              draggable="true"
+              @dragstart="onDragStart($event, issue)"
+              @dragend="onIssueDragEnd"
+              @click="$router.push(`/projects/${id}/issues/${issue.number}`)">
+              <div class="flex items-start justify-between gap-2 mb-2">
+                <span class="text-xs text-gray-600">{{ formatIssueId(issue.number, projectsStore.currentProject) }}</span>
+                <span :class="priorityColor(issue.priority)" class="text-xs shrink-0">
+                  {{ priorityIcon(issue.priority) }}
+                </span>
+              </div>
+              <p class="text-sm text-gray-200 leading-snug mb-3 group-hover:text-white transition-colors">
+                {{ issue.title }}
+              </p>
+              <div class="flex items-center justify-between">
+                <span :class="typeBadge(issue.type)"
+                  class="text-xs px-1.5 py-0.5 rounded font-medium capitalize">
+                  {{ issue.type }}
+                </span>
+                <span v-if="issue.estimate" class="text-xs text-gray-600">{{ issue.estimate }}pt</span>
+              </div>
             </div>
-          </div>
+          </template>
 
-          <!-- Drop zone placeholder -->
-          <div v-if="draggedId && !draggedColId && isValidDropTarget(col.id) && dragHoverColId === col.id"
+          <!-- Drop zone placeholder at the end of the list -->
+          <div v-if="draggedId && !draggedColId && isValidDropTarget(col.id) && dragHoverColId === col.id && dragHoverInsertIdx >= (issuesByStatus[col.issueStatus]?.length ?? 0)"
             role="status" aria-label="Drop zone"
             class="rounded-lg border-2 border-dashed border-brand-500/50 bg-brand-900/10 h-14 animate-pulse">
           </div>
@@ -204,23 +214,33 @@
 
         <!-- Existing columns (draggable for reorder) -->
         <div class="space-y-2 mb-4 max-h-64 overflow-y-auto">
-          <div v-for="col in boardColumns" :key="col.id"
-            draggable="true"
-            @dragstart="onLaneDragStart($event, col.id)"
-            @dragover.prevent="onLaneDragOver($event, col.id)"
-            @drop.stop="onLaneDrop($event, col.id)"
-            @dragend="draggedLaneId = null"
-            :class="['flex items-center gap-3 bg-gray-800 rounded-lg px-3 py-2 cursor-grab active:cursor-grabbing', draggedLaneId === col.id ? 'opacity-50' : '']">
-            <span class="text-gray-500 select-none">⠿</span>
-            <span :class="statusDotColor(col.issueStatus)" class="w-2 h-2 rounded-full shrink-0"></span>
-            <span class="text-sm text-gray-300 flex-1">{{ col.name }}</span>
-            <span class="text-xs text-gray-600">pos {{ col.position }}</span>
-            <button @click="deleteColumn(col.id)"
-              class="text-gray-600 hover:text-red-400 transition-colors">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <template v-for="(col, idx) in boardColumns" :key="col.id">
+            <!-- Drop placeholder before this item -->
+            <div v-if="draggedLaneId && draggedLaneId !== col.id && laneHoverInsertIdx === idx"
+              class="h-8 rounded-lg border-2 border-dashed border-brand-500/50 bg-brand-900/10 animate-pulse">
+            </div>
+            <div
+              draggable="true"
+              @dragstart="onLaneDragStart($event, col.id)"
+              @dragover.prevent="onLaneDragOver($event, col.id, idx)"
+              @drop.stop="onLaneDrop($event, col.id)"
+              @dragend="onLaneDragEnd"
+              :class="['flex items-center gap-3 bg-gray-800 rounded-lg px-3 py-2 cursor-grab active:cursor-grabbing', draggedLaneId === col.id ? 'invisible' : '']">
+              <span class="text-gray-500 select-none">⠿</span>
+              <span :class="statusDotColor(col.issueStatus)" class="w-2 h-2 rounded-full shrink-0"></span>
+              <span class="text-sm text-gray-300 flex-1">{{ col.name }}</span>
+              <span class="text-xs text-gray-600">pos {{ col.position }}</span>
+              <button @click="deleteColumn(col.id)"
+                class="text-gray-600 hover:text-red-400 transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
+          </div>
+          </template>
+          <!-- Drop placeholder at end -->
+          <div v-if="draggedLaneId && laneHoverInsertIdx >= boardColumns.length"
+            class="h-8 rounded-lg border-2 border-dashed border-brand-500/50 bg-brand-900/10 animate-pulse">
           </div>
           <div v-if="!boardColumns.length" class="text-xs text-gray-600 text-center py-4">No lanes yet</div>
         </div>
@@ -340,12 +360,14 @@ const draggedId = ref<string | null>(null)
 const draggedIssueStatus = ref<IssueStatus | null>(null)
 const transitionsButtonAlert = ref(false)
 const dragHoverColId = ref<string | null>(null)
+const dragHoverInsertIdx = ref<number>(0)
 
 // ── Column drag state (board view) ─────────────────────────────────────────
 const draggedColId = ref<string | null>(null)
 
 // ── Lane drag state (modal) ────────────────────────────────────────────────
 const draggedLaneId = ref<string | null>(null)
+const laneHoverInsertIdx = ref<number>(0)
 
 // ── Board state ───────────────────────────────────────────────────────────
 const showNewBoard = ref(false)
@@ -433,6 +455,7 @@ function onIssueDragEnd() {
   draggedId.value = null
   draggedIssueStatus.value = null
   dragHoverColId.value = null
+  dragHoverInsertIdx.value = 0
   transitionsButtonAlert.value = false
 }
 
@@ -440,7 +463,8 @@ function isValidDropTarget(targetColId: string): boolean {
   if (!draggedId.value || !draggedIssueStatus.value) return false
   const sourceCol = boardColumns.value.find(c => c.issueStatus === draggedIssueStatus.value)
   if (!sourceCol) return false
-  if (sourceCol.id === targetColId) return false
+  // Same column: always valid (for within-column reordering)
+  if (sourceCol.id === targetColId) return true
   // If no transitions are defined, all columns are valid drop targets (open board)
   if (kanban.transitions.length === 0) return true
   return kanban.transitions.some(t => t.fromColumnId === sourceCol.id && t.toColumnId === targetColId)
@@ -452,17 +476,47 @@ async function onIssueDrop(e: DragEvent, targetCol: KanbanColumn) {
   if (draggedColId.value) return
   if (!draggedId.value) return
   if (!isValidDropTarget(targetCol.id)) return
-  await issueStore.updateIssueStatus(id, draggedId.value, targetCol.issueStatus)
+  const insertIdx = dragHoverInsertIdx.value
+  const sourceCol = boardColumns.value.find(c => c.issueStatus === draggedIssueStatus.value)
+  const isSameColumn = sourceCol?.id === targetCol.id
+  if (!isSameColumn) {
+    // Status change - optimistically update local state
+    await issueStore.updateIssueStatus(id, draggedId.value, targetCol.issueStatus)
+  }
+  // Update kanban rank via kanban store (pass position for ordering)
+  await kanban.moveIssue(activeBoardId.value, draggedId.value, targetCol.id, insertIdx)
+  // Update local kanbanRank to reflect new order
+  const issues = issueStore.issues.filter(i => i.status === targetCol.issueStatus).sort((a, b) => a.kanbanRank - b.kanbanRank || a.createdAt.localeCompare(b.createdAt))
+  const moved = issues.find(i => i.id === draggedId.value)
+  if (moved) {
+    // Build reordered list: all siblings without the moved item, then splice moved in at target index
+    const reordered = issues.filter(i => i.id !== draggedId.value)
+    reordered.splice(Math.min(insertIdx, reordered.length), 0, moved)
+    // Assign sequential ranks to all items including the moved one (moved is a reference in reordered)
+    reordered.forEach((issue, idx) => { issue.kanbanRank = idx })
+  }
   draggedId.value = null
   draggedIssueStatus.value = null
   dragHoverColId.value = null
+  dragHoverInsertIdx.value = 0
   transitionsButtonAlert.value = false
 }
 
 function onIssueDragOver(e: DragEvent, colId: string) {
-  if (draggedId.value && !draggedColId.value) {
-    dragHoverColId.value = colId
+  if (!draggedId.value || draggedColId.value) return
+  dragHoverColId.value = colId
+  // Calculate insertion index from mouse position
+  const container = e.currentTarget as HTMLElement
+  const items = Array.from(container.querySelectorAll<HTMLElement>('[draggable="true"]'))
+  let insertIdx = items.length
+  for (let i = 0; i < items.length; i++) {
+    const rect = items[i].getBoundingClientRect()
+    if (e.clientY < rect.top + rect.height / 2) {
+      insertIdx = i
+      break
+    }
   }
+  dragHoverInsertIdx.value = insertIdx
 }
 
 function onIssueDragLeave(e: DragEvent) {
@@ -510,17 +564,25 @@ async function onColDrop(e: DragEvent, targetColId: string) {
 // ── Lane drag & drop (modal reorder) ──────────────────────────────────────
 function onLaneDragStart(e: DragEvent, laneId: string) {
   draggedLaneId.value = laneId
+  laneHoverInsertIdx.value = boardColumns.value.findIndex(c => c.id === laneId)
   e.dataTransfer!.effectAllowed = 'move'
 }
 
-function onLaneDragOver(e: DragEvent, _laneId: string) {
+function onLaneDragEnd() {
+  draggedLaneId.value = null
+  laneHoverInsertIdx.value = 0
+}
+
+function onLaneDragOver(e: DragEvent, _laneId: string, idx: number) {
   if (!draggedLaneId.value) return
   e.preventDefault()
+  laneHoverInsertIdx.value = idx
 }
 
 async function onLaneDrop(e: DragEvent, targetLaneId: string) {
   if (!draggedLaneId.value || draggedLaneId.value === targetLaneId) {
     draggedLaneId.value = null
+    laneHoverInsertIdx.value = 0
     return
   }
   e.preventDefault()
@@ -529,11 +591,13 @@ async function onLaneDrop(e: DragEvent, targetLaneId: string) {
   const toIdx = cols.findIndex(c => c.id === targetLaneId)
   if (fromIdx === -1 || toIdx === -1) {
     draggedLaneId.value = null
+    laneHoverInsertIdx.value = 0
     return
   }
   const [moved] = cols.splice(fromIdx, 1)
   cols.splice(toIdx, 0, moved)
   draggedLaneId.value = null
+  laneHoverInsertIdx.value = 0
   await kanban.reorderColumns(activeBoardId.value, cols.map(c => c.id))
 }
 

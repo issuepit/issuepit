@@ -165,6 +165,22 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
         if (column is null) return NotFound();
         issue.Status = column.IssueStatus;
         issue.UpdatedAt = DateTime.UtcNow;
+
+        // Reorder issues within the target column if a position is specified
+        if (req.Position.HasValue)
+        {
+            // Fetch all other issues in the target column, sorted by current rank
+            var siblings = await db.Issues
+                .Where(i => i.ProjectId == issue.ProjectId && i.Status == column.IssueStatus && i.Id != issue.Id)
+                .OrderBy(i => i.KanbanRank)
+                .ThenBy(i => i.CreatedAt)
+                .ToListAsync();
+            // Insert the moved issue at the requested position, then assign sequential ranks to all
+            siblings.Insert(Math.Clamp(req.Position.Value, 0, siblings.Count), issue);
+            for (var i = 0; i < siblings.Count; i++)
+                siblings[i].KanbanRank = i; // also updates issue.KanbanRank (tracked entity in siblings)
+        }
+
         await db.SaveChangesAsync();
         return Ok(issue);
     }
@@ -272,7 +288,7 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
 public record CreateBoardRequest(Guid ProjectId, string Name);
 public record CreateColumnRequest(string Name, int Position, IssuePit.Core.Enums.IssueStatus IssueStatus);
 public record CreateTransitionRequest(string Name, Guid FromColumnId, Guid ToColumnId, bool IsAuto, Guid? AgentId);
-public record MoveIssueRequest(Guid IssueId, Guid ColumnId);
+public record MoveIssueRequest(Guid IssueId, Guid ColumnId, int? Position = null);
 public record ReorderColumnsRequest(List<Guid> ColumnIds);
 public record UpdateBoardRequest(string Name);
 public record UpdateColumnRequest(string Name, int Position, IssuePit.Core.Enums.IssueStatus IssueStatus);
