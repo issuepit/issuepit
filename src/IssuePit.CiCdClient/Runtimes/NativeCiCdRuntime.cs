@@ -52,9 +52,6 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
         var argsList = BuildActArgumentsList(trigger).ToList();
         argsList.Add("--container-name-suffix");
         argsList.Add(containerNameSuffix);
-        var args = string.Join(' ', argsList);
-
-        var argsList = BuildActArgumentsList(trigger).ToList();
         foreach (var label in platformLabels)
         {
             argsList.Add("-P");
