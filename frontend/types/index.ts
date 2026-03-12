@@ -307,6 +307,7 @@ export interface Issue {
   parentIssue?: Issue
   dueDate?: string
   estimate?: number
+  kanbanRank: number
   createdAt: string
   updatedAt: string
   subIssues?: Issue[]

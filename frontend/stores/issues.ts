@@ -53,6 +53,9 @@ export const useIssuesStore = defineStore('issues', () => {
     for (const issue of filteredIssues.value) {
       grouped[issue.status].push(issue)
     }
+    for (const status of Object.keys(grouped) as unknown as IssueStatus[]) {
+      grouped[status].sort((a, b) => a.kanbanRank - b.kanbanRank || a.createdAt.localeCompare(b.createdAt))
+    }
     return grouped
   })
 
