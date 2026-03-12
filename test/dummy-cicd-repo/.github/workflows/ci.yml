@@ -14,7 +14,8 @@ jobs:
           echo "Build succeeded" > build-output.txt
           cat build-output.txt
       - name: Upload build output
-        uses: actions/upload-artifact@v7.0.0
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: build-output
           path: build-output.txt
@@ -44,7 +45,8 @@ jobs:
           EOF
           echo "Tests passed"
       - name: Upload test results
-        uses: actions/upload-artifact@v7.0.0
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: test-results
           path: TestResults/
