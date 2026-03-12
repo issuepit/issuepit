@@ -548,7 +548,18 @@ public class CiCdRunsController(
             workflow: request.Workflow,
             eventName: request.EventName,
             inputs: request.Inputs,
-            gitRepoUrl: repo?.RemoteUrl);
+            gitRepoUrl: repo?.RemoteUrl,
+            extraPayload: new
+            {
+                workspacePath = request.WorkspacePath,
+                runtimeOverride = request.RuntimeOverride,
+            });
+
+        if (!string.IsNullOrWhiteSpace(request.WorkspacePath))
+        {
+            newRun.WorkspacePath = request.WorkspacePath;
+            await db.SaveChangesAsync();
+        }
 
         return Accepted(new { runId = newRun.Id, projectId = request.ProjectId, commitSha = request.CommitSha, eventName = request.EventName });
     }
@@ -642,5 +653,9 @@ public record TriggerRunRequest(
     string EventName,
     string? Branch = null,
     string? Workflow = null,
+    /// <summary>Optional workspace path override forwarded to the CI/CD worker for this run.</summary>
+    string? WorkspacePath = null,
+    /// <summary>Optional runtime override (<c>Native</c> or <c>Docker</c>) forwarded to the CI/CD worker for this run.</summary>
+    string? RuntimeOverride = null,
     /// <summary>Input key-value pairs for workflow_dispatch events.</summary>
     Dictionary<string, string>? Inputs = null);

@@ -170,8 +170,9 @@ public class CiCdPipelineTests(AspireFixture fixture)
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
 
-        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+        var triggerResp = await client.PostAsJsonAsync("/api/cicd-runs/trigger",
             BuildTriggerPayload(projectId, "e2e-log-abc", runtimeMode));
+        Assert.Equal(HttpStatusCode.Accepted, triggerResp.StatusCode);
 
         var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromSeconds(50));
         Assert.Equal("Succeeded", run.GetProperty("statusName").GetString());
@@ -208,8 +209,9 @@ public class CiCdPipelineTests(AspireFixture fixture)
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
 
-        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+        var triggerResp = await client.PostAsJsonAsync("/api/cicd-runs/trigger",
             BuildTriggerPayload(projectId, "e2e-joblogs-abc", runtimeMode));
+        Assert.Equal(HttpStatusCode.Accepted, triggerResp.StatusCode);
 
         var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromSeconds(50));
         var runId = run.GetProperty("id").GetString()!;
@@ -238,8 +240,9 @@ public class CiCdPipelineTests(AspireFixture fixture)
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
 
-        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+        var triggerResp = await client.PostAsJsonAsync("/api/cicd-runs/trigger",
             BuildTriggerPayload(projectId, "e2e-artifact-abc", runtimeMode));
+        Assert.Equal(HttpStatusCode.Accepted, triggerResp.StatusCode);
 
         var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromSeconds(50));
         var runId = run.GetProperty("id").GetString()!;
@@ -265,8 +268,9 @@ public class CiCdPipelineTests(AspireFixture fixture)
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
 
-        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+        var triggerResp = await client.PostAsJsonAsync("/api/cicd-runs/trigger",
             BuildTriggerPayload(projectId, "e2e-trx-abc", runtimeMode));
+        Assert.Equal(HttpStatusCode.Accepted, triggerResp.StatusCode);
 
         var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromSeconds(50));
         var runId = run.GetProperty("id").GetString()!;

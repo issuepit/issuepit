@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using Microsoft.Extensions.DependencyInjection;
@@ -312,6 +313,39 @@ public class CiCdEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         });
 
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
+    public async Task Trigger_WithWorkspacePath_PersistsWorkspacePath()
+    {
+        var (tenantId, _, projectId) = await SeedProjectAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var workspacePath = "/tmp/issuepit-trigger-workspace";
+        var response = await _client.PostAsJsonAsync("/api/cicd-runs/trigger", new
+        {
+            projectId,
+            commitSha = "abc123def456",
+            eventName = "push",
+            branch = "main",
+            workspacePath,
+            runtimeOverride = "Docker",
+        });
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var runId = body.GetProperty("runId").GetGuid();
+
+        var runResponse = await _client.GetAsync($"/api/cicd-runs/{runId}");
+        Assert.Equal(HttpStatusCode.OK, runResponse.StatusCode);
+
+        var run = await runResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(workspacePath, run.GetProperty("workspacePath").GetString());
 
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
     }
