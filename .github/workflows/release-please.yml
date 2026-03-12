@@ -3,6 +3,8 @@ name: Release Please
 on:
   push:
     branches: [main]
+  merge_group:
+
 
 permissions:
   contents: write
