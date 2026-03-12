@@ -272,8 +272,8 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
         var concurrentJobs = trigger.ConcurrentJobs ?? DefaultConcurrentJobs;
         if (concurrentJobs > 0)
         {
-            //list.Add("--concurrent-jobs");
-            //list.Add(concurrentJobs.ToString());
+            list.Add("--concurrent-jobs");
+            list.Add(concurrentJobs.ToString());
         }
 
         // Action/repo cache support (act --action-cache-path, --use-new-action-cache, --action-offline-mode).
