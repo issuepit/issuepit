@@ -117,13 +117,21 @@ public class VoiceIssueTests : IAsyncLifetime
         // When no model is available, the service returns empty string (best-effort), which is also acceptable.
         var text = transcription.GetString() ?? string.Empty;
 
+        // Capture the optional warning from the API — it explains WHY transcription is empty:
+        //   "Voice transcription model is not configured on this server." → model path wrong / not passed to API
+        //   "No speech detected in the recording."                        → model loaded but Vosk returned empty
+        var warning = body.TryGetProperty("transcriptionWarning", out var w) ? w.GetString() : null;
+
         // If a model path is explicitly set in the environment (e.g. CI), transcription must be non-empty
         var modelPath = Environment.GetEnvironmentVariable("VoiceTranscription__ModelPath");
         if (!string.IsNullOrWhiteSpace(modelPath) && Directory.Exists(modelPath))
         {
             Assert.False(string.IsNullOrWhiteSpace(text),
                 $"Vosk model is present at '{modelPath}' but transcription was empty for '{fixture}'. " +
-                "Ensure the WAV is a valid 16-bit PCM mono file at 16 kHz.");
+                $"API warning: '{warning ?? "(none)"}'. " +
+                "Possible causes: (1) API did not receive VoiceTranscription__ModelPath env var — " +
+                "check AppHost configuration; (2) FFmpeg conversion failed and fallback WAV parsing " +
+                "produced wrong PCM; (3) Vosk model failed to load (check API startup logs).");
         }
 
         if (!string.IsNullOrWhiteSpace(text))

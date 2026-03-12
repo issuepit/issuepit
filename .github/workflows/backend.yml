@@ -203,7 +203,7 @@ jobs:
           dotnet test src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj
           --no-build
           --configuration Release
-          --filter "Category=E2E"
+          --filter "Category=E2E|Category=PoC"
           --verbosity normal
           --logger "trx;LogFileName=e2e-results.trx"
           --blame-hang-timeout 5min
