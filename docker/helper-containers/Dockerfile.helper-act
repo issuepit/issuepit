@@ -1,14 +1,29 @@
-# Helper act image: helper-base + Docker CLI (DinD support) + nektos/act (local GitHub Actions runner) + actionlint
+# Helper act image: helper-base + Docker CLI (DinD support) + issuepit/act (local GitHub Actions runner) + actionlint
 #
 # Build args (override at build time):
 #   BASE_IMAGE          — fully-qualified helper-base image reference
-#   ACT_VERSION         — nektos/act release version to install (default: 0.2.74)
+#   ACT_COMMIT          — issuepit/act git commit hash to build from
 #   ACTIONLINT_VERSION  — rhysd/actionlint release version to install (default: 1.7.11)
 
+# Stage 1: Build act from source at the specified commit of the issuepit/act fork.
+# The module name in go.mod is still github.com/nektos/act so "go install" with the
+# fork URL does not work; we clone and build manually instead.
+FROM golang:1.24 AS act-builder
+
+ARG ACT_COMMIT=cb02232605fa5f914986ce6eb3500db85c06c0ce
+
+RUN set -eux; \
+    git clone https://github.com/issuepit/act.git /act && \
+    cd /act && \
+    git checkout "${ACT_COMMIT}" && \
+    go build -ldflags "-X main.version=${ACT_COMMIT}" -o /usr/local/bin/act main.go && \
+    act --version
+
+# Stage 2: Final image — extend helper-base with Docker Engine (DinD), the pre-built act, and actionlint.
 ARG BASE_IMAGE=ghcr.io/issuepit/issuepit-helper-base:latest
 FROM ${BASE_IMAGE}
 
-ARG ACT_VERSION=0.2.84
+ARG ACT_COMMIT=cb02232605fa5f914986ce6eb3500db85c06c0ce
 ARG ACTIONLINT_VERSION=1.7.11
 
 # Install Docker Engine (dockerd) + CLI for true DinD (isolated in-container daemon).
@@ -23,12 +38,9 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
     apt-get install -y --no-install-recommends docker-ce docker-ce-cli containerd.io && \
     rm -rf /var/lib/apt/lists/*
 
-# Install act using the official install script (if not already installed).
-RUN if ! command -v act > /dev/null 2>&1; then \
-        curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/nektos/act/master/install.sh | \
-        bash -s -- -b /usr/local/bin "v${ACT_VERSION}"; \
-    fi && \
-    act --version
+# Copy the pre-built act binary from the builder stage.
+COPY --from=act-builder /usr/local/bin/act /usr/local/bin/act
+RUN act --version
 
 # Install actionlint using the official download script.
 # Download to a temp file first since bash process substitution (<()) is not available in /bin/sh.
@@ -41,5 +53,5 @@ RUN curl --proto '=https' --tlsv1.2 -fsSL \
 
 LABEL org.opencontainers.image.title="issuepit-helper-act" \
       org.opencontainers.image.description="IssuePit helper image for CI/CD runs: helper-base + Docker Engine (DinD) + act + actionlint" \
-      issuepit.act.version="${ACT_VERSION}" \
+      issuepit.act.commit="${ACT_COMMIT}" \
       issuepit.actionlint.version="${ACTIONLINT_VERSION}"

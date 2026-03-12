@@ -29,7 +29,7 @@ A shared base image that all other helper images extend.
 
 ### `issuepit-helper-act`
 
-Extends `helper-base` with [nektos/act](https://github.com/nektos/act), which lets you run GitHub Actions workflows locally inside the container — used by `IssuePit.CiCdClient` for local CI runs.
+Extends `helper-base` with [issuepit/act](https://github.com/issuepit/act) (a fork of [nektos/act](https://github.com/nektos/act)), which lets you run GitHub Actions workflows locally inside the container — used by `IssuePit.CiCdClient` for local CI runs.
 
 **Includes:** everything in `helper-base` + `act`
 
@@ -81,7 +81,7 @@ The Dockerfiles accept build arguments that you can override when building local
 | `PLAYWRIGHT_VERSION` | `helper-base` | `v1.51.0` | Playwright .NET image tag (e.g. `v1.54.0`) |
 | `NODE_MAJOR` | `helper-base` | `24` | Node.js major version |
 | `BASE_IMAGE` | `helper-act`, `helper-opencode`, `helper-opencode-act` | `ghcr.io/issuepit/issuepit-helper-base:latest` | Base image reference |
-| `ACT_VERSION` | `helper-act` | `0.2.74` | nektos/act release version |
+| `ACT_COMMIT` | `helper-act` | *(current commit hash)* | [issuepit/act](https://github.com/issuepit/act) git commit hash to build from |
 | `OPENCODE_VERSION` | `helper-opencode`, `helper-opencode-act` | `latest` | opencode-ai npm package version |
 
 ### Building locally
@@ -98,7 +98,7 @@ docker build \
 # Build the act image from the local base
 docker build \
   --build-arg BASE_IMAGE=issuepit-helper-base:local \
-  --build-arg ACT_VERSION=0.2.74 \
+  --build-arg ACT_COMMIT=cb02232605fa5f914986ce6eb3500db85c06c0ce \
   -f docker/Dockerfile.helper-act \
   -t issuepit-helper-act:local \
   .
@@ -141,7 +141,7 @@ To upgrade bundled runtimes:
    DOTNET_MAJOR: "10"
    NODE_MAJOR: "24"
    PLAYWRIGHT_VERSION: "v1.51.0"
-   ACT_VERSION: "0.2.74"
+   ACT_COMMIT: "cb02232605fa5f914986ce6eb3500db85c06c0ce"
    ```
 2. Update the `ARG` defaults in `docker/Dockerfile.helper-base` (and other Dockerfiles) to match.
 3. Bump `docker/helper-containers/version.txt` so release-please creates a new release.

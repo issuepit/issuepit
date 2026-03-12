@@ -35,7 +35,15 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
         // Print act version for diagnostics before the actual run.
         await TryLogActVersionAsync(actBin, onLogLine, cancellationToken);
 
-        var args = BuildActArguments(trigger);
+        // Derive a short unique prefix from the run ID so that act job containers created on the
+        // host Docker daemon never collide across parallel runs (issuepit/act --container-name-prefix).
+        // The prefix contains only alphanumeric chars and hyphens (hex UUID digits + "run-" literal),
+        // so no shell escaping is needed when it is joined into the args string below.
+        var containerNamePrefix = $"run-{run.Id:N}"[..ContainerNamePrefixLength] + "-";
+        var argsList = BuildActArgumentsList(trigger).ToList();
+        argsList.Add("--container-name-prefix");
+        argsList.Add(containerNamePrefix);
+        var args = string.Join(' ', argsList);
 
         logger.LogInformation("Running act (native) for run {RunId}: {ActBin} {Args}", run.Id, actBin, args);
 
@@ -193,6 +201,13 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
 
     /// <summary>Default number of concurrent jobs passed to <c>--concurrent-jobs</c> when neither project nor org specifies a value.</summary>
     internal const int DefaultConcurrentJobs = 4;
+
+    /// <summary>
+    /// Length (in chars) used when truncating <c>"run-{runId:N}"</c> for the <c>--container-name-prefix</c> flag.
+    /// Produces "run-" (4 chars) followed by 10 hex digits from the UUID — enough uniqueness while
+    /// keeping container names well below Docker's 63-character limit.
+    /// </summary>
+    internal const int ContainerNamePrefixLength = 14;
 
     internal static IReadOnlyList<string> BuildActArgumentsList(TriggerPayload trigger)
     {
