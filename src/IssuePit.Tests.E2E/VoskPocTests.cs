@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Text.Json;
 using Vosk;
 
@@ -9,16 +10,65 @@ namespace IssuePit.Tests.E2E;
 /// These tests are intentionally isolated so they can pinpoint whether a failure is in Vosk
 /// itself (model loading, audio format) vs. the API integration layer.
 ///
-/// Prerequisites: set the <c>VoiceTranscription__ModelPath</c> environment variable to the
-/// directory of an unpacked Vosk model (e.g. <c>~/.vosk/vosk-model-small-en-us-0.15</c>).
-/// The tests are silently skipped when the model is absent so they are safe to run locally
-/// without the model pre-installed.
+/// If <c>VoiceTranscription__ModelPath</c> is not set the tests fall back to
+/// <c>~/.vosk/vosk-model-small-en-us-0.15</c> and download the model automatically from
+/// alphacephei.com when it is absent.  Tests are never silently skipped.
 /// </summary>
 [Trait("Category", "PoC")]
 public class VoskPocTests
 {
-    private static string? ModelPath =>
-        Environment.GetEnvironmentVariable("VoiceTranscription__ModelPath");
+    private const string ModelDownloadUrl =
+        "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip";
+
+    private static string DefaultModelPath =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".vosk",
+            "vosk-model-small-en-us-0.15");
+
+    // Reuse a single HttpClient for the model download to avoid socket exhaustion.
+    private static readonly System.Net.Http.HttpClient _httpClient = new()
+    {
+        Timeout = TimeSpan.FromMinutes(10)
+    };
+
+    /// <summary>
+    /// Returns the configured model path (from <c>VoiceTranscription__ModelPath</c> env var or
+    /// the default <c>~/.vosk/vosk-model-small-en-us-0.15</c>), downloading the model archive
+    /// from alphacephei.com when the directory is absent.
+    /// </summary>
+    private static async Task<string> EnsureModelAsync()
+    {
+        var path = Environment.GetEnvironmentVariable("VoiceTranscription__ModelPath")
+                   ?? DefaultModelPath;
+
+        if (Directory.Exists(path))
+            return path;
+
+        // Model is absent — download and extract it automatically.
+        var parentDir = Path.GetDirectoryName(Path.GetFullPath(path))
+            ?? throw new InvalidOperationException($"Could not determine parent directory of model path '{path}'");
+        Directory.CreateDirectory(parentDir);
+
+        var tmpZip = Path.Combine(Path.GetTempPath(), $"vosk-model-{Guid.NewGuid():N}.zip");
+        Console.WriteLine($"[PoC] Vosk model not found at '{path}'. Downloading from {ModelDownloadUrl}…");
+
+        using (var resp = await _httpClient.GetAsync(ModelDownloadUrl, System.Net.Http.HttpCompletionOption.ResponseHeadersRead))
+        {
+            resp.EnsureSuccessStatusCode();
+            await using var fs = File.Create(tmpZip);
+            await resp.Content.CopyToAsync(fs);
+        }
+
+        Console.WriteLine($"[PoC] Extracting to {parentDir}…");
+        // The download URL is a hardcoded alphacephei.com release (trusted source).
+        // ZipFile.ExtractToDirectory with overwriteFiles=true is safe for this controlled scenario.
+        ZipFile.ExtractToDirectory(tmpZip, parentDir, overwriteFiles: true);
+        File.Delete(tmpZip);
+
+        Console.WriteLine($"[PoC] Vosk model ready at '{path}'.");
+        return path;
+    }
 
     /// <summary>
     /// Verifies that the Vosk model can be loaded from the configured path.
@@ -26,10 +76,9 @@ public class VoskPocTests
     /// incompatible model version, or a wrong path would surface here.
     /// </summary>
     [Fact]
-    public void VoskModel_Loads_WhenModelPathIsConfigured()
+    public async Task VoskModel_Loads_WhenModelPathIsConfigured()
     {
-        var path = ModelPath;
-        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path)) return;
+        var path = await EnsureModelAsync();
 
         Vosk.Vosk.SetLogLevel(0);
         using var model = new Model(path);
@@ -42,17 +91,16 @@ public class VoskPocTests
     /// Expected keywords: task, car, mechanic, door
     /// </summary>
     [Fact]
-    public void VoskRecognizer_TranscribesWav_TaskCar()
+    public async Task VoskRecognizer_TranscribesWav_TaskCar()
     {
-        var path = ModelPath;
-        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path)) return;
+        var path = await EnsureModelAsync();
 
         var wavBytes = LoadFixture("Voice_TaskCar.wav");
         var text = Transcribe(path, wavBytes);
 
         Assert.False(string.IsNullOrWhiteSpace(text),
             $"Expected non-empty transcription for Voice_TaskCar.wav with model '{path}', " +
-            $"but got empty string. " +
+            "but got empty string. " +
             "Ensure the WAV is 16-bit PCM mono at 16 kHz and the model is valid.");
 
         // At least 50 % of keywords must appear in the transcription
@@ -68,17 +116,16 @@ public class VoskPocTests
     /// Expected keywords: ticket, refactor, tests, page, object, model
     /// </summary>
     [Fact]
-    public void VoskRecognizer_TranscribesWav_TicketRefactorTests()
+    public async Task VoskRecognizer_TranscribesWav_TicketRefactorTests()
     {
-        var path = ModelPath;
-        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path)) return;
+        var path = await EnsureModelAsync();
 
         var wavBytes = LoadFixture("Voice_TicketRefactorTests.wav");
         var text = Transcribe(path, wavBytes);
 
         Assert.False(string.IsNullOrWhiteSpace(text),
             $"Expected non-empty transcription for Voice_TicketRefactorTests.wav with model '{path}', " +
-            $"but got empty string. " +
+            "but got empty string. " +
             "Ensure the WAV is 16-bit PCM mono at 16 kHz and the model is valid.");
 
         var keywords = new[] { "ticket", "refactor", "tests", "page", "object" };
