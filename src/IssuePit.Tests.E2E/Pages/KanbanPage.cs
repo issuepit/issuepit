@@ -30,13 +30,15 @@ public class KanbanPage(IPage page)
         }
     }
 
-    /// <summary>Creates a new board via the "+ Board" button.</summary>
+    /// <summary>Creates a new board via the "+ Board" button and waits for the board to become active.</summary>
     public async Task CreateBoardAsync(string name)
     {
         await page.ClickAsync("button:has-text('+ Board')");
         await page.FillAsync("input[placeholder='Board name...']", name);
         await page.ClickAsync("button:has-text('Create')");
-        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        // Wait for the modal to close and the Lanes button to appear (confirms board is active)
+        await page.WaitForSelectorAsync("button:has-text('Lanes')",
+            new PageWaitForSelectorOptions { Timeout = 10_000 });
     }
 
     /// <summary>Opens the Lanes modal.</summary>
@@ -68,5 +70,16 @@ public class KanbanPage(IPage page)
 
     /// <summary>Returns whether the Lanes button is visible (i.e., a board is active).</summary>
     public async Task<bool> HasLanesButtonAsync()
-        => await page.Locator("button:has-text('Lanes')").CountAsync() > 0;
+    {
+        try
+        {
+            await page.WaitForSelectorAsync("button:has-text('Lanes')",
+                new PageWaitForSelectorOptions { Timeout = 5_000 });
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            return false;
+        }
+    }
 }
