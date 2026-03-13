@@ -219,6 +219,22 @@ var kafkaInitializer = builder.AddProject<Projects.IssuePit_KafkaInitializer>("k
     .WithReference(kafka)
     .WaitFor(kafka);
 
+// Vosk speech-recognition model — downloaded once on first run, then reused from the local path.
+// Override with VoiceTranscription__ModelPath env var; defaults to ~/.vosk/vosk-model-small-en-us-0.15.
+// To enable automatic download also set VoiceTranscription__ModelDownloadUrl, e.g.:
+//   VoiceTranscription__ModelDownloadUrl=https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+// Leave ModelDownloadUrl empty (default) to skip automatic download and avoid network traffic in CI.
+var voskModelPath = Environment.GetEnvironmentVariable("VoiceTranscription__ModelPath")
+    ?? Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        ".vosk",
+        "vosk-model-small-en-us-0.15");
+var voskModelDownloadUrl = Environment.GetEnvironmentVariable("VoiceTranscription__ModelDownloadUrl") ?? string.Empty;
+
+var voskModelDownloader = builder.AddProject<Projects.IssuePit_VoskModelDownloader>("vosk-model-downloader")
+    .WithEnvironment("VoiceTranscription__ModelPath", voskModelPath)
+    .WithEnvironment("VoiceTranscription__ModelDownloadUrl", voskModelDownloadUrl);
+
 var frontend = builder.AddNpmApp("frontend", "../../frontend", "dev")
     .WithHttpEndpoint(env: "NUXT_PORT")
     .WithExternalHttpEndpoints();
@@ -230,6 +246,7 @@ var api = builder.AddProject<Projects.IssuePit_Api>("api")
     .WithReference(redis)
     .WaitForCompletion(migrator)
     .WaitForCompletion(kafkaInitializer)
+    .WaitForCompletion(voskModelDownloader)
     .WaitFor(kafka)
     .WaitFor(redis)
     .WaitFor(storage)
@@ -237,6 +254,7 @@ var api = builder.AddProject<Projects.IssuePit_Api>("api")
     .WithEnvironment("AllowedOrigins", frontend.GetEndpoint("http"))
     .WithEnvironment("GitHub__OAuth__FrontendUrl", frontend.GetEndpoint("http"))
     .WithEnvironment("ImageStorage__ServiceUrl", storage.GetEndpoint("http"))
+    .WithEnvironment("VoiceTranscription__ModelPath", voskModelPath)
     .WithUrlForEndpoint("http", u =>
     {
         u.DisplayText = "Scalar API Reference";

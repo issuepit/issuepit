@@ -1,8 +1,11 @@
 <template>
-  <div>
+  <div class="p-8">
     <div class="flex items-center justify-between mb-6">
       <div>
-        <h2 class="text-lg font-semibold text-white">Agent Runtimes</h2>
+        <PageBreadcrumb :items="[
+          { label: 'Agents', to: '/agents', icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2' },
+          { label: 'Runtimes', to: '/config/runtimes', icon: 'M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z' },
+        ]" />
         <p class="text-sm text-gray-400 mt-0.5">Define where agents execute: local Docker, SSH, Hetzner cloud, and more.</p>
       </div>
       <button

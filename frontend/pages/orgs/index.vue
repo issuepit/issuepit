@@ -3,8 +3,10 @@
     <!-- Header -->
     <div class="flex items-center justify-between mb-8">
       <div>
-        <h1 class="text-2xl font-bold text-white">Organizations</h1>
-        <p class="text-gray-400 mt-1">{{ store.orgs.length }} organization{{ store.orgs.length === 1 ? '' : 's' }}</p>
+        <PageBreadcrumb :items="[
+          { label: 'Organizations', to: '/orgs', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z' },
+        ]" />
+        <p class="text-gray-400 mt-1 text-sm">{{ store.orgs.length }} organization{{ store.orgs.length === 1 ? '' : 's' }}</p>
       </div>
       <button
         class="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"

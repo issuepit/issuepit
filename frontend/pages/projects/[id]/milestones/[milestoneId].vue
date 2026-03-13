@@ -6,8 +6,20 @@
     </div>
 
     <template v-else-if="progress">
+      <!-- Breadcrumb -->
+      <div class="flex items-center gap-3 mb-6">
+        <PageBreadcrumb :items="[
+          { label: 'Projects', to: '/projects', icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10' },
+          { label: projectsStore.currentProject?.name || 'Project', to: `/projects/${id}`, color: projectsStore.currentProject?.color || '#4c6ef5' },
+          { label: 'Milestones', to: `/projects/${id}/milestones`, icon: 'M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9' },
+          { label: progress.title, to: `/projects/${id}/milestones/${milestoneId}`, icon: 'M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9' },
+        ]" />
+        <span :class="progress.status === 'open' ? 'bg-green-900/40 text-green-400' : 'bg-gray-800 text-gray-500'"
+          class="text-xs px-2 py-0.5 rounded-full font-medium">
+          {{ progress.status === 'open' ? 'Open' : 'Closed' }}
+        </span>
       <!-- Breadcrumb + Actions -->
-      <div class="flex items-start justify-between gap-4 mb-6">
+      <!-- <div class="flex items-start justify-between gap-4 mb-6">
         <div class="flex items-center gap-2 flex-wrap">
           <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name || 'Project' }}</NuxtLink>
           <span class="text-gray-600">/</span>
@@ -18,7 +30,7 @@
             class="text-xs px-2 py-0.5 rounded-full font-medium">
             {{ progress.status === 'open' ? 'Open' : 'Closed' }}
           </span>
-        </div>
+        </div> -->
         <!-- Action buttons -->
         <div class="flex items-center gap-2 shrink-0">
           <button @click="openEdit"

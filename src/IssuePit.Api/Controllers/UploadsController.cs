@@ -71,17 +71,23 @@ public class UploadsController(ImageStorageService imageStorage, VoiceTranscript
 
         // Transcribe — best-effort; a failure here must not prevent the upload from succeeding
         var transcription = string.Empty;
+        string? transcriptionWarning = null;
         try
         {
             ms.Position = 0;
             transcription = await voiceTranscription.TranscribeAsync(ms, ct);
+            if (string.IsNullOrEmpty(transcription))
+                transcriptionWarning = voiceTranscription.IsAvailable
+                    ? "No speech detected in the recording."
+                    : "Voice transcription model is not configured on this server.";
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Voice transcription failed; returning empty transcription");
+            transcriptionWarning = ex.Message;
         }
 
-        return Ok(new { voiceUrl, transcription });
+        return Ok(new { voiceUrl, transcription, transcriptionWarning });
     }
 
     /// <summary>

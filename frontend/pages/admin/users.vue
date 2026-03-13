@@ -3,8 +3,11 @@
     <!-- Header -->
     <div class="flex items-center justify-between mb-8">
       <div>
-        <h1 class="text-2xl font-bold text-white">User Management</h1>
-        <p class="text-gray-400 mt-1">{{ store.users.length }} user{{ store.users.length === 1 ? '' : 's' }} registered</p>
+        <PageBreadcrumb :items="[
+          { label: 'Admin', to: '/admin/users', icon: 'M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4' },
+          { label: 'Users', to: '/admin/users', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z' },
+        ]" />
+        <p class="text-gray-400 mt-1 text-sm">{{ store.users.length }} user{{ store.users.length === 1 ? '' : 's' }} registered</p>
       </div>
       <button
         class="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"

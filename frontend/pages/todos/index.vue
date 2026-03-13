@@ -3,7 +3,9 @@
     <!-- Header -->
     <div class="flex items-center justify-between mb-6 shrink-0">
       <div class="flex items-center gap-3">
-        <h1 class="text-xl font-bold text-white">Todos</h1>
+        <PageBreadcrumb :items="[
+          { label: 'Todos', to: '/todos', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4' },
+        ]" />
         <span class="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full font-normal">
           {{ filteredTodos.length }}
         </span>
@@ -115,17 +117,24 @@
           @dragover="onBoardColumnDragOver($event, null)"
           @dragleave="onBoardColumnDragLeave"
           @drop="onBoardColumnDrop($event, null)">
-          <div v-for="todo in uncategorizedTodos" :key="todo.id"
-            draggable="true"
-            @dragstart="onBoardDragStart($event, todo.id)"
-            @dragend="onBoardDragEnd">
-            <TodoCard :todo="todo"
-              @toggle="store.toggleTodo(todo.id)"
-              @edit="openEdit(todo)"
-              @delete="confirmDelete(todo.id)" />
-          </div>
-          <!-- Drop zone placeholder -->
-          <div v-if="boardDraggingTodoId && boardHoverCategoryId === '__uncategorized__'"
+          <template v-for="(todo, idx) in uncategorizedTodos" :key="todo.id">
+            <!-- Placeholder before this item -->
+            <div v-if="boardDraggingTodoId && boardHoverCategoryId === '__uncategorized__' && boardHoverInsertIdx === idx"
+              role="status" aria-label="Drop zone"
+              class="rounded-lg border-2 border-dashed border-brand-500/50 bg-brand-900/10 h-14 animate-pulse">
+            </div>
+            <div :class="todo.id === boardDraggingTodoId ? 'invisible' : ''"
+              draggable="true"
+              @dragstart="onBoardDragStart($event, todo.id)"
+              @dragend="onBoardDragEnd">
+              <TodoCard :todo="todo"
+                @toggle="store.toggleTodo(todo.id)"
+                @edit="openEdit(todo)"
+                @delete="confirmDelete(todo.id)" />
+            </div>
+          </template>
+          <!-- Drop zone placeholder at end -->
+          <div v-if="boardDraggingTodoId && boardHoverCategoryId === '__uncategorized__' && boardHoverInsertIdx >= uncategorizedTodos.length"
             role="status" aria-label="Drop zone"
             class="rounded-lg border-2 border-dashed border-brand-500/50 bg-brand-900/10 h-14 animate-pulse">
           </div>
@@ -164,17 +173,24 @@
           @dragover="onBoardColumnDragOver($event, cat.id)"
           @dragleave="onBoardColumnDragLeave"
           @drop="onBoardColumnDrop($event, cat.id)">
-          <div v-for="todo in todosByCategory[cat.id] ?? []" :key="todo.id"
-            draggable="true"
-            @dragstart="onBoardDragStart($event, todo.id)"
-            @dragend="onBoardDragEnd">
-            <TodoCard :todo="todo"
-              @toggle="store.toggleTodo(todo.id)"
-              @edit="openEdit(todo)"
-              @delete="confirmDelete(todo.id)" />
-          </div>
-          <!-- Drop zone placeholder -->
-          <div v-if="boardDraggingTodoId && boardHoverCategoryId === cat.id"
+          <template v-for="(todo, idx) in todosByCategory[cat.id] ?? []" :key="todo.id">
+            <!-- Placeholder before this item -->
+            <div v-if="boardDraggingTodoId && boardHoverCategoryId === cat.id && boardHoverInsertIdx === idx"
+              role="status" aria-label="Drop zone"
+              class="rounded-lg border-2 border-dashed border-brand-500/50 bg-brand-900/10 h-14 animate-pulse">
+            </div>
+            <div :class="todo.id === boardDraggingTodoId ? 'invisible' : ''"
+              draggable="true"
+              @dragstart="onBoardDragStart($event, todo.id)"
+              @dragend="onBoardDragEnd">
+              <TodoCard :todo="todo"
+                @toggle="store.toggleTodo(todo.id)"
+                @edit="openEdit(todo)"
+                @delete="confirmDelete(todo.id)" />
+            </div>
+          </template>
+          <!-- Drop zone placeholder at end -->
+          <div v-if="boardDraggingTodoId && boardHoverCategoryId === cat.id && boardHoverInsertIdx >= (todosByCategory[cat.id]?.length ?? 0)"
             role="status" aria-label="Drop zone"
             class="rounded-lg border-2 border-dashed border-brand-500/50 bg-brand-900/10 h-14 animate-pulse">
           </div>
@@ -763,6 +779,7 @@ async function onResize(todo: Todo, newStartDate: Date, newDueDate: Date) {
 // ── Board drag & drop ─────────────────────────────────────────────────────
 const boardDraggingTodoId = ref<string | null>(null)
 const boardHoverCategoryId = ref<string | null>(null)
+const boardHoverInsertIdx = ref<number>(0)
 
 function onBoardDragStart(event: DragEvent, todoId: string) {
   boardDraggingTodoId.value = todoId
@@ -772,12 +789,25 @@ function onBoardDragStart(event: DragEvent, todoId: string) {
 function onBoardDragEnd() {
   boardDraggingTodoId.value = null
   boardHoverCategoryId.value = null
+  boardHoverInsertIdx.value = 0
 }
 
 function onBoardColumnDragOver(event: DragEvent, categoryId: string | null) {
   if (!boardDraggingTodoId.value) return
   event.preventDefault()
   boardHoverCategoryId.value = categoryId ?? '__uncategorized__'
+  // Calculate insertion index from mouse position
+  const container = event.currentTarget as HTMLElement
+  const items = Array.from(container.querySelectorAll<HTMLElement>('[draggable="true"]'))
+  let insertIdx = items.length
+  for (let i = 0; i < items.length; i++) {
+    const rect = items[i].getBoundingClientRect()
+    if (event.clientY < rect.top + rect.height / 2) {
+      insertIdx = i
+      break
+    }
+  }
+  boardHoverInsertIdx.value = insertIdx
 }
 
 function onBoardColumnDragLeave(event: DragEvent) {
@@ -793,6 +823,7 @@ async function onBoardColumnDrop(event: DragEvent, categoryId: string | null) {
   if (!todo) {
     boardDraggingTodoId.value = null
     boardHoverCategoryId.value = null
+    boardHoverInsertIdx.value = 0
     return
   }
   await store.updateTodo(todo.id, {
@@ -808,6 +839,7 @@ async function onBoardColumnDrop(event: DragEvent, categoryId: string | null) {
   })
   boardDraggingTodoId.value = null
   boardHoverCategoryId.value = null
+  boardHoverInsertIdx.value = 0
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────

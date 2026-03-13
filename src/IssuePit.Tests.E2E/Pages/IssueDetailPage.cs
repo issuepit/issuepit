@@ -20,7 +20,7 @@ public class IssueDetailPage(IPage page)
         // Click the issue link to navigate to the detail page
         await page.ClickAsync($"a:has-text('{issueTitle}')");
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        await page.WaitForSelectorAsync("h1", new PageWaitForSelectorOptions { Timeout = 10_000 });
+        await page.WaitForSelectorAsync($"a:has-text('{issueTitle}')", new PageWaitForSelectorOptions { Timeout = 10_000 });
     }
 
     /// <summary>Returns true if the tab button with the given label is visible.</summary>

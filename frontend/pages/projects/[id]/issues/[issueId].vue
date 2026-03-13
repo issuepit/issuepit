@@ -1,5 +1,5 @@
 <template>
-  <div class="p-6">
+  <div class="p-8">
     <!-- Loading -->
     <div v-if="store.loading && !store.currentIssue" class="flex items-center justify-center py-20">
       <div class="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
@@ -8,21 +8,17 @@
     <template v-else-if="store.currentIssue">
       <!-- Breadcrumb + action buttons -->
       <div class="flex items-center justify-between mb-5">
+        <PageBreadcrumb :items="issueBreadcrumbItems" />
+        <!-- Issue action buttons -->
         <div class="flex items-center gap-2">
-          <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name || 'Project' }}</NuxtLink>
-          <span class="text-gray-600">/</span>
-          <NuxtLink :to="`/projects/${id}/issues`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">Issues</NuxtLink>
-          <template v-if="store.currentIssue.parentIssue">
-            <span class="text-gray-600">/</span>
-            <NuxtLink :to="`/projects/${id}/issues/${store.currentIssue.parentIssue.number}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">
-              {{ formatIssueId(store.currentIssue.parentIssue.number, projectsStore.currentProject) }} {{ store.currentIssue.parentIssue.title }}
-            </NuxtLink>
-          </template>
-          <span class="text-gray-600">/</span>
-          <NuxtLink :to="`/projects/${id}/issues/${store.currentIssue.number}`" class="text-xl font-bold text-white">{{ formatIssueId(store.currentIssue.number, projectsStore.currentProject) }}</NuxtLink>
-        </div>
-        <!-- Issue creation buttons -->
-        <div class="flex items-center gap-2">
+          <button @click="startEditTitle"
+            class="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
+            title="Rename issue">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+          </button>
           <button @click="showVoiceCreate = true"
             class="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
             title="Create issue from voice">
@@ -42,22 +38,15 @@
         </div>
       </div>
 
+      <!-- Inline title edit -->
+      <div v-if="editingTitle" class="mb-5">
+        <input v-model="titleEdit" @blur="saveTitle" @keyup.enter="saveTitle" autofocus
+          class="w-full bg-gray-800 border border-brand-500 rounded-lg px-3 py-2 text-base font-semibold text-white focus:outline-none focus:ring-2 focus:ring-brand-500" />
+      </div>
+
       <div class="flex gap-6">
         <!-- Main Content -->
         <div class="flex-1 min-w-0 space-y-5">
-          <!-- Title -->
-          <div class="flex items-start gap-3">
-            <span :class="statusColor(store.currentIssue.status)" class="w-3 h-3 rounded-full mt-2 shrink-0"></span>
-            <div class="flex-1">
-              <h1 v-if="!editingTitle" @click="editingTitle = true"
-                class="text-2xl font-bold text-white cursor-text hover:text-brand-300 transition-colors leading-tight">
-                {{ store.currentIssue.title }}
-              </h1>
-              <input v-else v-model="titleEdit" @blur="saveTitle" @keyup.enter="saveTitle"
-                class="w-full text-2xl font-bold bg-transparent border-b border-brand-500 text-white focus:outline-none pb-0.5" />
-            </div>
-          </div>
-
           <!-- Description -->
           <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
             <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Description</h2>
@@ -78,9 +67,13 @@
                   :class="descTab === 'preview' ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'">Preview</button>
               </div>
               <textarea v-if="descTab === 'write'" v-model="bodyEdit" rows="15" autofocus
-                class="w-full bg-transparent text-sm text-gray-300 focus:outline-none resize-y font-mono min-h-[15rem]"
+                class="w-full bg-transparent text-sm text-gray-300 focus:outline-none resize-y font-mono min-h-[15rem] transition-colors"
+                :class="{ 'ring-2 ring-brand-500 bg-brand-500/10': descDragOver }"
                 placeholder="Describe this issue... (Markdown supported)"
-                @paste="e => handleImagePaste(e, md => bodyEdit += md)"></textarea>
+                @paste="e => handleImagePaste(e, md => bodyEdit += md)"
+                @dragover.prevent="descDragOver = true"
+                @dragleave="descDragOver = false"
+                @drop.prevent="e => { descDragOver = false; handleDropAttach(e, md => bodyEdit += md) }"></textarea>
               <div v-else class="prose prose-invert prose-sm max-w-none min-h-16 text-sm"
                 v-html="renderedBodyEdit"></div>
               <div class="flex gap-2 mt-3">
@@ -353,10 +346,15 @@
             </div>
 
             <!-- Add comment -->
-            <div class="border border-gray-700 rounded-lg overflow-hidden">
+            <div class="border border-gray-700 rounded-lg overflow-hidden"
+              :class="{ 'ring-2 ring-brand-500': commentDragOver }">
               <textarea v-model="newComment" rows="3" placeholder="Leave a comment..."
-                class="w-full bg-gray-800 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none resize-none"
-                @paste="e => handleImagePaste(e, md => newComment += md)" />
+                class="w-full bg-gray-800 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none resize-none transition-colors"
+                :class="{ 'bg-brand-500/10': commentDragOver }"
+                @paste="e => handleImagePaste(e, md => newComment += md)"
+                @dragover.prevent="commentDragOver = true"
+                @dragleave="commentDragOver = false"
+                @drop.prevent="e => { commentDragOver = false; handleDropAttach(e, md => newComment += md) }" />
               <div class="flex justify-end bg-gray-800/50 px-3 py-2 border-t border-gray-700 gap-2">
                 <p v-if="uploadingImage" class="text-xs text-gray-400 mr-auto self-center">Uploading image…</p>
                 <p v-else-if="uploadImageError" class="text-xs text-red-400 mr-auto self-center">{{ uploadImageError }}</p>
@@ -420,7 +418,7 @@
                   </p>
                 </div>
                 <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button v-if="att.isVoiceFile" @click="retranscribeVoice(att.id)"
+                  <button v-if="att.isVoiceFile || att.contentType?.startsWith('audio/')" @click="retranscribeVoice(att.id)"
                     :disabled="retranscribingId === att.id"
                     class="text-xs text-brand-400 hover:text-brand-300 disabled:opacity-40 transition-colors"
                     title="Retry transcription">
@@ -784,6 +782,9 @@ const projectsStore = useProjectsStore()
 const api = useApi()
 const { uploading: uploadingImage, uploadError: uploadImageError, handlePaste: handleImagePaste } = useImageUpload()
 
+const descDragOver = ref(false)
+const commentDragOver = ref(false)
+
 // Resolved project GUID (falls back to URL param before issue is loaded)
 const actualProjectId = computed(() => store.currentIssue?.projectId ?? id)
 
@@ -846,6 +847,21 @@ function toggleTab(tab: IssueTab, event: MouseEvent): void {
     localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(activeTabs.value))
   }
 }
+
+const issueBreadcrumbItems = computed(() => {
+  const items: { label: string, to: string, icon?: string, color?: string }[] = [
+    { label: 'Projects', to: '/projects', icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10' },
+    { label: projectsStore.currentProject?.name || 'Project', to: `/projects/${id}`, color: projectsStore.currentProject?.color || '#4c6ef5' },
+    { label: 'Issues', to: `/projects/${id}/issues`, icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
+  ]
+  if (store.currentIssue?.parentIssue) {
+    items.push({ label: `#${store.currentIssue.parentIssue.number} ${store.currentIssue.parentIssue.title}`, to: `/projects/${id}/issues/${store.currentIssue.parentIssue.number}`, icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' })
+  }
+  if (store.currentIssue) {
+    items.push({ label: `#${store.currentIssue.number} ${store.currentIssue.title}`, to: `/projects/${id}/issues/${store.currentIssue.number}`, icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' })
+  }
+  return items
+})
 
 const allTabs = computed(() => [
   { id: 'tasks' as IssueTab, label: 'Tasks', count: store.currentTasks.length },
@@ -977,6 +993,13 @@ async function saveTitle() {
   editingTitle.value = false
   if (titleEdit.value && titleEdit.value !== store.currentIssue?.title) {
     await store.updateIssue(id, resolvedIssueId.value, { title: titleEdit.value })
+  }
+}
+
+function startEditTitle() {
+  if (store.currentIssue) {
+    titleEdit.value = store.currentIssue.title
+    editingTitle.value = true
   }
 }
 
@@ -1166,8 +1189,9 @@ async function handleFileUpload(e: Event) {
   if (!file) return
   uploadingAttachment.value = true
   attachmentError.value = null
+  const isVoiceFile = file.type.startsWith('audio/')
   try {
-    await store.addAttachment(resolvedIssueId.value, file, false, true)
+    await store.addAttachment(resolvedIssueId.value, file, isVoiceFile, true)
   } catch (err: unknown) {
     attachmentError.value = err instanceof Error ? err.message : 'Upload failed'
   } finally {
@@ -1176,21 +1200,61 @@ async function handleFileUpload(e: Event) {
   }
 }
 
+async function uploadFileTo(endpoint: string, file: File): Promise<string> {
+  const config = useRuntimeConfig()
+  const baseURL = config.public.apiBase as string
+  const body = new FormData()
+  body.append('file', file)
+  const result = await $fetch<{ url: string }>(endpoint, { baseURL, method: 'POST', body, credentials: 'include' })
+  return result.url
+}
+
+async function handleDropAttach(e: DragEvent, insertText: (md: string) => void) {
+  const file = e.dataTransfer?.files[0]
+  if (!file) return
+  try {
+    if (file.type.startsWith('image/')) {
+      const url = await uploadFileTo('/api/uploads/image', file)
+      insertText(`![${file.name}](${url})`)
+    } else if (file.type.startsWith('audio/')) {
+      const att = await store.addAttachment(resolvedIssueId.value, file, /* isVoiceFile */ true, /* isPublic */ true)
+      if (att?.fileUrl) insertText(`[${file.name}](${att.fileUrl})`)
+    } else {
+      const url = await uploadFileTo('/api/uploads/file', file)
+      if (url) insertText(`[${file.name}](${url})`)
+    }
+  } catch (err: unknown) {
+    console.error('Drop file attach failed', err)
+  }
+}
+
 async function handleCommentFileAttach(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
   try {
-    const config = useRuntimeConfig()
-    const baseURL = config.public.apiBase as string
-    const body = new FormData()
-    body.append('file', file)
-    const result = await $fetch<{ url: string }>('/api/uploads/file', {
-      baseURL,
-      method: 'POST',
-      body,
-      credentials: 'include',
-    })
-    newComment.value += (newComment.value ? '\n' : '') + `[${file.name}](${result.url})`
+    let url: string
+    if (file.type.startsWith('audio/')) {
+      // Audio files: store as a proper IssueAttachment so retranscription is available
+      const att = await store.addAttachment(resolvedIssueId.value, file, /* isVoiceFile */ true, /* isPublic */ true)
+      url = att?.fileUrl ?? ''
+    } else {
+      const config = useRuntimeConfig()
+      const baseURL = config.public.apiBase as string
+      const body = new FormData()
+      body.append('file', file)
+      const result = await $fetch<{ url: string }>('/api/uploads/file', {
+        baseURL,
+        method: 'POST',
+        body,
+        credentials: 'include',
+      })
+      url = result.url
+    }
+    if (url) {
+      newComment.value += (newComment.value ? '\n' : '') + `[${file.name}](${url})`
+    } else {
+      console.error('Audio attachment upload returned no URL')
+    }
   } catch (err: unknown) {
     console.error('Comment file attach failed', err)
   } finally {
