@@ -1,5 +1,5 @@
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @click.self="$emit('close')">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @mousedown="backdropClose.onMousedown" @click="backdropClose.onClick">
     <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-lg mx-4 shadow-xl">
       <!-- Header -->
       <div class="flex items-center justify-between px-5 py-4 border-b border-gray-800">
@@ -109,6 +109,7 @@
 <script setup lang="ts">
 import type { WorkflowInfo, WorkflowInput } from '~/types'
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
+import { useBackdropClose } from '~/composables/useBackdropClose'
 
 const props = defineProps<{
   projectId: string
@@ -121,6 +122,8 @@ const emit = defineEmits<{
   close: []
   triggered: []
 }>()
+
+const backdropClose = useBackdropClose(() => emit('close'))
 
 const ACT_CONTAINER_STORAGE_KEY = 'cicd-act-container-image'
 

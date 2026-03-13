@@ -77,7 +77,7 @@
 
       <!-- Retry options modal -->
       <Teleport to="body">
-        <div v-if="showRetryModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @click.self="showRetryModal = false">
+        <div v-if="showRetryModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @mousedown="retryModalBackdrop.onMousedown" @click="retryModalBackdrop.onClick">
           <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-xl p-6 w-full max-w-md">
             <h3 class="text-base font-semibold text-white mb-4">Retry Session</h3>
 
@@ -270,6 +270,7 @@ import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useProjectsStore } from '~/stores/projects'
 import { CiCdRunStatus, AgentSessionStatus, type AgentSessionLog } from '~/types'
 import { formatIssueId } from '~/composables/useIssueFormat'
+import { useBackdropClose } from '~/composables/useBackdropClose'
 
 const route = useRoute()
 const projectId = route.params.id as string
@@ -367,6 +368,7 @@ onMounted(async () => {
 
 const retrying = ref(false)
 const showRetryModal = ref(false)
+const retryModalBackdrop = useBackdropClose(() => { showRetryModal.value = false })
 
 const agentImageOptions = [
   {

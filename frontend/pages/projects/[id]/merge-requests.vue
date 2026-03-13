@@ -134,7 +134,7 @@
     <!-- Create MR Modal -->
     <div v-if="showCreateModal"
       class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
-      @click.self="showCreateModal = false">
+      @mousedown="createModalBackdrop.onMousedown" @click="createModalBackdrop.onClick">
       <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-md p-6 space-y-4">
         <h2 class="text-lg font-bold text-white">New Merge Request</h2>
 
@@ -200,6 +200,7 @@
 <script setup lang="ts">
 import type { GitBranch } from '~/types'
 import { useProjectsStore } from '~/stores/projects'
+import { useBackdropClose } from '~/composables/useBackdropClose'
 
 const route = useRoute()
 const id = route.params.id as string
@@ -248,6 +249,7 @@ const tabCount = (tab: string) =>
 
 // Create modal state
 const showCreateModal = ref(false)
+const createModalBackdrop = useBackdropClose(() => { showCreateModal.value = false })
 const creating = ref(false)
 const createError = ref<string | null>(null)
 const branches = ref<GitBranch[]>([])
