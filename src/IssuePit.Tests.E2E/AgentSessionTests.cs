@@ -173,10 +173,17 @@ public class AgentSessionTests(AspireFixture fixture)
             var runsResp = await client.GetAsync($"/api/issues/{issueId}/runs");
             if (runsResp.IsSuccessStatusCode)
             {
-                var runs = await runsResp.Content.ReadFromJsonAsync<JsonElement>();
-                if (runs.GetArrayLength() > 0)
+                var runsBody = await runsResp.Content.ReadFromJsonAsync<JsonElement>();
+                // /api/issues/{id}/runs returns { "agentSessions": [...], ... }
+                if (!runsBody.TryGetProperty("agentSessions", out var sessions))
                 {
-                    var sessionRef = runs[0];
+                    await Task.Delay(TimeSpan.FromMilliseconds(500));
+                    continue;
+                }
+
+                if (sessions.GetArrayLength() > 0)
+                {
+                    var sessionRef = sessions[0];
                     var statusName = sessionRef.GetProperty("statusName").GetString();
                     if (statusName is "Succeeded" or "Failed" or "Cancelled")
                         return sessionRef;

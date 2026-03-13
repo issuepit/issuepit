@@ -176,13 +176,14 @@ public class IssueWorker(
 
         // Launch all assigned agents in parallel; each task manages its own DB scope
         await Task.WhenAll(agentIds.Select(agentId =>
-            LaunchAgentAsync(agentId, message.Id, message.DockerImageOverride, cancellationToken)));
+            LaunchAgentAsync(agentId, message.Id, message.DockerImageOverride, message.KeepContainer, cancellationToken)));
     }
 
     private async Task LaunchAgentAsync(
         Guid agentId,
         Guid issueId,
         string? dockerImageOverride,
+        bool keepContainer,
         CancellationToken cancellationToken)
     {
         using var scope = services.CreateScope();
@@ -226,6 +227,7 @@ public class IssueWorker(
             RuntimeConfigId = runtimeConfig?.Id,
             Status = AgentSessionStatus.Running,
             StartedAt = DateTime.UtcNow,
+            KeepContainer = keepContainer,
         };
 
         // If the runtime has a concurrency limit, record the session as Pending until a slot is available.
@@ -410,5 +412,5 @@ public class IssueWorker(
         }
     }
 
-    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, string? DockerImageOverride = null);
+    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, string? DockerImageOverride = null, bool KeepContainer = false);
 }

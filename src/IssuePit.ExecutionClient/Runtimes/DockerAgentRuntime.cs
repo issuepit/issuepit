@@ -50,6 +50,8 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         await onLogLine($"[DEBUG] DinD           : isolated (Privileged=true, in-container dockerd)", LogStream.Stdout);
         if (agent.DisableInternet)
             await onLogLine($"[DEBUG] Internet       : restricted", LogStream.Stdout);
+        if (session.KeepContainer)
+            await onLogLine($"[DEBUG] Keep container : true (container will not be removed on exit)", LogStream.Stdout);
         if (gitRepository is not null)
             await onLogLine($"[DEBUG] Git remote     : {gitRepository.RemoteUrl}", LogStream.Stdout);
 
@@ -95,7 +97,9 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
             // The host Docker socket is never mounted — agent tools run inside the container's
             // own isolated Docker daemon, fully isolated from the host.
             Privileged = true,
-            AutoRemove = true,
+            // Keep the container after exit when KeepContainer is set so developers can inspect
+            // the container filesystem or re-attach for debugging. Default is to auto-remove.
+            AutoRemove = !session.KeepContainer,
         };
 
         if (dns is not null)
