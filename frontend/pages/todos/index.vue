@@ -236,7 +236,7 @@
 
     <!-- Boards Manager Modal -->
     <div v-if="showBoards" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
-      @mousedown="boardsModalBackdrop.onMousedown" @click="boardsModalBackdrop.onClick">
+      @mousedown.self="showBoards = false">
       <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-md p-6">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-lg font-bold text-white">Todo Boards</h2>
@@ -273,7 +273,7 @@
 
     <!-- New Category Modal -->
     <div v-if="showNewCategory" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
-      @mousedown="newCategoryModalBackdrop.onMousedown" @click="newCategoryModalBackdrop.onClick">
+      @mousedown.self="showNewCategory = false">
       <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-sm p-6">
         <h2 class="text-lg font-bold text-white mb-4">Add Category</h2>
         <input v-model="newCategoryName" type="text" placeholder="Category name"
@@ -297,7 +297,7 @@
 
     <!-- Create/Edit Todo Modal -->
     <div v-if="showTodoForm" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
-      @mousedown="todoFormModalBackdrop.onMousedown" @click="todoFormModalBackdrop.onClick">
+      @mousedown.self="closeTodoForm">
       <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-lg p-6">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-lg font-bold text-white">{{ editingTodo ? 'Edit Todo' : 'New Todo' }}</h2>
@@ -406,7 +406,6 @@
 import { useTodosStore } from '~/stores/todos'
 import type { Todo, TodoCategory } from '~/types'
 import { TodoPriority, TodoPriorityLabels, TodoRecurringInterval, TodoRecurringIntervalLabels } from '~/types'
-import { useBackdropClose } from '~/composables/useBackdropClose'
 
 const store = useTodosStore()
 
@@ -556,7 +555,6 @@ async function copyIcalUrl() {
 
 // ── Boards modal ──────────────────────────────────────────────────────────
 const showBoards = ref(false)
-const boardsModalBackdrop = useBackdropClose(() => { showBoards.value = false })
 const newBoardName = ref('')
 const newBoardDescription = ref('')
 const editingBoardId = ref<string | null>(null)
@@ -587,7 +585,6 @@ async function deleteBoard(id: string) {
 
 // ── Category modal ────────────────────────────────────────────────────────
 const showNewCategory = ref(false)
-const newCategoryModalBackdrop = useBackdropClose(() => { showNewCategory.value = false })
 const newCategoryName = ref('')
 const newCategoryColor = ref('#6b7280')
 
@@ -602,7 +599,6 @@ async function createCategory() {
 
 // ── Todo modal ────────────────────────────────────────────────────────────
 const showTodoForm = ref(false)
-const todoFormModalBackdrop = useBackdropClose(() => closeTodoForm())
 const saving = ref(false)
 const editingTodo = ref<Todo | null>(null)
 

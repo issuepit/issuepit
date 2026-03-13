@@ -191,7 +191,7 @@
         </div>
 
         <!-- Add / Edit Repo modal -->
-        <div v-if="showRepoModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @mousedown="repoModalBackdrop.onMousedown" @click="repoModalBackdrop.onClick">
+        <div v-if="showRepoModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @mousedown.self="showRepoModal = false">
           <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 w-full max-w-md shadow-xl space-y-4">
             <h3 class="font-semibold text-white">{{ editingRepoId ? 'Edit Git Origin' : 'Add Git Origin' }}</h3>
             <form class="space-y-3" @submit.prevent="saveRepo">
@@ -444,7 +444,6 @@ import { useGitStore } from '~/stores/git'
 import { useAgentsStore } from '~/stores/agents'
 import { useMcpServersStore } from '~/stores/mcp-servers'
 import type { AgentProject, ProjectMcpServer, GitRepository, GitOriginMode } from '~/types'
-import { useBackdropClose } from '~/composables/useBackdropClose'
 
 const route = useRoute()
 const router = useRouter()
@@ -464,7 +463,6 @@ const suggestingIssueKey = ref(false)
 
 // ── Repo form (multi-origin) ──────────────────────────────────
 const showRepoModal = ref(false)
-const repoModalBackdrop = useBackdropClose(() => { showRepoModal.value = false })
 const editingRepoId = ref<string | null>(null)
 const repoForm = reactive<{ remoteUrl: string; defaultBranch: string; authUsername: string; authToken: string; mode: GitOriginMode }>({
   remoteUrl: '',
