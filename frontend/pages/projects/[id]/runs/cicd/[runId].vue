@@ -820,12 +820,13 @@ const sectionTabs = [
   { label: 'Details', value: 'details' },
 ]
 const validSections = ['jobs', 'logs', 'tests', 'artifacts', 'details'] as const
+type Section = typeof validSections[number]
 const activeSection = computed({
-  get: () => {
+  get: (): Section => {
     const tab = route.query.tab as string
-    return (validSections.includes(tab as typeof validSections[number]) ? tab : 'jobs') as typeof validSections[number]
+    return validSections.includes(tab as Section) ? (tab as Section) : 'jobs'
   },
-  set: (value: typeof validSections[number]) => {
+  set: (value: Section) => {
     if (route.query.tab !== value)
       router.push({ query: { ...route.query, tab: value } })
   },
