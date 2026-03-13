@@ -85,21 +85,21 @@ public static class RunnerCommandBuilder
 
     /// <summary>
     /// Build shell-escaped args for the opencode CLI.
-    /// Usage: opencode [--model MODEL] TASK
+    /// Usage: opencode run [--model MODEL] TASK
     /// https://opencode.ai/docs
     /// </summary>
     private static string BuildOpenCodeArgs(Agent agent, string task)
     {
-        var args = new StringBuilder();
+        var args = new StringBuilder("run");
         if (!string.IsNullOrWhiteSpace(agent.Model))
             args.Append($" --model {EscapeShellArg(agent.Model)}");
         args.Append($" {EscapeShellArg(task)}");
-        return args.ToString().TrimStart();
+        return args.ToString();
     }
 
     private static IReadOnlyList<string> BuildOpenCodeArgsList(Agent agent, string task)
     {
-        var args = new List<string> { "opencode" };
+        var args = new List<string> { "opencode", "run" };
         if (!string.IsNullOrWhiteSpace(agent.Model))
         {
             args.Add("--model");

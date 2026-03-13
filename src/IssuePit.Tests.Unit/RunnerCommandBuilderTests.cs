@@ -35,6 +35,7 @@ public class RunnerCommandBuilderTests
         var agent = MakeAgent(RunnerType.OpenCode);
         var issue = MakeIssue("Fix the bug");
         var args = RunnerCommandBuilder.BuildArgs(agent, issue);
+        Assert.StartsWith("run", args);
         Assert.Contains("Fix the bug", args);
     }
 
@@ -102,6 +103,7 @@ public class RunnerCommandBuilderTests
         var issue = MakeIssue("Fix the bug");
         var args = RunnerCommandBuilder.BuildArgsList(agent, issue);
         Assert.Equal("opencode", args[0]);
+        Assert.Equal("run", args[1]);
     }
 
     [Fact]
@@ -120,6 +122,7 @@ public class RunnerCommandBuilderTests
         var issue = MakeIssue();
         var args = RunnerCommandBuilder.BuildArgsList(agent, issue);
         Assert.Equal("opencode", args[0]);
+        Assert.Equal("run", args[1]);
         Assert.Contains("--model", args);
         Assert.Contains("anthropic/claude-opus-4-5", args);
     }
