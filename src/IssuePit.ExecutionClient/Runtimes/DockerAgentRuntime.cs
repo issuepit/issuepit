@@ -136,9 +136,18 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         logger.LogInformation("Started Docker container {ContainerId} for agent session {SessionId}",
             container.ID, session.Id);
 
-        // Step 6: Stream container logs until the container exits.
-        // This keeps the session open and visible in the UI while the agent runs.
-        await StreamContainerLogsAsync(container.ID, onLogLine, cancellationToken);
+        // Step 6: Stream container logs until the container exits and capture exit code.
+        // WaitContainerAsync runs concurrently with log streaming so we can get the
+        // container exit code even when AutoRemove=true (the container is already removed
+        // by the time StreamContainerLogsAsync returns).
+        var logStreamTask = StreamContainerLogsAsync(container.ID, onLogLine, cancellationToken);
+        var waitResponse = await dockerClient.Containers.WaitContainerAsync(container.ID, cancellationToken);
+        await logStreamTask;
+
+        if (waitResponse.StatusCode != 0)
+            throw new Exception(
+                $"Agent container exited with code {waitResponse.StatusCode} " +
+                $"(image: {image}, session: {session.Id})");
 
         return container.ID;
     }

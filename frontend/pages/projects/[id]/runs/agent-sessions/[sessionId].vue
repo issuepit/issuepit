@@ -217,7 +217,8 @@
           <div v-if="filteredLogs.length" class="bg-gray-950 p-4 font-mono text-xs overflow-auto max-h-[600px]">
             <div v-for="log in filteredLogs" :key="log.id" class="flex gap-3 leading-5">
               <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
-              <span :class="log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'" class="whitespace-pre-wrap break-all">{{ log.line }}</span>
+              <!-- eslint-disable-next-line vue/no-v-html -->
+              <span :class="log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'" class="whitespace-pre-wrap break-all" v-html="renderLogLine(log.line)" />
             </div>
           </div>
           <div v-else class="py-10 text-center text-sm text-gray-500">No logs available</div>
@@ -299,6 +300,7 @@ import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useProjectsStore } from '~/stores/projects'
 import { CiCdRunStatus, AgentSessionStatus, type AgentSessionLog } from '~/types'
 import { formatIssueId } from '~/composables/useIssueFormat'
+import { parseAnsiToHtml, stripAnsiCodes } from '~/composables/useAnsiParser'
 
 const route = useRoute()
 const projectId = route.params.id as string
@@ -306,6 +308,11 @@ const sessionId = route.params.sessionId as string
 
 const store = useCiCdRunsStore()
 const projectsStore = useProjectsStore()
+const { prefs } = useUserPreferences()
+
+function renderLogLine(line: string): string {
+  return prefs.value.ansiColors ? parseAnsiToHtml(line) : stripAnsiCodes(line)
+}
 
 const sectionTabs = [
   { label: 'Logs', value: 'logs' },
@@ -330,7 +337,8 @@ const debugMetadata = computed(() => {
   const entries: Array<{ key: string; value: string }> = []
   for (const log of store.currentSessionLogs) {
     // Match lines like: [DEBUG] Key name   : value (space-colon-space separator)
-    const m = log.line.match(/^\[DEBUG\]\s+([^:]+?)\s*:\s(.+)$/)
+    // Strip ANSI codes before matching so control sequences don't break the regex.
+    const m = stripAnsiCodes(log.line).match(/^\[DEBUG\]\s+([^:]+?)\s*:\s(.+)$/)
     if (m) entries.push({ key: m[1].trim(), value: m[2].trim() })
   }
   return entries
@@ -410,14 +418,9 @@ async function cancelSession() {
 
 const agentImageOptions = [
   {
-    value: 'ghcr.io/issuepit/issuepit-helper-opencode-act:latest',
-    description: 'Most recent stable release — recommended for production use.',
-    isDefault: true,
-  },
-  {
     value: 'ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24',
-    description: 'Latest build from the main branch — may include unreleased changes.',
-    isDefault: false,
+    description: 'Latest build from the main branch — recommended.',
+    isDefault: true,
   },
 ]
 
