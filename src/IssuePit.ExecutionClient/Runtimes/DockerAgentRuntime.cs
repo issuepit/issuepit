@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text;
 using Docker.DotNet;
 using Docker.DotNet.Models;
 using IssuePit.Core.Entities;
@@ -13,7 +14,10 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
     // Docker image used to run agents. Uses the IssuePit helper-opencode-act image which includes
     // the opencode CLI, Docker Engine (DinD), act, .NET SDK, Node.js, and Playwright.
     // Overridden by agent.DockerImage when set.
-    private const string DefaultDockerImage = "ghcr.io/issuepit/issuepit-helper-opencode-act:latest";
+    private const string DefaultDockerImage = "ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24";
+
+    /// <summary>Read buffer size for streaming container log output. 80 KiB matches the Docker SDK convention.</summary>
+    private const int LogBufferSize = 81920;
 
     private static string AppVersion =>
         Assembly.GetEntryAssembly()
@@ -124,7 +128,64 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         logger.LogInformation("Started Docker container {ContainerId} for agent session {SessionId}",
             container.ID, session.Id);
 
+        // Step 6: Stream container logs until the container exits.
+        // This keeps the session open and visible in the UI while the agent runs.
+        await StreamContainerLogsAsync(container.ID, onLogLine, cancellationToken);
+
         return container.ID;
+    }
+
+    /// <summary>
+    /// Streams the container's stdout/stderr to <paramref name="onLogLine"/> and blocks until the container exits.
+    /// Uses <c>Follow=true</c> so the call does not return until the container stops.
+    /// </summary>
+    private async Task StreamContainerLogsAsync(
+        string containerId,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        var logsParams = new ContainerLogsParameters
+        {
+            Follow = true,
+            ShowStdout = true,
+            ShowStderr = true,
+        };
+
+        using var stream = await dockerClient.Containers.GetContainerLogsAsync(
+            containerId, logsParams, cancellationToken);
+
+        var buffer = new byte[LogBufferSize];
+        var remainder = string.Empty;
+        var lastTarget = LogStream.Stdout;
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var result = await stream.ReadOutputAsync(buffer, 0, buffer.Length, cancellationToken);
+            if (result.EOF) break;
+
+            lastTarget = result.Target == MultiplexedStream.TargetStream.StandardError
+                ? LogStream.Stderr
+                : LogStream.Stdout;
+
+            var text = remainder + Encoding.UTF8.GetString(buffer, 0, result.Count);
+            var lines = text.Split('\n');
+
+            // All but the last element are complete lines.
+            for (var i = 0; i < lines.Length - 1; i++)
+            {
+                var line = lines[i].TrimEnd('\r');
+                if (!string.IsNullOrEmpty(line))
+                    await onLogLine(line, lastTarget);
+            }
+
+            // Keep the trailing (possibly incomplete) fragment for the next iteration.
+            remainder = lines[^1];
+        }
+
+        // Flush any remaining content after EOF.
+        var flushed = remainder.TrimEnd('\r');
+        if (!string.IsNullOrEmpty(flushed))
+            await onLogLine(flushed, lastTarget);
     }
 
     /// <summary>Explicitly pulls the Docker image, ensuring the latest version is available before container creation.</summary>
