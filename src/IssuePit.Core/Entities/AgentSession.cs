@@ -43,6 +43,15 @@ public class AgentSession
 
     public DateTime? EndedAt { get; set; }
 
+    /// <summary>
+    /// When <c>true</c> the Docker container is kept after exit (no <c>--rm</c> / <c>AutoRemove</c>)
+    /// so the developer can inspect its filesystem or re-attach for debugging.
+    /// This field is not persisted to the database — it is set at launch time from the
+    /// <c>issue-assigned</c> Kafka message and consumed only by <see cref="DockerAgentRuntime"/>.
+    /// </summary>
+    [NotMapped]
+    public bool KeepContainer { get; set; }
+
     public ICollection<CiCdRun> CiCdRuns { get; set; } = [];
 
     public ICollection<AgentSessionLog> Logs { get; set; } = [];

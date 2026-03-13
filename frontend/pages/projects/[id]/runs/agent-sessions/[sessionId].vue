@@ -127,6 +127,18 @@
 
             <p class="text-xs text-gray-500 mb-5">A new session will be started for the same issue and agent.</p>
 
+            <!-- Keep container option -->
+            <label class="flex items-start gap-2.5 cursor-pointer mb-5">
+              <input
+                v-model="retryKeepContainer"
+                type="checkbox"
+                class="mt-0.5 text-brand-500 focus:ring-brand-500 bg-gray-800 border-gray-600 rounded" />
+              <span class="text-sm">
+                <span class="text-gray-300">Keep container after exit</span>
+                <span class="block text-xs text-gray-500 mt-0.5">Container will not be removed on exit — useful for debugging (docker exec, logs, inspect).</span>
+              </span>
+            </label>
+
             <div class="flex justify-end gap-2">
               <button
                 class="px-4 py-1.5 text-sm text-gray-400 hover:text-gray-200 transition-colors"
@@ -384,6 +396,7 @@ const agentImageOptions = [
 // Default to the first (stable/latest) option
 const retryDockerImage = ref(agentImageOptions[0].value)
 const retryCustomDockerImage = ref('')
+const retryKeepContainer = ref(false)
 
 async function retrySession() {
   showRetryModal.value = false
@@ -395,7 +408,10 @@ async function retrySession() {
     } else if (retryDockerImage.value !== agentImageOptions[0].value) {
       imageOverride = retryDockerImage.value
     }
-    await store.retrySession(sessionId, imageOverride ? { dockerImageOverride: imageOverride } : undefined)
+    await store.retrySession(sessionId, {
+      dockerImageOverride: imageOverride,
+      keepContainer: retryKeepContainer.value || undefined,
+    })
     await store.fetchAgentSessions(projectId)
     navigateTo(`/projects/${projectId}/runs?tab=agent`)
   } finally {
