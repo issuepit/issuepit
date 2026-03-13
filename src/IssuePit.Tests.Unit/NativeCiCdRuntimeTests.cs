@@ -230,38 +230,18 @@ public class NativeCiCdRuntimeTests
     }
 
     [Fact]
-    public void BuildActArgumentsList_DefaultConcurrentJobs_EmitsFlagWithValue4()
+    public void BuildActArgumentsList_ConcurrentJobs_NeverEmitsFlag()
     {
-        var args = NativeCiCdRuntime.BuildActArgumentsList(Trigger()).ToList();
-        var idx = args.IndexOf("--concurrent-jobs");
-        Assert.True(idx >= 0, "--concurrent-jobs flag should be present by default");
-        Assert.Equal(NativeCiCdRuntime.DefaultConcurrentJobs.ToString(), args[idx + 1]);
-    }
+        // --concurrent-jobs is not a valid flag in act v0.2.x; it must never be emitted.
+        var defaultArgs = NativeCiCdRuntime.BuildActArgumentsList(Trigger());
+        Assert.DoesNotContain("--concurrent-jobs", defaultArgs);
 
-    [Fact]
-    public void BuildActArgumentsList_CustomConcurrentJobs_EmitsFlagWithCustomValue()
-    {
-        var trigger = new TriggerPayload(
+        var customArgs = NativeCiCdRuntime.BuildActArgumentsList(new TriggerPayload(
             ProjectId: Guid.NewGuid(),
             CommitSha: null, Branch: null, Workflow: null,
             AgentSessionId: null, WorkspacePath: null, EventName: null,
-            ConcurrentJobs: 2);
-        var args = NativeCiCdRuntime.BuildActArgumentsList(trigger).ToList();
-        var idx = args.IndexOf("--concurrent-jobs");
-        Assert.True(idx >= 0);
-        Assert.Equal("2", args[idx + 1]);
-    }
-
-    [Fact]
-    public void BuildActArgumentsList_ZeroConcurrentJobs_NoFlag()
-    {
-        var trigger = new TriggerPayload(
-            ProjectId: Guid.NewGuid(),
-            CommitSha: null, Branch: null, Workflow: null,
-            AgentSessionId: null, WorkspacePath: null, EventName: null,
-            ConcurrentJobs: 0);
-        var args = NativeCiCdRuntime.BuildActArgumentsList(trigger);
-        Assert.DoesNotContain("--concurrent-jobs", args);
+            ConcurrentJobs: 2));
+        Assert.DoesNotContain("--concurrent-jobs", customArgs);
     }
 
     [Fact]

@@ -247,7 +247,7 @@ public class CiCdWorker(
                 return;
             }
 
-            var runtime = runtimeFactory.Create();
+            var runtime = runtimeFactory.Create(trigger.RuntimeOverride);
 
             // Log run parameters so they are visible in the log output
             await AppendLogAsync(run.Id,
@@ -264,10 +264,28 @@ public class CiCdWorker(
             // without needing a client-side timer. The heartbeat is cancelled when the run finishes.
             _ = PublishHeartbeatAsync(run.Id.ToString(), runCts.Token);
 
+            // act streams stdout and stderr in parallel (Task.WhenAll). Both streams invoke this
+            // callback concurrently, but EF Core DbContext is not thread-safe. Serialise all
+            // SaveChangesAsync calls with a per-run lock so the two reader tasks never overlap.
+            using var logLock = new SemaphoreSlim(1, 1);
+
             await runtime.RunAsync(
                 run,
                 trigger,
-                (line, stream) => AppendLogAsync(run.Id, line, stream, db, stoppingToken),
+                async (line, stream) =>
+                {
+                    var acquired = false;
+                    try
+                    {
+                        await logLock.WaitAsync(stoppingToken);
+                        acquired = true;
+                        await AppendLogAsync(run.Id, line, stream, db, stoppingToken);
+                    }
+                    finally
+                    {
+                        if (acquired) logLock.Release();
+                    }
+                },
                 runCts.Token);
 
             run.Status = CiCdRunStatus.Succeeded;
@@ -372,6 +390,7 @@ public class CiCdWorker(
     /// <summary>
     /// Scans <paramref name="artifactDir"/> for <c>.trx</c> files, parses each one, and
     /// persists the results as <see cref="CiCdTestSuite"/> rows linked to the given run.
+    /// Also searches inside <c>.zip</c> archives (act stores artifact uploads as zipped files).
     /// Handles both bare <c>.trx</c> files on disk and <c>.trx</c> files packed inside
     /// <c>.zip</c> archives as produced by the act artifact server.
     /// Best-effort: errors are logged but never propagated.
@@ -382,8 +401,31 @@ public class CiCdWorker(
         IssuePitDbContext db,
         CancellationToken cancellationToken)
     {
+        var tempDirs = new List<string>();
         try
         {
+            // Collect .trx files — both directly present and inside .zip artifact archives.
+            // act v0.2.x stores uploaded artifacts as .zip files, so we must extract them
+            // into a temporary directory to find any embedded .trx test result files.
+            var trxFiles = TrxParser.FindTrxFiles(artifactDir).ToList();
+
+            foreach (var zipFile in Directory.EnumerateFiles(artifactDir, "*.zip", SearchOption.AllDirectories))
+            {
+                var tempDir = Path.Combine(Path.GetTempPath(), $"issuepit-trx-{Guid.NewGuid():N}");
+                try
+                {
+                    ZipFile.ExtractToDirectory(zipFile, tempDir);
+                    trxFiles.AddRange(TrxParser.FindTrxFiles(tempDir));
+                    tempDirs.Add(tempDir);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogDebug(ex, "Could not extract zip {ZipFile} while scanning for TRX files", zipFile);
+                }
+            }
+
+            if (trxFiles.Count == 0) return;
+            
             if (!Directory.Exists(artifactDir)) return;
 
             var suiteCount = 0;
@@ -464,9 +506,24 @@ public class CiCdWorker(
         {
             logger.LogError(ex, "Failed to collect test results for run {RunId}", runId);
         }
+        finally
+        {
+            foreach (var tempDir in tempDirs)
+            {
+                try { Directory.Delete(tempDir, recursive: true); }
+                catch (Exception ex) { logger.LogDebug(ex, "Could not clean up temp dir {TempDir}", tempDir); }
+            }
+        }
     }
 
     /// <summary>
+    /// Scans <paramref name="artifactDir"/> for artifact directories and records their names and
+    /// sizes as <see cref="CiCdArtifact"/> rows linked to the given run.
+    /// Handles both the legacy flat layout (<c>&lt;artifactName&gt;/&lt;files&gt;</c>) and the
+    /// act v0.2.x layout where a numeric run-number directory is interposed
+    /// (<c>&lt;runNumber&gt;/&lt;artifactName&gt;/&lt;files&gt;</c>).
+    /// Excludes <c>_workflows</c> and hidden directories. Best-effort: errors are logged but never propagated.
+    ///
     /// Scans <paramref name="artifactDir"/> for artifact directories, records their names and sizes as <see cref="CiCdArtifact"/>
     /// rows linked to the given run. Best-effort: errors are logged but never propagated.
     /// </summary>
@@ -598,7 +655,10 @@ public class CiCdWorker(
         CancellationToken cancellationToken)
     {
         // Try to parse act's JSON log format (enabled by --json flag).
-        // act uses logrus JSON format: {"level":"info","msg":"...","job":"build","stage":"Set up job","time":"..."}
+        // act uses logrus JSON format: {"level":"info","msg":"...","jobID":"build","stage":"Set up job","time":"..."}
+        // Note: act also emits a "job" field with the workflow-qualified name (e.g. "CI/build") — we
+        // prefer the "jobID" field (plain job name, e.g. "build") so that callers can filter by job
+        // name without knowing the workflow prefix.
         var displayLine = line;
         var jobId = (string?)null;
         var stepId = (string?)null;
@@ -612,7 +672,10 @@ public class CiCdWorker(
                 if (root.TryGetProperty("msg", out var msgEl))
                 {
                     displayLine = msgEl.GetString() ?? line;
-                    if (root.TryGetProperty("job", out var jobEl))
+                    // Prefer "jobID" (plain job name) over "job" (workflow-qualified name like "CI/build").
+                    if (root.TryGetProperty("jobID", out var jobIdEl))
+                        jobId = jobIdEl.GetString();
+                    else if (root.TryGetProperty("job", out var jobEl))
                         jobId = jobEl.GetString();
                     // Extract step name from the 'stage' field (e.g. "Set up job", "Main actions/checkout@v4").
                     if (root.TryGetProperty("stage", out var stageEl))
@@ -664,11 +727,14 @@ public class CiCdWorker(
         // Guard on stepId: act emits these messages in the "Complete Job" teardown stage (or
         // with no stage at all). A user script could echo the same text inside a regular step,
         // so only fire when stepId is null or "Complete Job" to avoid false positives.
+        // act v0.2.84 emits "🏁  Job succeeded" / "🏁  Job failed" (emoji prefix); use EndsWith.
+        var isJobSucceeded = displayLine.EndsWith("Job succeeded", StringComparison.Ordinal);
+        var isJobFailed = displayLine.EndsWith("Job failed", StringComparison.Ordinal);
         if (!string.IsNullOrEmpty(jobId) &&
             (stepId == null || stepId == "Complete Job") &&
-            (displayLine == "Job succeeded" || displayLine == "Job failed"))
+            (isJobSucceeded || isJobFailed))
         {
-            var status = displayLine == "Job succeeded" ? "succeeded" : "failed";
+            var status = isJobSucceeded ? "succeeded" : "failed";
             await PublishLogLineAsync(runId.ToString(),
                 JsonSerializer.Serialize(new { @event = "job-status", jobId, status }));
         }

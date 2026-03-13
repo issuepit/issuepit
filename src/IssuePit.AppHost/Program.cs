@@ -310,6 +310,29 @@ var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     .WithHttpHealthCheck("/health", endpointName: "http")
     .WithReplicas(cicdClientWorkers);
 
+// Configure the CI/CD client to use NativeCiCdRuntime with the dummy git repo when running
+// under the E2E test harness. AspireFixture sets CICD_E2E_REPO_PATH to the path of a
+// temporary git repository initialised from test/dummy-cicd-repo before building the AppHost.
+// CI/CD pipeline E2E tests skip automatically when act is not installed.
+var e2eRepoPath = Environment.GetEnvironmentVariable("CICD_E2E_REPO_PATH");
+if (!string.IsNullOrEmpty(e2eRepoPath))
+{
+    cicdClient.WithEnvironment("CiCd__Runtime", "Native");
+    cicdClient.WithEnvironment("CiCd__DefaultWorkspacePath", e2eRepoPath);
+    // Use a small, pre-pulled Node.js image so act can run the dummy workflow without
+    // downloading catthehacker/ubuntu:act-latest (several GB) in CI.
+    // node:20-slim has bash + Node 20 which is sufficient for simple shell steps and
+    // actions/upload-artifact@v7.0.0 (pure Node.js).
+    cicdClient.WithEnvironment("CiCd__ActImage", "node:20-slim");
+}
+
+// When CICD_E2E_HELPER_ACT_IMAGE is set (populated by the E2E CI step), configure the
+// Docker runtime to use that specific image so Docker-mode tests run against a known,
+// pre-pulled helper-act image rather than the default :latest tag.
+var e2eHelperActImage = Environment.GetEnvironmentVariable("CICD_E2E_HELPER_ACT_IMAGE");
+if (!string.IsNullOrEmpty(e2eHelperActImage))
+    cicdClient.WithEnvironment("CiCd__Docker__Image", e2eHelperActImage);
+
 frontend
     .WithEnvironment("NUXT_PUBLIC_API_BASE", api.GetEndpoint("http"))
     .WithEnvironment("NUXT_PUBLIC_MCP_BASE", mcpServer.GetEndpoint("http"))

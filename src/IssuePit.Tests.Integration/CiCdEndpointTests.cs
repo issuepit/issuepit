@@ -355,4 +355,196 @@ public class CiCdEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
     }
+
+    [Fact]
+    public async Task GetArtifacts_WithStoredArtifacts_Returns_ArtifactList()
+    {
+        var (tenantId, _, projectId) = await SeedProjectAsync();
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+        var runId = Guid.NewGuid();
+        db.CiCdRuns.Add(new CiCdRun
+        {
+            Id = runId,
+            ProjectId = projectId,
+            CommitSha = "artifact-test",
+            Status = IssuePit.Core.Enums.CiCdRunStatus.Succeeded,
+            StartedAt = DateTime.UtcNow,
+        });
+        db.CiCdArtifacts.Add(new CiCdArtifact
+        {
+            Id = Guid.NewGuid(),
+            CiCdRunId = runId,
+            Name = "build-output",
+            SizeBytes = 42,
+            FileCount = 1,
+            CreatedAt = DateTime.UtcNow,
+        });
+        db.CiCdArtifacts.Add(new CiCdArtifact
+        {
+            Id = Guid.NewGuid(),
+            CiCdRunId = runId,
+            Name = "test-results",
+            SizeBytes = 1024,
+            FileCount = 1,
+            CreatedAt = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var response = await _client.GetAsync($"/api/cicd-runs/{runId}/artifacts");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var artifacts = await response.Content.ReadFromJsonAsync<List<ArtifactEntry>>();
+        Assert.NotNull(artifacts);
+        Assert.Equal(2, artifacts.Count);
+        Assert.Contains(artifacts, a => a.name == "build-output" && a.sizeBytes == 42 && a.fileCount == 1);
+        Assert.Contains(artifacts, a => a.name == "test-results" && a.sizeBytes == 1024 && a.fileCount == 1);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
+    public async Task GetArtifacts_WithNoArtifacts_Returns_EmptyList()
+    {
+        var (tenantId, _, projectId) = await SeedProjectAsync();
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+        var runId = Guid.NewGuid();
+        db.CiCdRuns.Add(new CiCdRun
+        {
+            Id = runId,
+            ProjectId = projectId,
+            CommitSha = "no-artifact-test",
+            Status = IssuePit.Core.Enums.CiCdRunStatus.Succeeded,
+            StartedAt = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var response = await _client.GetAsync($"/api/cicd-runs/{runId}/artifacts");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var artifacts = await response.Content.ReadFromJsonAsync<List<ArtifactEntry>>();
+        Assert.NotNull(artifacts);
+        Assert.Empty(artifacts);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
+    public async Task GetTestResults_WithStoredSuite_Returns_SuiteWithTestCases()
+    {
+        var (tenantId, _, projectId) = await SeedProjectAsync();
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+        var runId = Guid.NewGuid();
+        db.CiCdRuns.Add(new CiCdRun
+        {
+            Id = runId,
+            ProjectId = projectId,
+            CommitSha = "trx-test",
+            Status = IssuePit.Core.Enums.CiCdRunStatus.Succeeded,
+            StartedAt = DateTime.UtcNow,
+        });
+        var suiteId = Guid.NewGuid();
+        db.CiCdTestSuites.Add(new CiCdTestSuite
+        {
+            Id = suiteId,
+            CiCdRunId = runId,
+            ArtifactName = "test-results",
+            TotalTests = 2,
+            PassedTests = 1,
+            FailedTests = 1,
+            SkippedTests = 0,
+            DurationMs = 5000,
+            CreatedAt = DateTime.UtcNow,
+            TestCases =
+            [
+                new CiCdTestCase
+                {
+                    Id = Guid.NewGuid(),
+                    FullName = "MyNamespace.MyClass.MyPassingTest",
+                    ClassName = "MyNamespace.MyClass",
+                    MethodName = "MyPassingTest",
+                    Outcome = IssuePit.Core.Enums.TestOutcome.Passed,
+                    DurationMs = 100,
+                },
+                new CiCdTestCase
+                {
+                    Id = Guid.NewGuid(),
+                    FullName = "MyNamespace.MyClass.MyFailingTest",
+                    ClassName = "MyNamespace.MyClass",
+                    MethodName = "MyFailingTest",
+                    Outcome = IssuePit.Core.Enums.TestOutcome.Failed,
+                    DurationMs = 50,
+                    ErrorMessage = "Assert.Equal() Failure",
+                    StackTrace = "at MyClass.MyFailingTest()",
+                },
+            ],
+        });
+        await db.SaveChangesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var response = await _client.GetAsync($"/api/cicd-runs/{runId}/test-results");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var suites = await response.Content.ReadFromJsonAsync<List<TestSuiteEntry>>();
+        Assert.NotNull(suites);
+        Assert.Single(suites);
+
+        var suite = suites[0];
+        Assert.Equal("test-results", suite.artifactName);
+        Assert.Equal(2, suite.totalTests);
+        Assert.Equal(1, suite.passedTests);
+        Assert.Equal(1, suite.failedTests);
+        Assert.Equal(5000, suite.durationMs);
+        Assert.Equal(2, suite.testCases.Count);
+
+        var failing = suite.testCases.First(tc => tc.methodName == "MyFailingTest");
+        Assert.Equal("Failed", failing.outcomeName);
+        Assert.Contains("Assert.Equal()", failing.errorMessage!);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
+    public async Task GetTestResults_WithNoSuites_Returns_EmptyList()
+    {
+        var (tenantId, _, projectId) = await SeedProjectAsync();
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+        var runId = Guid.NewGuid();
+        db.CiCdRuns.Add(new CiCdRun
+        {
+            Id = runId,
+            ProjectId = projectId,
+            CommitSha = "no-trx-test",
+            Status = IssuePit.Core.Enums.CiCdRunStatus.Succeeded,
+            StartedAt = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var response = await _client.GetAsync($"/api/cicd-runs/{runId}/test-results");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var suites = await response.Content.ReadFromJsonAsync<List<TestSuiteEntry>>();
+        Assert.NotNull(suites);
+        Assert.Empty(suites);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    private sealed record ArtifactEntry(Guid id, string name, long sizeBytes, int fileCount, DateTime createdAt);
+    private sealed record TestSuiteEntry(Guid id, string artifactName, int totalTests, int passedTests, int failedTests, int skippedTests, double durationMs, DateTime createdAt, List<TestCaseEntry> testCases);
+    private sealed record TestCaseEntry(Guid id, string fullName, string? className, string? methodName, string outcome, string outcomeName, double durationMs, string? errorMessage, string? stackTrace);
 }

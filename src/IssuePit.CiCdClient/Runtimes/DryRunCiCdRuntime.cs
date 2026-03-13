@@ -5,7 +5,8 @@ namespace IssuePit.CiCdClient.Runtimes;
 
 /// <summary>
 /// Dry-run (simulation) CI/CD runtime. Emits a scripted sequence of log lines without
-/// actually invoking <c>act</c>. Only active when <c>CiCd__DryRun=true</c>.
+/// actually invoking <c>act</c>. Only active when the configuration key <c>CiCd:DryRun</c>
+/// is <c>true</c> (environment variable: <c>CiCd__DryRun=true</c>).
 /// Emits act-compatible JSON log lines so the worker can parse job and level info.
 /// Also writes a fake artifact and TRX file into <see cref="TriggerPayload.ArtifactServerPath"/>
 /// (when set) so downstream collection and S3 upload can be exercised end-to-end in tests.
