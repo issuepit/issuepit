@@ -236,7 +236,7 @@
 
     <!-- Boards Manager Modal -->
     <div v-if="showBoards" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
-      @click.self="showBoards = false">
+      @mousedown.self="showBoards = false">
       <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-md p-6">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-lg font-bold text-white">Todo Boards</h2>
@@ -273,7 +273,7 @@
 
     <!-- New Category Modal -->
     <div v-if="showNewCategory" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
-      @click.self="showNewCategory = false">
+      @mousedown.self="showNewCategory = false">
       <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-sm p-6">
         <h2 class="text-lg font-bold text-white mb-4">Add Category</h2>
         <input v-model="newCategoryName" type="text" placeholder="Category name"
@@ -297,7 +297,7 @@
 
     <!-- Create/Edit Todo Modal -->
     <div v-if="showTodoForm" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
-      @click.self="closeTodoForm">
+      @mousedown.self="closeTodoForm">
       <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-lg p-6">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-lg font-bold text-white">{{ editingTodo ? 'Edit Todo' : 'New Todo' }}</h2>

@@ -108,7 +108,7 @@
 
       <!-- Retry options modal -->
       <Teleport to="body">
-        <div v-if="showRetryModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @click.self="showRetryModal = false">
+        <div v-if="showRetryModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @mousedown.self="showRetryModal = false">
           <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-xl p-6 w-full max-w-md">
             <h3 class="text-base font-semibold text-white mb-4">Retry Options</h3>
 
@@ -648,7 +648,7 @@
 
     <!-- Create Issue from failed job modal -->
     <Teleport to="body">
-      <div v-if="showCreateIssueModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @click.self="showCreateIssueModal = false">
+      <div v-if="showCreateIssueModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @mousedown.self="showCreateIssueModal = false">
         <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-xl p-6 w-full max-w-lg">
           <h3 class="text-base font-semibold text-white mb-1">Create Issue from {{ createIssueJobId ? 'Failed Job' : 'Run Logs' }}</h3>
           <p v-if="createIssueJobId" class="text-xs text-gray-500 mb-4">Job: <span class="font-mono text-gray-300">{{ createIssueJobId }}</span></p>
@@ -695,7 +695,7 @@
 
     <!-- Trigger filter modal -->
     <Teleport to="body">
-      <div v-if="showTriggerFilterModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @click.self="showTriggerFilterModal = false">
+      <div v-if="showTriggerFilterModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @mousedown.self="showTriggerFilterModal = false">
         <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-xl p-6 w-full max-w-sm">
           <h3 class="text-base font-semibold text-white mb-1">Filter workflows by trigger</h3>
           <p class="text-xs text-gray-500 mb-4">Show only workflows that are triggered by the selected events. Events matching this run's triggers are marked below.</p>

@@ -191,7 +191,7 @@
         </div>
 
         <!-- Add / Edit Repo modal -->
-        <div v-if="showRepoModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @click.self="showRepoModal = false">
+        <div v-if="showRepoModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @mousedown.self="showRepoModal = false">
           <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 w-full max-w-md shadow-xl space-y-4">
             <h3 class="font-semibold text-white">{{ editingRepoId ? 'Edit Git Origin' : 'Add Git Origin' }}</h3>
             <form class="space-y-3" @submit.prevent="saveRepo">

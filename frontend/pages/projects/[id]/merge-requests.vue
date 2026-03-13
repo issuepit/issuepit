@@ -134,7 +134,7 @@
     <!-- Create MR Modal -->
     <div v-if="showCreateModal"
       class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
-      @click.self="showCreateModal = false">
+      @mousedown.self="showCreateModal = false">
       <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-md p-6 space-y-4">
         <h2 class="text-lg font-bold text-white">New Merge Request</h2>
 

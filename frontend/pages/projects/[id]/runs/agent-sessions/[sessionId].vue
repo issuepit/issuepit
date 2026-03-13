@@ -77,7 +77,7 @@
 
       <!-- Retry options modal -->
       <Teleport to="body">
-        <div v-if="showRetryModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @click.self="showRetryModal = false">
+        <div v-if="showRetryModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @mousedown.self="showRetryModal = false">
           <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-xl p-6 w-full max-w-md">
             <h3 class="text-base font-semibold text-white mb-4">Retry Session</h3>
 

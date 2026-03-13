@@ -1,5 +1,5 @@
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @click.self="$emit('close')">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @mousedown.self="$emit('close')">
     <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-lg mx-4 shadow-xl">
       <!-- Header -->
       <div class="flex items-center justify-between px-5 py-4 border-b border-gray-800">
