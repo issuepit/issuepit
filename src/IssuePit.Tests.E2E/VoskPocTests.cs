@@ -80,7 +80,7 @@ public class VoskPocTests
     {
         var path = await EnsureModelAsync();
 
-        Vosk.Vosk.SetLogLevel(0);
+        Vosk.Vosk.SetLogLevel(-1); // -1 = suppress all native Vosk library logs in CI output
         using var model = new Model(path);
         Assert.NotNull(model);
     }
@@ -142,7 +142,7 @@ public class VoskPocTests
     /// </summary>
     private static string Transcribe(string modelPath, byte[] wavBytes)
     {
-        Vosk.Vosk.SetLogLevel(0); // 0 = INFO; keeps Vosk logs visible during PoC diagnostic runs
+        Vosk.Vosk.SetLogLevel(-1); // -1 = suppress all native Vosk library logs in CI output
         using var model = new Model(modelPath);
         using var rec = new VoskRecognizer(model, 16000f);
         rec.SetMaxAlternatives(0);
@@ -150,14 +150,10 @@ public class VoskPocTests
 
         // Skip the RIFF/WAV header to reach raw PCM bytes.
         int pcmOffset = FindPcmOffset(wavBytes);
-        Console.WriteLine($"[PoC] PCM data starts at offset {pcmOffset}, " +
-                          $"size {wavBytes.Length - pcmOffset} bytes " +
-                          $"({(wavBytes.Length - pcmOffset) / 2.0 / 16000.0:F2}s of audio at 16 kHz)");
 
         var accumulated = new System.Text.StringBuilder();
         var buffer = new byte[4096];
         int pos = pcmOffset;
-        int boundaryCount = 0;
 
         while (pos < wavBytes.Length)
         {
@@ -167,15 +163,12 @@ public class VoskPocTests
 
             if (rec.AcceptWaveform(buffer, toRead))
             {
-                var json = rec.Result();
-                AppendText(accumulated, json);
-                Console.WriteLine($"[PoC] Boundary #{++boundaryCount}: {json}");
+                AppendText(accumulated, rec.Result());
             }
         }
 
         var finalJson = rec.FinalResult();
         AppendText(accumulated, finalJson);
-        Console.WriteLine($"[PoC] FinalResult: {finalJson}");
 
         return accumulated.ToString();
     }
