@@ -33,7 +33,10 @@
           </div>
           <div>
             <p class="text-xs text-gray-500 mb-1">Agent</p>
-            <p class="text-sm text-gray-300">{{ store.currentSession.agentName }}</p>
+            <NuxtLink :to="`/agents/${store.currentSession.agentId}`"
+              class="text-sm text-brand-400 hover:text-brand-300 transition-colors">
+              {{ store.currentSession.agentName }}
+            </NuxtLink>
           </div>
           <div>
             <p class="text-xs text-gray-500 mb-1">Issue</p>
@@ -58,6 +61,20 @@
             <p class="text-xs text-gray-500 mb-1">Duration</p>
             <p class="text-sm text-gray-400">{{ duration(store.currentSession.startedAt, store.currentSession.endedAt) }}</p>
           </div>
+        </div>
+        <!-- Cancel button for active sessions -->
+        <div v-if="store.currentSession.status === AgentSessionStatus.Running || store.currentSession.status === AgentSessionStatus.Pending"
+          class="mt-4 pt-4 border-t border-gray-800 flex justify-end">
+          <button
+            :disabled="cancelling"
+            class="flex items-center gap-1.5 text-sm text-red-400 hover:text-red-300 disabled:opacity-50 transition-colors"
+            @click="cancelSession">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M6 18L18 6M6 6l12 12" />
+            </svg>
+            {{ cancelling ? 'Cancelling…' : 'Cancel Session' }}
+          </button>
         </div>
         <!-- Retry button for failed/cancelled sessions -->
         <div v-if="store.currentSession.status === AgentSessionStatus.Failed || store.currentSession.status === AgentSessionStatus.Cancelled"
@@ -379,6 +396,17 @@ onMounted(async () => {
 
 const retrying = ref(false)
 const showRetryModal = ref(false)
+const cancelling = ref(false)
+
+async function cancelSession() {
+  cancelling.value = true
+  try {
+    await store.cancelSession(sessionId)
+    await store.fetchAgentSessionOnly(sessionId)
+  } finally {
+    cancelling.value = false
+  }
+}
 
 const agentImageOptions = [
   {

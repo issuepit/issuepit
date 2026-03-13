@@ -99,7 +99,7 @@ public static class RunnerCommandBuilder
 
     private static IReadOnlyList<string> BuildOpenCodeArgsList(Agent agent, string task)
     {
-        var args = new List<string>();
+        var args = new List<string> { "opencode" };
         if (!string.IsNullOrWhiteSpace(agent.Model))
         {
             args.Add("--model");
@@ -126,7 +126,7 @@ public static class RunnerCommandBuilder
 
     private static IReadOnlyList<string> BuildCodexArgsList(Agent agent, string task)
     {
-        var args = new List<string>();
+        var args = new List<string> { "codex" };
         if (!string.IsNullOrWhiteSpace(agent.Model))
         {
             args.Add("--model");
@@ -148,7 +148,7 @@ public static class RunnerCommandBuilder
 
     private static IReadOnlyList<string> BuildCopilotArgsList(string task) =>
         // GitHub Copilot CLI does not support --model selection at this time
-        ["suggest", task];
+        ["gh", "copilot", "suggest", task];
 
     /// <summary>Formats the issue title and body into a single task prompt string.</summary>
     private static string BuildTaskPrompt(Issue issue)
