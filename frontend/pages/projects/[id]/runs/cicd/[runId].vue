@@ -744,6 +744,7 @@ import { parseAnsiToHtml, stripAnsiCodes } from '~/composables/useAnsiParser'
 import { buildGraphJobIndexes, resolveLogJobId as resolveLogJobIdFn, matrixLabel as matrixLabelFn } from '~/utils/cicdLogMapper'
 
 const route = useRoute()
+const router = useRouter()
 const projectId = route.params.id as string
 const runId = route.params.runId as string
 
@@ -818,7 +819,17 @@ const sectionTabs = [
   { label: 'Artifacts', value: 'artifacts' },
   { label: 'Details', value: 'details' },
 ]
-const activeSection = ref<'jobs' | 'logs' | 'tests' | 'artifacts' | 'details'>('jobs')
+const validSections = ['jobs', 'logs', 'tests', 'artifacts', 'details'] as const
+const activeSection = computed({
+  get: () => {
+    const tab = route.query.tab as string
+    return (validSections.includes(tab as typeof validSections[number]) ? tab : 'jobs') as typeof validSections[number]
+  },
+  set: (value: typeof validSections[number]) => {
+    if (route.query.tab !== value)
+      router.push({ query: { ...route.query, tab: value } })
+  },
+})
 
 /** Slim mode: hides log counts, yml file names and status labels in the job graph. */
 const slimMode = ref(false)

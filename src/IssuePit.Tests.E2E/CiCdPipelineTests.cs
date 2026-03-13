@@ -151,7 +151,8 @@ public class CiCdPipelineTests(AspireFixture fixture)
     [MemberData(nameof(RuntimeModes))]
     public async Task CiCdRun_RunSucceeds(string runtimeMode)
     {
-        if (!IsReady(runtimeMode)) return;
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip($"Skipping {runtimeMode} E2E test: CICD_E2E_REPO_PATH not set{(runtimeMode == NativeRuntime ? " or act not installed" : "")}.");
 
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
@@ -169,7 +170,8 @@ public class CiCdPipelineTests(AspireFixture fixture)
     [MemberData(nameof(RuntimeModes))]
     public async Task CiCdRun_CapturesLogsForBothJobs(string runtimeMode)
     {
-        if (!IsReady(runtimeMode)) return;
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip($"Skipping {runtimeMode} E2E test: CICD_E2E_REPO_PATH not set{(runtimeMode == NativeRuntime ? " or act not installed" : "")}.");
 
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
@@ -207,7 +209,8 @@ public class CiCdPipelineTests(AspireFixture fixture)
     [MemberData(nameof(RuntimeModes))]
     public async Task CiCdRun_JobLogsFilterByJobId(string runtimeMode)
     {
-        if (!IsReady(runtimeMode)) return;
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip($"Skipping {runtimeMode} E2E test: CICD_E2E_REPO_PATH not set{(runtimeMode == NativeRuntime ? " or act not installed" : "")}.");
 
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
@@ -238,7 +241,8 @@ public class CiCdPipelineTests(AspireFixture fixture)
     [MemberData(nameof(RuntimeModes))]
     public async Task CiCdRun_StoresArtifacts(string runtimeMode)
     {
-        if (!IsReady(runtimeMode)) return;
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip($"Skipping {runtimeMode} E2E test: CICD_E2E_REPO_PATH not set{(runtimeMode == NativeRuntime ? " or act not installed" : "")}.");
 
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
@@ -266,7 +270,8 @@ public class CiCdPipelineTests(AspireFixture fixture)
     [MemberData(nameof(RuntimeModes))]
     public async Task CiCdRun_StoresTrxTestResults(string runtimeMode)
     {
-        if (!IsReady(runtimeMode)) return;
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip($"Skipping {runtimeMode} E2E test: CICD_E2E_REPO_PATH not set{(runtimeMode == NativeRuntime ? " or act not installed" : "")}.");
 
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;

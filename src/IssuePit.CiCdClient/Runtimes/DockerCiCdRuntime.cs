@@ -394,11 +394,10 @@ public partial class DockerCiCdRuntime(
             binds.Add($"{workspacePath}:/workspace");
         }
 
-        // Artifacts are no longer volume-mounted. Instead, after the run the container uploads
-        // the /artifacts directory directly to S3 using the AWS CLI. This removes the requirement
-        // for a shared filesystem path between the cicd-client process and the Docker host, enabling
-        // fully containerised deployments (Docker Compose, Kubernetes, etc.) where bind-mounting a
-        // path from inside the cicd-client container is not possible.
+        // Artifacts are not volume-mounted. After act runs, the cicd-client uses the Docker archive
+        // API (GetArchiveFromContainerAsync) to copy /artifacts out of the container directly into
+        // the local artifactDir. This works in all environments without requiring a shared filesystem
+        // path or an S3-compatible endpoint reachable from inside the container.
 
         // Mount named Docker volumes for package caches so their contents persist across CI/CD runs.
         // The paths inside the container match what act's job containers (DinD) will bind-mount
@@ -523,8 +522,7 @@ public partial class DockerCiCdRuntime(
 
                 // Dynamically compute the number of steps so the [N/M] prefix is always correct.
                 var hasArtifacts = !string.IsNullOrWhiteSpace(trigger.ArtifactServerPath);
-                var hasS3 = !string.IsNullOrWhiteSpace(configuration["ImageStorage:ServiceUrl"]);
-                var totalSteps = 3 + (useDind ? 1 : 0) + (hasGitRepo ? 1 : 0) + (!string.IsNullOrWhiteSpace(trigger.Workflow) ? 1 : 0) + (hasArtifacts && hasS3 ? 1 : 0);
+                var totalSteps = 3 + (useDind ? 1 : 0) + (hasGitRepo ? 1 : 0) + (!string.IsNullOrWhiteSpace(trigger.Workflow) ? 1 : 0) + (hasArtifacts ? 1 : 0);
                 var stepNum = 0;
 
                 // Step: Print act version for diagnostics.
@@ -599,13 +597,13 @@ public partial class DockerCiCdRuntime(
                 await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: {string.Join(' ', actCmd)}", LogStream.Stdout);
                 var actExitCode = await ExecCommandAsync(container.ID, actCmd, onLogLine, cancellationToken);
 
-                // Step: Upload artifacts to S3 from inside the container (best-effort, regardless of act exit code).
-                // This replaces the previous volume-mount approach: the container pushes artifacts
-                // directly so no shared filesystem path is required between the cicd-client and the host.
-                if (hasArtifacts && hasS3)
+                // Step: Copy artifacts from the container to the local artifact directory (best-effort,
+                // regardless of act exit code so artifacts are captured even on partial runs).
+                // Uses the Docker archive API — no S3 or shared filesystem required.
+                if (hasArtifacts)
                 {
-                    await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: uploading artifacts to S3", LogStream.Stdout);
-                    await UploadArtifactsToS3Async(container.ID, run.Id, onLogLine, cancellationToken);
+                    await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: collecting artifacts from container", LogStream.Stdout);
+                    await CopyArtifactsFromContainerAsync(container.ID, trigger.ArtifactServerPath!, onLogLine, cancellationToken);
                 }
 
                 if (actExitCode != 0)
@@ -999,57 +997,84 @@ public partial class DockerCiCdRuntime(
         return sb.ToString();
     }
 
+
     /// <summary>
-    /// Uploads the contents of <c>/artifacts</c> inside the container to S3-compatible storage
-    /// using the AWS CLI, replacing the previous volume-mount approach.
+    /// Copies the contents of <c>/artifacts</c> inside the container to <paramref name="artifactDir"/>
+    /// on the local filesystem using the Docker archive (tar) API.
+    /// This replaces the previous S3 upload approach and works in all environments without requiring
+    /// an S3-compatible endpoint to be accessible from inside the container.
     ///
-    /// The method is best-effort: a failed upload is logged as a warning but never aborts the run.
-    ///
-    /// If the AWS CLI is not present in the container it is installed automatically
-    /// (pip3 install awscli → apt-get install awscli fallback).
-    ///
-    /// Credentials and endpoint are injected as exec-scoped environment variables so they are
-    /// never visible in the container's environment or in act's job containers.
+    /// The method is best-effort: errors are logged as warnings but never abort the run.
+    /// If <c>/artifacts</c> does not exist in the container (no artifacts uploaded), the call is a no-op.
     /// </summary>
-    private async Task UploadArtifactsToS3Async(
+    private async Task CopyArtifactsFromContainerAsync(
         string containerId,
-        Guid runId,
+        string artifactDir,
         Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {
-        var serviceUrl = configuration["ImageStorage:ServiceUrl"];
-        if (string.IsNullOrWhiteSpace(serviceUrl))
-            return;
-
-        var accessKey = configuration["ImageStorage:AccessKey"] ?? "test";
-        var secretKey = configuration["ImageStorage:SecretKey"] ?? "test";
-        var region = configuration["ImageStorage:Region"] ?? "us-east-1";
-        var bucket = configuration["ImageStorage:BucketName"] ?? "issuepit-uploads";
-        var runIdHex = runId.ToString("N");
-
-        var env = new List<string>
-        {
-            $"AWS_ACCESS_KEY_ID={accessKey}",
-            $"AWS_SECRET_ACCESS_KEY={secretKey}",
-            $"AWS_DEFAULT_REGION={region}",
-            $"ISSUEPIT_S3_BUCKET={bucket}",
-            $"ISSUEPIT_S3_ENDPOINT_URL={serviceUrl}",
-            $"ISSUEPIT_RUN_ID={runIdHex}",
-        };
-
-        var script = BuildArtifactUploadScript();
-
         try
         {
-            var exitCode = await ExecCommandAsync(
-                containerId,
-                ["/bin/sh", "-c", script],
-                onLogLine,
-                cancellationToken,
-                env);
+            ContainerArchiveResponse response;
+            try
+            {
+                response = await dockerClient.Containers.GetArchiveFromContainerAsync(
+                    containerId,
+                    new ContainerPathStatParameters { Path = "/artifacts" },
+                    false,
+                    cancellationToken);
+            }
+            catch (DockerApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                await onLogLine("[DEBUG] No /artifacts directory found in container — no artifacts to collect", LogStream.Stdout);
+                return;
+            }
 
-            if (exitCode != 0)
-                await onLogLine($"[WARN] Artifact S3 upload exited with code {exitCode} — artifacts may not be available for download", LogStream.Stdout);
+            // Extract the tar stream. Docker wraps the requested path as the root entry, so
+            // entries are named "artifacts/", "artifacts/1/", "artifacts/1/build-output/..." etc.
+            // Strip the leading "artifacts/" prefix to get the layout that ParseAndStoreArtifactsAsync expects.
+            const string TarPrefix = "artifacts/";
+            var fileCount = 0;
+            var canonicalArtifactDir = Path.GetFullPath(artifactDir);
+
+            using var tarStream = response.Stream;
+            await using var reader = new System.Formats.Tar.TarReader(tarStream);
+            System.Formats.Tar.TarEntry? entry;
+            while ((entry = await reader.GetNextEntryAsync(cancellationToken: cancellationToken)) != null)
+            {
+                var name = entry.Name;
+                if (!name.StartsWith(TarPrefix, StringComparison.Ordinal))
+                    continue;
+                var relativePath = name[TarPrefix.Length..];
+                if (string.IsNullOrEmpty(relativePath))
+                    continue;
+
+                var localPath = Path.GetFullPath(
+                    Path.Combine(canonicalArtifactDir, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+
+                // Guard against path traversal attacks.
+                if (!localPath.StartsWith(canonicalArtifactDir, StringComparison.Ordinal))
+                    continue;
+
+                if (entry.EntryType == System.Formats.Tar.TarEntryType.Directory)
+                {
+                    Directory.CreateDirectory(localPath);
+                }
+                else if (entry.EntryType is System.Formats.Tar.TarEntryType.RegularFile
+                                          or System.Formats.Tar.TarEntryType.V7RegularFile)
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
+                    await using var fileStream = File.Create(localPath);
+                    if (entry.DataStream is not null)
+                        await entry.DataStream.CopyToAsync(fileStream, cancellationToken);
+                    fileCount++;
+                }
+            }
+
+            if (fileCount > 0)
+                await onLogLine($"[DEBUG] Collected {fileCount} artifact file(s) from container", LogStream.Stdout);
+            else
+                await onLogLine("[DEBUG] No artifact files found in /artifacts", LogStream.Stdout);
         }
         catch (OperationCanceledException)
         {
@@ -1057,45 +1082,9 @@ public partial class DockerCiCdRuntime(
         }
         catch (Exception ex)
         {
-            await onLogLine($"[WARN] Artifact S3 upload failed (non-fatal): {ex.Message}", LogStream.Stdout);
+            await onLogLine($"[WARN] Failed to collect artifacts from container (non-fatal): {ex.Message}", LogStream.Stdout);
         }
     }
-
-    /// <summary>
-    /// Builds the shell script that checks for s5cmd, installs it if missing, and then
-    /// syncs <c>/artifacts</c> to <c>s3://{bucket}/artifacts-raw/{runId}/</c>.
-    /// Uses <c>s5cmd</c> (FOSS, MIT-licensed) instead of the AWS CLI.
-    /// Environment variables expected: <c>AWS_ACCESS_KEY_ID</c>, <c>AWS_SECRET_ACCESS_KEY</c>,
-    /// <c>AWS_DEFAULT_REGION</c>, <c>ISSUEPIT_S3_BUCKET</c>, <c>ISSUEPIT_S3_ENDPOINT_URL</c>,
-    /// <c>ISSUEPIT_RUN_ID</c>.
-    /// </summary>
-    private static string BuildArtifactUploadScript() => """
-        set -e
-        # Exit early if the artifacts directory is empty.
-        if [ ! -d /artifacts ] || [ -z "$(ls -A /artifacts 2>/dev/null)" ]; then
-            echo '[S3-UPLOAD] No artifacts to upload'
-            exit 0
-        fi
-        # The IssuePit helper-base image ships s5cmd pre-installed.
-        # For non-standard images that do not include s5cmd, attempt a runtime
-        # installation as a safety net before running the upload.
-        if ! command -v s5cmd > /dev/null 2>&1; then
-            echo '[S3-UPLOAD] s5cmd not found, installing...'
-            ARCH=$(uname -m)
-            case "$ARCH" in
-              x86_64)  S5CMD_ARCH=Linux-64bit ;;
-              aarch64) S5CMD_ARCH=Linux-arm64 ;;
-              *) echo "[S3-UPLOAD] Unsupported architecture: $ARCH"; exit 1 ;;
-            esac
-            curl --proto '=https' --tlsv1.2 -fsSL \
-                "https://github.com/peak/s5cmd/releases/download/v2.3.0/s5cmd_2.3.0_${S5CMD_ARCH}.tar.gz" | \
-            tar -xz -C /usr/local/bin s5cmd
-        fi
-        echo "[S3-UPLOAD] Uploading artifacts to s3://${ISSUEPIT_S3_BUCKET}/artifacts-raw/${ISSUEPIT_RUN_ID}/"
-        s5cmd --endpoint-url "${ISSUEPIT_S3_ENDPOINT_URL}" \
-            sync /artifacts/ "s3://${ISSUEPIT_S3_BUCKET}/artifacts-raw/${ISSUEPIT_RUN_ID}/"
-        echo '[S3-UPLOAD] Upload complete'
-        """;
 
     /// <summary>
     /// Reads the workflow YAML files from the cloned repo inside the container using <c>cat</c>,
