@@ -262,6 +262,40 @@ public class CiCdPipelineTests(AspireFixture fixture)
         Assert.Contains("test-results", names);
     }
 
+    /// <summary>
+    /// Verifies that the act version used by the runtime supports <c>actions/upload-artifact@v7</c>.
+    /// The workflow <c>ci-upload-v7.yml</c> uses v7 of the upload action (without
+    /// <c>continue-on-error</c>) so any incompatibility will cause the run to fail.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(RuntimeModes))]
+    public async Task CiCdRun_UploadArtifactV7_Succeeds(string runtimeMode)
+    {
+        if (!IsReady(runtimeMode)) return;
+
+        var (client, projectId) = await SetupProjectAsync();
+        using var _ = client;
+
+        var triggerResp = await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+            BuildTriggerPayload(projectId, "e2e-uploadv7-abc", runtimeMode, "ci-upload-v7.yml"));
+        Assert.Equal(HttpStatusCode.Accepted, triggerResp.StatusCode);
+
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
+
+        var artifactsResp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts");
+        Assert.Equal(HttpStatusCode.OK, artifactsResp.StatusCode);
+        var artifacts = await artifactsResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        // The v7 workflow uploads build-output-v7 and test-results-v7 artifacts.
+        var names = artifacts.EnumerateArray()
+            .Select(a => a.GetProperty("name").GetString())
+            .ToList();
+        Assert.Contains("build-output-v7", names);
+        Assert.Contains("test-results-v7", names);
+    }
+
     [Theory]
     [MemberData(nameof(RuntimeModes))]
     public async Task CiCdRun_StoresTrxTestResults(string runtimeMode)
