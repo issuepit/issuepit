@@ -261,7 +261,7 @@ function buildPayload(allowedTools: string[]) {
     isActive: form.isActive,
     runnerType: form.runnerType ?? undefined,
     model: form.model || undefined,
-    allowedTools,
+    allowedTools: JSON.stringify(allowedTools),
   }
 }
 
