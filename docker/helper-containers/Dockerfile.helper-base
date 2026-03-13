@@ -4,12 +4,14 @@
 # Build args (override at build time):
 #   PLAYWRIGHT_VERSION   — Playwright .NET image tag (default: v1.51.0)
 #   NODE_MAJOR           — Node.js major version to install (default: 24)
+#   DOTNET_SDK_CHANNEL   — .NET SDK release channel to install via dotnet-install.sh (default: 10.0)
 
 ARG PLAYWRIGHT_VERSION=v1.51.0
 
 FROM mcr.microsoft.com/playwright/dotnet:${PLAYWRIGHT_VERSION}-noble
 
 ARG NODE_MAJOR=24
+ARG DOTNET_SDK_CHANNEL=10.0
 
 # Install Node.js via NodeSource, git, and dnsmasq.
 # Note: we do NOT run "dotnet workload install aspire" here because modern Aspire (v9+) is
@@ -25,6 +27,16 @@ RUN apt-get update && \
     curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
+
+# Install the target .NET SDK channel so that net<MAJOR>.0 projects build correctly.
+# The Playwright base image ships an older SDK version; dotnet-install.sh overlays the
+# requested channel onto the same /usr/share/dotnet directory so both SDKs coexist and
+# the .NET toolchain automatically selects the highest available version.
+RUN curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh && \
+    chmod +x /tmp/dotnet-install.sh && \
+    /tmp/dotnet-install.sh --channel ${DOTNET_SDK_CHANNEL} --install-dir /usr/share/dotnet && \
+    rm /tmp/dotnet-install.sh && \
+    dotnet --list-sdks
 
 # Install s5cmd — a FOSS S3-compatible CLI used by CI/CD runs to upload artifacts
 # directly from inside the container to S3-compatible storage (LocalStack, AWS, B2).
@@ -56,8 +68,10 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # Expose version info as labels
 ARG PLAYWRIGHT_VERSION
 ARG NODE_MAJOR
+ARG DOTNET_SDK_CHANNEL
 LABEL org.opencontainers.image.title="issuepit-helper-base" \
       org.opencontainers.image.description="IssuePit helper base: .NET SDK + Playwright + Chrome + Node.js" \
       issuepit.node.major="${NODE_MAJOR}" \
       issuepit.playwright.version="${PLAYWRIGHT_VERSION}" \
-      issuepit.s5cmd.version="${S5CMD_VERSION}"
+      issuepit.s5cmd.version="${S5CMD_VERSION}" \
+      issuepit.dotnet.sdk.channel="${DOTNET_SDK_CHANNEL}"

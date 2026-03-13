@@ -80,6 +80,7 @@ The Dockerfiles accept build arguments that you can override when building local
 |----------|-------|---------|-------------|
 | `PLAYWRIGHT_VERSION` | `helper-base` | `v1.51.0` | Playwright .NET image tag (e.g. `v1.54.0`) |
 | `NODE_MAJOR` | `helper-base` | `24` | Node.js major version |
+| `DOTNET_SDK_CHANNEL` | `helper-base` | `10.0` | .NET SDK release channel installed via `dotnet-install.sh` (e.g. `10.0`, `9.0`) |
 | `BASE_IMAGE` | `helper-act`, `helper-opencode`, `helper-opencode-act` | `ghcr.io/issuepit/issuepit-helper-base:latest` | Base image reference |
 | `ACT_COMMIT` | `helper-act` | *(current commit hash)* | [issuepit/act](https://github.com/issuepit/act) git commit hash to build from |
 | `OPENCODE_VERSION` | `helper-opencode`, `helper-opencode-act` | `latest` | opencode-ai npm package version |
@@ -91,31 +92,32 @@ The Dockerfiles accept build arguments that you can override when building local
 docker build \
   --build-arg PLAYWRIGHT_VERSION=v1.51.0 \
   --build-arg NODE_MAJOR=24 \
-  -f docker/Dockerfile.helper-base \
+  --build-arg DOTNET_SDK_CHANNEL=10.0 \
+  -f docker/helper-containers/Dockerfile.helper-base \
   -t issuepit-helper-base:local \
-  .
+  docker/helper-containers
 
 # Build the act image from the local base
 docker build \
   --build-arg BASE_IMAGE=issuepit-helper-base:local \
   --build-arg ACT_COMMIT=cb02232605fa5f914986ce6eb3500db85c06c0ce \
-  -f docker/Dockerfile.helper-act \
+  -f docker/helper-containers/Dockerfile.helper-act \
   -t issuepit-helper-act:local \
-  .
+  docker/helper-containers
 
 # Build the opencode image from the local base
 docker build \
   --build-arg BASE_IMAGE=issuepit-helper-base:local \
-  -f docker/Dockerfile.helper-opencode \
+  -f docker/helper-containers/Dockerfile.helper-opencode \
   -t issuepit-helper-opencode:local \
-  .
+  docker/helper-containers
 
 # Build the opencode-act combined image (default for agent runs)
 docker build \
   --build-arg BASE_IMAGE=issuepit-helper-act:local \
-  -f docker/Dockerfile.helper-opencode-act \
+  -f docker/helper-containers/Dockerfile.helper-opencode-act \
   -t issuepit-helper-opencode-act:local \
-  .
+  docker/helper-containers
 ```
 
 ---
