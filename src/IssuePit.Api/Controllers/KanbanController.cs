@@ -1,3 +1,4 @@
+using System.Text.Json;
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
@@ -11,6 +12,14 @@ namespace IssuePit.Api.Controllers;
 [Route("api/kanban")]
 public class KanbanController(IssuePitDbContext db, TenantContext ctx) : ControllerBase
 {
+    // Helper: parse a JsonStringEnumMemberName-annotated enum from a lane value string
+    private static T? TryParseJsonEnum<T>(string? value) where T : struct, Enum
+    {
+        if (string.IsNullOrEmpty(value)) return null;
+        try { return JsonSerializer.Deserialize<T>($"\"{value}\""); }
+        catch { return null; }
+    }
+
     // ── Boards ────────────────────────────────────────────────────────────
 
     [HttpGet("boards")]
@@ -184,13 +193,13 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
                 break;
 
             case KanbanLaneProperty.Priority:
-                if (!string.IsNullOrEmpty(column.LaneValue) && Enum.TryParse<IssuePriority>(column.LaneValue, true, out var priority))
-                    issue.Priority = priority;
+                var parsedPriority = TryParseJsonEnum<IssuePriority>(column.LaneValue);
+                if (parsedPriority.HasValue) issue.Priority = parsedPriority.Value;
                 break;
 
             case KanbanLaneProperty.Type:
-                if (!string.IsNullOrEmpty(column.LaneValue) && Enum.TryParse<IssueType>(column.LaneValue, true, out var issueType))
-                    issue.Type = issueType;
+                var parsedType = TryParseJsonEnum<IssueType>(column.LaneValue);
+                if (parsedType.HasValue) issue.Type = parsedType.Value;
                 break;
 
             case KanbanLaneProperty.Milestone:

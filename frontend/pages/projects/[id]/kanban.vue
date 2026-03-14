@@ -691,15 +691,18 @@ async function onIssueDrop(e: DragEvent, targetCol: KanbanColumn) {
 
   if (!isSameColumn) {
     const lp = activeBoard.value?.laneProperty ?? KanbanLaneProperty.Status
-    // For status boards, optimistically update local status
+    // For status boards, optimistically update local status before the API call
     if (lp === KanbanLaneProperty.Status) {
       await issueStore.updateIssueStatus(id, draggedId.value, targetCol.issueStatus)
     }
   }
-  // Move via kanban store (backend handles the property update)
-  await kanban.moveIssue(activeBoardId.value, draggedId.value, targetCol.id, insertIdx)
-  // Refresh issues to reflect any property changes made by the move
-  await issueStore.fetchIssues(id)
+  // Move via kanban store (backend handles the property update, returns updated issue)
+  const updatedIssue = await kanban.moveIssue(activeBoardId.value, draggedId.value, targetCol.id, insertIdx)
+  // Patch the issue in the local store to reflect property changes (avoids a full reload)
+  if (updatedIssue) {
+    const idx = issueStore.issues.findIndex(i => i.id === updatedIssue.id)
+    if (idx !== -1) Object.assign(issueStore.issues[idx], updatedIssue)
+  }
   draggedId.value = null
   draggedIssueStatus.value = null
   draggedSourceColId.value = null

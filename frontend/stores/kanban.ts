@@ -220,7 +220,7 @@ export const useKanbanStore = defineStore('kanban', () => {
 
   async function moveIssue(boardId: string, issueId: string, columnId: string, position?: number) {
     try {
-      return await api.post(`/api/kanban/boards/${boardId}/move-issue`, { issueId, columnId, position })
+      return await api.post<import('~/types').Issue>(`/api/kanban/boards/${boardId}/move-issue`, { issueId, columnId, position })
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Failed to move issue'
     }
