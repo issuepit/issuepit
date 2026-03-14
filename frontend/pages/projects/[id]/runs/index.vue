@@ -91,7 +91,12 @@
               <td class="px-4 py-3 text-gray-400 text-xs">{{ formatDate(run.startedAt) }}</td>
               <td class="px-4 py-3 text-gray-400 text-xs">{{ duration(run.startedAt, run.endedAt) }}</td>
               <td class="px-4 py-3 text-right">
-                <button v-if="run.status === CiCdRunStatus.Pending || run.status === CiCdRunStatus.Running"
+                <button v-if="run.status === CiCdRunStatus.WaitingForApproval"
+                  class="text-xs text-purple-400 hover:text-purple-300 transition-colors"
+                  @click.stop="approveRun(run.id)">
+                  Approve
+                </button>
+                <button v-else-if="run.status === CiCdRunStatus.Pending || run.status === CiCdRunStatus.Running"
                   class="text-xs text-red-400 hover:text-red-300 transition-colors"
                   @click.stop="cancelRun(run.id)">
                   Cancel
@@ -241,6 +246,10 @@ async function cancelRun(runId: string) {
   await store.cancelRun(runId)
 }
 
+async function approveRun(runId: string) {
+  await store.approveRun(runId)
+}
+
 async function retrySession(sessionId: string) {
   await store.retrySession(sessionId)
   await store.fetchAgentSessions(id)
@@ -271,6 +280,7 @@ function statusClass(status: CiCdRunStatus) {
     case CiCdRunStatus.Running: return 'bg-blue-900/30 text-blue-400'
     case CiCdRunStatus.Failed: return 'bg-red-900/30 text-red-400'
     case CiCdRunStatus.Cancelled: return 'bg-gray-800 text-gray-400'
+    case CiCdRunStatus.WaitingForApproval: return 'bg-purple-900/30 text-purple-400'
     default: return 'bg-yellow-900/30 text-yellow-400'
   }
 }
@@ -281,6 +291,7 @@ function statusDot(status: CiCdRunStatus) {
     case CiCdRunStatus.Running: return 'bg-blue-400 animate-pulse'
     case CiCdRunStatus.Failed: return 'bg-red-400'
     case CiCdRunStatus.Cancelled: return 'bg-gray-500'
+    case CiCdRunStatus.WaitingForApproval: return 'bg-purple-400'
     default: return 'bg-yellow-400'
   }
 }

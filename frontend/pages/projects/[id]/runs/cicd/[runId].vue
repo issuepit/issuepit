@@ -89,7 +89,20 @@
             </span>
           </div>
         </div>
-        <div v-if="store.currentRun.status === CiCdRunStatus.Failed || store.currentRun.status === CiCdRunStatus.Cancelled"
+        <div v-if="store.currentRun.status === CiCdRunStatus.WaitingForApproval"
+          class="mt-4 pt-4 border-t border-gray-800 flex justify-end">
+          <button
+            :disabled="approving"
+            class="flex items-center gap-1.5 text-sm text-purple-400 hover:text-purple-300 disabled:opacity-50 transition-colors"
+            @click="approveRunAction()">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M5 13l4 4L19 7" />
+            </svg>
+            {{ approving ? 'Approving…' : 'Approve Run' }}
+          </button>
+        </div>
+        <div v-else-if="store.currentRun.status === CiCdRunStatus.Failed || store.currentRun.status === CiCdRunStatus.Cancelled"
           class="mt-4 pt-4 border-t border-gray-800 flex justify-end">
           <button
             :disabled="retrying"
@@ -849,6 +862,7 @@ function renderLogLine(line: string, highlight?: string): string {
 }
 
 const retrying = ref(false)
+const approving = ref(false)
 const showRetryModal = ref(false)
 const retryOptions = reactive({
   keepContainerOnFailure: false,
@@ -1811,6 +1825,15 @@ async function retryRun() {
   await retryRunWithOptions()
 }
 
+async function approveRunAction() {
+  approving.value = true
+  try {
+    await store.approveRun(runId)
+  } finally {
+    approving.value = false
+  }
+}
+
 function openRetryModal() {
   retryOptions.eventName = store.currentRun?.eventName ?? 'push'
   showRetryModal.value = true
@@ -1910,6 +1933,7 @@ function statusClass(status: CiCdRunStatus) {
     case CiCdRunStatus.Running: return 'bg-blue-900/30 text-blue-400'
     case CiCdRunStatus.Failed: return 'bg-red-900/30 text-red-400'
     case CiCdRunStatus.Cancelled: return 'bg-gray-800 text-gray-400'
+    case CiCdRunStatus.WaitingForApproval: return 'bg-purple-900/30 text-purple-400'
     default: return 'bg-yellow-900/30 text-yellow-400'
   }
 }
@@ -1920,6 +1944,7 @@ function statusDot(status: CiCdRunStatus) {
     case CiCdRunStatus.Running: return 'bg-blue-400 animate-pulse'
     case CiCdRunStatus.Failed: return 'bg-red-400'
     case CiCdRunStatus.Cancelled: return 'bg-gray-500'
+    case CiCdRunStatus.WaitingForApproval: return 'bg-purple-400'
     default: return 'bg-yellow-400'
   }
 }

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { CiCdRun, CiCdRunLog, CiCdTestSuite, CiCdArtifact, AgentSession, AgentSessionDetail, AgentSessionLog, DashboardAgentSession, WorkflowGraph, WorkflowInfo } from '~/types'
+import type { CiCdRun, CiCdRunStatus, CiCdRunLog, CiCdTestSuite, CiCdArtifact, AgentSession, AgentSessionDetail, AgentSessionLog, DashboardAgentSession, WorkflowGraph, WorkflowInfo } from '~/types'
 
 export const useCiCdRunsStore = defineStore('cicdRuns', () => {
   const runs = ref<CiCdRun[]>([])
@@ -143,6 +143,23 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     await api.post(`/api/cicd-runs/${runId}/retry`, options ?? {})
   }
 
+  async function approveRun(runId: string) {
+    try {
+      const updated = await api.post<{ id: string; status: string; statusName: string }>(`/api/cicd-runs/${runId}/approve`, {})
+      const run = runs.value.find(r => r.id === runId)
+      if (run) {
+        run.status = updated.status as CiCdRunStatus
+        run.statusName = updated.statusName
+      }
+      if (currentRun.value?.id === runId) {
+        currentRun.value.status = updated.status as CiCdRunStatus
+        currentRun.value.statusName = updated.statusName
+      }
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to approve CI/CD run'
+    }
+  }
+
   async function cancelRun(runId: string) {
     try {
       const updated = await api.post<{ id: string; status: number; statusName: string }>(`/api/cicd-runs/${runId}/cancel`, {})
@@ -214,6 +231,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     cancelSession,
     retryRun,
     cancelRun,
+    approveRun,
     fetchDashboardSessions,
     fetchWorkflows,
     triggerRun,
