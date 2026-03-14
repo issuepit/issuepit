@@ -496,7 +496,7 @@ public class CiCdRunsController(
             commitSha: run.CommitSha,
             branch: run.Branch,
             workflow: run.Workflow,
-            eventName: run.EventName ?? "push",
+            eventName: !string.IsNullOrWhiteSpace(options?.EventName) ? options.EventName : (run.EventName ?? "push"),
             inputs: null,
             gitRepoUrl: retryRepo?.RemoteUrl,
             agentSessionId: run.AgentSessionId,
@@ -620,7 +620,9 @@ public record RetryRunOptions(
     /// <summary>Additional CLI arguments appended to the act command.</summary>
     string? CustomArgs = null,
     /// <summary>Override the act runner image used by act for platform mapping (e.g. ubuntu-latest). Null or empty = use project/org/global default.</summary>
-    string? ActRunnerImage = null);
+    string? ActRunnerImage = null,
+    /// <summary>Override the event/trigger name (e.g. "push", "pull_request"). Null or empty = use the original run's event name.</summary>
+    string? EventName = null);
 
 /// <summary>Request body for the external CI/CD sync endpoint.</summary>
 public record ExternalSyncRequest(

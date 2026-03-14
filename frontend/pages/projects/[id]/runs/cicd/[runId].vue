@@ -96,7 +96,7 @@
             class="flex items-center gap-1.5 text-sm text-brand-400 hover:text-brand-300 disabled:opacity-50 transition-colors"
             :title="'Click to retry · Shift+click for options'"
             @click.exact="retryRun()"
-            @click.shift="showRetryModal = true">
+            @click.shift="openRetryModal()">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -115,6 +115,22 @@
             <!-- Conflict warning -->
             <div v-if="retryConflict" class="mb-4 rounded-lg bg-yellow-900/40 border border-yellow-700/50 p-3 text-xs text-yellow-300">
               {{ retryConflict.message }}
+            </div>
+
+            <!-- Event / trigger selector -->
+            <div class="mb-3">
+              <label class="block text-xs text-gray-500 mb-1">Event / Trigger</label>
+              <select
+                v-model="retryOptions.eventName"
+                class="w-full bg-gray-800 border border-gray-700 rounded-md text-sm text-white px-2.5 py-1.5 focus:outline-none focus:border-brand-500">
+                <option value="push">push</option>
+                <option value="pull_request">pull_request</option>
+                <option value="workflow_dispatch">workflow_dispatch</option>
+                <option value="workflow_call">workflow_call</option>
+                <option value="merge_group">merge_group</option>
+                <option value="release">release</option>
+              </select>
+              <p class="text-xs text-gray-600 mt-1">Override the event/trigger for this run. The original trigger was <code class="text-gray-400">{{ store.currentRun?.eventName ?? 'push' }}</code>.</p>
             </div>
 
             <label class="flex items-start gap-3 cursor-pointer mb-3">
@@ -277,12 +293,25 @@
                 'flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md transition-colors',
                 slimMode ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'
               ]"
-              title="Toggle slim mode — hides log counts, file names and status labels"
+              title="Toggle slim mode — hides log counts, file names and status labels; filters out workflows whose trigger doesn't match this run's event"
               @click="slimMode = !slimMode">
               <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
               </svg>
               Slim
+            </button>
+            <!-- Debug mode toggle -->
+            <button
+              :class="[
+                'flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md transition-colors',
+                debugMode ? 'bg-amber-700 text-white' : 'text-gray-500 hover:text-gray-300'
+              ]"
+              title="Toggle debug mode — shows original act log IDs before fuzzy matching and all triggers per workflow"
+              @click="debugMode = !debugMode">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+              </svg>
+              Debug
             </button>
           </div>
         </div>
@@ -368,6 +397,27 @@
                     <span :class="jobStatusDot(job)" class="w-2 h-2 rounded-full shrink-0" />
                     <span class="text-sm font-medium text-white break-words leading-tight">{{ job.name }}</span>
                   </span>
+                  <!-- Debug mode: show raw act log IDs and workflow triggers -->
+                  <template v-if="debugMode">
+                    <div v-if="job.rawJobIds.length" class="w-full">
+                      <span class="text-[10px] text-amber-500 font-mono uppercase tracking-wide">act IDs</span>
+                      <div class="flex flex-wrap gap-0.5 mt-0.5">
+                        <span
+                          v-for="rawId in job.rawJobIds"
+                          :key="rawId"
+                          class="text-[10px] font-mono bg-amber-900/30 border border-amber-700/40 text-amber-300 px-1 rounded">{{ rawId }}</span>
+                      </div>
+                    </div>
+                    <div v-if="job.workflowTriggers.length" class="w-full">
+                      <span class="text-[10px] text-amber-500 font-mono uppercase tracking-wide">triggers</span>
+                      <div class="flex flex-wrap gap-0.5 mt-0.5">
+                        <span
+                          v-for="trigger in job.workflowTriggers"
+                          :key="trigger"
+                          class="text-[10px] font-mono bg-amber-900/30 border border-amber-700/40 text-amber-300 px-1 rounded">{{ trigger }}</span>
+                      </div>
+                    </div>
+                  </template>
                   <span v-if="(job.callerWorkflowFile || job.workflowFile) && !slimMode" class="text-xs text-gray-500 font-mono">
                     <template v-if="job.callerWorkflowFile">{{ job.callerWorkflowFile }} / {{ job.workflowFile }}</template>
                     <template v-else>{{ job.workflowFile }}</template>
@@ -808,6 +858,7 @@ const retryOptions = reactive({
   customEntrypoint: '',
   customArgs: '',
   actRunnerImage: '',
+  eventName: '',
 })
 const retryConflict = ref<{ message: string; activeRunId: string } | null>(null)
 
@@ -822,6 +873,9 @@ const activeSection = ref<'jobs' | 'logs' | 'tests' | 'artifacts' | 'details'>('
 
 /** Slim mode: hides log counts, yml file names and status labels in the job graph. */
 const slimMode = ref(false)
+
+/** Debug mode: shows original log IDs before fuzzy matching and all workflow triggers per box. */
+const debugMode = ref(false)
 
 /** Actual rendered heights of job boxes, keyed by job ID. Populated by ResizeObserver. */
 const measuredBoxHeights = ref<Map<string, number>>(new Map())
@@ -851,8 +905,8 @@ function registerJobBox(id: string, el: HTMLElement | null) {
   }
 }
 
-// Clear measured heights when slim mode changes so stale measurements are not used.
-watch(slimMode, () => {
+// Clear measured heights when slim mode or debug mode changes so stale measurements are not used.
+watch([slimMode, debugMode], () => {
   measuredBoxHeights.value = new Map()
 })
 
@@ -1123,6 +1177,10 @@ interface EnrichedJob {
   matrixCount: number
   /** Per-instance matrix data when matrixCount > 1. */
   matrixInstances: MatrixInstance[]
+  /** Raw act log job IDs that were resolved to this graph node (for debug mode). */
+  rawJobIds: string[]
+  /** All trigger event names for the workflow file containing this job (for debug mode). */
+  workflowTriggers: string[]
   // layout
   x: number
   y: number
@@ -1182,63 +1240,60 @@ const runInputs = computed<Record<string, string> | null>(() => {
 
 // Build the enriched job list by unioning graph nodes with log-observed jobs.
 // Graph nodes get their needs/name from the YAML; log-only jobs fall back to id as name.
-const enrichedJobs = computed<EnrichedJob[]>(() => {
-  const BOX_W = 220
-  // Estimated box height breakdown (normal mode):
-  //   name(20) + statusBadge(22) + logCount(16) + padding-tb(24) + inner gaps(~16) ≈ 98px (no workflow/timing)
-  //   + workflowFile(16) + timing(16) = 130px for a started job with workflow file info
-  const BASE_BOX_H = 130
-  // Slim mode hides status badge (~22px), log count (~16px), and workflow file (~16px),
-  // reducing the box height: 130 - 22 - 16 - 16 ≈ 76px; 80px with a small safety margin.
-  const SLIM_BOX_H = 80
-  const MATRIX_ROW_H = 24
-  const COL_GAP = 80
-  const ROW_GAP = 14
-  const PAD = 16
 
-  // Helper: compute box height for a job.
-  // Uses the actual measured height from ResizeObserver when available,
-  // falling back to an estimate based on the current mode and matrix instance count.
-  const computeBoxH = (id: string) => {
-    const measured = measuredBoxHeights.value.get(id)
-    if (measured) return measured
-    const instances = jobLogMap.value.get(id)?.instances
-    const instanceCount = instances ? instances.size : 0
-    const matrixRows = instanceCount > 1 ? Math.ceil(instanceCount / 2) : 0
-    const baseH = slimMode.value ? SLIM_BOX_H : BASE_BOX_H
-    return baseH + matrixRows * MATRIX_ROW_H
-  }
+/** Layout constants. */
+const BOX_W = 220
+// Estimated box height breakdown (normal mode):
+//   name(20) + statusBadge(22) + logCount(16) + padding-tb(24) + inner gaps(~16) ≈ 98px (no workflow/timing)
+//   + workflowFile(16) + timing(16) = 130px for a started job with workflow file info
+const BASE_BOX_H = 130
+// Slim mode hides status badge (~22px), log count (~16px), and workflow file (~16px),
+// reducing the box height: 130 - 22 - 16 - 16 ≈ 76px; 80px with a small safety margin.
+const SLIM_BOX_H = 80
+const MATRIX_ROW_H = 24
+const COL_GAP = 80
+const ROW_GAP = 14
+const LAYOUT_PAD = 16
 
-  // Collect all job IDs
-  const graphJobs = store.currentRunGraph?.jobs ?? []
-  const logJobIds = Array.from(jobLogMap.value.keys())
-  const allIds = new Set([...graphJobs.map(j => j.id), ...logJobIds])
+/** Computes box height for a job using the actual measured height or an estimate. */
+function computeBoxH(id: string): number {
+  const measured = measuredBoxHeights.value.get(id)
+  if (measured) return measured
+  const instances = jobLogMap.value.get(id)?.instances
+  const instanceCount = instances ? instances.size : 0
+  const matrixRows = instanceCount > 1 ? Math.ceil(instanceCount / 2) : 0
+  const baseH = slimMode.value ? SLIM_BOX_H : BASE_BOX_H
+  return baseH + matrixRows * MATRIX_ROW_H
+}
 
-  // Build a map of job metadata
-  const jobMeta = new Map(graphJobs.map(j => [j.id, { name: j.name, needs: j.needs, workflowFile: j.workflowFile, callerWorkflowFile: j.callerWorkflowFile }]))
-
-  // Assign columns via BFS from roots (no needs)
+/**
+ * Computes x/y positions for a set of job IDs via BFS column assignment.
+ * Edges between IDs outside the provided set are ignored, so the layout
+ * is compact (no gaps) when only a filtered subset is being positioned.
+ */
+function computePositions(
+  jobIds: Set<string>,
+  edges: { from: string; to: string }[],
+): Map<string, { x: number; y: number }> {
   const colMap = new Map<string, number>()
   const inDegree = new Map<string, number>()
-  const edges = store.currentRunGraph?.edges ?? []
-
-  for (const id of allIds) {
+  for (const id of jobIds) {
     if (!inDegree.has(id)) inDegree.set(id, 0)
   }
   for (const e of edges) {
-    if (allIds.has(e.to)) inDegree.set(e.to, (inDegree.get(e.to) ?? 0) + 1)
+    if (jobIds.has(e.from) && jobIds.has(e.to))
+      inDegree.set(e.to, (inDegree.get(e.to) ?? 0) + 1)
   }
 
   const queue: string[] = []
   for (const [id, deg] of inDegree) {
     if (deg === 0) queue.push(id)
   }
-
   while (queue.length) {
     const id = queue.shift()!
     const col = colMap.get(id) ?? 0
     for (const e of edges) {
-      if (e.from === id) {
+      if (e.from === id && jobIds.has(e.to)) {
         const nextCol = Math.max(colMap.get(e.to) ?? 0, col + 1)
         colMap.set(e.to, nextCol)
         const newDeg = (inDegree.get(e.to) ?? 1) - 1
@@ -1248,27 +1303,39 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
     }
   }
 
-  // Group by column
   const byCol = new Map<number, string[]>()
-  for (const id of allIds) {
+  for (const id of jobIds) {
     const col = colMap.get(id) ?? 0
     if (!byCol.has(col)) byCol.set(col, [])
     byCol.get(col)!.push(id)
   }
 
-  // Assign x/y positions using per-job heights for accurate spacing
   const posMap = new Map<string, { x: number; y: number }>()
   const sortedCols = Array.from(byCol.keys()).sort((a, b) => a - b)
-  let x = PAD
+  let x = LAYOUT_PAD
   for (const col of sortedCols) {
     const jobs = byCol.get(col)!
-    let y = PAD
+    let y = LAYOUT_PAD
     for (const id of jobs) {
       posMap.set(id, { x, y })
       y += computeBoxH(id) + ROW_GAP
     }
     x += BOX_W + COL_GAP
   }
+  return posMap
+}
+
+const enrichedJobs = computed<EnrichedJob[]>(() => {
+  // Collect all job IDs
+  const graphJobs = store.currentRunGraph?.jobs ?? []
+  const logJobIds = Array.from(jobLogMap.value.keys())
+  const allIds = new Set([...graphJobs.map(j => j.id), ...logJobIds])
+
+  // Build a map of job metadata
+  const jobMeta = new Map(graphJobs.map(j => [j.id, { name: j.name, needs: j.needs, workflowFile: j.workflowFile, callerWorkflowFile: j.callerWorkflowFile }]))
+
+  const edges = store.currentRunGraph?.edges ?? []
+  const wfTriggers = store.currentRunGraph?.workflowTriggers
 
   // Pre-build a map of which jobs have started (have log lines) for downstream inference.
   const startedIds = new Set(Array.from(allIds).filter(id => (jobLogMap.value.get(id)?.logCount ?? 0) > 0))
@@ -1300,10 +1367,12 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
     }
   }
 
+  const posMap = computePositions(allIds, edges)
+
   return Array.from(allIds).map(id => {
     const meta = jobMeta.get(id)
-    const logs = jobLogMap.value.get(id) ?? { logCount: 0, hasError: false, isComplete: false, instances: new Map() }
-    const pos = posMap.get(id) ?? { x: PAD, y: PAD }
+    const logs = jobLogMap.value.get(id) ?? { logCount: 0, hasError: false, isComplete: false, instances: new Map(), rawJobIds: new Set<string>() }
+    const pos = posMap.get(id) ?? { x: LAYOUT_PAD, y: LAYOUT_PAD }
     const hasStarted = logs.logCount > 0
     // Backend-emitted job-status event takes precedence as the authoritative completion signal.
     // Log-based detection (logs.isComplete) covers historical data loaded on page open.
@@ -1325,6 +1394,7 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
         }))
       : []
 
+    const workflowFile = meta?.workflowFile
     return {
       id,
       name: meta?.name ?? id,
@@ -1333,10 +1403,12 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
       hasError,
       hasStarted,
       isComplete,
-      workflowFile: meta?.workflowFile,
+      workflowFile,
       callerWorkflowFile: meta?.callerWorkflowFile,
       matrixCount,
       matrixInstances,
+      rawJobIds: logs.rawJobIds ? Array.from(logs.rawJobIds) : [],
+      workflowTriggers: workflowFile ? Array.from(wfTriggers?.[workflowFile] ?? []) : [],
       startedAt: logs.startedAt,
       // When run ended but the job never emitted a final timestamp, use the run's end time.
       endedAt: isComplete && !logs.endedAt ? (store.currentRun?.endedAt ?? logs.startedAt) : logs.endedAt,
@@ -1347,11 +1419,38 @@ const enrichedJobs = computed<EnrichedJob[]>(() => {
   })
 })
 
-/** Jobs visible after applying the workflow trigger filter. */
+/** Jobs visible after applying slim-mode trigger filtering and the user-selected trigger filter. */
 const visibleJobs = computed<EnrichedJob[]>(() => {
-  if (selectedTriggerFilters.value.size === 0 || triggerVisibleFiles.value.size === 0)
-    return enrichedJobs.value
-  return enrichedJobs.value.filter(j => !j.workflowFile || triggerVisibleFiles.value.has(j.workflowFile))
+  const edges = store.currentRunGraph?.edges ?? []
+  const wfTriggers = store.currentRunGraph?.workflowTriggers
+
+  let filtered = enrichedJobs.value
+
+  // Slim mode: hide boxes whose workflow file triggers don't include the current run's event name.
+  if (slimMode.value && store.currentRun?.eventName && wfTriggers) {
+    const eventName = store.currentRun.eventName
+    filtered = filtered.filter(j => {
+      if (!j.workflowFile) return true  // no workflow info — keep
+      const triggers = wfTriggers[j.workflowFile] ?? []
+      return triggers.includes(eventName)
+    })
+  }
+
+  // Apply user-selected trigger filter
+  if (selectedTriggerFilters.value.size > 0 && triggerVisibleFiles.value.size > 0)
+    filtered = filtered.filter(j => !j.workflowFile || triggerVisibleFiles.value.has(j.workflowFile))
+
+  // If no jobs were filtered out, return as-is (positions already correct).
+  if (filtered.length === enrichedJobs.value.length) return filtered
+
+  // Recompute layout for the filtered subset so columns are compact (no gaps).
+  const visibleIds = new Set(filtered.map(j => j.id))
+  const posMap = computePositions(visibleIds, edges)
+  return filtered.map(j => {
+    const pos = posMap.get(j.id)
+    if (!pos) return j
+    return { ...j, x: pos.x, y: pos.y, boxHeight: computeBoxH(j.id) }
+  })
 })
 
 /**
@@ -1435,9 +1534,6 @@ const blockedJobIds = computed<Set<string>>(() => {
 interface SvgEdge { path: string; highlighted: boolean; isFailure: boolean }
 
 const graphLayout = computed<{ svgWidth: number; svgHeight: number; edges: SvgEdge[] }>(() => {
-  const BOX_W = 220
-  const PAD = 16
-
   if (!visibleJobs.value.length) return { svgWidth: 0, svgHeight: 0, edges: [] }
 
   const visibleIds = new Set(visibleJobs.value.map(j => j.id))
@@ -1465,8 +1561,8 @@ const graphLayout = computed<{ svgWidth: number; svgHeight: number; edges: SvgEd
     return { path: `M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}`, highlighted, isFailure }
   }).filter((e): e is SvgEdge => e !== null)
 
-  const maxX = Math.max(...visibleJobs.value.map(j => j.x)) + BOX_W + PAD
-  const maxY = Math.max(...visibleJobs.value.map(j => j.y + j.boxHeight)) + PAD
+  const maxX = Math.max(...visibleJobs.value.map(j => j.x)) + BOX_W + LAYOUT_PAD
+  const maxY = Math.max(...visibleJobs.value.map(j => j.y + j.boxHeight)) + LAYOUT_PAD
 
   return { svgWidth: maxX, svgHeight: maxY, edges }
 })
@@ -1703,6 +1799,11 @@ async function retryRun() {
   await retryRunWithOptions()
 }
 
+function openRetryModal() {
+  retryOptions.eventName = store.currentRun?.eventName ?? 'push'
+  showRetryModal.value = true
+}
+
 async function retryRunWithOptions() {
   retrying.value = true
   retryConflict.value = null
@@ -1717,6 +1818,7 @@ async function retryRunWithOptions() {
       customEntrypoint: retryOptions.customEntrypoint.trim() || undefined,
       customArgs: retryOptions.customArgs.trim() || undefined,
       actRunnerImage: retryOptions.actRunnerImage.trim() || undefined,
+      eventName: retryOptions.eventName.trim() || undefined,
     })
     retryOptions.forceRetry = false
     navigateTo(`/projects/${projectId}/runs`)
