@@ -277,7 +277,7 @@ public class CiCdPipelineTests(AspireFixture fixture)
         using var _ = client;
 
         await client.PostAsJsonAsync("/api/cicd-runs/trigger",
-            BuildTriggerPayload(projectId, "e2e-joblogs-abc", runtimeMode));
+            BuildTriggerPayload(projectId, "e2e-joblogs-abc", runtimeMode, "ci.yml"));
 
         var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
         var runId = run.GetProperty("id").GetString()!;
@@ -378,7 +378,7 @@ public class CiCdPipelineTests(AspireFixture fixture)
         using var _ = client;
 
         await client.PostAsJsonAsync("/api/cicd-runs/trigger",
-            BuildTriggerPayload(projectId, "e2e-artifact-abc", runtimeMode));
+            BuildTriggerPayload(projectId, "e2e-artifact-abc", runtimeMode, "ci.yml"));
 
         var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
         var runId = run.GetProperty("id").GetString()!;
@@ -389,11 +389,91 @@ public class CiCdPipelineTests(AspireFixture fixture)
         var artifacts = await artifactsResp.Content.ReadFromJsonAsync<JsonElement>();
 
         // The dummy workflow uploads build-output and test-results artifacts.
+        // The -W filter must also prevent ci-upload-v7.yml from running; verify its
+        // v7-suffixed artifacts are absent.
         var names = artifacts.EnumerateArray()
             .Select(a => a.GetProperty("name").GetString())
             .ToList();
         Assert.Contains("build-output", names);
         Assert.Contains("test-results", names);
+        Assert.DoesNotContain("build-output-v7", names);
+        Assert.DoesNotContain("test-results-v7", names);
+    }
+
+    /// <summary>
+    /// Verifies that the act version used by the runtime supports <c>actions/upload-artifact@v7</c>.
+    /// The workflow <c>ci-upload-v7.yml</c> uses v7 of the upload action (without
+    /// <c>continue-on-error</c>) so any incompatibility will cause the run to fail.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(RuntimeModes))]
+    public async Task CiCdRun_UploadArtifactV7_Succeeds(string runtimeMode)
+    {
+        if (!IsReady(runtimeMode)) return;
+
+        var (client, projectId) = await SetupProjectAsync();
+        using var _ = client;
+
+        var triggerResp = await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+            BuildTriggerPayload(projectId, "e2e-uploadv7-abc", runtimeMode, "ci-upload-v7.yml"));
+        Assert.Equal(HttpStatusCode.Accepted, triggerResp.StatusCode);
+
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
+
+        var artifactsResp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts");
+        Assert.Equal(HttpStatusCode.OK, artifactsResp.StatusCode);
+        var artifacts = await artifactsResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        // The v7 workflow uploads build-output-v7 and test-results-v7 artifacts.
+        // The -W filter must also prevent ci.yml from running; verify its non-v7
+        // artifacts are absent.
+        var names = artifacts.EnumerateArray()
+            .Select(a => a.GetProperty("name").GetString())
+            .ToList();
+        Assert.Contains("build-output-v7", names);
+        Assert.Contains("test-results-v7", names);
+        Assert.DoesNotContain("build-output", names);
+        Assert.DoesNotContain("test-results", names);
+    }
+
+    /// <summary>
+    /// Verifies that the act version used by the runtime supports <c>actions/upload-artifact@v8</c>.
+    /// The workflow <c>ci-upload-v8.yml</c> uses v8 of the upload action (without
+    /// <c>continue-on-error</c>) so any incompatibility will cause the run to fail.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(RuntimeModes))]
+    public async Task CiCdRun_UploadArtifactV8_Succeeds(string runtimeMode)
+    {
+        if (!IsReady(runtimeMode)) return;
+
+        var (client, projectId) = await SetupProjectAsync();
+        using var _ = client;
+
+        var triggerResp = await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+            BuildTriggerPayload(projectId, "e2e-uploadv8-abc", runtimeMode, "ci-upload-v8.yml"));
+        Assert.Equal(HttpStatusCode.Accepted, triggerResp.StatusCode);
+
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
+
+        var artifactsResp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts");
+        Assert.Equal(HttpStatusCode.OK, artifactsResp.StatusCode);
+        var artifacts = await artifactsResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        // The v8 workflow uploads build-output-v8 and test-results-v8 artifacts.
+        // The -W filter must also prevent ci.yml from running; verify its non-v8
+        // artifacts are absent.
+        var names = artifacts.EnumerateArray()
+            .Select(a => a.GetProperty("name").GetString())
+            .ToList();
+        Assert.Contains("build-output-v8", names);
+        Assert.Contains("test-results-v8", names);
+        Assert.DoesNotContain("build-output", names);
+        Assert.DoesNotContain("test-results", names);
     }
 
     [Theory]
@@ -407,7 +487,7 @@ public class CiCdPipelineTests(AspireFixture fixture)
         using var _ = client;
 
         await client.PostAsJsonAsync("/api/cicd-runs/trigger",
-            BuildTriggerPayload(projectId, "e2e-trx-abc", runtimeMode));
+            BuildTriggerPayload(projectId, "e2e-trx-abc", runtimeMode, "ci.yml"));
 
         var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
         var runId = run.GetProperty("id").GetString()!;
