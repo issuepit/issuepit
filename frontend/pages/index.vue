@@ -500,7 +500,7 @@ function loadLayout() {
     if (saved) {
       const parsed = JSON.parse(saved) as MainLayout
       if (Array.isArray(parsed.order) && parsed.order.length) {
-        const valid = parsed.order.filter(s => s in DEFAULT_CONFIGS) as MainSectionId[]
+        const valid = parsed.order.filter((s): s is MainSectionId => s in DEFAULT_CONFIGS)
         const missing = DEFAULT_ORDER.filter(s => !valid.includes(s))
         layout.value.order = [...valid, ...missing]
       }
@@ -563,6 +563,8 @@ function onDragEnd() {
 }
 
 // ── Tab group logic ──────────────────────────────────────────────────────
+let _tabGroupCounter = 0
+
 function toggleTabGroupWithNext(sid: MainSectionId) {
   const cfg = sectionCfg(sid)
   if (cfg.tabGroup !== null) {
@@ -577,7 +579,7 @@ function toggleTabGroupWithNext(sid: MainSectionId) {
     const nextSid = idx >= 0 && idx + 1 < visible.length ? visible[idx + 1] : null
     if (!nextSid) return
     const nextCfg = sectionCfg(nextSid)
-    const grp = nextCfg.tabGroup ?? `grp-${Date.now()}`
+    const grp = nextCfg.tabGroup ?? `grp-${++_tabGroupCounter}`
     updateCfg(sid, { tabGroup: grp })
     if (nextCfg.tabGroup === null) updateCfg(nextSid, { tabGroup: grp })
   }
