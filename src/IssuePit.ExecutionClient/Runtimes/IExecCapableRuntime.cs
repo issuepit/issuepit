@@ -11,8 +11,8 @@ namespace IssuePit.ExecutionClient.Runtimes;
 /// This enables fix runs (uncommitted-changes or CI/CD failures) to reuse the container that
 /// the initial agent run created, so that:
 ///   - The git workspace already contains the changes from the first run.
-///   - opencode session files are on disk, allowing <c>opencode run --fork &lt;session-id&gt;</c>
-///     to resume with full conversation context once opencode supports the --fork flag.
+///   - <c>opencode run --session &lt;id&gt; --fork</c> resumes with full conversation context
+///     from the session that made the original changes.
 /// </summary>
 public interface IExecCapableRuntime : IAgentRuntime
 {
@@ -25,7 +25,8 @@ public interface IExecCapableRuntime : IAgentRuntime
     /// <param name="containerId">ID of the running container (returned by <see cref="IAgentRuntime.LaunchAsync"/>).</param>
     /// <param name="openCodeSessionId">
     /// The opencode session ID captured during the initial run.
-    /// Will be passed as <c>--fork &lt;id&gt;</c> once opencode supports that flag in non-interactive mode.
+    /// Passed as <c>--session &lt;id&gt; --fork</c> so the fix run continues the same session
+    /// with full conversation context. See https://opencode.ai/docs/cli/#run-1.
     /// </param>
     Task<(string? CommitSha, string? BranchName)> ExecFixInContainerAsync(
         string containerId,

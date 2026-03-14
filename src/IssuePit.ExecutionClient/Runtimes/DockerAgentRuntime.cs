@@ -262,15 +262,12 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
             return onLogLine($"[fix] {line}", stream);
         }
 
-        var runnerArgs = RunnerCommandBuilder.BuildArgsList(agent, fixIssue);
-        // NOTE: When opencode supports `opencode run --fork <session-id>` in non-interactive mode,
-        // pass openCodeSessionId here so the fix run continues the same session with full context.
-        // For now, the same container gives the fix run access to the workspace as-is.
-        // TODO: RunnerCommandBuilder.BuildArgsList(agent, fixIssue, forkSessionId: openCodeSessionId)
+        var runnerArgs = RunnerCommandBuilder.BuildArgsList(agent, fixIssue, forkSessionId: openCodeSessionId);
         if (runnerArgs.Count > 0)
         {
             var shortId = containerId[..Math.Min(12, containerId.Length)];
-            await onLogLine($"[INFO] Exec fix run in container {shortId}…", LogStream.Stdout);
+            var forkInfo = openCodeSessionId is not null ? $" (--session {openCodeSessionId[..Math.Min(8, openCodeSessionId.Length)]} --fork)" : string.Empty;
+            await onLogLine($"[INFO] Exec fix run in container {shortId}{forkInfo}…", LogStream.Stdout);
             var exitCode = await ExecCommandAsync(containerId, runnerArgs, onFixLogLine, cancellationToken);
             if (exitCode != 0)
                 await onLogLine($"[WARN] Fix agent exited with code {exitCode}", LogStream.Stderr);
