@@ -37,6 +37,7 @@ public class IssueWorker(
     // Special log-line prefixes emitted by entrypoint.sh to communicate git state back to IssueWorker.
     private const string GitCommitShaMarker = "[ISSUEPIT:GIT_COMMIT_SHA]=";
     private const string GitBranchMarker = "[ISSUEPIT:GIT_BRANCH]=";
+    private const string HasUncommittedChangesMarker = "[ISSUEPIT:HAS_UNCOMMITTED_CHANGES]=";
 
     private string KafkaBootstrapServers => configuration.GetConnectionString("kafka")
         ?? throw new InvalidOperationException("Kafka connection string 'kafka' is not configured.");
@@ -274,6 +275,7 @@ public class IssueWorker(
 
             string? capturedCommitSha = null;
             string? capturedBranchName = null;
+            var capturedHasUncommittedChanges = false;
 
             Task onLogLine(string line, LogStream stream)
             {
@@ -282,6 +284,8 @@ public class IssueWorker(
                     capturedCommitSha = line[GitCommitShaMarker.Length..].Trim();
                 else if (line.StartsWith(GitBranchMarker, StringComparison.Ordinal))
                     capturedBranchName = line[GitBranchMarker.Length..].Trim();
+                else if (line.StartsWith(HasUncommittedChangesMarker, StringComparison.Ordinal))
+                    capturedHasUncommittedChanges = true;
                 return AppendLogAsync(session.Id, line, stream, db, sessionCts.Token);
             }
 
@@ -300,6 +304,23 @@ public class IssueWorker(
                 session.CommitSha = capturedCommitSha;
             if (!string.IsNullOrEmpty(capturedBranchName))
                 session.GitBranch = capturedBranchName;
+
+            // If there are uncommitted changes, loop back to opencode to fix them before CI/CD.
+            if (capturedHasUncommittedChanges && gitRepository is not null && !string.IsNullOrEmpty(capturedBranchName))
+            {
+                await AppendLogAsync(session.Id,
+                    "[INFO] Uncommitted changes detected — re-running opencode to commit or .gitignore them…",
+                    LogStream.Stdout, db, sessionCts.Token);
+
+                var fixUncommittedIssue = BuildUncommittedChangesFixIssue(issue, capturedBranchName);
+                var (fixCommitSha, fixBranchName) = await RunCiCdFixAgentAsync(
+                    session, agent, fixUncommittedIssue, gitRepository, credentials, runtimeConfig, db, sessionCts.Token);
+
+                if (!string.IsNullOrEmpty(fixCommitSha))
+                    capturedCommitSha = fixCommitSha;
+                if (!string.IsNullOrEmpty(fixBranchName))
+                    capturedBranchName = fixBranchName;
+            }
 
             // After the agent run completes, trigger the CI/CD pipeline and wait for results.
             // If CI/CD fails, re-run opencode with the failure context to fix it (up to MaxCiCdFixAttempts).
@@ -657,21 +678,39 @@ public class IssueWorker(
     }
 
     /// <summary>
-    /// Returns the last <c>200</c> log lines from the CI/CD run as a single string so they
-    /// can be included in the opencode fix prompt as failure context.
+    /// Returns CI/CD failure log lines as a string to pass directly to the opencode task prompt.
+    /// Always fetches the last 200 total lines and also ensures the last 20 stderr lines are
+    /// included even when the 200-line window is dominated by stdout.
     /// </summary>
     private static async Task<string> GetCiCdFailureLogsAsync(
         Guid runId,
         IssuePitDbContext db,
         CancellationToken cancellationToken)
     {
-        var lines = await db.CiCdRunLogs
+        // Fetch the last 200 total log lines (mixed stdout/stderr).
+        var recent = await db.CiCdRunLogs
             .Where(l => l.CiCdRunId == runId)
             .OrderByDescending(l => l.Timestamp)
             .Take(200)
             .OrderBy(l => l.Timestamp)
-            .Select(l => l.Stream == LogStream.Stderr ? $"[stderr] {l.Line}" : l.Line)
+            .Select(l => new { l.Id, l.Line, l.Stream, l.Timestamp })
             .ToListAsync(cancellationToken);
+
+        // Additionally fetch the last 20 stderr lines so errors are always represented,
+        // even when the 200-line window is dominated by stdout.
+        var recentIds = recent.Select(l => l.Id).ToHashSet();
+        var extraStderr = await db.CiCdRunLogs
+            .Where(l => l.CiCdRunId == runId && l.Stream == LogStream.Stderr)
+            .OrderByDescending(l => l.Timestamp)
+            .Take(20)
+            .OrderBy(l => l.Timestamp)
+            .Select(l => new { l.Id, l.Line, l.Stream, l.Timestamp })
+            .ToListAsync(cancellationToken);
+
+        var lines = recent
+            .Concat(extraStderr.Where(l => !recentIds.Contains(l.Id)))
+            .OrderBy(l => l.Timestamp)
+            .Select(l => l.Stream == LogStream.Stderr ? $"[stderr] {l.Line}" : l.Line);
 
         return string.Join('\n', lines);
     }
@@ -730,22 +769,39 @@ public class IssueWorker(
     }
 
     /// <summary>
-    /// Creates an in-memory <see cref="Issue"/> copy for the CI/CD fix agent run.
-    /// The copy has the same identity as the original but the body is augmented with the
-    /// CI/CD failure context so opencode knows what to fix. The <see cref="Issue.GitBranch"/>
-    /// is set to <paramref name="branchName"/> so the entrypoint checks out the correct branch.
+    /// Creates an in-memory <see cref="Issue"/> whose task prompt is the CI/CD failure context.
+    /// The failure logs are passed directly as the task — the original issue body is NOT included
+    /// so that opencode focuses solely on fixing the CI/CD failures.
+    /// <see cref="Issue.GitBranch"/> is set so the entrypoint checks out the correct branch.
     /// </summary>
     private static Issue BuildFixIssue(Issue original, string failureLogs, string branchName) => new()
     {
         Id = original.Id,
         ProjectId = original.ProjectId,
         Number = original.Number,
-        Title = original.Title,
+        Title = $"Fix CI/CD failures for: {original.Title}",
         Body =
-            $"{original.Body ?? string.Empty}\n\n" +
-            $"--- CI/CD FAILURE CONTEXT ---\n" +
-            $"The previous CI/CD run failed. Fix the issues described in the log below, then commit and push the changes.\n\n" +
+            "The previous CI/CD run failed. Fix the issues described in the log below,\n" +
+            "then commit and push the changes.\n\n" +
             $"{failureLogs}",
+        GitBranch = branchName,
+    };
+
+    /// <summary>
+    /// Creates an in-memory <see cref="Issue"/> whose task prompt asks opencode to handle
+    /// uncommitted changes by committing them or updating <c>.gitignore</c>.
+    /// </summary>
+    private static Issue BuildUncommittedChangesFixIssue(Issue original, string branchName) => new()
+    {
+        Id = original.Id,
+        ProjectId = original.ProjectId,
+        Number = original.Number,
+        Title = $"Fix uncommitted changes for: {original.Title}",
+        Body =
+            "There are uncommitted changes remaining after the previous agent run.\n" +
+            "Please commit all changes that should be tracked and update .gitignore to exclude\n" +
+            "build artifacts and other generated files that should not be committed.\n" +
+            "Run `git status` to see what is uncommitted.",
         GitBranch = branchName,
     };
 

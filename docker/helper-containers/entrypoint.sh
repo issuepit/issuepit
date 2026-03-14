@@ -10,7 +10,7 @@
 #   4b. Start Docker daemon (DinD) if dockerd is installed and no host socket is mounted.
 #   5. Execute the CLI agent tool (captures exit code; does NOT use exec so steps 6-8 run).
 #   6. Log opencode sessions (for visibility / debugging).
-#   7. Handle uncommitted changes: check for unstaged files, commit if needed, push.
+#   7. Check for uncommitted changes (emit marker for IssueWorker) and push.
 #   8. Emit git markers for IssueWorker to capture and use for CI/CD triggering.
 
 set -euo pipefail
@@ -35,7 +35,9 @@ if [[ -n "${ISSUEPIT_GIT_REMOTE_URL:-}" ]]; then
     # Priority: 1. ISSUEPIT_GIT_BRANCH env var, 2. auto-generate from issue number + title.
     if [[ -z "${ISSUEPIT_GIT_BRANCH:-}" && -n "${ISSUEPIT_ISSUE_NUMBER:-}" ]]; then
         # Auto-generate branch name: verb/NNN-slugified-title
-        # The verb is derived from the issue title using conventional-commit keywords.
+        # The verb is derived from the issue title using simple keyword matching.
+        # TODO: Replace keyword matching with an LLM API call so the verb and slug are
+        #       semantically accurate and properly summarise the issue intent.
         TITLE_LOWER=$(echo "${ISSUEPIT_ISSUE_TITLE:-}" | tr '[:upper:]' '[:lower:]')
         if echo "${TITLE_LOWER}" | grep -qE '(fix|bug|hotfix|patch|correct|repair)'; then
             VERB="fix"
@@ -220,34 +222,37 @@ if command -v opencode > /dev/null 2>&1; then
     opencode session list 2>/dev/null || true
 fi
 
-# ─── Step 7: Commit and push ──────────────────────────────────────────────────
+# ─── Step 7: Check for uncommitted changes and push ──────────────────────────
 #
-# After the agent finishes, make sure all work is committed and pushed.
-# Rules:
-#   a) Stage any unstaged tracked files (untracked files may be build artifacts —
-#      the agent is expected to handle .gitignore; warn if any remain).
-#   b) Commit staged changes with a conventional-commit message.
-#   c) Push the branch (allowed to fail — git credentials may not be configured yet).
+# The agent is expected to commit its own work. We only verify the final state:
+#   - Detect any remaining uncommitted changes (staged, tracked-but-modified, or untracked)
+#     and emit a special marker so IssueWorker can loop back to opencode to fix them.
+#   - Push the branch (allowed to fail — git credentials may not be configured yet).
 
 if [[ -d "${WORKSPACE}" ]]; then
     cd "${WORKSPACE}"
 
-    # Check for untracked (new) files that were not staged by the agent.
+    # Detect uncommitted state across all change categories.
+    STAGED=$(git diff --cached --name-only 2>/dev/null || true)
+    MODIFIED=$(git diff --name-only 2>/dev/null || true)
     UNTRACKED=$(git ls-files --others --exclude-standard 2>/dev/null || true)
-    if [[ -n "${UNTRACKED}" ]]; then
-        echo "[entrypoint] WARNING: untracked files found after agent run (may be build artifacts):"
-        echo "${UNTRACKED}" | head -20
-        echo "[entrypoint] If these should be committed, ensure the agent adds them or updates .gitignore."
-    fi
 
-    # Stage all modifications to tracked files (deletions and edits, but not untracked).
-    git add -u 2>/dev/null || true
-
-    # If there are staged changes, create a commit.
-    if ! git diff --cached --quiet 2>/dev/null; then
-        COMMIT_MSG="${VERB:-feat}: agent changes for issue #${ISSUEPIT_ISSUE_NUMBER:-unknown}"
-        echo "[entrypoint] Committing staged changes: ${COMMIT_MSG}"
-        git commit -m "${COMMIT_MSG}" 2>&1 || true
+    if [[ -n "${STAGED}" || -n "${MODIFIED}" || -n "${UNTRACKED}" ]]; then
+        echo "[entrypoint] WARNING: uncommitted changes found after agent run"
+        if [[ -n "${STAGED}" ]]; then
+            echo "[entrypoint] Staged files:"
+            echo "${STAGED}" | head -20
+        fi
+        if [[ -n "${MODIFIED}" ]]; then
+            echo "[entrypoint] Modified tracked files:"
+            echo "${MODIFIED}" | head -20
+        fi
+        if [[ -n "${UNTRACKED}" ]]; then
+            echo "[entrypoint] Untracked files (may be build artifacts — check .gitignore):"
+            echo "${UNTRACKED}" | head -20
+        fi
+        # IssueWorker reads this marker to decide whether to loop back to opencode.
+        echo "[ISSUEPIT:HAS_UNCOMMITTED_CHANGES]=true"
     fi
 
     # Push the current branch (allowed to fail if no push credentials are configured yet).
