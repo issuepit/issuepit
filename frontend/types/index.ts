@@ -308,6 +308,8 @@ export interface Issue {
   dueDate?: string
   estimate?: number
   kanbanRank: number
+  gitHubIssueNumber?: number
+  gitHubIssueUrl?: string
   createdAt: string
   updatedAt: string
   subIssues?: Issue[]
@@ -988,4 +990,78 @@ export interface Todo {
   updatedAt: string
   boardMemberships: TodoBoardMembership[]
   categoryMemberships: TodoCategoryMembership[]
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// GitHub Sync
+// ──────────────────────────────────────────────────────────────────────────────
+
+export enum GitHubSyncTriggerMode {
+  Off = 0,
+  Manual = 1,
+  Auto = 2,
+}
+
+export const GitHubSyncTriggerModeLabels: Record<GitHubSyncTriggerMode, string> = {
+  [GitHubSyncTriggerMode.Off]: 'Off',
+  [GitHubSyncTriggerMode.Manual]: 'Manual',
+  [GitHubSyncTriggerMode.Auto]: 'Auto',
+}
+
+export enum GitHubSyncRunStatus {
+  Pending = 0,
+  Running = 1,
+  Succeeded = 2,
+  Failed = 3,
+}
+
+export enum GitHubSyncLogLevel {
+  Info = 0,
+  Warn = 1,
+  Error = 2,
+}
+
+export interface GitHubSyncConfig {
+  id?: string
+  projectId: string
+  gitHubIdentityId?: string
+  gitHubIdentityName?: string
+  gitHubRepo?: string
+  triggerMode: GitHubSyncTriggerMode
+  autoCreateOnGitHub: boolean
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface GitHubSyncRun {
+  id: string
+  projectId: string
+  status: GitHubSyncRunStatus
+  summary?: string
+  startedAt: string
+  completedAt?: string
+}
+
+export interface GitHubSyncRunLog {
+  id: string
+  level: GitHubSyncLogLevel
+  message: string
+  timestamp: string
+}
+
+export interface GitHubSyncRunDetail extends GitHubSyncRun {
+  logs: GitHubSyncRunLog[]
+}
+
+export interface GitHubConflict {
+  issueId: string
+  issueNumber: number
+  gitHubIssueNumber: number
+  localTitle: string
+  gitHubTitle: string
+  localBody?: string
+  gitHubBody?: string
+  gitHubUrl: string
+  titleDiffers: boolean
+  bodyDiffers: boolean
 }
