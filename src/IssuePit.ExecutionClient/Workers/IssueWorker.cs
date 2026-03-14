@@ -34,10 +34,13 @@ public class IssueWorker(
     /// <summary>Timeout in minutes to wait for a CI/CD run to complete before giving up.</summary>
     private const int CiCdWaitTimeoutMinutes = 30;
 
-    // Special log-line prefixes emitted by entrypoint.sh to communicate git state back to IssueWorker.
+    // Special log-line prefixes emitted by DockerAgentRuntime (exec flow) to communicate
+    // git state and opencode session info back to IssueWorker.
+    // These must stay in sync with the constants on DockerAgentRuntime.
     private const string GitCommitShaMarker = "[ISSUEPIT:GIT_COMMIT_SHA]=";
     private const string GitBranchMarker = "[ISSUEPIT:GIT_BRANCH]=";
     private const string HasUncommittedChangesMarker = "[ISSUEPIT:HAS_UNCOMMITTED_CHANGES]=";
+    private const string OpenCodeSessionIdMarker = "[ISSUEPIT:OPENCODE_SESSION_ID]=";
 
     private string KafkaBootstrapServers => configuration.GetConnectionString("kafka")
         ?? throw new InvalidOperationException("Kafka connection string 'kafka' is not configured.");
@@ -275,17 +278,20 @@ public class IssueWorker(
 
             string? capturedCommitSha = null;
             string? capturedBranchName = null;
+            string? capturedOpenCodeSessionId = null;
             var capturedHasUncommittedChanges = false;
 
             Task onLogLine(string line, LogStream stream)
             {
-                // Parse special markers emitted by entrypoint.sh to capture git state.
+                // Parse special markers emitted by DockerAgentRuntime to capture git state and session ID.
                 if (line.StartsWith(GitCommitShaMarker, StringComparison.Ordinal))
                     capturedCommitSha = line[GitCommitShaMarker.Length..].Trim();
                 else if (line.StartsWith(GitBranchMarker, StringComparison.Ordinal))
                     capturedBranchName = line[GitBranchMarker.Length..].Trim();
                 else if (line.StartsWith(HasUncommittedChangesMarker, StringComparison.Ordinal))
                     capturedHasUncommittedChanges = true;
+                else if (line.StartsWith(OpenCodeSessionIdMarker, StringComparison.Ordinal))
+                    capturedOpenCodeSessionId = line[OpenCodeSessionIdMarker.Length..].Trim();
                 return AppendLogAsync(session.Id, line, stream, db, sessionCts.Token);
             }
 
@@ -293,49 +299,95 @@ public class IssueWorker(
             // without needing a client-side timer. The heartbeat is cancelled when the session ends.
             _ = PublishHeartbeatAsync(session.Id.ToString(), sessionCts.Token);
 
-            var runtimeId = await runtime.LaunchAsync(session, agent, issue, credentials, runtimeConfig, gitRepository, onLogLine, sessionCts.Token);
+            string? runtimeId = null;
+            // Exec-capable runtimes (DockerAgentRuntime) keep the container alive after LaunchAsync
+            // so that fix runs execute in the same container and share the same opencode session state.
+            IExecCapableRuntime? execRuntime = runtime as IExecCapableRuntime;
+            bool useExecForFixes = false;
 
-            logger.LogInformation(
-                "Agent {AgentId} launched via {RuntimeType} with id '{RuntimeId}' for session {SessionId}",
-                agent.Id, runtimeType, runtimeId, session.Id);
-
-            // Persist git branch / commit SHA reported by the entrypoint on the session record.
-            if (!string.IsNullOrEmpty(capturedCommitSha))
-                session.CommitSha = capturedCommitSha;
-            if (!string.IsNullOrEmpty(capturedBranchName))
-                session.GitBranch = capturedBranchName;
-
-            // If there are uncommitted changes, loop back to opencode to fix them before CI/CD.
-            if (capturedHasUncommittedChanges && gitRepository is not null && !string.IsNullOrEmpty(capturedBranchName))
+            try
             {
-                await AppendLogAsync(session.Id,
-                    "[INFO] Uncommitted changes detected — re-running opencode to commit or .gitignore them…",
-                    LogStream.Stdout, db, sessionCts.Token);
+                runtimeId = await runtime.LaunchAsync(session, agent, issue, credentials, runtimeConfig, gitRepository, onLogLine, sessionCts.Token);
 
-                var fixUncommittedIssue = BuildUncommittedChangesFixIssue(issue, capturedBranchName);
-                var (fixCommitSha, fixBranchName) = await RunCiCdFixAgentAsync(
-                    session, agent, fixUncommittedIssue, gitRepository, credentials, runtimeConfig, db, sessionCts.Token);
+                logger.LogInformation(
+                    "Agent {AgentId} launched via {RuntimeType} with id '{RuntimeId}' for session {SessionId}",
+                    agent.Id, runtimeType, runtimeId, session.Id);
 
-                if (!string.IsNullOrEmpty(fixCommitSha))
-                    capturedCommitSha = fixCommitSha;
-                if (!string.IsNullOrEmpty(fixBranchName))
-                    capturedBranchName = fixBranchName;
+                // Determine if we have an exec-capable container to use for fix runs.
+                // Only use exec if a session ID was captured (indicates the exec flow was used).
+                useExecForFixes = execRuntime is not null
+                    && !string.IsNullOrEmpty(capturedOpenCodeSessionId)
+                    && runtimeId is not null;
+
+                // Persist git branch / commit SHA reported by the runtime on the session record.
+                if (!string.IsNullOrEmpty(capturedCommitSha))
+                    session.CommitSha = capturedCommitSha;
+                if (!string.IsNullOrEmpty(capturedBranchName))
+                    session.GitBranch = capturedBranchName;
+
+                // If there are uncommitted changes, run opencode again to commit or .gitignore them.
+                if (capturedHasUncommittedChanges && gitRepository is not null && !string.IsNullOrEmpty(capturedBranchName))
+                {
+                    await AppendLogAsync(session.Id,
+                        "[INFO] Uncommitted changes detected — re-running opencode to commit or .gitignore them…",
+                        LogStream.Stdout, db, sessionCts.Token);
+
+                    var fixUncommittedIssue = BuildUncommittedChangesFixIssue(issue, capturedBranchName);
+                    string? fixCommitSha, fixBranchName;
+
+                    if (useExecForFixes)
+                    {
+                        // Same container — opencode can see the workspace and use --fork when supported.
+                        (fixCommitSha, fixBranchName) = await execRuntime!.ExecFixInContainerAsync(
+                            runtimeId!, capturedOpenCodeSessionId,
+                            session, agent, fixUncommittedIssue,
+                            (line, stream) => AppendLogAsync(session.Id, line, stream, db, sessionCts.Token),
+                            sessionCts.Token);
+                    }
+                    else
+                    {
+                        (fixCommitSha, fixBranchName) = await RunCiCdFixAgentAsync(
+                            session, agent, fixUncommittedIssue, gitRepository, credentials, runtimeConfig, db, sessionCts.Token);
+                    }
+
+                    if (!string.IsNullOrEmpty(fixCommitSha))
+                        capturedCommitSha = fixCommitSha;
+                    if (!string.IsNullOrEmpty(fixBranchName))
+                        capturedBranchName = fixBranchName;
+                }
+
+                // After the agent run completes, trigger the CI/CD pipeline and wait for results.
+                // If CI/CD fails, re-run opencode with the failure context to fix it (up to MaxCiCdFixAttempts).
+                if (gitRepository is not null
+                    && !string.IsNullOrEmpty(capturedCommitSha)
+                    && !string.IsNullOrEmpty(capturedBranchName))
+                {
+                    var cicdSucceeded = await RunCiCdFixLoopAsync(
+                        session, agent, issue, gitRepository, credentials, runtimeConfig,
+                        capturedCommitSha, capturedBranchName, db, sessionCts.Token,
+                        execRuntime: useExecForFixes ? execRuntime : null,
+                        execContainerId: useExecForFixes ? runtimeId : null,
+                        openCodeSessionId: capturedOpenCodeSessionId);
+                    session.Status = cicdSucceeded ? AgentSessionStatus.Succeeded : AgentSessionStatus.Failed;
+                }
+                else
+                {
+                    session.Status = AgentSessionStatus.Succeeded;
+                }
             }
-
-            // After the agent run completes, trigger the CI/CD pipeline and wait for results.
-            // If CI/CD fails, re-run opencode with the failure context to fix it (up to MaxCiCdFixAttempts).
-            if (gitRepository is not null
-                && !string.IsNullOrEmpty(capturedCommitSha)
-                && !string.IsNullOrEmpty(capturedBranchName))
+            finally
             {
-                var cicdSucceeded = await RunCiCdFixLoopAsync(
-                    session, agent, issue, gitRepository, credentials, runtimeConfig,
-                    capturedCommitSha, capturedBranchName, db, sessionCts.Token);
-                session.Status = cicdSucceeded ? AgentSessionStatus.Succeeded : AgentSessionStatus.Failed;
-            }
-            else
-            {
-                session.Status = AgentSessionStatus.Succeeded;
+                // Stop and clean up the exec container once all work (fix loops included) is done,
+                // or if an exception occurred after LaunchAsync returned successfully.
+                if (useExecForFixes && runtimeId is not null)
+                {
+                    if (session.KeepContainer)
+                        await AppendLogAsync(session.Id,
+                            $"[DEBUG] Container kept alive for inspection (KeepContainer=true). ID: {runtimeId[..Math.Min(12, runtimeId.Length)]}",
+                            LogStream.Stdout, db, sessionCts.Token);
+                    else
+                        await execRuntime!.StopContainerAsync(runtimeId, remove: true, sessionCts.Token);
+                }
             }
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -498,7 +550,11 @@ public class IssueWorker(
         string commitSha,
         string branchName,
         IssuePitDbContext db,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        // Exec-flow parameters: when set, fix runs reuse the same container.
+        IExecCapableRuntime? execRuntime = null,
+        string? execContainerId = null,
+        string? openCodeSessionId = null)
     {
         for (var attempt = 0; attempt < MaxCiCdFixAttempts; attempt++)
         {
@@ -544,14 +600,25 @@ public class IssueWorker(
                 $"[INFO] Launching opencode fix agent (attempt {attempt + 2}/{MaxCiCdFixAttempts}) to address CI/CD failures…",
                 LogStream.Stdout, db, cancellationToken);
 
-            // Re-run opencode with the CI/CD failure appended to the task prompt.
-            // NOTE: Ideally opencode would be invoked with `opencode run --fork <session-id>` so it
-            // can continue from where the previous session left off and retain full code context.
-            // The --fork flag is not yet supported in this integration; instead a new session is
-            // started with the failure summary appended to the task body as additional context.
             var fixIssue = BuildFixIssue(issue, failureLogs, branchName);
-            var (fixCommitSha, fixBranchName) = await RunCiCdFixAgentAsync(
-                session, agent, fixIssue, gitRepository, credentials, runtimeConfig, db, cancellationToken);
+            string? fixCommitSha, fixBranchName;
+
+            if (execRuntime is not null && execContainerId is not null)
+            {
+                // Same container — opencode sees the workspace as modified by the previous run.
+                // When opencode supports --fork, openCodeSessionId will be passed for full session continuity.
+                (fixCommitSha, fixBranchName) = await execRuntime.ExecFixInContainerAsync(
+                    execContainerId, openCodeSessionId,
+                    session, agent, fixIssue,
+                    (line, stream) => AppendLogAsync(session.Id, line, stream, db, cancellationToken),
+                    cancellationToken);
+            }
+            else
+            {
+                // Fallback: launch a new container for the fix run (legacy behaviour for non-exec runtimes).
+                (fixCommitSha, fixBranchName) = await RunCiCdFixAgentAsync(
+                    session, agent, fixIssue, gitRepository, credentials, runtimeConfig, db, cancellationToken);
+            }
 
             if (string.IsNullOrEmpty(fixCommitSha))
             {
