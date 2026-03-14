@@ -138,12 +138,7 @@
               class="hover:bg-gray-900/50 transition-colors cursor-pointer"
               @click="navigateTo(`/projects/${id}/runs/agent-sessions/${session.id}`)">
               <td class="px-4 py-3">
-                <span :class="statusClass(session.status)" class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium">
-                  <span :class="statusDot(session.status)" class="w-1.5 h-1.5 rounded-full" />
-                  {{ session.statusName }}
-                </span>
-              </td>
-              <td class="px-4 py-3 text-gray-300">{{ session.agentName }}</td>
+                <AgentSessionStatusChip :session="session" />
               <td class="px-4 py-3">
                 <NuxtLink :to="`/projects/${id}/issues/${session.issueNumber}`"
                   class="text-brand-400 hover:text-brand-300 transition-colors"
@@ -265,23 +260,4 @@ function duration(start: string, end?: string) {
   return `${Math.floor(m / 60)}h ${m % 60}m`
 }
 
-function statusClass(status: CiCdRunStatus) {
-  switch (status) {
-    case CiCdRunStatus.Succeeded: return 'bg-green-900/30 text-green-400'
-    case CiCdRunStatus.Running: return 'bg-blue-900/30 text-blue-400'
-    case CiCdRunStatus.Failed: return 'bg-red-900/30 text-red-400'
-    case CiCdRunStatus.Cancelled: return 'bg-gray-800 text-gray-400'
-    default: return 'bg-yellow-900/30 text-yellow-400'
-  }
-}
-
-function statusDot(status: CiCdRunStatus) {
-  switch (status) {
-    case CiCdRunStatus.Succeeded: return 'bg-green-400'
-    case CiCdRunStatus.Running: return 'bg-blue-400 animate-pulse'
-    case CiCdRunStatus.Failed: return 'bg-red-400'
-    case CiCdRunStatus.Cancelled: return 'bg-gray-500'
-    default: return 'bg-yellow-400'
-  }
-}
 </script>

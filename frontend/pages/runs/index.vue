@@ -73,7 +73,9 @@
               class="hover:bg-gray-900/50 transition-colors cursor-pointer"
               @click="navigateTo(item.href)">
               <td class="px-4 py-3">
-                <span :class="statusClass(item.status)" class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium">
+                <CiCdStatusChip v-if="item.cicdRun" :runs="[item.cicdRun]" :run-link="false" />
+                <AgentSessionStatusChip v-else-if="item.agentSession" :session="item.agentSession" />
+                <span v-else :class="statusClass(item.status)" class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium">
                   <span :class="statusDot(item.status)" class="w-1.5 h-1.5 rounded-full" />
                   {{ item.statusName }}
                 </span>
@@ -208,11 +210,7 @@
               class="hover:bg-gray-900/50 transition-colors cursor-pointer"
               @click="navigateTo(`/projects/${session.projectId}/runs/agent-sessions/${session.id}`)">
               <td class="px-4 py-3">
-                <span :class="statusClass(session.status)" class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium">
-                  <span :class="statusDot(session.status)" class="w-1.5 h-1.5 rounded-full" />
-                  {{ session.statusName }}
-                </span>
-              </td>
+                <AgentSessionStatusChip :session="session" />
               <td class="px-4 py-3">
                 <NuxtLink :to="`/projects/${session.projectId}/runs?tab=agent`"
                   class="text-brand-400 hover:text-brand-300 transition-colors"
@@ -256,7 +254,7 @@
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useProjectsStore } from '~/stores/projects'
 import { useOrgsStore } from '~/stores/orgs'
-import { CiCdRunStatus, type AgentSessionStatus } from '~/types'
+import { CiCdRunStatus, type AgentSessionStatus, type CiCdRun, type DashboardAgentSession } from '~/types'
 import type { MultiSelectOption } from '~/components/MultiSelect.vue'
 
 const store = useCiCdRunsStore()
@@ -387,6 +385,8 @@ interface MixedRunItem {
   startedAt: string
   endedAt?: string
   href: string
+  cicdRun?: CiCdRun
+  agentSession?: DashboardAgentSession
 }
 
 const allRunsMixed = computed((): MixedRunItem[] => {
@@ -402,6 +402,7 @@ const allRunsMixed = computed((): MixedRunItem[] => {
     startedAt: run.startedAt,
     endedAt: run.endedAt,
     href: `/projects/${run.projectId}/runs/cicd/${run.id}`,
+    cicdRun: run,
   }))
 
   const agentItems: MixedRunItem[] = filteredAgentSessions.value.map(session => ({
@@ -416,6 +417,7 @@ const allRunsMixed = computed((): MixedRunItem[] => {
     startedAt: session.startedAt,
     endedAt: session.endedAt,
     href: `/projects/${session.projectId}/runs/agent-sessions/${session.id}`,
+    agentSession: session,
   }))
 
   return [...cicdItems, ...agentItems].sort(
