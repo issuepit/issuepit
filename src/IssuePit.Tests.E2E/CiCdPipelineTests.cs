@@ -524,9 +524,56 @@ public class CiCdPipelineTests(AspireFixture fixture)
     }
 
     /// <summary>
-    /// Polls <c>GET /api/cicd-runs?projectId={id}</c> until the most-recent run reaches a
-    /// terminal status (Succeeded, Failed, or Cancelled) or the timeout elapses.
+    /// Verifies that the trigger endpoint accepts a branch name without a commit SHA and
+    /// queues the run, storing the branch in the run record.
     /// </summary>
+    [Fact]
+    public async Task TriggerRun_ByBranchOnly_ReturnsAcceptedAndStoresBranch()
+    {
+        var (client, projectId) = await SetupProjectAsync();
+        using var _ = client;
+
+        // Trigger with branch only — no commitSha provided.
+        var triggerResp = await client.PostAsJsonAsync("/api/cicd-runs/trigger", new
+        {
+            projectId = Guid.Parse(projectId),
+            eventName = "push",
+            branch = "main",
+        });
+
+        Assert.Equal(HttpStatusCode.Accepted, triggerResp.StatusCode);
+
+        var body = await triggerResp.Content.ReadFromJsonAsync<JsonElement>();
+        var runId = body.GetProperty("runId").GetString()!;
+
+        // Fetch the created run and verify the branch field is set.
+        var runResp = await client.GetAsync($"/api/cicd-runs/{runId}");
+        Assert.Equal(HttpStatusCode.OK, runResp.StatusCode);
+        var run = await runResp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("main", run.GetProperty("branch").GetString());
+        // CommitSha should be populated (either resolved tip or fallback to branch name).
+        var commitSha = run.GetProperty("commitSha").GetString();
+        Assert.False(string.IsNullOrEmpty(commitSha), "Expected a non-empty commitSha in the run record");
+    }
+
+    /// <summary>
+    /// Verifies that the trigger endpoint rejects requests that provide neither a commit SHA
+    /// nor a branch name.
+    /// </summary>
+    [Fact]
+    public async Task TriggerRun_NeitherShaOrBranch_ReturnsBadRequest()
+    {
+        var (client, projectId) = await SetupProjectAsync();
+        using var _ = client;
+
+        var triggerResp = await client.PostAsJsonAsync("/api/cicd-runs/trigger", new
+        {
+            projectId = Guid.Parse(projectId),
+            eventName = "push",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, triggerResp.StatusCode);
+    }
     private static async Task<JsonElement> WaitForRunOfProjectAsync(
         HttpClient client,
         string projectId,

@@ -250,9 +250,10 @@ public class CiCdWorker(
             var runtime = runtimeFactory.Create(trigger.RuntimeOverride);
 
             // Log run parameters so they are visible in the log output
-            await AppendLogAsync(run.Id,
-                $"[INFO] Run started — event: {run.EventName ?? "push"}, commit: {run.CommitSha}",
-                LogStream.Stdout, db, stoppingToken);
+            var startLine = $"[INFO] Run started — event: {run.EventName ?? "push"}, commit: {run.CommitSha}";
+            if (!string.IsNullOrEmpty(run.Branch))
+                startLine += $", branch: {run.Branch}";
+            await AppendLogAsync(run.Id, startLine, LogStream.Stdout, db, stoppingToken);
             if (!string.IsNullOrEmpty(run.InputsJson))
             {
                 await AppendLogAsync(run.Id,
