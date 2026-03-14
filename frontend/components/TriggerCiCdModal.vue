@@ -22,11 +22,39 @@
           </div>
         </div>
         <div v-else>
-          <label class="block text-sm font-medium text-gray-300 mb-1">
-            Commit SHA <span class="text-red-400">*</span>
-          </label>
-          <input v-model="manualCommitSha" type="text" placeholder="e.g. abc123def456…"
-            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          <!-- Mode toggle: Branch vs SHA -->
+          <div class="flex gap-1 mb-3 bg-gray-800 rounded-lg p-1 w-fit">
+            <button
+              v-for="mode in refModes"
+              :key="mode.value"
+              @click="refMode = mode.value"
+              :class="[
+                'px-3 py-1 text-xs rounded-md transition-colors font-medium',
+                refMode === mode.value
+                  ? 'bg-brand-600 text-white'
+                  : 'text-gray-400 hover:text-gray-200',
+              ]">
+              {{ mode.label }}
+            </button>
+          </div>
+
+          <!-- Branch input -->
+          <div v-if="refMode === 'branch'">
+            <label class="block text-sm font-medium text-gray-300 mb-1">
+              Branch <span class="text-red-400">*</span>
+            </label>
+            <input v-model="manualBranch" type="text" placeholder="e.g. main, feature/my-branch"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          </div>
+
+          <!-- SHA input -->
+          <div v-else>
+            <label class="block text-sm font-medium text-gray-300 mb-1">
+              Commit SHA <span class="text-red-400">*</span>
+            </label>
+            <input v-model="manualCommitSha" type="text" placeholder="e.g. abc123def456…"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          </div>
         </div>
 
         <!-- Event type selector -->
@@ -135,8 +163,17 @@ const eventOptions = [
   { value: 'release', label: 'release' },
 ]
 
+const refModes = [
+  { value: 'branch', label: 'Branch' },
+  { value: 'sha', label: 'Commit SHA' },
+] as const
+
+type RefMode = typeof refModes[number]['value']
+
+const refMode = ref<RefMode>('branch')
 const selectedEvent = ref('push')
 const selectedWorkflow = ref('')
+const manualBranch = ref('')
 const manualCommitSha = ref('')
 const inputValues = ref<Record<string, string>>({})
 const inputBooleans = ref<Record<string, boolean>>({})
@@ -186,11 +223,17 @@ onMounted(async () => {
 
 async function triggerRun() {
   triggerError.value = null
-  const sha = props.commitSha || manualCommitSha.value.trim()
-  if (!sha) {
-    triggerError.value = 'Commit SHA is required'
+
+  // When commitSha prop is provided (e.g. triggered from the code view), use it directly.
+  // Otherwise use the user's manual input based on the selected mode.
+  const sha = props.commitSha || (refMode.value === 'sha' ? manualCommitSha.value.trim() : undefined)
+  const branchName = props.branch || (refMode.value === 'branch' ? manualBranch.value.trim() : undefined)
+
+  if (!sha && !branchName) {
+    triggerError.value = refMode.value === 'branch' ? 'Branch name is required' : 'Commit SHA is required'
     return
   }
+
   triggering.value = true
   try {
     // Build inputs dict (only for workflow_dispatch)
@@ -206,7 +249,7 @@ async function triggerRun() {
       projectId: props.projectId,
       commitSha: sha,
       eventName: selectedEvent.value,
-      branch: props.branch,
+      branch: branchName,
       workflow: selectedWorkflow.value || undefined,
       inputs,
       customImage: import.meta.client ? (localStorage.getItem(ACT_CONTAINER_STORAGE_KEY) ?? undefined) : undefined,

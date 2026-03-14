@@ -195,7 +195,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
 
   async function triggerRun(request: {
     projectId: string
-    commitSha: string
+    commitSha?: string
     eventName: string
     branch?: string
     workflow?: string

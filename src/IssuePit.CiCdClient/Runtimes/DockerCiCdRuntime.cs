@@ -557,10 +557,20 @@ public partial class DockerCiCdRuntime(
                 if (hasGitRepo)
                 {
                     await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: git clone {trigger.GitRepoUrl}", LogStream.Stdout);
+                    // Clone into /workspace so act can find the repo at its expected path.
+                    // Pass -b when a branch is specified so the correct branch is checked out
+                    // rather than the remote's default branch.
+                    var cloneArgs = new List<string> { "git", "clone", "--depth=1" };
+                    if (!string.IsNullOrWhiteSpace(trigger.Branch))
+                    {
+                        cloneArgs.Add("-b");
+                        cloneArgs.Add(trigger.Branch);
+                    }
+                    cloneArgs.Add(trigger.GitRepoUrl!);
+                    cloneArgs.Add("/workspace");
                     var cloneExitCode = await ExecCommandAsync(
                         container.ID,
-                        // Clone into /workspace so act can find the repo at its expected path.
-                        ["git", "clone", "--depth=1", trigger.GitRepoUrl!, "/workspace"],
+                        cloneArgs,
                         onLogLine,
                         cancellationToken);
                     if (cloneExitCode != 0)
