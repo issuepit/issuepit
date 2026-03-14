@@ -13,7 +13,7 @@
       <StatCard label="Projects" :value="stats.projects" icon="projects" color="blue" to="/projects" />
       <StatCard label="Open Issues" :value="stats.openIssues" icon="issues" color="amber" to="/issues?status=open" />
       <StatCard label="In Progress" :value="stats.inProgress" icon="progress" color="indigo" to="/issues?status=in_progress" />
-      <StatCard label="Agents" :value="stats.agents" icon="agents" color="green" to="/agents" />
+      <StatCard label="Agent Runs" :value="stats.agentRuns" icon="agents" color="green" to="/runs" />
     </div>
 
     <!-- Recent Activity -->
@@ -209,13 +209,11 @@
 import { IssueStatus, IssuePriority, type IssueHistoryEntry, CiCdRunStatus } from '~/types'
 import { useProjectsStore } from '~/stores/projects'
 import { useIssuesStore } from '~/stores/issues'
-import { useAgentsStore } from '~/stores/agents'
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { formatIssueId } from '~/composables/useIssueFormat'
 
 const projectsStore = useProjectsStore()
 const issuesStore = useIssuesStore()
-const agentsStore = useAgentsStore()
 const runsStore = useCiCdRunsStore()
 
 const api = useApi()
@@ -227,7 +225,6 @@ const activeRunTab = ref<typeof runTabs[number]>('CI/CD')
 onMounted(async () => {
   await Promise.allSettled([
     projectsStore.fetchProjects(),
-    agentsStore.fetchAgents(),
     issuesStore.fetchIssues(),
     runsStore.fetchRuns(),
     runsStore.fetchDashboardSessions(),
@@ -239,7 +236,7 @@ const stats = computed(() => ({
   projects: projectsStore.projects.length,
   openIssues: issuesStore.issues.filter(i => i.status !== IssueStatus.Done && i.status !== IssueStatus.Cancelled).length,
   inProgress: issuesStore.issues.filter(i => i.status === IssueStatus.InProgress).length,
-  agents: agentsStore.agents.length
+  agentRuns: runsStore.dashboardSessions.length
 }))
 
 const recentIssues = computed(() =>
