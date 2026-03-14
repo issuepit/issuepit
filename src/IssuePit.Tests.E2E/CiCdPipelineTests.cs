@@ -189,7 +189,7 @@ public class CiCdPipelineTests(AspireFixture fixture)
         using var _ = client;
 
         const string expectedBranch = "feat/42-add-e2e-branch-check";
-        const string expectedCommitSha = "e2e-branch-sha-0123456789abcdef";
+        const string expectedCommitSha = "e2eabc123def456789abcdef0123456789abcdef";
 
         var workspacePath = runtimeMode == NativeRuntime
             ? Environment.GetEnvironmentVariable("CICD_E2E_REPO_PATH")
