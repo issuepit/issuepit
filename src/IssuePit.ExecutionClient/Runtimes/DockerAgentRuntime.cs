@@ -122,7 +122,7 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         // Replace localhost/127.0.0.1 with host.docker.internal so containers can reach the host's services
         // (e.g. the IssuePit MCP server). The container host-gateway ExtraHost added below makes
         // host.docker.internal resolvable both on Linux (via host-gateway) and Docker Desktop.
-        var issuePitMcpUrl = ToDockerHostUrl(configuration["McpServer__BaseUrl"]);
+        var issuePitMcpUrl = ToDockerHostUrl(configuration["McpServer:BaseUrl"]);
         var env = AgentEnvironmentBuilder.Build(session, agent, issue, credentials, gitRepository, issuePitMcpUrl);
         if (!string.IsNullOrWhiteSpace(issuePitMcpUrl))
             await onLogLine($"[DEBUG] IssuePit MCP   : {issuePitMcpUrl}", LogStream.Stdout);
