@@ -261,20 +261,19 @@ var api = builder.AddProject<Projects.IssuePit_Api>("api")
         u.Url = "/scalar/v1";
     });
 
+// Disable the DCP proxy for the MCP server: the proxy only binds to 127.0.0.1, which Docker
+// agent containers cannot reach via host.docker.internal. With IsProxied=false, GetEndpoint
+// returns the direct target URL (http://localhost:{T}); ToDockerHostUrl() translates it to
+// host.docker.internal:{T}, and the MCP server listens on 0.0.0.0:{T} via ListenAnyIP.
 var mcpServer = builder.AddProject<Projects.IssuePit_McpServer>("mcp-server")
     .WithReference(api)
     .WaitFor(api)
-    .WithEnvironment("IssuePit__ApiBaseUrl", api.GetEndpoint("http"));
+    .WithEnvironment("IssuePit__ApiBaseUrl", api.GetEndpoint("http"))
+    .WithEndpoint("http", e => e.IsProxied = false);
 
 // Allow the API to discover and call the MCP server (e.g. for issue enhancement).
 api.WithEnvironment("McpServer__BaseUrl", mcpServer.GetEndpoint("http"));
 
-// The Aspire DCP proxy that sits in front of the MCP server binds only to localhost, so Docker
-// agent containers cannot reach it via host.docker.internal. We pass the MCP server's own
-// target port (the port the process directly listens on) as a separate config entry so the
-// execution client can bypass the proxy when constructing the container-accessible URL.
-// The MCP server binds on 0.0.0.0 on this port via ConfigureKestrel/ListenAnyIP in Program.cs.
-var mcpServerEndpoint = mcpServer.GetEndpoint("http");
 var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("execution-client")
     .WithReference(postgresDb)
     .WithReference(postgresServer)
@@ -284,9 +283,7 @@ var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("exe
     .WaitForCompletion(kafkaInitializer)
     .WaitFor(kafka)
     .WaitFor(redis)
-    .WithEnvironment("McpServer__BaseUrl", mcpServerEndpoint)
-    .WithEnvironment("McpServer__DockerBaseUrl",
-        ReferenceExpression.Create($"http://localhost:{mcpServerEndpoint.Property(EndpointProperty.TargetPort)}"))
+    .WithEnvironment("McpServer__BaseUrl", mcpServer.GetEndpoint("http"))
     .WithHttpHealthCheck("/health", endpointName: "http");
 
 // Scale cicd-client horizontally to allow multiple concurrent runs.
