@@ -374,7 +374,7 @@
           <div v-if="previewIssue.assignees?.length" class="flex items-center gap-2 flex-wrap">
             <span class="text-xs text-gray-500">Assigned:</span>
             <span v-for="a in previewIssue.assignees" :key="a.id" class="text-xs text-gray-300">
-              {{ (a as { user?: { username?: string }, agent?: { name?: string } }).user?.username || (a as { user?: { username?: string }, agent?: { name?: string } }).agent?.name || 'Unknown' }}
+              {{ a.user?.username || a.agent?.name || 'Unknown' }}
             </span>
           </div>
           <!-- Milestone -->
@@ -526,7 +526,9 @@ const issuesByColumn = computed(() => {
   }
   else if (board.laneType === KanbanLaneType.Milestone) {
     for (const issue of filteredIssues) {
-      const col = boardColumns.value.find(c => c.filterValue === (issue.milestoneId ?? null))
+      // Normalize both sides to string | null for reliable comparison
+      const issueMs = issue.milestoneId ?? null
+      const col = boardColumns.value.find(c => (c.filterValue ?? null) === issueMs)
       if (col) result[col.id]?.push(issue)
       else {
         const defaultCol = boardColumns.value.find(c => !c.filterValue)

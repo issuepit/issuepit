@@ -218,6 +218,8 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
         await db.SaveChangesAsync();
 
         // --- Label board for frontend project ---
+        // Note: IssueStatus.Backlog is a placeholder for non-status lanes; the frontend
+        // ignores IssueStatus when LaneType != Status (no status change on drag-drop).
         var (feLabelBoard, _) = await db.KanbanBoards.AddIfNotExistsAsync(
             b => b.ProjectId == frontendProject.Id && b.Name == "By Label",
             new KanbanBoard { Id = Guid.NewGuid(), ProjectId = frontendProject.Id, Name = "By Label", LaneType = KanbanLaneType.Label, CreatedAt = DateTime.UtcNow });
