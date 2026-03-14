@@ -24,11 +24,11 @@ export const useKanbanStore = defineStore('kanban', () => {
     }
   }
 
-  async function createBoard(projectId: string, name: string) {
+  async function createBoard(projectId: string, name: string, laneProperty?: import('~/types').KanbanLaneProperty) {
     loading.value = true
     error.value = null
     try {
-      const board = await api.post<KanbanBoard>('/api/kanban/boards', { projectId, name })
+      const board = await api.post<KanbanBoard>('/api/kanban/boards', { projectId, name, laneProperty })
       boards.value.push(board)
       return board
     } catch (e: unknown) {
@@ -74,11 +74,11 @@ export const useKanbanStore = defineStore('kanban', () => {
 
   // ── Columns ───────────────────────────────────────────────────────────────
 
-  async function addColumn(boardId: string, name: string, position: number, issueStatus: IssueStatus) {
+  async function addColumn(boardId: string, name: string, position: number, issueStatus: IssueStatus, laneValue?: string) {
     loading.value = true
     error.value = null
     try {
-      const col = await api.post<KanbanColumn>(`/api/kanban/boards/${boardId}/columns`, { name, position, issueStatus })
+      const col = await api.post<KanbanColumn>(`/api/kanban/boards/${boardId}/columns`, { name, position, issueStatus, laneValue })
       const board = boards.value.find(b => b.id === boardId)
       if (board) {
         board.columns.push(col)
@@ -93,11 +93,11 @@ export const useKanbanStore = defineStore('kanban', () => {
     }
   }
 
-  async function updateColumn(boardId: string, columnId: string, name: string, position: number, issueStatus: IssueStatus) {
+  async function updateColumn(boardId: string, columnId: string, name: string, position: number, issueStatus: IssueStatus, laneValue?: string) {
     loading.value = true
     error.value = null
     try {
-      const col = await api.put<KanbanColumn>(`/api/kanban/boards/${boardId}/columns/${columnId}`, { name, position, issueStatus })
+      const col = await api.put<KanbanColumn>(`/api/kanban/boards/${boardId}/columns/${columnId}`, { name, position, issueStatus, laneValue })
       const replaceInBoard = (b: KanbanBoard) => {
         const idx = b.columns.findIndex(c => c.id === columnId)
         if (idx !== -1) b.columns[idx] = col

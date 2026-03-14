@@ -507,6 +507,125 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
             });
         await db.SaveChangesAsync();
 
+        // --- Additional Kanban Boards (Label, Priority, Agent, Milestone, Custom) ---
+        // Fetch seeded agents so we can create agent-property boards
+        var seededPlanAgent  = await db.Agents.FirstOrDefaultAsync(a => a.OrgId == org.Id && a.Name == "Plan Agent");
+        var seededCodeAgent  = await db.Agents.FirstOrDefaultAsync(a => a.OrgId == org.Id && a.Name == "Code Agent");
+        var seededEvalAgent  = await db.Agents.FirstOrDefaultAsync(a => a.OrgId == org.Id && a.Name == "Evaluate Agent");
+
+        // Helper to add a non-status column to a board
+        static KanbanColumn NsCol(Guid boardId, string name, int pos, string laneValue, IssueStatus defaultStatus = IssueStatus.Backlog)
+            => new() { Id = Guid.NewGuid(), BoardId = boardId, Name = name, Position = pos, IssueStatus = defaultStatus, LaneValue = laneValue };
+
+        // ── Frontend project extra boards ─────────────────────────────────
+        var (feLabelBoard, _) = await db.KanbanBoards.AddIfNotExistsAsync(
+            b => b.ProjectId == frontendProject.Id && b.Name == "By Label",
+            new KanbanBoard { Id = Guid.NewGuid(), ProjectId = frontendProject.Id, Name = "By Label", LaneProperty = KanbanLaneProperty.Label, CreatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+        await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == feLabelBoard.Id && c.LaneValue == labelBug.Id.ToString(),     NsCol(feLabelBoard.Id, "Bug",      0, labelBug.Id.ToString()));
+        await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == feLabelBoard.Id && c.LaneValue == labelFeature.Id.ToString(), NsCol(feLabelBoard.Id, "Feature",  1, labelFeature.Id.ToString()));
+        await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == feLabelBoard.Id && c.LaneValue == labelUx.Id.ToString(),      NsCol(feLabelBoard.Id, "UX",       2, labelUx.Id.ToString()));
+        await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == feLabelBoard.Id && c.LaneValue == "",                         NsCol(feLabelBoard.Id, "No Label", 3, ""));
+        await db.SaveChangesAsync();
+
+        var (fePriorityBoard, _) = await db.KanbanBoards.AddIfNotExistsAsync(
+            b => b.ProjectId == frontendProject.Id && b.Name == "By Priority",
+            new KanbanBoard { Id = Guid.NewGuid(), ProjectId = frontendProject.Id, Name = "By Priority", LaneProperty = KanbanLaneProperty.Priority, CreatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+        await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == fePriorityBoard.Id && c.LaneValue == "urgent",      NsCol(fePriorityBoard.Id, "Urgent",      0, "urgent",      IssueStatus.InProgress));
+        await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == fePriorityBoard.Id && c.LaneValue == "high",        NsCol(fePriorityBoard.Id, "High",        1, "high",        IssueStatus.InProgress));
+        await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == fePriorityBoard.Id && c.LaneValue == "medium",      NsCol(fePriorityBoard.Id, "Medium",      2, "medium",      IssueStatus.Todo));
+        await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == fePriorityBoard.Id && c.LaneValue == "low",         NsCol(fePriorityBoard.Id, "Low",         3, "low",         IssueStatus.Backlog));
+        await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == fePriorityBoard.Id && c.LaneValue == "no_priority", NsCol(fePriorityBoard.Id, "No Priority", 4, "no_priority", IssueStatus.Backlog));
+        await db.SaveChangesAsync();
+
+        var (feMilestoneBoard, _) = await db.KanbanBoards.AddIfNotExistsAsync(
+            b => b.ProjectId == frontendProject.Id && b.Name == "By Milestone",
+            new KanbanBoard { Id = Guid.NewGuid(), ProjectId = frontendProject.Id, Name = "By Milestone", LaneProperty = KanbanLaneProperty.Milestone, CreatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+        await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == feMilestoneBoard.Id && c.LaneValue == feMilestone.Id.ToString(), NsCol(feMilestoneBoard.Id, "v1.0 Launch",  0, feMilestone.Id.ToString()));
+        await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == feMilestoneBoard.Id && c.LaneValue == "",                         NsCol(feMilestoneBoard.Id, "No Milestone", 1, ""));
+        await db.SaveChangesAsync();
+
+        if (seededCodeAgent is not null || seededPlanAgent is not null || seededEvalAgent is not null)
+        {
+            var (feAgentBoard, _) = await db.KanbanBoards.AddIfNotExistsAsync(
+                b => b.ProjectId == frontendProject.Id && b.Name == "By Agent",
+                new KanbanBoard { Id = Guid.NewGuid(), ProjectId = frontendProject.Id, Name = "By Agent", LaneProperty = KanbanLaneProperty.Agent, CreatedAt = DateTime.UtcNow });
+            await db.SaveChangesAsync();
+            var feAgentPos = 0;
+            if (seededPlanAgent is not null)  await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == feAgentBoard.Id && c.LaneValue == seededPlanAgent.Id.ToString(),  NsCol(feAgentBoard.Id, "Plan Agent",     feAgentPos++, seededPlanAgent.Id.ToString()));
+            if (seededCodeAgent is not null)  await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == feAgentBoard.Id && c.LaneValue == seededCodeAgent.Id.ToString(),  NsCol(feAgentBoard.Id, "Code Agent",     feAgentPos++, seededCodeAgent.Id.ToString()));
+            if (seededEvalAgent is not null)  await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == feAgentBoard.Id && c.LaneValue == seededEvalAgent.Id.ToString(),  NsCol(feAgentBoard.Id, "Evaluate Agent", feAgentPos++, seededEvalAgent.Id.ToString()));
+            await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == feAgentBoard.Id && c.LaneValue == "", NsCol(feAgentBoard.Id, "Unassigned", feAgentPos, ""));
+            await db.SaveChangesAsync();
+        }
+
+        // ── IssuePit project extra boards ─────────────────────────────────
+        var (ipLabelBoard, _) = await db.KanbanBoards.AddIfNotExistsAsync(
+            b => b.ProjectId == issuePitProject.Id && b.Name == "By Label",
+            new KanbanBoard { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Name = "By Label", LaneProperty = KanbanLaneProperty.Label, CreatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+        await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == ipLabelBoard.Id && c.LaneValue == ipLabelBug.Id.ToString(),         NsCol(ipLabelBoard.Id, "Bug",         0, ipLabelBug.Id.ToString()));
+        await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == ipLabelBoard.Id && c.LaneValue == ipLabelFeature.Id.ToString(),     NsCol(ipLabelBoard.Id, "Feature",     1, ipLabelFeature.Id.ToString()));
+        await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == ipLabelBoard.Id && c.LaneValue == ipLabelEnhancement.Id.ToString(), NsCol(ipLabelBoard.Id, "Enhancement", 2, ipLabelEnhancement.Id.ToString()));
+        await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == ipLabelBoard.Id && c.LaneValue == ipLabelDocs.Id.ToString(),        NsCol(ipLabelBoard.Id, "Docs",        3, ipLabelDocs.Id.ToString()));
+        await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == ipLabelBoard.Id && c.LaneValue == "",                              NsCol(ipLabelBoard.Id, "No Label",    4, ""));
+        await db.SaveChangesAsync();
+
+        var (ipMilestoneBoard, _) = await db.KanbanBoards.AddIfNotExistsAsync(
+            b => b.ProjectId == issuePitProject.Id && b.Name == "By Milestone",
+            new KanbanBoard { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Name = "By Milestone", LaneProperty = KanbanLaneProperty.Milestone, CreatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+        await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == ipMilestoneBoard.Id && c.LaneValue == ipMilestoneBeta.Id.ToString(),  NsCol(ipMilestoneBoard.Id, "v0.1 Private Beta",     0, ipMilestoneBeta.Id.ToString()));
+        await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == ipMilestoneBoard.Id && c.LaneValue == ipMilestoneCiCd.Id.ToString(),  NsCol(ipMilestoneBoard.Id, "v0.2 CI/CD & Code Review", 1, ipMilestoneCiCd.Id.ToString()));
+        await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == ipMilestoneBoard.Id && c.LaneValue == "",                             NsCol(ipMilestoneBoard.Id, "No Milestone",            2, ""));
+        await db.SaveChangesAsync();
+
+        if (seededCodeAgent is not null || seededPlanAgent is not null || seededEvalAgent is not null)
+        {
+            var (ipAgentBoard, _) = await db.KanbanBoards.AddIfNotExistsAsync(
+                b => b.ProjectId == issuePitProject.Id && b.Name == "By Agent",
+                new KanbanBoard { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Name = "By Agent", LaneProperty = KanbanLaneProperty.Agent, CreatedAt = DateTime.UtcNow });
+            await db.SaveChangesAsync();
+            var ipAgentPos = 0;
+            if (seededPlanAgent is not null)  await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == ipAgentBoard.Id && c.LaneValue == seededPlanAgent.Id.ToString(),  NsCol(ipAgentBoard.Id, "Plan Agent",     ipAgentPos++, seededPlanAgent.Id.ToString()));
+            if (seededCodeAgent is not null)  await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == ipAgentBoard.Id && c.LaneValue == seededCodeAgent.Id.ToString(),  NsCol(ipAgentBoard.Id, "Code Agent",     ipAgentPos++, seededCodeAgent.Id.ToString()));
+            if (seededEvalAgent is not null)  await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == ipAgentBoard.Id && c.LaneValue == seededEvalAgent.Id.ToString(),  NsCol(ipAgentBoard.Id, "Evaluate Agent", ipAgentPos++, seededEvalAgent.Id.ToString()));
+            await db.KanbanColumns.AddIfNotExistsAsync(c => c.BoardId == ipAgentBoard.Id && c.LaneValue == "", NsCol(ipAgentBoard.Id, "Unassigned", ipAgentPos, ""));
+            await db.SaveChangesAsync();
+        }
+
+        // ── Custom Properties for IssuePit project ────────────────────────
+        await db.ProjectProperties.AddIfNotExistsAsync(
+            p => p.ProjectId == issuePitProject.Id && p.Name == "Due Date",
+            new ProjectProperty { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Name = "Due Date", Type = ProjectPropertyType.Date, IsRequired = false, Position = 0, CreatedAt = DateTime.UtcNow });
+        await db.ProjectProperties.AddIfNotExistsAsync(
+            p => p.ProjectId == issuePitProject.Id && p.Name == "Reporter",
+            new ProjectProperty { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Name = "Reporter", Type = ProjectPropertyType.Person, IsRequired = false, Position = 1, CreatedAt = DateTime.UtcNow });
+        await db.ProjectProperties.AddIfNotExistsAsync(
+            p => p.ProjectId == issuePitProject.Id && p.Name == "Is Confidential",
+            new ProjectProperty { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Name = "Is Confidential", Type = ProjectPropertyType.Bool, IsRequired = false, DefaultValue = "false", Position = 2, CreatedAt = DateTime.UtcNow });
+        await db.ProjectProperties.AddIfNotExistsAsync(
+            p => p.ProjectId == issuePitProject.Id && p.Name == "Affected Component",
+            new ProjectProperty { Id = Guid.NewGuid(), ProjectId = issuePitProject.Id, Name = "Affected Component", Type = ProjectPropertyType.Enum, IsRequired = false, AllowedValues = """["frontend","backend","infra","database","ci-cd"]""", Position = 3, CreatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+
+        // ── Custom Properties for Frontend project ────────────────────────
+        await db.ProjectProperties.AddIfNotExistsAsync(
+            p => p.ProjectId == frontendProject.Id && p.Name == "Due Date",
+            new ProjectProperty { Id = Guid.NewGuid(), ProjectId = frontendProject.Id, Name = "Due Date", Type = ProjectPropertyType.Date, IsRequired = false, Position = 0, CreatedAt = DateTime.UtcNow });
+        await db.ProjectProperties.AddIfNotExistsAsync(
+            p => p.ProjectId == frontendProject.Id && p.Name == "Reporter",
+            new ProjectProperty { Id = Guid.NewGuid(), ProjectId = frontendProject.Id, Name = "Reporter", Type = ProjectPropertyType.Person, IsRequired = false, Position = 1, CreatedAt = DateTime.UtcNow });
+        await db.ProjectProperties.AddIfNotExistsAsync(
+            p => p.ProjectId == frontendProject.Id && p.Name == "Is Confidential",
+            new ProjectProperty { Id = Guid.NewGuid(), ProjectId = frontendProject.Id, Name = "Is Confidential", Type = ProjectPropertyType.Bool, IsRequired = false, DefaultValue = "false", Position = 2, CreatedAt = DateTime.UtcNow });
+        await db.ProjectProperties.AddIfNotExistsAsync(
+            p => p.ProjectId == frontendProject.Id && p.Name == "Affected Component",
+            new ProjectProperty { Id = Guid.NewGuid(), ProjectId = frontendProject.Id, Name = "Affected Component", Type = ProjectPropertyType.Enum, IsRequired = false, AllowedValues = """["frontend","backend","infra","database","ci-cd"]""", Position = 3, CreatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+
         // --- Project Metric Snapshots (14 days of daily history for IssuePit and Frontend projects) ---
         // Simulates a project that starts with 4 open issues and gradually moves work through InProgress to Done.
         const int MetricDays = 14;

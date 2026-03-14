@@ -408,20 +408,65 @@ export interface KanbanTransition {
   createdAt: string
 }
 
+export enum KanbanLaneProperty {
+  Status = 0,
+  Priority = 1,
+  Label = 2,
+  Type = 3,
+  Agent = 4,
+  Milestone = 5,
+}
+
 export interface KanbanColumn {
   id: string
   boardId: string
   name: string
   issueStatus: IssueStatus
   position: number
+  /** Value identifying which issues belong to this column for non-Status lane properties. */
+  laneValue?: string | null
 }
 
 export interface KanbanBoard {
   id: string
   projectId: string
   name: string
+  /** The issue property used to determine which lane an issue belongs to. Defaults to Status (0). */
+  laneProperty: KanbanLaneProperty
   columns: KanbanColumn[]
   createdAt: string
+}
+
+export enum ProjectPropertyType {
+  Text = 0,
+  Enum = 1,
+  Number = 2,
+  Date = 3,
+  Person = 4,
+  Agent = 5,
+  Bool = 6,
+}
+
+export interface ProjectProperty {
+  id: string
+  projectId: string
+  name: string
+  type: ProjectPropertyType
+  isRequired: boolean
+  defaultValue?: string | null
+  allowedValues?: string | null
+  position: number
+  createdAt: string
+}
+
+export interface IssuePropertyValue {
+  id: string
+  issueId: string
+  propertyId: string
+  property: ProjectProperty
+  value?: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 export interface PaginatedResponse<T> {

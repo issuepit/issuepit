@@ -357,6 +357,42 @@
           <p v-if="moveError" class="text-red-400 text-sm mt-2">{{ moveError }}</p>
         </div>
 
+        <!-- Custom Properties -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h2 class="font-semibold text-white">Custom Properties</h2>
+              <p class="text-sm text-gray-500 mt-0.5">Define extra fields for issues in this project.</p>
+            </div>
+            <button @click="openNewProperty"
+              class="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg transition-colors">
+              + Add Property
+            </button>
+          </div>
+
+          <!-- Properties list -->
+          <div v-if="propsStore.loading" class="text-sm text-gray-500">Loading…</div>
+          <div v-else-if="!propsStore.properties.length" class="text-sm text-gray-600 text-center py-4">No custom properties yet.</div>
+          <div v-else class="space-y-2">
+            <div v-for="prop in propsStore.properties" :key="prop.id"
+              class="flex items-center gap-3 bg-gray-800 rounded-lg px-3 py-2.5">
+              <div class="flex-1 min-w-0">
+                <span class="text-sm text-gray-200 font-medium">{{ prop.name }}</span>
+                <span class="ml-2 text-xs text-gray-500">{{ propertyTypeLabel(prop.type) }}</span>
+                <span v-if="prop.isRequired" class="ml-1 text-xs text-amber-400">required</span>
+              </div>
+              <div class="flex items-center gap-1 shrink-0">
+                <button @click="openEditProperty(prop)" class="text-gray-500 hover:text-gray-300 p-1 rounded transition-colors text-xs">Edit</button>
+                <button @click="deleteProperty(prop.id)" class="text-gray-600 hover:text-red-400 p-1 rounded transition-colors">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Danger Zone -->
         <div class="bg-gray-900 border border-red-900/40 rounded-xl p-6">
           <h2 class="font-semibold text-red-400 mb-1">Danger Zone</h2>
@@ -377,6 +413,57 @@
     </div>
 
     <ToastError :error="projectsStore.error" />
+
+    <!-- New/Edit Property Modal -->
+    <div v-if="showPropertyModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md p-6 shadow-xl">
+        <h2 class="text-lg font-bold text-white mb-5">{{ editingPropertyId ? 'Edit Property' : 'New Property' }}</h2>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-xs text-gray-400 mb-1.5">Name</label>
+            <input v-model="propForm.name" type="text" placeholder="e.g. Due Date"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-400 mb-1.5">Type</label>
+            <select v-model="propForm.type"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500">
+              <option :value="ProjectPropertyType.Text">Text</option>
+              <option :value="ProjectPropertyType.Enum">Enum (pick list)</option>
+              <option :value="ProjectPropertyType.Number">Number</option>
+              <option :value="ProjectPropertyType.Date">Date</option>
+              <option :value="ProjectPropertyType.Person">Person</option>
+              <option :value="ProjectPropertyType.Agent">Agent</option>
+              <option :value="ProjectPropertyType.Bool">Boolean</option>
+            </select>
+          </div>
+          <div v-if="propForm.type === ProjectPropertyType.Enum">
+            <label class="block text-xs text-gray-400 mb-1.5">Allowed values (JSON array)</label>
+            <input v-model="propForm.allowedValues" type="text" placeholder='["option1","option2"]'
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-400 mb-1.5">Default value (optional)</label>
+            <input v-model="propForm.defaultValue" type="text" placeholder="Default value"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          </div>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input v-model="propForm.isRequired" type="checkbox" class="rounded border-gray-600 bg-gray-800 text-brand-600 focus:ring-brand-500" />
+            <span class="text-sm text-gray-300">Required field</span>
+          </label>
+        </div>
+        <div class="flex gap-3 mt-6">
+          <button @click="saveProperty"
+            class="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
+            {{ editingPropertyId ? 'Save Changes' : 'Create' }}
+          </button>
+          <button @click="showPropertyModal = false"
+            class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 rounded-lg transition-colors">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- Link Agent Modal -->
     <div v-if="showLinkAgentModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
@@ -452,7 +539,9 @@ import { useOrgsStore } from '~/stores/orgs'
 import { useGitStore } from '~/stores/git'
 import { useAgentsStore } from '~/stores/agents'
 import { useMcpServersStore } from '~/stores/mcp-servers'
-import type { AgentProject, ProjectMcpServer, GitRepository, GitOriginMode } from '~/types'
+import { useProjectPropertiesStore } from '~/stores/projectProperties'
+import { ProjectPropertyType } from '~/types'
+import type { AgentProject, ProjectMcpServer, GitRepository, GitOriginMode, ProjectProperty } from '~/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -463,6 +552,65 @@ const orgsStore = useOrgsStore()
 const gitStore = useGitStore()
 const agentsStore = useAgentsStore()
 const mcpServersStore = useMcpServersStore()
+const propsStore = useProjectPropertiesStore()
+
+// ── Custom Properties ─────────────────────────────────────────
+const showPropertyModal = ref(false)
+const editingPropertyId = ref<string | null>(null)
+const propForm = reactive({ name: '', type: ProjectPropertyType.Text, isRequired: false, defaultValue: '', allowedValues: '' })
+
+function propertyTypeLabel(type: ProjectPropertyType): string {
+  const map: Record<ProjectPropertyType, string> = {
+    [ProjectPropertyType.Text]: 'Text',
+    [ProjectPropertyType.Enum]: 'Enum',
+    [ProjectPropertyType.Number]: 'Number',
+    [ProjectPropertyType.Date]: 'Date',
+    [ProjectPropertyType.Person]: 'Person',
+    [ProjectPropertyType.Agent]: 'Agent',
+    [ProjectPropertyType.Bool]: 'Bool',
+  }
+  return map[type] ?? 'Unknown'
+}
+
+function openNewProperty() {
+  editingPropertyId.value = null
+  Object.assign(propForm, { name: '', type: ProjectPropertyType.Text, isRequired: false, defaultValue: '', allowedValues: '' })
+  showPropertyModal.value = true
+}
+
+function openEditProperty(prop: ProjectProperty) {
+  editingPropertyId.value = prop.id
+  Object.assign(propForm, {
+    name: prop.name,
+    type: prop.type,
+    isRequired: prop.isRequired,
+    defaultValue: prop.defaultValue ?? '',
+    allowedValues: prop.allowedValues ?? '',
+  })
+  showPropertyModal.value = true
+}
+
+async function saveProperty() {
+  if (!propForm.name.trim()) return
+  const payload = {
+    name: propForm.name.trim(),
+    type: propForm.type,
+    isRequired: propForm.isRequired,
+    defaultValue: propForm.defaultValue || null,
+    allowedValues: propForm.allowedValues || null,
+  }
+  if (editingPropertyId.value) {
+    await propsStore.updateProperty(id, editingPropertyId.value, payload)
+  } else {
+    await propsStore.createProperty(id, payload)
+  }
+  showPropertyModal.value = false
+}
+
+async function deleteProperty(propertyId: string) {
+  if (!confirm('Delete this custom property? All values will be lost.')) return
+  await propsStore.deleteProperty(id, propertyId)
+}
 
 // ── General form ──────────────────────────────────────────────
 const form = reactive({ name: '', slug: '', description: '', gitHubRepo: '', isAgenda: false, issueKey: '', issueNumberOffset: 0 })
@@ -644,6 +792,7 @@ onMounted(async () => {
     agentsStore.fetchAgents(),
     fetchProjectAgents(),
     fetchProjectMcpServers(),
+    propsStore.fetchProperties(id),
   ])
 
   if (projectsStore.currentProject) {
