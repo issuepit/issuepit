@@ -172,6 +172,57 @@ public class CiCdPipelineTests(AspireFixture fixture)
         await AssertRunSucceededAsync(client, run, runId);
     }
 
+    /// <summary>
+    /// Verifies that a CI/CD run records the exact branch name and commit SHA that were
+    /// supplied to the trigger endpoint. This ensures that when <c>IssueWorker</c> triggers
+    /// a run after the agent commits, the run is always associated with the correct ref —
+    /// and any subsequent fix-loop iteration can locate the right code.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(RuntimeModes))]
+    public async Task CiCdRun_RecordsCorrectBranchAndCommitSha(string runtimeMode)
+    {
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip(SkipReason(runtimeMode));
+
+        var (client, projectId) = await SetupProjectAsync();
+        using var _ = client;
+
+        const string expectedBranch = "feat/42-add-e2e-branch-check";
+        const string expectedCommitSha = "e2eabc123def456789abcdef0123456789abcdef";
+
+        var workspacePath = runtimeMode == NativeRuntime
+            ? Environment.GetEnvironmentVariable("CICD_E2E_REPO_PATH")
+            : null;
+
+        var triggerResp = await client.PostAsJsonAsync("/api/cicd-runs/trigger", new
+        {
+            projectId = Guid.Parse(projectId),
+            commitSha = expectedCommitSha,
+            eventName = "push",
+            branch = expectedBranch,
+            workflow = "ci.yml",
+            workspacePath,
+            runtimeOverride = runtimeMode,
+        });
+        Assert.Equal(HttpStatusCode.Accepted, triggerResp.StatusCode);
+
+        // Wait for the run to complete (pass or fail — we only care about metadata).
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var runId = run.GetProperty("id").GetString()!;
+
+        // Fetch the run details and verify branch + commitSha were persisted correctly.
+        var runResp = await client.GetAsync($"/api/cicd-runs/{runId}");
+        Assert.Equal(HttpStatusCode.OK, runResp.StatusCode);
+        var runDetail = await runResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        var actualBranch = runDetail.GetProperty("branch").GetString();
+        var actualCommitSha = runDetail.GetProperty("commitSha").GetString();
+
+        Assert.Equal(expectedBranch, actualBranch);
+        Assert.Equal(expectedCommitSha, actualCommitSha);
+    }
+
     [Theory]
     [MemberData(nameof(RuntimeModes))]
     public async Task CiCdRun_CapturesLogsForBothJobs(string runtimeMode)

@@ -50,7 +50,14 @@
           Trigger Run
         </button>
       </div>
-      <div v-if="store.runs.length" class="rounded-xl border border-gray-800 overflow-hidden">
+      <div v-if="commitShaFilter" class="mb-3 flex items-center gap-2 rounded-lg bg-teal-900/30 border border-teal-700/50 px-3 py-2 text-xs text-teal-300">
+        <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+        </svg>
+        Filtered by commit <span class="font-mono ml-1">{{ commitShaFilter.slice(0, 7) }}</span>
+        <button class="ml-auto text-teal-400 hover:text-teal-200 transition-colors" @click="clearCommitShaFilter">✕</button>
+      </div>
+      <div v-if="filteredRuns.length" class="rounded-xl border border-gray-800 overflow-hidden">
         <table class="w-full text-sm">
           <thead class="bg-gray-900">
             <tr>
@@ -66,7 +73,7 @@
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-800">
-            <tr v-for="run in store.runs" :key="run.id"
+            <tr v-for="run in filteredRuns" :key="run.id"
               class="hover:bg-gray-900/50 transition-colors cursor-pointer"
               @click="navigateTo(`/projects/${id}/runs/cicd/${run.id}`)">
               <td class="px-4 py-3">
@@ -143,12 +150,8 @@
               class="hover:bg-gray-900/50 transition-colors cursor-pointer"
               @click="navigateTo(`/projects/${id}/runs/agent-sessions/${session.id}`)">
               <td class="px-4 py-3">
-                <span :class="statusClass(session.status)" class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium">
-                  <span :class="statusDot(session.status)" class="w-1.5 h-1.5 rounded-full" />
-                  {{ session.statusName }}
-                </span>
+                <AgentSessionStatusChip :session="session" />
               </td>
-              <td class="px-4 py-3 text-gray-300">{{ session.agentName }}</td>
               <td class="px-4 py-3">
                 <NuxtLink :to="`/projects/${id}/issues/${session.issueNumber}`"
                   class="text-brand-400 hover:text-brand-300 transition-colors"
@@ -203,12 +206,24 @@ import { CiCdRunStatus, AgentSessionStatus } from '~/types'
 import { formatIssueId } from '~/composables/useIssueFormat'
 
 const route = useRoute()
+const router = useRouter()
 const id = route.params.id as string
 
 const store = useCiCdRunsStore()
 const projectsStore = useProjectsStore()
 const tabs = ['CI/CD Runs', 'Agent Runs'] as const
 const activeTab = ref<typeof tabs[number]>(route.query.tab === 'agent' ? 'Agent Runs' : 'CI/CD Runs')
+
+const commitShaFilter = computed(() => route.query.commitSha as string | undefined)
+const filteredRuns = computed(() =>
+  commitShaFilter.value
+    ? store.runs.filter(r => r.commitSha === commitShaFilter.value)
+    : store.runs,
+)
+
+function clearCommitShaFilter() {
+  router.push({ query: { ...route.query, commitSha: undefined } })
+}
 
 const triggerModal = reactive({ open: false, commitSha: '' })
 
@@ -275,25 +290,4 @@ function duration(start: string, end?: string) {
   return `${Math.floor(m / 60)}h ${m % 60}m`
 }
 
-function statusClass(status: CiCdRunStatus) {
-  switch (status) {
-    case CiCdRunStatus.Succeeded: return 'bg-green-900/30 text-green-400'
-    case CiCdRunStatus.Running: return 'bg-blue-900/30 text-blue-400'
-    case CiCdRunStatus.Failed: return 'bg-red-900/30 text-red-400'
-    case CiCdRunStatus.Cancelled: return 'bg-gray-800 text-gray-400'
-    case CiCdRunStatus.WaitingForApproval: return 'bg-purple-900/30 text-purple-400'
-    default: return 'bg-yellow-900/30 text-yellow-400'
-  }
-}
-
-function statusDot(status: CiCdRunStatus) {
-  switch (status) {
-    case CiCdRunStatus.Succeeded: return 'bg-green-400'
-    case CiCdRunStatus.Running: return 'bg-blue-400 animate-pulse'
-    case CiCdRunStatus.Failed: return 'bg-red-400'
-    case CiCdRunStatus.Cancelled: return 'bg-gray-500'
-    case CiCdRunStatus.WaitingForApproval: return 'bg-purple-400'
-    default: return 'bg-yellow-400'
-  }
-}
 </script>

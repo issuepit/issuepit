@@ -275,11 +275,7 @@
               <div v-for="session in visibleAgentSessions" :key="session.id"
                 class="flex items-center gap-3 py-2 border-b border-gray-800 last:border-0 cursor-pointer"
                 @click="navigateTo(`/projects/${id}/runs/agent-sessions/${session.id}`)">
-                <span :class="agentStatusClass(session.status)"
-                  class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium shrink-0">
-                  <span :class="agentStatusDot(session.status)" class="w-1.5 h-1.5 rounded-full" />
-                  {{ session.statusName }}
-                </span>
+                <AgentSessionStatusChip :session="session" class="shrink-0" />
                 <div class="flex-1 min-w-0">
                   <NuxtLink :to="`/projects/${id}/issues/${session.issueNumber}`"
                     class="text-sm text-gray-300 hover:text-brand-300 transition-colors truncate block"
@@ -643,9 +639,12 @@ const types = [
 
 async function submitCreate() {
   if (!form.title) return
-  await issuesStore.createIssue(id, form)
+  const newIssue = await issuesStore.createIssue(id, form)
   showCreate.value = false
   Object.assign(form, { title: '', body: '', status: IssueStatus.Todo, priority: IssuePriority.Medium, type: IssueType.Issue })
+  if (newIssue) {
+    await navigateTo(`/projects/${id}/issues/${newIssue.number}`)
+  }
 }
 
 // --- Voice creation ---
@@ -714,6 +713,9 @@ async function submitVoiceCreate() {
     }
   }
   closeVoiceModal()
+  if (newIssue) {
+    await navigateTo(`/projects/${id}/issues/${newIssue.number}`)
+  }
 }
 
 function closeVoiceModal() {
@@ -868,27 +870,6 @@ function relativeTime(d: string) {
   const h = Math.floor(m / 60)
   if (h < 24) return `${h}h ago`
   return `${Math.floor(h / 24)}d ago`
-}
-
-// Agent session status helpers
-function agentStatusClass(status: AgentSessionStatus) {
-  switch (status) {
-    case AgentSessionStatus.Succeeded: return 'bg-green-900/30 text-green-400'
-    case AgentSessionStatus.Running: return 'bg-blue-900/30 text-blue-400'
-    case AgentSessionStatus.Failed: return 'bg-red-900/30 text-red-400'
-    case AgentSessionStatus.Cancelled: return 'bg-gray-800 text-gray-400'
-    default: return 'bg-yellow-900/30 text-yellow-400'
-  }
-}
-
-function agentStatusDot(status: AgentSessionStatus) {
-  switch (status) {
-    case AgentSessionStatus.Succeeded: return 'bg-green-400'
-    case AgentSessionStatus.Running: return 'bg-blue-400 animate-pulse'
-    case AgentSessionStatus.Failed: return 'bg-red-400'
-    case AgentSessionStatus.Cancelled: return 'bg-gray-500'
-    default: return 'bg-yellow-400'
-  }
 }
 
 // Chart helpers

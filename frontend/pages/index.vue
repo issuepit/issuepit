@@ -182,10 +182,7 @@
                 class="hover:bg-gray-800/40 transition-colors cursor-pointer"
                 @click="navigateTo(`/projects/${session.projectId}/runs/agent-sessions/${session.id}`)">
                 <td class="px-3 py-2">
-                  <span :class="runStatusClass(session.status)" class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium">
-                    <span :class="runStatusDot(session.status)" class="w-1.5 h-1.5 rounded-full" />
-                    {{ session.statusName }}
-                  </span>
+                  <AgentSessionStatusChip :session="session" />
                 </td>
                 <td class="px-3 py-2 text-gray-300 text-xs">{{ session.agentName }}</td>
                 <td class="px-3 py-2 text-xs">
@@ -209,7 +206,7 @@
 </template>
 
 <script setup lang="ts">
-import { IssueStatus, IssuePriority, CiCdRunStatus, type IssueHistoryEntry } from '~/types'
+import { IssueStatus, IssuePriority, type IssueHistoryEntry } from '~/types'
 import { useProjectsStore } from '~/stores/projects'
 import { useIssuesStore } from '~/stores/issues'
 import { useAgentsStore } from '~/stores/agents'
@@ -299,28 +296,6 @@ function duration(start: string, end?: string) {
   const m = Math.floor(s / 60)
   if (m < 60) return `${m}m ${s % 60}s`
   return `${Math.floor(m / 60)}h ${m % 60}m`
-}
-
-function runStatusClass(status: CiCdRunStatus) {
-  switch (status) {
-    case CiCdRunStatus.Succeeded: return 'bg-green-900/30 text-green-400'
-    case CiCdRunStatus.Running: return 'bg-blue-900/30 text-blue-400'
-    case CiCdRunStatus.Failed: return 'bg-red-900/30 text-red-400'
-    case CiCdRunStatus.Cancelled: return 'bg-gray-800 text-gray-400'
-    case CiCdRunStatus.WaitingForApproval: return 'bg-purple-900/30 text-purple-400'
-    default: return 'bg-yellow-900/30 text-yellow-400'
-  }
-}
-
-function runStatusDot(status: CiCdRunStatus) {
-  switch (status) {
-    case CiCdRunStatus.Succeeded: return 'bg-green-400'
-    case CiCdRunStatus.Running: return 'bg-blue-400 animate-pulse'
-    case CiCdRunStatus.Failed: return 'bg-red-400'
-    case CiCdRunStatus.Cancelled: return 'bg-gray-500'
-    case CiCdRunStatus.WaitingForApproval: return 'bg-purple-400'
-    default: return 'bg-yellow-400'
-  }
 }
 
 function statusDot(status: IssueStatus) {

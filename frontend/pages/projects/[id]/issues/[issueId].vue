@@ -453,10 +453,7 @@
                       class="hover:bg-gray-800/30 transition-colors cursor-pointer"
                       @click="navigateTo(`/projects/${actualProjectId}/runs/agent-sessions/${session.id}`)">
                       <td class="px-3 py-2">
-                        <span :class="agentStatusClass(session.status)" class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium">
-                          <span :class="agentStatusDot(session.status)" class="w-1.5 h-1.5 rounded-full" />
-                          {{ session.statusName }}
-                        </span>
+                        <AgentSessionStatusChip :session="session" />
                       </td>
                       <td class="px-3 py-2 text-gray-300 text-xs">{{ session.agentName }}</td>
                       <td class="px-3 py-2 text-gray-400 font-mono text-xs">{{ session.gitBranch || '—' }}</td>
@@ -758,7 +755,7 @@
 <script setup lang="ts">
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { IssueStatus, IssueType, IssueLinkType, IssueLinkTypeLabels, IssueEventTypeLabels, AgentSessionStatus } from '~/types'
+import { IssueStatus, IssueType, IssueLinkType, IssueLinkTypeLabels, IssueEventTypeLabels } from '~/types'
 import type { IssuePriority } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
 import { useLabelsStore } from '~/stores/labels'
@@ -1162,26 +1159,6 @@ function statusColor(status: IssueStatus) {
   return map[status] ?? 'bg-gray-500'
 }
 
-function agentStatusClass(status: AgentSessionStatus) {
-  switch (status) {
-    case AgentSessionStatus.Succeeded: return 'bg-green-900/30 text-green-400'
-    case AgentSessionStatus.Running: return 'bg-blue-900/30 text-blue-400'
-    case AgentSessionStatus.Failed: return 'bg-red-900/30 text-red-400'
-    case AgentSessionStatus.Cancelled: return 'bg-gray-800 text-gray-400'
-    default: return 'bg-yellow-900/30 text-yellow-400'
-  }
-}
-
-function agentStatusDot(status: AgentSessionStatus) {
-  switch (status) {
-    case AgentSessionStatus.Succeeded: return 'bg-green-400'
-    case AgentSessionStatus.Running: return 'bg-blue-400 animate-pulse'
-    case AgentSessionStatus.Failed: return 'bg-red-400'
-    case AgentSessionStatus.Cancelled: return 'bg-gray-500'
-    default: return 'bg-yellow-400'
-  }
-}
-
 function formatDate(d: string) {
   return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
@@ -1299,7 +1276,7 @@ const createForm = reactive({
 
 async function submitCreate() {
   if (!createForm.title.trim()) return
-  await store.createIssue(actualProjectId.value, {
+  const newIssue = await store.createIssue(actualProjectId.value, {
     title: createForm.title.trim(),
     body: createForm.body || undefined,
     status: createForm.status,
@@ -1308,6 +1285,9 @@ async function submitCreate() {
   showCreate.value = false
   createForm.title = ''
   createForm.body = ''
+  if (newIssue) {
+    await navigateTo(`/projects/${actualProjectId.value}/issues/${newIssue.number}`)
+  }
 }
 
 async function startVoiceRecording() {
@@ -1341,6 +1321,9 @@ async function submitVoiceCreate() {
     }
   }
   closeVoiceModal()
+  if (newIssue) {
+    await navigateTo(`/projects/${actualProjectId.value}/issues/${newIssue.number}`)
+  }
 }
 
 function closeVoiceModal() {
