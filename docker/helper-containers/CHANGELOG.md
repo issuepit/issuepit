@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.4](https://github.com/issuepit/issuepit/compare/helper-containers-v1.2.3...helper-containers-v1.2.4) (2026-03-14)
+
+
+### Bug Fixes
+
+* install .NET 10 SDK in helper-base image via dotnet-install.sh and bump Playwright to v1.58.0 ([#509](https://github.com/issuepit/issuepit/issues/509)) ([c3b04cb](https://github.com/issuepit/issuepit/commit/c3b04cb990e31252862bd88a02a9a111a67cd9db))
+
 ## [1.2.3](https://github.com/issuepit/issuepit/compare/helper-containers-v1.2.2...helper-containers-v1.2.3) (2026-03-09)
 
 
