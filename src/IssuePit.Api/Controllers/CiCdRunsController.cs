@@ -69,6 +69,7 @@ public class CiCdRunsController(
                 r.Id,
                 r.ProjectId,
                 r.AgentSessionId,
+                r.RetryOfRunId,
                 r.CommitSha,
                 r.Branch,
                 r.Workflow,
@@ -85,6 +86,124 @@ public class CiCdRunsController(
             .FirstOrDefaultAsync();
 
         return run is null ? NotFound() : Ok(run);
+    }
+
+    /// <summary>
+    /// Returns runs that are related to the given run:
+    /// retries of the same original run, the run that was retried to produce this run,
+    /// the agent session that triggered this run, and other runs on the same commit SHA.
+    /// </summary>
+    [HttpGet("{id:guid}/linked")]
+    public async Task<IActionResult> GetLinkedRuns(Guid id)
+    {
+        var run = await db.CiCdRuns
+            .Include(r => r.Project)
+            .Where(r => r.Id == id && r.Project.Organization.TenantId == tenant.CurrentTenant!.Id)
+            .Select(r => new { r.Id, r.ProjectId, r.CommitSha, r.AgentSessionId, r.RetryOfRunId })
+            .FirstOrDefaultAsync();
+
+        if (run is null) return NotFound();
+
+        var results = new List<object>();
+
+        // 1. The original run that was retried to produce this one.
+        if (run.RetryOfRunId.HasValue)
+        {
+            var original = await db.CiCdRuns
+                .Where(r => r.Id == run.RetryOfRunId.Value && r.ProjectId == run.ProjectId)
+                .Select(r => new
+                {
+                    r.Id,
+                    r.ProjectId,
+                    r.CommitSha,
+                    r.Branch,
+                    r.Workflow,
+                    r.Status,
+                    StatusName = r.Status.ToString(),
+                    r.StartedAt,
+                    r.EndedAt,
+                    LinkType = "retry-of",
+                    LinkLabel = "Retried from",
+                })
+                .FirstOrDefaultAsync();
+            if (original is not null)
+                results.Add(original);
+        }
+
+        // 2. Runs that are retries of this run (direct children).
+        var retries = await db.CiCdRuns
+            .Where(r => r.RetryOfRunId == id && r.ProjectId == run.ProjectId)
+            .OrderBy(r => r.StartedAt)
+            .Select(r => new
+            {
+                r.Id,
+                r.ProjectId,
+                r.CommitSha,
+                r.Branch,
+                r.Workflow,
+                r.Status,
+                StatusName = r.Status.ToString(),
+                r.StartedAt,
+                r.EndedAt,
+                LinkType = "retry",
+                LinkLabel = "Retry",
+            })
+            .ToListAsync();
+        results.AddRange(retries.Cast<object>());
+
+        // 3. Agent session that triggered this run.
+        if (run.AgentSessionId.HasValue)
+        {
+            var session = await db.AgentSessions
+                .Include(s => s.Issue)
+                .Where(s => s.Id == run.AgentSessionId.Value)
+                .Select(s => new
+                {
+                    s.Id,
+                    ProjectId = run.ProjectId,
+                    IssueTitle = s.Issue.Title,
+                    IssueNumber = s.Issue.Number,
+                    s.CommitSha,
+                    GitBranch = s.GitBranch,
+                    s.Status,
+                    StatusName = s.Status.ToString(),
+                    s.StartedAt,
+                    s.EndedAt,
+                    LinkType = "agent-triggered",
+                    LinkLabel = "Agent Session",
+                })
+                .FirstOrDefaultAsync();
+            if (session is not null)
+                results.Add(session);
+        }
+
+        // 4. Other runs on the same commit SHA (excluding this run and already-listed retries).
+        var alreadyListed = retries.Select(r => r.Id).Append(run.RetryOfRunId ?? Guid.Empty).ToHashSet();
+        var sameCommit = await db.CiCdRuns
+            .Where(r => r.CommitSha == run.CommitSha
+                && r.ProjectId == run.ProjectId
+                && r.Id != id
+                && !alreadyListed.Contains(r.Id))
+            .OrderByDescending(r => r.StartedAt)
+            .Take(10)
+            .Select(r => new
+            {
+                r.Id,
+                r.ProjectId,
+                r.CommitSha,
+                r.Branch,
+                r.Workflow,
+                r.Status,
+                StatusName = r.Status.ToString(),
+                r.StartedAt,
+                r.EndedAt,
+                LinkType = "same-sha",
+                LinkLabel = "Same commit",
+            })
+            .ToListAsync();
+        results.AddRange(sameCommit.Cast<object>());
+
+        return Ok(results);
     }
 
     [HttpGet("{id:guid}/logs")]
@@ -500,6 +619,7 @@ public class CiCdRunsController(
             inputs: null,
             gitRepoUrl: retryRepo?.RemoteUrl,
             agentSessionId: run.AgentSessionId,
+            retryOfRunId: run.Id,
             extraPayload: new
             {
                 keepContainerOnFailure = options?.KeepContainerOnFailure ?? false,

@@ -660,6 +660,7 @@ export interface CiCdRun {
   projectId: string
   projectName?: string
   agentSessionId?: string
+  retryOfRunId?: string
   commitSha: string
   branch?: string
   workflow?: string
@@ -672,6 +673,26 @@ export interface CiCdRun {
   workspacePath?: string
   eventName?: string
   inputsJson?: string
+}
+
+export type LinkedRunType = 'retry-of' | 'retry' | 'agent-triggered' | 'same-sha'
+
+export interface LinkedCiCdRun {
+  id: string
+  projectId: string
+  commitSha?: string
+  branch?: string
+  workflow?: string
+  status: CiCdRunStatus | AgentSessionStatus
+  statusName: string
+  startedAt: string
+  endedAt?: string
+  linkType: LinkedRunType
+  linkLabel: string
+  /** Only for agent-triggered links */
+  issueTitle?: string
+  issueNumber?: number
+  gitBranch?: string
 }
 
 export enum AgentSessionStatus {
