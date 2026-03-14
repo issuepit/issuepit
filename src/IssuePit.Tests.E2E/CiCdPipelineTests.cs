@@ -251,12 +251,14 @@ public class CiCdPipelineTests(AspireFixture fixture)
         // Both the build and test jobs should have log entries captured with the correct jobId.
         // We check the jobId field rather than the line text because act's --json msg content
         // (e.g. "🚀 Start image=...", "Job succeeded") does not reliably contain the job name.
+        // act's "job" field stores workflow-qualified names (e.g. "CI/build"), so we match by
+        // suffix as well as exact equality to handle both single- and multi-workflow runs.
         var hasBuildJobLogs = logEntries.Any(l =>
             l.TryGetProperty("jobId", out var jId) &&
-            "build".Equals(jId.GetString(), StringComparison.OrdinalIgnoreCase));
+            JobIdMatchesSuffix(jId.GetString(), "build"));
         var hasTestJobLogs = logEntries.Any(l =>
             l.TryGetProperty("jobId", out var jId) &&
-            "test".Equals(jId.GetString(), StringComparison.OrdinalIgnoreCase));
+            JobIdMatchesSuffix(jId.GetString(), "test"));
 
         Assert.True(hasBuildJobLogs, "Expected log entries from the 'build' job");
         Assert.True(hasTestJobLogs, "Expected log entries from the 'test' job");
@@ -287,10 +289,13 @@ public class CiCdPipelineTests(AspireFixture fixture)
         Assert.True(buildLogs.GetArrayLength() > 0, "Expected build job to have log lines");
 
         // Every returned log line must belong to the 'build' job.
+        // act's "job" field stores workflow-qualified names (e.g. "CI/build"), so we accept
+        // both exact equality ("build") and the trailing-segment form (".../build").
         foreach (var entry in buildLogs.EnumerateArray())
         {
             var jobId = entry.GetProperty("jobId").GetString();
-            Assert.Equal("build", jobId);
+            Assert.True(JobIdMatchesSuffix(jobId, "build"),
+                $"Expected jobId to be 'build' or end with '/build' but got '{jobId}'");
         }
     }
 
@@ -651,4 +656,16 @@ public class CiCdPipelineTests(AspireFixture fixture)
             $"Expected run status 'Succeeded' but was '{statusName}' (runId: {runId}).\n" +
             $"Last act log lines:\n{logTail}");
     }
+
+    /// <summary>
+    /// Returns <c>true</c> when <paramref name="jobId"/> equals <paramref name="suffix"/>
+    /// (case-insensitive) or ends with <c>"/{suffix}"</c>.
+    /// act's <c>job</c> JSON field stores workflow-qualified names (e.g. <c>"CI/build"</c>),
+    /// so callers that only know the plain YAML key need suffix matching.
+    /// </summary>
+    private static bool JobIdMatchesSuffix(string? jobId, string suffix) =>
+        jobId != null &&
+        (jobId.Equals(suffix, StringComparison.OrdinalIgnoreCase) ||
+         jobId.EndsWith("/" + suffix, StringComparison.OrdinalIgnoreCase));
 }
+
