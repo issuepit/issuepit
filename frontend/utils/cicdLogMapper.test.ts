@@ -76,6 +76,34 @@ describe('resolveLogJobId', () => {
     })
   })
 
+  describe('plain YAML key ambiguity (act "job" field vs "jobID" field)', () => {
+    // Scenario: pages.yml has a plain "Build" job; backend.yml also has a "build" YAML key job.
+    // When act uses jobID="build" (plain key), it wrongly maps to pages/build because pages.yml
+    // has a job with display name "Build" that also resolves to byName["build"].
+    // Fix: act's "job" field provides the workflow-qualified name (e.g. "CI/Backend CI/Build"),
+    // which the compound-path matching correctly resolves to backend/build.
+    const jobs = [
+      job('backend/build', 'Backend / Build', 'backend.yml', 'ci.yml'),
+      job('pages/build', 'Build', 'pages.yml'),
+      job('pages/deploy', 'Deploy', 'pages.yml'),
+    ]
+
+    it('plain YAML key "build" maps to pages/build (same display name) — shows the ambiguity', () => {
+      // This is the bug scenario: act's old jobID="build" mapped here even for backend build.
+      expect(resolve('build', jobs)).toBe('pages/build')
+    })
+
+    it('qualified "CI/Backend CI/Build" (act "job" field) correctly maps to backend/build', () => {
+      // With the CiCdWorker fix, act sends the "job" field (qualified name) instead of "jobID".
+      expect(resolve('CI/Backend CI/Build', jobs)).toBe('backend/build')
+    })
+
+    it('qualified "Deploy GitHub Pages/Build" (act "job" field) correctly maps to pages/build', () => {
+      // pages.yml's Build job is emitted with the workflow name prefix by act.
+      expect(resolve('Deploy GitHub Pages/Build', jobs)).toBe('pages/build')
+    })
+  })
+
   describe('3-segment path: Backend/Backend CI/Build', () => {
     // pages.yml has a plain "Build" job; backend.yml's Build job is called via ci.yml
     // and gets the compound name "Backend / Build" after substitution.
