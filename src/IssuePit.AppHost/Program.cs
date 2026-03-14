@@ -269,6 +269,12 @@ var mcpServer = builder.AddProject<Projects.IssuePit_McpServer>("mcp-server")
 // Allow the API to discover and call the MCP server (e.g. for issue enhancement).
 api.WithEnvironment("McpServer__BaseUrl", mcpServer.GetEndpoint("http"));
 
+// The Aspire DCP proxy that sits in front of the MCP server binds only to localhost, so Docker
+// agent containers cannot reach it via host.docker.internal. We pass the MCP server's own
+// target port (the port the process directly listens on) as a separate config entry so the
+// execution client can bypass the proxy when constructing the container-accessible URL.
+// The MCP server binds on 0.0.0.0 on this port via ConfigureKestrel/ListenAnyIP in Program.cs.
+var mcpServerEndpoint = mcpServer.GetEndpoint("http");
 var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("execution-client")
     .WithReference(postgresDb)
     .WithReference(postgresServer)
@@ -278,7 +284,9 @@ var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("exe
     .WaitForCompletion(kafkaInitializer)
     .WaitFor(kafka)
     .WaitFor(redis)
-    .WithEnvironment("McpServer__BaseUrl", mcpServer.GetEndpoint("http"))
+    .WithEnvironment("McpServer__BaseUrl", mcpServerEndpoint)
+    .WithEnvironment("McpServer__DockerBaseUrl",
+        ReferenceExpression.Create($"http://localhost:{mcpServerEndpoint.Property(EndpointProperty.TargetPort)}"))
     .WithHttpHealthCheck("/health", endpointName: "http");
 
 // Scale cicd-client horizontally to allow multiple concurrent runs.
