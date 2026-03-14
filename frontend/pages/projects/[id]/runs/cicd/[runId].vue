@@ -1509,9 +1509,33 @@ const visibleJobs = computed<EnrichedJob[]>(() => {
     const eventName = store.currentRun.eventName
     filtered = filtered.filter(j => {
       if (!j.workflowFile) return true  // no workflow info — keep
+      // For nested workflow jobs (called via uses:), the job runs because the CALLER triggered —
+      // check the caller's triggers instead of the nested file's own triggers.
+      // e.g. backend.yml has `on: workflow_call` but runs when ci.yml (on: push) calls it.
+      if (j.callerWorkflowFile) {
+        const callerTriggers = wfTriggers[j.callerWorkflowFile] ?? []
+        if (callerTriggers.includes(eventName)) return true
+      }
       const triggers = wfTriggers[j.workflowFile] ?? []
       return triggers.includes(eventName)
     })
+    // Cascade: also hide downstream jobs whose every direct dependency was just filtered out.
+    // This prevents orphaned boxes from appearing when their prerequisite jobs are hidden.
+    const visibleSet = new Set(filtered.map(j => j.id))
+    let changed = true
+    while (changed) {
+      changed = false
+      filtered = filtered.filter(j => {
+        if (j.needs.length === 0) return true  // root job — always keep
+        // Hide if ALL declared needs are now invisible.
+        if (j.needs.every(n => !visibleSet.has(n))) {
+          visibleSet.delete(j.id)
+          changed = true
+          return false
+        }
+        return true
+      })
+    }
   }
 
   // Apply user-selected trigger filter

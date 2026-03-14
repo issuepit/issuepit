@@ -701,10 +701,11 @@ public class CiCdWorker(
         CancellationToken cancellationToken)
     {
         // Try to parse act's JSON log format (enabled by --json flag).
-        // act uses logrus JSON format: {"level":"info","msg":"...","jobID":"build","stage":"Set up job","time":"..."}
-        // Note: act also emits a "job" field with the workflow-qualified name (e.g. "CI/build") — we
-        // prefer the "jobID" field (plain job name, e.g. "build") so that callers can filter by job
-        // name without knowing the workflow prefix.
+        // act uses logrus JSON format: {"level":"info","msg":"...","jobID":"build","job":"CI/build","stage":"Set up job","time":"..."}
+        // We prefer the "job" field (workflow-qualified name, e.g. "Deploy GitHub Pages/Build" or
+        // "CI/Backend CI/Build") over "jobID" (plain YAML key, e.g. "build") because the qualified
+        // name is needed by the frontend's fuzzy matcher to disambiguate same-named jobs from
+        // different workflow files (e.g. "build" exists in both pages.yml and backend.yml).
         var displayLine = line;
         var jobId = (string?)null;
         var stepId = (string?)null;
@@ -718,14 +719,16 @@ public class CiCdWorker(
                 if (root.TryGetProperty("msg", out var msgEl))
                 {
                     displayLine = msgEl.GetString() ?? line;
-                    // Prefer "jobID" (plain job name) over "job" (workflow-qualified name like "CI/build").
-                    if (root.TryGetProperty("jobID", out var jobIdEl))
-                        jobId = jobIdEl.GetString();
-                    else if (root.TryGetProperty("job", out var jobEl))
-                        jobId = jobEl.GetString();
+                    // Prefer "job" (workflow-qualified name like "CI/Backend CI/Build") over "jobID"
+                    // (plain YAML key like "build") so same-named jobs in different workflow files
+                    // can be disambiguated by the frontend fuzzy matcher.
+                    if (root.TryGetProperty("job", out var jobEl))
+                        jobId = jobEl.GetString()?.Trim();
+                    else if (root.TryGetProperty("jobID", out var jobIdEl))
+                        jobId = jobIdEl.GetString()?.Trim();
                     // Extract step name from the 'stage' field (e.g. "Set up job", "Main actions/checkout@v4").
                     if (root.TryGetProperty("stage", out var stageEl))
-                        stepId = stageEl.GetString();
+                        stepId = stageEl.GetString()?.Trim();
                     // Remap stream from act JSON level only if the original stream was stdout;
                     // if the container already routed the line to stderr, trust that.
                     if (stream == LogStream.Stdout &&

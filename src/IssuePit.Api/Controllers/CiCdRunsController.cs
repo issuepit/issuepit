@@ -208,7 +208,7 @@ public class CiCdRunsController(
     }
 
     [HttpGet("{id:guid}/logs")]
-    public async Task<IActionResult> GetLogs(Guid id, [FromQuery] LogStream? stream)
+    public async Task<IActionResult> GetLogs(Guid id, [FromQuery] LogStream? stream, [FromQuery] string? jobId)
     {
         // Verify the run belongs to this tenant
         var runExists = await db.CiCdRuns
@@ -223,6 +223,10 @@ public class CiCdRunsController(
 
         if (stream.HasValue)
             query = query.Where(l => l.Stream == stream.Value);
+
+        // Filter by the exact stored jobId (act's qualified name, e.g. "CI/build").
+        if (!string.IsNullOrEmpty(jobId))
+            query = query.Where(l => l.JobId == jobId);
 
         var logs = await query
             .Select(l => new { l.Id, l.Line, l.Stream, StreamName = l.Stream.ToString(), l.JobId, l.StepId, l.Timestamp })
@@ -422,8 +426,12 @@ public class CiCdRunsController(
 
         if (!runExists) return NotFound();
 
+        // Match exact JobId OR a workflow-qualified name ending with "/<jobId>" (e.g. "CI/build" for jobId="build").
+        // The act `job` field stores the workflow-qualified name (e.g. "CI/build"); callers may pass the
+        // plain YAML key ("build") which is the trailing segment after the last "/".
+        var suffix = "/" + jobId;
         var query = db.CiCdRunLogs
-            .Where(l => l.CiCdRunId == id && l.JobId == jobId)
+            .Where(l => l.CiCdRunId == id && (l.JobId == jobId || l.JobId!.EndsWith(suffix)))
             .OrderBy(l => l.Timestamp)
             .AsQueryable();
 
@@ -452,9 +460,10 @@ public class CiCdRunsController(
 
         if (!runExists) return NotFound();
 
-        // Return steps in the order they first appeared, excluding null step IDs.
+        // Match exact JobId OR a workflow-qualified name ending with "/<jobId>" (same as GetJobLogs).
+        var suffix = "/" + jobId;
         var steps = await db.CiCdRunLogs
-            .Where(l => l.CiCdRunId == id && l.JobId == jobId && l.StepId != null)
+            .Where(l => l.CiCdRunId == id && (l.JobId == jobId || l.JobId!.EndsWith(suffix)) && l.StepId != null)
             .GroupBy(l => l.StepId!)
             .Select(g => new { StepId = g.Key, FirstSeen = g.Min(l => l.Timestamp) })
             .OrderBy(s => s.FirstSeen)
