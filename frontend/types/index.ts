@@ -1008,6 +1008,24 @@ export const GitHubSyncTriggerModeLabels: Record<GitHubSyncTriggerMode, string> 
   [GitHubSyncTriggerMode.Auto]: 'Auto',
 }
 
+export enum GitHubSyncMode {
+  Import = 0,
+  TwoWay = 1,
+  CreateOnGitHub = 2,
+}
+
+export const GitHubSyncModeLabels: Record<GitHubSyncMode, string> = {
+  [GitHubSyncMode.Import]: 'Import (GitHub → IssuePit)',
+  [GitHubSyncMode.TwoWay]: 'Two-Way (GitHub ↔ IssuePit)',
+  [GitHubSyncMode.CreateOnGitHub]: 'Create on GitHub (IssuePit → GitHub)',
+}
+
+export const GitHubSyncModeDescriptions: Record<GitHubSyncMode, string> = {
+  [GitHubSyncMode.Import]: 'Imports issues from GitHub into IssuePit. Existing IssuePit issues are not modified on GitHub.',
+  [GitHubSyncMode.TwoWay]: 'Imports from GitHub and pushes recent IssuePit changes back to GitHub.',
+  [GitHubSyncMode.CreateOnGitHub]: 'When a new issue is created in IssuePit it is automatically pushed to GitHub.',
+}
+
 export enum GitHubSyncRunStatus {
   Pending = 0,
   Running = 1,
@@ -1028,7 +1046,7 @@ export interface GitHubSyncConfig {
   gitHubIdentityName?: string
   gitHubRepo?: string
   triggerMode: GitHubSyncTriggerMode
-  autoCreateOnGitHub: boolean
+  syncMode: GitHubSyncMode
   createdAt?: string
   updatedAt?: string
 }

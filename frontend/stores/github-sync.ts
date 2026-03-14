@@ -5,7 +5,7 @@ import type {
   GitHubSyncRunDetail,
   GitHubConflict,
 } from '~/types'
-import { GitHubSyncTriggerMode } from '~/types'
+import { GitHubSyncTriggerMode, GitHubSyncMode } from '~/types'
 
 export const useGitHubSyncStore = defineStore('githubSync', () => {
   const config = ref<GitHubSyncConfig | null>(null)
@@ -35,7 +35,7 @@ export const useGitHubSyncStore = defineStore('githubSync', () => {
     gitHubIdentityId?: string | null
     gitHubRepo?: string | null
     triggerMode: number
-    autoCreateOnGitHub: boolean
+    syncMode: number
   }) {
     loading.value = true
     error.value = null
@@ -131,4 +131,4 @@ export const useGitHubSyncStore = defineStore('githubSync', () => {
   }
 })
 
-export { GitHubSyncTriggerMode }
+export { GitHubSyncTriggerMode, GitHubSyncMode }

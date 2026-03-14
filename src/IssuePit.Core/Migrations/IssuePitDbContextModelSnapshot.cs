@@ -594,9 +594,6 @@ namespace IssuePit.Core.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<bool>("AutoCreateOnGitHub")
-                        .HasColumnType("boolean");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -609,6 +606,9 @@ namespace IssuePit.Core.Migrations
 
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uuid");
+
+                    b.Property<int>("SyncMode")
+                        .HasColumnType("integer");
 
                     b.Property<int>("TriggerMode")
                         .HasColumnType("integer");

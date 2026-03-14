@@ -13,53 +13,21 @@ namespace IssuePit.Api.Services;
 /// </summary>
 public class MetricSnapshotService(
     ILogger<MetricSnapshotService> logger,
-    IServiceScopeFactory scopeFactory) : BackgroundService
+    IServiceScopeFactory scopeFactory)
+    : PeriodicBackgroundService(logger, TimeSpan.FromHours(1))
 {
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    // Align the very first tick to the next full hour boundary.
+    protected override TimeSpan ComputeStartupDelay()
     {
-        logger.LogInformation("MetricSnapshotService started");
-
-        // Align to the next full hour boundary so snapshots are taken at :00 each hour.
         var now = DateTime.UtcNow;
         var nextHour = now.Date.AddHours(now.Hour + 1);
-        var initialDelay = nextHour - now;
-
-        // But don't wait more than an hour on startup — cap at 1 h, start right away in tests.
-        if (initialDelay > TimeSpan.FromHours(1))
-            initialDelay = TimeSpan.Zero;
-
-        try
-        {
-            await Task.Delay(initialDelay, stoppingToken);
-        }
-        catch (OperationCanceledException)
-        {
-            return;
-        }
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await TakeSnapshotsAsync(stoppingToken);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                logger.LogError(ex, "Unhandled error in MetricSnapshotService.TakeSnapshotsAsync");
-            }
-
-            try
-            {
-                await Task.Delay(TimeSpan.FromHours(1), stoppingToken);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-        }
-
-        logger.LogInformation("MetricSnapshotService stopped");
+        var delay = nextHour - now;
+        // Cap at 1 hour — avoid waiting more than one full cycle on startup.
+        return delay > TimeSpan.FromHours(1) ? TimeSpan.Zero : delay;
     }
+
+    protected override async Task ExecuteTickAsync(CancellationToken stoppingToken)
+        => await TakeSnapshotsAsync(stoppingToken);
 
     private async Task TakeSnapshotsAsync(CancellationToken cancellationToken)
     {

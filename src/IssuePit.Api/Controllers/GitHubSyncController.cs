@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 namespace IssuePit.Api.Controllers;
 
 /// <summary>
-/// Manages GitHub ↔ IssuePit issue synchronisation for a single project.
+/// Manages GitHub sync configuration, runs, and conflicts for a project.
 /// All endpoints are scoped to <c>/api/projects/{projectId}/github-sync</c>.
 /// </summary>
 [ApiController]
@@ -41,7 +41,7 @@ public class GitHubSyncController(
                 gitHubIdentityId = (Guid?)null,
                 gitHubRepo = (string?)null,
                 triggerMode = GitHubSyncTriggerMode.Off,
-                autoCreateOnGitHub = false,
+                syncMode = GitHubSyncMode.Import,
             });
         }
 
@@ -53,7 +53,7 @@ public class GitHubSyncController(
             GitHubIdentityName = config.GitHubIdentity?.Name ?? config.GitHubIdentity?.GitHubUsername,
             config.GitHubRepo,
             config.TriggerMode,
-            config.AutoCreateOnGitHub,
+            config.SyncMode,
             config.CreatedAt,
             config.UpdatedAt,
         });
@@ -95,18 +95,27 @@ public class GitHubSyncController(
         config.GitHubIdentityId = req.GitHubIdentityId;
         config.GitHubRepo = req.GitHubRepo?.Trim();
         config.TriggerMode = req.TriggerMode;
-        config.AutoCreateOnGitHub = req.AutoCreateOnGitHub;
+        config.SyncMode = req.SyncMode;
         config.UpdatedAt = DateTime.UtcNow;
 
         await db.SaveChangesAsync();
-        return Ok(new { config.Id, config.ProjectId, config.GitHubIdentityId, config.GitHubRepo, config.TriggerMode, config.AutoCreateOnGitHub, config.UpdatedAt });
+        return Ok(new
+        {
+            config.Id,
+            config.ProjectId,
+            config.GitHubIdentityId,
+            config.GitHubRepo,
+            config.TriggerMode,
+            config.SyncMode,
+            config.UpdatedAt,
+        });
     }
 
     // ──────────────────────────────────────────────────────────────────────────
     // Sync runs
     // ──────────────────────────────────────────────────────────────────────────
 
-    /// <summary>Triggers a manual GitHub sync (import) for the project.</summary>
+    /// <summary>Triggers a manual sync for the project (fire-and-forget; returns 202).</summary>
     [HttpPost("trigger")]
     public async Task<IActionResult> TriggerSync(Guid projectId)
     {
@@ -118,7 +127,7 @@ public class GitHubSyncController(
         {
             using var scope = HttpContext.RequestServices.CreateScope();
             var svc = scope.ServiceProvider.GetRequiredService<GitHubSyncService>();
-            await svc.ImportFromGitHubAsync(projectId);
+            await svc.SyncAsync(projectId);
         });
 
         return Accepted(new { message = "Sync started. Check runs for progress." });
@@ -213,4 +222,4 @@ public record UpsertSyncConfigRequest(
     Guid? GitHubIdentityId,
     string? GitHubRepo,
     GitHubSyncTriggerMode TriggerMode,
-    bool AutoCreateOnGitHub);
+    GitHubSyncMode SyncMode);

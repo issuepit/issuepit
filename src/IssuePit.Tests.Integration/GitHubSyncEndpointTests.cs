@@ -53,7 +53,7 @@ public class GitHubSyncEndpointTests(ApiFactory factory) : IClassFixture<ApiFact
         Assert.Equal(projectId.ToString(), body.GetProperty("projectId").GetString());
         // triggerMode is serialized as snake_case enum string ("off")
         Assert.Equal("off", body.GetProperty("triggerMode").GetString());
-        Assert.False(body.GetProperty("autoCreateOnGitHub").GetBoolean());
+        Assert.Equal("import", body.GetProperty("syncMode").GetString());
 
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
     }
@@ -89,7 +89,7 @@ public class GitHubSyncEndpointTests(ApiFactory factory) : IClassFixture<ApiFact
             gitHubIdentityId = (Guid?)null,
             gitHubRepo = "acme/backend",
             triggerMode = GitHubSyncTriggerMode.Manual,
-            autoCreateOnGitHub = false,
+            syncMode = GitHubSyncMode.Import,
         });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -115,7 +115,7 @@ public class GitHubSyncEndpointTests(ApiFactory factory) : IClassFixture<ApiFact
             gitHubIdentityId = (Guid?)null,
             gitHubRepo = "acme/backend",
             triggerMode = GitHubSyncTriggerMode.Manual,
-            autoCreateOnGitHub = false,
+            syncMode = GitHubSyncMode.Import,
         });
 
         // Second save with different values
@@ -124,14 +124,14 @@ public class GitHubSyncEndpointTests(ApiFactory factory) : IClassFixture<ApiFact
             gitHubIdentityId = (Guid?)null,
             gitHubRepo = "acme/frontend",
             triggerMode = GitHubSyncTriggerMode.Off,
-            autoCreateOnGitHub = true,
+            syncMode = GitHubSyncMode.CreateOnGitHub,
         });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("acme/frontend", body.GetProperty("gitHubRepo").GetString());
         Assert.Equal("off", body.GetProperty("triggerMode").GetString());
-        Assert.True(body.GetProperty("autoCreateOnGitHub").GetBoolean());
+        Assert.Equal("create_on_git_hub", body.GetProperty("syncMode").GetString());
 
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
     }
@@ -149,7 +149,7 @@ public class GitHubSyncEndpointTests(ApiFactory factory) : IClassFixture<ApiFact
             gitHubIdentityId = Guid.NewGuid(), // doesn't exist
             gitHubRepo = "acme/backend",
             triggerMode = GitHubSyncTriggerMode.Manual,
-            autoCreateOnGitHub = false,
+            syncMode = GitHubSyncMode.Import,
         });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -170,7 +170,7 @@ public class GitHubSyncEndpointTests(ApiFactory factory) : IClassFixture<ApiFact
             gitHubIdentityId = (Guid?)null,
             gitHubRepo = "just-a-repo-name-without-slash", // invalid format
             triggerMode = GitHubSyncTriggerMode.Manual,
-            autoCreateOnGitHub = false,
+            syncMode = GitHubSyncMode.Import,
         });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);

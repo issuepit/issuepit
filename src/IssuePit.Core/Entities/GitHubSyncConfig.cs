@@ -33,10 +33,14 @@ public class GitHubSyncConfig
     public GitHubSyncTriggerMode TriggerMode { get; set; } = GitHubSyncTriggerMode.Off;
 
     /// <summary>
-    /// When <c>true</c>, newly created IssuePit issues are automatically pushed to GitHub as new issues.
-    /// Hidden behind a feature flag — disabled by default.
+    /// Controls the direction of synchronisation:
+    /// <list type="bullet">
+    ///   <item><see cref="GitHubSyncMode.Import"/> — GitHub → IssuePit (default)</item>
+    ///   <item><see cref="GitHubSyncMode.TwoWay"/> — GitHub ↔ IssuePit (bidirectional)</item>
+    ///   <item><see cref="GitHubSyncMode.CreateOnGitHub"/> — new IssuePit issues are pushed to GitHub</item>
+    /// </list>
     /// </summary>
-    public bool AutoCreateOnGitHub { get; set; } = false;
+    public GitHubSyncMode SyncMode { get; set; } = GitHubSyncMode.Import;
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

@@ -10,7 +10,8 @@ using Microsoft.EntityFrameworkCore;
 namespace IssuePit.Api.Services;
 
 /// <summary>
-/// Handles GitHub ↔ IssuePit issue synchronisation: import, auto-create, and conflict detection.
+/// Handles GitHub ↔ IssuePit issue synchronisation: import, two-way sync, and auto-create.
+/// The direction of sync is controlled by <see cref="GitHubSyncConfig.SyncMode"/>.
 /// </summary>
 public class GitHubSyncService(
     IssuePitDbContext db,
@@ -25,16 +26,29 @@ public class GitHubSyncService(
     // ──────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Imports all open (and closed) GitHub issues for the given project.
-    /// Creates a <see cref="GitHubSyncRun"/> audit record and appends log entries throughout.
+    /// Runs a sync for the given project according to its configured <see cref="GitHubSyncMode"/>:
+    /// Import (GitHub→IssuePit), TwoWay (bidirectional), or CreateOnGitHub (no batch import).
+    /// Creates a <see cref="GitHubSyncRun"/> audit record with full log output.
     /// </summary>
-    public async Task<GitHubSyncRun> ImportFromGitHubAsync(Guid projectId, CancellationToken ct = default)
+    public async Task<GitHubSyncRun> SyncAsync(Guid projectId, CancellationToken ct = default)
     {
         var run = await CreateRunAsync(projectId, ct);
 
         try
         {
             await SetRunStatusAsync(run, GitHubSyncRunStatus.Running, ct);
+
+            var config = await db.GitHubSyncConfigs
+                .Include(c => c.GitHubIdentity)
+                .FirstOrDefaultAsync(c => c.ProjectId == projectId, ct);
+
+            if (config?.SyncMode == GitHubSyncMode.CreateOnGitHub)
+            {
+                await AppendLogAsync(run, GitHubSyncLogLevel.Info,
+                    "SyncMode is CreateOnGitHub — batch sync is not applicable. Issues are pushed to GitHub individually when created.", ct);
+                await CompleteRunAsync(run, ct);
+                return run;
+            }
 
             var (token, repo) = await ResolveTokenAndRepoAsync(projectId, run, ct);
             if (token is null || repo is null)
@@ -43,12 +57,13 @@ public class GitHubSyncService(
                 return run;
             }
 
-            await AppendLogAsync(run, GitHubSyncLogLevel.Info, $"Importing issues from {repo}…", ct);
+            var syncMode = config?.SyncMode ?? GitHubSyncMode.Import;
+            await AppendLogAsync(run, GitHubSyncLogLevel.Info, $"SyncMode = {syncMode}. Fetching issues from {repo}...", ct);
 
             var ghIssues = await FetchAllGitHubIssuesAsync(token, repo, run, ct);
             await AppendLogAsync(run, GitHubSyncLogLevel.Info, $"Fetched {ghIssues.Count} issue(s) from GitHub.", ct);
 
-            int imported = 0, updated = 0, skipped = 0;
+            int imported = 0, updated = 0, pushed = 0, skipped = 0;
 
             foreach (var ghIssue in ghIssues)
             {
@@ -57,12 +72,11 @@ public class GitHubSyncService(
 
                 if (existing is null)
                 {
-                    // Determine the next sequential issue number.
                     var maxNumber = await db.Issues
                         .Where(i => i.ProjectId == projectId)
                         .MaxAsync(i => (int?)i.Number, ct) ?? 0;
 
-                    var issue = new Issue
+                    db.Issues.Add(new Issue
                     {
                         Id = Guid.NewGuid(),
                         ProjectId = projectId,
@@ -76,23 +90,72 @@ public class GitHubSyncService(
                         GitHubIssueUrl = ghIssue.HtmlUrl,
                         CreatedAt = DateTime.UtcNow,
                         UpdatedAt = DateTime.UtcNow,
-                    };
-                    db.Issues.Add(issue);
+                    });
                     imported++;
                     await AppendLogAsync(run, GitHubSyncLogLevel.Info,
                         $"  Imported: #{ghIssue.Number} \"{TruncateTitle(ghIssue.Title)}\"", ct);
                 }
+                else if (syncMode == GitHubSyncMode.TwoWay)
+                {
+                    // Two-way: if the IssuePit issue was modified very recently, push it to GitHub.
+                    // Otherwise pull from GitHub as the authoritative source.
+                    bool localNewer = existing.UpdatedAt > DateTime.UtcNow.AddMinutes(-5);
+                    bool contentDiffers =
+                        !string.Equals(existing.Title, ghIssue.Title, StringComparison.Ordinal) ||
+                        !string.Equals(existing.Body ?? string.Empty, ghIssue.Body ?? string.Empty, StringComparison.Ordinal);
+
+                    if (localNewer && contentDiffers)
+                    {
+                        var pushResult = await PushIssueToGitHubAsync(existing, token, repo, ct);
+                        if (pushResult)
+                        {
+                            pushed++;
+                            await AppendLogAsync(run, GitHubSyncLogLevel.Info,
+                                $"  Pushed local changes: #{ghIssue.Number} \"{TruncateTitle(existing.Title)}\"", ct);
+                        }
+                        else
+                        {
+                            await AppendLogAsync(run, GitHubSyncLogLevel.Warn,
+                                $"  Failed to push: #{ghIssue.Number} \"{TruncateTitle(existing.Title)}\"", ct);
+                        }
+                    }
+                    else
+                    {
+                        bool changed = false;
+                        if (!string.Equals(existing.Title, ghIssue.Title, StringComparison.Ordinal))
+                        {
+                            existing.Title = ghIssue.Title;
+                            changed = true;
+                        }
+                        if (!string.Equals(existing.Body ?? string.Empty, ghIssue.Body ?? string.Empty, StringComparison.Ordinal))
+                        {
+                            existing.Body = ghIssue.Body;
+                            changed = true;
+                        }
+                        if (!string.Equals(existing.GitHubIssueUrl, ghIssue.HtmlUrl, StringComparison.Ordinal))
+                        {
+                            existing.GitHubIssueUrl = ghIssue.HtmlUrl;
+                            changed = true;
+                        }
+                        if (changed)
+                        {
+                            existing.UpdatedAt = DateTime.UtcNow;
+                            updated++;
+                            await AppendLogAsync(run, GitHubSyncLogLevel.Info,
+                                $"  Updated from GitHub: #{ghIssue.Number} \"{TruncateTitle(ghIssue.Title)}\"", ct);
+                        }
+                        else
+                        {
+                            skipped++;
+                        }
+                    }
+                }
                 else
                 {
-                    // Only update the GitHub URL / number in case it was missing.
-                    bool changed = false;
-                    if (existing.GitHubIssueUrl != ghIssue.HtmlUrl)
+                    // Import mode: only patch stale GitHub URL links.
+                    if (!string.Equals(existing.GitHubIssueUrl, ghIssue.HtmlUrl, StringComparison.Ordinal))
                     {
                         existing.GitHubIssueUrl = ghIssue.HtmlUrl;
-                        changed = true;
-                    }
-                    if (changed)
-                    {
                         existing.UpdatedAt = DateTime.UtcNow;
                         updated++;
                         await AppendLogAsync(run, GitHubSyncLogLevel.Info,
@@ -107,7 +170,9 @@ public class GitHubSyncService(
 
             await db.SaveChangesAsync(ct);
 
-            run.Summary = $"{imported} imported, {updated} updated, {skipped} unchanged";
+            run.Summary = syncMode == GitHubSyncMode.TwoWay
+                ? $"{imported} imported, {updated} updated from GitHub, {pushed} pushed to GitHub, {skipped} unchanged"
+                : $"{imported} imported, {updated} updated, {skipped} unchanged";
             await CompleteRunAsync(run, ct);
             await AppendLogAsync(run, GitHubSyncLogLevel.Info, $"Done. {run.Summary}", ct);
         }
@@ -117,7 +182,7 @@ public class GitHubSyncService(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Unhandled error during GitHub sync import for project {ProjectId}", projectId);
+            logger.LogError(ex, "Unhandled error during GitHub sync for project {ProjectId}", projectId);
             await FailRunAsync(run, $"Unexpected error: {ex.Message}", CancellationToken.None);
         }
 
@@ -125,7 +190,7 @@ public class GitHubSyncService(
     }
 
     /// <summary>
-    /// Returns issues that exist in both GitHub and IssuePit (matched by <c>GitHubIssueNumber</c>)
+    /// Returns issues that exist in both GitHub and IssuePit (matched by GitHubIssueNumber)
     /// but have diverging title or body.
     /// </summary>
     public async Task<List<GitHubConflict>> GetConflictsAsync(Guid projectId, CancellationToken ct = default)
@@ -171,7 +236,7 @@ public class GitHubSyncService(
 
     /// <summary>
     /// Creates a new GitHub issue from an existing IssuePit issue and links them.
-    /// Called when <see cref="GitHubSyncConfig.AutoCreateOnGitHub"/> is <c>true</c>.
+    /// Only operates when the project's SyncMode is CreateOnGitHub.
     /// Silently skips if the issue already has a GitHub issue number.
     /// </summary>
     public async Task AutoCreateOnGitHubAsync(Issue issue, CancellationToken ct = default)
@@ -181,7 +246,7 @@ public class GitHubSyncService(
 
         var config = await db.GitHubSyncConfigs
             .Include(c => c.GitHubIdentity)
-            .FirstOrDefaultAsync(c => c.ProjectId == issue.ProjectId && c.AutoCreateOnGitHub, ct);
+            .FirstOrDefaultAsync(c => c.ProjectId == issue.ProjectId && c.SyncMode == GitHubSyncMode.CreateOnGitHub, ct);
 
         if (config?.GitHubIdentity is null || string.IsNullOrWhiteSpace(config.GitHubRepo))
             return;
@@ -221,6 +286,34 @@ public class GitHubSyncService(
     // ──────────────────────────────────────────────────────────────────────────
     // Private helpers
     // ──────────────────────────────────────────────────────────────────────────
+
+    private async Task<bool> PushIssueToGitHubAsync(Issue issue, string token, string repo, CancellationToken ct)
+    {
+        try
+        {
+            if (!issue.GitHubIssueNumber.HasValue) return false;
+
+            var (owner, repoName) = ParseRepo(repo);
+            var client = CreateHttpClient(token);
+
+            var payload = JsonSerializer.Serialize(new
+            {
+                title = issue.Title,
+                body = issue.Body ?? string.Empty,
+            });
+
+            var response = await client.PatchAsync(
+                $"https://api.github.com/repos/{owner}/{repoName}/issues/{issue.GitHubIssueNumber.Value}",
+                new StringContent(payload, Encoding.UTF8, "application/json"), ct);
+
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error pushing issue {IssueId} to GitHub", issue.Id);
+            return false;
+        }
+    }
 
     private async Task<GitHubSyncRun> CreateRunAsync(Guid projectId, CancellationToken ct)
     {
@@ -393,7 +486,7 @@ public class GitHubSyncService(
         state?.ToLowerInvariant() == "closed" ? IssueStatus.Done : IssueStatus.Backlog;
 
     private static string TruncateTitle(string title, int max = 60) =>
-        title.Length <= max ? title : title[..max] + "…";
+        title.Length <= max ? title : title[..max] + "...";
 
     // ──────────────────────────────────────────────────────────────────────────
     // DTO types
