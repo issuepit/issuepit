@@ -447,31 +447,8 @@ public class CiCdWorker(
         IssuePitDbContext db,
         CancellationToken cancellationToken)
     {
-        var tempDirs = new List<string>();
         try
         {
-            // Collect .trx files — both directly present and inside .zip artifact archives.
-            // act v0.2.x stores uploaded artifacts as .zip files, so we must extract them
-            // into a temporary directory to find any embedded .trx test result files.
-            var trxFiles = TrxParser.FindTrxFiles(artifactDir).ToList();
-
-            foreach (var zipFile in Directory.EnumerateFiles(artifactDir, "*.zip", SearchOption.AllDirectories))
-            {
-                var tempDir = Path.Combine(Path.GetTempPath(), $"issuepit-trx-{Guid.NewGuid():N}");
-                try
-                {
-                    ZipFile.ExtractToDirectory(zipFile, tempDir);
-                    trxFiles.AddRange(TrxParser.FindTrxFiles(tempDir));
-                    tempDirs.Add(tempDir);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogDebug(ex, "Could not extract zip {ZipFile} while scanning for TRX files", zipFile);
-                }
-            }
-
-            if (trxFiles.Count == 0) return;
-            
             if (!Directory.Exists(artifactDir)) return;
 
             var suiteCount = 0;
@@ -551,14 +528,6 @@ public class CiCdWorker(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to collect test results for run {RunId}", runId);
-        }
-        finally
-        {
-            foreach (var tempDir in tempDirs)
-            {
-                try { Directory.Delete(tempDir, recursive: true); }
-                catch (Exception ex) { logger.LogDebug(ex, "Could not clean up temp dir {TempDir}", tempDir); }
-            }
         }
     }
 
