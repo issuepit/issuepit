@@ -8,6 +8,7 @@ jobs:
   conventional-commit:
     name: Conventional Commit
     runs-on: ubuntu-latest
+    if: vars.ISSUEPIT_RUN != 'true'
     permissions:
       pull-requests: read
     steps:

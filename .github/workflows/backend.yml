@@ -163,6 +163,7 @@ jobs:
       # The helper-act image is published to the issuepit org registry, which is not
       # publicly accessible without authentication.
       - name: Login to GitHub Container Registry
+        if: vars.ISSUEPIT_RUN != 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -176,6 +177,10 @@ jobs:
           docker pull apache/kafka:3.9.0
           docker pull node:20-slim
           docker pull localstack/localstack:4.3
+
+      - name: Pre-pull GHCR Docker image
+        if: vars.ISSUEPIT_RUN != 'true'
+        run: |
           docker pull ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24
 
       - name: Build act from issuepit/act fork
