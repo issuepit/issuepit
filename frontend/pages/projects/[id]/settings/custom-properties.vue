@@ -179,8 +179,14 @@ function openCreate() {
 
 function openEdit(prop: CustomProperty) {
   editId.value = prop.id
-  const vals = prop.allowedValues ? JSON.parse(prop.allowedValues) : []
-  allowedValuesInput.value = Array.isArray(vals) ? vals.join(',') : ''
+  let vals: unknown = []
+  try {
+    vals = prop.allowedValues ? JSON.parse(prop.allowedValues) : []
+  }
+  catch {
+    vals = []
+  }
+  allowedValuesInput.value = Array.isArray(vals) ? (vals as string[]).join(',') : ''
   form.value = {
     name: prop.name,
     type: prop.type,

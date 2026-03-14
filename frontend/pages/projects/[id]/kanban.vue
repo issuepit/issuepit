@@ -560,8 +560,16 @@ onMounted(async () => {
     milestonesStore.fetchMilestones(id),
   ])
   if (kanban.boards.length) activeBoardId.value = kanban.boards[0].id
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') previewIssue.value = null })
+  document.addEventListener('keydown', onEscapeKey)
 })
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', onEscapeKey)
+})
+
+function onEscapeKey(e: KeyboardEvent) {
+  if (e.key === 'Escape') previewIssue.value = null
+}
 
 watch(activeBoardId, (bid) => {
   if (bid) {
