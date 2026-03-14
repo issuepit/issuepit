@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 using System.Text.Json;
 using Confluent.Kafka;
 using IssuePit.Core.Data;
@@ -378,15 +379,18 @@ public class IssueWorker(
             finally
             {
                 // Stop and clean up the exec container once all work (fix loops included) is done,
-                // or if an exception occurred after LaunchAsync returned successfully.
+                // or if an exception (including cancellation) occurred after LaunchAsync returned.
+                // Use CancellationToken.None so the stop always executes even when the session was
+                // cancelled (sessionCts.Token is already cancelled in that case).
                 if (useExecForFixes && runtimeId is not null)
                 {
                     if (session.KeepContainer)
+                        // Use CancellationToken.None so the log line is written even when the session was cancelled.
                         await AppendLogAsync(session.Id,
                             $"[DEBUG] Container kept alive for inspection (KeepContainer=true). ID: {runtimeId[..Math.Min(12, runtimeId.Length)]}",
-                            LogStream.Stdout, db, sessionCts.Token);
+                            LogStream.Stdout, db, CancellationToken.None);
                     else
-                        await execRuntime!.StopContainerAsync(runtimeId, remove: true, sessionCts.Token);
+                        await execRuntime!.StopContainerAsync(runtimeId, remove: true, CancellationToken.None);
                 }
             }
         }
@@ -745,41 +749,122 @@ public class IssueWorker(
     }
 
     /// <summary>
-    /// Returns CI/CD failure log lines as a string to pass directly to the opencode task prompt.
-    /// Always fetches the last 200 total lines and also ensures the last 20 stderr lines are
-    /// included even when the 200-line window is dominated by stdout.
+    /// Returns a structured CI/CD failure report to pass directly to the opencode task prompt.
+    /// Includes run metadata, a job-level overview (pass/fail), and the last 100 log lines
+    /// for each failed job (identified by having any stderr output). Also ensures the last 20
+    /// stderr lines are always included even for jobs without a <c>JobId</c>.
     /// </summary>
     private static async Task<string> GetCiCdFailureLogsAsync(
         Guid runId,
         IssuePitDbContext db,
         CancellationToken cancellationToken)
     {
-        // Fetch the last 200 total log lines (mixed stdout/stderr).
-        var recent = await db.CiCdRunLogs
-            .Where(l => l.CiCdRunId == runId)
-            .OrderByDescending(l => l.Timestamp)
-            .Take(200)
-            .OrderBy(l => l.Timestamp)
-            .Select(l => new { l.Id, l.Line, l.Stream, l.Timestamp })
+        // Load run metadata for context (workflow, branch, commit, external run ID).
+        var run = await db.CiCdRuns
+            .Where(r => r.Id == runId)
+            .Select(r => new { r.Workflow, r.Branch, r.CommitSha, r.ExternalRunId })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        // Determine which named jobs exist and whether each has any stderr output (proxy for failure).
+        var jobStats = await db.CiCdRunLogs
+            .Where(l => l.CiCdRunId == runId && l.JobId != null)
+            .GroupBy(l => l.JobId!)
+            .Select(g => new
+            {
+                JobId = g.Key,
+                HasErrors = g.Any(l => l.Stream == LogStream.Stderr),
+            })
             .ToListAsync(cancellationToken);
 
-        // Additionally fetch the last 20 stderr lines so errors are always represented,
-        // even when the 200-line window is dominated by stdout.
-        var recentIds = recent.Select(l => l.Id).ToHashSet();
-        var extraStderr = await db.CiCdRunLogs
-            .Where(l => l.CiCdRunId == runId && l.Stream == LogStream.Stderr)
-            .OrderByDescending(l => l.Timestamp)
-            .Take(20)
-            .OrderBy(l => l.Timestamp)
-            .Select(l => new { l.Id, l.Line, l.Stream, l.Timestamp })
-            .ToListAsync(cancellationToken);
+        var failedJobIds = jobStats.Where(j => j.HasErrors).Select(j => j.JobId).ToHashSet();
+        var passedJobIds = jobStats.Where(j => !j.HasErrors).Select(j => j.JobId).ToHashSet();
 
-        var lines = recent
-            .Concat(extraStderr.Where(l => !recentIds.Contains(l.Id)))
-            .OrderBy(l => l.Timestamp)
-            .Select(l => l.Stream == LogStream.Stderr ? $"[stderr] {l.Line}" : l.Line);
+        var sb = new StringBuilder();
 
-        return string.Join('\n', lines);
+        // ── Header ──────────────────────────────────────────────────────────────
+        sb.AppendLine("=== CI/CD Run Failure Report ===");
+        if (run is not null)
+        {
+            if (!string.IsNullOrWhiteSpace(run.Workflow))
+                sb.AppendLine($"Workflow : {run.Workflow}");
+            if (!string.IsNullOrWhiteSpace(run.Branch))
+                sb.AppendLine($"Branch   : {run.Branch}");
+            if (!string.IsNullOrWhiteSpace(run.CommitSha))
+                sb.AppendLine($"Commit   : {run.CommitSha[..Math.Min(7, run.CommitSha.Length)]}");
+            if (!string.IsNullOrWhiteSpace(run.ExternalRunId))
+                sb.AppendLine($"Run ID   : {run.ExternalRunId}");
+        }
+
+        sb.AppendLine();
+
+        // ── Job summary ──────────────────────────────────────────────────────────
+        sb.AppendLine("--- Job Summary ---");
+        if (jobStats.Count == 0)
+        {
+            sb.AppendLine("(No job-level data available)");
+        }
+        else
+        {
+            foreach (var job in jobStats.OrderBy(j => j.JobId))
+                sb.AppendLine($"{(job.HasErrors ? "❌" : "✅")} {job.JobId}");
+        }
+
+        sb.AppendLine();
+
+        // ── Failed job logs ──────────────────────────────────────────────────────
+        if (failedJobIds.Count > 0)
+        {
+            foreach (var jobId in failedJobIds.OrderBy(j => j))
+            {
+                sb.AppendLine($"--- Failed Job: {jobId} ---");
+
+                var jobLogs = await db.CiCdRunLogs
+                    .Where(l => l.CiCdRunId == runId && l.JobId == jobId)
+                    .OrderByDescending(l => l.Timestamp)
+                    .Take(100)
+                    .OrderBy(l => l.Timestamp)
+                    .Select(l => new { l.Line, l.Stream })
+                    .ToListAsync(cancellationToken);
+
+                foreach (var log in jobLogs)
+                    sb.AppendLine(log.Stream == LogStream.Stderr ? $"[stderr] {log.Line}" : log.Line);
+
+                sb.AppendLine();
+            }
+        }
+        else
+        {
+            // No named jobs have stderr output — fall back to the last 200 total lines
+            // plus extra stderr lines to ensure errors are represented.
+            sb.AppendLine("--- Recent Logs ---");
+
+            var recent = await db.CiCdRunLogs
+                .Where(l => l.CiCdRunId == runId)
+                .OrderByDescending(l => l.Timestamp)
+                .Take(200)
+                .OrderBy(l => l.Timestamp)
+                .Select(l => new { l.Id, l.Line, l.Stream, l.Timestamp })
+                .ToListAsync(cancellationToken);
+
+            var recentIds = recent.Select(l => l.Id).ToHashSet();
+            var extraStderr = await db.CiCdRunLogs
+                .Where(l => l.CiCdRunId == runId && l.Stream == LogStream.Stderr)
+                .OrderByDescending(l => l.Timestamp)
+                .Take(20)
+                .OrderBy(l => l.Timestamp)
+                .Select(l => new { l.Id, l.Line, l.Stream, l.Timestamp })
+                .ToListAsync(cancellationToken);
+
+            var lines = recent
+                .Concat(extraStderr.Where(l => !recentIds.Contains(l.Id)))
+                .OrderBy(l => l.Timestamp)
+                .Select(l => l.Stream == LogStream.Stderr ? $"[stderr] {l.Line}" : l.Line);
+
+            foreach (var line in lines)
+                sb.AppendLine(line);
+        }
+
+        return sb.ToString().Trim();
     }
 
     /// <summary>
@@ -848,8 +933,9 @@ public class IssueWorker(
         Number = original.Number,
         Title = $"Fix CI/CD failures for: {original.Title}",
         Body =
-            "The previous CI/CD run failed. Fix the issues described in the log below,\n" +
-            "then commit and push the changes.\n\n" +
+            "The previous CI/CD run failed. Fix the issues described in the report below,\n" +
+            "then commit the changes.\n" +
+            "IMPORTANT: Do NOT run `git push` — you do not have remote write access. Only commit changes locally.\n\n" +
             $"{failureLogs}",
         GitBranch = branchName,
     };
@@ -868,7 +954,8 @@ public class IssueWorker(
             "There are uncommitted changes remaining after the previous agent run.\n" +
             "Please commit all changes that should be tracked and update .gitignore to exclude\n" +
             "build artifacts and other generated files that should not be committed.\n" +
-            "Run `git status` to see what is uncommitted.",
+            "Run `git status` to see what is uncommitted.\n" +
+            "IMPORTANT: Do NOT run `git push` — you do not have remote write access. Only commit changes locally.",
         GitBranch = branchName,
     };
 

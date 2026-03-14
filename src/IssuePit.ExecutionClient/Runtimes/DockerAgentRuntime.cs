@@ -273,6 +273,54 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
                 await onLogLine($"[WARN] Fix agent exited with code {exitCode}", LogStream.Stderr);
         }
 
+        // After the fix run, check for uncommitted changes and ask opencode to handle them
+        // (commit tracked files or update .gitignore for build artifacts) before emitting markers.
+        try
+        {
+            var statusOutput = await ExecReadOutputAsync(
+                containerId, ["git", "status", "--porcelain"], cancellationToken);
+
+            if (!string.IsNullOrWhiteSpace(statusOutput))
+            {
+                await onLogLine("[INFO] Uncommitted changes detected after fix run — re-running opencode to commit them…", LogStream.Stdout);
+
+                var currentBranch = (await ExecReadOutputAsync(
+                    containerId, ["git", "branch", "--show-current"], cancellationToken)).Trim();
+
+                var uncommittedIssue = new Issue
+                {
+                    Id = fixIssue.Id,
+                    ProjectId = fixIssue.ProjectId,
+                    Number = fixIssue.Number,
+                    Title = $"Commit remaining changes for: {fixIssue.Title}",
+                    Body =
+                        "There are still uncommitted changes after the previous fix run.\n" +
+                        "Please commit all changes that should be tracked and add build artifacts or\n" +
+                        "generated files to .gitignore so they are not committed.\n" +
+                        "Run `git status` to see what is uncommitted.\n" +
+                        "IMPORTANT: Do NOT run `git push` — you do not have remote write access.\n" +
+                        "Only commit changes locally.",
+                    GitBranch = currentBranch,
+                };
+
+                var uncommittedArgs = RunnerCommandBuilder.BuildArgsList(agent, uncommittedIssue, forkSessionId: openCodeSessionId);
+                if (uncommittedArgs.Count > 0)
+                {
+                    var exitCode2 = await ExecCommandAsync(containerId, uncommittedArgs, onFixLogLine, cancellationToken);
+                    if (exitCode2 != 0)
+                        await onLogLine($"[WARN] Uncommitted-changes fix agent exited with code {exitCode2}", LogStream.Stderr);
+                }
+                else
+                {
+                    await onLogLine("[WARN] No runner args available for uncommitted-changes fix (RunnerType not set?)", LogStream.Stderr);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            await onLogLine($"[WARN] Uncommitted changes check failed: {ex.Message}", LogStream.Stderr);
+        }
+
         // Emit git markers so the caller can capture the updated commit SHA and branch.
         try { await EmitGitMarkersAsync(containerId, onFixLogLine, cancellationToken); }
         catch (Exception ex) { await onFixLogLine($"[WARN] Git marker emission failed: {ex.Message}", LogStream.Stderr); }
@@ -371,13 +419,16 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
             async (line, stream) =>
             {
                 await onLogLine($"[entrypoint]   {line}", stream);
-                // Session list format: <id>  <date>  <title> — first whitespace-delimited token is the ID.
-                // opencode lists sessions newest-first, so the first non-empty token is the most recent session.
+                // Session list format: <id>  <title>  <updated> — first whitespace-delimited token is the ID.
+                // opencode lists sessions newest-first, so the first real session ID line is the most recent.
+                // Skip the header line ("Session ID  Title  Updated") and separator lines by requiring the
+                // token to start with the "ses_" prefix used by all opencode session identifiers.
                 if (lastSessionId is null)
                 {
-                    var tokenEnd = line.IndexOfAny([' ', '\t']);
-                    var token = (tokenEnd > 0 ? line[..tokenEnd] : line).Trim();
-                    if (!string.IsNullOrWhiteSpace(token))
+                    var trimmedLine = line.TrimStart();
+                    var tokenEnd = trimmedLine.IndexOfAny([' ', '\t']);
+                    var token = (tokenEnd > 0 ? trimmedLine[..tokenEnd] : trimmedLine).Trim();
+                    if (token.StartsWith("ses_", StringComparison.Ordinal))
                         lastSessionId = token;
                 }
             }, cancellationToken);
