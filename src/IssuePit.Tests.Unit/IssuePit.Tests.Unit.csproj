@@ -19,6 +19,7 @@
     <ProjectReference Include="..\IssuePit.CiCdClient\IssuePit.CiCdClient.csproj" />
     <ProjectReference Include="..\IssuePit.McpServer\IssuePit.McpServer.csproj" />
     <ProjectReference Include="..\IssuePit.Api\IssuePit.Api.csproj" />
+    <ProjectReference Include="..\IssuePit.ExecutionClient\IssuePit.ExecutionClient.csproj" />
   </ItemGroup>
 
   <ItemGroup>

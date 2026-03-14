@@ -124,6 +124,7 @@ public class AgentSessionsController(IssuePitDbContext db, TenantContext tenant,
             agentId = session.AgentId,
             dockerImageOverride = body?.DockerImageOverride,
             keepContainer = body?.KeepContainer ?? false,
+            dockerCmdOverride = body?.DockerCmdOverride,
         });
 
         await producer.ProduceAsync("issue-assigned", new Message<string, string>
@@ -136,4 +137,4 @@ public class AgentSessionsController(IssuePitDbContext db, TenantContext tenant,
     }
 }
 
-public record RetrySessionRequest(string? DockerImageOverride = null, bool KeepContainer = false);
+public record RetrySessionRequest(string? DockerImageOverride = null, bool KeepContainer = false, string[]? DockerCmdOverride = null);

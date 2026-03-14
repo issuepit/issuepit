@@ -52,6 +52,16 @@ public class AgentSession
     [NotMapped]
     public bool KeepContainer { get; set; }
 
+    /// <summary>
+    /// Optional command to run in the container instead of the image's default CMD.
+    /// Useful for diagnostic or test runs (e.g. a curl connectivity check).
+    /// Only applies to the legacy flow (no <see cref="Agent.RunnerType"/>); the exec flow always
+    /// uses <c>sleep infinity</c> as the container CMD.
+    /// Not persisted — set at launch time from the <c>issue-assigned</c> Kafka message.
+    /// </summary>
+    [NotMapped]
+    public string[]? CustomCmd { get; set; }
+
     public ICollection<CiCdRun> CiCdRuns { get; set; } = [];
 
     public ICollection<AgentSessionLog> Logs { get; set; } = [];

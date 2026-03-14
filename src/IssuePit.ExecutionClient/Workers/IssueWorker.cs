@@ -203,7 +203,7 @@ public class IssueWorker(
 
         // Launch all assigned agents in parallel; each task manages its own DB scope
         await Task.WhenAll(agentIds.Select(agentId =>
-            LaunchAgentAsync(agentId, message.Id, message.DockerImageOverride, message.KeepContainer, cancellationToken)));
+            LaunchAgentAsync(agentId, message.Id, message.DockerImageOverride, message.KeepContainer, message.DockerCmdOverride, cancellationToken)));
     }
 
     private async Task LaunchAgentAsync(
@@ -211,6 +211,7 @@ public class IssueWorker(
         Guid issueId,
         string? dockerImageOverride,
         bool keepContainer,
+        string[]? dockerCmdOverride,
         CancellationToken cancellationToken)
     {
         using var scope = services.CreateScope();
@@ -270,6 +271,7 @@ public class IssueWorker(
             Status = AgentSessionStatus.Running,
             StartedAt = DateTime.UtcNow,
             KeepContainer = keepContainer,
+            CustomCmd = dockerCmdOverride,
             Warnings = commentsWarning is not null
                 ? System.Text.Json.JsonSerializer.Serialize(new[] { commentsWarning })
                 : null,
@@ -989,7 +991,7 @@ public class IssueWorker(
         GitBranch = branchName,
     };
 
-    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, string? DockerImageOverride = null, bool KeepContainer = false);
+    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? DockerCmdOverride = null);
 
     /// <summary>
     /// Trims the comment list so that the combined character count of all comment bodies stays

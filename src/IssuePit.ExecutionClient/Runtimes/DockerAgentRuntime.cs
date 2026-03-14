@@ -110,7 +110,10 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         await onLogLine($"[DEBUG] Pull finished  : {DateTime.UtcNow:u} (took {pullDuration:F1}s)", LogStream.Stdout);
 
         // Step 2: Build environment including git repo info so the container can clone the repo on startup.
-        var issuePitMcpUrl = configuration["McpServer__BaseUrl"];
+        // Replace localhost/127.0.0.1 with host.docker.internal so containers can reach the host's services
+        // (e.g. the IssuePit MCP server). The container host-gateway ExtraHost added below makes
+        // host.docker.internal resolvable both on Linux (via host-gateway) and Docker Desktop.
+        var issuePitMcpUrl = ToDockerHostUrl(configuration["McpServer__BaseUrl"]);
         var env = AgentEnvironmentBuilder.Build(session, agent, issue, credentials, gitRepository, issuePitMcpUrl);
         if (!string.IsNullOrWhiteSpace(issuePitMcpUrl))
             await onLogLine($"[DEBUG] IssuePit MCP   : {issuePitMcpUrl}", LogStream.Stdout);
@@ -151,17 +154,27 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
             // Exec flow manages its own lifecycle (stopped by StopContainerAsync after all work is done).
             // Legacy flow uses AutoRemove as before.
             AutoRemove = useExecFlow ? false : !session.KeepContainer,
+            // Make host.docker.internal resolve to the Docker host gateway so containers can call
+            // the IssuePit MCP server and other host services. "host-gateway" is the Docker-native
+            // special value that resolves to the correct host IP on both Linux and Docker Desktop.
+            ExtraHosts = ["host.docker.internal:host-gateway"],
         };
 
         if (dns is not null)
             hostConfig.DNS = dns;
 
+        // Custom CMD: for non-exec-flow sessions (legacy flow) only. Exec flow always uses
+        // "sleep infinity" so that docker exec can be used for all subsequent operations.
+        // DockerCmdOverride is useful for diagnostic/testing sessions (e.g. connectivity checks).
+        IList<string>? containerCmd = useExecFlow
+            ? ["sleep", "infinity"]
+            : (session.CustomCmd?.Length > 0 ? session.CustomCmd : null);
+
         var createParams = new CreateContainerParameters
         {
             Image = image,
             Env = env,
-            // Exec flow: keep container alive; legacy flow: run container's default CMD.
-            Cmd = useExecFlow ? ["sleep", "infinity"] : null,
+            Cmd = containerCmd,
             HostConfig = hostConfig,
             Labels = new Dictionary<string, string>
             {
@@ -610,6 +623,23 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
             return null;
         }
         return [dnsServer];
+    }
+
+    /// <summary>
+    /// Replaces <c>localhost</c> and <c>127.0.0.1</c> host references in a URL with
+    /// <c>host.docker.internal</c> so agent containers can reach services running on the
+    /// Docker host. Handles both port-qualified (<c>http://localhost:8080/</c>) and
+    /// default-port (<c>http://localhost/path</c>) forms.
+    /// Returns <c>null</c> when the input is null or empty.
+    /// </summary>
+    internal static string? ToDockerHostUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return url;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return url;
+        if (!uri.IsLoopback) return url; // already points at a non-localhost host — leave it alone
+
+        var builder = new UriBuilder(uri) { Host = "host.docker.internal" };
+        return builder.Uri.ToString().TrimEnd('/');
     }
 
     /// <summary>Best-effort stop + remove of a container. Used for cleanup on failure paths.</summary>

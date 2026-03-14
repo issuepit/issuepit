@@ -230,6 +230,116 @@ public class AgentSessionTests(AspireFixture fixture)
     }
 
     /// <summary>
+    /// Verifies that an agent container can reach the IssuePit MCP server at the URL injected
+    /// via <c>ISSUEPIT_MCP_URL</c>.
+    ///
+    /// The test triggers an agent session with a custom <c>DockerCmdOverride</c> that runs
+    /// <c>wget</c> against the MCP health endpoint and echoes a marker line to stdout.
+    /// Connectivity is confirmed by asserting that <c>[ISSUEPIT:MCP_CHECK]=OK</c> appears in
+    /// the session logs.
+    ///
+    /// This test validates:
+    /// <list type="bullet">
+    ///   <item><c>host.docker.internal</c> is resolvable inside the agent container (via the
+    ///         <c>ExtraHosts: host.docker.internal:host-gateway</c> added to the container).</item>
+    ///   <item><c>ISSUEPIT_MCP_URL</c> has been rewritten from <c>localhost</c> to
+    ///         <c>host.docker.internal</c> so the URL works inside the container.</item>
+    /// </list>
+    ///
+    /// Skipped automatically when Docker is not available on the host.
+    /// </summary>
+    [Fact]
+    public async Task AgentSession_McpConnectivity_ContainerCanReachMcpServer()
+    {
+        if (!IsDockerAvailable()) return;
+
+        using var client = CreateCookieClient();
+        var tenantId = await GetDefaultTenantIdAsync();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"e2e{Guid.NewGuid():N}"[..12];
+        await client.PostAsJsonAsync("/api/auth/register", new { username, password = "TestPass1!" });
+
+        // Create org and project
+        var orgSlug = $"mcp-org-{Guid.NewGuid():N}"[..16];
+        var orgResp = await client.PostAsJsonAsync("/api/orgs", new { name = "MCP Check Org", slug = orgSlug });
+        Assert.Equal(HttpStatusCode.Created, orgResp.StatusCode);
+        var org = await orgResp.Content.ReadFromJsonAsync<JsonElement>();
+        var orgId = org.GetProperty("id").GetString()!;
+
+        var projectSlug = $"mcp-proj-{Guid.NewGuid():N}"[..16];
+        var projResp = await client.PostAsJsonAsync("/api/projects",
+            new { name = "MCP Check Project", slug = projectSlug, orgId = Guid.Parse(orgId) });
+        Assert.Equal(HttpStatusCode.Created, projResp.StatusCode);
+        var project = await projResp.Content.ReadFromJsonAsync<JsonElement>();
+        var projectId = project.GetProperty("id").GetString()!;
+
+        // Create an agent with busybox:latest (has wget and sh); no RunnerType so legacy flow is used.
+        // The session will run a custom command that probes the MCP health endpoint.
+        var agentResp = await client.PostAsJsonAsync("/api/agents",
+            new
+            {
+                name = "MCP Connectivity Agent",
+                orgId = Guid.Parse(orgId),
+                systemPrompt = "You are a diagnostic agent.",
+                dockerImage = "busybox:latest",
+                allowedTools = "[]",
+                isActive = true,
+                // No RunnerType → legacy flow; DockerCmdOverride is sent in the assignment request
+            });
+        Assert.Equal(HttpStatusCode.Created, agentResp.StatusCode);
+        var agent = await agentResp.Content.ReadFromJsonAsync<JsonElement>();
+        var agentId = agent.GetProperty("id").GetString()!;
+
+        // Create the issue
+        var issueResp = await client.PostAsJsonAsync("/api/issues",
+            new { title = "MCP Connectivity Test", projectId = Guid.Parse(projectId) });
+        Assert.Equal(HttpStatusCode.Created, issueResp.StatusCode);
+        var issue = await issueResp.Content.ReadFromJsonAsync<JsonElement>();
+        var issueId = issue.GetProperty("id").GetString()!;
+
+        // Assign the agent with a DockerCmdOverride: use wget to check the MCP health endpoint.
+        // ISSUEPIT_MCP_URL is set to http://host.docker.internal:PORT by the execution client
+        // (localhost is replaced with host.docker.internal before passing to the container).
+        // The sh command always exits 0 so the session status reflects connectivity, not failure.
+        var mcpCheckCmd = new string[]
+        {
+            "sh", "-c",
+            """
+            if wget -qO- "${ISSUEPIT_MCP_URL}/health" 2>&1; then
+              echo '[ISSUEPIT:MCP_CHECK]=OK'
+            else
+              echo '[ISSUEPIT:MCP_CHECK]=FAIL'
+            fi
+            """,
+        };
+
+        var assignResp = await client.PostAsJsonAsync($"/api/issues/{issueId}/assignees",
+            new { agentId = Guid.Parse(agentId), dockerCmdOverride = mcpCheckCmd });
+        Assert.Equal(HttpStatusCode.Created, assignResp.StatusCode);
+
+        // Wait for the session to complete
+        var session = await WaitForAgentSessionAsync(client, issueId, TimeSpan.FromMinutes(3));
+        var sessionId = session.GetProperty("id").GetString()!;
+
+        // Fetch the session logs
+        var logsResp = await client.GetAsync($"/api/agent-sessions/{sessionId}/logs");
+        Assert.Equal(HttpStatusCode.OK, logsResp.StatusCode);
+        var logs = await logsResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        var logLines = logs.EnumerateArray()
+            .Select(l => l.GetProperty("line").GetString() ?? string.Empty)
+            .ToList();
+
+        // The container should have output [ISSUEPIT:MCP_CHECK]=OK if the MCP server is reachable
+        Assert.True(
+            logLines.Any(l => l.Contains("[ISSUEPIT:MCP_CHECK]=OK")),
+            $"Expected '[ISSUEPIT:MCP_CHECK]=OK' in session logs, indicating the MCP server is reachable " +
+            $"from inside the agent container via host.docker.internal.\n" +
+            $"Actual logs:\n{string.Join('\n', logLines.Take(50))}");
+    }
+
+    /// <summary>
     /// Polls <c>GET /api/issues/{issueId}/runs</c> until the most-recent agent session reaches a
     /// terminal status (Succeeded, Failed, or Cancelled) or the timeout elapses.
     /// </summary>
