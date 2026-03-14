@@ -580,11 +580,11 @@ public class IssueWorker(
         for (var attempt = 0; attempt < MaxCiCdFixAttempts; attempt++)
         {
             var cicdSectionIndex = attempt + 1;
-            var appendCiCd = (string line, LogStream stream) =>
+            var appendCiCdLog = (string line, LogStream stream) =>
                 (onLogLine ?? ((l, s, sec, idx) => AppendLogAsync(session.Id, l, s, sec, idx, db, cancellationToken)))(
                     line, stream, AgentLogSection.CiCdRun, cicdSectionIndex);
 
-            await appendCiCd(
+            await appendCiCdLog(
                 $"[INFO] Starting CI/CD run (attempt {cicdSectionIndex}/{MaxCiCdFixAttempts}) for branch '{branchName}' commit '{(commitSha.Length > 0 ? commitSha[..Math.Min(7, commitSha.Length)] : "(none)")}'",
                 LogStream.Stdout);
 
@@ -593,7 +593,7 @@ public class IssueWorker(
                 session.Id, issue.ProjectId, gitRepository.RemoteUrl,
                 commitSha, branchName, db, cancellationToken);
 
-            await appendCiCd(
+            await appendCiCdLog(
                 $"[INFO] CI/CD run {cicdRun.Id} queued, waiting for completion…",
                 LogStream.Stdout);
 
@@ -601,19 +601,19 @@ public class IssueWorker(
 
             if (cicdStatus == CiCdRunStatus.Succeeded)
             {
-                await appendCiCd(
+                await appendCiCdLog(
                     $"[INFO] CI/CD run {cicdRun.Id} succeeded.",
                     LogStream.Stdout);
                 return true;
             }
 
-            await appendCiCd(
+            await appendCiCdLog(
                 $"[WARN] CI/CD run {cicdRun.Id} finished with status '{cicdStatus}'.",
                 LogStream.Stderr);
 
             if (attempt >= MaxCiCdFixAttempts - 1)
             {
-                await appendCiCd(
+                await appendCiCdLog(
                     $"[ERROR] CI/CD fix loop exhausted after {MaxCiCdFixAttempts} attempt(s). Marking session as failed.",
                     LogStream.Stderr);
                 return false;
@@ -623,11 +623,11 @@ public class IssueWorker(
             var failureLogs = await GetCiCdFailureLogsAsync(cicdRun.Id, db, cancellationToken);
 
             var fixSectionIndex = attempt + 1;
-            var appendFix = (string line, LogStream stream) =>
+            var appendFixLog = (string line, LogStream stream) =>
                 (onLogLine ?? ((l, s, sec, idx) => AppendLogAsync(session.Id, l, s, sec, idx, db, cancellationToken)))(
                     line, stream, AgentLogSection.CiCdFixRun, fixSectionIndex);
 
-            await appendFix(
+            await appendFixLog(
                 $"[INFO] Launching opencode fix agent (attempt {fixSectionIndex}/{MaxCiCdFixAttempts - 1}) to address CI/CD failures…",
                 LogStream.Stdout);
 
@@ -656,7 +656,7 @@ public class IssueWorker(
 
             if (string.IsNullOrEmpty(fixCommitSha))
             {
-                await appendFix(
+                await appendFixLog(
                     "[WARN] Fix agent did not report a commit SHA. Aborting CI/CD fix loop.",
                     LogStream.Stderr);
                 return false;

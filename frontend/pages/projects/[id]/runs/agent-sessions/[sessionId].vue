@@ -469,11 +469,11 @@ function renderLogLine(line: string, highlight?: string): string {
 }
 
 const sectionTabs = [
-  { label: 'Steps', value: 'steps' },
   { label: 'Logs', value: 'logs' },
+  { label: 'Steps', value: 'steps' },
   { label: 'Details', value: 'details' },
 ]
-const activeSection = ref<'steps' | 'logs' | 'details'>('steps')
+const activeSection = ref<'steps' | 'logs' | 'details'>('logs')
 
 const streamTabs = [
   { label: 'All', value: null },
