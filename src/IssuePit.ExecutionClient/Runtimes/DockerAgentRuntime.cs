@@ -57,7 +57,16 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         if (session.KeepContainer)
             await onLogLine($"[DEBUG] Keep container : true (container will not be removed on exit)", LogStream.Stdout);
         if (gitRepository is not null)
+        {
             await onLogLine($"[DEBUG] Git remote     : {gitRepository.RemoteUrl}", LogStream.Stdout);
+            // Determine the branch the container will check out: issue.GitBranch takes precedence
+            // (feature branch for this issue), otherwise falls back to the repo's default branch.
+            var effectiveBranch = !string.IsNullOrWhiteSpace(issue.GitBranch)
+                ? issue.GitBranch
+                : gitRepository.DefaultBranch;
+            if (!string.IsNullOrWhiteSpace(effectiveBranch))
+                await onLogLine($"[DEBUG] Git branch     : {effectiveBranch}", LogStream.Stdout);
+        }
 
         // Verify Docker daemon is reachable and log its version.
         try

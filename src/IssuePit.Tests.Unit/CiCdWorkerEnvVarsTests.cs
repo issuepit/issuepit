@@ -125,4 +125,29 @@ public class CiCdWorkerEnvVarsTests
         var lines = GetEnvValues(result).ToList();
         Assert.All(lines, l => Assert.StartsWith("ISSUEPIT_", l));
     }
+
+    // ── IsValidFullSha ────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("a3f1b2c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0")] // lowercase
+    [InlineData("A3F1B2C4D5E6F7A8B9C0D1E2F3A4B5C6D7E8F9A0")] // uppercase
+    [InlineData("A3f1B2c4D5e6F7a8B9c0D1e2F3a4B5c6D7e8F9a0")] // mixed case
+    public void IsValidFullSha_Valid40HexChars_ReturnsTrue(string sha)
+    {
+        Assert.True(CiCdWorker.IsValidFullSha(sha));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("main")]
+    [InlineData("feature/my-branch")]
+    [InlineData("abc123")]                                       // short SHA (6 chars)
+    [InlineData("a3f1b2c")]                                      // short SHA (7 chars)
+    [InlineData("a3f1b2c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0x")] // 41 chars
+    [InlineData("a3f1b2c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9g0")]  // invalid hex char 'g'
+    public void IsValidFullSha_Invalid_ReturnsFalse(string? sha)
+    {
+        Assert.False(CiCdWorker.IsValidFullSha(sha));
+    }
 }

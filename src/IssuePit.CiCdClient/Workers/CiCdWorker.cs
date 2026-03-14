@@ -249,10 +249,24 @@ public class CiCdWorker(
 
             var runtime = runtimeFactory.Create(trigger.RuntimeOverride);
 
-            // Log run parameters so they are visible in the log output
-            await AppendLogAsync(run.Id,
-                $"[INFO] Run started — event: {run.EventName ?? "push"}, commit: {run.CommitSha}",
-                LogStream.Stdout, db, stoppingToken);
+            // Log run parameters so they are visible in the log output.
+            // Validate the commit SHA format: a full git SHA is 40 hex characters.
+            // Abbreviated SHAs are 7-39 hex characters. Anything else is likely a branch name
+            // used as a fallback when the local clone was unavailable during trigger.
+            var shaIsFullSha = IsValidFullSha(run.CommitSha);
+            var shaLabel = shaIsFullSha
+                ? $"commit: {run.CommitSha}"
+                : $"commit: {run.CommitSha} (not a full SHA - branch name used as fallback or short SHA)";
+
+            var startLine = $"[INFO] Run started — event: {run.EventName ?? "push"}, {shaLabel}";
+            if (!string.IsNullOrEmpty(run.Branch))
+                startLine += $", branch: {run.Branch}";
+            await AppendLogAsync(run.Id, startLine, LogStream.Stdout, db, stoppingToken);
+
+            if (!shaIsFullSha && !string.IsNullOrEmpty(run.Branch))
+                await AppendLogAsync(run.Id,
+                    "[WARN] CommitSha is not a 40-character hex SHA. The run will check out the branch tip at clone time.",
+                    LogStream.Stdout, db, stoppingToken);
             if (!string.IsNullOrEmpty(run.InputsJson))
             {
                 await AppendLogAsync(run.Id,
@@ -854,5 +868,13 @@ public class CiCdWorker(
             ? issuepitEnv
             : issuepitEnv + "\n" + existingActEnv;
     }
+
+    /// <summary>
+    /// Returns <c>true</c> when <paramref name="sha"/> looks like a valid full-length git commit SHA
+    /// (exactly 40 lowercase or uppercase hexadecimal characters). Abbreviated SHAs and branch/tag
+    /// names return <c>false</c>.
+    /// </summary>
+    internal static bool IsValidFullSha(string? sha) =>
+        sha is { Length: 40 } && sha.All(c => (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'));
 }
 
