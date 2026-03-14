@@ -160,12 +160,11 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         var hostConfig = new HostConfig
         {
             Privileged = true,
-            // Exec flow manages its own lifecycle (stopped by StopContainerAsync after all work is done).
-            // Legacy flow uses AutoRemove, UNLESS CustomCmd is set: a fast-exiting custom command can cause
-            // a race where the container is auto-removed before WaitContainerAsync / StreamContainerLogsAsync
-            // run, resulting in NotFound errors and missing logs. In that case we keep the container and
-            // remove it explicitly after log capture completes (see below).
-            AutoRemove = useExecFlow ? false : !session.KeepContainer && session.CustomCmd is not { Length: > 0 },
+            // Never auto-remove: both exec flow and legacy flow manage container lifetime explicitly.
+            // AutoRemove races with WaitContainerAsync / StreamContainerLogsAsync — the container can
+            // be removed before logs are fully streamed, producing NotFound errors. Instead, we always
+            // remove the container ourselves after all log capture is complete (see below).
+            AutoRemove = false,
             // Make host.docker.internal resolve to the Docker host gateway so containers can call
             // the IssuePit MCP server and other host services. "host-gateway" is the Docker-native
             // special value that resolves to the correct host IP on both Linux and Docker Desktop.
@@ -217,10 +216,9 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
             var waitResponse = await dockerClient.Containers.WaitContainerAsync(container.ID, cancellationToken);
             await logStreamTask;
 
-            // When CustomCmd is set, AutoRemove was disabled to avoid the race where a fast-exiting
-            // command causes the container to be removed before logs can be streamed. Remove it now
-            // that all logs have been collected (unless KeepContainer was requested for inspection).
-            if (session.CustomCmd is { Length: > 0 } && !session.KeepContainer)
+            // Explicit cleanup after all logs have been captured. AutoRemove is always disabled to
+            // prevent the race where a fast-exiting container is removed before log streaming completes.
+            if (!session.KeepContainer)
                 await TryStopAndRemoveContainerAsync(container.ID);
 
             if (waitResponse.StatusCode != 0)
