@@ -96,7 +96,7 @@
               <td class="px-4 py-3 text-gray-300 max-w-xs truncate">{{ item.description }}</td>
               <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ item.branch || '—' }}</td>
               <td class="px-4 py-3 text-gray-400 text-xs">{{ formatDate(item.startedAt) }}</td>
-              <td class="px-4 py-3 text-gray-400 text-xs">{{ duration(item.startedAt, item.endedAt) }}</td>
+              <td class="px-4 py-3 text-gray-400 text-xs">{{ item.status === CiCdRunStatus.WaitingForApproval ? '—' : duration(item.startedAt, item.endedAt) }}</td>
             </tr>
           </tbody>
         </table>
@@ -161,7 +161,7 @@
                 <span v-else class="text-gray-600 text-xs">local</span>
               </td>
               <td class="px-4 py-3 text-gray-400 text-xs">{{ formatDate(run.startedAt) }}</td>
-              <td class="px-4 py-3 text-gray-400 text-xs">{{ duration(run.startedAt, run.endedAt) }}</td>
+              <td class="px-4 py-3 text-gray-400 text-xs">{{ run.status === CiCdRunStatus.WaitingForApproval ? '—' : duration(run.startedAt, run.endedAt) }}</td>
               <td class="px-4 py-3 text-right">
                 <button v-if="run.status === CiCdRunStatus.WaitingForApproval"
                   class="text-xs text-purple-400 hover:text-purple-300 transition-colors"
@@ -347,6 +347,7 @@ const statusOptions: MultiSelectOption[] = [
   { value: 'succeeded', label: 'Succeeded', dotClass: 'bg-green-400' },
   { value: 'failed', label: 'Failed', dotClass: 'bg-red-400' },
   { value: 'cancelled', label: 'Cancelled', dotClass: 'bg-gray-500' },
+  { value: 'WaitingForApproval', label: 'Waiting for Approval', dotClass: 'bg-purple-400' },
 ]
 
 // Case-insensitive status label matching
@@ -476,7 +477,7 @@ function statusClass(status: CiCdRunStatus | AgentSessionStatus) {
     case CiCdRunStatus.Failed: return 'bg-red-900/30 text-red-400'
     case CiCdRunStatus.Cancelled: return 'bg-gray-800 text-gray-400'
     case CiCdRunStatus.WaitingForApproval: return 'bg-purple-900/30 text-purple-400'
-    default: return 'bg-yellow-900/30 text-yellow-400'
+    default: return 'bg-gray-800 text-gray-400'
   }
 }
 
@@ -487,7 +488,7 @@ function statusDot(status: CiCdRunStatus | AgentSessionStatus) {
     case CiCdRunStatus.Failed: return 'bg-red-400'
     case CiCdRunStatus.Cancelled: return 'bg-gray-500'
     case CiCdRunStatus.WaitingForApproval: return 'bg-purple-400'
-    default: return 'bg-yellow-400'
+    default: return 'bg-gray-500'
   }
 }
 </script>

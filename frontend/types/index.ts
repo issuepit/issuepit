@@ -645,7 +645,7 @@ export enum CiCdRunStatus {
   Succeeded = 'succeeded',
   Failed = 'failed',
   Cancelled = 'cancelled',
-  WaitingForApproval = 'waitingForApproval',
+  WaitingForApproval = 'waiting_for_approval',
 }
 
 export const CiCdRunStatusLabels: Record<CiCdRunStatus, string> = {

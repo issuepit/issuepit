@@ -96,7 +96,7 @@
                 <span v-else class="text-gray-600 text-xs">local</span>
               </td>
               <td class="px-4 py-3 text-gray-400 text-xs">{{ formatDate(run.startedAt) }}</td>
-              <td class="px-4 py-3 text-gray-400 text-xs">{{ duration(run.startedAt, run.endedAt) }}</td>
+              <td class="px-4 py-3 text-gray-400 text-xs">{{ run.status === CiCdRunStatus.WaitingForApproval ? '—' : duration(run.startedAt, run.endedAt) }}</td>
               <td class="px-4 py-3 text-right">
                 <button v-if="run.status === CiCdRunStatus.WaitingForApproval"
                   class="text-xs text-purple-400 hover:text-purple-300 transition-colors"

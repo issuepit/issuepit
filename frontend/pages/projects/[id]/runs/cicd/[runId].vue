@@ -82,7 +82,7 @@
           </div>
           <div>
             <p class="text-xs text-gray-500 mb-1">Duration</p>
-            <p class="text-sm text-gray-400">{{ duration(store.currentRun.startedAt, store.currentRun.endedAt) }}</p>
+            <p class="text-sm text-gray-400">{{ store.currentRun.status === CiCdRunStatus.WaitingForApproval ? '—' : duration(store.currentRun.startedAt, store.currentRun.endedAt) }}</p>
           </div>
         </div>
         <!-- Inputs for workflow_dispatch runs -->
@@ -291,7 +291,7 @@
                 <span v-else class="font-mono text-xs text-gray-400">{{ link.workflow || link.branch || link.commitSha?.slice(0, 7) || '—' }}</span>
               </td>
               <td class="px-4 py-2 text-gray-400 text-xs">{{ formatDate(link.startedAt) }}</td>
-              <td class="px-4 py-2 text-gray-400 text-xs">{{ duration(link.startedAt, link.endedAt) }}</td>
+              <td class="px-4 py-2 text-gray-400 text-xs">{{ link.status === CiCdRunStatus.WaitingForApproval ? '—' : duration(link.startedAt, link.endedAt) }}</td>
             </tr>
           </tbody>
         </table>
@@ -2012,7 +2012,7 @@ function statusClass(status: CiCdRunStatus) {
     case CiCdRunStatus.Failed: return 'bg-red-900/30 text-red-400'
     case CiCdRunStatus.Cancelled: return 'bg-gray-800 text-gray-400'
     case CiCdRunStatus.WaitingForApproval: return 'bg-purple-900/30 text-purple-400'
-    default: return 'bg-yellow-900/30 text-yellow-400'
+    default: return 'bg-gray-800 text-gray-400'
   }
 }
 
@@ -2023,7 +2023,7 @@ function statusDot(status: CiCdRunStatus) {
     case CiCdRunStatus.Failed: return 'bg-red-400'
     case CiCdRunStatus.Cancelled: return 'bg-gray-500'
     case CiCdRunStatus.WaitingForApproval: return 'bg-purple-400'
-    default: return 'bg-yellow-400'
+    default: return 'bg-gray-500'
   }
 }
 
@@ -2044,7 +2044,7 @@ function linkedRunStatusClass(link: LinkedCiCdRun) {
   if (s === 'failed' || s === CiCdRunStatus.Failed) return 'bg-red-900/30 text-red-400'
   if (s === 'cancelled' || s === CiCdRunStatus.Cancelled) return 'bg-gray-800 text-gray-400'
   if (s === CiCdRunStatus.WaitingForApproval) return 'bg-purple-900/30 text-purple-400'
-  return 'bg-yellow-900/30 text-yellow-400'
+  return 'bg-gray-800 text-gray-400'
 }
 
 function linkedRunStatusDot(link: LinkedCiCdRun) {
@@ -2053,7 +2053,7 @@ function linkedRunStatusDot(link: LinkedCiCdRun) {
   if (s === 'running' || s === CiCdRunStatus.Running) return 'bg-blue-400 animate-pulse'
   if (s === 'failed' || s === CiCdRunStatus.Failed) return 'bg-red-400'
   if (s === 'cancelled' || s === CiCdRunStatus.Cancelled) return 'bg-gray-500'
-  return 'bg-yellow-400'
+  return 'bg-gray-500'
 }
 
 function navigateToLinkedRun(link: LinkedCiCdRun) {
