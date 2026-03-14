@@ -1083,3 +1083,27 @@ export interface GitHubConflict {
   titleDiffers: boolean
   bodyDiffers: boolean
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Scheduled Tasks (cross-project view)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// <summary>Type discriminator for scheduled task runs.</summary>
+export type ScheduledTaskType = 'GitHubSync'
+
+export interface ScheduledTaskRun {
+  id: string
+  projectId: string
+  projectName: string
+  type: ScheduledTaskType
+  status: GitHubSyncRunStatus
+  summary?: string
+  startedAt: string
+  completedAt?: string
+}
+
+export interface ScheduledTaskProject {
+  projectId: string
+  name: string
+}
+
