@@ -201,10 +201,34 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         // The container is alive (running `sleep infinity`). Drive all agent work via exec.
         try
         {
-            // Step 6: Execute the agent tool via docker exec.
+            // Step 6: Log the actual commit SHA that was checked out by the entrypoint clone.
+            // This runs inside the container so we get the real HEAD, not the trigger value.
+            if (gitRepository is not null)
+            {
+                try
+                {
+                    var clonedSha = await ExecReadOutputAsync(
+                        container.ID, ["git", "rev-parse", "HEAD"], cancellationToken);
+                    var clonedBranch = await ExecReadOutputAsync(
+                        container.ID, ["git", "branch", "--show-current"], cancellationToken);
+                    if (!string.IsNullOrWhiteSpace(clonedSha))
+                    {
+                        var branchPart = !string.IsNullOrWhiteSpace(clonedBranch)
+                            ? $", branch: {clonedBranch}"
+                            : string.Empty;
+                        await onLogLine($"[INFO] Workspace cloned: SHA={clonedSha}{branchPart}", LogStream.Stdout);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    await onLogLine($"[WARN] Could not read cloned SHA: {ex.Message}", LogStream.Stderr);
+                }
+            }
+
+            // Step 7: Execute the agent tool via docker exec.
             var agentExitCode = await ExecCommandAsync(container.ID, runnerArgs, onLogLine, cancellationToken);
 
-            // Step 7: Capture the opencode session ID for --fork on subsequent fix runs.
+            // Step 8: Capture the opencode session ID for --fork on subsequent fix runs.
             // NOTE: opencode run --fork <session-id> will continue from the same session and retain
             // full conversation context. The same container already gives the agent access to the
             // git workspace as modified by the first run. --fork will be wired up once opencode
@@ -218,7 +242,7 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
                 }
             }
 
-            // Step 8: Check git state and emit markers so IssueWorker can trigger CI/CD.
+            // Step 9: Check git state and emit markers so IssueWorker can trigger CI/CD.
             if (gitRepository is not null)
             {
                 try

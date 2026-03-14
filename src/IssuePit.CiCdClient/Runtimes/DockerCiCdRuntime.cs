@@ -576,6 +576,11 @@ public partial class DockerCiCdRuntime(
                     if (cloneExitCode != 0)
                         throw new Exception($"git clone failed with exit code {cloneExitCode} for URL '{trigger.GitRepoUrl}'");
 
+                    // Verify the actual cloned commit SHA from inside the container and compare
+                    // it with the trigger SHA. This confirms the correct commit was checked out
+                    // and, when triggered by branch, resolves and updates the run's CommitSha.
+                    await VerifyClonedCommitAsync(container.ID, run, trigger, onLogLine, cancellationToken);
+
                     // Parse the workflow graph from the cloned repo by cat-ing the YAML files
                     // inside the container. Sets run.WorkflowGraphJson so the worker can persist it.
                     await ParseWorkflowGraphFromContainerAsync(container.ID, run, onLogLine, cancellationToken);
@@ -1007,6 +1012,73 @@ public partial class DockerCiCdRuntime(
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Runs <c>git rev-parse HEAD</c> inside the container to obtain the commit SHA that was
+    /// actually checked out after the clone. Compares it with the trigger SHA stored on <paramref name="run"/>:
+    /// <list type="bullet">
+    ///   <item>Triggered by <b>full SHA</b>: logs a confirmation or a mismatch warning (the branch
+    ///     may have advanced between trigger and clone).</item>
+    ///   <item>Triggered by <b>branch</b> (CommitSha is not a 40-char hex string): updates
+    ///     <c>run.CommitSha</c> to the resolved tip SHA so the run record is accurate.</item>
+    /// </list>
+    /// Best-effort — errors are logged as warnings and never abort the run.
+    /// </summary>
+    private async Task VerifyClonedCommitAsync(
+        string containerId,
+        CiCdRun run,
+        TriggerPayload trigger,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var actualSha = (await ExecCommandCaptureAsync(
+                containerId, ["git", "rev-parse", "HEAD"], cancellationToken)).Trim();
+
+            if (string.IsNullOrWhiteSpace(actualSha)) return;
+
+            var branchPart = !string.IsNullOrWhiteSpace(trigger.Branch) ? $" (branch: {trigger.Branch})" : "";
+
+            if (IsFullCommitSha(run.CommitSha))
+            {
+                // Triggered by an explicit SHA — verify the clone matches.
+                if (string.Equals(actualSha, run.CommitSha, StringComparison.OrdinalIgnoreCase))
+                {
+                    await onLogLine(
+                        $"[INFO] Commit verified: {actualSha}{branchPart}",
+                        LogStream.Stdout);
+                }
+                else
+                {
+                    await onLogLine(
+                        $"[WARN] Commit SHA mismatch: trigger={run.CommitSha}, cloned={actualSha}{branchPart} — branch may have advanced since trigger",
+                        LogStream.Stdout);
+                    // Update to the actual SHA so the run record reflects what was executed.
+                    run.CommitSha = actualSha;
+                }
+            }
+            else
+            {
+                // Triggered by branch only — CommitSha was a branch name or unresolved.
+                // Update it to the real tip SHA now that we have a clone.
+                run.CommitSha = actualSha;
+                await onLogLine(
+                    $"[INFO] Cloned branch '{trigger.Branch}', tip commit: {actualSha}",
+                    LogStream.Stdout);
+            }
+        }
+        catch (Exception ex)
+        {
+            await onLogLine($"[WARN] Could not verify cloned commit SHA: {ex.Message}", LogStream.Stdout);
+        }
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> when <paramref name="sha"/> is a valid full-length git commit SHA
+    /// (exactly 40 hexadecimal characters). Branch names, abbreviated SHAs, and nulls return <c>false</c>.
+    /// </summary>
+    private static bool IsFullCommitSha(string? sha) =>
+        sha is { Length: 40 } && sha.All(char.IsAsciiHexDigit);
 
     /// <summary>
     /// Copies the contents of <c>/artifacts</c> inside the container to <paramref name="artifactDir"/>
