@@ -77,7 +77,7 @@ const label = computed(() => {
     [CiCdRunStatus.Cancelled]: 'Cancelled',
     [CiCdRunStatus.WaitingForApproval]: 'Waiting for Approval',
   }
-  return labels[s]
+  return labels[s] ?? 'Unknown'
 })
 
 const chipClass = computed(() => {
@@ -87,7 +87,7 @@ const chipClass = computed(() => {
     case CiCdRunStatus.Failed: return 'bg-red-900/30 text-red-400'
     case CiCdRunStatus.Cancelled: return 'bg-gray-800 text-gray-400'
     case CiCdRunStatus.WaitingForApproval: return 'bg-purple-900/30 text-purple-400'
-    default: return 'bg-yellow-900/30 text-yellow-400'
+    default: return 'bg-gray-800 text-gray-400'
   }
 })
 
@@ -98,7 +98,7 @@ const dotClass = computed(() => {
     case CiCdRunStatus.Failed: return 'bg-red-400'
     case CiCdRunStatus.Cancelled: return 'bg-gray-500'
     case CiCdRunStatus.WaitingForApproval: return 'bg-purple-400'
-    default: return 'bg-yellow-400'
+    default: return 'bg-gray-500'
   }
 })
 
@@ -109,7 +109,7 @@ function runChipClass(status: CiCdRunStatus) {
     case CiCdRunStatus.Failed: return 'bg-red-900/30 text-red-400'
     case CiCdRunStatus.Cancelled: return 'bg-gray-800 text-gray-400'
     case CiCdRunStatus.WaitingForApproval: return 'bg-purple-900/30 text-purple-400'
-    default: return 'bg-yellow-900/30 text-yellow-400'
+    default: return 'bg-gray-800 text-gray-400'
   }
 }
 
@@ -120,7 +120,7 @@ function runDotClass(status: CiCdRunStatus) {
     case CiCdRunStatus.Failed: return 'bg-red-400'
     case CiCdRunStatus.Cancelled: return 'bg-gray-500'
     case CiCdRunStatus.WaitingForApproval: return 'bg-purple-400'
-    default: return 'bg-yellow-400'
+    default: return 'bg-gray-500'
   }
 }
 
