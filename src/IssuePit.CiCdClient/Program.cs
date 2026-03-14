@@ -17,7 +17,6 @@ builder.Services.AddSingleton(_ => new DockerClientBuilder().Build());
 // Register CI/CD runtime implementations
 builder.Services.AddSingleton<DockerCiCdRuntime>();
 builder.Services.AddSingleton<NativeCiCdRuntime>();
-builder.Services.AddSingleton<DryRunCiCdRuntime>();
 builder.Services.AddSingleton<CiCdRuntimeFactory>();
 
 // Artifact S3 upload (reuses ImageStorage__ config keys; skipped when not configured)

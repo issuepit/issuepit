@@ -188,7 +188,7 @@ jobs:
           # Build from the same issuepit/act commit used in Dockerfile.helper-act.
           # The issuepit/act fork adds --container-name-suffix (used by NativeCiCdRuntime)
           # which is not present in the official nektos/act releases.
-          ACT_COMMIT=cb02232605fa5f914986ce6eb3500db85c06c0ce
+          ACT_COMMIT=7f8e2fe297293c4f1d818692433f885967648101
           git clone https://github.com/issuepit/act.git /tmp/issuepit-act
           cd /tmp/issuepit-act
           git checkout "$ACT_COMMIT"
