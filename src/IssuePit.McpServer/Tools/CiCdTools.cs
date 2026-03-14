@@ -94,4 +94,17 @@ public class CiCdTools(IssuePitApiClient api, IOptions<McpServerOptions> options
         var result = await api.GetAsync<object>(url, ct);
         return ToolSerializer.Serialize(result);
     }
+
+    [McpServerTool, Description("Compare the test results of two CI/CD runs. Returns categorised diffs: newly added tests (only in run B), removed tests (only in run A), fixed tests (failed in A → passed in B), regressed tests (passed in A → failed in B), and tests that became significantly slower. Useful for understanding what changed between two commits.")]
+    public async Task<string> CompareTestRuns(
+        [Description("Project ID (GUID).")] Guid projectId,
+        [Description("The baseline CI/CD run ID (GUID) — the 'before' snapshot.")] Guid runA,
+        [Description("The comparison CI/CD run ID (GUID) — the 'after' snapshot.")] Guid runB,
+        CancellationToken ct = default)
+    {
+        ToolGuard.EnforceNotEnhanceMode(Opts, "CompareTestRuns");
+        var url = $"/api/projects/{projectId}/test-history/compare?runA={runA}&runB={runB}";
+        var result = await api.GetAsync<object>(url, ct);
+        return ToolSerializer.Serialize(result);
+    }
 }

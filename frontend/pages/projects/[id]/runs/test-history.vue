@@ -282,6 +282,232 @@
           <p class="text-gray-600 text-sm mt-1">All tests consistently pass or consistently fail across recorded runs.</p>
         </div>
       </template>
+
+      <!-- Compare Tab -->
+      <template v-else-if="activeTab === 'Compare'">
+        <!-- Run pickers -->
+        <div class="grid grid-cols-2 gap-4 mb-6">
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+            <p class="text-xs text-gray-500 mb-2">Run A <span class="text-gray-600">(baseline)</span></p>
+            <select
+              v-model="compareRunAId"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-300 px-2.5 py-1.5 focus:outline-none focus:border-brand-500 font-mono">
+              <option value="">— select a run —</option>
+              <option v-for="run in runSummaries" :key="run.runId" :value="run.runId">
+                {{ formatCommit(run.commitSha) }} · {{ run.branch || 'no branch' }} · {{ formatDate(run.startedAt) }} ({{ run.totalTests }} tests)
+              </option>
+            </select>
+          </div>
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+            <p class="text-xs text-gray-500 mb-2">Run B <span class="text-gray-600">(comparison)</span></p>
+            <select
+              v-model="compareRunBId"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-300 px-2.5 py-1.5 focus:outline-none focus:border-brand-500 font-mono">
+              <option value="">— select a run —</option>
+              <option v-for="run in runSummaries" :key="run.runId" :value="run.runId">
+                {{ formatCommit(run.commitSha) }} · {{ run.branch || 'no branch' }} · {{ formatDate(run.startedAt) }} ({{ run.totalTests }} tests)
+              </option>
+            </select>
+          </div>
+        </div>
+        <div class="flex justify-center mb-6">
+          <button
+            :disabled="!compareRunAId || !compareRunBId || compareRunAId === compareRunBId || compareLoading"
+            class="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white text-sm px-5 py-2 rounded-lg transition-colors"
+            @click="runCompare">
+            <svg v-if="compareLoading" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+            </svg>
+            <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+            </svg>
+            {{ compareLoading ? 'Comparing…' : 'Compare Runs' }}
+          </button>
+        </div>
+
+        <!-- Compare results -->
+        <template v-if="compareResult">
+          <!-- Summary cards -->
+          <div class="flex items-center gap-3 mb-5 text-xs text-gray-500">
+            <span class="font-mono text-gray-300 bg-gray-800 px-2 py-1 rounded">A: {{ formatCommit(compareResult.runA.commitSha) }}</span>
+            <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+            </svg>
+            <span class="font-mono text-gray-300 bg-gray-800 px-2 py-1 rounded">B: {{ formatCommit(compareResult.runB.commitSha) }}</span>
+            <span class="text-gray-600">{{ compareResult.runA.testCount }} → {{ compareResult.runB.testCount }} tests</span>
+          </div>
+          <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-3 text-center">
+              <p class="text-xs text-gray-500 mb-1">New Tests</p>
+              <p class="text-xl font-semibold text-blue-400">+{{ compareResult.summary.addedCount }}</p>
+            </div>
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-3 text-center">
+              <p class="text-xs text-gray-500 mb-1">Removed</p>
+              <p class="text-xl font-semibold text-gray-400">-{{ compareResult.summary.removedCount }}</p>
+            </div>
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-3 text-center">
+              <p class="text-xs text-gray-500 mb-1">Fixed</p>
+              <p class="text-xl font-semibold text-green-400">{{ compareResult.summary.fixedCount }}</p>
+            </div>
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-3 text-center">
+              <p class="text-xs text-gray-500 mb-1">Regressed</p>
+              <p class="text-xl font-semibold text-red-400">{{ compareResult.summary.regressedCount }}</p>
+            </div>
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-3 text-center">
+              <p class="text-xs text-gray-500 mb-1">Slower</p>
+              <p class="text-xl font-semibold text-yellow-400">{{ compareResult.summary.slowedDownCount }}</p>
+            </div>
+          </div>
+
+          <!-- Regressed section -->
+          <template v-if="compareResult.regressed.length">
+            <h4 class="text-sm font-medium text-red-400 mb-2 flex items-center gap-2">
+              <span class="text-red-400">✗</span> Regressed (passed in A → failed in B)
+            </h4>
+            <div class="rounded-xl border border-red-900/50 overflow-hidden mb-5">
+              <table class="w-full text-xs">
+                <thead class="bg-red-950/40">
+                  <tr>
+                    <th class="text-left px-4 py-2 text-red-400/70 font-medium">Test</th>
+                    <th class="text-right px-4 py-2 text-red-400/70 font-medium">Duration A</th>
+                    <th class="text-right px-4 py-2 text-red-400/70 font-medium">Duration B</th>
+                    <th class="text-left px-4 py-2 text-red-400/70 font-medium">Error</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-red-900/30">
+                  <tr v-for="t in compareResult.regressed" :key="t.fullName" class="hover:bg-red-950/20">
+                    <td class="px-4 py-2 text-gray-300 font-mono truncate max-w-xs" :title="t.fullName">{{ t.fullName.split('.').pop() }}</td>
+                    <td class="px-4 py-2 text-right text-gray-400">{{ formatDuration(t.durationMsA) }}</td>
+                    <td class="px-4 py-2 text-right text-red-400">{{ formatDuration(t.durationMsB) }}</td>
+                    <td class="px-4 py-2 text-red-400/80 truncate max-w-xs font-mono text-xs" :title="t.errorMessage ?? ''">{{ t.errorMessage || '—' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </template>
+
+          <!-- Fixed section -->
+          <template v-if="compareResult.fixed_.length">
+            <h4 class="text-sm font-medium text-green-400 mb-2 flex items-center gap-2">
+              <span>✓</span> Fixed (failed in A → passed in B)
+            </h4>
+            <div class="rounded-xl border border-green-900/50 overflow-hidden mb-5">
+              <table class="w-full text-xs">
+                <thead class="bg-green-950/40">
+                  <tr>
+                    <th class="text-left px-4 py-2 text-green-400/70 font-medium">Test</th>
+                    <th class="text-right px-4 py-2 text-green-400/70 font-medium">Duration A</th>
+                    <th class="text-right px-4 py-2 text-green-400/70 font-medium">Duration B</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-green-900/30">
+                  <tr v-for="t in compareResult.fixed_" :key="t.fullName" class="hover:bg-green-950/20">
+                    <td class="px-4 py-2 text-gray-300 font-mono truncate max-w-xs" :title="t.fullName">{{ t.fullName.split('.').pop() }}</td>
+                    <td class="px-4 py-2 text-right text-gray-400">{{ formatDuration(t.durationMsA) }}</td>
+                    <td class="px-4 py-2 text-right text-green-400">{{ formatDuration(t.durationMsB) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </template>
+
+          <!-- Added section -->
+          <template v-if="compareResult.added.length">
+            <h4 class="text-sm font-medium text-blue-400 mb-2 flex items-center gap-2">
+              <span>+</span> New Tests (only in B)
+            </h4>
+            <div class="rounded-xl border border-blue-900/50 overflow-hidden mb-5">
+              <table class="w-full text-xs">
+                <thead class="bg-blue-950/40">
+                  <tr>
+                    <th class="text-left px-4 py-2 text-blue-400/70 font-medium">Test</th>
+                    <th class="text-left px-4 py-2 text-blue-400/70 font-medium">Outcome</th>
+                    <th class="text-right px-4 py-2 text-blue-400/70 font-medium">Duration</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-blue-900/30">
+                  <tr v-for="t in compareResult.added" :key="t.fullName" class="hover:bg-blue-950/20">
+                    <td class="px-4 py-2 text-gray-300 font-mono truncate max-w-xs" :title="t.fullName">{{ t.fullName.split('.').pop() }}</td>
+                    <td class="px-4 py-2" :class="outcomeClass(t.outcomeName)">{{ t.outcomeName }}</td>
+                    <td class="px-4 py-2 text-right text-gray-400">{{ formatDuration(t.durationMs) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </template>
+
+          <!-- Removed section -->
+          <template v-if="compareResult.removed.length">
+            <h4 class="text-sm font-medium text-gray-400 mb-2 flex items-center gap-2">
+              <span>−</span> Removed Tests (only in A)
+            </h4>
+            <div class="rounded-xl border border-gray-800 overflow-hidden mb-5">
+              <table class="w-full text-xs">
+                <thead class="bg-gray-900">
+                  <tr>
+                    <th class="text-left px-4 py-2 text-gray-500 font-medium">Test</th>
+                    <th class="text-left px-4 py-2 text-gray-500 font-medium">Last Outcome</th>
+                    <th class="text-right px-4 py-2 text-gray-500 font-medium">Duration</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-800">
+                  <tr v-for="t in compareResult.removed" :key="t.fullName" class="hover:bg-gray-900/50">
+                    <td class="px-4 py-2 text-gray-400 font-mono truncate max-w-xs line-through" :title="t.fullName">{{ t.fullName.split('.').pop() }}</td>
+                    <td class="px-4 py-2 text-gray-500">{{ t.outcomeName }}</td>
+                    <td class="px-4 py-2 text-right text-gray-500">{{ formatDuration(t.durationMs) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </template>
+
+          <!-- Slowed down section -->
+          <template v-if="compareResult.slowedDown.length">
+            <h4 class="text-sm font-medium text-yellow-400 mb-2 flex items-center gap-2">
+              <span>⏱</span> Significantly Slower (≥1.5× slower than baseline)
+            </h4>
+            <div class="rounded-xl border border-yellow-900/50 overflow-hidden mb-5">
+              <table class="w-full text-xs">
+                <thead class="bg-yellow-950/30">
+                  <tr>
+                    <th class="text-left px-4 py-2 text-yellow-400/70 font-medium">Test</th>
+                    <th class="text-right px-4 py-2 text-yellow-400/70 font-medium">Duration A</th>
+                    <th class="text-right px-4 py-2 text-yellow-400/70 font-medium">Duration B</th>
+                    <th class="text-right px-4 py-2 text-yellow-400/70 font-medium">Δ</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-yellow-900/30">
+                  <tr v-for="t in compareResult.slowedDown" :key="t.fullName" class="hover:bg-yellow-950/20">
+                    <td class="px-4 py-2 text-gray-300 font-mono truncate max-w-xs" :title="t.fullName">{{ t.fullName.split('.').pop() }}</td>
+                    <td class="px-4 py-2 text-right text-gray-400">{{ formatDuration(t.durationMsA) }}</td>
+                    <td class="px-4 py-2 text-right text-yellow-400">{{ formatDuration(t.durationMsB) }}</td>
+                    <td class="px-4 py-2 text-right text-yellow-300 font-medium">+{{ formatDuration(t.deltaMs) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </template>
+
+          <div
+            v-if="!compareResult.regressed.length && !compareResult.fixed_.length && !compareResult.added.length && !compareResult.removed.length && !compareResult.slowedDown.length"
+            class="flex flex-col items-center justify-center py-16 text-center">
+            <div class="w-12 h-12 bg-green-900/30 rounded-full flex items-center justify-center mb-3">
+              <svg class="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <p class="text-gray-400 font-medium">No differences found</p>
+            <p class="text-gray-600 text-sm mt-1">Both runs have identical test names and outcomes.</p>
+          </div>
+        </template>
+        <div v-else-if="!compareLoading" class="flex flex-col items-center justify-center py-16 text-center text-gray-500">
+          <svg class="w-10 h-10 text-gray-700 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+          </svg>
+          <p class="text-sm">Select two runs above and click <strong class="text-gray-400">Compare Runs</strong></p>
+        </div>
+      </template>
     </template>
 
     <!-- Test detail side panel -->
@@ -426,7 +652,7 @@
 </template>
 
 <script setup lang="ts">
-import type { TestRunSummary, TestStats, TestCaseHistoryEntry } from '~/types'
+import type { TestRunSummary, TestStats, TestCaseHistoryEntry, TestRunCompareResult } from '~/types'
 import { useProjectsStore } from '~/stores/projects'
 
 const route = useRoute()
@@ -435,7 +661,7 @@ const projectsStore = useProjectsStore()
 
 const api = useApi()
 
-const tabs = ['Overview', 'Tests', 'Flaky'] as const
+const tabs = ['Overview', 'Tests', 'Flaky', 'Compare'] as const
 const activeTab = ref<typeof tabs[number]>('Overview')
 
 const branchFilter = ref((route.query.branch as string) || '')
@@ -590,6 +816,25 @@ async function importTrx() {
   }
   finally {
     importing.value = false
+  }
+}
+
+const compareRunAId = ref('')
+const compareRunBId = ref('')
+const compareLoading = ref(false)
+const compareResult = ref<TestRunCompareResult | null>(null)
+
+async function runCompare() {
+  if (!compareRunAId.value || !compareRunBId.value) return
+  compareLoading.value = true
+  compareResult.value = null
+  try {
+    compareResult.value = await api.get<TestRunCompareResult>(
+      `/api/projects/${projectId}/test-history/compare?runA=${compareRunAId.value}&runB=${compareRunBId.value}`,
+    )
+  }
+  finally {
+    compareLoading.value = false
   }
 }
 

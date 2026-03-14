@@ -820,6 +820,17 @@ export interface TestCaseHistoryEntry {
   artifactName: string
 }
 
+export interface TestRunCompareResult {
+  runA: { id: string; commitSha: string; branch?: string; startedAt: string; testCount: number }
+  runB: { id: string; commitSha: string; branch?: string; startedAt: string; testCount: number }
+  added: { fullName: string; outcomeName: string; durationMs: number }[]
+  removed: { fullName: string; outcomeName: string; durationMs: number }[]
+  fixed_: { fullName: string; durationMsA: number; durationMsB: number }[]
+  regressed: { fullName: string; durationMsA: number; durationMsB: number; errorMessage?: string }[]
+  slowedDown: { fullName: string; durationMsA: number; durationMsB: number; deltaMs: number }[]
+  summary: { addedCount: number; removedCount: number; fixedCount: number; regressedCount: number; slowedDownCount: number }
+}
+
 export interface WorkflowJobNode {
   id: string
   name: string

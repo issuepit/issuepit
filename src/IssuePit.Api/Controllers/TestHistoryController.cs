@@ -178,6 +178,105 @@ public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : Co
     }
 
     // ──────────────────────────────────────────────────────────────────────────
+    // Compare two runs
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Compares the test cases of two CI/CD runs and returns categorised diffs:
+    /// new tests (only in run B), removed tests (only in run A),
+    /// fixed tests (failed in A, passed in B), regressed tests (passed in A, failed in B),
+    /// and unchanged tests still failing in both.
+    /// </summary>
+    [HttpGet("compare")]
+    public async Task<IActionResult> CompareRuns(
+        Guid projectId,
+        [FromQuery] Guid runA,
+        [FromQuery] Guid runB)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        if (!await ProjectExistsInTenantAsync(projectId)) return NotFound();
+
+        // Verify both runs belong to this project+tenant.
+        var runIds = new[] { runA, runB };
+        var validRuns = await db.CiCdRuns
+            .Where(r => runIds.Contains(r.Id)
+                     && r.ProjectId == projectId
+                     && r.Project.Organization.TenantId == ctx.CurrentTenant.Id)
+            .Select(r => new { r.Id, r.CommitSha, r.Branch, r.StartedAt })
+            .ToListAsync();
+
+        if (validRuns.Count != 2)
+            return BadRequest("Both runA and runB must belong to this project.");
+
+        var runAMeta = validRuns.First(r => r.Id == runA);
+        var runBMeta = validRuns.First(r => r.Id == runB);
+
+        // Load all test cases for both runs.
+        var testsA = await db.CiCdTestCases
+            .Where(tc => tc.CiCdTestSuite.CiCdRunId == runA)
+            .Select(tc => new { tc.FullName, tc.Outcome, tc.DurationMs, tc.ErrorMessage })
+            .ToListAsync();
+
+        var testsB = await db.CiCdTestCases
+            .Where(tc => tc.CiCdTestSuite.CiCdRunId == runB)
+            .Select(tc => new { tc.FullName, tc.Outcome, tc.DurationMs, tc.ErrorMessage })
+            .ToListAsync();
+
+        var namesA = testsA.ToDictionary(t => t.FullName, t => t);
+        var namesB = testsB.ToDictionary(t => t.FullName, t => t);
+
+        var added = namesB.Keys.Except(namesA.Keys)
+            .Select(n => new { fullName = n, outcomeName = namesB[n].Outcome.ToString(), durationMs = namesB[n].DurationMs })
+            .OrderBy(t => t.fullName)
+            .ToList();
+
+        var removed = namesA.Keys.Except(namesB.Keys)
+            .Select(n => new { fullName = n, outcomeName = namesA[n].Outcome.ToString(), durationMs = namesA[n].DurationMs })
+            .OrderBy(t => t.fullName)
+            .ToList();
+
+        var both = namesA.Keys.Intersect(namesB.Keys).ToList();
+
+        var fixed_ = both
+            .Where(n => namesA[n].Outcome == TestOutcome.Failed && namesB[n].Outcome == TestOutcome.Passed)
+            .Select(n => new { fullName = n, durationMsA = namesA[n].DurationMs, durationMsB = namesB[n].DurationMs })
+            .OrderBy(t => t.fullName)
+            .ToList();
+
+        var regressed = both
+            .Where(n => namesA[n].Outcome == TestOutcome.Passed && namesB[n].Outcome == TestOutcome.Failed)
+            .Select(n => new { fullName = n, durationMsA = namesA[n].DurationMs, durationMsB = namesB[n].DurationMs, errorMessage = namesB[n].ErrorMessage })
+            .OrderBy(t => t.fullName)
+            .ToList();
+
+        var slowedDown = both
+            .Where(n => namesB[n].DurationMs > namesA[n].DurationMs * 1.5 && namesA[n].DurationMs > 50)
+            .Select(n => new { fullName = n, durationMsA = namesA[n].DurationMs, durationMsB = namesB[n].DurationMs, deltaMs = namesB[n].DurationMs - namesA[n].DurationMs })
+            .OrderByDescending(t => t.deltaMs)
+            .Take(20)
+            .ToList();
+
+        return Ok(new
+        {
+            runA = new { runAMeta.Id, runAMeta.CommitSha, runAMeta.Branch, runAMeta.StartedAt, testCount = testsA.Count },
+            runB = new { runBMeta.Id, runBMeta.CommitSha, runBMeta.Branch, runBMeta.StartedAt, testCount = testsB.Count },
+            added,
+            removed,
+            fixed_,
+            regressed,
+            slowedDown,
+            summary = new
+            {
+                addedCount = added.Count,
+                removedCount = removed.Count,
+                fixedCount = fixed_.Count,
+                regressedCount = regressed.Count,
+                slowedDownCount = slowedDown.Count,
+            },
+        });
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
     // Import TRX file directly
     // ──────────────────────────────────────────────────────────────────────────
 
