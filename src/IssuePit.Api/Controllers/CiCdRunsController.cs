@@ -88,7 +88,7 @@ public class CiCdRunsController(
     }
 
     [HttpGet("{id:guid}/logs")]
-    public async Task<IActionResult> GetLogs(Guid id, [FromQuery] LogStream? stream)
+    public async Task<IActionResult> GetLogs(Guid id, [FromQuery] LogStream? stream, [FromQuery] string? jobId)
     {
         // Verify the run belongs to this tenant
         var runExists = await db.CiCdRuns
@@ -103,6 +103,10 @@ public class CiCdRunsController(
 
         if (stream.HasValue)
             query = query.Where(l => l.Stream == stream.Value);
+
+        // Filter by the exact stored jobId (act's qualified name, e.g. "CI/build").
+        if (!string.IsNullOrEmpty(jobId))
+            query = query.Where(l => l.JobId == jobId);
 
         var logs = await query
             .Select(l => new { l.Id, l.Line, l.Stream, StreamName = l.Stream.ToString(), l.JobId, l.StepId, l.Timestamp })

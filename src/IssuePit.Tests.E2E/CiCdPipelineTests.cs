@@ -249,19 +249,21 @@ public class CiCdPipelineTests(AspireFixture fixture)
         var logEntries = logs.EnumerateArray().ToList();
 
         // Both the build and test jobs should have log entries captured with the correct jobId.
-        // We check the jobId field rather than the line text because act's --json msg content
-        // (e.g. "🚀 Start image=...", "Job succeeded") does not reliably contain the job name.
-        // act's "job" field stores workflow-qualified names (e.g. "CI/build"), so we match by
-        // suffix as well as exact equality to handle both single- and multi-workflow runs.
-        var hasBuildJobLogs = logEntries.Any(l =>
-            l.TryGetProperty("jobId", out var jId) &&
-            JobIdMatchesSuffix(jId.GetString(), "build"));
-        var hasTestJobLogs = logEntries.Any(l =>
-            l.TryGetProperty("jobId", out var jId) &&
-            JobIdMatchesSuffix(jId.GetString(), "test"));
+        // act's "job" field stores workflow-qualified names (e.g. "CI/build" for the "CI" workflow).
+        // We check the full qualified jobId to verify the correct field is being stored.
+        var jobIds = logEntries
+            .Where(l => l.TryGetProperty("jobId", out var jIdEl) && jIdEl.GetString() != null)
+            .Select(l => l.GetProperty("jobId").GetString()!)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        Assert.True(hasBuildJobLogs, "Expected log entries from the 'build' job");
-        Assert.True(hasTestJobLogs, "Expected log entries from the 'test' job");
+        Assert.True(jobIds.Contains("CI/build"),
+            $"Expected log entries with jobId 'CI/build' but found: {string.Join(", ", jobIds)}");
+        Assert.True(jobIds.Contains("CI/test"),
+            $"Expected log entries with jobId 'CI/test' but found: {string.Join(", ", jobIds)}");
+        // Verify plain (unqualified) keys are NOT stored — the fix ensures we use act's "job"
+        // field (qualified) rather than "jobID" (plain YAML key).
+        Assert.DoesNotContain("build", jobIds);
+        Assert.DoesNotContain("test", jobIds);
     }
 
     [Theory]
@@ -281,21 +283,87 @@ public class CiCdPipelineTests(AspireFixture fixture)
         var runId = run.GetProperty("id").GetString()!;
         await AssertRunSucceededAsync(client, run, runId);
 
-        // Fetch logs filtered to the 'build' job only.
-        var buildLogsResp = await client.GetAsync($"/api/cicd-runs/{runId}/jobs/build/logs");
+        // Discover the actual stored jobId for the build job from all run logs.
+        // act stores the workflow-qualified name (e.g. "CI/build") so we look for a log
+        // entry whose jobId ends with "/build" or is exactly "build".
+        var allLogsResp = await client.GetAsync($"/api/cicd-runs/{runId}/logs");
+        Assert.Equal(HttpStatusCode.OK, allLogsResp.StatusCode);
+        var allLogs = await allLogsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var buildJobId = allLogs.EnumerateArray()
+            .Where(l => l.TryGetProperty("jobId", out var jId) && JobIdMatchesSuffix(jId.GetString(), "build"))
+            .Select(l => l.GetProperty("jobId").GetString()!)
+            .FirstOrDefault();
+        Assert.NotNull(buildJobId);
+
+        // Fetch logs filtered to the discovered full jobId using the query-string parameter,
+        // which supports exact matching on the full qualified name (e.g. "CI/build").
+        var buildLogsResp = await client.GetAsync(
+            $"/api/cicd-runs/{runId}/logs?jobId={Uri.EscapeDataString(buildJobId)}");
         Assert.Equal(HttpStatusCode.OK, buildLogsResp.StatusCode);
         var buildLogs = await buildLogsResp.Content.ReadFromJsonAsync<JsonElement>();
 
         Assert.True(buildLogs.GetArrayLength() > 0, "Expected build job to have log lines");
 
-        // Every returned log line must belong to the 'build' job.
-        // act's "job" field stores workflow-qualified names (e.g. "CI/build"), so we accept
-        // both exact equality ("build") and the trailing-segment form (".../build").
+        // Every returned log line must have the exact full jobId that was used to query.
         foreach (var entry in buildLogs.EnumerateArray())
         {
             var jobId = entry.GetProperty("jobId").GetString();
-            Assert.True(JobIdMatchesSuffix(jobId, "build"),
-                $"Expected jobId to be 'build' or end with '/build' but got '{jobId}'");
+            Assert.Equal(buildJobId, jobId);
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(RuntimeModes))]
+    public async Task CiCdRun_LogsHaveQualifiedJobIds(string runtimeMode)
+    {
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip(SkipReason(runtimeMode));
+
+        var (client, projectId) = await SetupProjectAsync();
+        using var _ = client;
+
+        // Use the dummy ci.yml workflow (name: "CI", jobs: "build" and "test") so we can assert
+        // the expected qualified jobId format: act's "job" field emits "<WorkflowName>/<jobKey>",
+        // e.g. "CI/build" and "CI/test". This test verifies the full pipeline from act log parsing
+        // in CiCdWorker through to the stored jobId field — the core of the job-mapping fix.
+        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+            BuildTriggerPayload(projectId, "e2e-qualifiedjobid-abc", runtimeMode, "ci.yml"));
+
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
+
+        var logsResp = await client.GetAsync($"/api/cicd-runs/{runId}/logs");
+        Assert.Equal(HttpStatusCode.OK, logsResp.StatusCode);
+        var allLogs = await logsResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        var jobIds = allLogs.EnumerateArray()
+            .Where(l => l.TryGetProperty("jobId", out var jId) && jId.GetString() != null)
+            .Select(l => l.GetProperty("jobId").GetString()!)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // Verify the full workflow-qualified form is stored (not just the plain YAML key).
+        // The dummy workflow is "name: CI" with "build" and "test" jobs, so act emits
+        // jobId="CI/build" and jobId="CI/test" (never plain "build" or "test").
+        Assert.True(jobIds.Contains("CI/build"),
+            $"Expected stored jobId 'CI/build' (qualified) but found: {string.Join(", ", jobIds)}");
+        Assert.True(jobIds.Contains("CI/test"),
+            $"Expected stored jobId 'CI/test' (qualified) but found: {string.Join(", ", jobIds)}");
+        Assert.DoesNotContain("build", jobIds);
+        Assert.DoesNotContain("test", jobIds);
+
+        // Verify that filtering by the full qualified jobId via the ?jobId= query parameter
+        // returns only matching log entries with that exact jobId.
+        var buildFilterResp = await client.GetAsync(
+            $"/api/cicd-runs/{runId}/logs?jobId={Uri.EscapeDataString("CI/build")}");
+        Assert.Equal(HttpStatusCode.OK, buildFilterResp.StatusCode);
+        var buildLogs = await buildFilterResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.True(buildLogs.GetArrayLength() > 0, "Expected log entries for 'CI/build'");
+        foreach (var entry in buildLogs.EnumerateArray())
+        {
+            var storedJobId = entry.GetProperty("jobId").GetString();
+            Assert.Equal("CI/build", storedJobId);
         }
     }
 
