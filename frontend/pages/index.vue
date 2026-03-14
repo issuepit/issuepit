@@ -13,10 +13,10 @@
       <StatCard label="Projects" :value="stats.projects" icon="projects" color="blue" to="/projects" />
       <StatCard label="Open Issues" :value="stats.openIssues" icon="issues" color="amber" to="/issues?status=open" />
       <StatCard label="In Progress" :value="stats.inProgress" icon="progress" color="indigo" to="/issues?status=in_progress" />
-      <StatCard label="Agents" :value="stats.agents" icon="agents" color="green" to="/agents" />
+      <StatCard label="Agent Runs" :value="stats.agentRuns" icon="agents" color="green" />
     </div>
 
-    <!-- Recent Activity -->
+    <!-- CI/CD + Agent Runs row -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
       <!-- Recent Issues -->
       <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
@@ -65,6 +65,65 @@
           </NuxtLink>
           <p v-if="projectsStore.projects.length === 0" class="text-sm text-gray-500 py-4 text-center">No projects yet</p>
         </div>
+      </div>
+    </div>
+
+    <!-- CI/CD Runs + Agent Runs -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+      <!-- Recent Agent Runs -->
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="font-semibold text-white flex items-center gap-2">
+            <svg class="w-4 h-4 text-fuchsia-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2" />
+            </svg>
+            Agent Runs
+            <span class="text-xs font-normal text-gray-500">({{ runsStore.dashboardSessions.length }})</span>
+          </h2>
+        </div>
+        <div v-if="runsStore.dashboardSessions.length" class="space-y-1.5">
+          <div v-for="session in runsStore.dashboardSessions.slice(0, 5)" :key="session.id"
+            class="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-gray-800 transition-colors cursor-pointer"
+            @click="navigateTo(`/projects/${session.projectId}/runs/agent-sessions/${session.id}`)">
+            <AgentSessionStatusChip :session="session" class="shrink-0" />
+            <div class="flex-1 min-w-0">
+              <p class="text-sm text-gray-300 truncate">{{ session.issueTitle }}</p>
+              <p class="text-xs text-gray-500 truncate">{{ session.agentName }} · {{ session.projectName }}</p>
+            </div>
+            <span class="text-xs text-gray-600 shrink-0">{{ formatDate(session.startedAt) }}</span>
+          </div>
+        </div>
+        <p v-else class="text-sm text-gray-500 py-4 text-center">No agent runs yet</p>
+      </div>
+
+      <!-- Recent CI/CD Runs -->
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="font-semibold text-white flex items-center gap-2">
+            <svg class="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            CI/CD Runs
+            <span class="text-xs font-normal text-gray-500">({{ runsStore.runs.length }})</span>
+          </h2>
+        </div>
+        <div v-if="runsStore.runs.length" class="space-y-1.5">
+          <div v-for="run in runsStore.runs.slice(0, 5)" :key="run.id"
+            class="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-gray-800 transition-colors cursor-pointer"
+            @click="navigateTo(`/projects/${run.projectId}/runs/cicd/${run.id}`)">
+            <CiCdStatusChip :runs="[run]" class="shrink-0" />
+            <div class="flex-1 min-w-0">
+              <p class="text-sm text-gray-300 truncate">{{ run.workflow || run.branch || 'Run' }}</p>
+              <p class="text-xs text-gray-500 truncate">
+                {{ run.projectName || '—' }}
+                <span v-if="run.branch"> · {{ run.branch }}</span>
+              </p>
+            </div>
+            <span class="text-xs text-gray-600 shrink-0">{{ formatDate(run.startedAt) }}</span>
+          </div>
+        </div>
+        <p v-else class="text-sm text-gray-500 py-4 text-center">No CI/CD runs yet</p>
       </div>
     </div>
 
@@ -239,7 +298,7 @@ const stats = computed(() => ({
   projects: projectsStore.projects.length,
   openIssues: issuesStore.issues.filter(i => i.status !== IssueStatus.Done && i.status !== IssueStatus.Cancelled).length,
   inProgress: issuesStore.issues.filter(i => i.status === IssueStatus.InProgress).length,
-  agents: agentsStore.agents.length
+  agentRuns: runsStore.dashboardSessions.length
 }))
 
 const recentIssues = computed(() =>

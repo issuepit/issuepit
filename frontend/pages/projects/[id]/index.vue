@@ -73,123 +73,115 @@
         {{ store.currentProject.description }}
       </p>
 
-      <!-- Stats Row: Issues + Commits + Open MRs -->
-      <div class="grid grid-cols-3 gap-3 mb-6 max-w-md">
+      <!-- Stats Row: Issues + Commits + Open MRs (compact) -->
+      <div class="flex flex-wrap items-center gap-3 mb-5">
         <NuxtLink :to="`/projects/${id}/issues`"
-          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group">
-          <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
-            {{ store.currentProject.issueCount }}
-          </p>
-          <p class="text-xs text-gray-500 mt-0.5">Issues</p>
+          class="flex items-center gap-1.5 bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-lg px-3 py-1.5 text-sm transition-colors group">
+          <span class="font-semibold text-white group-hover:text-brand-300 transition-colors">{{ store.currentProject.issueCount }}</span>
+          <span class="text-gray-500">Issues</span>
         </NuxtLink>
 
         <NuxtLink :to="`/projects/${id}/code?tab=commits`"
-          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group">
-          <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
-            {{ commitCountLabel }}
-          </p>
-          <p class="text-xs text-gray-500 mt-0.5">Commits</p>
+          class="flex items-center gap-1.5 bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-lg px-3 py-1.5 text-sm transition-colors group">
+          <span class="font-semibold text-white group-hover:text-brand-300 transition-colors">{{ commitCountLabel }}</span>
+          <span class="text-gray-500">Commits</span>
         </NuxtLink>
 
         <NuxtLink :to="`/projects/${id}/merge-requests`"
-          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group">
-          <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
-            {{ store.currentProject.openMergeRequestCount }}
-          </p>
-          <p class="text-xs text-gray-500 mt-0.5">Open MRs</p>
+          class="flex items-center gap-1.5 bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-lg px-3 py-1.5 text-sm transition-colors group">
+          <span class="font-semibold text-white group-hover:text-brand-300 transition-colors">{{ store.currentProject.openMergeRequestCount }}</span>
+          <span class="text-gray-500">Open MRs</span>
+        </NuxtLink>
+
+        <NuxtLink :to="`/projects/${id}/runs?tab=agent`"
+          class="flex items-center gap-1.5 bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-lg px-3 py-1.5 text-sm transition-colors group">
+          <span class="font-semibold text-white group-hover:text-brand-300 transition-colors">{{ runsStore.agentSessions.length }}</span>
+          <span class="text-gray-500">Agent Runs</span>
+        </NuxtLink>
+
+        <NuxtLink :to="`/projects/${id}/runs`"
+          class="flex items-center gap-1.5 bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-lg px-3 py-1.5 text-sm transition-colors group">
+          <span class="font-semibold text-white group-hover:text-brand-300 transition-colors">{{ runsStore.runs.length }}</span>
+          <span class="text-gray-500">CI/CD Runs</span>
         </NuxtLink>
       </div>
 
-      <!-- Quick Navigation -->
-      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+      <!-- Quick Navigation (horizontal menu) -->
+      <nav class="flex items-center gap-0.5 border-b border-gray-800 mb-6 overflow-x-auto">
         <NuxtLink :to="`/projects/${id}/code`"
-          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 flex items-center gap-3 transition-colors group">
-          <div class="w-8 h-8 bg-orange-900/30 rounded-lg flex items-center justify-center shrink-0">
-            <svg class="w-4 h-4 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-            </svg>
-          </div>
-          <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Code</span>
+          class="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-400 hover:text-gray-200 border-b-2 border-transparent hover:border-brand-500 transition-colors shrink-0 whitespace-nowrap">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+          </svg>
+          Code
         </NuxtLink>
 
         <NuxtLink :to="`/projects/${id}/code?tab=commits`"
-          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 flex items-center gap-3 transition-colors group">
-          <div class="w-8 h-8 bg-amber-900/30 rounded-lg flex items-center justify-center shrink-0">
-            <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-          </div>
-          <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Commits</span>
+          class="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-400 hover:text-gray-200 border-b-2 border-transparent hover:border-brand-500 transition-colors shrink-0 whitespace-nowrap">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          Commits
         </NuxtLink>
 
         <NuxtLink :to="`/projects/${id}/issues`"
-          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 flex items-center gap-3 transition-colors group">
-          <div class="w-8 h-8 bg-blue-900/30 rounded-lg flex items-center justify-center shrink-0">
-            <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-            </svg>
-          </div>
-          <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Issues</span>
+          class="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-400 hover:text-gray-200 border-b-2 border-transparent hover:border-brand-500 transition-colors shrink-0 whitespace-nowrap">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+          </svg>
+          Issues
         </NuxtLink>
 
         <NuxtLink :to="`/projects/${id}/kanban`"
-          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 flex items-center gap-3 transition-colors group">
-          <div class="w-8 h-8 bg-purple-900/30 rounded-lg flex items-center justify-center shrink-0">
-            <svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-            </svg>
-          </div>
-          <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Kanban</span>
+          class="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-400 hover:text-gray-200 border-b-2 border-transparent hover:border-brand-500 transition-colors shrink-0 whitespace-nowrap">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+          </svg>
+          Kanban
         </NuxtLink>
 
         <NuxtLink :to="`/projects/${id}/review`"
-          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 flex items-center gap-3 transition-colors group">
-          <div class="w-8 h-8 bg-teal-900/30 rounded-lg flex items-center justify-center shrink-0">
-            <svg class="w-4 h-4 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-            </svg>
-          </div>
-          <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Review</span>
+          class="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-400 hover:text-gray-200 border-b-2 border-transparent hover:border-brand-500 transition-colors shrink-0 whitespace-nowrap">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+          </svg>
+          Review
         </NuxtLink>
 
         <NuxtLink :to="`/projects/${id}/merge-requests`"
-          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 flex items-center gap-3 transition-colors group">
-          <div class="w-8 h-8 bg-green-900/30 rounded-lg flex items-center justify-center shrink-0">
-            <svg class="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-            </svg>
-          </div>
-          <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Merge Requests</span>
-        </NuxtLink>
-
-        <NuxtLink :to="`/projects/${id}/badges`"
-          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 flex items-center gap-3 transition-colors group">
-          <div class="w-8 h-8 bg-pink-900/30 rounded-lg flex items-center justify-center shrink-0">
-            <svg class="w-4 h-4 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-            </svg>
-          </div>
-          <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Badges</span>
+          class="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-400 hover:text-gray-200 border-b-2 border-transparent hover:border-brand-500 transition-colors shrink-0 whitespace-nowrap">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+          </svg>
+          Merge Requests
         </NuxtLink>
 
         <NuxtLink :to="`/projects/${id}/milestones`"
-          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 flex items-center gap-3 transition-colors group">
-          <div class="w-8 h-8 bg-indigo-900/30 rounded-lg flex items-center justify-center shrink-0">
-            <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
-            </svg>
-          </div>
-          <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Milestones</span>
+          class="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-400 hover:text-gray-200 border-b-2 border-transparent hover:border-brand-500 transition-colors shrink-0 whitespace-nowrap">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
+          </svg>
+          Milestones
         </NuxtLink>
-      </div>
+
+        <NuxtLink :to="`/projects/${id}/runs`"
+          class="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-400 hover:text-gray-200 border-b-2 border-transparent hover:border-brand-500 transition-colors shrink-0 whitespace-nowrap">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+          Runs
+        </NuxtLink>
+
+        <NuxtLink :to="`/projects/${id}/settings`"
+          class="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-400 hover:text-gray-200 border-b-2 border-transparent hover:border-brand-500 transition-colors shrink-0 whitespace-nowrap ml-auto">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          Settings
+        </NuxtLink>
+      </nav>
 
       <!-- Milestones (shown if any exist) -->
       <div v-if="openMilestones.length" class="mb-6">
@@ -356,6 +348,41 @@
         </div>
       </div>
 
+      <!-- Recent Issues -->
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="font-semibold text-white flex items-center gap-2">
+            <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            Recent Issues
+          </h2>
+          <NuxtLink :to="`/projects/${id}/issues`"
+            class="text-xs text-brand-400 hover:text-brand-300 transition-colors">View all →</NuxtLink>
+        </div>
+        <div class="space-y-1">
+          <NuxtLink v-for="issue in recentIssues" :key="issue.id"
+            :to="`/projects/${id}/issues/${issue.number}`"
+            class="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-gray-800 transition-colors">
+            <span :class="statusDotColor(issue.status)" class="w-2 h-2 rounded-full shrink-0"></span>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm text-gray-200 truncate">
+                <span class="text-gray-500 mr-1">#{{ formatIssueId(issue.number, store.currentProject) }}</span>{{ issue.title }}
+              </p>
+            </div>
+            <span class="text-xs text-gray-600 shrink-0">{{ relativeTime(issue.updatedAt) }}</span>
+            <span v-if="issue.priority !== IssuePriority.NoPriority"
+              class="text-xs shrink-0" :class="priorityColor(issue.priority)">{{ priorityIcon(issue.priority) }}</span>
+          </NuxtLink>
+          <p v-if="!recentIssues.length && !issuesStore.loading"
+            class="text-sm text-gray-600 py-4 text-center">No issues yet</p>
+          <div v-if="issuesStore.loading" class="flex items-center justify-center py-4">
+            <div class="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
+          </div>
+        </div>
+      </div>
+
       <!-- Bottom section: History / Kanban toggle -->
       <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
         <div class="flex items-center justify-between mb-4">
@@ -434,21 +461,48 @@
           </div>
         </template>
 
-        <!-- Kanban view -->
+        <!-- Kanban view (inline) -->
         <template v-else>
-          <div class="flex flex-col items-center gap-4 py-6">
-            <p class="text-sm text-gray-400 text-center max-w-sm">
-              Manage your issues visually using drag-and-drop columns. The Kanban board shows all issues organised by status.
-            </p>
-            <NuxtLink :to="`/projects/${id}/kanban`"
-              class="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-              </svg>
-              Open Kanban Board
-            </NuxtLink>
+          <div v-if="issuesStore.loading" class="flex items-center justify-center py-8">
+            <div class="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
           </div>
+          <template v-else>
+            <div class="flex gap-3 overflow-x-auto pb-3">
+              <div v-for="col in kanbanColumns" :key="col.status" class="w-52 shrink-0">
+                <div class="flex items-center gap-2 mb-2 px-1">
+                  <span :class="statusDotColor(col.status)" class="w-2 h-2 rounded-full"></span>
+                  <span class="text-xs font-medium text-gray-400">{{ col.label }}</span>
+                  <span class="text-xs text-gray-600">{{ issuesStore.issuesByStatus[col.status]?.length ?? 0 }}</span>
+                </div>
+                <div class="space-y-1.5 min-h-8">
+                  <NuxtLink v-for="issue in (issuesStore.issuesByStatus[col.status] || []).slice(0, 5)" :key="issue.id"
+                    :to="`/projects/${id}/issues/${issue.number}`"
+                    class="block bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-gray-600 rounded-lg p-2.5 transition-colors">
+                    <p class="text-xs text-gray-300 line-clamp-2 leading-relaxed">{{ issue.title }}</p>
+                    <div class="flex items-center gap-1.5 mt-1.5">
+                      <span class="text-xs text-gray-600">#{{ formatIssueId(issue.number, store.currentProject) }}</span>
+                      <span v-if="issue.priority !== IssuePriority.NoPriority"
+                        class="text-xs" :class="priorityColor(issue.priority)">{{ priorityIcon(issue.priority) }}</span>
+                    </div>
+                  </NuxtLink>
+                  <div v-if="!(issuesStore.issuesByStatus[col.status]?.length)"
+                    class="text-xs text-gray-700 text-center py-3 border border-dashed border-gray-800 rounded-lg">
+                    No issues
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="mt-3 pt-3 border-t border-gray-800 flex justify-end">
+              <NuxtLink :to="`/projects/${id}/kanban`"
+                class="flex items-center gap-1.5 text-xs text-brand-400 hover:text-brand-300 transition-colors">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+                </svg>
+                Open Full Kanban Board →
+              </NuxtLink>
+            </div>
+          </template>
         </template>
       </div>
     </template>
@@ -606,6 +660,7 @@ const id = route.params.id as string
 const store = useProjectsStore()
 const runsStore = useCiCdRunsStore()
 const issuesStore = useIssuesStore()
+const { priorityIcon, priorityColor, priorities } = usePriority()
 const api = useApi()
 
 // --- Issue creation ---
@@ -626,8 +681,6 @@ const statuses = [
   { value: IssueStatus.Done, label: 'Done' },
   { value: IssueStatus.Cancelled, label: 'Cancelled' },
 ]
-
-const { priorities } = usePriority()
 
 const types = [
   { value: IssueType.Issue, label: '📋 Issue' },
@@ -814,6 +867,34 @@ const visibleCiCdRuns = computed(() => {
   return runsStore.runs.slice(0, 5)
 })
 
+// Recent issues: sorted by updatedAt descending, up to 8
+const recentIssues = computed(() =>
+  [...issuesStore.issues]
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    .slice(0, 8),
+)
+
+// Inline kanban columns definition
+const kanbanColumns = [
+  { status: IssueStatus.Backlog, label: 'Backlog' },
+  { status: IssueStatus.Todo, label: 'Todo' },
+  { status: IssueStatus.InProgress, label: 'In Progress' },
+  { status: IssueStatus.InReview, label: 'In Review' },
+  { status: IssueStatus.Done, label: 'Done' },
+]
+
+function statusDotColor(status: IssueStatus): string {
+  const map: Record<IssueStatus, string> = {
+    [IssueStatus.Backlog]: 'bg-gray-500',
+    [IssueStatus.Todo]: 'bg-blue-400',
+    [IssueStatus.InProgress]: 'bg-yellow-400',
+    [IssueStatus.InReview]: 'bg-purple-400',
+    [IssueStatus.Done]: 'bg-green-400',
+    [IssueStatus.Cancelled]: 'bg-red-400',
+  }
+  return map[status] ?? 'bg-gray-500'
+}
+
 onMounted(async () => {
   // Restore bottom view preference
   if (import.meta.client) {
@@ -827,6 +908,7 @@ onMounted(async () => {
   await Promise.all([
     runsStore.fetchRuns(id),
     runsStore.fetchAgentSessions(id),
+    issuesStore.fetchIssues(id),
     api.get<Milestone[]>(`/api/projects/${id}/milestones`)
       .then(data => { milestones.value = data })
       .catch((e) => { console.warn(`Failed to load milestones for project ${id}`, e) }),
