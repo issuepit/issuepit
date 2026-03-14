@@ -380,6 +380,18 @@
                 <span class="text-sm text-gray-200 font-medium">{{ prop.name }}</span>
                 <span class="ml-2 text-xs text-gray-500">{{ propertyTypeLabel(prop.type) }}</span>
                 <span v-if="prop.isRequired" class="ml-1 text-xs text-amber-400">required</span>
+                <!-- Constraint summary -->
+                <span v-if="prop.allowedValues" class="ml-1.5 text-xs text-gray-600">
+                  <template v-if="prop.type === ProjectPropertyType.Enum">
+                    {{ tryParseEnumValues(prop.allowedValues) }}
+                  </template>
+                  <template v-else-if="prop.type === ProjectPropertyType.Text">
+                    {{ textConstraintSummary(prop.allowedValues) }}
+                  </template>
+                  <template v-else-if="prop.type === ProjectPropertyType.Number || prop.type === ProjectPropertyType.Date">
+                    {{ rangeConstraintSummary(prop.allowedValues) }}
+                  </template>
+                </span>
               </div>
               <div class="flex items-center gap-1 shrink-0">
                 <button @click="openEditProperty(prop)" class="text-gray-500 hover:text-gray-300 p-1 rounded transition-colors text-xs">Edit</button>
@@ -416,7 +428,7 @@
 
     <!-- New/Edit Property Modal -->
     <div v-if="showPropertyModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md p-6 shadow-xl">
+      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md p-6 shadow-xl max-h-[90vh] overflow-y-auto">
         <h2 class="text-lg font-bold text-white mb-5">{{ editingPropertyId ? 'Edit Property' : 'New Property' }}</h2>
         <div class="space-y-4">
           <div>
@@ -437,13 +449,58 @@
               <option :value="ProjectPropertyType.Bool">Boolean</option>
             </select>
           </div>
+
+          <!-- Enum: list of allowed values -->
           <div v-if="propForm.type === ProjectPropertyType.Enum">
-            <label class="block text-xs text-gray-400 mb-1.5">Allowed values (JSON array)</label>
-            <input v-model="propForm.allowedValues" type="text" placeholder='["option1","option2"]'
+            <label class="block text-xs text-gray-400 mb-1.5">Allowed values <span class="text-gray-600">(comma-separated or JSON array)</span></label>
+            <input v-model="propForm.enumValues" type="text" placeholder='frontend, backend, infra  or  ["a","b","c"]'
               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
           </div>
+
+          <!-- Text: min/max length -->
+          <div v-if="propForm.type === ProjectPropertyType.Text" class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-gray-400 mb-1.5">Min length <span class="text-gray-600">(optional)</span></label>
+              <input v-model="propForm.minLength" type="number" min="0" placeholder="0"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+            <div>
+              <label class="block text-xs text-gray-400 mb-1.5">Max length <span class="text-gray-600">(optional)</span></label>
+              <input v-model="propForm.maxLength" type="number" min="0" placeholder="e.g. 500"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+          </div>
+
+          <!-- Number: min/max range -->
+          <div v-if="propForm.type === ProjectPropertyType.Number" class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-gray-400 mb-1.5">Min value <span class="text-gray-600">(optional)</span></label>
+              <input v-model="propForm.minValue" type="number" placeholder="None"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+            <div>
+              <label class="block text-xs text-gray-400 mb-1.5">Max value <span class="text-gray-600">(optional)</span></label>
+              <input v-model="propForm.maxValue" type="number" placeholder="None"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+          </div>
+
+          <!-- Date: min/max range -->
+          <div v-if="propForm.type === ProjectPropertyType.Date" class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-gray-400 mb-1.5">Min date <span class="text-gray-600">(optional)</span></label>
+              <input v-model="propForm.minValue" type="date"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+            <div>
+              <label class="block text-xs text-gray-400 mb-1.5">Max date <span class="text-gray-600">(optional)</span></label>
+              <input v-model="propForm.maxValue" type="date"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+          </div>
+
           <div>
-            <label class="block text-xs text-gray-400 mb-1.5">Default value (optional)</label>
+            <label class="block text-xs text-gray-400 mb-1.5">Default value <span class="text-gray-600">(optional)</span></label>
             <input v-model="propForm.defaultValue" type="text" placeholder="Default value"
               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
           </div>
@@ -557,7 +614,20 @@ const propsStore = useProjectPropertiesStore()
 // ── Custom Properties ─────────────────────────────────────────
 const showPropertyModal = ref(false)
 const editingPropertyId = ref<string | null>(null)
-const propForm = reactive({ name: '', type: ProjectPropertyType.Text, isRequired: false, defaultValue: '', allowedValues: '' })
+const propForm = reactive({
+  name: '',
+  type: ProjectPropertyType.Text,
+  isRequired: false,
+  defaultValue: '',
+  // Enum: comma-separated or JSON array string
+  enumValues: '',
+  // Text constraints
+  minLength: '',
+  maxLength: '',
+  // Number/Date constraints
+  minValue: '',
+  maxValue: '',
+})
 
 function propertyTypeLabel(type: ProjectPropertyType): string {
   const map: Record<ProjectPropertyType, string> = {
@@ -572,9 +642,60 @@ function propertyTypeLabel(type: ProjectPropertyType): string {
   return map[type] ?? 'Unknown'
 }
 
+/** Build the allowedValues JSON string from the type-specific form fields. */
+function buildAllowedValues(): string | null {
+  switch (propForm.type) {
+    case ProjectPropertyType.Enum: {
+      const raw = propForm.enumValues.trim()
+      if (!raw) return null
+      // Accept either a JSON array or a comma-separated list
+      if (raw.startsWith('[')) return raw
+      const items = raw.split(',').map(s => s.trim()).filter(Boolean)
+      return items.length ? JSON.stringify(items) : null
+    }
+    case ProjectPropertyType.Text: {
+      const obj: Record<string, number> = {}
+      if (propForm.minLength !== '') obj.minLength = Number(propForm.minLength)
+      if (propForm.maxLength !== '') obj.maxLength = Number(propForm.maxLength)
+      return Object.keys(obj).length ? JSON.stringify(obj) : null
+    }
+    case ProjectPropertyType.Number:
+    case ProjectPropertyType.Date: {
+      const obj: Record<string, string | number> = {}
+      if (propForm.minValue !== '') obj.min = propForm.minValue
+      if (propForm.maxValue !== '') obj.max = propForm.maxValue
+      return Object.keys(obj).length ? JSON.stringify(obj) : null
+    }
+    default:
+      return null
+  }
+}
+
+/** Populate the type-specific form fields from a stored allowedValues JSON string. */
+function parseAllowedValues(raw: string | null | undefined, type: ProjectPropertyType) {
+  propForm.enumValues = ''
+  propForm.minLength = ''
+  propForm.maxLength = ''
+  propForm.minValue = ''
+  propForm.maxValue = ''
+  if (!raw) return
+  try {
+    const parsed = JSON.parse(raw)
+    if (type === ProjectPropertyType.Enum && Array.isArray(parsed)) {
+      propForm.enumValues = raw
+    } else if (type === ProjectPropertyType.Text && typeof parsed === 'object') {
+      propForm.minLength = parsed.minLength != null ? String(parsed.minLength) : ''
+      propForm.maxLength = parsed.maxLength != null ? String(parsed.maxLength) : ''
+    } else if ((type === ProjectPropertyType.Number || type === ProjectPropertyType.Date) && typeof parsed === 'object') {
+      propForm.minValue = parsed.min != null ? String(parsed.min) : ''
+      propForm.maxValue = parsed.max != null ? String(parsed.max) : ''
+    }
+  } catch { /* ignore */ }
+}
+
 function openNewProperty() {
   editingPropertyId.value = null
-  Object.assign(propForm, { name: '', type: ProjectPropertyType.Text, isRequired: false, defaultValue: '', allowedValues: '' })
+  Object.assign(propForm, { name: '', type: ProjectPropertyType.Text, isRequired: false, defaultValue: '', enumValues: '', minLength: '', maxLength: '', minValue: '', maxValue: '' })
   showPropertyModal.value = true
 }
 
@@ -585,8 +706,8 @@ function openEditProperty(prop: ProjectProperty) {
     type: prop.type,
     isRequired: prop.isRequired,
     defaultValue: prop.defaultValue ?? '',
-    allowedValues: prop.allowedValues ?? '',
   })
+  parseAllowedValues(prop.allowedValues, prop.type)
   showPropertyModal.value = true
 }
 
@@ -597,7 +718,7 @@ async function saveProperty() {
     type: propForm.type,
     isRequired: propForm.isRequired,
     defaultValue: propForm.defaultValue || null,
-    allowedValues: propForm.allowedValues || null,
+    allowedValues: buildAllowedValues(),
   }
   if (editingPropertyId.value) {
     await propsStore.updateProperty(id, editingPropertyId.value, payload)
@@ -610,6 +731,34 @@ async function saveProperty() {
 async function deleteProperty(propertyId: string) {
   if (!confirm('Delete this custom property? All values will be lost.')) return
   await propsStore.deleteProperty(id, propertyId)
+}
+
+function tryParseEnumValues(raw: string): string {
+  try {
+    const arr = JSON.parse(raw)
+    if (Array.isArray(arr)) return arr.join(' · ')
+  } catch { /* ignore */ }
+  return raw
+}
+
+function textConstraintSummary(raw: string): string {
+  try {
+    const obj = JSON.parse(raw)
+    const parts: string[] = []
+    if (obj.minLength != null) parts.push(`min ${obj.minLength}`)
+    if (obj.maxLength != null) parts.push(`max ${obj.maxLength}`)
+    return parts.length ? `(${parts.join(', ')} chars)` : ''
+  } catch { return '' }
+}
+
+function rangeConstraintSummary(raw: string): string {
+  try {
+    const obj = JSON.parse(raw)
+    const parts: string[] = []
+    if (obj.min != null) parts.push(`≥ ${obj.min}`)
+    if (obj.max != null) parts.push(`≤ ${obj.max}`)
+    return parts.length ? `(${parts.join(', ')})` : ''
+  } catch { return '' }
 }
 
 // ── General form ──────────────────────────────────────────────
