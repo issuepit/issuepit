@@ -199,8 +199,8 @@
             </button>
           </div>
 
-          <!-- Log stream filter (only in Logs tab) -->
-          <div v-if="activeSection === 'logs'" class="flex items-center gap-2 flex-wrap">
+          <!-- Log stream filter (only in Logs tab and Steps tab selected-step view) -->
+          <div v-if="activeSection === 'logs' || (activeSection === 'steps' && selectedStep)" class="flex items-center gap-2 flex-wrap">
             <div class="flex gap-1">
               <button v-for="s in streamTabs" :key="s.value ?? 'all'"
                 :class="[
@@ -572,7 +572,9 @@ const sessionStepGroups = computed<SessionStepGroup[]>(() => {
     const g = keyToGroup.get(key)!
     g.logs.push(log)
     g.endTs = log.timestamp
-    if (log.stream === 'stderr') g.hasError = true
+    // A step is considered to have errors only when a line with [ERROR] prefix is present.
+    // stderr alone is not an error indicator — opencode writes verbose output to stderr during normal operation.
+    if (log.line.includes('[ERROR]')) g.hasError = true
   }
 
   return groups
@@ -610,7 +612,9 @@ const logsBySection = computed<SessionStepGroup[]>(() => {
     const g = keyToGroup.get(key)!
     g.logs.push(log)
     g.endTs = log.timestamp
-    if (log.stream === 'stderr') g.hasError = true
+    // A step is considered to have errors only when a line with [ERROR] prefix is present.
+    // stderr alone is not an error indicator — opencode writes verbose output to stderr during normal operation.
+    if (log.line.includes('[ERROR]')) g.hasError = true
   }
   return groups
 })

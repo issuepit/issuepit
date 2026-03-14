@@ -36,6 +36,8 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
     internal const string GitBranchMarker = "[ISSUEPIT:GIT_BRANCH]=";
     internal const string HasUncommittedChangesMarker = "[ISSUEPIT:HAS_UNCOMMITTED_CHANGES]=";
     internal const string OpenCodeSessionIdMarker = "[ISSUEPIT:OPENCODE_SESSION_ID]=";
+    /// <summary>Emitted when <c>git push</c> fails; IssueWorker uses this to trigger a .git archive upload.</summary>
+    internal const string GitPushFailedMarker = "[ISSUEPIT:GIT_PUSH_FAILED]=true";
 
     private static string AppVersion =>
         Assembly.GetEntryAssembly()
@@ -525,8 +527,9 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
     /// <summary>
     /// Pushes the current branch to origin (allowed to fail), then emits
     /// <c>[ISSUEPIT:GIT_COMMIT_SHA]</c> and <c>[ISSUEPIT:GIT_BRANCH]</c> markers.
+    /// Returns <c>true</c> when the push succeeded, <c>false</c> otherwise.
     /// </summary>
-    private async Task EmitGitMarkersAsync(
+    private async Task<bool> EmitGitMarkersAsync(
         string containerId,
         Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
@@ -536,6 +539,8 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         var commitSha = await ExecReadOutputAsync(
             containerId, ["git", "rev-parse", "HEAD"], cancellationToken);
 
+        var pushSucceeded = false;
+
         // Push is allowed to fail — credentials may not be configured yet.
         if (!string.IsNullOrWhiteSpace(branch))
         {
@@ -544,15 +549,48 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
                 async (line, stream) => await onLogLine($"[entrypoint] {line}", stream),
                 cancellationToken);
             if (pushExit != 0)
+            {
                 await onLogLine(
                     "[entrypoint] Push failed (allowed — credentials may not be configured or push was rejected)",
                     LogStream.Stdout);
+                // Emit a structured marker so IssueWorker can trigger a .git archive upload for recovery.
+                await onLogLine(GitPushFailedMarker, LogStream.Stdout);
+            }
+            else
+                pushSucceeded = true;
         }
 
         if (!string.IsNullOrWhiteSpace(commitSha))
             await onLogLine($"{GitCommitShaMarker}{commitSha}", LogStream.Stdout);
         if (!string.IsNullOrWhiteSpace(branch))
             await onLogLine($"{GitBranchMarker}{branch}", LogStream.Stdout);
+
+        return pushSucceeded;
+    }
+
+    /// <summary>
+    /// Extracts the <c>/workspace/.git</c> directory from the running container using the
+    /// Docker archive API and returns the raw tar stream. The caller is responsible for
+    /// disposing the returned stream. Returns <c>null</c> if the archive could not be read.
+    /// </summary>
+    internal async Task<Stream?> TryGetGitArchiveStreamAsync(
+        string containerId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await dockerClient.Containers.GetArchiveFromContainerAsync(
+                containerId,
+                new Docker.DotNet.Models.ContainerPathStatParameters { Path = "/workspace/.git" },
+                false,
+                cancellationToken);
+            return response.Stream;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not extract .git archive from container {ContainerId}", containerId);
+            return null;
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────────

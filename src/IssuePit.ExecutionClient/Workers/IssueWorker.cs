@@ -7,6 +7,7 @@ using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
 using IssuePit.Core.Runners;
 using IssuePit.ExecutionClient.Runtimes;
+using IssuePit.ExecutionClient.Services;
 using Microsoft.EntityFrameworkCore;
 using StackExchange.Redis;
 
@@ -18,7 +19,8 @@ public class IssueWorker(
     IServiceProvider services,
     AgentRuntimeFactory runtimeFactory,
     IConnectionMultiplexer redis,
-    IProducer<string, string> kafkaProducer) : BackgroundService
+    IProducer<string, string> kafkaProducer,
+    GitArtifactUploadService gitArtifactUploader) : BackgroundService
 {
     // Tracks CancellationTokenSources for in-flight agent launches so they can be cancelled on demand.
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _activeSessions = new();
@@ -43,6 +45,7 @@ public class IssueWorker(
     private const string GitBranchMarker = "[ISSUEPIT:GIT_BRANCH]=";
     private const string HasUncommittedChangesMarker = "[ISSUEPIT:HAS_UNCOMMITTED_CHANGES]=";
     private const string OpenCodeSessionIdMarker = "[ISSUEPIT:OPENCODE_SESSION_ID]=";
+    private const string GitPushFailedMarker = "[ISSUEPIT:GIT_PUSH_FAILED]=true";
 
     /// <summary>
     /// Maximum total character count for comments included in the task prompt.
@@ -309,6 +312,7 @@ public class IssueWorker(
             string? capturedBranchName = null;
             string? capturedOpenCodeSessionId = null;
             var capturedHasUncommittedChanges = false;
+            var capturedGitPushFailed = false;
 
             // Track the current phase of the workflow so every log line is tagged with its section.
             var currentSection = AgentLogSection.InitialAgentRun;
@@ -325,6 +329,8 @@ public class IssueWorker(
                     capturedHasUncommittedChanges = true;
                 else if (line.StartsWith(OpenCodeSessionIdMarker, StringComparison.Ordinal))
                     capturedOpenCodeSessionId = line[OpenCodeSessionIdMarker.Length..].Trim();
+                else if (line == GitPushFailedMarker)
+                    capturedGitPushFailed = true;
                 return AppendLogAsync(session.Id, line, stream, currentSection, currentSectionIndex, db, sessionCts.Token);
             }
 
@@ -357,6 +363,40 @@ public class IssueWorker(
                     session.CommitSha = capturedCommitSha;
                 if (!string.IsNullOrEmpty(capturedBranchName))
                     session.GitBranch = capturedBranchName;
+
+                // When git push failed, attempt to upload the .git folder as a recovery artifact
+                // so the agent's committed work is not lost. Only attempted for the exec flow
+                // (container still running) when artifact storage is configured.
+                if (capturedGitPushFailed && runtimeId is not null && execRuntime is DockerAgentRuntime dockerRuntime
+                    && gitArtifactUploader.IsConfigured)
+                {
+                    await AppendLogAsync(session.Id,
+                        "[INFO] Git push failed — uploading .git archive to artifact storage for recovery…",
+                        LogStream.Stdout, currentSection, currentSectionIndex, db, sessionCts.Token);
+                    try
+                    {
+                        await using var gitStream = await dockerRuntime.TryGetGitArchiveStreamAsync(runtimeId, sessionCts.Token);
+                        if (gitStream is not null)
+                        {
+                            var artifactUrl = await gitArtifactUploader.UploadGitArchiveAsync(gitStream, session.Id, sessionCts.Token);
+                            if (artifactUrl is not null)
+                            {
+                                var warning = $"Git push failed — .git archive uploaded for recovery: {artifactUrl}";
+                                await AddSessionWarningAsync(session, warning, db, sessionCts.Token);
+                                await AppendLogAsync(session.Id,
+                                    $"[INFO] .git archive uploaded: {artifactUrl}",
+                                    LogStream.Stdout, currentSection, currentSectionIndex, db, sessionCts.Token);
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Failed to upload .git archive for session {SessionId}", session.Id);
+                        await AppendLogAsync(session.Id,
+                            $"[WARN] .git archive upload failed: {ex.Message}",
+                            LogStream.Stderr, currentSection, currentSectionIndex, db, sessionCts.Token);
+                    }
+                }
 
                 // If there are uncommitted changes, run opencode again to commit or .gitignore them.
                 if (capturedHasUncommittedChanges && gitRepository is not null && !string.IsNullOrEmpty(capturedBranchName))
@@ -537,13 +577,14 @@ public class IssueWorker(
         db.AgentSessionLogs.Add(log);
         await db.SaveChangesAsync(cancellationToken);
 
-        // Publish to Redis so the API relay pushes it to SignalR clients
+        // Publish to Redis so the API relay pushes it to SignalR clients.
+        // section is kept as PascalCase (enum name) so the frontend sectionLabel() switch cases match.
         var payload = JsonSerializer.Serialize(new
         {
             stream = stream.ToString().ToLowerInvariant(),
             line,
             timestamp = log.Timestamp,
-            section = section?.ToString().ToLowerInvariant(),
+            section = section?.ToString(),
             sectionIndex,
         });
         await PublishSessionEventAsync(sessionId.ToString(), payload);
@@ -582,6 +623,28 @@ public class IssueWorker(
     // ──────────────────────────────────────────────────────────────────────────
     // CI/CD fix loop helpers
     // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Appends <paramref name="warning"/> to the session's <c>Warnings</c> JSON array and saves to DB.
+    /// </summary>
+    private static async Task AddSessionWarningAsync(
+        AgentSession session,
+        string warning,
+        IssuePitDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var existing = new List<string>();
+        if (!string.IsNullOrEmpty(session.Warnings))
+        {
+            try { existing = JsonSerializer.Deserialize<List<string>>(session.Warnings) ?? []; }
+            catch { /* ignore malformed JSON */ }
+        }
+        existing.Add(warning);
+        session.Warnings = JsonSerializer.Serialize(existing);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+
 
     /// <summary>
     /// Runs up to <see cref="MaxCiCdFixAttempts"/> CI/CD → opencode-fix cycles.
