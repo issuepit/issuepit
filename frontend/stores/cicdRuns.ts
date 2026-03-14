@@ -145,14 +145,14 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
 
   async function approveRun(runId: string) {
     try {
-      const updated = await api.post<{ id: string; status: string; statusName: string }>(`/api/cicd-runs/${runId}/approve`, {})
+      const updated = await api.post<{ id: string; status: CiCdRunStatus; statusName: string }>(`/api/cicd-runs/${runId}/approve`, {})
       const run = runs.value.find(r => r.id === runId)
       if (run) {
-        run.status = updated.status as CiCdRunStatus
+        run.status = updated.status
         run.statusName = updated.statusName
       }
       if (currentRun.value?.id === runId) {
-        currentRun.value.status = updated.status as CiCdRunStatus
+        currentRun.value.status = updated.status
         currentRun.value.statusName = updated.statusName
       }
     } catch (e: unknown) {

@@ -248,6 +248,7 @@ async function cancelRun(runId: string) {
 
 async function approveRun(runId: string) {
   await store.approveRun(runId)
+  await store.fetchRuns(id)
 }
 
 async function retrySession(sessionId: string) {
