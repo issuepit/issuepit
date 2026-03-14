@@ -82,7 +82,7 @@
           </div>
           <div>
             <p class="text-xs text-gray-500 mb-1">Duration</p>
-            <p class="text-sm text-gray-400">{{ duration(store.currentRun.startedAt, store.currentRun.endedAt) }}</p>
+            <p class="text-sm text-gray-400">{{ store.currentRun.status === CiCdRunStatus.WaitingForApproval ? '—' : duration(store.currentRun.startedAt, store.currentRun.endedAt) }}</p>
           </div>
         </div>
         <!-- Inputs for workflow_dispatch runs -->
@@ -291,7 +291,7 @@
                 <span v-else class="font-mono text-xs text-gray-400">{{ link.workflow || link.branch || link.commitSha?.slice(0, 7) || '—' }}</span>
               </td>
               <td class="px-4 py-2 text-gray-400 text-xs">{{ formatDate(link.startedAt) }}</td>
-              <td class="px-4 py-2 text-gray-400 text-xs">{{ duration(link.startedAt, link.endedAt) }}</td>
+              <td class="px-4 py-2 text-gray-400 text-xs">{{ link.status === CiCdRunStatus.WaitingForApproval ? '—' : duration(link.startedAt, link.endedAt) }}</td>
             </tr>
           </tbody>
         </table>
@@ -1509,9 +1509,33 @@ const visibleJobs = computed<EnrichedJob[]>(() => {
     const eventName = store.currentRun.eventName
     filtered = filtered.filter(j => {
       if (!j.workflowFile) return true  // no workflow info — keep
+      // For nested workflow jobs (called via uses:), the job runs because the CALLER triggered —
+      // check the caller's triggers instead of the nested file's own triggers.
+      // e.g. backend.yml has `on: workflow_call` but runs when ci.yml (on: push) calls it.
+      if (j.callerWorkflowFile) {
+        const callerTriggers = wfTriggers[j.callerWorkflowFile] ?? []
+        if (callerTriggers.includes(eventName)) return true
+      }
       const triggers = wfTriggers[j.workflowFile] ?? []
       return triggers.includes(eventName)
     })
+    // Cascade: also hide downstream jobs whose every direct dependency was just filtered out.
+    // This prevents orphaned boxes from appearing when their prerequisite jobs are hidden.
+    const visibleSet = new Set(filtered.map(j => j.id))
+    let changed = true
+    while (changed) {
+      changed = false
+      filtered = filtered.filter(j => {
+        if (j.needs.length === 0) return true  // root job — always keep
+        // Hide if ALL declared needs are now invisible.
+        if (j.needs.every(n => !visibleSet.has(n))) {
+          visibleSet.delete(j.id)
+          changed = true
+          return false
+        }
+        return true
+      })
+    }
   }
 
   // Apply user-selected trigger filter
@@ -1988,7 +2012,7 @@ function statusClass(status: CiCdRunStatus) {
     case CiCdRunStatus.Failed: return 'bg-red-900/30 text-red-400'
     case CiCdRunStatus.Cancelled: return 'bg-gray-800 text-gray-400'
     case CiCdRunStatus.WaitingForApproval: return 'bg-purple-900/30 text-purple-400'
-    default: return 'bg-yellow-900/30 text-yellow-400'
+    default: return 'bg-gray-800 text-gray-400'
   }
 }
 
@@ -1999,7 +2023,7 @@ function statusDot(status: CiCdRunStatus) {
     case CiCdRunStatus.Failed: return 'bg-red-400'
     case CiCdRunStatus.Cancelled: return 'bg-gray-500'
     case CiCdRunStatus.WaitingForApproval: return 'bg-purple-400'
-    default: return 'bg-yellow-400'
+    default: return 'bg-gray-500'
   }
 }
 
@@ -2020,7 +2044,7 @@ function linkedRunStatusClass(link: LinkedCiCdRun) {
   if (s === 'failed' || s === CiCdRunStatus.Failed) return 'bg-red-900/30 text-red-400'
   if (s === 'cancelled' || s === CiCdRunStatus.Cancelled) return 'bg-gray-800 text-gray-400'
   if (s === CiCdRunStatus.WaitingForApproval) return 'bg-purple-900/30 text-purple-400'
-  return 'bg-yellow-900/30 text-yellow-400'
+  return 'bg-gray-800 text-gray-400'
 }
 
 function linkedRunStatusDot(link: LinkedCiCdRun) {
@@ -2029,7 +2053,7 @@ function linkedRunStatusDot(link: LinkedCiCdRun) {
   if (s === 'running' || s === CiCdRunStatus.Running) return 'bg-blue-400 animate-pulse'
   if (s === 'failed' || s === CiCdRunStatus.Failed) return 'bg-red-400'
   if (s === 'cancelled' || s === CiCdRunStatus.Cancelled) return 'bg-gray-500'
-  return 'bg-yellow-400'
+  return 'bg-gray-500'
 }
 
 function navigateToLinkedRun(link: LinkedCiCdRun) {

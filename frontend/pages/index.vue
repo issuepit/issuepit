@@ -155,7 +155,7 @@
                 <td class="px-3 py-2 text-gray-300 font-mono text-xs hidden md:table-cell">{{ run.branch || '—' }}</td>
                 <td class="px-3 py-2 text-gray-300 font-mono text-xs hidden md:table-cell">{{ run.commitSha?.slice(0, 7) || '—' }}</td>
                 <td class="px-3 py-2 text-gray-400 text-xs">{{ formatDate(run.startedAt) }}</td>
-                <td class="px-3 py-2 text-gray-400 text-xs">{{ duration(run.startedAt, run.endedAt) }}</td>
+                <td class="px-3 py-2 text-gray-400 text-xs">{{ run.status === CiCdRunStatus.WaitingForApproval ? '—' : duration(run.startedAt, run.endedAt) }}</td>
               </tr>
             </tbody>
           </table>
@@ -206,7 +206,7 @@
 </template>
 
 <script setup lang="ts">
-import { IssueStatus, IssuePriority, type IssueHistoryEntry } from '~/types'
+import { IssueStatus, IssuePriority, type IssueHistoryEntry, CiCdRunStatus } from '~/types'
 import { useProjectsStore } from '~/stores/projects'
 import { useIssuesStore } from '~/stores/issues'
 import { useAgentsStore } from '~/stores/agents'
