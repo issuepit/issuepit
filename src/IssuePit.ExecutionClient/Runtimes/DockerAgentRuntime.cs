@@ -88,6 +88,19 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         var runnerArgs = RunnerCommandBuilder.BuildArgsList(agent, issue);
         var cmd = runnerArgs.Count > 0 ? runnerArgs.ToList() : null;
 
+        // Log the command being passed to the container so it is visible in the session log output.
+        if (cmd is not null && cmd.Count > 0)
+        {
+            // Log the CLI command (e.g. "opencode run --model ...") without the task text.
+            var cmdDisplay = string.Join(" ", cmd.Take(cmd.Count - 1));
+            await onLogLine($"[DEBUG] Runner cmd     : {cmdDisplay}", LogStream.Stdout);
+        }
+        // Log the task prompt that will be passed to the agent so it is always visible in the logs.
+        var taskPrompt = RunnerCommandBuilder.BuildTaskPrompt(issue);
+        await onLogLine($"[DEBUG] Task prompt    :", LogStream.Stdout);
+        foreach (var promptLine in taskPrompt.Split('\n'))
+            await onLogLine($"[DEBUG]   {promptLine}", LogStream.Stdout);
+
         // Step 4: Configure DNS-based firewall when internet access should be restricted.
         // The restricted DNS server blocks general internet while keeping development domains reachable.
         var dns = agent.DisableInternet ? GetRestrictedDns() : null;

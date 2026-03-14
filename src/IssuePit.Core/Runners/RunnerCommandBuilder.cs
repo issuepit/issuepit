@@ -151,7 +151,7 @@ public static class RunnerCommandBuilder
         ["gh", "copilot", "suggest", task];
 
     /// <summary>Formats the issue title and body into a single task prompt string.</summary>
-    private static string BuildTaskPrompt(Issue issue)
+    public static string BuildTaskPrompt(Issue issue)
     {
         var sb = new StringBuilder();
         sb.Append($"Task: {issue.Title}");
