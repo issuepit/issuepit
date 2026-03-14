@@ -232,6 +232,9 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
                 Description = "IssuePit — AI-powered issue tracker and agent orchestration platform",
                 GitHubRepo = "https://github.com/issuepit/issuepit",
                 IssueKey = "IP",
+                // Require explicit approval before dispatching CI/CD runs so that the git-polling
+                // service does not auto-start runners for this seeded project in E2E tests.
+                RequiresRunApproval = true,
                 CreatedAt = DateTime.UtcNow,
             });
         await db.SaveChangesAsync();
@@ -254,6 +257,9 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
                 Slug = "dummy-cicd-test",
                 Description = "Minimal repo used to validate the CI/CD runtime — fast green runs for development and E2E testing.",
                 GitHubRepo = "https://github.com/issuepit/dummy-cicd-action-test",
+                // Require explicit approval before dispatching CI/CD runs so that the git-polling
+                // service does not auto-start runners for this seeded project in E2E tests.
+                RequiresRunApproval = true,
                 CreatedAt = DateTime.UtcNow,
             });
         await db.SaveChangesAsync();
