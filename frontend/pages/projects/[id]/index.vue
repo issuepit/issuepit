@@ -643,9 +643,12 @@ const types = [
 
 async function submitCreate() {
   if (!form.title) return
-  await issuesStore.createIssue(id, form)
+  const newIssue = await issuesStore.createIssue(id, form)
   showCreate.value = false
   Object.assign(form, { title: '', body: '', status: IssueStatus.Todo, priority: IssuePriority.Medium, type: IssueType.Issue })
+  if (newIssue) {
+    await navigateTo(`/projects/${id}/issues/${newIssue.number}`)
+  }
 }
 
 // --- Voice creation ---
@@ -714,6 +717,9 @@ async function submitVoiceCreate() {
     }
   }
   closeVoiceModal()
+  if (newIssue) {
+    await navigateTo(`/projects/${id}/issues/${newIssue.number}`)
+  }
 }
 
 function closeVoiceModal() {

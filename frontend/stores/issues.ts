@@ -38,7 +38,7 @@ export const useIssuesStore = defineStore('issues', () => {
       const q = filters.value.search.toLowerCase()
       result = result.filter(i => i.title.toLowerCase().includes(q))
     }
-    return result
+    return [...result].sort((a, b) => b.number - a.number)
   })
 
   const issuesByStatus = computed(() => {

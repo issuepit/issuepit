@@ -1299,7 +1299,7 @@ const createForm = reactive({
 
 async function submitCreate() {
   if (!createForm.title.trim()) return
-  await store.createIssue(actualProjectId.value, {
+  const newIssue = await store.createIssue(actualProjectId.value, {
     title: createForm.title.trim(),
     body: createForm.body || undefined,
     status: createForm.status,
@@ -1308,6 +1308,9 @@ async function submitCreate() {
   showCreate.value = false
   createForm.title = ''
   createForm.body = ''
+  if (newIssue) {
+    await navigateTo(`/projects/${actualProjectId.value}/issues/${newIssue.number}`)
+  }
 }
 
 async function startVoiceRecording() {
@@ -1341,6 +1344,9 @@ async function submitVoiceCreate() {
     }
   }
   closeVoiceModal()
+  if (newIssue) {
+    await navigateTo(`/projects/${actualProjectId.value}/issues/${newIssue.number}`)
+  }
 }
 
 function closeVoiceModal() {
