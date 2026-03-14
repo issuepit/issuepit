@@ -765,14 +765,18 @@ public class IssueWorker(
             .Select(r => new { r.Workflow, r.Branch, r.CommitSha, r.ExternalRunId })
             .FirstOrDefaultAsync(cancellationToken);
 
-        // Determine which named jobs exist and whether each has any stderr output (proxy for failure).
+        // Determine which named jobs exist and whether each ended with a "Job failed" line.
+        // act emits "🏁  Job succeeded" / "🏁  Job failed" as the final display line for each job.
+        // We use EndsWith("Job failed") rather than stderr presence because stderr output can
+        // appear in passing jobs (e.g. progress spinners, warnings) — only the terminal status
+        // line is a reliable indicator of job-level failure.
         var jobStats = await db.CiCdRunLogs
             .Where(l => l.CiCdRunId == runId && l.JobId != null)
             .GroupBy(l => l.JobId!)
             .Select(g => new
             {
                 JobId = g.Key,
-                HasErrors = g.Any(l => l.Stream == LogStream.Stderr),
+                HasErrors = g.Any(l => l.Line.EndsWith("Job failed", StringComparison.Ordinal)),
             })
             .ToListAsync(cancellationToken);
 
@@ -834,8 +838,8 @@ public class IssueWorker(
         }
         else
         {
-            // No named jobs have stderr output — fall back to the last 200 total lines
-            // plus extra stderr lines to ensure errors are represented.
+            // No jobs had a "Job failed" terminal line — fall back to the last 200 total lines
+            // plus extra stderr lines to ensure errors are always represented.
             sb.AppendLine("--- Recent Logs ---");
 
             var recent = await db.CiCdRunLogs

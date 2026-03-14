@@ -107,12 +107,36 @@ if [[ -d "${WORKSPACE}" ]]; then
     echo "[entrypoint] Active branch: $(git branch --show-current)"
 fi
 
+# ─── Step 2c: Install git push wrapper ─────────────────────────────────────────
+#
+# A lightweight wrapper is placed at /usr/local/bin/git (ahead of the real git on PATH).
+# It intercepts `git push` invocations and exits with an error so that agent tools
+# (opencode, codex, etc.) cannot push to the remote during their run.
+# Pushing is performed explicitly by the C# execution client after the agent finishes.
+#
+# This is not a full security boundary — a sufficiently determined agent could locate
+# and invoke the real git binary directly — but it prevents accidental pushes from
+# tool-generated shell commands and conventional git usage.
+
+REAL_GIT=$(command -v git 2>/dev/null || echo "/usr/bin/git")
+cat > /usr/local/bin/git << GITWRAPPER
+#!/usr/bin/env bash
+# IssuePit git wrapper — blocks push; all other subcommands are forwarded unchanged.
+if [[ "\${1:-}" == "push" ]]; then
+    echo "[issuepit] git push is not permitted inside the agent container." >&2
+    echo "[issuepit] The execution client will push the branch after your run completes." >&2
+    exit 1
+fi
+exec "${REAL_GIT}" "\$@"
+GITWRAPPER
+chmod +x /usr/local/bin/git
+echo "[entrypoint] git push wrapper installed (real git: ${REAL_GIT})"
+
 # ─── Step 3: Set up tools ──────────────────────────────────────────────────────
 
 if [[ -d "${WORKSPACE}" ]]; then
     cd "${WORKSPACE}"
 
-    # Restore Node.js dependencies
     if [[ -f "package.json" ]]; then
         echo "[entrypoint] Running npm install"
         npm install --prefer-offline
