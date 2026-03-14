@@ -347,6 +347,7 @@ const statusOptions: MultiSelectOption[] = [
   { value: 'succeeded', label: 'Succeeded', dotClass: 'bg-green-400' },
   { value: 'failed', label: 'Failed', dotClass: 'bg-red-400' },
   { value: 'cancelled', label: 'Cancelled', dotClass: 'bg-gray-500' },
+  { value: 'WaitingForApproval', label: 'Waiting for Approval', dotClass: 'bg-purple-400' },
 ]
 
 // Case-insensitive status label matching
