@@ -91,7 +91,12 @@
               <td class="px-4 py-3 text-gray-400 text-xs">{{ formatDate(run.startedAt) }}</td>
               <td class="px-4 py-3 text-gray-400 text-xs">{{ duration(run.startedAt, run.endedAt) }}</td>
               <td class="px-4 py-3 text-right">
-                <button v-if="run.status === CiCdRunStatus.Pending || run.status === CiCdRunStatus.Running"
+                <button v-if="run.status === CiCdRunStatus.WaitingForApproval"
+                  class="text-xs text-purple-400 hover:text-purple-300 transition-colors"
+                  @click.stop="approveRun(run.id)">
+                  Approve
+                </button>
+                <button v-else-if="run.status === CiCdRunStatus.Pending || run.status === CiCdRunStatus.Running"
                   class="text-xs text-red-400 hover:text-red-300 transition-colors"
                   @click.stop="cancelRun(run.id)">
                   Cancel
@@ -234,6 +239,11 @@ onMounted(async () => {
 
 async function cancelRun(runId: string) {
   await store.cancelRun(runId)
+}
+
+async function approveRun(runId: string) {
+  await store.approveRun(runId)
+  await store.fetchRuns(id)
 }
 
 async function retrySession(sessionId: string) {
