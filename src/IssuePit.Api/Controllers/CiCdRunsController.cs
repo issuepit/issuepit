@@ -620,6 +620,7 @@ public class CiCdRunsController(
         var retryRepo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == run.ProjectId);
 
         // Create the new run record immediately (Pending) so it shows as queued in the UI.
+        // Retries are user-initiated so they bypass RequiresRunApproval.
         var newRun = await runQueue.EnqueueAsync(
             projectId: run.ProjectId,
             commitSha: run.CommitSha,
@@ -639,7 +640,8 @@ public class CiCdRunsController(
                 customEntrypoint = options?.CustomEntrypoint,
                 customArgs = options?.CustomArgs,
                 actRunnerImage = options?.ActRunnerImage,
-            });
+            },
+            userTriggered: true);
 
         return Accepted(new { retriedRunId = newRun.Id });
     }
@@ -679,6 +681,7 @@ public class CiCdRunsController(
             : (repo is not null ? gitService.GetBranchTipSha(repo, request.Branch!) : null) ?? request.Branch!;
 
         // Create the run record immediately (Pending) so it shows as queued in the UI.
+        // Manual triggers are user-initiated so they bypass RequiresRunApproval.
         var newRun = await runQueue.EnqueueAsync(
             projectId: request.ProjectId,
             commitSha: commitSha,
@@ -687,7 +690,8 @@ public class CiCdRunsController(
             eventName: request.EventName,
             inputs: request.Inputs,
             gitRepoUrl: repo?.RemoteUrl,
-            extraPayload: string.IsNullOrWhiteSpace(request.CustomImage) ? null : new { customImage = request.CustomImage });
+            extraPayload: string.IsNullOrWhiteSpace(request.CustomImage) ? null : new { customImage = request.CustomImage },
+            userTriggered: true);
 
         return Accepted(new { runId = newRun.Id, projectId = request.ProjectId, commitSha, eventName = request.EventName });
     }

@@ -141,6 +141,7 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
         project.UseNewActionCache = updated.UseNewActionCache;
         project.ActionOfflineMode = updated.ActionOfflineMode;
         project.LocalRepositories = updated.LocalRepositories;
+        project.RequiresRunApproval = updated.RequiresRunApproval;
         project.IssueKey = string.IsNullOrWhiteSpace(updated.IssueKey) ? null : updated.IssueKey.Trim().ToUpperInvariant();
         project.IssueNumberOffset = updated.IssueNumberOffset;
         await db.SaveChangesAsync();
