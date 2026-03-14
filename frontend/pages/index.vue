@@ -13,7 +13,7 @@
       <StatCard label="Projects" :value="stats.projects" icon="projects" color="blue" to="/projects" />
       <StatCard label="Open Issues" :value="stats.openIssues" icon="issues" color="amber" to="/issues?status=open" />
       <StatCard label="In Progress" :value="stats.inProgress" icon="progress" color="indigo" to="/issues?status=in_progress" />
-      <StatCard label="Agent Runs" :value="stats.agentRuns" icon="agents" color="green" />
+      <StatCard label="Agent Runs" :value="stats.agentRuns" icon="runs" color="green" />
     </div>
 
     <!-- CI/CD + Agent Runs row -->
