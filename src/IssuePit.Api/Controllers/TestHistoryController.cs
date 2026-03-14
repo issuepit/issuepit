@@ -220,7 +220,7 @@ public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : Co
         {
             Id = Guid.NewGuid(),
             ProjectId = projectId,
-            CommitSha = string.IsNullOrWhiteSpace(commitSha) ? string.Empty : commitSha,
+            CommitSha = commitSha?.Trim() ?? string.Empty,
             Branch = string.IsNullOrWhiteSpace(branch) ? null : branch,
             Status = CiCdRunStatus.Succeeded,
             StartedAt = now,

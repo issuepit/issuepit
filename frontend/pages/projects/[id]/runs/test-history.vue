@@ -534,11 +534,9 @@ async function reload() {
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 function onSearchInput() {
   if (searchTimer) clearTimeout(searchTimer)
-  searchTimer = setTimeout(() => {
-    if (searchQuery.value.length >= 2 || searchQuery.value.length === 0) {
-      /* filtering is client-side via filteredTests computed */
-    }
-  }, 300)
+  // Filtering is handled client-side by the filteredTests computed property.
+  // The timer is kept here as a hook for future server-side search if needed.
+  searchTimer = setTimeout(() => { /* client-side filtering via filteredTests */ }, 300)
 }
 
 async function openTestDetail(test: TestStats) {
