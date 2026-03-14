@@ -188,7 +188,7 @@
           </div>
 
           <!-- Log stream filter (only in Logs tab) -->
-          <div v-if="activeSection === 'logs'" class="flex items-center gap-2">
+          <div v-if="activeSection === 'logs'" class="flex items-center gap-2 flex-wrap">
             <div class="flex gap-1">
               <button v-for="s in streamTabs" :key="s.value ?? 'all'"
                 :class="[
@@ -199,6 +199,31 @@
                 {{ s.label }}
               </button>
             </div>
+            <!-- Search -->
+            <div class="relative">
+              <svg class="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                v-model="logSearchQuery"
+                type="text"
+                placeholder="Search logs…"
+                class="bg-gray-900 border border-gray-700 rounded-md text-xs text-gray-300 pl-6 pr-2 py-1 placeholder-gray-600 focus:outline-none focus:border-brand-500 w-40 transition-colors" />
+            </div>
+            <!-- Word wrap toggle -->
+            <button
+              :class="['px-2 py-0.5 text-xs rounded-md border transition-colors', wordWrap ? 'border-brand-700 text-brand-300 bg-brand-950/30' : 'border-gray-700 text-gray-500 hover:border-gray-600']"
+              title="Toggle word wrap"
+              @click="wordWrap = !wordWrap">
+              Wrap
+            </button>
+            <!-- Verbose toggle (show/hide dnsmasq DNS-proxy noise) -->
+            <button
+              :class="['px-2 py-0.5 text-xs rounded-md border transition-colors', verboseLogs ? 'border-brand-700 text-brand-300 bg-brand-950/30' : 'border-gray-700 text-gray-500 hover:border-gray-600']"
+              title="Show/hide DNS proxy (dnsmasq) lines"
+              @click="verboseLogs = !verboseLogs">
+              Verbose
+            </button>
             <button
               v-if="store.currentSessionLogs.length"
               class="px-2.5 py-1 text-xs font-medium rounded-md text-gray-500 hover:text-gray-300 transition-colors"
@@ -218,10 +243,10 @@
             <div v-for="log in filteredLogs" :key="log.id" class="flex gap-3 leading-5">
               <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
               <!-- eslint-disable-next-line vue/no-v-html -->
-              <span :class="log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'" class="whitespace-pre-wrap break-all" v-html="renderLogLine(log.line)" />
+              <span :class="[log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300', wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
             </div>
           </div>
-          <div v-else class="py-10 text-center text-sm text-gray-500">No logs available</div>
+          <div v-else class="py-10 text-center text-sm text-gray-500">{{ logSearchQuery ? 'No matching log lines' : 'No logs available' }}</div>
         </template>
 
         <!-- Details tab -->
@@ -310,8 +335,20 @@ const store = useCiCdRunsStore()
 const projectsStore = useProjectsStore()
 const { prefs } = useUserPreferences()
 
-function renderLogLine(line: string): string {
-  return prefs.value.ansiColors ? parseAnsiToHtml(line) : stripAnsiCodes(line)
+function renderLogLine(line: string, highlight?: string): string {
+  let html = prefs.value.ansiColors ? parseAnsiToHtml(line) : stripAnsiCodes(line)
+
+  // Highlight search query hits — replace occurrences in text content only (not inside HTML tags).
+  if (highlight && highlight.trim()) {
+    const escapedQuery = highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const re = new RegExp(`(${escapedQuery})`, 'gi')
+    // Split HTML by tags so we only replace in text nodes (even-indexed parts).
+    html = html.split(/(<[^>]*>)/g).map((part, i) =>
+      i % 2 === 1 ? part : part.replace(re, '<mark class="bg-yellow-400/40 text-yellow-100 rounded-sm not-italic">$1</mark>'),
+    ).join('')
+  }
+
+  return html
 }
 
 const sectionTabs = [
@@ -327,11 +364,28 @@ const streamTabs = [
 ]
 const activeStream = ref<string | null>(null)
 
-const filteredLogs = computed(() =>
-  activeStream.value === null
-    ? store.currentSessionLogs
-    : store.currentSessionLogs.filter(l => l.stream === activeStream.value)
-)
+/** When false (default), dnsmasq DNS-proxy lines are hidden to reduce noise. */
+const verboseLogs = ref(false)
+
+/** Log search query — filters displayed lines and highlights matching text. */
+const logSearchQuery = ref('')
+
+/** Word wrap toggle — off by default to match CiCd run page behaviour. */
+const wordWrap = ref(false)
+
+/** Pattern that identifies noisy DNS-proxy lines emitted by dnsmasq inside the container. */
+const DNSMASQ_RE = /dnsmasq\[/
+
+const filteredLogs = computed(() => {
+  let logs = store.currentSessionLogs
+  if (activeStream.value !== null)
+    logs = logs.filter(l => l.stream === activeStream.value)
+  if (!verboseLogs.value)
+    logs = logs.filter(l => !DNSMASQ_RE.test(l.line))
+  if (logSearchQuery.value.trim())
+    logs = logs.filter(l => stripAnsiCodes(l.line).toLowerCase().includes(logSearchQuery.value.toLowerCase()))
+  return logs
+})
 
 const debugMetadata = computed(() => {
   const entries: Array<{ key: string; value: string }> = []
@@ -451,7 +505,7 @@ async function retrySession() {
 }
 
 async function copyLogsToClipboard() {
-  const text = store.currentSessionLogs.map(l => `${formatLogTime(l.timestamp)} ${l.line}`).join('\n')
+  const text = store.currentSessionLogs.map(l => `${formatLogTime(l.timestamp)} ${stripAnsiCodes(l.line)}`).join('\n')
   try {
     await navigator.clipboard.writeText(text)
   } catch {
