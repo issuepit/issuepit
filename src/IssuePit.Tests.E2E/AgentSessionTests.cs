@@ -159,6 +159,77 @@ public class AgentSessionTests(AspireFixture fixture)
     }
 
     /// <summary>
+    /// Assigns an agent with a command that exits non-zero (command not found) and verifies
+    /// that the session is marked as <c>Failed</c> rather than <c>Succeeded</c>.
+    ///
+    /// Uses <c>busybox:latest</c> with <c>RunnerType=Codex</c> so the container tries to run
+    /// <c>codex --full-auto "Task: ..."</c> which does not exist in busybox → exit code 127.
+    ///
+    /// Skipped automatically when Docker is not available on the host.
+    /// </summary>
+    [Fact]
+    public async Task AgentSession_ContainerExitsNonZero_MarksSessionAsFailed()
+    {
+        if (!IsDockerAvailable()) return;
+
+        using var client = CreateCookieClient();
+        var tenantId = await GetDefaultTenantIdAsync();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"e2e{Guid.NewGuid():N}"[..12];
+        await client.PostAsJsonAsync("/api/auth/register", new { username, password = "TestPass1!" });
+
+        // Create org and project
+        var orgSlug = $"agt-org-{Guid.NewGuid():N}"[..16];
+        var orgResp = await client.PostAsJsonAsync("/api/orgs", new { name = "Agent Fail Org", slug = orgSlug });
+        Assert.Equal(HttpStatusCode.Created, orgResp.StatusCode);
+        var org = await orgResp.Content.ReadFromJsonAsync<JsonElement>();
+        var orgId = org.GetProperty("id").GetString()!;
+
+        var projectSlug = $"agt-proj-{Guid.NewGuid():N}"[..16];
+        var projResp = await client.PostAsJsonAsync("/api/projects",
+            new { name = "Agent Fail Project", slug = projectSlug, orgId = Guid.Parse(orgId) });
+        Assert.Equal(HttpStatusCode.Created, projResp.StatusCode);
+        var project = await projResp.Content.ReadFromJsonAsync<JsonElement>();
+        var projectId = project.GetProperty("id").GetString()!;
+
+        // Create an agent with RunnerType=Codex and busybox as the image.
+        // busybox doesn't have `codex` → container exits with 127 (command not found).
+        var agentResp = await client.PostAsJsonAsync("/api/agents",
+            new
+            {
+                name = "Fail Test Agent",
+                orgId = Guid.Parse(orgId),
+                systemPrompt = "You are a test agent.",
+                dockerImage = "busybox:latest",
+                runnerType = "Codex",
+                allowedTools = "[]",
+                isActive = true,
+            });
+        Assert.Equal(HttpStatusCode.Created, agentResp.StatusCode);
+        var agent = await agentResp.Content.ReadFromJsonAsync<JsonElement>();
+        var agentId = agent.GetProperty("id").GetString()!;
+
+        // Create an issue and assign the agent
+        var issueResp = await client.PostAsJsonAsync("/api/issues",
+            new { title = "Agent Fail Test Issue", projectId = Guid.Parse(projectId) });
+        Assert.Equal(HttpStatusCode.Created, issueResp.StatusCode);
+        var issue = await issueResp.Content.ReadFromJsonAsync<JsonElement>();
+        var issueId = issue.GetProperty("id").GetString()!;
+
+        var assignResp = await client.PostAsJsonAsync($"/api/issues/{issueId}/assignees",
+            new { agentId = Guid.Parse(agentId) });
+        Assert.Equal(HttpStatusCode.Created, assignResp.StatusCode);
+
+        // Wait for the session to reach a terminal state
+        var session = await WaitForAgentSessionAsync(client, issueId, TimeSpan.FromMinutes(3));
+
+        // The container exited non-zero — session must be Failed, not Succeeded
+        var statusName = session.GetProperty("statusName").GetString();
+        Assert.Equal("Failed", statusName);
+    }
+
+    /// <summary>
     /// Polls <c>GET /api/issues/{issueId}/runs</c> until the most-recent agent session reaches a
     /// terminal status (Succeeded, Failed, or Cancelled) or the timeout elapses.
     /// </summary>

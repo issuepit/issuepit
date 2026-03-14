@@ -85,21 +85,21 @@ public static class RunnerCommandBuilder
 
     /// <summary>
     /// Build shell-escaped args for the opencode CLI.
-    /// Usage: opencode [--model MODEL] TASK
+    /// Usage: opencode run [--model MODEL] TASK
     /// https://opencode.ai/docs
     /// </summary>
     private static string BuildOpenCodeArgs(Agent agent, string task)
     {
-        var args = new StringBuilder();
+        var args = new StringBuilder("run");
         if (!string.IsNullOrWhiteSpace(agent.Model))
             args.Append($" --model {EscapeShellArg(agent.Model)}");
         args.Append($" {EscapeShellArg(task)}");
-        return args.ToString().TrimStart();
+        return args.ToString();
     }
 
     private static IReadOnlyList<string> BuildOpenCodeArgsList(Agent agent, string task)
     {
-        var args = new List<string>();
+        var args = new List<string> { "opencode", "run" };
         if (!string.IsNullOrWhiteSpace(agent.Model))
         {
             args.Add("--model");
@@ -126,7 +126,7 @@ public static class RunnerCommandBuilder
 
     private static IReadOnlyList<string> BuildCodexArgsList(Agent agent, string task)
     {
-        var args = new List<string>();
+        var args = new List<string> { "codex" };
         if (!string.IsNullOrWhiteSpace(agent.Model))
         {
             args.Add("--model");
@@ -148,7 +148,7 @@ public static class RunnerCommandBuilder
 
     private static IReadOnlyList<string> BuildCopilotArgsList(string task) =>
         // GitHub Copilot CLI does not support --model selection at this time
-        ["suggest", task];
+        ["gh", "copilot", "suggest", task];
 
     /// <summary>Formats the issue title and body into a single task prompt string.</summary>
     private static string BuildTaskPrompt(Issue issue)

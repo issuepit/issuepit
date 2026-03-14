@@ -766,7 +766,6 @@ import { useAgentsStore } from '~/stores/agents'
 import { useMilestonesStore } from '~/stores/milestones'
 import { useProjectsStore } from '~/stores/projects'
 import { formatIssueId } from '~/composables/useIssueFormat'
-
 const route = useRoute()
 const router = useRouter()
 const id = route.params.id as string
@@ -781,6 +780,9 @@ const milestonesStore = useMilestonesStore()
 const projectsStore = useProjectsStore()
 const api = useApi()
 const { uploading: uploadingImage, uploadError: uploadImageError, handlePaste: handleImagePaste } = useImageUpload()
+
+// SignalR: connect to project hub to receive RunsUpdated events (live agent session refresh)
+const { connection: projectConnection, connect: connectProject } = useSignalR('/hubs/project')
 
 const descDragOver = ref(false)
 const commentDragOver = ref(false)
@@ -971,6 +973,17 @@ onMounted(async () => {
       }))
   } catch (e) {
     console.error('Failed to fetch org issues for link selector', e)
+  }
+
+  // Connect to project hub for real-time agent session updates
+  await connectProject()
+  if (projectConnection.value) {
+    await projectConnection.value.invoke('JoinProject', actualProjectId.value).catch((e: unknown) => {
+      console.warn('Failed to join project group for issue page', e)
+    })
+    projectConnection.value.on('RunsUpdated', () => {
+      store.fetchIssueRuns(resolvedIssueId.value)
+    })
   }
 })
 

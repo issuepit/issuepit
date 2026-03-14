@@ -187,6 +187,66 @@ public class OrgProjectAgentTests : IAsyncLifetime
     // ── UI tests ──────────────────────────────────────────────────────────────
 
     /// <summary>
+    /// UI: create agent via API → navigate to agent detail page → update name → save succeeds (no 400 error).
+    /// This test covers the bug where buildPayload in agents/[id].vue sent allowedTools as a JSON array
+    /// instead of a JSON string, causing the backend to return 400 Bad Request.
+    /// </summary>
+    [Fact]
+    public async Task Ui_UpdateAgent_SaveSettings_Succeeds()
+    {
+        if (FrontendUrl is null)
+            throw new InvalidOperationException("FRONTEND_URL is not set. Ensure the Aspire fixture started the frontend.");
+
+        using var apiClient = CreateCookieClient();
+        var tenantId = await GetDefaultTenantIdAsync();
+        apiClient.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"ui{Guid.NewGuid():N}"[..12];
+        await apiClient.PostAsJsonAsync("/api/auth/register", new { username, password = "TestPass1!" });
+
+        // Create org and agent via API so we have a known agent ID to navigate to.
+        var orgSlug = $"e2e-org-{Guid.NewGuid():N}"[..16];
+        var orgResp = await apiClient.PostAsJsonAsync("/api/orgs", new { name = "UI Save Org", slug = orgSlug });
+        var org = await orgResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var orgId = Guid.Parse(org.GetProperty("id").GetString()!);
+
+        var agentResp = await apiClient.PostAsJsonAsync("/api/agents",
+            new { name = "Save Test Agent", orgId, systemPrompt = "Original prompt", dockerImage = "ghcr.io/test/img:v1", allowedTools = "[]", isActive = false });
+        Assert.Equal(HttpStatusCode.Created, agentResp.StatusCode);
+        var agentJson = await agentResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var agentId = agentJson.GetProperty("id").GetString()!;
+
+        // Open a browser, log in, and navigate to the agent detail page.
+        var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
+        context.SetDefaultTimeout(10_000);
+        var page = await context.NewPageAsync();
+
+        try
+        {
+            await new LoginPage(page).LoginAsync(username, "TestPass1!");
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+
+            var detailPage = new AgentDetailPage(page);
+            await detailPage.GotoAsync(agentId);
+
+            // Edit the agent name and save — the prior bug caused 400 here
+            var updatedName = $"Saved Agent {Guid.NewGuid():N}"[..20];
+            await detailPage.SaveSettingsAsync(name: updatedName, systemPrompt: "Updated system prompt");
+
+            // Verify the agent name was persisted by re-fetching via API.
+            var getResp = await apiClient.GetAsync($"/api/agents/{agentId}");
+            Assert.Equal(HttpStatusCode.OK, getResp.StatusCode);
+            var saved = await getResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+            Assert.Equal(updatedName, saved.GetProperty("name").GetString());
+            Assert.Equal("Updated system prompt", saved.GetProperty("systemPrompt").GetString());
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
+
+    /// <summary>
     /// UI: register → navigate to orgs page → create org via form → org appears in the list.
     /// </summary>
     [Fact]

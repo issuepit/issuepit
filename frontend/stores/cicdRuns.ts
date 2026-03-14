@@ -125,6 +125,10 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     await api.post(`/api/agent-sessions/${sessionId}/retry`, options ?? {})
   }
 
+  async function cancelSession(sessionId: string) {
+    await api.post(`/api/agent-sessions/${sessionId}/cancel`, {})
+  }
+
   async function retryRun(runId: string, options?: {
     keepContainerOnFailure?: boolean
     forceRetry?: boolean
@@ -206,6 +210,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     fetchAgentSession,
     fetchAgentSessionOnly,
     retrySession,
+    cancelSession,
     retryRun,
     cancelRun,
     fetchDashboardSessions,

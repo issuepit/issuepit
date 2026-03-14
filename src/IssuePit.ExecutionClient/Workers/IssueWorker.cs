@@ -267,6 +267,7 @@ public class IssueWorker(
 
             var runtimeId = await runtime.LaunchAsync(session, agent, issue, credentials, runtimeConfig, gitRepository, onLogLine, sessionCts.Token);
 
+            session.Status = AgentSessionStatus.Succeeded;
             logger.LogInformation(
                 "Agent {AgentId} launched via {RuntimeType} with id '{RuntimeId}' for session {SessionId}",
                 agent.Id, runtimeType, runtimeId, session.Id);
