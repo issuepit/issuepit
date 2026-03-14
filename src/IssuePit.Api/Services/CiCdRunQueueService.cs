@@ -4,14 +4,17 @@ using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 
 namespace IssuePit.Api.Services;
 
 /// <summary>
-/// Creates a <see cref="CiCdRun"/> row with <see cref="CiCdRunStatus.Pending"/> status,
-/// notifies the project hub so the UI shows the run as queued immediately, then
-/// publishes the trigger payload to the 'cicd-trigger' Kafka topic.
+/// Creates a <see cref="CiCdRun"/> row with <see cref="CiCdRunStatus.Pending"/> status (or
+/// <see cref="CiCdRunStatus.WaitingForApproval"/> when the project has
+/// <see cref="Project.RequiresRunApproval"/> set), notifies the project hub so the UI shows the
+/// run as queued immediately, then publishes the trigger payload to the 'cicd-trigger' Kafka topic
+/// (skipped when waiting for approval).
 ///
 /// All API trigger paths (manual trigger, retry, git-polling) go through this service so that
 /// the run is always visible in the runs list before the worker picks it up.
@@ -38,6 +41,11 @@ public sealed class CiCdRunQueueService(
         object? extraPayload = null,
         CancellationToken cancellationToken = default)
     {
+        var requiresApproval = await db.Projects
+            .Where(p => p.Id == projectId)
+            .Select(p => p.RequiresRunApproval)
+            .FirstOrDefaultAsync(cancellationToken);
+
         var inputsJson = inputs is { Count: > 0 }
             ? JsonSerializer.Serialize(inputs)
             : null;
@@ -52,7 +60,7 @@ public sealed class CiCdRunQueueService(
             Workflow = workflow,
             EventName = eventName,
             InputsJson = inputsJson,
-            Status = CiCdRunStatus.Pending,
+            Status = requiresApproval ? CiCdRunStatus.WaitingForApproval : CiCdRunStatus.Pending,
             StartedAt = DateTime.UtcNow,
         };
 
@@ -60,15 +68,21 @@ public sealed class CiCdRunQueueService(
         await db.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation(
-            "CI/CD run {RunId} queued for project {ProjectId}, commit {Commit}, event {EventName}",
-            run.Id, projectId, commitSha, eventName ?? "push");
+            "CI/CD run {RunId} queued for project {ProjectId}, commit {Commit}, event {EventName}, status {Status}",
+            run.Id, projectId, commitSha, eventName ?? "push", run.Status);
 
-        // Notify the project hub immediately so the runs list shows the run as Pending/Queued.
+        // Notify the project hub immediately so the runs list shows the run as queued.
         await projectHub.Clients
             .Group(ProjectHub.ProjectGroup(projectId.ToString()))
             .SendAsync("RunsUpdated",
                 new { runId = run.Id, status = run.Status, statusName = run.Status.ToString() },
                 cancellationToken);
+
+        if (requiresApproval)
+        {
+            // Do not publish to Kafka — the run will only be dispatched once explicitly approved.
+            return run;
+        }
 
         // Build the Kafka payload. Include RunId so the worker can reuse the pre-created row.
         var payloadDict = new Dictionary<string, object?>
@@ -97,6 +111,75 @@ public sealed class CiCdRunQueueService(
         await producer.ProduceAsync("cicd-trigger", new Message<string, string>
         {
             Key = commitSha,
+            Value = payload,
+        }, cancellationToken);
+
+        return run;
+    }
+
+    /// <summary>
+    /// Approves a <see cref="CiCdRunStatus.WaitingForApproval"/> run by transitioning it to
+    /// <see cref="CiCdRunStatus.Pending"/> and publishing the Kafka trigger so the CI/CD worker
+    /// picks it up.
+    /// </summary>
+    /// <returns>The updated run, or <c>null</c> if the run was not found or is not in the
+    /// <see cref="CiCdRunStatus.WaitingForApproval"/> state.</returns>
+    public async Task<CiCdRun?> ApproveAsync(Guid runId, CancellationToken cancellationToken = default)
+    {
+        var run = await db.CiCdRuns.FindAsync([runId], cancellationToken);
+        if (run is null || run.Status != CiCdRunStatus.WaitingForApproval)
+            return null;
+
+        run.Status = CiCdRunStatus.Pending;
+        await db.SaveChangesAsync(cancellationToken);
+
+        logger.LogInformation("CI/CD run {RunId} approved, dispatching to worker", runId);
+
+        // Notify the project hub so the UI refreshes.
+        await projectHub.Clients
+            .Group(ProjectHub.ProjectGroup(run.ProjectId.ToString()))
+            .SendAsync("RunsUpdated",
+                new { runId = run.Id, status = run.Status, statusName = run.Status.ToString() },
+                cancellationToken);
+
+        // Reconstruct the Kafka payload from the persisted run.
+        var gitRepo = await db.GitRepositories
+            .Where(r => r.ProjectId == run.ProjectId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        Dictionary<string, string>? inputs = null;
+        if (!string.IsNullOrEmpty(run.InputsJson))
+        {
+            try
+            {
+                inputs = JsonSerializer.Deserialize<Dictionary<string, string>>(run.InputsJson,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            }
+            catch (JsonException ex)
+            {
+                logger.LogWarning(ex, "Could not deserialize InputsJson for run {RunId} — inputs will be omitted from trigger", run.Id);
+            }
+        }
+
+        var payloadDict = new Dictionary<string, object?>
+        {
+            ["runId"] = run.Id,
+            ["projectId"] = run.ProjectId,
+            ["commitSha"] = run.CommitSha,
+            ["branch"] = run.Branch,
+            ["workflow"] = run.Workflow,
+            ["agentSessionId"] = run.AgentSessionId,
+            ["gitRepoUrl"] = gitRepo?.RemoteUrl,
+            ["workspacePath"] = run.WorkspacePath,
+            ["eventName"] = run.EventName ?? "push",
+            ["inputs"] = inputs,
+        };
+
+        var payload = JsonSerializer.Serialize(payloadDict);
+
+        await producer.ProduceAsync("cicd-trigger", new Message<string, string>
+        {
+            Key = run.CommitSha,
             Value = payload,
         }, cancellationToken);
 
