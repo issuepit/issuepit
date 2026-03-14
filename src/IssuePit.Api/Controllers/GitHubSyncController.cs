@@ -76,6 +76,10 @@ public class GitHubSyncController(
                 return BadRequest("GitHub identity not found in this tenant.");
         }
 
+        // Validate repo format when provided.
+        if (!string.IsNullOrWhiteSpace(req.GitHubRepo) && !req.GitHubRepo.Trim().Contains('/'))
+            return BadRequest("GitHub repository must be in owner/repo format (e.g. \"acme/backend\").");
+
         var config = await db.GitHubSyncConfigs.FirstOrDefaultAsync(c => c.ProjectId == projectId);
         if (config is null)
         {

@@ -305,6 +305,13 @@ public class GitHubSyncService(
             return (null, null);
         }
 
+        if (!config.GitHubRepo.Contains('/'))
+        {
+            await AppendLogAsync(run, GitHubSyncLogLevel.Error,
+                $"GitHub repository \"{config.GitHubRepo}\" is not in the required owner/repo format.", ct);
+            return (null, null);
+        }
+
         var token = DecryptToken(config.GitHubIdentity.EncryptedToken);
         if (token is null)
         {
@@ -377,7 +384,9 @@ public class GitHubSyncService(
     private static (string owner, string repo) ParseRepo(string ownerRepo)
     {
         var parts = ownerRepo.Split('/', 2);
-        return parts.Length == 2 ? (parts[0], parts[1]) : (ownerRepo, ownerRepo);
+        if (parts.Length != 2 || string.IsNullOrEmpty(parts[0]) || string.IsNullOrEmpty(parts[1]))
+            throw new ArgumentException($"Invalid GitHub repository format: \"{ownerRepo}\". Expected owner/repo.", nameof(ownerRepo));
+        return (parts[0], parts[1]);
     }
 
     private static IssueStatus MapGitHubState(string? state) =>

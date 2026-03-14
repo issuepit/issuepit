@@ -157,9 +157,26 @@ public class GitHubSyncEndpointTests(ApiFactory factory) : IClassFixture<ApiFact
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
     }
 
-    // ──────────────────────────────────────────────────────────────────────
-    // GET /api/projects/{projectId}/github-sync/runs
-    // ──────────────────────────────────────────────────────────────────────
+    [Fact]
+    public async Task UpsertConfig_WithInvalidRepoFormat_Returns400()
+    {
+        var (tenantId, _, projectId, _) = await SeedProjectAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var response = await _client.PutAsJsonAsync($"/api/projects/{projectId}/github-sync/config", new
+        {
+            gitHubIdentityId = (Guid?)null,
+            gitHubRepo = "just-a-repo-name-without-slash", // invalid format
+            triggerMode = GitHubSyncTriggerMode.Manual,
+            autoCreateOnGitHub = false,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
 
     [Fact]
     public async Task ListRuns_WithNoRuns_ReturnsEmptyArray()
