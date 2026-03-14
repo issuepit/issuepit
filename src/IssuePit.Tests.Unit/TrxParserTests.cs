@@ -1,4 +1,4 @@
-using IssuePit.CiCdClient.Services;
+using IssuePit.Core.Services;
 using IssuePit.Core.Enums;
 
 namespace IssuePit.Tests.Unit;

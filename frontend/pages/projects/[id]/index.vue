@@ -189,6 +189,17 @@
           </div>
           <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Milestones</span>
         </NuxtLink>
+
+        <NuxtLink :to="`/projects/${id}/test-history`"
+          class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 flex items-center gap-3 transition-colors group">
+          <div class="w-8 h-8 bg-cyan-900/30 rounded-lg flex items-center justify-center shrink-0">
+            <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            </svg>
+          </div>
+          <span class="font-medium text-sm text-white group-hover:text-brand-300 transition-colors">Test History</span>
+        </NuxtLink>
       </div>
 
       <!-- Milestones (shown if any exist) -->

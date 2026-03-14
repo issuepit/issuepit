@@ -777,6 +777,73 @@ export interface CiCdArtifact {
   createdAt: string
 }
 
+export interface TestHistoryRun {
+  id: string
+  artifactName: string
+  totalTests: number
+  passedTests: number
+  failedTests: number
+  skippedTests: number
+  durationMs: number
+  createdAt: string
+  run: {
+    id: string
+    commitSha: string
+    branch?: string
+    workflow?: string
+    startedAt: string
+    externalRunId?: string
+    externalSource?: string
+  }
+}
+
+export interface FlakyTest {
+  fullName: string
+  className?: string
+  methodName?: string
+  totalRuns: number
+  passedRuns: number
+  failedRuns: number
+  failureRate: number
+  avgDurationMs: number
+  lastSeenAt: string
+}
+
+export interface TestCaseHistoryEntry {
+  id: string
+  fullName: string
+  className?: string
+  methodName?: string
+  outcome: number
+  outcomeName: string
+  durationMs: number
+  errorMessage?: string
+  stackTrace?: string
+  suite: {
+    id: string
+    artifactName: string
+    createdAt: string
+    run: {
+      id: string
+      commitSha: string
+      branch?: string
+      startedAt: string
+    }
+  }
+}
+
+export interface TestRunComparison {
+  baseCommit: string
+  headCommit: string
+  baseTestCount: number
+  headTestCount: number
+  newTests: Array<{ fullName: string; outcomeName: string; durationMs: number }>
+  removedTests: Array<{ fullName: string; outcomeName: string; durationMs: number }>
+  nowFailing: Array<{ fullName: string; baseOutcomeName: string; headOutcomeName: string; durationMs: number }>
+  nowPassing: Array<{ fullName: string; baseOutcomeName: string; headOutcomeName: string; durationMs: number }>
+  slowerTests: Array<{ fullName: string; baseDurationMs: number; headDurationMs: number; deltaMs: number }>
+}
+
 export interface WorkflowJobNode {
   id: string
   name: string
