@@ -55,4 +55,8 @@ public class AgentSession
     public ICollection<CiCdRun> CiCdRuns { get; set; } = [];
 
     public ICollection<AgentSessionLog> Logs { get; set; } = [];
+
+    /// <summary>JSON array of warning strings accumulated during the session (e.g. truncated issue comments).
+    /// Null when no warnings were emitted.</summary>
+    public string? Warnings { get; set; }
 }

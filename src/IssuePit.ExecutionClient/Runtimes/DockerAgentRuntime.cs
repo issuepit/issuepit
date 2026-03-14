@@ -104,14 +104,18 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         await onLogLine($"[DEBUG] Pull finished  : {DateTime.UtcNow:u} (took {pullDuration:F1}s)", LogStream.Stdout);
 
         // Step 2: Build environment including git repo info so the container can clone the repo on startup.
-        var env = AgentEnvironmentBuilder.Build(session, agent, issue, credentials, gitRepository);
+        var issuePitMcpUrl = configuration["McpServer__BaseUrl"];
+        var env = AgentEnvironmentBuilder.Build(session, agent, issue, credentials, gitRepository, issuePitMcpUrl);
+        if (!string.IsNullOrWhiteSpace(issuePitMcpUrl))
+            await onLogLine($"[DEBUG] IssuePit MCP   : {issuePitMcpUrl}", LogStream.Stdout);
 
         // Step 3: Determine whether to use the exec-based flow (RunnerType set) or the legacy flow.
         //
         // Exec flow  — container CMD = "sleep infinity"; entrypoint does setup and keeps container alive;
         //              C# execs the agent tool and all post-run steps (git check, markers, push).
         // Legacy flow — container CMD from entrypoint default; wait for container to exit (old behaviour).
-        var runnerArgs = RunnerCommandBuilder.BuildArgsList(agent, issue);
+        var comments = issue.Comments.Count > 0 ? (IReadOnlyList<IssueComment>)issue.Comments : null;
+        var runnerArgs = RunnerCommandBuilder.BuildArgsList(agent, issue, comments: comments);
         var useExecFlow = runnerArgs.Count > 0;
 
         if (useExecFlow)
@@ -122,7 +126,7 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         }
 
         // Log the task prompt that will be passed to the agent so it is always visible in the logs.
-        var taskPrompt = RunnerCommandBuilder.BuildTaskPrompt(issue);
+        var taskPrompt = RunnerCommandBuilder.BuildTaskPrompt(issue, comments);
         await onLogLine($"[DEBUG] Task prompt    :", LogStream.Stdout);
         foreach (var promptLine in taskPrompt.Split('\n'))
             await onLogLine($"[DEBUG]   {promptLine}", LogStream.Stdout);

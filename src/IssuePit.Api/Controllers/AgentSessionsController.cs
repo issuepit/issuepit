@@ -35,6 +35,7 @@ public class AgentSessionsController(IssuePitDbContext db, TenantContext tenant,
                 StatusName = s.Status.ToString(),
                 s.StartedAt,
                 s.EndedAt,
+                s.Warnings,
                 CiCdRuns = s.CiCdRuns.Select(r => new
                 {
                     r.Id,

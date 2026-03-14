@@ -19,12 +19,12 @@ public static class RunnerCommandBuilder
     /// Suitable for shell-based runtimes (native process, SSH).
     /// Returns an empty string when no runner type is set (legacy entrypoint behaviour).
     /// </summary>
-    public static string BuildArgs(Agent agent, Issue issue)
+    public static string BuildArgs(Agent agent, Issue issue, IReadOnlyList<IssueComment>? comments = null)
     {
         if (agent.RunnerType is null)
             return string.Empty;
 
-        var task = BuildTaskPrompt(issue);
+        var task = BuildTaskPrompt(issue, comments);
 
         return agent.RunnerType switch
         {
@@ -45,12 +45,12 @@ public static class RunnerCommandBuilder
     /// session so it retains full conversation context and workspace state.
     /// </para>
     /// </summary>
-    public static IReadOnlyList<string> BuildArgsList(Agent agent, Issue issue, string? forkSessionId = null)
+    public static IReadOnlyList<string> BuildArgsList(Agent agent, Issue issue, string? forkSessionId = null, IReadOnlyList<IssueComment>? comments = null)
     {
         if (agent.RunnerType is null)
             return [];
 
-        var task = BuildTaskPrompt(issue);
+        var task = BuildTaskPrompt(issue, comments);
 
         return agent.RunnerType switch
         {
@@ -164,18 +164,38 @@ public static class RunnerCommandBuilder
         // GitHub Copilot CLI does not support --model selection at this time
         ["gh", "copilot", "suggest", task];
 
-    /// <summary>Formats the issue title and body into a single task prompt string.</summary>
-    public static string BuildTaskPrompt(Issue issue)
+    /// <summary>
+    /// Maximum total character count for comments included in the task prompt.
+    /// When exceeded, older comments are dropped and a truncation note is prepended.
+    /// </summary>
+    public const int MaxCommentsLength = 8000;
+
+    /// <summary>Formats the issue title, body, and optional comments into a single task prompt string.</summary>
+    public static string BuildTaskPrompt(Issue issue, IReadOnlyList<IssueComment>? comments = null)
     {
         var sb = new StringBuilder();
-        sb.Append($"Task: {issue.Title}");
+        sb.Append($"## Task: {issue.Title}");
         if (!string.IsNullOrWhiteSpace(issue.Body))
         {
             sb.AppendLine();
             sb.AppendLine();
             sb.Append(issue.Body);
         }
-        return sb.ToString();
+
+        if (comments is { Count: > 0 })
+        {
+            sb.AppendLine();
+            sb.AppendLine();
+            sb.AppendLine("## Comments");
+            foreach (var comment in comments)
+            {
+                var author = comment.User?.Username ?? "Unknown";
+                sb.AppendLine($"<!-- comment by {author} on {comment.CreatedAt:yyyy-MM-dd} -->");
+                sb.AppendLine(comment.Body);
+            }
+        }
+
+        return sb.ToString().TrimEnd();
     }
 
     /// <summary>Wraps a value in single quotes and escapes embedded single quotes for POSIX shell.</summary>

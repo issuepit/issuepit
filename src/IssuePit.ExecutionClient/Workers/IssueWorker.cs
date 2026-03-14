@@ -5,6 +5,7 @@ using Confluent.Kafka;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
+using IssuePit.Core.Runners;
 using IssuePit.ExecutionClient.Runtimes;
 using Microsoft.EntityFrameworkCore;
 using StackExchange.Redis;
@@ -42,6 +43,13 @@ public class IssueWorker(
     private const string GitBranchMarker = "[ISSUEPIT:GIT_BRANCH]=";
     private const string HasUncommittedChangesMarker = "[ISSUEPIT:HAS_UNCOMMITTED_CHANGES]=";
     private const string OpenCodeSessionIdMarker = "[ISSUEPIT:OPENCODE_SESSION_ID]=";
+
+    /// <summary>
+    /// Maximum total character count for comments included in the task prompt.
+    /// When the combined comment text exceeds this limit, the oldest comments are dropped
+    /// and a warning is stored on the session.
+    /// </summary>
+    private const int MaxCommentsChars = RunnerCommandBuilder.MaxCommentsLength;
 
     private string KafkaBootstrapServers => configuration.GetConnectionString("kafka")
         ?? throw new InvalidOperationException("Kafka connection string 'kafka' is not configured.");
@@ -208,7 +216,9 @@ public class IssueWorker(
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
 
-        var agent = await db.Agents.FindAsync([agentId], cancellationToken);
+        var agent = await db.Agents
+            .Include(a => a.ChildAgents)
+            .FirstOrDefaultAsync(a => a.Id == agentId, cancellationToken);
         var issue = await db.Issues.FindAsync([issueId], cancellationToken);
 
         if (agent is null || issue is null)
@@ -223,6 +233,19 @@ public class IssueWorker(
             db.Entry(agent).State = EntityState.Detached;
             agent.DockerImage = dockerImageOverride;
         }
+
+        // Load issue comments for context. Truncate old comments if the total size would be too large
+        // to avoid exceeding LLM context limits. Newest comments are kept; a warning is stored when any
+        // comments are dropped.
+        string? commentsWarning = null;
+        var rawComments = await db.IssueComments
+            .Include(c => c.User)
+            .Where(c => c.IssueId == issue.Id)
+            .OrderBy(c => c.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        var comments = TrimCommentsToLimit(rawComments, MaxCommentsChars, out commentsWarning);
+        issue.Comments = comments;
 
         // Resolve runtime: use the org's default configuration or fall back to Docker
         var runtimeConfig = await db.RuntimeConfigurations
@@ -247,6 +270,9 @@ public class IssueWorker(
             Status = AgentSessionStatus.Running,
             StartedAt = DateTime.UtcNow,
             KeepContainer = keepContainer,
+            Warnings = commentsWarning is not null
+                ? System.Text.Json.JsonSerializer.Serialize(new[] { commentsWarning })
+                : null,
         };
 
         // If the runtime has a concurrency limit, record the session as Pending until a slot is available.
@@ -964,5 +990,40 @@ public class IssueWorker(
     };
 
     private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, string? DockerImageOverride = null, bool KeepContainer = false);
+
+    /// <summary>
+    /// Trims the comment list so that the combined character count of all comment bodies stays
+    /// within <paramref name="maxChars"/>. The most-recent comments are kept; older ones are dropped.
+    /// When comments are dropped, <paramref name="warning"/> is set to a human-readable message.
+    /// </summary>
+    private static IList<IssueComment> TrimCommentsToLimit(
+        IList<IssueComment> comments,
+        int maxChars,
+        out string? warning)
+    {
+        warning = null;
+        if (comments.Count == 0)
+            return comments;
+
+        var total = comments.Sum(c => c.Body.Length);
+        if (total <= maxChars)
+            return comments;
+
+        // Walk from newest to oldest, keep as many as fit within the limit.
+        var kept = new List<IssueComment>();
+        var chars = 0;
+        for (var i = comments.Count - 1; i >= 0; i--)
+        {
+            if (chars + comments[i].Body.Length > maxChars)
+                break;
+            kept.Insert(0, comments[i]);
+            chars += comments[i].Body.Length;
+        }
+
+        var dropped = comments.Count - kept.Count;
+        // TODO: compact old comments using an LLM summarisation step when context gets too large.
+        warning = $"{dropped} older comment(s) were omitted because the combined comment size exceeded the {maxChars / 1000}K-character limit. Only the {kept.Count} most recent comment(s) were included in the agent prompt.";
+        return kept;
+    }
 }
 
