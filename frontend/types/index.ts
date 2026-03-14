@@ -795,6 +795,8 @@ export interface AgentSessionLog {
   stream: string
   streamName: string
   timestamp: string
+  section?: string
+  sectionIndex: number
 }
 
 export interface AgentSessionDetail extends AgentSession {
