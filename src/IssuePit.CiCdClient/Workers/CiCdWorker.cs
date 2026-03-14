@@ -326,7 +326,9 @@ public class CiCdWorker(
             semaphore?.Release();
             _activeRuns.TryRemove(run.Id, out _);
             run.EndedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync(stoppingToken);
+            // Note: do NOT save the terminal status here. The status is saved after all
+            // artifact/test-result processing completes (see below) to prevent a race condition
+            // where HTTP clients poll the run as "Succeeded" before the artifact rows exist.
 
             // Upload raw artifacts to S3 from the CiCdClient process (which has S3 access).
             // This replaces the previous approach of running s5cmd inside the helper-act container:
@@ -360,6 +362,15 @@ public class CiCdWorker(
 
             // Parse workflow graph from workflow files copied during the clone step.
             await ParseAndStoreWorkflowGraphAsync(run.Id, artifactDir, db, stoppingToken);
+
+            // Save the terminal run status (Succeeded / Failed / Cancelled) and EndedAt.
+            // This is intentionally deferred until after all ParseAndStore* calls so that
+            // HTTP clients polling the run status never observe "Succeeded" before the
+            // artifact and test-result rows are committed to the database.
+            // (ParseAndStore* methods may also call db.SaveChangesAsync internally, which
+            // incidentally persists the run entity — the explicit save here is the guaranteed
+            // fallback for runs that produced no artifacts or test results.)
+            await db.SaveChangesAsync(stoppingToken);
 
             // Clean up the artifact directory now that results have been collected.
             try { Directory.Delete(artifactDir, recursive: true); }

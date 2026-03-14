@@ -325,9 +325,7 @@ public class CiCdPipelineTests(AspireFixture fixture)
         var runId = run.GetProperty("id").GetString()!;
         await AssertRunSucceededAsync(client, run, runId);
 
-        var artifactsResp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts");
-        Assert.Equal(HttpStatusCode.OK, artifactsResp.StatusCode);
-        var artifacts = await artifactsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var artifacts = await WaitForArtifactsAsync(client, runId, minCount: 1, TimeSpan.FromSeconds(30));
         Assert.True(artifacts.GetArrayLength() > 0, "Expected at least one artifact");
 
         // Every artifact must have been uploaded to S3 (non-null/non-empty storageKey).
@@ -357,9 +355,7 @@ public class CiCdPipelineTests(AspireFixture fixture)
         var runId = run.GetProperty("id").GetString()!;
         await AssertRunSucceededAsync(client, run, runId);
 
-        var artifactsResp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts");
-        Assert.Equal(HttpStatusCode.OK, artifactsResp.StatusCode);
-        var artifacts = await artifactsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var artifacts = await WaitForArtifactsAsync(client, runId, minCount: 1, TimeSpan.FromSeconds(30));
         Assert.True(artifacts.GetArrayLength() > 0, "Expected at least one artifact");
 
         // Download the first artifact and verify it is a valid ZIP.
@@ -396,14 +392,13 @@ public class CiCdPipelineTests(AspireFixture fixture)
         var runId = run.GetProperty("id").GetString()!;
         await AssertRunSucceededAsync(client, run, runId);
 
-        var artifactsResp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts");
-        Assert.Equal(HttpStatusCode.OK, artifactsResp.StatusCode);
-        var artifacts = await artifactsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var artifacts = await WaitForArtifactByNameAsync(client, runId, "build-output", TimeSpan.FromSeconds(30));
 
         // Find the build-output artifact specifically.
         var buildArtifact = artifacts.EnumerateArray()
             .FirstOrDefault(a => a.GetProperty("name").GetString() == "build-output");
-        Assert.NotEqual(default, buildArtifact);
+        Assert.True(buildArtifact.ValueKind != JsonValueKind.Undefined,
+            "Expected 'build-output' artifact to be present in the run's artifact list.");
 
         var artifactId = buildArtifact.GetProperty("id").GetString()!;
         var downloadResp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts/{artifactId}/download");
@@ -446,14 +441,13 @@ public class CiCdPipelineTests(AspireFixture fixture)
         var runId = run.GetProperty("id").GetString()!;
         await AssertRunSucceededAsync(client, run, runId);
 
-        var artifactsResp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts");
-        Assert.Equal(HttpStatusCode.OK, artifactsResp.StatusCode);
-        var artifacts = await artifactsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var artifacts = await WaitForArtifactByNameAsync(client, runId, "test-results", TimeSpan.FromSeconds(30));
 
         // Find the test-results artifact specifically.
         var testArtifact = artifacts.EnumerateArray()
             .FirstOrDefault(a => a.GetProperty("name").GetString() == "test-results");
-        Assert.NotEqual(default, testArtifact);
+        Assert.True(testArtifact.ValueKind != JsonValueKind.Undefined,
+            "Expected 'test-results' artifact to be present in the run's artifact list.");
 
         var artifactId = testArtifact.GetProperty("id").GetString()!;
         var downloadResp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts/{artifactId}/download");
@@ -508,6 +502,59 @@ public class CiCdPipelineTests(AspireFixture fixture)
         }
 
         throw new TimeoutException($"No completed CI/CD run found for project {projectId} within {timeout}.");
+    }
+
+    /// <summary>
+    /// Polls <c>GET /api/cicd-runs/{runId}/artifacts</c> until at least
+    /// <paramref name="minCount"/> artifacts are returned, or the timeout elapses.
+    /// This is needed because the worker saves the run's terminal status before finishing
+    /// the artifact processing, so the artifacts may not be immediately visible after the
+    /// run reaches a terminal state.
+    /// </summary>
+    private static async Task<JsonElement> WaitForArtifactsAsync(
+        HttpClient client,
+        string runId,
+        int minCount,
+        TimeSpan timeout)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var last = default(JsonElement);
+        while (sw.Elapsed < timeout)
+        {
+            var resp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts");
+            resp.EnsureSuccessStatusCode();
+            last = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            if (last.GetArrayLength() >= minCount)
+                return last;
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+        }
+
+        return last; // callers will assert on the content
+    }
+
+    /// <summary>
+    /// Polls <c>GET /api/cicd-runs/{runId}/artifacts</c> until an artifact with
+    /// <paramref name="name"/> appears in the list, or the timeout elapses.
+    /// </summary>
+    private static async Task<JsonElement> WaitForArtifactByNameAsync(
+        HttpClient client,
+        string runId,
+        string name,
+        TimeSpan timeout)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var last = default(JsonElement);
+        while (sw.Elapsed < timeout)
+        {
+            var resp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts");
+            resp.EnsureSuccessStatusCode();
+            last = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            if (last.EnumerateArray().Any(a => a.GetProperty("name").GetString() == name))
+                return last;
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+        }
+
+        return last; // callers will assert on the content
     }
 
     /// <summary>
