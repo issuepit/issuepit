@@ -161,8 +161,11 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         {
             Privileged = true,
             // Exec flow manages its own lifecycle (stopped by StopContainerAsync after all work is done).
-            // Legacy flow uses AutoRemove as before.
-            AutoRemove = useExecFlow ? false : !session.KeepContainer,
+            // Legacy flow uses AutoRemove, UNLESS CustomCmd is set: a fast-exiting custom command can cause
+            // a race where the container is auto-removed before WaitContainerAsync / StreamContainerLogsAsync
+            // run, resulting in NotFound errors and missing logs. In that case we keep the container and
+            // remove it explicitly after log capture completes (see below).
+            AutoRemove = useExecFlow ? false : !session.KeepContainer && session.CustomCmd is not { Length: > 0 },
             // Make host.docker.internal resolve to the Docker host gateway so containers can call
             // the IssuePit MCP server and other host services. "host-gateway" is the Docker-native
             // special value that resolves to the correct host IP on both Linux and Docker Desktop.
@@ -213,6 +216,12 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
             var logStreamTask = StreamContainerLogsAsync(container.ID, onLogLine, cancellationToken);
             var waitResponse = await dockerClient.Containers.WaitContainerAsync(container.ID, cancellationToken);
             await logStreamTask;
+
+            // When CustomCmd is set, AutoRemove was disabled to avoid the race where a fast-exiting
+            // command causes the container to be removed before logs can be streamed. Remove it now
+            // that all logs have been collected (unless KeepContainer was requested for inspection).
+            if (session.CustomCmd is { Length: > 0 } && !session.KeepContainer)
+                await TryStopAndRemoveContainerAsync(container.ID);
 
             if (waitResponse.StatusCode != 0)
                 throw new Exception(
