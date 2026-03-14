@@ -636,6 +636,17 @@
         <!-- Tests tab -->
         <template v-else-if="activeSection === 'tests'">
           <div v-if="store.currentRunTestSuites.length" class="p-4 space-y-4">
+            <div class="flex justify-end">
+              <NuxtLink
+                :to="`/projects/${projectId}/runs/test-history`"
+                class="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+                View Test History
+              </NuxtLink>
+            </div>
             <div
               v-for="suite in store.currentRunTestSuites"
               :key="suite.id"
@@ -668,7 +679,12 @@
                     <span v-if="tc.outcomeName === 'Passed'" class="text-green-400 shrink-0">✓</span>
                     <span v-else-if="tc.outcomeName === 'Failed'" class="text-red-400 shrink-0">✗</span>
                     <span v-else class="text-yellow-500 shrink-0">–</span>
-                    <span class="text-xs text-gray-300 font-mono truncate flex-1" :title="tc.fullName">{{ tc.methodName || tc.fullName }}</span>
+                    <NuxtLink
+                      :to="`/projects/${projectId}/runs/test-history?tab=Tests`"
+                      class="text-xs text-gray-300 font-mono truncate flex-1 hover:text-brand-400 transition-colors"
+                      :title="tc.fullName">
+                      {{ tc.methodName || tc.fullName }}
+                    </NuxtLink>
                     <span class="text-xs text-gray-600 shrink-0">{{ formatTestDuration(tc.durationMs) }}</span>
                   </div>
                   <!-- Error details (collapsed by default) -->

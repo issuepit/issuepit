@@ -45,4 +45,53 @@ public class CiCdTools(IssuePitApiClient api, IOptions<McpServerOptions> options
         var result = await api.GetAsync<object>(url, ct);
         return ToolSerializer.Serialize(result);
     }
+
+    [McpServerTool, Description("Get test result summaries per CI/CD run for a project. Use this to see test trends over time, count newly added or removed tests, and identify runs where tests started failing. Optionally filter by branch (recommended: use 'main' for stable history).")]
+    public async Task<string> GetTestHistory(
+        [Description("Project ID (GUID).")] Guid projectId,
+        [Description("Optional branch name to filter (e.g. 'main').")] string? branch = null,
+        [Description("Maximum number of run summaries to return (default 50).")] int take = 50,
+        CancellationToken ct = default)
+    {
+        ToolGuard.EnforceNotEnhanceMode(Opts, "GetTestHistory");
+        var url = $"/api/projects/{projectId}/test-history/runs?take={take}";
+        if (!string.IsNullOrWhiteSpace(branch))
+            url += $"&branch={Uri.EscapeDataString(branch)}";
+        var result = await api.GetAsync<object>(url, ct);
+        return ToolSerializer.Serialize(result);
+    }
+
+    [McpServerTool, Description("List all unique tests in a project with aggregated stats: pass/fail counts, average duration, and last outcome. Sorted by failure count descending so the most flaky tests appear first. Use the search parameter to find tests by name. Useful for flakiness analysis.")]
+    public async Task<string> GetTestList(
+        [Description("Project ID (GUID).")] Guid projectId,
+        [Description("Optional branch name to filter results (e.g. 'main').")] string? branch = null,
+        [Description("Optional substring to search for in test full names.")] string? search = null,
+        [Description("Maximum number of tests to return (default 200).")] int take = 200,
+        CancellationToken ct = default)
+    {
+        ToolGuard.EnforceNotEnhanceMode(Opts, "GetTestList");
+        var url = $"/api/projects/{projectId}/test-history/tests?take={take}";
+        if (!string.IsNullOrWhiteSpace(branch))
+            url += $"&branch={Uri.EscapeDataString(branch)}";
+        if (!string.IsNullOrWhiteSpace(search))
+            url += $"&search={Uri.EscapeDataString(search)}";
+        var result = await api.GetAsync<object>(url, ct);
+        return ToolSerializer.Serialize(result);
+    }
+
+    [McpServerTool, Description("Get the run-by-run history for a single test case, showing outcome, duration, error messages, branch, and commit for each run. Use this to determine whether a test is flaky (sometimes passes, sometimes fails) or consistently failing.")]
+    public async Task<string> GetTestCaseHistory(
+        [Description("Project ID (GUID).")] Guid projectId,
+        [Description("The full test name (e.g. 'MyNamespace.MyClass.MyTestMethod').")] string testFullName,
+        [Description("Optional branch name to filter results (e.g. 'main').")] string? branch = null,
+        [Description("Maximum number of history entries to return (default 50).")] int take = 50,
+        CancellationToken ct = default)
+    {
+        ToolGuard.EnforceNotEnhanceMode(Opts, "GetTestCaseHistory");
+        var url = $"/api/projects/{projectId}/test-history/tests/{Uri.EscapeDataString(testFullName)}?take={take}";
+        if (!string.IsNullOrWhiteSpace(branch))
+            url += $"&branch={Uri.EscapeDataString(branch)}";
+        var result = await api.GetAsync<object>(url, ct);
+        return ToolSerializer.Serialize(result);
+    }
 }
