@@ -294,11 +294,11 @@ OPENCODE_PYEOF
 
     # Debug: list all configured agent modes
     if [[ -n "${ISSUEPIT_OPENCODE_AGENTS_JSON:-}" ]]; then
-        echo "[entrypoint] Configured agent modes:"
-        echo "${ISSUEPIT_OPENCODE_AGENTS_JSON}" | python3 -c "
-import sys, json
+        echo "[entrypoint] Configured agent modes (from ISSUEPIT_OPENCODE_AGENTS_JSON):"
+        python3 -c "
+import sys, json, os
 try:
-    agents = json.load(sys.stdin)
+    agents = json.loads(os.environ.get('ISSUEPIT_OPENCODE_AGENTS_JSON', '[]'))
     for a in agents:
         model = a.get('model') or '(default)'
         print(f\"  - {a['name']} (model: {model})\")

@@ -81,6 +81,12 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
             await onLogLine($"[DEBUG] Keep container : true (container will not be removed on exit)", LogStream.Stdout);
         if (gitRepository is not null)
             await onLogLine($"[DEBUG] Git remote     : {gitRepository.RemoteUrl}", LogStream.Stdout);
+        if (agent.ChildAgents.Count > 0)
+        {
+            await onLogLine($"[DEBUG] Child agents   : {agent.ChildAgents.Count}", LogStream.Stdout);
+            foreach (var child in agent.ChildAgents)
+                await onLogLine($"[DEBUG]   - {child.Name} ({child.Id})", LogStream.Stdout);
+        }
 
         // Verify Docker daemon is reachable and log its version.
         try
@@ -115,6 +121,8 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         //              C# execs the agent tool and all post-run steps (git check, markers, push).
         // Legacy flow — container CMD from entrypoint default; wait for container to exit (old behaviour).
         var comments = issue.Comments.Count > 0 ? (IReadOnlyList<IssueComment>)issue.Comments : null;
+        if (comments is not null)
+            await onLogLine($"[DEBUG] Comments       : {comments.Count} comment(s) included in prompt", LogStream.Stdout);
         var runnerArgs = RunnerCommandBuilder.BuildArgsList(agent, issue, comments: comments);
         var useExecFlow = runnerArgs.Count > 0;
 

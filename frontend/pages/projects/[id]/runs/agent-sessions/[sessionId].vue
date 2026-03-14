@@ -417,7 +417,8 @@ const sessionWarnings = computed<string[]>(() => {
   try {
     const parsed = JSON.parse(raw)
     return Array.isArray(parsed) ? parsed.filter((w): w is string => typeof w === 'string') : []
-  } catch {
+  } catch (e) {
+    console.warn('Failed to parse session warnings JSON:', e)
     return []
   }
 })
