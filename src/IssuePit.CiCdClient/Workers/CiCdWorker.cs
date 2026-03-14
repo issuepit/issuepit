@@ -722,12 +722,12 @@ public class CiCdWorker(
                     // (plain YAML key like "build") so same-named jobs in different workflow files
                     // can be disambiguated by the frontend fuzzy matcher.
                     if (root.TryGetProperty("job", out var jobEl))
-                        jobId = jobEl.GetString();
+                        jobId = jobEl.GetString()?.Trim();
                     else if (root.TryGetProperty("jobID", out var jobIdEl))
-                        jobId = jobIdEl.GetString();
+                        jobId = jobIdEl.GetString()?.Trim();
                     // Extract step name from the 'stage' field (e.g. "Set up job", "Main actions/checkout@v4").
                     if (root.TryGetProperty("stage", out var stageEl))
-                        stepId = stageEl.GetString();
+                        stepId = stageEl.GetString()?.Trim();
                     // Remap stream from act JSON level only if the original stream was stdout;
                     // if the container already routed the line to stderr, trust that.
                     if (stream == LogStream.Stdout &&
