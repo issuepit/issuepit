@@ -106,6 +106,21 @@
                 class="w-40 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
               <p class="text-xs text-gray-500 mt-1">Overrides the organization setting for <code class="bg-gray-800 px-1 rounded">--concurrent-jobs</code>.</p>
             </div>
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="block text-sm font-medium text-gray-300">Require run approval</label>
+                <p class="text-xs text-gray-500 mt-0.5">Hold auto-triggered runs (git push, agent) for manual approval. User-triggered runs (manual trigger, retry) always bypass approval.</p>
+              </div>
+              <button
+                type="button"
+                :class="ciCdForm.requiresRunApproval ? 'bg-brand-600' : 'bg-gray-700'"
+                class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-gray-900"
+                @click="ciCdForm.requiresRunApproval = !ciCdForm.requiresRunApproval">
+                <span
+                  :class="ciCdForm.requiresRunApproval ? 'translate-x-6' : 'translate-x-1'"
+                  class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -260,6 +275,7 @@ const ciCdForm = reactive({
   useNewActionCache: false as boolean | null,
   actionOfflineMode: false as boolean | null,
   localRepositories: '' as string,
+  requiresRunApproval: false,
 })
 
 const saving = ref(false)
@@ -280,6 +296,7 @@ onMounted(async () => {
     ciCdForm.useNewActionCache = p.useNewActionCache ?? null
     ciCdForm.actionOfflineMode = p.actionOfflineMode ?? null
     ciCdForm.localRepositories = p.localRepositories || ''
+    ciCdForm.requiresRunApproval = p.requiresRunApproval ?? false
   }
 })
 
@@ -302,6 +319,7 @@ async function save() {
       useNewActionCache: ciCdForm.useNewActionCache,
       actionOfflineMode: ciCdForm.actionOfflineMode,
       localRepositories: ciCdForm.localRepositories || null,
+      requiresRunApproval: ciCdForm.requiresRunApproval,
     })
     savedOk.value = true
     setTimeout(() => { savedOk.value = false }, 3000)

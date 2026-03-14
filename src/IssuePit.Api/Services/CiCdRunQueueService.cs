@@ -29,6 +29,11 @@ public sealed class CiCdRunQueueService(
     /// Creates a pending run and publishes the Kafka trigger.
     /// Returns the newly-created <see cref="CiCdRun"/>.
     /// </summary>
+    /// <param name="userTriggered">
+    /// When <c>true</c> the run was explicitly initiated by a user (e.g. manual trigger or retry).
+    /// This bypasses the <see cref="Project.RequiresRunApproval"/> gate so that intentional user
+    /// actions are never held up for approval.
+    /// </param>
     public async Task<CiCdRun> EnqueueAsync(
         Guid projectId,
         string commitSha,
@@ -40,12 +45,15 @@ public sealed class CiCdRunQueueService(
         Guid? agentSessionId = null,
         Guid? retryOfRunId = null,
         object? extraPayload = null,
+        bool userTriggered = false,
         CancellationToken cancellationToken = default)
     {
-        var requiresApproval = await db.Projects
-            .Where(p => p.Id == projectId)
-            .Select(p => p.RequiresRunApproval)
-            .FirstOrDefaultAsync(cancellationToken);
+        var requiresApproval = userTriggered
+            ? false
+            : await db.Projects
+                .Where(p => p.Id == projectId)
+                .Select(p => p.RequiresRunApproval)
+                .FirstOrDefaultAsync(cancellationToken);
 
         var inputsJson = inputs is { Count: > 0 }
             ? JsonSerializer.Serialize(inputs)
