@@ -496,7 +496,7 @@ public class CiCdRunsController(
             commitSha: run.CommitSha,
             branch: run.Branch,
             workflow: run.Workflow,
-            eventName: run.EventName ?? "push",
+            eventName: !string.IsNullOrWhiteSpace(options?.EventName) ? options.EventName : (run.EventName ?? "push"),
             inputs: null,
             gitRepoUrl: retryRepo?.RemoteUrl,
             agentSessionId: run.AgentSessionId,
@@ -564,7 +564,7 @@ public class CiCdRunsController(
 
         if (run is null) return NotFound();
 
-        if (run.Status is not (CiCdRunStatus.Pending or CiCdRunStatus.Running))
+        if (run.Status is not (CiCdRunStatus.Pending or CiCdRunStatus.Running or CiCdRunStatus.WaitingForApproval))
             return Conflict(new { error = "Run is already in a terminal state.", run.Status, StatusName = run.Status.ToString() });
 
         run.Status = CiCdRunStatus.Cancelled;
@@ -581,6 +581,27 @@ public class CiCdRunsController(
         await NotifyRunsUpdated(run);
 
         return Ok(new { run.Id, run.Status, StatusName = run.Status.ToString() });
+    }
+
+    /// <summary>
+    /// Approves a CI/CD run that is in <c>WaitingForApproval</c> status, transitioning it to
+    /// <c>Pending</c> and dispatching it to the CI/CD worker via Kafka.
+    /// </summary>
+    [HttpPost("{id:guid}/approve")]
+    public async Task<IActionResult> ApproveRun(Guid id)
+    {
+        // Verify the run belongs to the current tenant before approving.
+        var runExists = await db.CiCdRuns
+            .AnyAsync(r => r.Id == id && r.Project.Organization.TenantId == tenant.CurrentTenant!.Id);
+
+        if (!runExists) return NotFound();
+
+        var approved = await runQueue.ApproveAsync(id);
+
+        if (approved is null)
+            return Conflict(new { error = "Run is not in WaitingForApproval state.", id });
+
+        return Ok(new { approved.Id, approved.Status, StatusName = approved.Status.ToString() });
     }
 
     private static CiCdRunStatus MapExternalStatus(string? status, string? conclusion) =>
@@ -620,7 +641,9 @@ public record RetryRunOptions(
     /// <summary>Additional CLI arguments appended to the act command.</summary>
     string? CustomArgs = null,
     /// <summary>Override the act runner image used by act for platform mapping (e.g. ubuntu-latest). Null or empty = use project/org/global default.</summary>
-    string? ActRunnerImage = null);
+    string? ActRunnerImage = null,
+    /// <summary>Override the event/trigger name (e.g. "push", "pull_request"). Null or empty = use the original run's event name.</summary>
+    string? EventName = null);
 
 /// <summary>Request body for the external CI/CD sync endpoint.</summary>
 public record ExternalSyncRequest(

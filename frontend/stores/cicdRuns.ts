@@ -138,6 +138,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     customEntrypoint?: string
     customArgs?: string
     actRunnerImage?: string
+    eventName?: string
   }) {
     await api.post(`/api/cicd-runs/${runId}/retry`, options ?? {})
   }

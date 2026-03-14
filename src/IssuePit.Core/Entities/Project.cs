@@ -82,5 +82,16 @@ public class Project
     /// </summary>
     public int IssueNumberOffset { get; set; } = 0;
 
+    /// <summary>
+    /// When <c>true</c>, triggered CI/CD runs are placed in the
+    /// <see cref="IssuePit.Core.Enums.CiCdRunStatus.WaitingForApproval"/> state and are NOT
+    /// dispatched to the CI/CD worker until explicitly approved via
+    /// <c>POST /api/cicd-runs/{id}/approve</c>.
+    ///
+    /// Use this on demo / seeded projects that have a linked git repository so that the
+    /// automatic git-polling trigger does not launch real CI/CD runners without human intent.
+    /// </summary>
+    public bool RequiresRunApproval { get; set; } = false;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

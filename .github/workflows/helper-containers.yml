@@ -27,10 +27,10 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ${{ github.repository_owner }}/issuepit
-  # .NET major version bundled in the Playwright image (update when changing PLAYWRIGHT_VERSION)
+  # .NET SDK channel installed in the helper-base image (used for image tags and DOTNET_SDK_CHANNEL build arg — passed as "$DOTNET_MAJOR.0", e.g. "10" → "10.0")
   DOTNET_MAJOR: "10"
   NODE_MAJOR: "24"
-  PLAYWRIGHT_VERSION: "v1.51.0"
+  PLAYWRIGHT_VERSION: "v1.58.0"
   ACT_COMMIT: "cb02232605fa5f914986ce6eb3500db85c06c0ce"
   ACTIONLINT_VERSION: "1.7.11"
   OPENCODE_VERSION: "latest"
@@ -144,6 +144,7 @@ jobs:
           build-args: |
             PLAYWRIGHT_VERSION=${{ env.PLAYWRIGHT_VERSION }}
             NODE_MAJOR=${{ env.NODE_MAJOR }}
+            DOTNET_SDK_CHANNEL=${{ env.DOTNET_MAJOR }}.0
 
       - name: Build helper-act
         uses: docker/build-push-action@v6
