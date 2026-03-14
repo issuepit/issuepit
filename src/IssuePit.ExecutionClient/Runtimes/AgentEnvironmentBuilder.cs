@@ -25,9 +25,11 @@ internal static class AgentEnvironmentBuilder
         {
             $"ISSUEPIT_SESSION_ID={session.Id}",
             $"ISSUEPIT_ISSUE_ID={issue.Id}",
+            $"ISSUEPIT_ISSUE_NUMBER={issue.Number}",
             $"ISSUEPIT_ISSUE_TITLE={issue.Title}",
             $"ISSUEPIT_ISSUE_BODY={issue.Body ?? string.Empty}",
             $"ISSUEPIT_AGENT_ID={agent.Id}",
+            $"ISSUEPIT_PROJECT_ID={issue.ProjectId}",
             $"ISSUEPIT_SYSTEM_PROMPT={agent.SystemPrompt}",
         };
 

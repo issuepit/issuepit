@@ -15,7 +15,8 @@ public class IssueWorker(
     IConfiguration configuration,
     IServiceProvider services,
     AgentRuntimeFactory runtimeFactory,
-    IConnectionMultiplexer redis) : BackgroundService
+    IConnectionMultiplexer redis,
+    IProducer<string, string> kafkaProducer) : BackgroundService
 {
     // Tracks CancellationTokenSources for in-flight agent launches so they can be cancelled on demand.
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _activeSessions = new();
@@ -23,6 +24,19 @@ public class IssueWorker(
     // Semaphore pool keyed by runtime configuration ID (or Guid.Empty for the default/unbound pool).
     // Enforces MaxConcurrentAgents per runtime host. A limit of 0 means unlimited (no semaphore).
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _runtimeSemaphores = new();
+
+    /// <summary>
+    /// Maximum number of CI/CD fix iterations after the initial agent run.
+    /// Flow: agent → CI/CD → [fail] → agent (fix) → CI/CD → ...
+    /// </summary>
+    private const int MaxCiCdFixAttempts = 3;
+
+    /// <summary>Timeout in minutes to wait for a CI/CD run to complete before giving up.</summary>
+    private const int CiCdWaitTimeoutMinutes = 30;
+
+    // Special log-line prefixes emitted by entrypoint.sh to communicate git state back to IssueWorker.
+    private const string GitCommitShaMarker = "[ISSUEPIT:GIT_COMMIT_SHA]=";
+    private const string GitBranchMarker = "[ISSUEPIT:GIT_BRANCH]=";
 
     private string KafkaBootstrapServers => configuration.GetConnectionString("kafka")
         ?? throw new InvalidOperationException("Kafka connection string 'kafka' is not configured.");
@@ -258,8 +272,18 @@ public class IssueWorker(
             var credentials = await LoadCredentialsAsync(agent.OrgId, db, sessionCts.Token);
             var runtime = runtimeFactory.Create(runtimeType);
 
+            string? capturedCommitSha = null;
+            string? capturedBranchName = null;
+
             Task onLogLine(string line, LogStream stream)
-                => AppendLogAsync(session.Id, line, stream, db, sessionCts.Token);
+            {
+                // Parse special markers emitted by entrypoint.sh to capture git state.
+                if (line.StartsWith(GitCommitShaMarker, StringComparison.Ordinal))
+                    capturedCommitSha = line[GitCommitShaMarker.Length..].Trim();
+                else if (line.StartsWith(GitBranchMarker, StringComparison.Ordinal))
+                    capturedBranchName = line[GitBranchMarker.Length..].Trim();
+                return AppendLogAsync(session.Id, line, stream, db, sessionCts.Token);
+            }
 
             // Start a periodic heartbeat so connected clients can keep the duration display live
             // without needing a client-side timer. The heartbeat is cancelled when the session ends.
@@ -267,10 +291,31 @@ public class IssueWorker(
 
             var runtimeId = await runtime.LaunchAsync(session, agent, issue, credentials, runtimeConfig, gitRepository, onLogLine, sessionCts.Token);
 
-            session.Status = AgentSessionStatus.Succeeded;
             logger.LogInformation(
                 "Agent {AgentId} launched via {RuntimeType} with id '{RuntimeId}' for session {SessionId}",
                 agent.Id, runtimeType, runtimeId, session.Id);
+
+            // Persist git branch / commit SHA reported by the entrypoint on the session record.
+            if (!string.IsNullOrEmpty(capturedCommitSha))
+                session.CommitSha = capturedCommitSha;
+            if (!string.IsNullOrEmpty(capturedBranchName))
+                session.GitBranch = capturedBranchName;
+
+            // After the agent run completes, trigger the CI/CD pipeline and wait for results.
+            // If CI/CD fails, re-run opencode with the failure context to fix it (up to MaxCiCdFixAttempts).
+            if (gitRepository is not null
+                && !string.IsNullOrEmpty(capturedCommitSha)
+                && !string.IsNullOrEmpty(capturedBranchName))
+            {
+                var cicdSucceeded = await RunCiCdFixLoopAsync(
+                    session, agent, issue, gitRepository, credentials, runtimeConfig,
+                    capturedCommitSha, capturedBranchName, db, sessionCts.Token);
+                session.Status = cicdSucceeded ? AgentSessionStatus.Succeeded : AgentSessionStatus.Failed;
+            }
+            else
+            {
+                session.Status = AgentSessionStatus.Succeeded;
+            }
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -413,5 +458,297 @@ public class IssueWorker(
         }
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    // CI/CD fix loop helpers
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Runs up to <see cref="MaxCiCdFixAttempts"/> CI/CD → opencode-fix cycles.
+    /// Returns <c>true</c> when a CI/CD run eventually succeeds; <c>false</c> when all
+    /// attempts are exhausted or when an unrecoverable error occurs.
+    /// </summary>
+    private async Task<bool> RunCiCdFixLoopAsync(
+        AgentSession session,
+        Agent agent,
+        Issue issue,
+        GitRepository gitRepository,
+        IReadOnlyDictionary<string, string> credentials,
+        RuntimeConfiguration? runtimeConfig,
+        string commitSha,
+        string branchName,
+        IssuePitDbContext db,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < MaxCiCdFixAttempts; attempt++)
+        {
+            await AppendLogAsync(session.Id,
+                $"[INFO] Starting CI/CD run (attempt {attempt + 1}/{MaxCiCdFixAttempts}) for branch '{branchName}' commit '{(commitSha.Length > 0 ? commitSha[..Math.Min(7, commitSha.Length)] : "(none)")}'",
+                LogStream.Stdout, db, cancellationToken);
+
+            // Create a CiCdRun record (linked to this session) and publish the Kafka trigger.
+            var cicdRun = await TriggerCiCdRunAsync(
+                session.Id, issue.ProjectId, gitRepository.RemoteUrl,
+                commitSha, branchName, db, cancellationToken);
+
+            await AppendLogAsync(session.Id,
+                $"[INFO] CI/CD run {cicdRun.Id} queued, waiting for completion…",
+                LogStream.Stdout, db, cancellationToken);
+
+            var cicdStatus = await WaitForCiCdCompletionAsync(cicdRun.Id, cancellationToken);
+
+            if (cicdStatus == CiCdRunStatus.Succeeded)
+            {
+                await AppendLogAsync(session.Id,
+                    $"[INFO] CI/CD run {cicdRun.Id} succeeded.",
+                    LogStream.Stdout, db, cancellationToken);
+                return true;
+            }
+
+            await AppendLogAsync(session.Id,
+                $"[WARN] CI/CD run {cicdRun.Id} finished with status '{cicdStatus}'.",
+                LogStream.Stderr, db, cancellationToken);
+
+            if (attempt >= MaxCiCdFixAttempts - 1)
+            {
+                await AppendLogAsync(session.Id,
+                    $"[ERROR] CI/CD fix loop exhausted after {MaxCiCdFixAttempts} attempt(s). Marking session as failed.",
+                    LogStream.Stderr, db, cancellationToken);
+                return false;
+            }
+
+            // Collect CI/CD failure logs to give opencode the context it needs for fixing.
+            var failureLogs = await GetCiCdFailureLogsAsync(cicdRun.Id, db, cancellationToken);
+
+            await AppendLogAsync(session.Id,
+                $"[INFO] Launching opencode fix agent (attempt {attempt + 2}/{MaxCiCdFixAttempts}) to address CI/CD failures…",
+                LogStream.Stdout, db, cancellationToken);
+
+            // Re-run opencode with the CI/CD failure appended to the task prompt.
+            // NOTE: Ideally opencode would be invoked with `opencode run --fork <session-id>` so it
+            // can continue from where the previous session left off and retain full code context.
+            // The --fork flag is not yet supported in this integration; instead a new session is
+            // started with the failure summary appended to the task body as additional context.
+            var fixIssue = BuildFixIssue(issue, failureLogs, branchName);
+            var (fixCommitSha, fixBranchName) = await RunCiCdFixAgentAsync(
+                session, agent, fixIssue, gitRepository, credentials, runtimeConfig, db, cancellationToken);
+
+            if (string.IsNullOrEmpty(fixCommitSha))
+            {
+                await AppendLogAsync(session.Id,
+                    "[WARN] Fix agent did not report a commit SHA. Aborting CI/CD fix loop.",
+                    LogStream.Stderr, db, cancellationToken);
+                return false;
+            }
+
+            commitSha = fixCommitSha;
+            if (!string.IsNullOrEmpty(fixBranchName))
+                branchName = fixBranchName;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Creates a <see cref="CiCdRun"/> record in the database (as <c>Pending</c>) and publishes the
+    /// corresponding payload to the <c>cicd-trigger</c> Kafka topic so the CiCdWorker picks it up.
+    /// </summary>
+    private async Task<CiCdRun> TriggerCiCdRunAsync(
+        Guid agentSessionId,
+        Guid projectId,
+        string gitRepoUrl,
+        string commitSha,
+        string branch,
+        IssuePitDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var run = new CiCdRun
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = projectId,
+            AgentSessionId = agentSessionId,
+            CommitSha = commitSha,
+            Branch = branch,
+            EventName = "push",
+            Status = CiCdRunStatus.Pending,
+            StartedAt = DateTime.UtcNow,
+        };
+
+        db.CiCdRuns.Add(run);
+        await db.SaveChangesAsync(cancellationToken);
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            runId = run.Id,
+            projectId,
+            commitSha,
+            branch,
+            agentSessionId,
+            gitRepoUrl,
+            eventName = "push",
+        });
+
+        await kafkaProducer.ProduceAsync("cicd-trigger", new Message<string, string>
+        {
+            Key = commitSha,
+            Value = payload,
+        }, cancellationToken);
+
+        logger.LogInformation("CI/CD run {RunId} triggered for session {SessionId} on branch '{Branch}'",
+            run.Id, agentSessionId, branch);
+
+        return run;
+    }
+
+    /// <summary>
+    /// Subscribes to the <c>cicd-run:{runId}</c> Redis channel and waits for the
+    /// <c>run-completed</c> event published by <c>CiCdWorker</c>.
+    /// Falls back to a DB status read on timeout or cancellation.
+    /// </summary>
+    private async Task<CiCdRunStatus> WaitForCiCdCompletionAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        var tcs = new TaskCompletionSource<CiCdRunStatus>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var channel = RedisChannel.Literal($"cicd-run:{runId}");
+
+        var subscriber = redis.GetSubscriber();
+        await subscriber.SubscribeAsync(channel, (_, message) =>
+        {
+            if (message.IsNullOrEmpty) return;
+            try
+            {
+                using var doc = JsonDocument.Parse((string)message!);
+                var root = doc.RootElement;
+                if (root.TryGetProperty("event", out var eventEl)
+                    && eventEl.GetString() == "run-completed"
+                    && root.TryGetProperty("status", out var statusEl)
+                    && Enum.TryParse<CiCdRunStatus>(statusEl.GetString(), out var status))
+                {
+                    tcs.TrySetResult(status);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to parse Redis message on cicd-run:{RunId} channel", runId);
+            }
+        });
+
+        try
+        {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(TimeSpan.FromMinutes(CiCdWaitTimeoutMinutes));
+
+            await using (timeoutCts.Token.Register(() => tcs.TrySetCanceled(cancellationToken)))
+            {
+                return await tcs.Task;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Timeout or host shutdown — fall back to reading the current status from the DB.
+            logger.LogWarning("Timed out waiting for CI/CD run {RunId} via Redis; falling back to DB status check", runId);
+            using var scope = services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+            var run = await db.CiCdRuns.FindAsync([runId], cancellationToken);
+            return run?.Status ?? CiCdRunStatus.Failed;
+        }
+        finally
+        {
+            await subscriber.UnsubscribeAsync(channel);
+        }
+    }
+
+    /// <summary>
+    /// Returns the last <c>200</c> log lines from the CI/CD run as a single string so they
+    /// can be included in the opencode fix prompt as failure context.
+    /// </summary>
+    private static async Task<string> GetCiCdFailureLogsAsync(
+        Guid runId,
+        IssuePitDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var lines = await db.CiCdRunLogs
+            .Where(l => l.CiCdRunId == runId)
+            .OrderByDescending(l => l.Timestamp)
+            .Take(200)
+            .OrderBy(l => l.Timestamp)
+            .Select(l => l.Stream == LogStream.Stderr ? $"[stderr] {l.Line}" : l.Line)
+            .ToListAsync(cancellationToken);
+
+        return string.Join('\n', lines);
+    }
+
+    /// <summary>
+    /// Runs a fix agent container with a task that includes the CI/CD failure context.
+    /// Returns the (commitSha, branchName) parsed from the container's log output,
+    /// or (null, null) if the container did not report git info.
+    /// </summary>
+    private async Task<(string? CommitSha, string? BranchName)> RunCiCdFixAgentAsync(
+        AgentSession parentSession,
+        Agent agent,
+        Issue fixIssue,
+        GitRepository gitRepository,
+        IReadOnlyDictionary<string, string> credentials,
+        RuntimeConfiguration? runtimeConfig,
+        IssuePitDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var runtimeType = runtimeConfig?.Type ?? RuntimeType.Docker;
+        var runtime = runtimeFactory.Create(runtimeType);
+
+        string? fixCommitSha = null;
+        string? fixBranchName = null;
+
+        Task onFixLogLine(string line, LogStream stream)
+        {
+            if (line.StartsWith(GitCommitShaMarker, StringComparison.Ordinal))
+                fixCommitSha = line[GitCommitShaMarker.Length..].Trim();
+            else if (line.StartsWith(GitBranchMarker, StringComparison.Ordinal))
+                fixBranchName = line[GitBranchMarker.Length..].Trim();
+            return AppendLogAsync(parentSession.Id, $"[fix] {line}", stream, db, cancellationToken);
+        }
+
+        try
+        {
+            // The fix run uses the same agent session so all output appears under one session in the UI.
+            await runtime.LaunchAsync(
+                parentSession, agent, fixIssue, credentials, runtimeConfig, gitRepository,
+                onFixLogLine, cancellationToken);
+
+            // Persist updated git info on the parent session.
+            if (!string.IsNullOrEmpty(fixCommitSha))
+                parentSession.CommitSha = fixCommitSha;
+            if (!string.IsNullOrEmpty(fixBranchName))
+                parentSession.GitBranch = fixBranchName;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Fix agent failed for session {SessionId}", parentSession.Id);
+            await AppendLogAsync(parentSession.Id,
+                $"[ERROR] Fix agent error: {ex.Message}", LogStream.Stderr, db, cancellationToken);
+        }
+
+        return (fixCommitSha, fixBranchName);
+    }
+
+    /// <summary>
+    /// Creates an in-memory <see cref="Issue"/> copy for the CI/CD fix agent run.
+    /// The copy has the same identity as the original but the body is augmented with the
+    /// CI/CD failure context so opencode knows what to fix. The <see cref="Issue.GitBranch"/>
+    /// is set to <paramref name="branchName"/> so the entrypoint checks out the correct branch.
+    /// </summary>
+    private static Issue BuildFixIssue(Issue original, string failureLogs, string branchName) => new()
+    {
+        Id = original.Id,
+        ProjectId = original.ProjectId,
+        Number = original.Number,
+        Title = original.Title,
+        Body =
+            $"{original.Body ?? string.Empty}\n\n" +
+            $"--- CI/CD FAILURE CONTEXT ---\n" +
+            $"The previous CI/CD run failed. Fix the issues described in the log below, then commit and push the changes.\n\n" +
+            $"{failureLogs}",
+        GitBranch = branchName,
+    };
+
     private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, string? DockerImageOverride = null, bool KeepContainer = false);
 }
+
