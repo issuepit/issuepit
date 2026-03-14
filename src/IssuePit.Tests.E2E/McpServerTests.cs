@@ -12,7 +12,7 @@ namespace IssuePit.Tests.E2E;
 /// These tests verify:
 /// <list type="bullet">
 ///   <item>The MCP server responds to <c>initialize</c> with valid server-info (name + version).</item>
-///   <item>The <c>ListProjects</c> tool returns a project count that is consistent with the
+///   <item>The <c>list_projects</c> tool returns a project count that is consistent with the
 ///         projects visible through the REST API.</item>
 /// </list>
 /// </summary>
@@ -124,7 +124,7 @@ public class McpServerTests(AspireFixture fixture)
     }
 
     /// <summary>
-    /// Creates a project via the REST API, then calls the MCP <c>ListProjects</c> tool and
+    /// Creates a project via the REST API, then calls the MCP <c>list_projects</c> tool and
     /// verifies that the returned project count increases by one.
     ///
     /// The MCP server calls the IssuePit API without a tenant header; the API resolves the
@@ -165,7 +165,7 @@ public class McpServerTests(AspireFixture fixture)
 
         var (listBefore, sessionId2) = await McpCallAsync(
             fixture.McpClient!, sessionId, "tools/call",
-            new { name = "ListProjects", arguments = new { } }, id: 2);
+            new { name = "list_projects", arguments = new { } }, id: 2);
 
         var countBefore = ParseProjectCount(listBefore);
 
@@ -178,7 +178,7 @@ public class McpServerTests(AspireFixture fixture)
         // ── 4. Verify the count increased by exactly 1 ───────────────────────
         var (listAfter, _) = await McpCallAsync(
             fixture.McpClient!, sessionId2, "tools/call",
-            new { name = "ListProjects", arguments = new { } }, id: 3);
+            new { name = "list_projects", arguments = new { } }, id: 3);
 
         var countAfter = ParseProjectCount(listAfter);
 
@@ -191,7 +191,7 @@ public class McpServerTests(AspireFixture fixture)
     // ── parsing helpers ───────────────────────────────────────────────────────
 
     /// <summary>
-    /// Extracts the project count from a <c>tools/call ListProjects</c> JSON-RPC response.
+    /// Extracts the project count from a <c>tools/call list_projects</c> JSON-RPC response.
     /// The MCP tool returns a JSON-encoded array of projects in <c>result.content[0].text</c>.
     /// </summary>
     private static int ParseProjectCount(JsonElement toolCallResult)

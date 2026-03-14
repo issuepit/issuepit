@@ -344,7 +344,7 @@ public class AgentSessionTests(AspireFixture fixture)
     /// <list type="bullet">
     ///   <item>Calling <c>initialize</c> via <c>POST /mcp</c> and printing the server version
     ///         as <c>[ISSUEPIT:MCP_VERSION]=&lt;version&gt;</c>.</item>
-    ///   <item>Calling the <c>ListProjects</c> MCP tool and asserting the project count is at
+    ///   <item>Calling the <c>list_projects</c> MCP tool and asserting the project count is at
     ///         least 1, printed as <c>[ISSUEPIT:MCP_PROJECT_COUNT]=&lt;n&gt;</c>.</item>
     /// </list>
     ///
@@ -365,7 +365,7 @@ public class AgentSessionTests(AspireFixture fixture)
         var username = $"e2e{Guid.NewGuid():N}"[..12];
         await client.PostAsJsonAsync("/api/auth/register", new { username, password = "TestPass1!" });
 
-        // Create org and project so ListProjects returns at least 1 result
+        // Create org and project so list_projects returns at least 1 result
         var orgSlug = $"mcp-tool-{Guid.NewGuid():N}"[..16];
         var orgResp = await client.PostAsJsonAsync("/api/orgs", new { name = "MCP Tool Org", slug = orgSlug });
         Assert.Equal(HttpStatusCode.Created, orgResp.StatusCode);
@@ -403,7 +403,7 @@ public class AgentSessionTests(AspireFixture fixture)
 
         // Shell script executed inside the container:
         //   1. POST /mcp  method=initialize  → capture Mcp-Session-Id header and server version
-        //   2. POST /mcp  method=tools/call  → call ListProjects and count returned projects
+        //   2. POST /mcp  method=tools/call  → call list_projects and count returned projects
         //
         // Counting note: the MCP tool response embeds projects as a JSON-encoded string inside
         // result.content[0].text. In that embedded JSON, the double-quotes are escaped with
@@ -428,14 +428,14 @@ public class AgentSessionTests(AspireFixture fixture)
             VER=$(echo "$BODY" | tr '{},' '\n' | grep '"version"' | sed 's/.*"version":"//;s/".*//' | tail -1)
             echo "[ISSUEPIT:MCP_VERSION]=$VER"
 
-            # Step 2: Call ListProjects MCP tool
+            # Step 2: Call list_projects MCP tool
             wget -qS \
               -O /tmp/list_body \
-              --post-data='{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"ListProjects","arguments":{}}}' \
+              --post-data='{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_projects","arguments":{}}}' \
               --header='Content-Type: application/json' \
               --header='Accept: application/json, text/event-stream' \
               --header="Mcp-Session-Id: $SESSION" \
-              "$MCP_URL" 2>/dev/null || { echo '[ISSUEPIT:MCP_TOOLS]=FAIL (ListProjects)'; exit 0; }
+              "$MCP_URL" 2>/dev/null || { echo '[ISSUEPIT:MCP_TOOLS]=FAIL (list_projects)'; exit 0; }
 
             LIST=$(sed 's/^data: //' /tmp/list_body)
             if echo "$LIST" | grep -qF '"isError":false'; then
@@ -444,7 +444,7 @@ public class AgentSessionTests(AspireFixture fixture)
               echo "[ISSUEPIT:MCP_PROJECT_COUNT]=$COUNT"
               echo '[ISSUEPIT:MCP_TOOLS]=OK'
             else
-              echo '[ISSUEPIT:MCP_TOOLS]=FAIL (ListProjects error response)'
+              echo '[ISSUEPIT:MCP_TOOLS]=FAIL (list_projects error response)'
             fi
             """,
         };
@@ -477,7 +477,7 @@ public class AgentSessionTests(AspireFixture fixture)
             $"from inside the agent container.\n" +
             $"Actual logs:\n{string.Join('\n', logLines.Take(60))}");
 
-        // Assert ListProjects returned at least 1 project
+        // Assert list_projects returned at least 1 project
         var countLine = logLines.FirstOrDefault(l => l.Contains("[ISSUEPIT:MCP_PROJECT_COUNT]="));
         Assert.NotNull(countLine);
         var countStr = countLine!.Split('=').Last().Trim();
