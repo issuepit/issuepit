@@ -8,7 +8,8 @@
     <template v-else-if="projectsStore.currentProject">
       <!-- Breadcrumb -->
       <div class="flex items-center gap-2 mb-4">
-        <PageBreadcrumb :items="[
+        <PageBreadcrumb
+:items="[
           { label: 'Projects', to: '/projects', icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10' },
           { label: projectsStore.currentProject.name, to: `/projects/${id}`, color: projectsStore.currentProject.color || '#4c6ef5' },
           { label: 'GitHub Sync', to: `/projects/${id}/github-sync`, icon: 'M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207' },
@@ -66,7 +67,8 @@
             <!-- GitHub Identity -->
             <div>
               <label class="block text-sm font-medium text-gray-300 mb-1.5">GitHub Identity (PAT)</label>
-              <select v-model="form.gitHubIdentityId"
+              <select
+v-model="form.gitHubIdentityId"
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500">
                 <option value="">— None —</option>
                 <option v-for="identity in identitiesStore.identities" :key="identity.id" :value="identity.id">
@@ -78,8 +80,9 @@
             <!-- GitHub Repo -->
             <div>
               <label class="block text-sm font-medium text-gray-300 mb-1.5">GitHub Repository</label>
-              <input v-model="form.gitHubRepo" type="text" placeholder="owner/repo (e.g. acme/backend)"
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+              <input
+v-model="form.gitHubRepo" type="text" placeholder="owner/repo (e.g. acme/backend)"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" >
               <p class="text-xs text-gray-600 mt-1">Format: <span class="font-mono">owner/repo</span></p>
             </div>
 
@@ -97,11 +100,11 @@
                   ]"
                 >
                   <input
+                    v-model.number="form.syncMode"
                     type="radio"
                     :value="Number(mode)"
-                    v-model.number="form.syncMode"
                     class="mt-0.5 accent-brand-500"
-                  />
+                  >
                   <div>
                     <p class="text-sm font-medium text-gray-200">{{ GitHubSyncModeLabels[Number(mode) as GitHubSyncMode] }}</p>
                     <p class="text-xs text-gray-500 mt-0.5">{{ desc }}</p>
@@ -113,7 +116,8 @@
             <!-- Trigger Mode -->
             <div>
               <label class="block text-sm font-medium text-gray-300 mb-1.5">Trigger Mode</label>
-              <select v-model.number="form.triggerMode"
+              <select
+v-model.number="form.triggerMode"
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500">
                 <option :value="GitHubSyncTriggerMode.Off">Off — sync disabled</option>
                 <option :value="GitHubSyncTriggerMode.Manual">Manual — trigger from this page only</option>
@@ -125,7 +129,8 @@
             <p v-if="saveSuccess" class="text-green-400 text-sm">Configuration saved.</p>
 
             <div class="flex gap-3 pt-1">
-              <button type="submit" :disabled="syncStore.loading"
+              <button
+type="submit" :disabled="syncStore.loading"
                 class="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
                 {{ syncStore.loading ? 'Saving…' : 'Save Configuration' }}
               </button>
@@ -181,7 +186,8 @@
         </div>
 
         <div v-else class="space-y-4">
-          <div v-for="conflict in syncStore.conflicts" :key="conflict.issueId"
+          <div
+v-for="conflict in syncStore.conflicts" :key="conflict.issueId"
             class="bg-gray-900 border border-orange-800/40 rounded-xl p-5">
             <div class="flex items-center justify-between mb-3">
               <div class="flex items-center gap-2">
@@ -190,7 +196,8 @@
                   IssuePit #{{ conflict.issueNumber }} ↔ GitHub #{{ conflict.gitHubIssueNumber }}
                 </span>
               </div>
-              <a :href="conflict.gitHubUrl" target="_blank" rel="noopener noreferrer"
+              <a
+:href="conflict.gitHubUrl" target="_blank" rel="noopener noreferrer"
                 class="text-xs text-brand-400 hover:text-brand-300 flex items-center gap-1">
                 View on GitHub →
               </a>
@@ -225,7 +232,8 @@
             </div>
 
             <div class="flex gap-2 mt-3">
-              <NuxtLink :to="`/projects/${id}/issues/${conflict.issueId}`"
+              <NuxtLink
+:to="`/projects/${id}/issues/${conflict.issueId}`"
                 class="text-xs text-brand-400 hover:text-brand-300 transition-colors">
                 Open in IssuePit →
               </NuxtLink>
