@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using IssuePit.Api.Services;
 
 namespace IssuePit.Tests.Unit;
@@ -12,6 +13,14 @@ public class BranchDetectionServiceTests
 
     private static Dictionary<int, Guid> GitHubMap(params int[] numbers)
         => numbers.ToDictionary(n => n, _ => Guid.NewGuid());
+
+    /// <summary>Builds the slug regex for branch name segments (same pattern as the service uses internally).</summary>
+    private static Regex BranchSlug(string issueKey) =>
+        new($@"{Regex.Escape(issueKey)}-?(\d+)", RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1));
+
+    /// <summary>Builds the slug regex for commit messages (same pattern as the service uses internally).</summary>
+    private static Regex CommitSlug(string issueKey) =>
+        new($@"\b{Regex.Escape(issueKey)}-?(\d+)\b", RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1));
 
     // ── Branch name extraction ────────────────────────────────────────────────
 
@@ -32,25 +41,33 @@ public class BranchDetectionServiceTests
     }
 
     [Theory]
-    [InlineData("feat/ip-123-another")]
-    [InlineData("feat/ip123-another-branch")]
-    [InlineData("fix/IP-456-some-fix")]
-    [InlineData("chore/IP456")]
-    public void ResolveBranchIssueIds_IssuePitPrefix_ReturnsCorrectIssue(string branchName)
+    [InlineData("feat/ip-123-another", 123)]
+    [InlineData("feat/ip123-another-branch", 123)]
+    [InlineData("fix/IP-456-some-fix", 456)]
+    [InlineData("chore/IP456", 456)]
+    public void ResolveBranchIssueIds_ProjectSlugPrefix_ReturnsCorrectIssue(string branchName, int expectedNumber)
     {
         var issueId = Guid.NewGuid();
-        // Extract expected number from the branch name (the numeric part after ip-? prefix)
-        var segment = branchName[(branchName.LastIndexOf('/') + 1)..];
-        var numStr = System.Text.RegularExpressions.Regex.Match(segment, @"ip-?(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Groups[1].Value;
-        var num = int.Parse(numStr);
+        var byNumber = new Dictionary<int, Guid> { [expectedNumber] = issueId };
 
-        var byNumber = new Dictionary<int, Guid> { [num] = issueId };
-
-        var result = BranchDetectionService.ResolveBranchIssueIds(branchName, byNumber, []);
+        var result = BranchDetectionService.ResolveBranchIssueIds(branchName, byNumber, [], BranchSlug("IP"));
 
         var ids = result.ToList();
         Assert.Single(ids);
         Assert.Equal(issueId, ids[0]);
+    }
+
+    [Fact]
+    public void ResolveBranchIssueIds_SlugPrefix_OnlyMatchesProjectSlug()
+    {
+        // A branch using prefix "IP" should NOT match when a different project slug "PROJ" is active
+        var issueId = Guid.NewGuid();
+        var byNumber = new Dictionary<int, Guid> { [123] = issueId };
+
+        var result = BranchDetectionService.ResolveBranchIssueIds("feat/ip-123-thing", byNumber, [], BranchSlug("PROJ"));
+
+        // ip-123 is not a plain number and doesn't match "PROJ" → no match
+        Assert.Empty(result);
     }
 
     [Fact]
@@ -125,16 +142,28 @@ public class BranchDetectionServiceTests
     [InlineData("ip-42: fix login")]
     [InlineData("closes ip42 login bug")]
     [InlineData("IP42 — some message")]
-    public void ResolveCommitIssueIds_IssuePitKey_ReturnsCorrectIssue(string message)
+    public void ResolveCommitIssueIds_ProjectSlugKey_ReturnsCorrectIssue(string message)
     {
         var issueId = Guid.NewGuid();
         var byNumber = new Dictionary<int, Guid> { [42] = issueId };
 
-        var result = BranchDetectionService.ResolveCommitIssueIds(message, byNumber, []);
+        var result = BranchDetectionService.ResolveCommitIssueIds(message, byNumber, [], CommitSlug("IP"));
 
         var ids = result.ToList();
         Assert.Single(ids);
         Assert.Equal(issueId, ids[0]);
+    }
+
+    [Fact]
+    public void ResolveCommitIssueIds_WrongSlug_ReturnsEmpty()
+    {
+        // "IP-42" should not match when the project's IssueKey is "PROJ"
+        var issueId = Guid.NewGuid();
+        var byNumber = new Dictionary<int, Guid> { [42] = issueId };
+
+        var result = BranchDetectionService.ResolveCommitIssueIds("fix: IP-42 resolved", byNumber, [], CommitSlug("PROJ"));
+
+        Assert.Empty(result);
     }
 
     [Theory]
@@ -164,7 +193,7 @@ public class BranchDetectionServiceTests
     [Fact]
     public void ResolveCommitIssueIds_UnknownReference_ReturnsEmpty()
     {
-        var result = BranchDetectionService.ResolveCommitIssueIds("fix: IP-999 not in project", NumberMap(1, 2), GitHubMap(3, 4));
+        var result = BranchDetectionService.ResolveCommitIssueIds("fix: IP-999 not in project", NumberMap(1, 2), GitHubMap(3, 4), CommitSlug("IP"));
         Assert.Empty(result);
     }
 
@@ -175,7 +204,7 @@ public class BranchDetectionServiceTests
         var id2 = Guid.NewGuid();
         var byNumber = new Dictionary<int, Guid> { [1] = id1, [2] = id2 };
 
-        var result = BranchDetectionService.ResolveCommitIssueIds("IP-1 and IP-2 both fixed", byNumber, []).ToList();
+        var result = BranchDetectionService.ResolveCommitIssueIds("IP-1 and IP-2 both fixed", byNumber, [], CommitSlug("IP")).ToList();
 
         Assert.Equal(2, result.Count);
         Assert.Contains(id1, result);
@@ -189,9 +218,24 @@ public class BranchDetectionServiceTests
         var byNumber = new Dictionary<int, Guid> { [5] = issueId };
 
         // IP-5 appears twice in message
-        var result = BranchDetectionService.ResolveCommitIssueIds("IP-5 fixed, see ip-5", byNumber, []).ToList();
+        var result = BranchDetectionService.ResolveCommitIssueIds("IP-5 fixed, see ip-5", byNumber, [], CommitSlug("IP")).ToList();
 
         Assert.Single(result);
         Assert.Equal(issueId, result[0]);
+    }
+
+    [Fact]
+    public void ResolveCommitIssueIds_NoSlug_OnlyGitHubRefsMatch()
+    {
+        var ipIssueId = Guid.NewGuid();
+        var ghIssueId = Guid.NewGuid();
+        var byNumber = new Dictionary<int, Guid> { [42] = ipIssueId };
+        var byGitHub = new Dictionary<int, Guid> { [10] = ghIssueId };
+
+        // Without a slug regex, "IP-42" should NOT match, but "#10" should
+        var result = BranchDetectionService.ResolveCommitIssueIds("IP-42 and closes #10", byNumber, byGitHub).ToList();
+
+        Assert.Single(result);
+        Assert.Equal(ghIssueId, result[0]);
     }
 }
