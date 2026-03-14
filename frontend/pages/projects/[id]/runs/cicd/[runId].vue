@@ -702,18 +702,23 @@
                     <p class="text-xs text-gray-500">{{ artifact.fileCount }} file{{ artifact.fileCount === 1 ? '' : 's' }} · {{ formatBytes(artifact.sizeBytes) }}</p>
                   </div>
                   <span class="text-xs text-gray-600 shrink-0">{{ formatDate(artifact.createdAt) }}</span>
-                  <a
+                  <button
                     v-if="artifact.storageKey"
-                    :href="`/api/cicd-runs/${runId}/artifacts/${artifact.id}/download`"
-                    class="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-medium bg-brand-600 hover:bg-brand-500 text-white transition-colors shrink-0"
+                    class="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-medium bg-brand-600 hover:bg-brand-500 disabled:opacity-60 text-white transition-colors shrink-0"
+                    :disabled="downloadingArtifacts.has(artifact.id)"
                     :aria-label="`Download ${artifact.name}.zip`"
-                    :title="`Download ${artifact.name}.zip`">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    :title="`Download ${artifact.name}.zip`"
+                    @click="downloadArtifact(artifact.id, artifact.name)">
+                    <svg v-if="downloadingArtifacts.has(artifact.id)" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                         d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                     </svg>
-                    Download
-                  </a>
+                    {{ downloadingArtifacts.has(artifact.id) ? 'Downloading…' : 'Download' }}
+                  </button>
                   <span
                     v-else
                     class="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-medium bg-gray-700 text-gray-500 cursor-not-allowed shrink-0"
@@ -760,6 +765,7 @@
     </div>
 
     <ErrorBox :error="store.error" />
+    <ToastError :error="downloadError" />
 
     <!-- Create Issue from failed job modal -->
     <Teleport to="body">
@@ -867,6 +873,7 @@ const store = useCiCdRunsStore()
 const issuesStore = useIssuesStore()
 const projectsStore = useProjectsStore()
 const { prefs } = useUserPreferences()
+const config = useRuntimeConfig()
 
 /**
  * Pre-compiled regex cache for log color rules. Rebuilt whenever the rules list changes.
@@ -1980,6 +1987,37 @@ function formatBytes(bytes: number): string {
   const sizes = ['B', 'KB', 'MB', 'GB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`
+}
+
+const downloadingArtifacts = ref(new Set<string>())
+const downloadError = ref<string | null>(null)
+
+async function downloadArtifact(artifactId: string, name: string) {
+  if (downloadingArtifacts.value.has(artifactId)) return
+  downloadingArtifacts.value.add(artifactId)
+  downloadError.value = null
+  try {
+    const apiBase = config.public.apiBase as string
+    const url = `${apiBase}/api/cicd-runs/${runId}/artifacts/${artifactId}/download`
+    const response = await fetch(url, { credentials: 'include' })
+    if (response.status === 404) throw new Error('Artifact not found in storage.')
+    if (!response.ok) throw new Error('Failed to download artifact. Please try again.')
+    const blob = await response.blob()
+    const objectUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = objectUrl
+    a.download = `${name}.zip`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(objectUrl)
+  }
+  catch (err) {
+    downloadError.value = err instanceof Error ? err.message : 'Failed to download artifact. Please try again.'
+  }
+  finally {
+    downloadingArtifacts.value.delete(artifactId)
+  }
 }
 
 function formatLogTime(d: string) {
