@@ -18,7 +18,8 @@ public class CiCdRunsController(
     IProducer<string, string> producer,
     IHubContext<ProjectHub> projectHub,
     CiCdRunQueueService runQueue,
-    ImageStorageService imageStorage) : ControllerBase
+    ImageStorageService imageStorage,
+    GitService gitService) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetRuns([FromQuery] Guid? projectId)
@@ -645,8 +646,8 @@ public class CiCdRunsController(
         if (request.ProjectId == Guid.Empty)
             return BadRequest(new { error = "projectId is required" });
 
-        if (string.IsNullOrWhiteSpace(request.CommitSha))
-            return BadRequest(new { error = "commitSha is required" });
+        if (string.IsNullOrWhiteSpace(request.CommitSha) && string.IsNullOrWhiteSpace(request.Branch))
+            return BadRequest(new { error = "commitSha or branch is required" });
 
         if (string.IsNullOrWhiteSpace(request.EventName))
             return BadRequest(new { error = "eventName is required" });
@@ -661,10 +662,17 @@ public class CiCdRunsController(
         // The container clones the repo inside itself — no host workspace path is needed.
         var repo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == request.ProjectId);
 
+        // When only a branch is given (no commit SHA), resolve the branch tip SHA from the local
+        // clone so the run record has a meaningful commit identifier. Fall back to the branch name
+        // itself when the local clone is unavailable.
+        var commitSha = !string.IsNullOrWhiteSpace(request.CommitSha)
+            ? request.CommitSha
+            : (repo is not null ? gitService.GetBranchTipSha(repo, request.Branch!) : null) ?? request.Branch!;
+
         // Create the run record immediately (Pending) so it shows as queued in the UI.
         var newRun = await runQueue.EnqueueAsync(
             projectId: request.ProjectId,
-            commitSha: request.CommitSha,
+            commitSha: commitSha,
             branch: request.Branch,
             workflow: request.Workflow,
             eventName: request.EventName,
@@ -672,7 +680,7 @@ public class CiCdRunsController(
             gitRepoUrl: repo?.RemoteUrl,
             extraPayload: string.IsNullOrWhiteSpace(request.CustomImage) ? null : new { customImage = request.CustomImage });
 
-        return Accepted(new { runId = newRun.Id, projectId = request.ProjectId, commitSha = request.CommitSha, eventName = request.EventName });
+        return Accepted(new { runId = newRun.Id, projectId = request.ProjectId, commitSha, eventName = request.EventName });
     }
 
     [HttpPost("{id:guid}/cancel")]
@@ -783,8 +791,10 @@ public record ExternalSyncRequest(
 /// <summary>Request body for the manual trigger endpoint.</summary>
 public record TriggerRunRequest(
     Guid ProjectId,
-    string CommitSha,
+    /// <summary>Commit SHA to run against. Either this or <see cref="Branch"/> must be provided.</summary>
+    string? CommitSha,
     string EventName,
+    /// <summary>Branch name. When <see cref="CommitSha"/> is omitted the branch tip is resolved automatically.</summary>
     string? Branch = null,
     string? Workflow = null,
     /// <summary>Input key-value pairs for workflow_dispatch events.</summary>
