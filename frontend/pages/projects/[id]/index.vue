@@ -582,7 +582,7 @@
 
 <script setup lang="ts">
 import type { ProjectMetricSnapshot, Milestone, GitCommit, Issue } from '~/types'
-import { CiCdRunStatus, IssueStatus, IssuePriority, IssueType } from '~/types'
+import { AgentSessionStatus, CiCdRunStatus, IssueStatus, IssuePriority, IssueType } from '~/types'
 import { useProjectsStore } from '~/stores/projects'
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useIssuesStore } from '~/stores/issues'
@@ -749,7 +749,7 @@ const recentIssues = computed(() =>
 // Always show up to 5 agent sessions (prefer failed/in-progress first)
 const visibleAgentSessions = computed(() => {
   const sessions = runsStore.agentSessions
-  const hasRed = sessions.some(s => s.status === 'failed' || s.status === 'cancelled')
+  const hasRed = sessions.some(s => s.status === AgentSessionStatus.Failed || s.status === AgentSessionStatus.Cancelled)
   if (hasRed) {
     // Show one entry per unique branch (max 5)
     const seen = new Set<string>()
