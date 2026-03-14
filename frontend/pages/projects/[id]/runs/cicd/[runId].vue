@@ -45,7 +45,14 @@
           </div>
           <div>
             <p class="text-xs text-gray-500 mb-1">Commit</p>
-            <p class="text-sm text-gray-300 font-mono">{{ store.currentRun.commitSha?.slice(0, 7) || '—' }}</p>
+            <NuxtLink
+              v-if="store.currentRun.commitSha"
+              :to="`/projects/${projectId}/runs?commitSha=${store.currentRun.commitSha}`"
+              class="text-sm text-brand-400 hover:text-brand-300 font-mono transition-colors"
+              :title="`Show all runs for ${store.currentRun.commitSha}`">
+              {{ store.currentRun.commitSha.slice(0, 7) }}
+            </NuxtLink>
+            <span v-else class="text-sm text-gray-300 font-mono">—</span>
           </div>
           <div>
             <p class="text-xs text-gray-500 mb-1">Source</p>
@@ -244,6 +251,51 @@
           </div>
         </div>
       </Teleport>
+
+      <!-- Linked Runs -->
+      <div v-if="store.currentRunLinkedRuns.length" class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden mb-6">
+        <div class="px-5 py-3 border-b border-gray-800">
+          <h2 class="text-sm font-medium text-white">Linked Runs</h2>
+        </div>
+        <table class="w-full text-sm">
+          <thead class="bg-gray-900/50">
+            <tr>
+              <th class="text-left px-4 py-2 text-gray-400 font-medium text-xs">Type</th>
+              <th class="text-left px-4 py-2 text-gray-400 font-medium text-xs">Status</th>
+              <th class="text-left px-4 py-2 text-gray-400 font-medium text-xs">Description</th>
+              <th class="text-left px-4 py-2 text-gray-400 font-medium text-xs">Started</th>
+              <th class="text-left px-4 py-2 text-gray-400 font-medium text-xs">Duration</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-800">
+            <tr v-for="link in store.currentRunLinkedRuns" :key="`${link.linkType}-${link.id}`"
+              class="hover:bg-gray-900/50 transition-colors cursor-pointer"
+              @click="navigateToLinkedRun(link)">
+              <td class="px-4 py-2">
+                <span :class="linkedRunTypeBadgeClass(link.linkType)"
+                  class="inline-flex items-center text-xs px-2 py-0.5 rounded-full font-medium">
+                  {{ link.linkLabel }}
+                </span>
+              </td>
+              <td class="px-4 py-2">
+                <span :class="linkedRunStatusClass(link)" class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium">
+                  <span :class="linkedRunStatusDot(link)" class="w-1.5 h-1.5 rounded-full" />
+                  {{ link.statusName }}
+                </span>
+              </td>
+              <td class="px-4 py-2 text-gray-300">
+                <template v-if="link.linkType === 'agent-triggered'">
+                  <span class="text-gray-500 mr-1">#{{ link.issueNumber }}</span>
+                  {{ link.issueTitle }}
+                </template>
+                <span v-else class="font-mono text-xs text-gray-400">{{ link.workflow || link.branch || link.commitSha?.slice(0, 7) || '—' }}</span>
+              </td>
+              <td class="px-4 py-2 text-gray-400 text-xs">{{ formatDate(link.startedAt) }}</td>
+              <td class="px-4 py-2 text-gray-400 text-xs">{{ duration(link.startedAt, link.endedAt) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       <!-- Logs / Details / Jobs -->
       <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
@@ -802,7 +854,7 @@
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useIssuesStore } from '~/stores/issues'
 import { useProjectsStore } from '~/stores/projects'
-import { CiCdRunStatus, type CiCdRunLog } from '~/types'
+import { CiCdRunStatus, type CiCdRunLog, type LinkedCiCdRun, type LinkedRunType } from '~/types'
 import { parseAnsiToHtml, stripAnsiCodes } from '~/composables/useAnsiParser'
 import { buildGraphJobIndexes, resolveLogJobId as resolveLogJobIdFn, matrixLabel as matrixLabelFn } from '~/utils/cicdLogMapper'
 
@@ -1760,6 +1812,7 @@ onMounted(async () => {
   await store.fetchRun(runId)
   await store.fetchTestResults(runId)
   await store.fetchArtifacts(runId)
+  store.fetchLinkedRuns(runId)
   projectsStore.fetchProject(projectId)
 
   // Connect to the CiCd output hub to receive live log lines and run-completed events
@@ -1776,6 +1829,7 @@ onMounted(async () => {
           // Fetch test results and artifacts now that the run has completed
           store.fetchTestResults(runId)
           store.fetchArtifacts(runId)
+          store.fetchLinkedRuns(runId)
         } else if (data.event === 'run-heartbeat') {
           now.value = Date.now()
         } else if (data.event === 'job-status' && data.jobId) {
@@ -1946,6 +2000,43 @@ function statusDot(status: CiCdRunStatus) {
     case CiCdRunStatus.Cancelled: return 'bg-gray-500'
     case CiCdRunStatus.WaitingForApproval: return 'bg-purple-400'
     default: return 'bg-yellow-400'
+  }
+}
+
+function linkedRunTypeBadgeClass(type: LinkedRunType) {
+  switch (type) {
+    case 'retry': return 'bg-blue-900/30 text-blue-400'
+    case 'retry-of': return 'bg-gray-800 text-gray-400'
+    case 'agent-triggered': return 'bg-purple-900/30 text-purple-400'
+    case 'same-sha': return 'bg-teal-900/30 text-teal-400'
+    default: return 'bg-gray-800 text-gray-400'
+  }
+}
+
+function linkedRunStatusClass(link: LinkedCiCdRun) {
+  const s = link.status as string
+  if (s === 'succeeded' || s === CiCdRunStatus.Succeeded) return 'bg-green-900/30 text-green-400'
+  if (s === 'running' || s === CiCdRunStatus.Running) return 'bg-blue-900/30 text-blue-400'
+  if (s === 'failed' || s === CiCdRunStatus.Failed) return 'bg-red-900/30 text-red-400'
+  if (s === 'cancelled' || s === CiCdRunStatus.Cancelled) return 'bg-gray-800 text-gray-400'
+  if (s === CiCdRunStatus.WaitingForApproval) return 'bg-purple-900/30 text-purple-400'
+  return 'bg-yellow-900/30 text-yellow-400'
+}
+
+function linkedRunStatusDot(link: LinkedCiCdRun) {
+  const s = link.status as string
+  if (s === 'succeeded' || s === CiCdRunStatus.Succeeded) return 'bg-green-400'
+  if (s === 'running' || s === CiCdRunStatus.Running) return 'bg-blue-400 animate-pulse'
+  if (s === 'failed' || s === CiCdRunStatus.Failed) return 'bg-red-400'
+  if (s === 'cancelled' || s === CiCdRunStatus.Cancelled) return 'bg-gray-500'
+  return 'bg-yellow-400'
+}
+
+function navigateToLinkedRun(link: LinkedCiCdRun) {
+  if (link.linkType === 'agent-triggered') {
+    navigateTo(`/projects/${link.projectId}/runs/agent-sessions/${link.id}`)
+  } else {
+    navigateTo(`/projects/${link.projectId}/runs/cicd/${link.id}`)
   }
 }
 </script>

@@ -10,7 +10,7 @@ namespace IssuePit.Api.Controllers;
 
 [ApiController]
 [Route("api/issues")]
-public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer<string, string> producer, IssueEnhancementService enhancementService, ImageStorageService imageStorage, VoiceTranscriptionService voiceTranscription, ILogger<IssuesController> logger) : ControllerBase
+public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer<string, string> producer, IssueEnhancementService enhancementService, ImageStorageService imageStorage, VoiceTranscriptionService voiceTranscription, GitHubSyncService githubSyncService, ILogger<IssuesController> logger) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetIssues([FromQuery] Guid? projectId, [FromQuery] Guid? orgId)
@@ -128,6 +128,10 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
 
         db.Issues.Add(issue);
         db.IssueEvents.Add(MakeEvent(issue.Id, IssueEventType.Created, newValue: issue.Title));
+        await db.SaveChangesAsync();
+
+        // Auto-create on GitHub if the project sync config has this enabled.
+        await githubSyncService.AutoCreateOnGitHubAsync(issue);
         await db.SaveChangesAsync();
 
         await producer.ProduceAsync("issue-assigned", new Message<string, string>

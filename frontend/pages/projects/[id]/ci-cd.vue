@@ -44,6 +44,15 @@
               : 'text-gray-400 hover:text-gray-200 border-transparent'
           ]"
         >Members</NuxtLink>
+        <NuxtLink
+          :to="`/projects/${id}/github-sync`"
+          :class="[
+            'px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
+            $route.path === `/projects/${id}/github-sync`
+              ? 'text-white border-brand-500'
+              : 'text-gray-400 hover:text-gray-200 border-transparent'
+          ]"
+        >GitHub Sync</NuxtLink>
       </div>
 
       <div class="space-y-6 max-w-2xl">

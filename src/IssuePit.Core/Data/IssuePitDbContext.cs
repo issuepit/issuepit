@@ -56,6 +56,9 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<Todo> Todos => Set<Todo>();
     public DbSet<TodoBoardMembership> TodoBoardMemberships => Set<TodoBoardMembership>();
     public DbSet<TodoCategoryMembership> TodoCategoryMemberships => Set<TodoCategoryMembership>();
+    public DbSet<GitHubSyncConfig> GitHubSyncConfigs => Set<GitHubSyncConfig>();
+    public DbSet<GitHubSyncRun> GitHubSyncRuns => Set<GitHubSyncRun>();
+    public DbSet<GitHubSyncRunLog> GitHubSyncRunLogs => Set<GitHubSyncRunLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

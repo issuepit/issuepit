@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { CiCdRun, CiCdRunStatus, CiCdRunLog, CiCdTestSuite, CiCdArtifact, AgentSession, AgentSessionDetail, AgentSessionLog, DashboardAgentSession, WorkflowGraph, WorkflowInfo } from '~/types'
+import type { CiCdRun, CiCdRunStatus, CiCdRunLog, CiCdTestSuite, CiCdArtifact, AgentSession, AgentSessionDetail, AgentSessionLog, DashboardAgentSession, WorkflowGraph, WorkflowInfo, LinkedCiCdRun } from '~/types'
 
 export const useCiCdRunsStore = defineStore('cicdRuns', () => {
   const runs = ref<CiCdRun[]>([])
@@ -11,6 +11,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
   const currentRunGraphError = ref<string | null>(null)
   const currentRunTestSuites = ref<CiCdTestSuite[]>([])
   const currentRunArtifacts = ref<CiCdArtifact[]>([])
+  const currentRunLinkedRuns = ref<LinkedCiCdRun[]>([])
   const currentSession = ref<AgentSessionDetail | null>(null)
   const currentSessionLogs = ref<AgentSessionLog[]>([])
   const loading = ref(false)
@@ -84,6 +85,15 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
       currentRunArtifacts.value = await api.get<CiCdArtifact[]>(`/api/cicd-runs/${runId}/artifacts`)
     } catch {
       currentRunArtifacts.value = []
+    }
+  }
+
+  /** Fetches linked runs (retries, agent session, same commit SHA) for the given run. */
+  async function fetchLinkedRuns(runId: string) {
+    try {
+      currentRunLinkedRuns.value = await api.get<LinkedCiCdRun[]>(`/api/cicd-runs/${runId}/linked`)
+    } catch {
+      currentRunLinkedRuns.value = []
     }
   }
 
@@ -215,6 +225,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     currentRunGraphError,
     currentRunTestSuites,
     currentRunArtifacts,
+    currentRunLinkedRuns,
     currentSession,
     currentSessionLogs,
     loading,
@@ -224,6 +235,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     fetchRunOnly,
     fetchTestResults,
     fetchArtifacts,
+    fetchLinkedRuns,
     fetchAgentSessions,
     fetchAgentSession,
     fetchAgentSessionOnly,

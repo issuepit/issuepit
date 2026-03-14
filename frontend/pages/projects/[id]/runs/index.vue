@@ -50,7 +50,14 @@
           Trigger Run
         </button>
       </div>
-      <div v-if="store.runs.length" class="rounded-xl border border-gray-800 overflow-hidden">
+      <div v-if="commitShaFilter" class="mb-3 flex items-center gap-2 rounded-lg bg-teal-900/30 border border-teal-700/50 px-3 py-2 text-xs text-teal-300">
+        <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+        </svg>
+        Filtered by commit <span class="font-mono ml-1">{{ commitShaFilter.slice(0, 7) }}</span>
+        <button class="ml-auto text-teal-400 hover:text-teal-200 transition-colors" @click="clearCommitShaFilter">✕</button>
+      </div>
+      <div v-if="filteredRuns.length" class="rounded-xl border border-gray-800 overflow-hidden">
         <table class="w-full text-sm">
           <thead class="bg-gray-900">
             <tr>
@@ -66,7 +73,7 @@
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-800">
-            <tr v-for="run in store.runs" :key="run.id"
+            <tr v-for="run in filteredRuns" :key="run.id"
               class="hover:bg-gray-900/50 transition-colors cursor-pointer"
               @click="navigateTo(`/projects/${id}/runs/cicd/${run.id}`)">
               <td class="px-4 py-3">
@@ -199,12 +206,24 @@ import { CiCdRunStatus, AgentSessionStatus } from '~/types'
 import { formatIssueId } from '~/composables/useIssueFormat'
 
 const route = useRoute()
+const router = useRouter()
 const id = route.params.id as string
 
 const store = useCiCdRunsStore()
 const projectsStore = useProjectsStore()
 const tabs = ['CI/CD Runs', 'Agent Runs'] as const
 const activeTab = ref<typeof tabs[number]>(route.query.tab === 'agent' ? 'Agent Runs' : 'CI/CD Runs')
+
+const commitShaFilter = computed(() => route.query.commitSha as string | undefined)
+const filteredRuns = computed(() =>
+  commitShaFilter.value
+    ? store.runs.filter(r => r.commitSha === commitShaFilter.value)
+    : store.runs,
+)
+
+function clearCommitShaFilter() {
+  router.push({ query: { ...route.query, commitSha: undefined } })
+}
 
 const triggerModal = reactive({ open: false, commitSha: '' })
 

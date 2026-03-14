@@ -56,14 +56,38 @@ You can add as many origins as needed. The first **Working** remote is used when
 
 ---
 
-## Importing Issues from GitHub
+## GitHub Sync
 
-Once a repository is linked, you can import individual issues by their GitHub issue number:
+Each project can be configured to synchronise issues with a GitHub repository. Navigate to **Project Settings → GitHub Sync** to configure.
 
-1. Open the project's **Issues** tab.
-2. Click **Import from GitHub**.
-3. Enter the GitHub issue number.
-4. Click **Import** — the issue content, labels, and description are copied into IssuePit.
+### Configuration
+
+| Field | Description |
+|-------|-------------|
+| **GitHub Identity** | A PAT (Personal Access Token) identity from [Config → GitHub Identities](/config/github-identities). Required for all sync operations. |
+| **GitHub Repository** | Repository in `owner/repo` format (e.g. `acme/backend`). |
+| **Trigger Mode** | `Off` (default) · `Manual` (trigger from the Sync page) · `Auto` (periodic automatic sync). |
+| **Auto-Create on GitHub** | When enabled, new issues created in IssuePit are automatically pushed to GitHub. Disabled by default. |
+
+### Importing Issues from GitHub
+
+1. Open **Project Settings → GitHub Sync**.
+2. Configure a GitHub identity and repository, then click **Save Configuration**.
+3. Click **Trigger Sync Now** to import all open and closed issues from GitHub into this project.
+
+Each GitHub issue is imported only once and linked via `GitHubIssueNumber`. A link to the original GitHub issue appears in the issue sidebar.
+
+### Sync Runs (Audit Log)
+
+Every manual or automatic sync creates a **sync run** record. Open the **Sync Runs** tab to:
+
+- View the status (Pending / Running / Succeeded / Failed) and summary of each run.
+- Click **View logs →** to inspect per-line audit output including which issues were imported, updated, or skipped.
+- Trigger a new sync from this tab.
+
+### Conflict Detection
+
+The **Conflicts** tab compares linked issues in both systems and lists any where the title or body has diverged. Click **Open in IssuePit →** to resolve the conflict manually.
 
 ---
 

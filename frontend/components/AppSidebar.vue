@@ -114,6 +114,7 @@ stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
         <SidebarNavLink to="/config/github-identities" icon="github" label="GitHub Identities" />
         <SidebarNavLink to="/config/telegram-bots" icon="config" label="Telegram Bots" />
         <SidebarNavLink to="/config/ci-cd" icon="runs" label="CI/CD" />
+        <SidebarNavLink to="/config/scheduled-tasks" icon="runs" label="Scheduled Tasks" />
         <SidebarNavLink to="/settings" icon="settings" label="Visuals" />
         <SidebarNavLink to="/about" icon="tenants" label="About" />
       </SidebarSection>

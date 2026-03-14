@@ -38,6 +38,7 @@ const tabs = [
   { id: 'github-identities', label: 'GitHub Identities', href: '/config/github-identities' },
   { id: 'telegram-bots', label: 'Telegram Bots', href: '/config/telegram-bots' },
   { id: 'ci-cd', label: 'CI/CD', href: '/config/ci-cd' },
+  { id: 'scheduled-tasks', label: 'Scheduled Tasks', href: '/config/scheduled-tasks' },
 ]
 
 // These pages belong to the Agents section — they render standalone without System wrapper

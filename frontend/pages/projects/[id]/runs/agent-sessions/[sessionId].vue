@@ -249,14 +249,131 @@
           </div>
         </div>
 
-        <!-- Logs tab -->
-        <template v-if="activeSection === 'logs'">
-          <div v-if="filteredLogs.length" class="bg-gray-950 p-4 font-mono text-xs overflow-auto max-h-[600px]">
-            <div v-for="log in filteredLogs" :key="log.id" class="flex gap-3 leading-5">
-              <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
-              <!-- eslint-disable-next-line vue/no-v-html -->
-              <span :class="[log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300', wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
+        <!-- Steps tab — chain/tree view of workflow phases (always linear today; no branching) -->
+        <template v-if="activeSection === 'steps'">
+          <div v-if="sessionStepGroups.length" class="p-4">
+            <!-- Chain of phase cards, one per section -->
+            <div class="flex flex-col gap-3">
+              <div
+                v-for="(group, gi) in sessionStepGroups"
+                :key="group.key"
+                class="flex gap-3 items-start">
+                <!-- Vertical connector line between cards -->
+                <div class="flex flex-col items-center" style="width: 20px;">
+                  <div
+                    :class="[
+                      'w-4 h-4 rounded-full border-2 shrink-0 mt-1',
+                      group.hasError ? 'border-red-500 bg-red-950/40' : 'border-green-500 bg-green-950/40',
+                    ]" />
+                  <div v-if="gi < sessionStepGroups.length - 1" class="flex-1 w-px bg-gray-700 mt-1" style="min-height: 20px;" />
+                </div>
+                <!-- Phase card -->
+                <div
+                  class="step-box flex-1 border rounded-lg p-3 cursor-pointer transition-colors mb-1"
+                  :class="[
+                    selectedStep === group.key
+                      ? 'border-brand-500 bg-brand-950/20'
+                      : group.hasError
+                        ? 'border-red-800/60 bg-gray-800/60 hover:border-red-700'
+                        : 'border-gray-700 bg-gray-800/60 hover:border-gray-600',
+                  ]"
+                  @click="selectedStep = selectedStep === group.key ? null : group.key">
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-medium" :class="group.hasError ? 'text-red-300' : 'text-white'">
+                      {{ group.label }}
+                    </span>
+                    <span v-if="stepDuration(group)" class="text-xs text-gray-500 font-mono">{{ stepDuration(group) }}</span>
+                    <span class="ml-auto text-xs text-gray-600">{{ group.logs.length }} line{{ group.logs.length === 1 ? '' : 's' }}</span>
+                    <!-- Link to CI/CD run page when available -->
+                    <NuxtLink
+                      v-if="cicdRunForStep(group)"
+                      :to="`/projects/${projectId}/runs/cicd/${cicdRunForStep(group)!.id}`"
+                      class="text-xs text-brand-400 hover:text-brand-300 transition-colors"
+                      title="Open CI/CD run"
+                      @click.stop>
+                      Open run →
+                    </NuxtLink>
+                  </div>
+                  <span v-if="group.hasError" class="text-xs text-red-400 mt-1 block">Contains errors</span>
+                </div>
+              </div>
             </div>
+
+            <!-- Logs for the selected step -->
+            <div v-if="selectedStep" class="mt-4">
+              <div class="flex items-center gap-2 mb-2 flex-wrap">
+                <span class="text-xs text-gray-400">
+                  Showing logs for: <span class="text-white font-mono">{{ sessionStepGroups.find(g => g.key === selectedStep)?.label }}</span>
+                </span>
+                <button class="text-xs text-gray-500 hover:text-gray-300 transition-colors" @click="selectedStep = null">Clear filter</button>
+                <!-- Search -->
+                <div class="ml-auto flex items-center gap-2">
+                  <div class="relative">
+                    <svg class="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input
+                      v-model="logSearchQuery"
+                      type="text"
+                      placeholder="Search logs…"
+                      class="bg-gray-900 border border-gray-700 rounded-md text-xs text-gray-300 pl-6 pr-2 py-1 placeholder-gray-600 focus:outline-none focus:border-brand-500 w-44 transition-colors" />
+                  </div>
+                  <!-- Word wrap toggle -->
+                  <button
+                    :class="['px-2 py-0.5 text-xs rounded-md border transition-colors', wordWrap ? 'border-brand-700 text-brand-300 bg-brand-950/30' : 'border-gray-700 text-gray-500 hover:border-gray-600']"
+                    title="Toggle word wrap"
+                    @click="wordWrap = !wordWrap">
+                    Wrap
+                  </button>
+                </div>
+              </div>
+              <div class="bg-gray-950 rounded-lg p-4 font-mono text-xs overflow-auto max-h-[500px]">
+                <div v-if="selectedStepLogs.length">
+                  <div v-for="log in selectedStepLogs" :key="log.id" class="flex gap-3 leading-5">
+                    <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
+                    <!-- eslint-disable-next-line vue/no-v-html -->
+                    <span :class="[log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300', wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
+                  </div>
+                </div>
+                <div v-else class="text-gray-500 text-center py-4">{{ logSearchQuery ? 'No matching log lines' : 'No logs for this step' }}</div>
+              </div>
+            </div>
+          </div>
+          <div v-else class="py-10 text-center text-sm text-gray-500">No step data yet — steps appear as the agent runs</div>
+        </template>
+
+        <!-- Logs tab -->
+        <template v-else-if="activeSection === 'logs'">
+          <div v-if="filteredLogs.length" class="bg-gray-950 p-4 font-mono text-xs overflow-auto max-h-[600px]">
+            <!-- When section data exists, group logs into collapsible sections -->
+            <template v-if="hasSections && logsBySection.length">
+              <template v-for="(group, gi) in logsBySection" :key="gi">
+                <!-- Section header: collapsible -->
+                <div
+                  class="flex items-center gap-2 mt-3 mb-1 first:mt-0 select-none cursor-pointer group"
+                  @click="toggleSection(group.key)">
+                  <span class="text-gray-600 transition-transform" :class="collapsedSections.has(group.key) ? '' : 'rotate-90'">▶</span>
+                  <span class="text-xs font-semibold text-gray-400 tracking-wide uppercase group-hover:text-gray-200 transition-colors">{{ group.label }}</span>
+                  <span v-if="stepDuration(group)" class="text-[10px] text-gray-600 font-mono">{{ stepDuration(group) }}</span>
+                  <span class="flex-1 border-t border-gray-800" />
+                </div>
+                <template v-if="!collapsedSections.has(group.key)">
+                  <div v-for="log in group.logs.filter(l => !logSearchQuery.trim() || stripAnsiCodes(l.line).toLowerCase().includes(logSearchQuery.toLowerCase()))" :key="log.id" class="flex gap-3 leading-5">
+                    <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
+                    <!-- eslint-disable-next-line vue/no-v-html -->
+                    <span :class="[log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300', wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
+                  </div>
+                </template>
+              </template>
+            </template>
+            <!-- Flat log list for sessions without section data -->
+            <template v-else>
+              <div v-for="log in filteredLogs" :key="log.id" class="flex gap-3 leading-5">
+                <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
+                <!-- eslint-disable-next-line vue/no-v-html -->
+                <span :class="[log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300', wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
+              </div>
+            </template>
           </div>
           <div v-else class="py-10 text-center text-sm text-gray-500">{{ logSearchQuery ? 'No matching log lines' : 'No logs available' }}</div>
         </template>
@@ -365,9 +482,10 @@ function renderLogLine(line: string, highlight?: string): string {
 
 const sectionTabs = [
   { label: 'Logs', value: 'logs' },
+  { label: 'Steps', value: 'steps' },
   { label: 'Details', value: 'details' },
 ]
-const activeSection = ref<'logs' | 'details'>('logs')
+const activeSection = ref<'steps' | 'logs' | 'details'>('logs')
 
 const streamTabs = [
   { label: 'All', value: null },
@@ -398,6 +516,145 @@ const filteredLogs = computed(() => {
     logs = logs.filter(l => stripAnsiCodes(l.line).toLowerCase().includes(logSearchQuery.value.toLowerCase()))
   return logs
 })
+
+// ── Step / section logic ────────────────────────────────────────────────────
+
+/** Maps a backend section string to a human-readable label. */
+function sectionLabel(section: string, index: number): string {
+  switch (section) {
+    case 'InitialAgentRun': return 'Initial Agent Run'
+    case 'UncommittedChangesFix': return 'Uncommitted Changes Fix'
+    case 'CiCdRun': return `CI/CD Run ${index}`
+    case 'CiCdFixRun': return `CI/CD Fix Run ${index}`
+    default: return section
+  }
+}
+
+interface SessionStepGroup {
+  key: string
+  section: string
+  sectionIndex: number
+  label: string
+  logs: AgentSessionLog[]
+  hasError: boolean
+  startTs?: string
+  endTs?: string
+}
+
+/**
+ * Derives the ordered list of distinct phases from the current session logs.
+ * Each phase groups logs by (section, sectionIndex). Logs without a section
+ * are grouped together as an unlabelled pre-section group.
+ *
+ * The chain is always linear today (no branching). Future enhancements could
+ * introduce forking (e.g. parallel git branches per fix attempt).
+ */
+const sessionStepGroups = computed<SessionStepGroup[]>(() => {
+  const groups: SessionStepGroup[] = []
+  const keyToGroup = new Map<string, SessionStepGroup>()
+
+  for (const log of store.currentSessionLogs) {
+    if (DNSMASQ_RE.test(log.line)) continue
+    const key = log.section ? `${log.section}:${log.sectionIndex}` : ''
+    if (!keyToGroup.has(key)) {
+      const group: SessionStepGroup = {
+        key,
+        section: log.section ?? '',
+        sectionIndex: log.sectionIndex ?? 0,
+        label: log.section ? sectionLabel(log.section, log.sectionIndex ?? 0) : 'Session',
+        logs: [],
+        hasError: false,
+        startTs: log.timestamp,
+      }
+      keyToGroup.set(key, group)
+      groups.push(group)
+    }
+    const g = keyToGroup.get(key)!
+    g.logs.push(log)
+    g.endTs = log.timestamp
+    if (log.stream === 'stderr') g.hasError = true
+  }
+
+  return groups
+})
+
+/** Whether any log has section info (used to decide between flat vs. grouped view). */
+const hasSections = computed(() => store.currentSessionLogs.some(l => !!l.section))
+
+/** Logs grouped by step for the collapsible view in the Logs tab. */
+const logsBySection = computed<SessionStepGroup[]>(() => {
+  if (!hasSections.value) return []
+  // Apply stream + verbose filter but NOT the search filter (search is applied at render time).
+  const logs = store.currentSessionLogs.filter((l) => {
+    if (activeStream.value !== null && l.stream !== activeStream.value) return false
+    if (!verboseLogs.value && DNSMASQ_RE.test(l.line)) return false
+    return true
+  })
+  const groups: SessionStepGroup[] = []
+  const keyToGroup = new Map<string, SessionStepGroup>()
+  for (const log of logs) {
+    const key = log.section ? `${log.section}:${log.sectionIndex}` : ''
+    if (!keyToGroup.has(key)) {
+      const group: SessionStepGroup = {
+        key,
+        section: log.section ?? '',
+        sectionIndex: log.sectionIndex ?? 0,
+        label: log.section ? sectionLabel(log.section, log.sectionIndex ?? 0) : 'Session',
+        logs: [],
+        hasError: false,
+        startTs: log.timestamp,
+      }
+      keyToGroup.set(key, group)
+      groups.push(group)
+    }
+    const g = keyToGroup.get(key)!
+    g.logs.push(log)
+    g.endTs = log.timestamp
+    if (log.stream === 'stderr') g.hasError = true
+  }
+  return groups
+})
+
+/** Tracks which step sections are collapsed in the Logs tab (by key). */
+const collapsedSections = ref(new Set<string>())
+
+function toggleSection(key: string) {
+  if (collapsedSections.value.has(key)) collapsedSections.value.delete(key)
+  else collapsedSections.value.add(key)
+}
+
+/** Returns step duration string or empty string. */
+function stepDuration(group: SessionStepGroup): string {
+  if (!group.startTs || !group.endTs) return ''
+  const ms = new Date(group.endTs).getTime() - new Date(group.startTs).getTime()
+  if (ms < 1000) return `${ms}ms`
+  const s = Math.floor(ms / 1000)
+  if (s < 60) return `${s}s`
+  return `${Math.floor(s / 60)}m ${s % 60}s`
+}
+
+/** The step currently selected in the Steps tab (null = all). */
+const selectedStep = ref<string | null>(null)
+
+/** Logs for the selected step (filtered by stream + search). */
+const selectedStepLogs = computed<AgentSessionLog[]>(() => {
+  if (!selectedStep.value) return []
+  const group = sessionStepGroups.value.find(g => g.key === selectedStep.value)
+  if (!group) return []
+  let logs = group.logs
+  if (activeStream.value !== null) logs = logs.filter(l => l.stream === activeStream.value)
+  if (!verboseLogs.value) logs = logs.filter(l => !DNSMASQ_RE.test(l.line))
+  if (logSearchQuery.value.trim())
+    logs = logs.filter(l => stripAnsiCodes(l.line).toLowerCase().includes(logSearchQuery.value.toLowerCase()))
+  return logs
+})
+
+/** Returns the matching CI/CD run for a CiCdRun step, based on order (1st CiCdRun → 1st ciCdRun). */
+function cicdRunForStep(group: SessionStepGroup) {
+  if (group.section !== 'CiCdRun') return undefined
+  const cicdRuns = store.currentSession?.ciCdRuns ?? []
+  return cicdRuns[group.sectionIndex - 1]
+}
 
 const debugMetadata = computed(() => {
   const entries: Array<{ key: string; value: string }> = []
@@ -458,7 +715,7 @@ onMounted(async () => {
     await agentConnection.value.invoke('JoinSession', sessionId).catch((e: unknown) => { console.warn('Failed to join agent session group', e) })
     agentConnection.value.on('LogLine', ({ payload }: { sessionId: string; payload: string }) => {
       try {
-        const data = JSON.parse(payload) as { event?: string; stream?: string; line?: string; timestamp?: string; status?: string }
+        const data = JSON.parse(payload) as { event?: string; stream?: string; line?: string; timestamp?: string; status?: string; section?: string; sectionIndex?: number }
         if (data.event === 'session-completed') {
           now.value = Date.now()
           // Refresh session metadata (status, endedAt) without replacing logs
@@ -472,6 +729,8 @@ onMounted(async () => {
             stream: data.stream ?? 'stdout',
             streamName: data.stream ? (data.stream.charAt(0).toUpperCase() + data.stream.slice(1)) : 'Stdout',
             timestamp: data.timestamp ?? new Date().toISOString(),
+            section: data.section,
+            sectionIndex: data.sectionIndex ?? 0,
           } satisfies AgentSessionLog)
           now.value = Date.now()
         }

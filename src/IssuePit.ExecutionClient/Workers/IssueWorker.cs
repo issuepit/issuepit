@@ -310,6 +310,10 @@ public class IssueWorker(
             string? capturedOpenCodeSessionId = null;
             var capturedHasUncommittedChanges = false;
 
+            // Track the current phase of the workflow so every log line is tagged with its section.
+            var currentSection = AgentLogSection.InitialAgentRun;
+            var currentSectionIndex = 0;
+
             Task onLogLine(string line, LogStream stream)
             {
                 // Parse special markers emitted by DockerAgentRuntime to capture git state and session ID.
@@ -321,7 +325,7 @@ public class IssueWorker(
                     capturedHasUncommittedChanges = true;
                 else if (line.StartsWith(OpenCodeSessionIdMarker, StringComparison.Ordinal))
                     capturedOpenCodeSessionId = line[OpenCodeSessionIdMarker.Length..].Trim();
-                return AppendLogAsync(session.Id, line, stream, db, sessionCts.Token);
+                return AppendLogAsync(session.Id, line, stream, currentSection, currentSectionIndex, db, sessionCts.Token);
             }
 
             // Start a periodic heartbeat so connected clients can keep the duration display live
@@ -357,9 +361,12 @@ public class IssueWorker(
                 // If there are uncommitted changes, run opencode again to commit or .gitignore them.
                 if (capturedHasUncommittedChanges && gitRepository is not null && !string.IsNullOrEmpty(capturedBranchName))
                 {
+                    currentSection = AgentLogSection.UncommittedChangesFix;
+                    currentSectionIndex = 0;
+
                     await AppendLogAsync(session.Id,
                         "[INFO] Uncommitted changes detected — re-running opencode to commit or .gitignore them…",
-                        LogStream.Stdout, db, sessionCts.Token);
+                        LogStream.Stdout, currentSection, currentSectionIndex, db, sessionCts.Token);
 
                     var fixUncommittedIssue = BuildUncommittedChangesFixIssue(issue, capturedBranchName);
                     string? fixCommitSha, fixBranchName;
@@ -370,13 +377,14 @@ public class IssueWorker(
                         (fixCommitSha, fixBranchName) = await execRuntime!.ExecFixInContainerAsync(
                             runtimeId!, capturedOpenCodeSessionId,
                             session, agent, fixUncommittedIssue,
-                            (line, stream) => AppendLogAsync(session.Id, line, stream, db, sessionCts.Token),
+                            (line, stream) => AppendLogAsync(session.Id, line, stream, currentSection, currentSectionIndex, db, sessionCts.Token),
                             sessionCts.Token);
                     }
                     else
                     {
                         (fixCommitSha, fixBranchName) = await RunCiCdFixAgentAsync(
-                            session, agent, fixUncommittedIssue, gitRepository, credentials, runtimeConfig, db, sessionCts.Token);
+                            session, agent, fixUncommittedIssue, gitRepository, credentials, runtimeConfig,
+                            AgentLogSection.UncommittedChangesFix, sectionIndex: 0, db, sessionCts.Token);
                     }
 
                     if (!string.IsNullOrEmpty(fixCommitSha))
@@ -396,7 +404,9 @@ public class IssueWorker(
                         capturedCommitSha, capturedBranchName, db, sessionCts.Token,
                         execRuntime: useExecForFixes ? execRuntime : null,
                         execContainerId: useExecForFixes ? runtimeId : null,
-                        openCodeSessionId: capturedOpenCodeSessionId);
+                        openCodeSessionId: capturedOpenCodeSessionId,
+                        onLogLine: (line, stream, section, idx) =>
+                            AppendLogAsync(session.Id, line, stream, section, idx, db, sessionCts.Token));
                     session.Status = cicdSucceeded ? AgentSessionStatus.Succeeded : AgentSessionStatus.Failed;
                 }
                 else
@@ -416,7 +426,7 @@ public class IssueWorker(
                         // Use CancellationToken.None so the log line is written even when the session was cancelled.
                         await AppendLogAsync(session.Id,
                             $"[DEBUG] Container kept alive for inspection (KeepContainer=true). ID: {runtimeId[..Math.Min(12, runtimeId.Length)]}",
-                            LogStream.Stdout, db, CancellationToken.None);
+                            LogStream.Stdout, section: null, sectionIndex: 0, db, CancellationToken.None);
                     else
                         await execRuntime!.StopContainerAsync(runtimeId, remove: true, CancellationToken.None);
                 }
@@ -436,9 +446,9 @@ public class IssueWorker(
             session.Status = AgentSessionStatus.Failed;
             session.EndedAt = DateTime.UtcNow;
             // Store the error as a log line so it's visible in the session detail UI.
-            await AppendLogAsync(session.Id, $"[ERROR] {ex.Message}", LogStream.Stderr, db, cancellationToken);
+            await AppendLogAsync(session.Id, $"[ERROR] {ex.Message}", LogStream.Stderr, section: null, sectionIndex: 0, db, cancellationToken);
             if (ex.InnerException is not null)
-                await AppendLogAsync(session.Id, $"[ERROR] Caused by: {ex.InnerException.Message}", LogStream.Stderr, db, cancellationToken);
+                await AppendLogAsync(session.Id, $"[ERROR] Caused by: {ex.InnerException.Message}", LogStream.Stderr, section: null, sectionIndex: 0, db, cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
         }
         finally
@@ -508,6 +518,8 @@ public class IssueWorker(
         Guid sessionId,
         string line,
         LogStream stream,
+        AgentLogSection? section,
+        int sectionIndex,
         IssuePitDbContext db,
         CancellationToken cancellationToken)
     {
@@ -517,6 +529,8 @@ public class IssueWorker(
             AgentSessionId = sessionId,
             Line = line,
             Stream = stream,
+            Section = section,
+            SectionIndex = sectionIndex,
             Timestamp = DateTime.UtcNow,
         };
 
@@ -529,6 +543,8 @@ public class IssueWorker(
             stream = stream.ToString().ToLowerInvariant(),
             line,
             timestamp = log.Timestamp,
+            section = section?.ToString().ToLowerInvariant(),
+            sectionIndex,
         });
         await PublishSessionEventAsync(sessionId.ToString(), payload);
     }
@@ -586,51 +602,62 @@ public class IssueWorker(
         // Exec-flow parameters: when set, fix runs reuse the same container.
         IExecCapableRuntime? execRuntime = null,
         string? execContainerId = null,
-        string? openCodeSessionId = null)
+        string? openCodeSessionId = null,
+        Func<string, LogStream, AgentLogSection, int, Task>? onLogLine = null)
     {
         for (var attempt = 0; attempt < MaxCiCdFixAttempts; attempt++)
         {
-            await AppendLogAsync(session.Id,
-                $"[INFO] Starting CI/CD run (attempt {attempt + 1}/{MaxCiCdFixAttempts}) for branch '{branchName}' commit '{(commitSha.Length > 0 ? commitSha[..Math.Min(7, commitSha.Length)] : "(none)")}'",
-                LogStream.Stdout, db, cancellationToken);
+            var cicdSectionIndex = attempt + 1;
+            var appendCiCdLog = (string line, LogStream stream) =>
+                (onLogLine ?? ((l, s, sec, idx) => AppendLogAsync(session.Id, l, s, sec, idx, db, cancellationToken)))(
+                    line, stream, AgentLogSection.CiCdRun, cicdSectionIndex);
+
+            await appendCiCdLog(
+                $"[INFO] Starting CI/CD run (attempt {cicdSectionIndex}/{MaxCiCdFixAttempts}) for branch '{branchName}' commit '{(commitSha.Length > 0 ? commitSha[..Math.Min(7, commitSha.Length)] : "(none)")}'",
+                LogStream.Stdout);
 
             // Create a CiCdRun record (linked to this session) and publish the Kafka trigger.
             var cicdRun = await TriggerCiCdRunAsync(
                 session.Id, issue.ProjectId, gitRepository.RemoteUrl,
                 commitSha, branchName, db, cancellationToken);
 
-            await AppendLogAsync(session.Id,
+            await appendCiCdLog(
                 $"[INFO] CI/CD run {cicdRun.Id} queued, waiting for completion…",
-                LogStream.Stdout, db, cancellationToken);
+                LogStream.Stdout);
 
             var cicdStatus = await WaitForCiCdCompletionAsync(cicdRun.Id, cancellationToken);
 
             if (cicdStatus == CiCdRunStatus.Succeeded)
             {
-                await AppendLogAsync(session.Id,
+                await appendCiCdLog(
                     $"[INFO] CI/CD run {cicdRun.Id} succeeded.",
-                    LogStream.Stdout, db, cancellationToken);
+                    LogStream.Stdout);
                 return true;
             }
 
-            await AppendLogAsync(session.Id,
+            await appendCiCdLog(
                 $"[WARN] CI/CD run {cicdRun.Id} finished with status '{cicdStatus}'.",
-                LogStream.Stderr, db, cancellationToken);
+                LogStream.Stderr);
 
             if (attempt >= MaxCiCdFixAttempts - 1)
             {
-                await AppendLogAsync(session.Id,
+                await appendCiCdLog(
                     $"[ERROR] CI/CD fix loop exhausted after {MaxCiCdFixAttempts} attempt(s). Marking session as failed.",
-                    LogStream.Stderr, db, cancellationToken);
+                    LogStream.Stderr);
                 return false;
             }
 
             // Collect CI/CD failure logs to give opencode the context it needs for fixing.
             var failureLogs = await GetCiCdFailureLogsAsync(cicdRun.Id, db, cancellationToken);
 
-            await AppendLogAsync(session.Id,
-                $"[INFO] Launching opencode fix agent (attempt {attempt + 2}/{MaxCiCdFixAttempts}) to address CI/CD failures…",
-                LogStream.Stdout, db, cancellationToken);
+            var fixSectionIndex = attempt + 1;
+            var appendFixLog = (string line, LogStream stream) =>
+                (onLogLine ?? ((l, s, sec, idx) => AppendLogAsync(session.Id, l, s, sec, idx, db, cancellationToken)))(
+                    line, stream, AgentLogSection.CiCdFixRun, fixSectionIndex);
+
+            await appendFixLog(
+                $"[INFO] Launching opencode fix agent (attempt {fixSectionIndex}/{MaxCiCdFixAttempts - 1}) to address CI/CD failures…",
+                LogStream.Stdout);
 
             var fixIssue = BuildFixIssue(issue, failureLogs, branchName);
             string? fixCommitSha, fixBranchName;
@@ -642,21 +669,24 @@ public class IssueWorker(
                 (fixCommitSha, fixBranchName) = await execRuntime.ExecFixInContainerAsync(
                     execContainerId, openCodeSessionId,
                     session, agent, fixIssue,
-                    (line, stream) => AppendLogAsync(session.Id, line, stream, db, cancellationToken),
+                    (line, stream) =>
+                        (onLogLine ?? ((l, s, sec, idx) => AppendLogAsync(session.Id, l, s, sec, idx, db, cancellationToken)))(
+                            line, stream, AgentLogSection.CiCdFixRun, fixSectionIndex),
                     cancellationToken);
             }
             else
             {
                 // Fallback: launch a new container for the fix run (legacy behaviour for non-exec runtimes).
                 (fixCommitSha, fixBranchName) = await RunCiCdFixAgentAsync(
-                    session, agent, fixIssue, gitRepository, credentials, runtimeConfig, db, cancellationToken);
+                    session, agent, fixIssue, gitRepository, credentials, runtimeConfig,
+                    AgentLogSection.CiCdFixRun, fixSectionIndex, db, cancellationToken);
             }
 
             if (string.IsNullOrEmpty(fixCommitSha))
             {
-                await AppendLogAsync(session.Id,
+                await appendFixLog(
                     "[WARN] Fix agent did not report a commit SHA. Aborting CI/CD fix loop.",
-                    LogStream.Stderr, db, cancellationToken);
+                    LogStream.Stderr);
                 return false;
             }
 
@@ -911,6 +941,8 @@ public class IssueWorker(
         GitRepository gitRepository,
         IReadOnlyDictionary<string, string> credentials,
         RuntimeConfiguration? runtimeConfig,
+        AgentLogSection section,
+        int sectionIndex,
         IssuePitDbContext db,
         CancellationToken cancellationToken)
     {
@@ -926,7 +958,7 @@ public class IssueWorker(
                 fixCommitSha = line[GitCommitShaMarker.Length..].Trim();
             else if (line.StartsWith(GitBranchMarker, StringComparison.Ordinal))
                 fixBranchName = line[GitBranchMarker.Length..].Trim();
-            return AppendLogAsync(parentSession.Id, $"[fix] {line}", stream, db, cancellationToken);
+            return AppendLogAsync(parentSession.Id, $"[fix] {line}", stream, section, sectionIndex, db, cancellationToken);
         }
 
         try
@@ -946,7 +978,7 @@ public class IssueWorker(
         {
             logger.LogError(ex, "Fix agent failed for session {SessionId}", parentSession.Id);
             await AppendLogAsync(parentSession.Id,
-                $"[ERROR] Fix agent error: {ex.Message}", LogStream.Stderr, db, cancellationToken);
+                $"[ERROR] Fix agent error: {ex.Message}", LogStream.Stderr, section, sectionIndex, db, cancellationToken);
         }
 
         return (fixCommitSha, fixBranchName);

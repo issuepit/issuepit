@@ -38,6 +38,7 @@ public sealed class CiCdRunQueueService(
         Dictionary<string, string>? inputs,
         string? gitRepoUrl,
         Guid? agentSessionId = null,
+        Guid? retryOfRunId = null,
         object? extraPayload = null,
         CancellationToken cancellationToken = default)
     {
@@ -55,6 +56,7 @@ public sealed class CiCdRunQueueService(
             Id = Guid.NewGuid(),
             ProjectId = projectId,
             AgentSessionId = agentSessionId,
+            RetryOfRunId = retryOfRunId,
             CommitSha = commitSha,
             Branch = branch,
             Workflow = workflow,
