@@ -72,7 +72,7 @@
             <span :class="statusDotColor(col.issueStatus)" class="w-2.5 h-2.5 rounded-full"></span>
             <h3 class="text-sm font-semibold text-gray-300">{{ col.name }}</h3>
             <span class="text-xs text-gray-600 bg-gray-800 px-1.5 py-0.5 rounded-full">
-              {{ issuesByStatus[col.issueStatus]?.length ?? 0 }}
+              {{ issuesByColumn[col.id]?.length ?? 0 }}
             </span>
           </div>
           <button @click.stop="openCreateForStatus(col.issueStatus)"
@@ -92,7 +92,7 @@
           @dragover.prevent="onIssueDragOver($event, col.id)"
           @dragleave="onIssueDragLeave"
           @drop="onIssueDrop($event, col)">
-          <template v-for="(issue, idx) in issuesByStatus[col.issueStatus]" :key="issue.id">
+          <template v-for="(issue, idx) in issuesByColumn[col.id]" :key="issue.id">
             <!-- Placeholder before this item -->
             <div v-if="draggedId && !draggedColId && isValidDropTarget(col.id) && dragHoverColId === col.id && dragHoverInsertIdx === idx"
               role="status" aria-label="Drop zone"
@@ -106,7 +106,7 @@
               draggable="true"
               @dragstart="onDragStart($event, issue)"
               @dragend="onIssueDragEnd"
-              @click="$router.push(`/projects/${id}/issues/${issue.number}`)">
+              @click="previewIssue = issue">
               <div class="flex items-start justify-between gap-2 mb-2">
                 <span class="text-xs text-gray-600">{{ formatIssueId(issue.number, projectsStore.currentProject) }}</span>
                 <span :class="priorityColor(issue.priority)" class="text-xs shrink-0">
@@ -127,13 +127,13 @@
           </template>
 
           <!-- Drop zone placeholder at the end of the list -->
-          <div v-if="draggedId && !draggedColId && isValidDropTarget(col.id) && dragHoverColId === col.id && dragHoverInsertIdx >= (issuesByStatus[col.issueStatus]?.length ?? 0)"
+          <div v-if="draggedId && !draggedColId && isValidDropTarget(col.id) && dragHoverColId === col.id && dragHoverInsertIdx >= (issuesByColumn[col.id]?.length ?? 0)"
             role="status" aria-label="Drop zone"
             class="rounded-lg border-2 border-dashed border-brand-500/50 bg-brand-900/10 h-14 animate-pulse">
           </div>
 
           <!-- Empty placeholder -->
-          <div v-if="!issuesByStatus[col.issueStatus]?.length && !(draggedId && !draggedColId && isValidDropTarget(col.id) && dragHoverColId === col.id)"
+          <div v-if="!issuesByColumn[col.id]?.length && !(draggedId && !draggedColId && isValidDropTarget(col.id) && dragHoverColId === col.id)"
             class="flex items-center justify-center h-16 text-gray-700 text-xs">
             Drop issues here
           </div>
@@ -328,11 +328,81 @@
         </button>
       </div>
     </div>
+
+    <!-- Issue Preview Sidebar -->
+    <transition name="slide-right">
+      <div v-if="previewIssue"
+        class="fixed inset-y-0 right-0 w-96 bg-gray-900 border-l border-gray-800 shadow-2xl z-40 flex flex-col overflow-y-auto">
+        <!-- Header -->
+        <div class="flex items-center justify-between p-4 border-b border-gray-800 shrink-0">
+          <span class="text-xs text-gray-500">{{ formatIssueId(previewIssue.number, projectsStore.currentProject) }}</span>
+          <div class="flex items-center gap-2">
+            <NuxtLink :to="`/projects/${id}/issues/${previewIssue.number}`"
+              class="text-xs text-brand-400 hover:text-brand-300 transition-colors">
+              Open full
+            </NuxtLink>
+            <button @click="previewIssue = null" class="text-gray-500 hover:text-gray-300 transition-colors">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <!-- Content -->
+        <div class="p-4 space-y-4 flex-1">
+          <!-- Title -->
+          <h2 class="text-base font-semibold text-white leading-snug">{{ previewIssue.title }}</h2>
+          <!-- Meta row -->
+          <div class="flex flex-wrap gap-2">
+            <span :class="typeBadge(previewIssue.type)" class="text-xs px-1.5 py-0.5 rounded font-medium capitalize">{{ previewIssue.type }}</span>
+            <span :class="priorityColor(previewIssue.priority)" class="text-xs">{{ priorityIcon(previewIssue.priority) }} {{ priorityLabel(previewIssue.priority) }}</span>
+          </div>
+          <!-- Status -->
+          <div class="flex items-center gap-2">
+            <span :class="statusDotColor(previewIssue.status)" class="w-2 h-2 rounded-full"></span>
+            <span class="text-xs text-gray-400 capitalize">{{ previewIssue.status.replace('_', ' ') }}</span>
+          </div>
+          <!-- Labels -->
+          <div v-if="previewIssue.labels?.length" class="flex flex-wrap gap-1.5">
+            <span v-for="label in previewIssue.labels" :key="label.id"
+              class="text-xs px-2 py-0.5 rounded-full font-medium"
+              :style="{ backgroundColor: label.color + '33', color: label.color }">
+              {{ label.name }}
+            </span>
+          </div>
+          <!-- Assignees -->
+          <div v-if="previewIssue.assignees?.length" class="flex items-center gap-2 flex-wrap">
+            <span class="text-xs text-gray-500">Assigned:</span>
+            <span v-for="a in previewIssue.assignees" :key="a.id" class="text-xs text-gray-300">
+              {{ (a as { user?: { username?: string }, agent?: { name?: string } }).user?.username || (a as { user?: { username?: string }, agent?: { name?: string } }).agent?.name || 'Unknown' }}
+            </span>
+          </div>
+          <!-- Milestone -->
+          <div v-if="previewIssue.milestoneId" class="flex items-center gap-2">
+            <span class="text-xs text-gray-500">Milestone:</span>
+            <span class="text-xs text-gray-300">
+              {{ milestonesStore.milestones.find(m => m.id === previewIssue!.milestoneId)?.title || 'Unknown' }}
+            </span>
+          </div>
+          <!-- Body -->
+          <div v-if="previewIssue.body" class="text-sm text-gray-400 border-t border-gray-800 pt-3 leading-relaxed line-clamp-6">
+            {{ previewIssue.body }}
+          </div>
+        </div>
+        <!-- Footer -->
+        <div class="p-4 border-t border-gray-800 shrink-0">
+          <NuxtLink :to="`/projects/${id}/issues/${previewIssue.number}`"
+            class="block w-full text-center text-sm text-brand-400 hover:text-brand-300 border border-brand-700 hover:border-brand-600 rounded-lg py-2 transition-colors">
+            View Full Issue →
+          </NuxtLink>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
 <script setup lang="ts">
-import { IssueStatus, IssuePriority, IssueType } from '~/types'
+import { IssueStatus, IssuePriority, IssueType, KanbanLaneType } from '~/types'
 import type { Issue, KanbanColumn } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
 import { useKanbanStore } from '~/stores/kanban'
@@ -346,7 +416,10 @@ const issueStore = useIssuesStore()
 const kanban = useKanbanStore()
 const milestonesStore = useMilestonesStore()
 const projectsStore = useProjectsStore()
-const { priorityIcon, priorityColor } = usePriority()
+const { priorityIcon, priorityColor, priorityLabel } = usePriority()
+
+// ── Issue preview ──────────────────────────────────────────────────────────
+const previewIssue = ref<Issue | null>(null)
 
 // ── Issue create state ────────────────────────────────────────────────────
 const showCreate = ref(false)
@@ -391,26 +464,86 @@ const newTransFrom = ref('')
 const newTransTo = ref('')
 const newTransIsAuto = ref(false)
 
-const issuesByStatus = computed(() => {
-  if (!filterMilestone.value) return issueStore.issuesByStatus
-  const filtered: Record<IssueStatus, Issue[]> = {
-    [IssueStatus.Backlog]: [],
-    [IssueStatus.Todo]: [],
-    [IssueStatus.InProgress]: [],
-    [IssueStatus.InReview]: [],
-    [IssueStatus.Done]: [],
-    [IssueStatus.Cancelled]: [],
+const issuesByColumn = computed(() => {
+  const board = activeBoard.value
+  if (!board) return {} as Record<string, Issue[]>
+  const filteredIssues = filterMilestone.value
+    ? issueStore.issues.filter(i => i.milestoneId === filterMilestone.value)
+    : issueStore.issues
+
+  const result: Record<string, Issue[]> = {}
+  for (const col of boardColumns.value) {
+    result[col.id] = []
   }
-  for (const issue of issueStore.issues.filter(i => i.milestoneId === filterMilestone.value)) {
-    filtered[issue.status].push(issue)
+
+  if (!board.laneType || board.laneType === KanbanLaneType.Status) {
+    for (const issue of filteredIssues) {
+      const col = boardColumns.value.find(c => c.issueStatus === issue.status)
+      if (col) result[col.id]?.push(issue)
+    }
   }
-  return filtered
+  else if (board.laneType === KanbanLaneType.Label) {
+    for (const issue of filteredIssues) {
+      let placed = false
+      for (const col of boardColumns.value) {
+        if (col.filterValue && issue.labels.some(l => l.id === col.filterValue)) {
+          result[col.id]?.push(issue)
+          placed = true
+          break
+        }
+      }
+      if (!placed) {
+        const unlabeledCol = boardColumns.value.find(c => !c.filterValue)
+        if (unlabeledCol) result[unlabeledCol.id]?.push(issue)
+      }
+    }
+  }
+  else if (board.laneType === KanbanLaneType.Type) {
+    for (const issue of filteredIssues) {
+      const col = boardColumns.value.find(c => c.filterValue === issue.type)
+      if (col) result[col.id]?.push(issue)
+      else {
+        const defaultCol = boardColumns.value.find(c => !c.filterValue)
+        if (defaultCol) result[defaultCol.id]?.push(issue)
+      }
+    }
+  }
+  else if (board.laneType === KanbanLaneType.Agent) {
+    for (const issue of filteredIssues) {
+      let placed = false
+      for (const col of boardColumns.value) {
+        if (col.filterValue && issue.assignees.some((a: { agentId?: string | null }) => a.agentId === col.filterValue)) {
+          result[col.id]?.push(issue)
+          placed = true
+          break
+        }
+      }
+      if (!placed) {
+        const defaultCol = boardColumns.value.find(c => !c.filterValue)
+        if (defaultCol) result[defaultCol.id]?.push(issue)
+      }
+    }
+  }
+  else if (board.laneType === KanbanLaneType.Milestone) {
+    for (const issue of filteredIssues) {
+      const col = boardColumns.value.find(c => c.filterValue === (issue.milestoneId ?? null))
+      if (col) result[col.id]?.push(issue)
+      else {
+        const defaultCol = boardColumns.value.find(c => !c.filterValue)
+        if (defaultCol) result[defaultCol.id]?.push(issue)
+      }
+    }
+  }
+
+  for (const colId of Object.keys(result)) {
+    result[colId].sort((a, b) => a.kanbanRank - b.kanbanRank || a.createdAt.localeCompare(b.createdAt))
+  }
+  return result
 })
 const totalIssues = computed(() => {
   if (!filterMilestone.value) return issueStore.issues.length
   return issueStore.issues.filter(i => i.milestoneId === filterMilestone.value).length
 })
-
 const statusOptions = [
   { value: IssueStatus.Backlog, label: 'Backlog' },
   { value: IssueStatus.Todo, label: 'Todo' },
@@ -427,6 +560,7 @@ onMounted(async () => {
     milestonesStore.fetchMilestones(id),
   ])
   if (kanban.boards.length) activeBoardId.value = kanban.boards[0].id
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') previewIssue.value = null })
 })
 
 watch(activeBoardId, (bid) => {
@@ -465,6 +599,8 @@ function isValidDropTarget(targetColId: string): boolean {
   if (!sourceCol) return false
   // Same column: always valid (for within-column reordering)
   if (sourceCol.id === targetColId) return true
+  // For non-status boards, all drops are valid (no status change happens)
+  if (activeBoard.value && activeBoard.value.laneType && activeBoard.value.laneType !== KanbanLaneType.Status) return true
   // If no transitions are defined, all columns are valid drop targets (open board)
   if (kanban.transitions.length === 0) return true
   return kanban.transitions.some(t => t.fromColumnId === sourceCol.id && t.toColumnId === targetColId)
@@ -479,7 +615,8 @@ async function onIssueDrop(e: DragEvent, targetCol: KanbanColumn) {
   const insertIdx = dragHoverInsertIdx.value
   const sourceCol = boardColumns.value.find(c => c.issueStatus === draggedIssueStatus.value)
   const isSameColumn = sourceCol?.id === targetCol.id
-  if (!isSameColumn) {
+  const isStatusBoard = !activeBoard.value?.laneType || activeBoard.value.laneType === KanbanLaneType.Status
+  if (!isSameColumn && isStatusBoard) {
     // Status change - optimistically update local state
     await issueStore.updateIssueStatus(id, draggedId.value, targetCol.issueStatus)
   }
@@ -696,3 +833,14 @@ function typeBadge(type: IssueType) {
   return map[type] ?? 'bg-gray-800 text-gray-400'
 }
 </script>
+
+<style scoped>
+.slide-right-enter-active,
+.slide-right-leave-active {
+  transition: transform 0.2s ease;
+}
+.slide-right-enter-from,
+.slide-right-leave-to {
+  transform: translateX(100%);
+}
+</style>

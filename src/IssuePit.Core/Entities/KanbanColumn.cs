@@ -21,4 +21,7 @@ public class KanbanColumn
     public int Position { get; set; }
 
     public IssueStatus IssueStatus { get; set; }
+
+    [MaxLength(500)]
+    public string? FilterValue { get; set; }
 }

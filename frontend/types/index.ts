@@ -27,6 +27,24 @@ export enum IssueType {
   Epic = 'epic'
 }
 
+export enum KanbanLaneType {
+  Status = 'status',
+  Label = 'label',
+  Type = 'type',
+  Agent = 'agent',
+  Milestone = 'milestone',
+}
+
+export enum CustomPropertyType {
+  Text = 'text',
+  Enum = 'enum',
+  Number = 'number',
+  Date = 'date',
+  Person = 'person',
+  Agent = 'agent',
+  Bool = 'bool',
+}
+
 export interface Tenant {
   id: string
   name: string
@@ -413,6 +431,7 @@ export interface KanbanColumn {
   boardId: string
   name: string
   issueStatus: IssueStatus
+  filterValue?: string | null
   position: number
 }
 
@@ -420,8 +439,30 @@ export interface KanbanBoard {
   id: string
   projectId: string
   name: string
+  laneType: KanbanLaneType
   columns: KanbanColumn[]
   createdAt: string
+}
+
+export interface CustomProperty {
+  id: string
+  projectId: string
+  name: string
+  type: CustomPropertyType
+  isRequired: boolean
+  defaultValue?: string | null
+  allowedValues?: string | null
+  position: number
+  createdAt: string
+}
+
+export interface IssuePropertyValue {
+  id: string
+  issueId: string
+  customPropertyId: string
+  customProperty?: CustomProperty
+  value?: string | null
+  updatedAt: string
 }
 
 export interface PaginatedResponse<T> {

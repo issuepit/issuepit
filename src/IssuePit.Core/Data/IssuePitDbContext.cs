@@ -28,6 +28,8 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<KanbanBoard> KanbanBoards => Set<KanbanBoard>();
     public DbSet<KanbanColumn> KanbanColumns => Set<KanbanColumn>();
     public DbSet<KanbanTransition> KanbanTransitions => Set<KanbanTransition>();
+    public DbSet<CustomProperty> CustomProperties => Set<CustomProperty>();
+    public DbSet<IssuePropertyValue> IssuePropertyValues => Set<IssuePropertyValue>();
     public DbSet<User> Users => Set<User>();
     public DbSet<GitHubIdentity> GitHubIdentities => Set<GitHubIdentity>();
     public DbSet<GitHubIdentityProject> GitHubIdentityProjects => Set<GitHubIdentityProject>();

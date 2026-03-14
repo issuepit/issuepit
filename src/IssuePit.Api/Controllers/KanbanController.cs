@@ -41,6 +41,7 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
             Id = Guid.NewGuid(),
             ProjectId = req.ProjectId,
             Name = req.Name,
+            LaneType = req.LaneType,
             CreatedAt = DateTime.UtcNow
         };
         db.KanbanBoards.Add(board);
@@ -87,7 +88,8 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
             BoardId = boardId,
             Name = req.Name,
             Position = req.Position,
-            IssueStatus = req.IssueStatus
+            IssueStatus = req.IssueStatus,
+            FilterValue = req.FilterValue
         };
         db.KanbanColumns.Add(column);
         await db.SaveChangesAsync();
@@ -108,6 +110,7 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
         column.Name = req.Name;
         column.Position = req.Position;
         column.IssueStatus = req.IssueStatus;
+        column.FilterValue = req.FilterValue;
         await db.SaveChangesAsync();
         return Ok(column);
     }
@@ -285,12 +288,12 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
     }
 }
 
-public record CreateBoardRequest(Guid ProjectId, string Name);
-public record CreateColumnRequest(string Name, int Position, IssuePit.Core.Enums.IssueStatus IssueStatus);
+public record CreateBoardRequest(Guid ProjectId, string Name, IssuePit.Core.Enums.KanbanLaneType LaneType = IssuePit.Core.Enums.KanbanLaneType.Status);
+public record CreateColumnRequest(string Name, int Position, IssuePit.Core.Enums.IssueStatus IssueStatus, string? FilterValue = null);
 public record CreateTransitionRequest(string Name, Guid FromColumnId, Guid ToColumnId, bool IsAuto, Guid? AgentId);
 public record MoveIssueRequest(Guid IssueId, Guid ColumnId, int? Position = null);
 public record ReorderColumnsRequest(List<Guid> ColumnIds);
 public record UpdateBoardRequest(string Name);
-public record UpdateColumnRequest(string Name, int Position, IssuePit.Core.Enums.IssueStatus IssueStatus);
+public record UpdateColumnRequest(string Name, int Position, IssuePit.Core.Enums.IssueStatus IssueStatus, string? FilterValue = null);
 public record UpdateTransitionRequest(string Name, Guid FromColumnId, Guid ToColumnId, bool IsAuto, Guid? AgentId);
 public record TriggerTransitionRequest(Guid IssueId);
