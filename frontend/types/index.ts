@@ -308,6 +308,8 @@ export interface Issue {
   dueDate?: string
   estimate?: number
   kanbanRank: number
+  gitHubIssueNumber?: number
+  gitHubIssueUrl?: string
   createdAt: string
   updatedAt: string
   subIssues?: Issue[]
@@ -1012,3 +1014,119 @@ export interface Todo {
   boardMemberships: TodoBoardMembership[]
   categoryMemberships: TodoCategoryMembership[]
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// GitHub Sync
+// ──────────────────────────────────────────────────────────────────────────────
+
+export enum GitHubSyncTriggerMode {
+  Off = 0,
+  Manual = 1,
+  Auto = 2,
+}
+
+export const GitHubSyncTriggerModeLabels: Record<GitHubSyncTriggerMode, string> = {
+  [GitHubSyncTriggerMode.Off]: 'Off',
+  [GitHubSyncTriggerMode.Manual]: 'Manual',
+  [GitHubSyncTriggerMode.Auto]: 'Auto',
+}
+
+export enum GitHubSyncMode {
+  Import = 0,
+  TwoWay = 1,
+  CreateOnGitHub = 2,
+}
+
+export const GitHubSyncModeLabels: Record<GitHubSyncMode, string> = {
+  [GitHubSyncMode.Import]: 'Import (GitHub → IssuePit)',
+  [GitHubSyncMode.TwoWay]: 'Two-Way (GitHub ↔ IssuePit)',
+  [GitHubSyncMode.CreateOnGitHub]: 'Create on GitHub (IssuePit → GitHub)',
+}
+
+export const GitHubSyncModeDescriptions: Record<GitHubSyncMode, string> = {
+  [GitHubSyncMode.Import]: 'Imports issues from GitHub into IssuePit. Existing IssuePit issues are not modified on GitHub.',
+  [GitHubSyncMode.TwoWay]: 'Imports from GitHub and pushes recent IssuePit changes back to GitHub.',
+  [GitHubSyncMode.CreateOnGitHub]: 'When a new issue is created in IssuePit it is automatically pushed to GitHub.',
+}
+
+export enum GitHubSyncRunStatus {
+  Pending = 0,
+  Running = 1,
+  Succeeded = 2,
+  Failed = 3,
+}
+
+export enum GitHubSyncLogLevel {
+  Info = 0,
+  Warn = 1,
+  Error = 2,
+}
+
+export interface GitHubSyncConfig {
+  id?: string
+  projectId: string
+  gitHubIdentityId?: string
+  gitHubIdentityName?: string
+  gitHubRepo?: string
+  triggerMode: GitHubSyncTriggerMode
+  syncMode: GitHubSyncMode
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface GitHubSyncRun {
+  id: string
+  projectId: string
+  status: GitHubSyncRunStatus
+  summary?: string
+  startedAt: string
+  completedAt?: string
+}
+
+export interface GitHubSyncRunLog {
+  id: string
+  level: GitHubSyncLogLevel
+  message: string
+  timestamp: string
+}
+
+export interface GitHubSyncRunDetail extends GitHubSyncRun {
+  logs: GitHubSyncRunLog[]
+}
+
+export interface GitHubConflict {
+  issueId: string
+  issueNumber: number
+  gitHubIssueNumber: number
+  localTitle: string
+  gitHubTitle: string
+  localBody?: string
+  gitHubBody?: string
+  gitHubUrl: string
+  titleDiffers: boolean
+  bodyDiffers: boolean
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Scheduled Tasks (cross-project view)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// <summary>Type discriminator for scheduled task runs.</summary>
+export type ScheduledTaskType = 'GitHubSync'
+
+export interface ScheduledTaskRun {
+  id: string
+  projectId: string
+  projectName: string
+  type: ScheduledTaskType
+  status: GitHubSyncRunStatus
+  summary?: string
+  startedAt: string
+  completedAt?: string
+}
+
+export interface ScheduledTaskProject {
+  projectId: string
+  name: string
+}
+
