@@ -326,13 +326,28 @@ public class CiCdWorker(
             semaphore?.Release();
             _activeRuns.TryRemove(run.Id, out _);
             run.EndedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync(stoppingToken);
+            // Note: do NOT save the terminal status here. The status is saved after all
+            // artifact/test-result processing completes (see below) to prevent a race condition
+            // where HTTP clients poll the run as "Succeeded" before the artifact rows exist.
 
-            // For Docker runs the artifact directory is intentionally empty (no volume mount).
-            // The container has already uploaded the raw artifact files to S3 under
-            // artifacts-raw/{runId}/. Download them now so the subsequent parsing steps
-            // (TRX test results, artifact metadata, workflow graph) can proceed as normal.
-            if (artifactStorage.IsConfigured && !Directory.EnumerateFileSystemEntries(artifactDir).Any())
+            // Upload raw artifacts to S3 from the CiCdClient process (which has S3 access).
+            // This replaces the previous approach of running s5cmd inside the helper-act container:
+            // the container could not reliably reach the S3 endpoint (e.g. LocalStack on the Aspire
+            // Docker network is not reachable from inside the spawned act container). The cicdClient
+            // process always has access to S3, so the upload is done here instead.
+            if (artifactStorage.IsConfigured && Directory.Exists(artifactDir) &&
+                Directory.EnumerateFileSystemEntries(artifactDir).Any())
+            {
+                var uploaded = await UploadRawArtifactsToS3Async(run.Id, artifactDir, stoppingToken);
+                if (uploaded > 0)
+                    logger.LogInformation("Uploaded {Count} raw artifact file(s) to S3 for run {RunId}", uploaded, run.Id);
+            }
+
+            // If the artifact directory is still empty at this point (e.g. crash recovery: the
+            // cicdClient restarted after a previous S3 upload but before processing), download the
+            // raw artifacts that were uploaded in a prior attempt.
+            if (artifactStorage.IsConfigured && Directory.Exists(artifactDir) &&
+                !Directory.EnumerateFileSystemEntries(artifactDir).Any())
             {
                 var downloaded = await DownloadRawArtifactsFromS3Async(run.Id, artifactDir, stoppingToken);
                 if (downloaded > 0)
@@ -348,12 +363,21 @@ public class CiCdWorker(
             // Parse workflow graph from workflow files copied during the clone step.
             await ParseAndStoreWorkflowGraphAsync(run.Id, artifactDir, db, stoppingToken);
 
+            // Save the terminal run status (Succeeded / Failed / Cancelled) and EndedAt.
+            // This is intentionally deferred until after all ParseAndStore* calls so that
+            // HTTP clients polling the run status never observe "Succeeded" before the
+            // artifact and test-result rows are committed to the database.
+            // (ParseAndStore* methods may also call db.SaveChangesAsync internally, which
+            // incidentally persists the run entity — the explicit save here is the guaranteed
+            // fallback for runs that produced no artifacts or test results.)
+            await db.SaveChangesAsync(stoppingToken);
+
             // Clean up the artifact directory now that results have been collected.
             try { Directory.Delete(artifactDir, recursive: true); }
             catch (Exception ex) { logger.LogDebug(ex, "Could not clean up artifact directory {Dir} for run {RunId}", artifactDir, run.Id); }
 
-            // Delete the raw S3 artifacts that were downloaded; the processed ZIPs uploaded by
-            // ParseAndStoreArtifactsAsync are the canonical download artifacts.
+            // Delete the raw S3 artifacts now that they have been processed; the processed ZIPs
+            // uploaded by ParseAndStoreArtifactsAsync are the canonical download artifacts.
             if (artifactStorage.IsConfigured)
             {
                 try { await artifactStorage.DeleteRawArtifactsAsync(run.Id, stoppingToken); }
@@ -363,6 +387,27 @@ public class CiCdWorker(
             // Notify clients that the run has completed
             await PublishLogLineAsync(run.Id.ToString(),
                 JsonSerializer.Serialize(new { @event = "run-completed", status = run.Status.ToString() }));
+        }
+    }
+
+    /// <summary>
+    /// Uploads raw artifact files from the local <paramref name="artifactDir"/> to
+    /// <c>artifacts-raw/{runId}/</c> in S3 so they can be recovered on restart if needed.
+    /// Best-effort: errors are logged but never propagated.
+    /// </summary>
+    private async Task<int> UploadRawArtifactsToS3Async(
+        Guid runId,
+        string artifactDir,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await artifactStorage.UploadRawArtifactsAsync(runId, artifactDir, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to upload raw artifacts to S3 for run {RunId}", runId);
+            return 0;
         }
     }
 

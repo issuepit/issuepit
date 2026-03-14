@@ -125,6 +125,52 @@ public class ArtifactStorageService(IConfiguration configuration, ILogger<Artifa
     }
 
     /// <summary>
+    /// Uploads all files from <paramref name="localDir"/> to <c>artifacts-raw/{runId}/</c> in S3,
+    /// preserving the relative path structure produced by the act artifact server.
+    /// Returns the number of objects uploaded.
+    /// No-op when S3 is not configured or the directory does not exist / is empty.
+    /// </summary>
+    public async Task<int> UploadRawArtifactsAsync(Guid runId, string localDir, CancellationToken ct = default)
+    {
+        if (!IsConfigured) return 0;
+        if (!Directory.Exists(localDir)) return 0;
+
+        var prefix = $"artifacts-raw/{runId:N}/";
+        using var s3 = CreateClient();
+
+        if (!_bucketEnsured)
+        {
+            await EnsureBucketExistsAsync(s3, ct);
+            _bucketEnsured = true;
+        }
+
+        var uploaded = 0;
+        var canonicalLocalDir = Path.GetFullPath(localDir);
+        foreach (var filePath in Directory.EnumerateFiles(localDir, "*", SearchOption.AllDirectories))
+        {
+            ct.ThrowIfCancellationRequested();
+            // Use forward slashes for S3 keys; GetRelativePath uses OS separator.
+            var relativePath = Path.GetRelativePath(canonicalLocalDir, filePath).Replace('\\', '/');
+            var key = $"{prefix}{relativePath}";
+
+            await RetryS3Async(async () =>
+            {
+                // Open fresh stream on each attempt so retries work correctly.
+                await using var fileStream = File.OpenRead(filePath);
+                await s3.PutObjectAsync(new PutObjectRequest
+                {
+                    BucketName = _bucketName,
+                    Key = key,
+                    InputStream = fileStream,
+                }, ct);
+            }, ct);
+            uploaded++;
+        }
+
+        return uploaded;
+    }
+
+    /// <summary>
     /// Downloads all raw artifact files uploaded by the container from
     /// <c>artifacts-raw/{runId}/</c> in S3 to <paramref name="localDir"/>,
     /// preserving the sub-directory structure produced by the act artifact server.
