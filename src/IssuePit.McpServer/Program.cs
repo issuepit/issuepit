@@ -1,5 +1,20 @@
 using IssuePit.McpServer;
 
+// Bind on all interfaces (0.0.0.0) instead of localhost so Docker containers can reach the
+// MCP server via host.docker.internal. Aspire sets ASPNETCORE_URLS to http://localhost:{port};
+// we replace the hostname before ASP.NET Core reads the configuration so the change takes effect.
+// This is safe because the MCP server relies on application-level authentication (tenant headers).
+{
+    var aspNetCoreUrls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
+    if (!string.IsNullOrEmpty(aspNetCoreUrls))
+    {
+        var allInterfacesUrls = aspNetCoreUrls
+            .Replace("localhost", "0.0.0.0", StringComparison.OrdinalIgnoreCase)
+            .Replace("127.0.0.1", "0.0.0.0");
+        Environment.SetEnvironmentVariable("ASPNETCORE_URLS", allInterfacesUrls);
+    }
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
