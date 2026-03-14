@@ -250,9 +250,10 @@ public class CiCdWorker(
             var runtime = runtimeFactory.Create(trigger.RuntimeOverride);
 
             // Log run parameters so they are visible in the log output
-            await AppendLogAsync(run.Id,
-                $"[INFO] Run started — event: {run.EventName ?? "push"}, commit: {run.CommitSha}",
-                LogStream.Stdout, db, stoppingToken);
+            var startLine = $"[INFO] Run started — event: {run.EventName ?? "push"}, commit: {run.CommitSha}";
+            if (!string.IsNullOrEmpty(run.Branch))
+                startLine += $", branch: {run.Branch}";
+            await AppendLogAsync(run.Id, startLine, LogStream.Stdout, db, stoppingToken);
             if (!string.IsNullOrEmpty(run.InputsJson))
             {
                 await AppendLogAsync(run.Id,
@@ -326,13 +327,28 @@ public class CiCdWorker(
             semaphore?.Release();
             _activeRuns.TryRemove(run.Id, out _);
             run.EndedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync(stoppingToken);
+            // Note: do NOT save the terminal status here. The status is saved after all
+            // artifact/test-result processing completes (see below) to prevent a race condition
+            // where HTTP clients poll the run as "Succeeded" before the artifact rows exist.
 
-            // For Docker runs the artifact directory is intentionally empty (no volume mount).
-            // The container has already uploaded the raw artifact files to S3 under
-            // artifacts-raw/{runId}/. Download them now so the subsequent parsing steps
-            // (TRX test results, artifact metadata, workflow graph) can proceed as normal.
-            if (artifactStorage.IsConfigured && !Directory.EnumerateFileSystemEntries(artifactDir).Any())
+            // Upload raw artifacts to S3 from the CiCdClient process (which has S3 access).
+            // This replaces the previous approach of running s5cmd inside the helper-act container:
+            // the container could not reliably reach the S3 endpoint (e.g. LocalStack on the Aspire
+            // Docker network is not reachable from inside the spawned act container). The cicdClient
+            // process always has access to S3, so the upload is done here instead.
+            if (artifactStorage.IsConfigured && Directory.Exists(artifactDir) &&
+                Directory.EnumerateFileSystemEntries(artifactDir).Any())
+            {
+                var uploaded = await UploadRawArtifactsToS3Async(run.Id, artifactDir, stoppingToken);
+                if (uploaded > 0)
+                    logger.LogInformation("Uploaded {Count} raw artifact file(s) to S3 for run {RunId}", uploaded, run.Id);
+            }
+
+            // If the artifact directory is still empty at this point (e.g. crash recovery: the
+            // cicdClient restarted after a previous S3 upload but before processing), download the
+            // raw artifacts that were uploaded in a prior attempt.
+            if (artifactStorage.IsConfigured && Directory.Exists(artifactDir) &&
+                !Directory.EnumerateFileSystemEntries(artifactDir).Any())
             {
                 var downloaded = await DownloadRawArtifactsFromS3Async(run.Id, artifactDir, stoppingToken);
                 if (downloaded > 0)
@@ -348,12 +364,21 @@ public class CiCdWorker(
             // Parse workflow graph from workflow files copied during the clone step.
             await ParseAndStoreWorkflowGraphAsync(run.Id, artifactDir, db, stoppingToken);
 
+            // Save the terminal run status (Succeeded / Failed / Cancelled) and EndedAt.
+            // This is intentionally deferred until after all ParseAndStore* calls so that
+            // HTTP clients polling the run status never observe "Succeeded" before the
+            // artifact and test-result rows are committed to the database.
+            // (ParseAndStore* methods may also call db.SaveChangesAsync internally, which
+            // incidentally persists the run entity — the explicit save here is the guaranteed
+            // fallback for runs that produced no artifacts or test results.)
+            await db.SaveChangesAsync(stoppingToken);
+
             // Clean up the artifact directory now that results have been collected.
             try { Directory.Delete(artifactDir, recursive: true); }
             catch (Exception ex) { logger.LogDebug(ex, "Could not clean up artifact directory {Dir} for run {RunId}", artifactDir, run.Id); }
 
-            // Delete the raw S3 artifacts that were downloaded; the processed ZIPs uploaded by
-            // ParseAndStoreArtifactsAsync are the canonical download artifacts.
+            // Delete the raw S3 artifacts now that they have been processed; the processed ZIPs
+            // uploaded by ParseAndStoreArtifactsAsync are the canonical download artifacts.
             if (artifactStorage.IsConfigured)
             {
                 try { await artifactStorage.DeleteRawArtifactsAsync(run.Id, stoppingToken); }
@@ -363,6 +388,27 @@ public class CiCdWorker(
             // Notify clients that the run has completed
             await PublishLogLineAsync(run.Id.ToString(),
                 JsonSerializer.Serialize(new { @event = "run-completed", status = run.Status.ToString() }));
+        }
+    }
+
+    /// <summary>
+    /// Uploads raw artifact files from the local <paramref name="artifactDir"/> to
+    /// <c>artifacts-raw/{runId}/</c> in S3 so they can be recovered on restart if needed.
+    /// Best-effort: errors are logged but never propagated.
+    /// </summary>
+    private async Task<int> UploadRawArtifactsToS3Async(
+        Guid runId,
+        string artifactDir,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await artifactStorage.UploadRawArtifactsAsync(runId, artifactDir, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to upload raw artifacts to S3 for run {RunId}", runId);
+            return 0;
         }
     }
 
@@ -655,10 +701,11 @@ public class CiCdWorker(
         CancellationToken cancellationToken)
     {
         // Try to parse act's JSON log format (enabled by --json flag).
-        // act uses logrus JSON format: {"level":"info","msg":"...","jobID":"build","stage":"Set up job","time":"..."}
-        // Note: act also emits a "job" field with the workflow-qualified name (e.g. "CI/build") — we
-        // prefer the "jobID" field (plain job name, e.g. "build") so that callers can filter by job
-        // name without knowing the workflow prefix.
+        // act uses logrus JSON format: {"level":"info","msg":"...","jobID":"build","job":"CI/build","stage":"Set up job","time":"..."}
+        // We prefer the "job" field (workflow-qualified name, e.g. "Deploy GitHub Pages/Build" or
+        // "CI/Backend CI/Build") over "jobID" (plain YAML key, e.g. "build") because the qualified
+        // name is needed by the frontend's fuzzy matcher to disambiguate same-named jobs from
+        // different workflow files (e.g. "build" exists in both pages.yml and backend.yml).
         var displayLine = line;
         var jobId = (string?)null;
         var stepId = (string?)null;
@@ -672,14 +719,16 @@ public class CiCdWorker(
                 if (root.TryGetProperty("msg", out var msgEl))
                 {
                     displayLine = msgEl.GetString() ?? line;
-                    // Prefer "jobID" (plain job name) over "job" (workflow-qualified name like "CI/build").
-                    if (root.TryGetProperty("jobID", out var jobIdEl))
-                        jobId = jobIdEl.GetString();
-                    else if (root.TryGetProperty("job", out var jobEl))
-                        jobId = jobEl.GetString();
+                    // Prefer "job" (workflow-qualified name like "CI/Backend CI/Build") over "jobID"
+                    // (plain YAML key like "build") so same-named jobs in different workflow files
+                    // can be disambiguated by the frontend fuzzy matcher.
+                    if (root.TryGetProperty("job", out var jobEl))
+                        jobId = jobEl.GetString()?.Trim();
+                    else if (root.TryGetProperty("jobID", out var jobIdEl))
+                        jobId = jobIdEl.GetString()?.Trim();
                     // Extract step name from the 'stage' field (e.g. "Set up job", "Main actions/checkout@v4").
                     if (root.TryGetProperty("stage", out var stageEl))
-                        stepId = stageEl.GetString();
+                        stepId = stageEl.GetString()?.Trim();
                     // Remap stream from act JSON level only if the original stream was stdout;
                     // if the container already routed the line to stderr, trust that.
                     if (stream == LogStream.Stdout &&

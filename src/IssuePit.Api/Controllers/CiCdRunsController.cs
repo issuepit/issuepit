@@ -18,7 +18,8 @@ public class CiCdRunsController(
     IProducer<string, string> producer,
     IHubContext<ProjectHub> projectHub,
     CiCdRunQueueService runQueue,
-    ImageStorageService imageStorage) : ControllerBase
+    ImageStorageService imageStorage,
+    GitService gitService) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetRuns([FromQuery] Guid? projectId)
@@ -69,6 +70,7 @@ public class CiCdRunsController(
                 r.Id,
                 r.ProjectId,
                 r.AgentSessionId,
+                r.RetryOfRunId,
                 r.CommitSha,
                 r.Branch,
                 r.Workflow,
@@ -87,8 +89,126 @@ public class CiCdRunsController(
         return run is null ? NotFound() : Ok(run);
     }
 
+    /// <summary>
+    /// Returns runs that are related to the given run:
+    /// retries of the same original run, the run that was retried to produce this run,
+    /// the agent session that triggered this run, and other runs on the same commit SHA.
+    /// </summary>
+    [HttpGet("{id:guid}/linked")]
+    public async Task<IActionResult> GetLinkedRuns(Guid id)
+    {
+        var run = await db.CiCdRuns
+            .Include(r => r.Project)
+            .Where(r => r.Id == id && r.Project.Organization.TenantId == tenant.CurrentTenant!.Id)
+            .Select(r => new { r.Id, r.ProjectId, r.CommitSha, r.AgentSessionId, r.RetryOfRunId })
+            .FirstOrDefaultAsync();
+
+        if (run is null) return NotFound();
+
+        var results = new List<object>();
+
+        // 1. The original run that was retried to produce this one.
+        if (run.RetryOfRunId.HasValue)
+        {
+            var original = await db.CiCdRuns
+                .Where(r => r.Id == run.RetryOfRunId.Value && r.ProjectId == run.ProjectId)
+                .Select(r => new
+                {
+                    r.Id,
+                    r.ProjectId,
+                    r.CommitSha,
+                    r.Branch,
+                    r.Workflow,
+                    r.Status,
+                    StatusName = r.Status.ToString(),
+                    r.StartedAt,
+                    r.EndedAt,
+                    LinkType = "retry-of",
+                    LinkLabel = "Retried from",
+                })
+                .FirstOrDefaultAsync();
+            if (original is not null)
+                results.Add(original);
+        }
+
+        // 2. Runs that are retries of this run (direct children).
+        var retries = await db.CiCdRuns
+            .Where(r => r.RetryOfRunId == id && r.ProjectId == run.ProjectId)
+            .OrderBy(r => r.StartedAt)
+            .Select(r => new
+            {
+                r.Id,
+                r.ProjectId,
+                r.CommitSha,
+                r.Branch,
+                r.Workflow,
+                r.Status,
+                StatusName = r.Status.ToString(),
+                r.StartedAt,
+                r.EndedAt,
+                LinkType = "retry",
+                LinkLabel = "Retry",
+            })
+            .ToListAsync();
+        results.AddRange(retries.Cast<object>());
+
+        // 3. Agent session that triggered this run.
+        if (run.AgentSessionId.HasValue)
+        {
+            var session = await db.AgentSessions
+                .Include(s => s.Issue)
+                .Where(s => s.Id == run.AgentSessionId.Value)
+                .Select(s => new
+                {
+                    s.Id,
+                    ProjectId = run.ProjectId,
+                    IssueTitle = s.Issue.Title,
+                    IssueNumber = s.Issue.Number,
+                    s.CommitSha,
+                    GitBranch = s.GitBranch,
+                    s.Status,
+                    StatusName = s.Status.ToString(),
+                    s.StartedAt,
+                    s.EndedAt,
+                    LinkType = "agent-triggered",
+                    LinkLabel = "Agent Session",
+                })
+                .FirstOrDefaultAsync();
+            if (session is not null)
+                results.Add(session);
+        }
+
+        // 4. Other runs on the same commit SHA (excluding this run and already-listed retries).
+        var alreadyListed = retries.Select(r => r.Id).Append(run.RetryOfRunId ?? Guid.Empty).ToHashSet();
+        var sameCommit = await db.CiCdRuns
+            .Where(r => r.CommitSha == run.CommitSha
+                && r.ProjectId == run.ProjectId
+                && r.Id != id
+                && !alreadyListed.Contains(r.Id))
+            .OrderByDescending(r => r.StartedAt)
+            .Take(10)
+            .Select(r => new
+            {
+                r.Id,
+                r.ProjectId,
+                r.CommitSha,
+                r.Branch,
+                r.Workflow,
+                r.Status,
+                StatusName = r.Status.ToString(),
+                r.StartedAt,
+                r.EndedAt,
+                LinkType = "same-sha",
+                LinkLabel = "Same commit",
+            })
+            .ToListAsync();
+        results.AddRange(sameCommit.Cast<object>());
+
+        return Ok(results);
+    }
+
     [HttpGet("{id:guid}/logs")]
-    public async Task<IActionResult> GetLogs(Guid id, [FromQuery] LogStream? stream)
+    public async Task<IActionResult> GetLogs(Guid id, [FromQuery] LogStream? stream, [FromQuery] string? jobId)
     {
         // Verify the run belongs to this tenant
         var runExists = await db.CiCdRuns
@@ -103,6 +223,10 @@ public class CiCdRunsController(
 
         if (stream.HasValue)
             query = query.Where(l => l.Stream == stream.Value);
+
+        // Filter by the exact stored jobId (act's qualified name, e.g. "CI/build").
+        if (!string.IsNullOrEmpty(jobId))
+            query = query.Where(l => l.JobId == jobId);
 
         var logs = await query
             .Select(l => new { l.Id, l.Line, l.Stream, StreamName = l.Stream.ToString(), l.JobId, l.StepId, l.Timestamp })
@@ -302,8 +426,12 @@ public class CiCdRunsController(
 
         if (!runExists) return NotFound();
 
+        // Match exact JobId OR a workflow-qualified name ending with "/<jobId>" (e.g. "CI/build" for jobId="build").
+        // The act `job` field stores the workflow-qualified name (e.g. "CI/build"); callers may pass the
+        // plain YAML key ("build") which is the trailing segment after the last "/".
+        var suffix = "/" + jobId;
         var query = db.CiCdRunLogs
-            .Where(l => l.CiCdRunId == id && l.JobId == jobId)
+            .Where(l => l.CiCdRunId == id && (l.JobId == jobId || l.JobId!.EndsWith(suffix)))
             .OrderBy(l => l.Timestamp)
             .AsQueryable();
 
@@ -332,9 +460,10 @@ public class CiCdRunsController(
 
         if (!runExists) return NotFound();
 
-        // Return steps in the order they first appeared, excluding null step IDs.
+        // Match exact JobId OR a workflow-qualified name ending with "/<jobId>" (same as GetJobLogs).
+        var suffix = "/" + jobId;
         var steps = await db.CiCdRunLogs
-            .Where(l => l.CiCdRunId == id && l.JobId == jobId && l.StepId != null)
+            .Where(l => l.CiCdRunId == id && (l.JobId == jobId || l.JobId!.EndsWith(suffix)) && l.StepId != null)
             .GroupBy(l => l.StepId!)
             .Select(g => new { StepId = g.Key, FirstSeen = g.Min(l => l.Timestamp) })
             .OrderBy(s => s.FirstSeen)
@@ -491,15 +620,17 @@ public class CiCdRunsController(
         var retryRepo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == run.ProjectId);
 
         // Create the new run record immediately (Pending) so it shows as queued in the UI.
+        // Retries are user-initiated so they bypass RequiresRunApproval.
         var newRun = await runQueue.EnqueueAsync(
             projectId: run.ProjectId,
             commitSha: run.CommitSha,
             branch: run.Branch,
             workflow: run.Workflow,
-            eventName: run.EventName ?? "push",
+            eventName: !string.IsNullOrWhiteSpace(options?.EventName) ? options.EventName : (run.EventName ?? "push"),
             inputs: null,
             gitRepoUrl: retryRepo?.RemoteUrl,
             agentSessionId: run.AgentSessionId,
+            retryOfRunId: run.Id,
             extraPayload: new
             {
                 keepContainerOnFailure = options?.KeepContainerOnFailure ?? false,
@@ -509,7 +640,8 @@ public class CiCdRunsController(
                 customEntrypoint = options?.CustomEntrypoint,
                 customArgs = options?.CustomArgs,
                 actRunnerImage = options?.ActRunnerImage,
-            });
+            },
+            userTriggered: true);
 
         return Accepted(new { retriedRunId = newRun.Id });
     }
@@ -525,8 +657,8 @@ public class CiCdRunsController(
         if (request.ProjectId == Guid.Empty)
             return BadRequest(new { error = "projectId is required" });
 
-        if (string.IsNullOrWhiteSpace(request.CommitSha))
-            return BadRequest(new { error = "commitSha is required" });
+        if (string.IsNullOrWhiteSpace(request.CommitSha) && string.IsNullOrWhiteSpace(request.Branch))
+            return BadRequest(new { error = "commitSha or branch is required" });
 
         if (string.IsNullOrWhiteSpace(request.EventName))
             return BadRequest(new { error = "eventName is required" });
@@ -541,18 +673,27 @@ public class CiCdRunsController(
         // The container clones the repo inside itself — no host workspace path is needed.
         var repo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == request.ProjectId);
 
+        // When only a branch is given (no commit SHA), resolve the branch tip SHA from the local
+        // clone so the run record has a meaningful commit identifier. Fall back to the branch name
+        // itself when the local clone is unavailable.
+        var commitSha = !string.IsNullOrWhiteSpace(request.CommitSha)
+            ? request.CommitSha
+            : (repo is not null ? gitService.GetBranchTipSha(repo, request.Branch!) : null) ?? request.Branch!;
+
         // Create the run record immediately (Pending) so it shows as queued in the UI.
+        // Manual triggers are user-initiated so they bypass RequiresRunApproval.
         var newRun = await runQueue.EnqueueAsync(
             projectId: request.ProjectId,
-            commitSha: request.CommitSha,
+            commitSha: commitSha,
             branch: request.Branch,
             workflow: request.Workflow,
             eventName: request.EventName,
             inputs: request.Inputs,
             gitRepoUrl: repo?.RemoteUrl,
-            extraPayload: string.IsNullOrWhiteSpace(request.CustomImage) ? null : new { customImage = request.CustomImage });
+            extraPayload: string.IsNullOrWhiteSpace(request.CustomImage) ? null : new { customImage = request.CustomImage },
+            userTriggered: true);
 
-        return Accepted(new { runId = newRun.Id, projectId = request.ProjectId, commitSha = request.CommitSha, eventName = request.EventName });
+        return Accepted(new { runId = newRun.Id, projectId = request.ProjectId, commitSha, eventName = request.EventName });
     }
 
     [HttpPost("{id:guid}/cancel")]
@@ -564,7 +705,7 @@ public class CiCdRunsController(
 
         if (run is null) return NotFound();
 
-        if (run.Status is not (CiCdRunStatus.Pending or CiCdRunStatus.Running))
+        if (run.Status is not (CiCdRunStatus.Pending or CiCdRunStatus.Running or CiCdRunStatus.WaitingForApproval))
             return Conflict(new { error = "Run is already in a terminal state.", run.Status, StatusName = run.Status.ToString() });
 
         run.Status = CiCdRunStatus.Cancelled;
@@ -581,6 +722,27 @@ public class CiCdRunsController(
         await NotifyRunsUpdated(run);
 
         return Ok(new { run.Id, run.Status, StatusName = run.Status.ToString() });
+    }
+
+    /// <summary>
+    /// Approves a CI/CD run that is in <c>WaitingForApproval</c> status, transitioning it to
+    /// <c>Pending</c> and dispatching it to the CI/CD worker via Kafka.
+    /// </summary>
+    [HttpPost("{id:guid}/approve")]
+    public async Task<IActionResult> ApproveRun(Guid id)
+    {
+        // Verify the run belongs to the current tenant before approving.
+        var runExists = await db.CiCdRuns
+            .AnyAsync(r => r.Id == id && r.Project.Organization.TenantId == tenant.CurrentTenant!.Id);
+
+        if (!runExists) return NotFound();
+
+        var approved = await runQueue.ApproveAsync(id);
+
+        if (approved is null)
+            return Conflict(new { error = "Run is not in WaitingForApproval state.", id });
+
+        return Ok(new { approved.Id, approved.Status, StatusName = approved.Status.ToString() });
     }
 
     private static CiCdRunStatus MapExternalStatus(string? status, string? conclusion) =>
@@ -620,7 +782,9 @@ public record RetryRunOptions(
     /// <summary>Additional CLI arguments appended to the act command.</summary>
     string? CustomArgs = null,
     /// <summary>Override the act runner image used by act for platform mapping (e.g. ubuntu-latest). Null or empty = use project/org/global default.</summary>
-    string? ActRunnerImage = null);
+    string? ActRunnerImage = null,
+    /// <summary>Override the event/trigger name (e.g. "push", "pull_request"). Null or empty = use the original run's event name.</summary>
+    string? EventName = null);
 
 /// <summary>Request body for the external CI/CD sync endpoint.</summary>
 public record ExternalSyncRequest(
@@ -640,8 +804,10 @@ public record ExternalSyncRequest(
 /// <summary>Request body for the manual trigger endpoint.</summary>
 public record TriggerRunRequest(
     Guid ProjectId,
-    string CommitSha,
+    /// <summary>Commit SHA to run against. Either this or <see cref="Branch"/> must be provided.</summary>
+    string? CommitSha,
     string EventName,
+    /// <summary>Branch name. When <see cref="CommitSha"/> is omitted the branch tip is resolved automatically.</summary>
     string? Branch = null,
     string? Workflow = null,
     /// <summary>Input key-value pairs for workflow_dispatch events.</summary>

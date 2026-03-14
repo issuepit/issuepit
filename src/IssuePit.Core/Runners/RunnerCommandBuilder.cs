@@ -39,8 +39,13 @@ public static class RunnerCommandBuilder
     /// Returns the additional CLI arguments as a raw string list for use with the Docker API.
     /// Suitable for Docker-based runtimes where shell escaping is not needed.
     /// Returns an empty list when no runner type is set (legacy entrypoint behaviour).
+    /// <para>
+    /// When <paramref name="forkSessionId"/> is provided and the runner supports session forking
+    /// (opencode: <c>--session &lt;id&gt; --fork</c>), the fix run will continue from the given
+    /// session so it retains full conversation context and workspace state.
+    /// </para>
     /// </summary>
-    public static IReadOnlyList<string> BuildArgsList(Agent agent, Issue issue)
+    public static IReadOnlyList<string> BuildArgsList(Agent agent, Issue issue, string? forkSessionId = null)
     {
         if (agent.RunnerType is null)
             return [];
@@ -49,7 +54,7 @@ public static class RunnerCommandBuilder
 
         return agent.RunnerType switch
         {
-            RunnerType.OpenCode => BuildOpenCodeArgsList(agent, task),
+            RunnerType.OpenCode => BuildOpenCodeArgsList(agent, task, forkSessionId),
             RunnerType.Codex => BuildCodexArgsList(agent, task),
             RunnerType.GitHubCopilotCli => BuildCopilotArgsList(task),
             _ => [],
@@ -85,21 +90,30 @@ public static class RunnerCommandBuilder
 
     /// <summary>
     /// Build shell-escaped args for the opencode CLI.
-    /// Usage: opencode [--model MODEL] TASK
-    /// https://opencode.ai/docs
+    /// Usage: opencode run [--session ID --fork] [--model MODEL] TASK
+    /// https://opencode.ai/docs/cli/#run-1
     /// </summary>
     private static string BuildOpenCodeArgs(Agent agent, string task)
     {
-        var args = new StringBuilder();
+        var args = new StringBuilder("run");
         if (!string.IsNullOrWhiteSpace(agent.Model))
             args.Append($" --model {EscapeShellArg(agent.Model)}");
         args.Append($" {EscapeShellArg(task)}");
-        return args.ToString().TrimStart();
+        return args.ToString();
     }
 
-    private static IReadOnlyList<string> BuildOpenCodeArgsList(Agent agent, string task)
+    private static IReadOnlyList<string> BuildOpenCodeArgsList(Agent agent, string task, string? forkSessionId = null)
     {
-        var args = new List<string>();
+        var args = new List<string> { "opencode", "run" };
+        if (!string.IsNullOrWhiteSpace(forkSessionId))
+        {
+            // Continue the previous opencode session and fork it so this run is a child branch.
+            // This gives the fix run full conversation context from the session that made the
+            // original changes. https://opencode.ai/docs/cli/#run-1
+            args.Add("--session");
+            args.Add(forkSessionId);
+            args.Add("--fork");
+        }
         if (!string.IsNullOrWhiteSpace(agent.Model))
         {
             args.Add("--model");
@@ -126,7 +140,7 @@ public static class RunnerCommandBuilder
 
     private static IReadOnlyList<string> BuildCodexArgsList(Agent agent, string task)
     {
-        var args = new List<string>();
+        var args = new List<string> { "codex" };
         if (!string.IsNullOrWhiteSpace(agent.Model))
         {
             args.Add("--model");
@@ -148,10 +162,10 @@ public static class RunnerCommandBuilder
 
     private static IReadOnlyList<string> BuildCopilotArgsList(string task) =>
         // GitHub Copilot CLI does not support --model selection at this time
-        ["suggest", task];
+        ["gh", "copilot", "suggest", task];
 
     /// <summary>Formats the issue title and body into a single task prompt string.</summary>
-    private static string BuildTaskPrompt(Issue issue)
+    public static string BuildTaskPrompt(Issue issue)
     {
         var sb = new StringBuilder();
         sb.Append($"Task: {issue.Title}");

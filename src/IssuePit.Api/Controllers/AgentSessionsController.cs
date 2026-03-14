@@ -72,10 +72,35 @@ public class AgentSessionsController(IssuePitDbContext db, TenantContext tenant,
                 Stream = l.Stream.ToString().ToLower(),
                 StreamName = l.Stream.ToString(),
                 l.Timestamp,
+                Section = l.Section != null ? l.Section.ToString() : null,
+                l.SectionIndex,
             })
             .ToListAsync();
 
         return Ok(logs);
+    }
+
+    [HttpPost("{id:guid}/cancel")]
+    public async Task<IActionResult> CancelSession(Guid id)
+    {
+        var session = await db.AgentSessions
+            .Include(s => s.Issue).ThenInclude(i => i.Project)
+            .FirstOrDefaultAsync(s => s.Id == id && s.Issue.Project!.Organization.TenantId == tenant.CurrentTenant!.Id);
+
+        if (session is null) return NotFound();
+
+        if (session.Status is not (AgentSessionStatus.Pending or AgentSessionStatus.Running))
+            return Conflict(new { error = "Only pending or running sessions can be cancelled.", session.Status, StatusName = session.Status.ToString() });
+
+        // Publish a cancel signal to the ExecutionClient. The worker will cancel the session
+        // and update the status to Cancelled via its IssueWorker.RunCancelConsumerAsync handler.
+        await producer.ProduceAsync("agent-cancel", new Message<string, string>
+        {
+            Key = session.Id.ToString(),
+            Value = session.Id.ToString(),
+        });
+
+        return Accepted(new { session.Id, Status = session.Status, StatusName = session.Status.ToString() });
     }
 
     [HttpPost("{id:guid}/retry")]

@@ -221,15 +221,16 @@ var kafkaInitializer = builder.AddProject<Projects.IssuePit_KafkaInitializer>("k
 
 // Vosk speech-recognition model — downloaded once on first run, then reused from the local path.
 // Override with VoiceTranscription__ModelPath env var; defaults to ~/.vosk/vosk-model-small-en-us-0.15.
-// To enable automatic download also set VoiceTranscription__ModelDownloadUrl, e.g.:
-//   VoiceTranscription__ModelDownloadUrl=https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
-// Leave ModelDownloadUrl empty (default) to skip automatic download and avoid network traffic in CI.
+// Override with VoiceTranscription__ModelDownloadUrl to use a different model archive.
+// Defaults to the small English model so voice input works out-of-the-box in local Aspire runs.
+// To disable automatic download (e.g. in CI) set VoiceTranscription__ModelDownloadUrl to an empty string.
 var voskModelPath = Environment.GetEnvironmentVariable("VoiceTranscription__ModelPath")
     ?? Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         ".vosk",
         "vosk-model-small-en-us-0.15");
-var voskModelDownloadUrl = Environment.GetEnvironmentVariable("VoiceTranscription__ModelDownloadUrl") ?? string.Empty;
+var voskModelDownloadUrl = Environment.GetEnvironmentVariable("VoiceTranscription__ModelDownloadUrl")
+    ?? "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip";
 
 var voskModelDownloader = builder.AddProject<Projects.IssuePit_VoskModelDownloader>("vosk-model-downloader")
     .WithEnvironment("VoiceTranscription__ModelPath", voskModelPath)

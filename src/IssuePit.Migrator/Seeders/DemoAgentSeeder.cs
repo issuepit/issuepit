@@ -1,6 +1,7 @@
 using System.Reflection;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
+using IssuePit.Core.Enums;
 
 namespace IssuePit.Migrator.Seeders;
 
@@ -47,10 +48,16 @@ public class DemoAgentSeeder(IssuePitDbContext db)
                 OrgId = orgId,
                 Name = "Plan Agent",
                 SystemPrompt = LoadSystemPrompt("plan-agent.md"),
-                DockerImage = "ghcr.io/issuepit/issuepit-helper-opencode-act:latest",
+                DockerImage = "ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24",
+                RunnerType = RunnerType.OpenCode,
+                IsActive = true,
                 AllowedTools = "[]",
                 CreatedAt = DateTime.UtcNow,
             });
+        // Ensure existing agents also have the runner type set
+        planAgent.RunnerType ??= RunnerType.OpenCode;
+        planAgent.IsActive = true;
+
         var (codeAgent, _) = await db.Agents.AddIfNotExistsAsync(
             a => a.OrgId == orgId && a.Name == "Code Agent",
             new Agent
@@ -59,10 +66,15 @@ public class DemoAgentSeeder(IssuePitDbContext db)
                 OrgId = orgId,
                 Name = "Code Agent",
                 SystemPrompt = LoadSystemPrompt("code-agent.md"),
-                DockerImage = "ghcr.io/issuepit/issuepit-helper-opencode-act:latest",
+                DockerImage = "ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24",
+                RunnerType = RunnerType.OpenCode,
+                IsActive = true,
                 AllowedTools = "[]",
                 CreatedAt = DateTime.UtcNow,
             });
+        codeAgent.RunnerType ??= RunnerType.OpenCode;
+        codeAgent.IsActive = true;
+
         var (evalAgent, _) = await db.Agents.AddIfNotExistsAsync(
             a => a.OrgId == orgId && a.Name == "Evaluate Agent",
             new Agent
@@ -71,10 +83,15 @@ public class DemoAgentSeeder(IssuePitDbContext db)
                 OrgId = orgId,
                 Name = "Evaluate Agent",
                 SystemPrompt = LoadSystemPrompt("evaluate-agent.md"),
-                DockerImage = "ghcr.io/issuepit/issuepit-helper-opencode-act:latest",
+                DockerImage = "ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24",
+                RunnerType = RunnerType.OpenCode,
+                IsActive = true,
                 AllowedTools = "[]",
                 CreatedAt = DateTime.UtcNow,
             });
+        evalAgent.RunnerType ??= RunnerType.OpenCode;
+        evalAgent.IsActive = true;
+
         var (qualityAgent, _) = await db.Agents.AddIfNotExistsAsync(
             a => a.OrgId == orgId && a.Name == "Quality Agent",
             new Agent
@@ -83,10 +100,14 @@ public class DemoAgentSeeder(IssuePitDbContext db)
                 OrgId = orgId,
                 Name = "Quality Agent",
                 SystemPrompt = LoadSystemPrompt("quality-agent.md"),
-                DockerImage = "ghcr.io/issuepit/issuepit-helper-opencode-act:latest",
+                DockerImage = "ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24",
+                RunnerType = RunnerType.OpenCode,
+                IsActive = true,
                 AllowedTools = "[]",
                 CreatedAt = DateTime.UtcNow,
             });
+        qualityAgent.RunnerType ??= RunnerType.OpenCode;
+        qualityAgent.IsActive = true;
         await db.SaveChangesAsync();
 
         // Link all agents to both MCP servers

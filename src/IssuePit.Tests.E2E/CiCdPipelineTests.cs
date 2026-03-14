@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.IO;
+using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -76,6 +78,10 @@ public class CiCdPipelineTests(AspireFixture fixture)
         _ => throw new ArgumentException($"Unknown runtime mode: {runtimeMode}", nameof(runtimeMode)),
     };
 
+    private static string SkipReason(string runtimeMode) =>
+        $"Skipping {runtimeMode} E2E test: CICD_E2E_REPO_PATH not set" +
+        (runtimeMode == NativeRuntime ? " or act not installed" : "") + ".";
+
     private HttpClient CreateCookieClient()
     {
         var handler = new HttpClientHandler { CookieContainer = new System.Net.CookieContainer() };
@@ -151,7 +157,8 @@ public class CiCdPipelineTests(AspireFixture fixture)
     [MemberData(nameof(RuntimeModes))]
     public async Task CiCdRun_RunSucceeds(string runtimeMode)
     {
-        if (!IsReady(runtimeMode)) return;
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip(SkipReason(runtimeMode));
 
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
@@ -165,11 +172,63 @@ public class CiCdPipelineTests(AspireFixture fixture)
         await AssertRunSucceededAsync(client, run, runId);
     }
 
+    /// <summary>
+    /// Verifies that a CI/CD run records the exact branch name and commit SHA that were
+    /// supplied to the trigger endpoint. This ensures that when <c>IssueWorker</c> triggers
+    /// a run after the agent commits, the run is always associated with the correct ref —
+    /// and any subsequent fix-loop iteration can locate the right code.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(RuntimeModes))]
+    public async Task CiCdRun_RecordsCorrectBranchAndCommitSha(string runtimeMode)
+    {
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip(SkipReason(runtimeMode));
+
+        var (client, projectId) = await SetupProjectAsync();
+        using var _ = client;
+
+        const string expectedBranch = "feat/42-add-e2e-branch-check";
+        const string expectedCommitSha = "e2eabc123def456789abcdef0123456789abcdef";
+
+        var workspacePath = runtimeMode == NativeRuntime
+            ? Environment.GetEnvironmentVariable("CICD_E2E_REPO_PATH")
+            : null;
+
+        var triggerResp = await client.PostAsJsonAsync("/api/cicd-runs/trigger", new
+        {
+            projectId = Guid.Parse(projectId),
+            commitSha = expectedCommitSha,
+            eventName = "push",
+            branch = expectedBranch,
+            workflow = "ci.yml",
+            workspacePath,
+            runtimeOverride = runtimeMode,
+        });
+        Assert.Equal(HttpStatusCode.Accepted, triggerResp.StatusCode);
+
+        // Wait for the run to complete (pass or fail — we only care about metadata).
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var runId = run.GetProperty("id").GetString()!;
+
+        // Fetch the run details and verify branch + commitSha were persisted correctly.
+        var runResp = await client.GetAsync($"/api/cicd-runs/{runId}");
+        Assert.Equal(HttpStatusCode.OK, runResp.StatusCode);
+        var runDetail = await runResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        var actualBranch = runDetail.GetProperty("branch").GetString();
+        var actualCommitSha = runDetail.GetProperty("commitSha").GetString();
+
+        Assert.Equal(expectedBranch, actualBranch);
+        Assert.Equal(expectedCommitSha, actualCommitSha);
+    }
+
     [Theory]
     [MemberData(nameof(RuntimeModes))]
     public async Task CiCdRun_CapturesLogsForBothJobs(string runtimeMode)
     {
-        if (!IsReady(runtimeMode)) return;
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip(SkipReason(runtimeMode));
 
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
@@ -190,24 +249,29 @@ public class CiCdPipelineTests(AspireFixture fixture)
         var logEntries = logs.EnumerateArray().ToList();
 
         // Both the build and test jobs should have log entries captured with the correct jobId.
-        // We check the jobId field rather than the line text because act's --json msg content
-        // (e.g. "🚀 Start image=...", "Job succeeded") does not reliably contain the job name.
-        var hasBuildJobLogs = logEntries.Any(l =>
-            l.TryGetProperty("jobId", out var jId) &&
-            "build".Equals(jId.GetString(), StringComparison.OrdinalIgnoreCase));
-        var hasTestJobLogs = logEntries.Any(l =>
-            l.TryGetProperty("jobId", out var jId) &&
-            "test".Equals(jId.GetString(), StringComparison.OrdinalIgnoreCase));
+        // act's "job" field stores workflow-qualified names (e.g. "CI/build" for the "CI" workflow).
+        // We check the full qualified jobId to verify the correct field is being stored.
+        var jobIds = logEntries
+            .Where(l => l.TryGetProperty("jobId", out var jIdEl) && jIdEl.GetString() != null)
+            .Select(l => l.GetProperty("jobId").GetString()!)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        Assert.True(hasBuildJobLogs, "Expected log entries from the 'build' job");
-        Assert.True(hasTestJobLogs, "Expected log entries from the 'test' job");
+        Assert.True(jobIds.Contains("CI/build"),
+            $"Expected log entries with jobId 'CI/build' but found: {string.Join(", ", jobIds)}");
+        Assert.True(jobIds.Contains("CI/test"),
+            $"Expected log entries with jobId 'CI/test' but found: {string.Join(", ", jobIds)}");
+        // Verify plain (unqualified) keys are NOT stored — the fix ensures we use act's "job"
+        // field (qualified) rather than "jobID" (plain YAML key).
+        Assert.DoesNotContain("build", jobIds);
+        Assert.DoesNotContain("test", jobIds);
     }
 
     [Theory]
     [MemberData(nameof(RuntimeModes))]
     public async Task CiCdRun_JobLogsFilterByJobId(string runtimeMode)
     {
-        if (!IsReady(runtimeMode)) return;
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip(SkipReason(runtimeMode));
 
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
@@ -219,18 +283,87 @@ public class CiCdPipelineTests(AspireFixture fixture)
         var runId = run.GetProperty("id").GetString()!;
         await AssertRunSucceededAsync(client, run, runId);
 
-        // Fetch logs filtered to the 'build' job only.
-        var buildLogsResp = await client.GetAsync($"/api/cicd-runs/{runId}/jobs/build/logs");
+        // Discover the actual stored jobId for the build job from all run logs.
+        // act stores the workflow-qualified name (e.g. "CI/build") so we look for a log
+        // entry whose jobId ends with "/build" or is exactly "build".
+        var allLogsResp = await client.GetAsync($"/api/cicd-runs/{runId}/logs");
+        Assert.Equal(HttpStatusCode.OK, allLogsResp.StatusCode);
+        var allLogs = await allLogsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var buildJobId = allLogs.EnumerateArray()
+            .Where(l => l.TryGetProperty("jobId", out var jId) && JobIdMatchesSuffix(jId.GetString(), "build"))
+            .Select(l => l.GetProperty("jobId").GetString()!)
+            .FirstOrDefault();
+        Assert.NotNull(buildJobId);
+
+        // Fetch logs filtered to the discovered full jobId using the query-string parameter,
+        // which supports exact matching on the full qualified name (e.g. "CI/build").
+        var buildLogsResp = await client.GetAsync(
+            $"/api/cicd-runs/{runId}/logs?jobId={Uri.EscapeDataString(buildJobId)}");
         Assert.Equal(HttpStatusCode.OK, buildLogsResp.StatusCode);
         var buildLogs = await buildLogsResp.Content.ReadFromJsonAsync<JsonElement>();
 
         Assert.True(buildLogs.GetArrayLength() > 0, "Expected build job to have log lines");
 
-        // Every returned log line must belong to the 'build' job.
+        // Every returned log line must have the exact full jobId that was used to query.
         foreach (var entry in buildLogs.EnumerateArray())
         {
             var jobId = entry.GetProperty("jobId").GetString();
-            Assert.Equal("build", jobId);
+            Assert.Equal(buildJobId, jobId);
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(RuntimeModes))]
+    public async Task CiCdRun_LogsHaveQualifiedJobIds(string runtimeMode)
+    {
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip(SkipReason(runtimeMode));
+
+        var (client, projectId) = await SetupProjectAsync();
+        using var _ = client;
+
+        // Use the dummy ci.yml workflow (name: "CI", jobs: "build" and "test") so we can assert
+        // the expected qualified jobId format: act's "job" field emits "<WorkflowName>/<jobKey>",
+        // e.g. "CI/build" and "CI/test". This test verifies the full pipeline from act log parsing
+        // in CiCdWorker through to the stored jobId field — the core of the job-mapping fix.
+        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+            BuildTriggerPayload(projectId, "e2e-qualifiedjobid-abc", runtimeMode, "ci.yml"));
+
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
+
+        var logsResp = await client.GetAsync($"/api/cicd-runs/{runId}/logs");
+        Assert.Equal(HttpStatusCode.OK, logsResp.StatusCode);
+        var allLogs = await logsResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        var jobIds = allLogs.EnumerateArray()
+            .Where(l => l.TryGetProperty("jobId", out var jId) && jId.GetString() != null)
+            .Select(l => l.GetProperty("jobId").GetString()!)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // Verify the full workflow-qualified form is stored (not just the plain YAML key).
+        // The dummy workflow is "name: CI" with "build" and "test" jobs, so act emits
+        // jobId="CI/build" and jobId="CI/test" (never plain "build" or "test").
+        Assert.True(jobIds.Contains("CI/build"),
+            $"Expected stored jobId 'CI/build' (qualified) but found: {string.Join(", ", jobIds)}");
+        Assert.True(jobIds.Contains("CI/test"),
+            $"Expected stored jobId 'CI/test' (qualified) but found: {string.Join(", ", jobIds)}");
+        Assert.DoesNotContain("build", jobIds);
+        Assert.DoesNotContain("test", jobIds);
+
+        // Verify that filtering by the full qualified jobId via the ?jobId= query parameter
+        // returns only matching log entries with that exact jobId.
+        var buildFilterResp = await client.GetAsync(
+            $"/api/cicd-runs/{runId}/logs?jobId={Uri.EscapeDataString("CI/build")}");
+        Assert.Equal(HttpStatusCode.OK, buildFilterResp.StatusCode);
+        var buildLogs = await buildFilterResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.True(buildLogs.GetArrayLength() > 0, "Expected log entries for 'CI/build'");
+        foreach (var entry in buildLogs.EnumerateArray())
+        {
+            var storedJobId = entry.GetProperty("jobId").GetString();
+            Assert.Equal("CI/build", storedJobId);
         }
     }
 
@@ -238,7 +371,8 @@ public class CiCdPipelineTests(AspireFixture fixture)
     [MemberData(nameof(RuntimeModes))]
     public async Task CiCdRun_StoresArtifacts(string runtimeMode)
     {
-        if (!IsReady(runtimeMode)) return;
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip(SkipReason(runtimeMode));
 
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
@@ -346,7 +480,8 @@ public class CiCdPipelineTests(AspireFixture fixture)
     [MemberData(nameof(RuntimeModes))]
     public async Task CiCdRun_StoresTrxTestResults(string runtimeMode)
     {
-        if (!IsReady(runtimeMode)) return;
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip(SkipReason(runtimeMode));
 
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
@@ -377,10 +512,221 @@ public class CiCdPipelineTests(AspireFixture fixture)
         Assert.Equal("DummyTest_Passes", testCases[0].GetProperty("methodName").GetString());
     }
 
+    [Theory]
+    [MemberData(nameof(RuntimeModes))]
+    public async Task CiCdRun_ArtifactsHaveStorageKey(string runtimeMode)
+    {
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip(SkipReason(runtimeMode));
+
+        var (client, projectId) = await SetupProjectAsync();
+        using var _ = client;
+
+        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+            BuildTriggerPayload(projectId, "e2e-artifact-key-abc", runtimeMode));
+
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
+
+        var artifacts = await WaitForArtifactsAsync(client, runId, minCount: 1, TimeSpan.FromSeconds(30));
+        Assert.True(artifacts.GetArrayLength() > 0, "Expected at least one artifact");
+
+        // Every artifact must have been uploaded to S3 (non-null/non-empty storageKey).
+        foreach (var artifact in artifacts.EnumerateArray())
+        {
+            var name = artifact.GetProperty("name").GetString();
+            var storageKey = artifact.TryGetProperty("storageKey", out var storageKeyElement) ? storageKeyElement.GetString() : null;
+            Assert.True(!string.IsNullOrEmpty(storageKey),
+                $"Artifact '{name}' is missing a storageKey — it was not uploaded to S3.");
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(RuntimeModes))]
+    public async Task CiCdRun_ArtifactCanBeDownloaded(string runtimeMode)
+    {
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip(SkipReason(runtimeMode));
+
+        var (client, projectId) = await SetupProjectAsync();
+        using var _ = client;
+
+        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+            BuildTriggerPayload(projectId, "e2e-artifact-dl-abc", runtimeMode));
+
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
+
+        var artifacts = await WaitForArtifactsAsync(client, runId, minCount: 1, TimeSpan.FromSeconds(30));
+        Assert.True(artifacts.GetArrayLength() > 0, "Expected at least one artifact");
+
+        // Download the first artifact and verify it is a valid ZIP.
+        var artifactId = artifacts[0].GetProperty("id").GetString()!;
+        var downloadResp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts/{artifactId}/download");
+
+        if (downloadResp.StatusCode == HttpStatusCode.ServiceUnavailable)
+            throw Xunit.Sdk.SkipException.ForSkip("Artifact storage is not configured on this server — skipping download test.");
+
+        Assert.Equal(HttpStatusCode.OK, downloadResp.StatusCode);
+
+        var bytes = await downloadResp.Content.ReadAsByteArrayAsync();
+        Assert.True(bytes.Length > 0, "Downloaded artifact ZIP should not be empty.");
+
+        // The first four bytes of a ZIP file are the PK signature (0x50 0x4B 0x03 0x04).
+        Assert.True(bytes.Length >= 4 && bytes[0] == 0x50 && bytes[1] == 0x4B,
+            "Downloaded file does not have a valid ZIP signature.");
+    }
+
+    [Theory]
+    [MemberData(nameof(RuntimeModes))]
+    public async Task CiCdRun_BuildArtifactContainsExpectedFile(string runtimeMode)
+    {
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip(SkipReason(runtimeMode));
+
+        var (client, projectId) = await SetupProjectAsync();
+        using var _ = client;
+
+        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+            BuildTriggerPayload(projectId, "e2e-artifact-content-abc", runtimeMode));
+
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
+
+        var artifacts = await WaitForArtifactByNameAsync(client, runId, "build-output", TimeSpan.FromSeconds(30));
+
+        // Find the build-output artifact specifically.
+        var buildArtifact = artifacts.EnumerateArray()
+            .FirstOrDefault(a => a.GetProperty("name").GetString() == "build-output");
+        Assert.True(buildArtifact.ValueKind != JsonValueKind.Undefined,
+            "Expected 'build-output' artifact to be present in the run's artifact list.");
+
+        var artifactId = buildArtifact.GetProperty("id").GetString()!;
+        var downloadResp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts/{artifactId}/download");
+
+        if (downloadResp.StatusCode == HttpStatusCode.ServiceUnavailable)
+            throw Xunit.Sdk.SkipException.ForSkip("Artifact storage is not configured on this server — skipping content test.");
+
+        Assert.Equal(HttpStatusCode.OK, downloadResp.StatusCode);
+
+        var zipBytes = await downloadResp.Content.ReadAsByteArrayAsync();
+        using var zipStream = new MemoryStream(zipBytes);
+        using var zip = new ZipArchive(zipStream, ZipArchiveMode.Read);
+
+        // The dummy workflow uploads build-output.txt; verify it is present and non-empty.
+        var entry = zip.Entries.FirstOrDefault(e =>
+            e.Name.Equals("build-output.txt", StringComparison.OrdinalIgnoreCase));
+        Assert.NotNull(entry);
+        Assert.True(entry!.Length > 0, "build-output.txt inside the artifact ZIP should not be empty.");
+
+        using var entryStream = entry.Open();
+        using var reader = new StreamReader(entryStream);
+        var content = await reader.ReadToEndAsync();
+        Assert.Contains("Build succeeded", content);
+    }
+
+    [Theory]
+    [MemberData(nameof(RuntimeModes))]
+    public async Task CiCdRun_TestArtifactContainsTrxFile(string runtimeMode)
+    {
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip(SkipReason(runtimeMode));
+
+        var (client, projectId) = await SetupProjectAsync();
+        using var _ = client;
+
+        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+            BuildTriggerPayload(projectId, "e2e-artifact-trx-abc", runtimeMode));
+
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
+
+        var artifacts = await WaitForArtifactByNameAsync(client, runId, "test-results", TimeSpan.FromSeconds(30));
+
+        // Find the test-results artifact specifically.
+        var testArtifact = artifacts.EnumerateArray()
+            .FirstOrDefault(a => a.GetProperty("name").GetString() == "test-results");
+        Assert.True(testArtifact.ValueKind != JsonValueKind.Undefined,
+            "Expected 'test-results' artifact to be present in the run's artifact list.");
+
+        var artifactId = testArtifact.GetProperty("id").GetString()!;
+        var downloadResp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts/{artifactId}/download");
+
+        if (downloadResp.StatusCode == HttpStatusCode.ServiceUnavailable)
+            throw Xunit.Sdk.SkipException.ForSkip("Artifact storage is not configured on this server — skipping content test.");
+
+        Assert.Equal(HttpStatusCode.OK, downloadResp.StatusCode);
+
+        var zipBytes = await downloadResp.Content.ReadAsByteArrayAsync();
+        using var zipStream = new MemoryStream(zipBytes);
+        using var zip = new ZipArchive(zipStream, ZipArchiveMode.Read);
+
+        // The dummy workflow uploads TestResults/test-results.trx; verify a .trx file is present.
+        var trxEntry = zip.Entries.FirstOrDefault(e =>
+            e.Name.EndsWith(".trx", StringComparison.OrdinalIgnoreCase));
+        Assert.NotNull(trxEntry);
+
+        using var entryStream = trxEntry!.Open();
+        using var reader = new StreamReader(entryStream);
+        var trxContent = await reader.ReadToEndAsync();
+        Assert.Contains("DummyTest_Passes", trxContent);
+    }
+
     /// <summary>
-    /// Polls <c>GET /api/cicd-runs?projectId={id}</c> until the most-recent run reaches a
-    /// terminal status (Succeeded, Failed, or Cancelled) or the timeout elapses.
+    /// Verifies that the trigger endpoint accepts a branch name without a commit SHA and
+    /// queues the run, storing the branch in the run record.
     /// </summary>
+    [Fact]
+    public async Task TriggerRun_ByBranchOnly_ReturnsAcceptedAndStoresBranch()
+    {
+        var (client, projectId) = await SetupProjectAsync();
+        using var _ = client;
+
+        // Trigger with branch only — no commitSha provided.
+        var triggerResp = await client.PostAsJsonAsync("/api/cicd-runs/trigger", new
+        {
+            projectId = Guid.Parse(projectId),
+            eventName = "push",
+            branch = "main",
+        });
+
+        Assert.Equal(HttpStatusCode.Accepted, triggerResp.StatusCode);
+
+        var body = await triggerResp.Content.ReadFromJsonAsync<JsonElement>();
+        var runId = body.GetProperty("runId").GetString()!;
+
+        // Fetch the created run and verify the branch field is set.
+        var runResp = await client.GetAsync($"/api/cicd-runs/{runId}");
+        Assert.Equal(HttpStatusCode.OK, runResp.StatusCode);
+        var run = await runResp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("main", run.GetProperty("branch").GetString());
+        // CommitSha should be populated (either resolved tip or fallback to branch name).
+        var commitSha = run.GetProperty("commitSha").GetString();
+        Assert.False(string.IsNullOrEmpty(commitSha), "Expected a non-empty commitSha in the run record");
+    }
+
+    /// <summary>
+    /// Verifies that the trigger endpoint rejects requests that provide neither a commit SHA
+    /// nor a branch name.
+    /// </summary>
+    [Fact]
+    public async Task TriggerRun_NeitherShaOrBranch_ReturnsBadRequest()
+    {
+        var (client, projectId) = await SetupProjectAsync();
+        using var _ = client;
+
+        var triggerResp = await client.PostAsJsonAsync("/api/cicd-runs/trigger", new
+        {
+            projectId = Guid.Parse(projectId),
+            eventName = "push",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, triggerResp.StatusCode);
+    }
     private static async Task<JsonElement> WaitForRunOfProjectAsync(
         HttpClient client,
         string projectId,
@@ -407,6 +753,59 @@ public class CiCdPipelineTests(AspireFixture fixture)
         }
 
         throw new TimeoutException($"No completed CI/CD run found for project {projectId} within {timeout}.");
+    }
+
+    /// <summary>
+    /// Polls <c>GET /api/cicd-runs/{runId}/artifacts</c> until at least
+    /// <paramref name="minCount"/> artifacts are returned, or the timeout elapses.
+    /// This is needed because the worker saves the run's terminal status before finishing
+    /// the artifact processing, so the artifacts may not be immediately visible after the
+    /// run reaches a terminal state.
+    /// </summary>
+    private static async Task<JsonElement> WaitForArtifactsAsync(
+        HttpClient client,
+        string runId,
+        int minCount,
+        TimeSpan timeout)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var last = default(JsonElement);
+        while (sw.Elapsed < timeout)
+        {
+            var resp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts");
+            resp.EnsureSuccessStatusCode();
+            last = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            if (last.GetArrayLength() >= minCount)
+                return last;
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+        }
+
+        return last; // callers will assert on the content
+    }
+
+    /// <summary>
+    /// Polls <c>GET /api/cicd-runs/{runId}/artifacts</c> until an artifact with
+    /// <paramref name="name"/> appears in the list, or the timeout elapses.
+    /// </summary>
+    private static async Task<JsonElement> WaitForArtifactByNameAsync(
+        HttpClient client,
+        string runId,
+        string name,
+        TimeSpan timeout)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var last = default(JsonElement);
+        while (sw.Elapsed < timeout)
+        {
+            var resp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts");
+            resp.EnsureSuccessStatusCode();
+            last = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            if (last.EnumerateArray().Any(a => a.GetProperty("name").GetString() == name))
+                return last;
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+        }
+
+        return last; // callers will assert on the content
     }
 
     /// <summary>
@@ -452,4 +851,16 @@ public class CiCdPipelineTests(AspireFixture fixture)
             $"Expected run status 'Succeeded' but was '{statusName}' (runId: {runId}).\n" +
             $"Last act log lines:\n{logTail}");
     }
+
+    /// <summary>
+    /// Returns <c>true</c> when <paramref name="jobId"/> equals <paramref name="suffix"/>
+    /// (case-insensitive) or ends with <c>"/{suffix}"</c>.
+    /// act's <c>job</c> JSON field stores workflow-qualified names (e.g. <c>"CI/build"</c>),
+    /// so callers that only know the plain YAML key need suffix matching.
+    /// </summary>
+    private static bool JobIdMatchesSuffix(string? jobId, string suffix) =>
+        jobId != null &&
+        (jobId.Equals(suffix, StringComparison.OrdinalIgnoreCase) ||
+         jobId.EndsWith("/" + suffix, StringComparison.OrdinalIgnoreCase));
 }
+

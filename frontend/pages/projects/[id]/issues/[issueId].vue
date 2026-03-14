@@ -453,10 +453,7 @@
                       class="hover:bg-gray-800/30 transition-colors cursor-pointer"
                       @click="navigateTo(`/projects/${actualProjectId}/runs/agent-sessions/${session.id}`)">
                       <td class="px-3 py-2">
-                        <span :class="agentStatusClass(session.status)" class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium">
-                          <span :class="agentStatusDot(session.status)" class="w-1.5 h-1.5 rounded-full" />
-                          {{ session.statusName }}
-                        </span>
+                        <AgentSessionStatusChip :session="session" />
                       </td>
                       <td class="px-3 py-2 text-gray-300 text-xs">{{ session.agentName }}</td>
                       <td class="px-3 py-2 text-gray-400 font-mono text-xs">{{ session.gitBranch || '—' }}</td>
@@ -629,6 +626,24 @@
               <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Due</p>
               <p class="text-xs text-gray-400">{{ formatDate(store.currentIssue.dueDate) }}</p>
             </div>
+
+            <!-- GitHub Issue -->
+            <div v-if="store.currentIssue.gitHubIssueUrl || store.currentIssue.gitHubIssueNumber">
+              <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">GitHub Issue</p>
+              <a
+                v-if="store.currentIssue.gitHubIssueUrl"
+                :href="store.currentIssue.gitHubIssueUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-xs text-brand-400 hover:text-brand-300 flex items-center gap-1"
+              >
+                <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" />
+                </svg>
+                #{{ store.currentIssue.gitHubIssueNumber }}
+              </a>
+              <span v-else class="text-xs text-gray-400">#{{ store.currentIssue.gitHubIssueNumber }}</span>
+            </div>
           </div>
 
           <!-- Delete -->
@@ -700,7 +715,7 @@
         <!-- Recording controls -->
         <div class="flex flex-col items-center gap-4 mb-5">
           <button
-            v-if="!voice.recording.value && !voice.uploading.value && !voice.transcription.value"
+            v-if="!voice.recording.value && !voice.uploading.value && !voiceRecordingDone"
             @click="startVoiceRecording"
             class="w-16 h-16 rounded-full bg-brand-600 hover:bg-brand-700 flex items-center justify-center transition-colors shadow-lg">
             <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -708,7 +723,7 @@
                 d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 016 0v6a3 3 0 01-3 3z" />
             </svg>
           </button>
-          <p v-if="!voice.recording.value && !voice.uploading.value && !voice.transcription.value"
+          <p v-if="!voice.recording.value && !voice.uploading.value && !voiceRecordingDone"
             class="text-sm text-gray-400">Click to start recording</p>
 
           <div v-if="voice.recording.value" class="flex flex-col items-center gap-3">
@@ -736,12 +751,17 @@
             <textarea v-model="voice.transcription.value" rows="4" placeholder="Transcription will appear here…"
               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"></textarea>
           </div>
+          <!-- Transcription warning (no model configured, no speech detected, or error from backend) -->
+          <p v-if="voice.transcriptionWarning.value && !voice.transcription.value"
+            class="text-xs text-amber-400">
+            {{ voice.transcriptionWarning.value }}
+          </p>
         </div>
 
         <p v-if="voice.error.value" class="text-sm text-red-400 mb-4">{{ voice.error.value }}</p>
 
         <div class="flex gap-3">
-          <button v-if="voice.transcription.value" @click="submitVoiceCreate"
+          <button v-if="voiceRecordingDone && !voice.uploading.value" @click="submitVoiceCreate"
             class="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
             Create Issue
           </button>
@@ -758,7 +778,7 @@
 <script setup lang="ts">
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { IssueStatus, IssueType, IssueLinkType, IssueLinkTypeLabels, IssueEventTypeLabels, AgentSessionStatus } from '~/types'
+import { IssueStatus, IssueType, IssueLinkType, IssueLinkTypeLabels, IssueEventTypeLabels } from '~/types'
 import type { IssuePriority } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
 import { useLabelsStore } from '~/stores/labels'
@@ -766,7 +786,6 @@ import { useAgentsStore } from '~/stores/agents'
 import { useMilestonesStore } from '~/stores/milestones'
 import { useProjectsStore } from '~/stores/projects'
 import { formatIssueId } from '~/composables/useIssueFormat'
-
 const route = useRoute()
 const router = useRouter()
 const id = route.params.id as string
@@ -781,6 +800,9 @@ const milestonesStore = useMilestonesStore()
 const projectsStore = useProjectsStore()
 const api = useApi()
 const { uploading: uploadingImage, uploadError: uploadImageError, handlePaste: handleImagePaste } = useImageUpload()
+
+// SignalR: connect to project hub to receive RunsUpdated events (live agent session refresh)
+const { connection: projectConnection, connect: connectProject } = useSignalR('/hubs/project')
 
 const descDragOver = ref(false)
 const commentDragOver = ref(false)
@@ -972,6 +994,17 @@ onMounted(async () => {
   } catch (e) {
     console.error('Failed to fetch org issues for link selector', e)
   }
+
+  // Connect to project hub for real-time agent session updates
+  await connectProject()
+  if (projectConnection.value) {
+    await projectConnection.value.invoke('JoinProject', actualProjectId.value).catch((e: unknown) => {
+      console.warn('Failed to join project group for issue page', e)
+    })
+    projectConnection.value.on('RunsUpdated', () => {
+      store.fetchIssueRuns(resolvedIssueId.value)
+    })
+  }
 })
 
 const availableLabels = computed(() => {
@@ -1149,26 +1182,6 @@ function statusColor(status: IssueStatus) {
   return map[status] ?? 'bg-gray-500'
 }
 
-function agentStatusClass(status: AgentSessionStatus) {
-  switch (status) {
-    case AgentSessionStatus.Succeeded: return 'bg-green-900/30 text-green-400'
-    case AgentSessionStatus.Running: return 'bg-blue-900/30 text-blue-400'
-    case AgentSessionStatus.Failed: return 'bg-red-900/30 text-red-400'
-    case AgentSessionStatus.Cancelled: return 'bg-gray-800 text-gray-400'
-    default: return 'bg-yellow-900/30 text-yellow-400'
-  }
-}
-
-function agentStatusDot(status: AgentSessionStatus) {
-  switch (status) {
-    case AgentSessionStatus.Succeeded: return 'bg-green-400'
-    case AgentSessionStatus.Running: return 'bg-blue-400 animate-pulse'
-    case AgentSessionStatus.Failed: return 'bg-red-400'
-    case AgentSessionStatus.Cancelled: return 'bg-gray-500'
-    default: return 'bg-yellow-400'
-  }
-}
-
 function formatDate(d: string) {
   return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
@@ -1286,7 +1299,7 @@ const createForm = reactive({
 
 async function submitCreate() {
   if (!createForm.title.trim()) return
-  await store.createIssue(actualProjectId.value, {
+  const newIssue = await store.createIssue(actualProjectId.value, {
     title: createForm.title.trim(),
     body: createForm.body || undefined,
     status: createForm.status,
@@ -1295,6 +1308,9 @@ async function submitCreate() {
   showCreate.value = false
   createForm.title = ''
   createForm.body = ''
+  if (newIssue) {
+    await navigateTo(`/projects/${actualProjectId.value}/issues/${newIssue.number}`)
+  }
 }
 
 async function startVoiceRecording() {
@@ -1328,6 +1344,9 @@ async function submitVoiceCreate() {
     }
   }
   closeVoiceModal()
+  if (newIssue) {
+    await navigateTo(`/projects/${actualProjectId.value}/issues/${newIssue.number}`)
+  }
 }
 
 function closeVoiceModal() {

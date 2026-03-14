@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { CiCdRun, CiCdRunLog, CiCdTestSuite, CiCdArtifact, AgentSession, AgentSessionDetail, AgentSessionLog, DashboardAgentSession, WorkflowGraph, WorkflowInfo } from '~/types'
+import type { CiCdRun, CiCdRunStatus, CiCdRunLog, CiCdTestSuite, CiCdArtifact, AgentSession, AgentSessionDetail, AgentSessionLog, DashboardAgentSession, WorkflowGraph, WorkflowInfo, LinkedCiCdRun } from '~/types'
 
 export const useCiCdRunsStore = defineStore('cicdRuns', () => {
   const runs = ref<CiCdRun[]>([])
@@ -11,6 +11,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
   const currentRunGraphError = ref<string | null>(null)
   const currentRunTestSuites = ref<CiCdTestSuite[]>([])
   const currentRunArtifacts = ref<CiCdArtifact[]>([])
+  const currentRunLinkedRuns = ref<LinkedCiCdRun[]>([])
   const currentSession = ref<AgentSessionDetail | null>(null)
   const currentSessionLogs = ref<AgentSessionLog[]>([])
   const loading = ref(false)
@@ -87,6 +88,15 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     }
   }
 
+  /** Fetches linked runs (retries, agent session, same commit SHA) for the given run. */
+  async function fetchLinkedRuns(runId: string) {
+    try {
+      currentRunLinkedRuns.value = await api.get<LinkedCiCdRun[]>(`/api/cicd-runs/${runId}/linked`)
+    } catch {
+      currentRunLinkedRuns.value = []
+    }
+  }
+
   async function fetchAgentSessions(projectId: string) {
     loading.value = true
     error.value = null
@@ -125,6 +135,10 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     await api.post(`/api/agent-sessions/${sessionId}/retry`, options ?? {})
   }
 
+  async function cancelSession(sessionId: string) {
+    await api.post(`/api/agent-sessions/${sessionId}/cancel`, {})
+  }
+
   async function retryRun(runId: string, options?: {
     keepContainerOnFailure?: boolean
     forceRetry?: boolean
@@ -134,8 +148,26 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     customEntrypoint?: string
     customArgs?: string
     actRunnerImage?: string
+    eventName?: string
   }) {
     await api.post(`/api/cicd-runs/${runId}/retry`, options ?? {})
+  }
+
+  async function approveRun(runId: string) {
+    try {
+      const updated = await api.post<{ id: string; status: CiCdRunStatus; statusName: string }>(`/api/cicd-runs/${runId}/approve`, {})
+      const run = runs.value.find(r => r.id === runId)
+      if (run) {
+        run.status = updated.status
+        run.statusName = updated.statusName
+      }
+      if (currentRun.value?.id === runId) {
+        currentRun.value.status = updated.status
+        currentRun.value.statusName = updated.statusName
+      }
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to approve CI/CD run'
+    }
   }
 
   async function cancelRun(runId: string) {
@@ -173,7 +205,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
 
   async function triggerRun(request: {
     projectId: string
-    commitSha: string
+    commitSha?: string
     eventName: string
     branch?: string
     workflow?: string
@@ -193,6 +225,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     currentRunGraphError,
     currentRunTestSuites,
     currentRunArtifacts,
+    currentRunLinkedRuns,
     currentSession,
     currentSessionLogs,
     loading,
@@ -202,12 +235,15 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     fetchRunOnly,
     fetchTestResults,
     fetchArtifacts,
+    fetchLinkedRuns,
     fetchAgentSessions,
     fetchAgentSession,
     fetchAgentSessionOnly,
     retrySession,
+    cancelSession,
     retryRun,
     cancelRun,
+    approveRun,
     fetchDashboardSessions,
     fetchWorkflows,
     triggerRun,

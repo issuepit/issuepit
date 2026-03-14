@@ -7,6 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 builder.AddKafkaHealthCheck();
+builder.AddKafkaProducer();
 builder.AddNpgsqlDbContext<IssuePitDbContext>("issuepit-db");
 builder.AddRedisClient("redis");
 
