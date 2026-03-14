@@ -72,6 +72,8 @@ public class AgentSessionsController(IssuePitDbContext db, TenantContext tenant,
                 Stream = l.Stream.ToString().ToLower(),
                 StreamName = l.Stream.ToString(),
                 l.Timestamp,
+                Section = l.Section != null ? l.Section.ToString() : null,
+                l.SectionIndex,
             })
             .ToListAsync();
 

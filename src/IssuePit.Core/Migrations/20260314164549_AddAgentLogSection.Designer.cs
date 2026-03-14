@@ -3,6 +3,7 @@ using System;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace IssuePit.Core.Migrations
 {
     [DbContext(typeof(IssuePitDbContext))]
-    partial class IssuePitDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260314164549_AddAgentLogSection")]
+    partial class AddAgentLogSection
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -326,9 +329,6 @@ namespace IssuePit.Core.Migrations
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("RetryOfRunId")
-                        .HasColumnType("uuid");
-
                     b.Property<DateTime>("StartedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -351,8 +351,6 @@ namespace IssuePit.Core.Migrations
                     b.HasIndex("AgentSessionId");
 
                     b.HasIndex("ProjectId");
-
-                    b.HasIndex("RetryOfRunId");
 
                     b.ToTable("cicd_runs");
                 });
@@ -2046,15 +2044,9 @@ namespace IssuePit.Core.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("IssuePit.Core.Entities.CiCdRun", "RetryOfRun")
-                        .WithMany()
-                        .HasForeignKey("RetryOfRunId");
-
                     b.Navigation("AgentSession");
 
                     b.Navigation("Project");
-
-                    b.Navigation("RetryOfRun");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.CiCdRunLog", b =>

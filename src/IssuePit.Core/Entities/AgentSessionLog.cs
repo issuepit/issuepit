@@ -22,4 +22,16 @@ public class AgentSessionLog
     public LogStream Stream { get; set; } = LogStream.Stdout;
 
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// Which phase of the agent workflow this log line belongs to.
+    /// Null for log lines emitted before section tracking was introduced.
+    /// </summary>
+    public AgentLogSection? Section { get; set; }
+
+    /// <summary>
+    /// 1-based index for numbered sections such as <see cref="AgentLogSection.CiCdRun"/>
+    /// and <see cref="AgentLogSection.CiCdFixRun"/>. Zero for single-occurrence sections.
+    /// </summary>
+    public int SectionIndex { get; set; }
 }
