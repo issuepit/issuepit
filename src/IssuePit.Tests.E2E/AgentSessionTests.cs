@@ -340,6 +340,154 @@ public class AgentSessionTests(AspireFixture fixture)
     }
 
     /// <summary>
+    /// Runs an agent container (busybox:latest) that exercises the MCP server by:
+    /// <list type="bullet">
+    ///   <item>Calling <c>initialize</c> via <c>POST /mcp</c> and printing the server version
+    ///         as <c>[ISSUEPIT:MCP_VERSION]=&lt;version&gt;</c>.</item>
+    ///   <item>Calling the <c>ListProjects</c> MCP tool and asserting the project count is at
+    ///         least 1, printed as <c>[ISSUEPIT:MCP_PROJECT_COUNT]=&lt;n&gt;</c>.</item>
+    /// </list>
+    ///
+    /// This verifies that the MCP server is reachable from a Docker container <em>and</em> that
+    /// MCP tool execution works end-to-end from inside the container.
+    ///
+    /// Skipped automatically when Docker is not available on the host.
+    /// </summary>
+    [Fact]
+    public async Task AgentSession_McpToolsWork_ContainerCanQueryProjectsAndGetVersion()
+    {
+        if (!IsDockerAvailable()) return;
+
+        using var client = CreateCookieClient();
+        var tenantId = await GetDefaultTenantIdAsync();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"e2e{Guid.NewGuid():N}"[..12];
+        await client.PostAsJsonAsync("/api/auth/register", new { username, password = "TestPass1!" });
+
+        // Create org and project so ListProjects returns at least 1 result
+        var orgSlug = $"mcp-tool-{Guid.NewGuid():N}"[..16];
+        var orgResp = await client.PostAsJsonAsync("/api/orgs", new { name = "MCP Tool Org", slug = orgSlug });
+        Assert.Equal(HttpStatusCode.Created, orgResp.StatusCode);
+        var org = await orgResp.Content.ReadFromJsonAsync<JsonElement>();
+        var orgId = org.GetProperty("id").GetString()!;
+
+        var projectSlug = $"mcp-tp-{Guid.NewGuid():N}"[..14];
+        var projResp = await client.PostAsJsonAsync("/api/projects",
+            new { name = "MCP Tool Project", slug = projectSlug, orgId = Guid.Parse(orgId) });
+        Assert.Equal(HttpStatusCode.Created, projResp.StatusCode);
+        var project = await projResp.Content.ReadFromJsonAsync<JsonElement>();
+        var projectId = project.GetProperty("id").GetString()!;
+
+        // Create an agent with busybox:latest (has wget and sh)
+        var agentResp = await client.PostAsJsonAsync("/api/agents",
+            new
+            {
+                name = "MCP Tool Agent",
+                orgId = Guid.Parse(orgId),
+                systemPrompt = "You are a diagnostic agent.",
+                dockerImage = AgentTestDockerImage,
+                allowedTools = "[]",
+                isActive = true,
+            });
+        Assert.Equal(HttpStatusCode.Created, agentResp.StatusCode);
+        var agent = await agentResp.Content.ReadFromJsonAsync<JsonElement>();
+        var agentId = agent.GetProperty("id").GetString()!;
+
+        // Create the issue
+        var issueResp = await client.PostAsJsonAsync("/api/issues",
+            new { title = "MCP Tool Test", projectId = Guid.Parse(projectId) });
+        Assert.Equal(HttpStatusCode.Created, issueResp.StatusCode);
+        var issue = await issueResp.Content.ReadFromJsonAsync<JsonElement>();
+        var issueId = issue.GetProperty("id").GetString()!;
+
+        // Shell script executed inside the container:
+        //   1. POST /mcp  method=initialize  → capture Mcp-Session-Id header and server version
+        //   2. POST /mcp  method=tools/call  → call ListProjects and count returned projects
+        //
+        // Counting note: the MCP tool response embeds projects as a JSON-encoded string inside
+        // result.content[0].text. In that embedded JSON, the double-quotes are escaped with
+        // backslash (e.g. {\"id\":\"...\"}). Each project contributes exactly two {\"id\"
+        // occurrences (one for project.id, one for organization.id), so PROJ_COUNT = RAW / 2.
+        var mcpToolsCmd = new string[]
+        {
+            "sh", "-c",
+            """
+            MCP_URL="${ISSUEPIT_MCP_URL%/}/mcp"
+
+            # Step 1: Initialize MCP session — capture session ID (header) and server version (body)
+            wget -qS \
+              -O /tmp/init_body \
+              --post-data='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"e2e","version":"1.0"}}}' \
+              --header='Content-Type: application/json' \
+              --header='Accept: application/json, text/event-stream' \
+              "$MCP_URL" 2>/tmp/init_hdr || { echo '[ISSUEPIT:MCP_TOOLS]=FAIL (init)'; exit 0; }
+
+            SESSION=$(grep -i 'Mcp-Session-Id' /tmp/init_hdr | head -1 | awk '{print $2}' | tr -d '\r')
+            BODY=$(sed 's/^data: //' /tmp/init_body)
+            VER=$(echo "$BODY" | tr '{},' '\n' | grep '"version"' | sed 's/.*"version":"//;s/".*//' | tail -1)
+            echo "[ISSUEPIT:MCP_VERSION]=$VER"
+
+            # Step 2: Call ListProjects MCP tool
+            wget -qS \
+              -O /tmp/list_body \
+              --post-data='{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"ListProjects","arguments":{}}}' \
+              --header='Content-Type: application/json' \
+              --header='Accept: application/json, text/event-stream' \
+              --header="Mcp-Session-Id: $SESSION" \
+              "$MCP_URL" 2>/dev/null || { echo '[ISSUEPIT:MCP_TOOLS]=FAIL (ListProjects)'; exit 0; }
+
+            LIST=$(sed 's/^data: //' /tmp/list_body)
+            if echo "$LIST" | grep -qF '"isError":false'; then
+              RAW=$(echo "$LIST" | grep -oF '{\"id\"' | wc -l | tr -d ' ')
+              COUNT=$((RAW / 2))
+              echo "[ISSUEPIT:MCP_PROJECT_COUNT]=$COUNT"
+              echo '[ISSUEPIT:MCP_TOOLS]=OK'
+            else
+              echo '[ISSUEPIT:MCP_TOOLS]=FAIL (ListProjects error response)'
+            fi
+            """,
+        };
+
+        var assignResp = await client.PostAsJsonAsync($"/api/issues/{issueId}/assignees",
+            new { agentId = Guid.Parse(agentId), dockerCmdOverride = mcpToolsCmd });
+        Assert.Equal(HttpStatusCode.Created, assignResp.StatusCode);
+
+        // Wait for the session to complete
+        var session = await WaitForAgentSessionAsync(client, issueId, TimeSpan.FromMinutes(3));
+        var sessionId = session.GetProperty("id").GetString()!;
+
+        // Fetch the session logs
+        var logsResp = await client.GetAsync($"/api/agent-sessions/{sessionId}/logs");
+        Assert.Equal(HttpStatusCode.OK, logsResp.StatusCode);
+        var logs = await logsResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        var logLines = logs.EnumerateArray()
+            .Select(l => l.GetProperty("line").GetString() ?? string.Empty)
+            .ToList();
+
+        // Print MCP version for CI log visibility
+        var versionLine = logLines.FirstOrDefault(l => l.Contains("[ISSUEPIT:MCP_VERSION]="));
+        Console.WriteLine($"[MCP] server version from container: {versionLine ?? "(not found)"}");
+
+        // Assert MCP tools worked end-to-end from inside the container
+        Assert.True(
+            logLines.Any(l => l.Contains("[ISSUEPIT:MCP_TOOLS]=OK")),
+            $"Expected '[ISSUEPIT:MCP_TOOLS]=OK' in session logs, indicating MCP tools work " +
+            $"from inside the agent container.\n" +
+            $"Actual logs:\n{string.Join('\n', logLines.Take(60))}");
+
+        // Assert ListProjects returned at least 1 project
+        var countLine = logLines.FirstOrDefault(l => l.Contains("[ISSUEPIT:MCP_PROJECT_COUNT]="));
+        Assert.NotNull(countLine);
+        var countStr = countLine!.Split('=').Last().Trim();
+        Assert.True(
+            int.TryParse(countStr, out var projCount) && projCount >= 1,
+            $"Expected project count >= 1, got '{countStr}'.\n" +
+            $"Actual logs:\n{string.Join('\n', logLines.Take(60))}");
+    }
+
+    /// <summary>
     /// Polls <c>GET /api/issues/{issueId}/runs</c> until the most-recent agent session reaches a
     /// terminal status (Succeeded, Failed, or Cancelled) or the timeout elapses.
     /// </summary>
