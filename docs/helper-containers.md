@@ -78,7 +78,7 @@ The Dockerfiles accept build arguments that you can override when building local
 
 | Argument | Image | Default | Description |
 |----------|-------|---------|-------------|
-| `PLAYWRIGHT_VERSION` | `helper-base` | `v1.51.0` | Playwright .NET image tag (e.g. `v1.54.0`) |
+| `PLAYWRIGHT_VERSION` | `helper-base` | `v1.58.0` | Playwright .NET image tag (e.g. `v1.58.0`) |
 | `NODE_MAJOR` | `helper-base` | `24` | Node.js major version |
 | `DOTNET_SDK_CHANNEL` | `helper-base` | `10.0` | .NET SDK release channel installed via `dotnet-install.sh` (e.g. `10.0`, `9.0`) |
 | `BASE_IMAGE` | `helper-act`, `helper-opencode`, `helper-opencode-act` | `ghcr.io/issuepit/issuepit-helper-base:latest` | Base image reference |
@@ -90,7 +90,7 @@ The Dockerfiles accept build arguments that you can override when building local
 ```bash
 # Build the base image
 docker build \
-  --build-arg PLAYWRIGHT_VERSION=v1.51.0 \
+  --build-arg PLAYWRIGHT_VERSION=v1.58.0 \
   --build-arg NODE_MAJOR=24 \
   --build-arg DOTNET_SDK_CHANNEL=10.0 \
   -f docker/helper-containers/Dockerfile.helper-base \
@@ -142,10 +142,10 @@ To upgrade bundled runtimes:
    ```yaml
    DOTNET_MAJOR: "10"
    NODE_MAJOR: "24"
-   PLAYWRIGHT_VERSION: "v1.51.0"
+   PLAYWRIGHT_VERSION: "v1.58.0"
    ACT_COMMIT: "cb02232605fa5f914986ce6eb3500db85c06c0ce"
    ```
-2. Update the `ARG` defaults in `docker/Dockerfile.helper-base` (and other Dockerfiles) to match.
+2. Update the `ARG` defaults in `docker/helper-containers/Dockerfile.helper-base` (and other Dockerfiles) to match.
 3. Bump `docker/helper-containers/version.txt` so release-please creates a new release.
 
 ---
