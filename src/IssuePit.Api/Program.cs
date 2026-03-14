@@ -42,6 +42,7 @@ builder.Services.AddHostedService<MergeRequestAutoMergeService>();
 builder.Services.AddHostedService<MetricSnapshotService>();
 builder.Services.AddHostedService<BotNotificationDispatchService>();
 builder.Services.AddHostedService<GitHubAutoSyncBackgroundService>();
+builder.Services.AddHostedService<BranchDetectionBackgroundService>();
 
 builder.Services.AddScoped<TenantContext>();
 builder.Services.AddScoped<TenantDatabaseService>();
@@ -50,6 +51,7 @@ builder.Services.AddScoped<ApiKeyResolverService>();
 builder.Services.AddScoped<IssueEnhancementService>();
 builder.Services.AddScoped<CiCdRunQueueService>();
 builder.Services.AddScoped<GitHubSyncService>();
+builder.Services.AddScoped<BranchDetectionService>();
 builder.Services.Configure<IssuePit.Api.Services.ImageStorageOptions>(
     builder.Configuration.GetSection(IssuePit.Api.Services.ImageStorageOptions.SectionName));
 builder.Services.AddSingleton<IssuePit.Api.Services.ImageStorageService>();
