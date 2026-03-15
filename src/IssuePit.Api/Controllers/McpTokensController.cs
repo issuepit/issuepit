@@ -40,6 +40,26 @@ public class McpTokensController(IssuePitDbContext db, TenantContext ctx) : Cont
         return Ok(tokens);
     }
 
+    /// <summary>
+    /// Returns metadata about the token that authenticated the current request.
+    /// Called by the MCP server's auth middleware to determine per-request read-only status.
+    /// Returns 404 when the request was not authenticated via a token (e.g. cookie auth).
+    /// </summary>
+    [HttpGet("me")]
+    public IActionResult GetCurrentTokenInfo()
+    {
+        if (ctx.CurrentMcpToken is null) return NotFound();
+
+        return Ok(new
+        {
+            ctx.CurrentMcpToken.Id,
+            ctx.CurrentMcpToken.IsReadOnly,
+            ctx.CurrentMcpToken.ProjectId,
+            ctx.CurrentMcpToken.OrgId,
+            ctx.CurrentMcpToken.IsEphemeral,
+        });
+    }
+
     /// <summary>Creates a new permanent MCP token. Returns the raw token value once — it cannot be retrieved again.</summary>
     [HttpPost]
     public async Task<IActionResult> CreateToken([FromBody] CreateMcpTokenRequest req)

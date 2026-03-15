@@ -5,7 +5,7 @@ using ModelContextProtocol.Server;
 namespace IssuePit.McpServer.Tools;
 
 [McpServerToolType]
-public class ProjectTools(IssuePitApiClient api, IOptions<McpServerOptions> options)
+public class ProjectTools(IssuePitApiClient api, IOptions<McpServerOptions> options, McpRequestContext requestContext)
 {
     private McpServerOptions Opts => options.Value;
 
@@ -34,7 +34,7 @@ public class ProjectTools(IssuePitApiClient api, IOptions<McpServerOptions> opti
         [Description("Optional description.")] string? description = null,
         CancellationToken ct = default)
     {
-        ToolGuard.EnforceNotReadOnly(Opts, "CreateProject");
+        ToolGuard.EnforceNotReadOnly(Opts, requestContext, "CreateProject");
         ToolGuard.EnforceNotAgentMode(Opts, "CreateProject");
         var body = new { orgId, name, slug, description };
         var result = await api.PostAsync<object>("/api/projects", body, ct);
@@ -49,7 +49,7 @@ public class ProjectTools(IssuePitApiClient api, IOptions<McpServerOptions> opti
         [Description("New description.")] string? description = null,
         CancellationToken ct = default)
     {
-        ToolGuard.EnforceNotReadOnly(Opts, "UpdateProject");
+        ToolGuard.EnforceNotReadOnly(Opts, requestContext, "UpdateProject");
         var body = new { name, slug, description };
         var result = await api.PutAsync<object>($"/api/projects/{id}", body, ct);
         return Serialize(result);
@@ -60,7 +60,7 @@ public class ProjectTools(IssuePitApiClient api, IOptions<McpServerOptions> opti
         [Description("The project ID (GUID).")] Guid id,
         CancellationToken ct = default)
     {
-        ToolGuard.EnforceNotReadOnly(Opts, "DeleteProject");
+        ToolGuard.EnforceNotReadOnly(Opts, requestContext, "DeleteProject");
         ToolGuard.EnforceNotAgentMode(Opts, "DeleteProject");
         ToolGuard.EnforceDestructive(Opts, "DeleteProject");
         await api.DeleteAsync($"/api/projects/{id}", ct);

@@ -48,6 +48,9 @@ builder.Services.AddHttpContextAccessor();
 // Register the delegating handler that forwards the MCP bearer token to every API call.
 builder.Services.AddTransient<McpTokenForwardingHandler>();
 
+// Per-request context populated by the auth middleware (IsReadOnly flag from token validation).
+builder.Services.AddScoped<McpRequestContext>();
+
 builder.Services.AddHttpClient<IssuePitApiClient>(client =>
 {
     client.BaseAddress = new Uri(apiBaseUrl);
@@ -101,6 +104,8 @@ app.UseCors();
 
 // Extract bearer / basic-auth token from the Authorization header and store it in
 // HttpContext.Items so McpTokenForwardingHandler can attach it to API calls.
+// After extracting the token, call /api/mcp-tokens/me to resolve per-request metadata
+// (e.g. IsReadOnly) and populate the scoped McpRequestContext.
 app.Use(async (context, next) =>
 {
     var auth = context.Request.Headers.Authorization.FirstOrDefault();
@@ -142,6 +147,26 @@ app.Use(async (context, next) =>
             context.Items[McpTokenKeys.HttpContextItemKey] = envToken;
     }
 
+    // Resolve token metadata (IsReadOnly) from the API and populate the scoped McpRequestContext.
+    // Only attempted when a token is present; failures are silently ignored.
+    if (context.Items.ContainsKey(McpTokenKeys.HttpContextItemKey))
+    {
+        try
+        {
+            var apiClient = context.RequestServices.GetRequiredService<IssuePitApiClient>();
+            var tokenInfo = await apiClient.GetAsync<McpTokenInfo>("/api/mcp-tokens/me");
+            if (tokenInfo is not null)
+            {
+                var requestCtx = context.RequestServices.GetRequiredService<McpRequestContext>();
+                requestCtx.IsReadOnly = tokenInfo.IsReadOnly;
+            }
+        }
+        catch
+        {
+            // Non-fatal: if the API is unreachable or the token is not in the DB yet, continue.
+        }
+    }
+
     await next();
 });
 
@@ -152,3 +177,11 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.Run();
+
+// DTO for /api/mcp-tokens/me response
+file sealed class McpTokenInfo
+{
+    public bool IsReadOnly { get; init; }
+    public Guid? ProjectId { get; init; }
+    public Guid? OrgId { get; init; }
+}

@@ -221,7 +221,7 @@ public class McpServerTests(AspireFixture fixture, ITestOutputHelper output)
     /// </summary>
     private static HttpClient CreateMcpClientWithBearer(HttpClient baseClient, string rawToken)
     {
-        var handler = new AuthorizingHandler(rawToken, baseClient.BaseAddress!);
+        var handler = new AuthorizingHandler(rawToken);
         return new HttpClient(handler) { BaseAddress = baseClient.BaseAddress };
     }
 
@@ -231,7 +231,7 @@ public class McpServerTests(AspireFixture fixture, ITestOutputHelper output)
     /// </summary>
     private static HttpClient CreateMcpClientWithBasicAuth(HttpClient baseClient, string rawToken)
     {
-        var handler = new AuthorizingHandler($"Basic {Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($":{rawToken}"))}", baseClient.BaseAddress!, isBearer: false);
+        var handler = new AuthorizingHandler($"Basic {Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($":{rawToken}"))}", isBearer: false);
         return new HttpClient(handler) { BaseAddress = baseClient.BaseAddress };
     }
 
@@ -406,7 +406,7 @@ public class McpServerTests(AspireFixture fixture, ITestOutputHelper output)
     /// <summary>
     /// Delegating handler that injects a fixed Authorization header on every request.
     /// </summary>
-    private sealed class AuthorizingHandler(string headerValue, Uri baseAddress, bool isBearer = true) : HttpClientHandler
+    private sealed class AuthorizingHandler(string headerValue, bool isBearer = true) : HttpClientHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {

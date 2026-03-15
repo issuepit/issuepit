@@ -40,12 +40,12 @@ internal static class ToolGuard
     }
 
     /// <summary>
-    /// Blocks write/mutating tools when the server is configured as read-only
-    /// (either globally via <see cref="McpServerOptions.ReadOnly"/> or via a read-only MCP token).
+    /// Blocks write/mutating tools when the server is configured as read-only globally
+    /// (<see cref="McpServerOptions.ReadOnly"/>) OR when the current request's MCP token is read-only.
     /// </summary>
-    public static void EnforceNotReadOnly(McpServerOptions opts, string toolName)
+    public static void EnforceNotReadOnly(McpServerOptions opts, McpRequestContext requestContext, string toolName)
     {
-        if (opts.ReadOnly)
+        if (opts.ReadOnly || requestContext.IsReadOnly)
             throw new InvalidOperationException(
                 $"Tool '{toolName}' is not allowed because this MCP token is read-only.");
     }
