@@ -7,9 +7,6 @@ namespace IssuePit.Tests.E2E.Pages;
 /// </summary>
 public class AgentsPage(IPage page)
 {
-    // Short wait before retrying a navigation that may have been redirected by Vue SSR hydration.
-    private const int VueHydrationRetryTimeoutMs = 5_000;
-
     public async Task GotoAsync()
     {
         await page.GotoAsync("/agents");
@@ -25,7 +22,7 @@ public class AgentsPage(IPage page)
         try
         {
             await page.WaitForSelectorAsync("button:has-text('New Agent Mode')",
-                new PageWaitForSelectorOptions { Timeout = VueHydrationRetryTimeoutMs });
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
         }
         catch (TimeoutException)
         {
@@ -43,7 +40,7 @@ public class AgentsPage(IPage page)
         }
         await page.FillAsync("textarea[placeholder='You are a helpful agent that...']", systemPrompt ?? "You are a test agent.");
         await page.ClickAsync("button:has-text('Create')");
-        await page.WaitForSelectorAsync($"h3:has-text('{name}')", new PageWaitForSelectorOptions { Timeout = 10_000 });
+        await page.WaitForSelectorAsync($"h3:has-text('{name}')", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
     }
 
     /// <summary>

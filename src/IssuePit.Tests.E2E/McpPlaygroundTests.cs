@@ -43,7 +43,7 @@ public class McpPlaygroundTests : IAsyncLifetime
     public async Task Ui_McpPlayground_LoadsAndShowsHeading()
     {
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
-        context.SetDefaultTimeout(10_000);
+        context.SetDefaultTimeout(E2ETimeouts.Default);
         var page = await context.NewPageAsync();
 
         try
@@ -51,7 +51,7 @@ public class McpPlaygroundTests : IAsyncLifetime
             // Register and log in so the page is accessible
             var username = $"mcp{Guid.NewGuid():N}"[..12];
             await new LoginPage(page).RegisterAsync(username, "TestPass1!");
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
 
             var playground = new McpPlaygroundPage(page);
             await playground.GotoAsync();
@@ -72,14 +72,14 @@ public class McpPlaygroundTests : IAsyncLifetime
     public async Task Ui_McpPlayground_ToolsListAttempted()
     {
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
-        context.SetDefaultTimeout(10_000);
+        context.SetDefaultTimeout(E2ETimeouts.Default);
         var page = await context.NewPageAsync();
 
         try
         {
             var username = $"mcp{Guid.NewGuid():N}"[..12];
             await new LoginPage(page).RegisterAsync(username, "TestPass1!");
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
 
             var playground = new McpPlaygroundPage(page);
             await playground.GotoAsync();
@@ -107,14 +107,14 @@ public class McpPlaygroundTests : IAsyncLifetime
     public async Task Ui_McpPlayground_ReloadToolsButton_Works()
     {
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
-        context.SetDefaultTimeout(10_000);
+        context.SetDefaultTimeout(E2ETimeouts.Default);
         var page = await context.NewPageAsync();
 
         try
         {
             var username = $"mcp{Guid.NewGuid():N}"[..12];
             await new LoginPage(page).RegisterAsync(username, "TestPass1!");
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
 
             var playground = new McpPlaygroundPage(page);
             await playground.GotoAsync();

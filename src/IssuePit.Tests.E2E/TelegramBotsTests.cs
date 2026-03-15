@@ -115,13 +115,13 @@ public class TelegramBotsTests : IAsyncLifetime
         var orgId = org.GetProperty("id").GetString()!;
 
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
-        context.SetDefaultTimeout(10_000);
+        context.SetDefaultTimeout(E2ETimeouts.Default);
         var page = await context.NewPageAsync();
 
         try
         {
             await new LoginPage(page).LoginAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
 
             var telegramBotsPage = new TelegramBotsPage(page);
             await telegramBotsPage.GotoAsync();

@@ -31,7 +31,7 @@ public class AgentDetailPage(IPage page)
         await page.ClickAsync("button:has-text('Save Settings')");
         // Wait for the save button to stop showing "Saving…" (i.e., the request completed)
         await page.WaitForSelectorAsync("button:has-text('Save Settings')",
-            new PageWaitForSelectorOptions { Timeout = 10_000 });
+            new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
     }
 
     /// <summary>Returns the currently displayed agent name from the form input.</summary>

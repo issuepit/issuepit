@@ -11,7 +11,7 @@ public class CiCdRunPage(IPage page)
         await page.GotoAsync($"/projects/{projectId}/runs/cicd/{runId}");
 
     public async Task WaitForLoadAsync() =>
-        await page.WaitForSelectorAsync("text=CI/CD Run", new PageWaitForSelectorOptions { Timeout = 15_000 });
+        await page.WaitForSelectorAsync("text=CI/CD Run", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
 
     /// <summary>
     /// Clicks the Jobs tab and waits for the tab to become active.
@@ -20,7 +20,7 @@ public class CiCdRunPage(IPage page)
     {
         await page.ClickAsync("button:has-text('Jobs')");
         // Wait for jobs content to be visible
-        await page.WaitForSelectorAsync("[data-testid='jobs-tab-content'], text=No job data available, text=log line", new PageWaitForSelectorOptions { Timeout = 5_000 });
+        await page.WaitForSelectorAsync("[data-testid='jobs-tab-content'], text=No job data available, text=log line", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
     }
 
     /// <summary>

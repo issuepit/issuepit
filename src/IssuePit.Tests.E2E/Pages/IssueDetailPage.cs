@@ -20,7 +20,7 @@ public class IssueDetailPage(IPage page)
         // Click the issue link to navigate to the detail page
         await page.ClickAsync($"a:has-text('{issueTitle}')");
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        await page.WaitForSelectorAsync($"a:has-text('{issueTitle}')", new PageWaitForSelectorOptions { Timeout = 10_000 });
+        await page.WaitForSelectorAsync($"a:has-text('{issueTitle}')", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
     }
 
     /// <summary>Returns true if the tab button with the given label is visible.</summary>
@@ -59,7 +59,7 @@ public class IssueDetailPage(IPage page)
     {
         await page.ClickAsync("button:has-text('Delete Issue')");
         await page.WaitForSelectorAsync("text=Are you sure you want to delete this issue?",
-            new PageWaitForSelectorOptions { Timeout = 5_000 });
+            new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
     }
 
     /// <summary>
@@ -81,7 +81,7 @@ public class IssueDetailPage(IPage page)
             new PageWaitForSelectorOptions
             {
                 State = WaitForSelectorState.Hidden,
-                Timeout = 5_000
+                Timeout = E2ETimeouts.Short
             });
     }
 }

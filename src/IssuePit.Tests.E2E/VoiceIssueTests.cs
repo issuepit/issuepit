@@ -190,7 +190,7 @@ public class VoiceIssueTests : IAsyncLifetime
 
             // 1. Register via the UI
             await new LoginPage(page).RegisterAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
 
             // 2. Create an org and project via the API using the same credentials
             var tenantId = await GetDefaultTenantIdAsync();
@@ -292,7 +292,7 @@ public class VoiceIssueTests : IAsyncLifetime
 
             // 1. Register via the UI
             await new LoginPage(page).RegisterAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
 
             // 2. Create org and project via the API using the same session
             var tenantId = await GetDefaultTenantIdAsync();
@@ -324,7 +324,7 @@ public class VoiceIssueTests : IAsyncLifetime
             await issuesPage.SubmitVoiceCreateAsync();
 
             // 4. Verify the voice issue now appears in the issues list
-            await page.WaitForSelectorAsync("text=Voice Issue", new PageWaitForSelectorOptions { Timeout = 10_000 });
+            await page.WaitForSelectorAsync("text=Voice Issue", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
         }
         finally
         {

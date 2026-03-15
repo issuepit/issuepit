@@ -24,7 +24,7 @@ public class McpPlaygroundPage(IPage page)
     /// Waits for the tools list to populate (or show an error/empty state),
     /// then returns the number of tools loaded. Returns 0 if none or if an error occurred.
     /// </summary>
-    public async Task<int> GetLoadedToolCountAsync(int timeoutMs = 15_000)
+    public async Task<int> GetLoadedToolCountAsync(int timeoutMs = E2ETimeouts.Navigation)
     {
         // Wait for one of three terminal states: tools loaded, empty, or error.
         await page.Locator("[data-testid='mcp-tools-list'] li")
@@ -41,6 +41,6 @@ public class McpPlaygroundPage(IPage page)
         await page.Locator("[data-testid='mcp-tools-list'] li")
             .Or(page.Locator("[data-testid='mcp-tools-empty']"))
             .Or(page.Locator("[data-testid='mcp-tools-error']"))
-            .First.WaitForAsync(new LocatorWaitForOptions { Timeout = 15_000 });
+            .First.WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Navigation });
     }
 }

@@ -41,7 +41,7 @@ public class FrontendSmokeTests : IAsyncLifetime
             Channel = "chrome",
         });
         _context = await _browser.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
-        _context.SetDefaultTimeout(10_000);
+        _context.SetDefaultTimeout(E2ETimeouts.Default);
         await SetUpAuthAsync();
     }
 
@@ -58,7 +58,7 @@ public class FrontendSmokeTests : IAsyncLifetime
             const string password = "TestPass1!";
 
             await new LoginPage(page).RegisterAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
         }
         finally
         {

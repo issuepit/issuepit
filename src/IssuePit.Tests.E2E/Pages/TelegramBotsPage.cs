@@ -7,8 +7,6 @@ namespace IssuePit.Tests.E2E.Pages;
 /// </summary>
 public class TelegramBotsPage(IPage page)
 {
-    // Short wait before retrying a navigation that may have been redirected by Vue SSR hydration.
-    private const int VueHydrationRetryTimeoutMs = 5_000;
 
     /// <summary>
     /// Navigates to the Telegram Bots config page and waits for the heading.
@@ -22,7 +20,7 @@ public class TelegramBotsPage(IPage page)
         try
         {
             await page.WaitForSelectorAsync("h2:has-text('Telegram Bots')",
-                new PageWaitForSelectorOptions { Timeout = VueHydrationRetryTimeoutMs });
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
         }
         catch (TimeoutException)
         {
@@ -50,7 +48,7 @@ public class TelegramBotsPage(IPage page)
 
         // Click the submit button inside the form (type="submit").
         await page.ClickAsync("form button[type='submit']");
-        await page.WaitForSelectorAsync($"td:has-text('{name}')", new PageWaitForSelectorOptions { Timeout = 10_000 });
+        await page.WaitForSelectorAsync($"td:has-text('{name}')", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
     }
 
     /// <summary>
@@ -73,7 +71,7 @@ public class TelegramBotsPage(IPage page)
         await page.WaitForSelectorAsync($"td:has-text('{name}')", new PageWaitForSelectorOptions
         {
             State = WaitForSelectorState.Hidden,
-            Timeout = 10_000,
+            Timeout = E2ETimeouts.Default,
         });
     }
 

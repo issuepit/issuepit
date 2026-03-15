@@ -27,7 +27,7 @@ public class ProjectsPage(IPage page)
             await page.FillAsync("input[placeholder='my-project']", slug);
         }
         await page.ClickAsync("button:has-text('Create')");
-        await page.WaitForSelectorAsync($"text={name}", new PageWaitForSelectorOptions { Timeout = 10_000 });
+        await page.WaitForSelectorAsync($"text={name}", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
     }
 
     /// <summary>
