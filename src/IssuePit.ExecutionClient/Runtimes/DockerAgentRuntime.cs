@@ -345,8 +345,9 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
                 await onLogLine($"[WARN] Fix agent exited with code {exitCode}", LogStream.Stderr);
         }
 
-        // After the fix run, check for uncommitted changes and ask opencode to handle them
-        // (commit tracked files or update .gitignore for build artifacts) before emitting markers.
+        // After the fix run, check for uncommitted changes and handle them before emitting markers.
+        // First attempt auto-commit of tracked changes; only fall back to an agent run if there
+        // are remaining uncommitted files (e.g. untracked files needing .gitignore treatment).
         try
         {
             var statusOutput = await ExecReadOutputAsync(
@@ -354,37 +355,57 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
 
             if (!string.IsNullOrWhiteSpace(statusOutput))
             {
-                await onLogLine("[INFO] Uncommitted changes detected after fix run — re-running opencode to commit them…", LogStream.Stdout);
+                await onLogLine("[INFO] Uncommitted changes detected after fix run — attempting auto-commit of tracked files…", LogStream.Stdout);
 
-                var currentBranch = (await ExecReadOutputAsync(
-                    containerId, ["git", "branch", "--show-current"], cancellationToken)).Trim();
-
-                var uncommittedIssue = new Issue
+                try
                 {
-                    Id = fixIssue.Id,
-                    ProjectId = fixIssue.ProjectId,
-                    Number = fixIssue.Number,
-                    Title = $"Commit remaining changes for: {fixIssue.Title}",
-                    Body =
-                        "There are still uncommitted changes after the previous fix run.\n" +
-                        "Please commit all changes that should be tracked and add build artifacts or\n" +
-                        "generated files to .gitignore so they are not committed.\n" +
-                        "Run `git status` to see what is uncommitted.\n" +
-                        "IMPORTANT: Do NOT run `git push` — you do not have remote write access.\n" +
-                        "Only commit changes locally.",
-                    GitBranch = currentBranch,
-                };
-
-                var uncommittedArgs = RunnerCommandBuilder.BuildArgsList(agent, uncommittedIssue, forkSessionId: openCodeSessionId);
-                if (uncommittedArgs.Count > 0)
-                {
-                    var exitCode2 = await ExecCommandAsync(containerId, uncommittedArgs, onFixLogLine, cancellationToken);
-                    if (exitCode2 != 0)
-                        await onLogLine($"[WARN] Uncommitted-changes fix agent exited with code {exitCode2}", LogStream.Stderr);
+                    var committed = await TryAutoCommitTrackedChangesAsync(containerId, onFixLogLine, cancellationToken);
+                    if (committed)
+                    {
+                        statusOutput = await ExecReadOutputAsync(
+                            containerId, ["git", "status", "--porcelain"], cancellationToken);
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    await onLogLine("[WARN] No runner args available for uncommitted-changes fix (RunnerType not set?)", LogStream.Stderr);
+                    await onLogLine($"[WARN] Auto-commit after fix run failed: {ex.Message}", LogStream.Stderr);
+                }
+
+                if (!string.IsNullOrWhiteSpace(statusOutput))
+                {
+                    // Still uncommitted changes (likely untracked files) — spawn another agent run.
+                    await onLogLine("[INFO] Re-running opencode to handle remaining uncommitted changes…", LogStream.Stdout);
+
+                    var currentBranch = (await ExecReadOutputAsync(
+                        containerId, ["git", "branch", "--show-current"], cancellationToken)).Trim();
+
+                    var uncommittedIssue = new Issue
+                    {
+                        Id = fixIssue.Id,
+                        ProjectId = fixIssue.ProjectId,
+                        Number = fixIssue.Number,
+                        Title = $"Commit remaining changes for: {fixIssue.Title}",
+                        Body =
+                            "There are still uncommitted changes after the previous fix run.\n" +
+                            "Run `git status` to see which files are uncommitted, then:\n" +
+                            "1. For source code and configuration files: run `git add <file>` and `git commit -m \"fix: commit remaining changes\"`\n" +
+                            "2. For generated build artifacts (e.g. bin/, obj/, node_modules/): add them to .gitignore\n" +
+                            "IMPORTANT: Do NOT run `git push` — you do not have remote write access.\n" +
+                            "Only commit changes locally.",
+                        GitBranch = currentBranch,
+                    };
+
+                    var uncommittedArgs = RunnerCommandBuilder.BuildArgsList(agent, uncommittedIssue, forkSessionId: openCodeSessionId);
+                    if (uncommittedArgs.Count > 0)
+                    {
+                        var exitCode2 = await ExecCommandAsync(containerId, uncommittedArgs, onFixLogLine, cancellationToken);
+                        if (exitCode2 != 0)
+                            await onLogLine($"[WARN] Uncommitted-changes fix agent exited with code {exitCode2}", LogStream.Stderr);
+                    }
+                    else
+                    {
+                        await onLogLine("[WARN] No runner args available for uncommitted-changes fix (RunnerType not set?)", LogStream.Stderr);
+                    }
                 }
             }
         }
@@ -512,6 +533,8 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
     /// <summary>
     /// Runs <c>git status --porcelain</c> in the workspace and emits
     /// <c>[ISSUEPIT:HAS_UNCOMMITTED_CHANGES]=true</c> when any uncommitted files are found.
+    /// Before emitting the marker, attempts to auto-commit tracked modified/deleted files
+    /// so that a fix-agent run is avoided for the common case where the agent forgot to commit.
     /// </summary>
     private async Task CheckAndEmitUncommittedChangesAsync(
         string containerId,
@@ -526,7 +549,64 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         await onLogLine("[entrypoint] WARNING: uncommitted changes found after agent run", LogStream.Stdout);
         foreach (var line in statusOutput.Split('\n').Where(l => !string.IsNullOrWhiteSpace(l)).Take(20))
             await onLogLine($"[entrypoint]   {line}", LogStream.Stdout);
+
+        // Attempt to auto-commit tracked modified/deleted files before triggering a full fix run.
+        // This handles the common case where the agent edited files but forgot to run `git commit`.
+        try
+        {
+            var committed = await TryAutoCommitTrackedChangesAsync(containerId, onLogLine, cancellationToken);
+            if (committed)
+            {
+                await onLogLine("[entrypoint] Auto-committed tracked changes — re-checking for uncommitted files…", LogStream.Stdout);
+                statusOutput = await ExecReadOutputAsync(
+                    containerId, ["git", "status", "--porcelain"], cancellationToken);
+                if (string.IsNullOrWhiteSpace(statusOutput))
+                {
+                    await onLogLine("[entrypoint] No remaining uncommitted changes after auto-commit.", LogStream.Stdout);
+                    return;
+                }
+                await onLogLine("[entrypoint] WARNING: still-uncommitted changes after auto-commit (likely untracked files):", LogStream.Stdout);
+                foreach (var line in statusOutput.Split('\n').Where(l => !string.IsNullOrWhiteSpace(l)).Take(20))
+                    await onLogLine($"[entrypoint]   {line}", LogStream.Stdout);
+            }
+        }
+        catch (Exception ex)
+        {
+            await onLogLine($"[entrypoint] Auto-commit of tracked changes failed: {ex.Message}", LogStream.Stderr);
+        }
+
         await onLogLine($"{HasUncommittedChangesMarker}true", LogStream.Stdout);
+    }
+
+    /// <summary>
+    /// Attempts to auto-commit tracked modified/deleted files using <c>git add -u</c> followed by
+    /// <c>git commit</c>. This handles the common case where the agent edited existing files but
+    /// forgot to stage and commit them. Untracked new files are intentionally left untouched so
+    /// that a subsequent fix-agent run can decide whether to commit or add them to <c>.gitignore</c>.
+    /// </summary>
+    /// <returns><c>true</c> when tracked changes were staged and committed successfully; <c>false</c> otherwise.</returns>
+    private async Task<bool> TryAutoCommitTrackedChangesAsync(
+        string containerId,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        // Stage only tracked changes (modified/deleted). Untracked files are not staged.
+        var addExit = await ExecCommandAsync(containerId, ["git", "add", "-u"],
+            async (line, stream) => await onLogLine($"[entrypoint] {line}", stream),
+            cancellationToken);
+        if (addExit != 0) return false;
+
+        // Check whether anything was actually staged before committing.
+        var staged = await ExecReadOutputAsync(
+            containerId, ["git", "diff", "--cached", "--name-only"], cancellationToken);
+        if (string.IsNullOrWhiteSpace(staged)) return false;
+
+        // Commit the staged changes.
+        var commitExit = await ExecCommandAsync(containerId,
+            ["git", "commit", "-m", "chore: auto-commit tracked changes from agent run"],
+            async (line, stream) => await onLogLine($"[entrypoint] {line}", stream),
+            cancellationToken);
+        return commitExit == 0;
     }
 
     /// <summary>
