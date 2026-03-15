@@ -439,6 +439,8 @@ public class CiCdWorker(
     /// Also searches inside <c>.zip</c> archives (act stores artifact uploads as zipped files).
     /// Handles both bare <c>.trx</c> files on disk and <c>.trx</c> files packed inside
     /// <c>.zip</c> archives as produced by the act artifact server.
+    /// Also handles artifact files stored without a <c>.zip</c> extension (act v7 direct-upload
+    /// format) by trying to open them as zip archives and, if that fails, as raw TRX XML.
     /// Best-effort: errors are logged but never propagated.
     /// </summary>
     private async Task ParseAndStoreTestResultsAsync(
@@ -471,6 +473,10 @@ public class CiCdWorker(
 
             // 2. .trx files packed inside .zip archives under the act artifact server layout:
             //    artifactDir/<runNumber>/<artifactName>/<file>.zip  (contains <file>.trx)
+            // 3. Files without .zip extension stored by act v7+ direct-upload:
+            //    artifactDir/<runNumber>/<artifactName>/<artifactName>  (raw content)
+            //    These are tried first as a zip archive (containing .trx entries) and then as
+            //    raw TRX XML — the same artifact name (directory name) is used for both cases.
             foreach (var runDir in Directory.GetDirectories(artifactDir))
             {
                 var runDirName = Path.GetFileName(runDir);
@@ -483,11 +489,21 @@ public class CiCdWorker(
                     if (string.IsNullOrEmpty(artifactName) || artifactName.StartsWith('.'))
                         continue;
 
-                    foreach (var zipFile in Directory.EnumerateFiles(artifactSubDir, "*.zip", SearchOption.AllDirectories))
+                    foreach (var artifactFile in Directory.EnumerateFiles(artifactSubDir, "*", SearchOption.AllDirectories))
                     {
+                        var ext = Path.GetExtension(artifactFile);
+
+                        // Already handled by case 1 (bare .trx files via FindTrxFiles).
+                        if (string.Equals(ext, ".trx", StringComparison.OrdinalIgnoreCase))
+                            continue;
+
+                        // Try to open the file as a zip archive and look for .trx entries inside.
+                        // This covers both .zip files (act archive mode) and extensionless files
+                        // stored by act v7+ that are still zip archives (archive=true, no extension).
+                        var foundInZip = false;
                         try
                         {
-                            using var zip = ZipFile.OpenRead(zipFile);
+                            using var zip = ZipFile.OpenRead(artifactFile);
                             foreach (var entry in zip.Entries)
                             {
                                 if (!entry.FullName.EndsWith(".trx", StringComparison.OrdinalIgnoreCase))
@@ -497,19 +513,47 @@ public class CiCdWorker(
                                 var suite = TrxParser.Parse(stream, artifactName);
                                 if (suite is null)
                                 {
-                                    logger.LogWarning("Failed to parse TRX entry {Entry} in {ZipFile} for run {RunId}",
-                                        entry.FullName, zipFile, runId);
+                                    logger.LogWarning("Failed to parse TRX entry {Entry} in {ArtifactFile} for run {RunId}",
+                                        entry.FullName, artifactFile, runId);
                                     continue;
                                 }
 
                                 suite.CiCdRunId = runId;
                                 db.CiCdTestSuites.Add(suite);
                                 suiteCount++;
+                                foundInZip = true;
                             }
                         }
-                        catch (Exception ex)
+                        catch (Exception ex) when (ex is not OperationCanceledException)
                         {
-                            logger.LogWarning(ex, "Failed to inspect zip {ZipFile} for TRX entries for run {RunId}", zipFile, runId);
+                            // Not a valid zip — fall through and try as raw TRX XML below.
+                            logger.LogDebug(ex, "File {ArtifactFile} is not a valid zip for run {RunId}; will try as raw TRX", artifactFile, runId);
+                        }
+
+                        if (foundInZip)
+                            continue;
+
+                        // Skip files with extensions other than the ones we know how to handle
+                        // (e.g. .txt, .json) to avoid noisy parse-attempt failures.
+                        // Only try extensionless files (act v7 direct-upload of a single TRX).
+                        if (!string.IsNullOrEmpty(ext))
+                            continue;
+
+                        // Try the extensionless file as raw TRX XML (act v7 direct upload with archive=false).
+                        try
+                        {
+                            using var stream = File.OpenRead(artifactFile);
+                            var suite = TrxParser.Parse(stream, artifactName);
+                            if (suite is not null)
+                            {
+                                suite.CiCdRunId = runId;
+                                db.CiCdTestSuites.Add(suite);
+                                suiteCount++;
+                            }
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
+                        {
+                            logger.LogDebug(ex, "File {ArtifactFile} is not a valid TRX for run {RunId}", artifactFile, runId);
                         }
                     }
                 }
