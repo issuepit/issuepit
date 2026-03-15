@@ -69,4 +69,13 @@ public class AgentSession
     /// <summary>JSON array of warning strings accumulated during the session (e.g. truncated issue comments).
     /// Null when no warnings were emitted.</summary>
     public string? Warnings { get; set; }
+
+    /// <summary>
+    /// URL of the agent tool's built-in web UI when running in HTTP server mode
+    /// (<see cref="Agent.UseHttpServer"/> = <c>true</c>).
+    /// Populated once the server is ready and cleared (set to null) after the session ends.
+    /// Null when running in CLI mode or when the server URL is not yet known.
+    /// </summary>
+    [MaxLength(500)]
+    public string? ServerWebUiUrl { get; set; }
 }
