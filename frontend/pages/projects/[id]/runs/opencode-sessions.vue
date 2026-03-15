@@ -123,9 +123,10 @@ const openCodeSessions = computed(() =>
   sessions.value.filter(s => s.openCodeSessionId),
 )
 
-// IDs of sessions that have a preserved DB snapshot (determined from openCodeDbS3Url via detail)
-// For simplicity, we show all sessions with openCodeSessionId — the preserved badge is on the detail page.
-const preservedIds = computed(() => new Set<string>())
+// IDs of sessions that have a preserved DB snapshot (can be restored in the next container run)
+const preservedIds = computed(() =>
+  new Set(sessions.value.filter(s => s.openCodeDbS3Url).map(s => s.id)),
+)
 
 onMounted(async () => {
   await projectsStore.fetchProject(id)

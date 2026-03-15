@@ -295,6 +295,7 @@ public class IssueWorker(
             .Where(s => s.IssueId == issue.Id
                 && s.AgentId == agent.Id
                 && s.Id != session.Id
+                && s.EndedAt != null
                 && s.OpenCodeSessionId != null
                 && (s.Status == AgentSessionStatus.Succeeded || s.Status == AgentSessionStatus.Failed))
             .OrderByDescending(s => s.EndedAt)
