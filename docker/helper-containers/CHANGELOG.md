@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/issuepit/issuepit/compare/helper-containers-v1.3.0...helper-containers-v1.4.0) (2026-03-15)
+
+
+### Features
+
+* opencode plugin to block `git push` ([#559](https://github.com/issuepit/issuepit/issues/559)) ([6928c6d](https://github.com/issuepit/issuepit/commit/6928c6d3386c6c9eccd14ac075bdff6fc5153cb5))
+
 ## [1.3.0](https://github.com/issuepit/issuepit/compare/helper-containers-v1.2.4...helper-containers-v1.3.0) (2026-03-15)
 
 
