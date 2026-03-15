@@ -411,8 +411,9 @@ public class AgentSessionTests(AspireFixture fixture)
         //
         // Counting note: the MCP tool response embeds projects as a JSON-encoded string inside
         // result.content[0].text. In that embedded JSON, the double-quotes are escaped with
-        // backslash (e.g. {\"id\":\"...\"}). Each project contributes exactly two {\"id\"
-        // occurrences (one for project.id, one for organization.id), so PROJ_COUNT = RAW / 2.
+        // backslash (e.g. {\"id\":\"...\"}). ProjectDto has a flat structure (id, orgId, name, ...)
+        // with no nested organization object, so each project contributes exactly ONE {\"id\"
+        // occurrence. PROJ_COUNT = RAW (no division).
         var mcpToolsCmd = new string[]
         {
             "sh", "-c",
@@ -446,9 +447,11 @@ public class AgentSessionTests(AspireFixture fixture)
             # Successful tool response has "content" but NO "isError":true.
             # The MCP SDK omits "isError":false in successful responses (defaults to false per spec).
             if echo "$LIST" | grep -qF '"content"' && ! echo "$LIST" | grep -qF '"isError":true'; then
-              RAW=$(echo "$LIST" | grep -oF '{\"id\"' | wc -l | tr -d ' ')
-              COUNT=$((RAW / 2))
+              # ProjectDto is flat (id, orgId, name, ...) — one {\"id\" per project, no division needed.
+              COUNT=$(echo "$LIST" | grep -oF '{\"id\"' | wc -l | tr -d ' ')
               echo "[ISSUEPIT:MCP_PROJECT_COUNT]=$COUNT"
+              # Print the raw list response body so CI logs show what was returned
+              echo "[ISSUEPIT:MCP_LIST_RESP]=$LIST"
               echo '[ISSUEPIT:MCP_TOOLS]=OK'
             else
               echo "[ISSUEPIT:MCP_LIST_RESP]=$LIST"
@@ -474,9 +477,12 @@ public class AgentSessionTests(AspireFixture fixture)
             .Select(l => l.GetProperty("line").GetString() ?? string.Empty)
             .ToList();
 
-        // Print MCP version for CI log visibility
+        // Print MCP version and raw list response for CI log visibility
         var versionLine = logLines.FirstOrDefault(l => l.Contains("[ISSUEPIT:MCP_VERSION]="));
         Console.WriteLine($"[MCP] server version from container: {versionLine ?? "(not found)"}");
+        var listRespLine = logLines.FirstOrDefault(l => l.Contains("[ISSUEPIT:MCP_LIST_RESP]="));
+        if (listRespLine is not null)
+            Console.WriteLine($"[MCP] list_projects raw response: {listRespLine}");
 
         // Assert MCP tools worked end-to-end from inside the container
         Assert.True(
