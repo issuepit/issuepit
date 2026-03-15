@@ -148,7 +148,7 @@ public class HappyPathTests : IAsyncLifetime
     public async Task Ui_HappyPath_RegisterCreateOrgProjectAndIssue()
     {
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
-        context.SetDefaultTimeout(10_000);
+        context.SetDefaultTimeout(E2ETimeouts.Default);
         var page = await context.NewPageAsync();
 
         try
@@ -158,7 +158,7 @@ public class HappyPathTests : IAsyncLifetime
 
             // 1. Register via the UI login/register form
             await new LoginPage(page).RegisterAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
 
             // 2. Create an organization via the Organizations page
             var orgName = $"UI Org {Guid.NewGuid():N}"[..20];
@@ -293,14 +293,14 @@ public class HappyPathTests : IAsyncLifetime
         var orgId = org.GetProperty("id").GetString()!;
 
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
-        context.SetDefaultTimeout(10_000);
+        context.SetDefaultTimeout(E2ETimeouts.Default);
         var page = await context.NewPageAsync();
 
         try
         {
             // Log in as owner
             await new LoginPage(page).LoginAsync(ownerUsername, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
 
             // Navigate to the org via the orgs list to avoid SSR hydration race conditions
             var orgsPage = new OrgsPage(page);
@@ -419,14 +419,14 @@ public class HappyPathTests : IAsyncLifetime
         var projectId = project.GetProperty("id").GetString()!;
 
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
-        context.SetDefaultTimeout(10_000);
+        context.SetDefaultTimeout(E2ETimeouts.Default);
         var page = await context.NewPageAsync();
 
         try
         {
             // Log in
             await new LoginPage(page).LoginAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
 
             // Navigate to milestones page and create a milestone
             var milestonesPage = new MilestonesPage(page);
@@ -474,14 +474,14 @@ public class HappyPathTests : IAsyncLifetime
         var milestoneId = ms.GetProperty("id").GetString()!;
 
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
-        context.SetDefaultTimeout(15_000);
+        context.SetDefaultTimeout(E2ETimeouts.Navigation);
         var page = await context.NewPageAsync();
 
         try
         {
             // Log in
             await new LoginPage(page).LoginAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
 
             // Navigate to milestones list and click the milestone row
             var milestonesPage = new MilestonesPage(page);
@@ -489,8 +489,8 @@ public class HappyPathTests : IAsyncLifetime
             await milestonesPage.ClickMilestoneAsync(milestoneTitle);
 
             // Verify we navigated to the milestone detail page
-            await page.WaitForURLAsync($"**/{milestoneId}", new PageWaitForURLOptions { Timeout = 10_000 });
-            await page.WaitForSelectorAsync("text=Progress", new PageWaitForSelectorOptions { Timeout = 10_000 });
+            await page.WaitForURLAsync($"**/{milestoneId}", new PageWaitForURLOptions { Timeout = E2ETimeouts.Default });
+            await page.WaitForSelectorAsync("text=Progress", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
         }
         finally
         {
@@ -533,13 +533,13 @@ public class HappyPathTests : IAsyncLifetime
         var milestoneId = ms.GetProperty("id").GetString()!;
 
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
-        context.SetDefaultTimeout(15_000);
+        context.SetDefaultTimeout(E2ETimeouts.Navigation);
         var page = await context.NewPageAsync();
 
         try
         {
             await new LoginPage(page).LoginAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
 
             var milestonesPage = new MilestonesPage(page);
             await milestonesPage.GotoAsync(projectId);
@@ -551,8 +551,8 @@ public class HappyPathTests : IAsyncLifetime
             await milestonesPage.ClickGanttLabelAsync(milestoneTitle);
 
             // Verify navigation to detail page
-            await page.WaitForURLAsync($"**/{milestoneId}", new PageWaitForURLOptions { Timeout = 10_000 });
-            await page.WaitForSelectorAsync("text=Progress", new PageWaitForSelectorOptions { Timeout = 10_000 });
+            await page.WaitForURLAsync($"**/{milestoneId}", new PageWaitForURLOptions { Timeout = E2ETimeouts.Default });
+            await page.WaitForSelectorAsync("text=Progress", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
         }
         finally
         {

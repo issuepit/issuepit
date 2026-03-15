@@ -7,9 +7,6 @@ namespace IssuePit.Tests.E2E.Pages;
 /// </summary>
 public class LoginPage(IPage page)
 {
-    // Short wait before retrying a tab click that may have been lost to Vue SSR hydration.
-    private const int VueHydrationRetryTimeoutMs = 5_000;
-
     // Targets the "Create account" tab button specifically, not the submit button inside the
     // register form (which also carries the text "Create account" when not loading).
     private const string CreateAccountTabSelector = "button:not([type='submit']):has-text('Create account')";
@@ -32,7 +29,7 @@ public class LoginPage(IPage page)
         try
         {
             await page.WaitForSelectorAsync("input[autocomplete='new-password']",
-                new PageWaitForSelectorOptions { Timeout = VueHydrationRetryTimeoutMs });
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
         }
         catch (TimeoutException)
         {

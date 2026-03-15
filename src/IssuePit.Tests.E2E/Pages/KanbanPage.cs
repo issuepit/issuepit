@@ -7,7 +7,6 @@ namespace IssuePit.Tests.E2E.Pages;
 /// </summary>
 public class KanbanPage(IPage page)
 {
-    private const int DefaultTimeoutMs = 15_000;
 
     /// <summary>
     /// Navigates to the kanban board for the given project and waits for the board to load.
@@ -19,11 +18,11 @@ public class KanbanPage(IPage page)
             await page.GotoAsync($"/projects/{projectId}/kanban");
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
             await page.WaitForSelectorAsync("a:text-is('Kanban')",
-                new PageWaitForSelectorOptions { Timeout = 10_000 });
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
         }
         catch (Exception ex) when (ex is TimeoutException || (ex is PlaywrightException pe && pe.Message.Contains("ERR_ABORTED")))
         {
-            await Task.Delay(1_500);
+            await Task.Delay(E2ETimeouts.RetryDelay);
             await page.GotoAsync($"/projects/{projectId}/kanban");
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
             await page.WaitForSelectorAsync("a:text-is('Kanban')");
@@ -38,14 +37,14 @@ public class KanbanPage(IPage page)
         await page.ClickAsync("button:has-text('Create')");
         // Wait for the modal to close and the Lanes button to appear (confirms board is active)
         await page.WaitForSelectorAsync("button:has-text('Lanes')",
-            new PageWaitForSelectorOptions { Timeout = 10_000 });
+            new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
     }
 
     /// <summary>Opens the Lanes modal.</summary>
     public async Task OpenLanesModalAsync()
     {
         await page.ClickAsync("button:has-text('Lanes')");
-        await page.WaitForSelectorAsync("text=Manage Lanes", new PageWaitForSelectorOptions { Timeout = DefaultTimeoutMs });
+        await page.WaitForSelectorAsync("text=Manage Lanes", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
     }
 
     /// <summary>Adds a lane via the Lanes modal.</summary>
@@ -74,7 +73,7 @@ public class KanbanPage(IPage page)
         try
         {
             await page.WaitForSelectorAsync("button:has-text('Lanes')",
-                new PageWaitForSelectorOptions { Timeout = 5_000 });
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
             return true;
         }
         catch (TimeoutException)

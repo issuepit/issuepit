@@ -90,11 +90,11 @@ public class IssueViewerTests : IAsyncLifetime
         var issueNumber = issue.GetProperty("number").GetInt32();
 
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
-        context.SetDefaultTimeout(15_000);
+        context.SetDefaultTimeout(E2ETimeouts.Navigation);
         var page = await context.NewPageAsync();
 
         await new LoginPage(page).LoginAsync(username, password);
-        await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+        await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
 
         return (context, page, projectSlug, issueNumber);
     }
@@ -113,7 +113,7 @@ public class IssueViewerTests : IAsyncLifetime
 
             // Issue title should be visible on the page
             await page.WaitForSelectorAsync("a:has-text('Viewer Test Issue')",
-                new PageWaitForSelectorOptions { Timeout = 10_000 });
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
         }
         finally
         {
@@ -133,7 +133,7 @@ public class IssueViewerTests : IAsyncLifetime
             await page.GotoAsync($"/projects/{projectSlug}/issues/{issueNumber}");
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
             await page.WaitForSelectorAsync("a:has-text('Viewer Test Issue')",
-                new PageWaitForSelectorOptions { Timeout = 10_000 });
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
 
             var detail = new IssueDetailPage(page);
             await detail.ClickDeleteButtonAsync();
@@ -160,7 +160,7 @@ public class IssueViewerTests : IAsyncLifetime
             await page.GotoAsync($"/projects/{projectSlug}/issues/{issueNumber}");
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
             await page.WaitForSelectorAsync("a:has-text('Viewer Test Issue')",
-                new PageWaitForSelectorOptions { Timeout = 10_000 });
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
 
             var detail = new IssueDetailPage(page);
             await detail.ClickDeleteButtonAsync();
@@ -188,7 +188,7 @@ public class IssueViewerTests : IAsyncLifetime
             await page.GotoAsync($"/projects/{projectSlug}/issues/{issueNumber}");
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
             await page.WaitForSelectorAsync("a:has-text('Viewer Test Issue')",
-                new PageWaitForSelectorOptions { Timeout = 10_000 });
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
 
             var detail = new IssueDetailPage(page);
             await detail.ClickDeleteButtonAsync();
@@ -196,7 +196,7 @@ public class IssueViewerTests : IAsyncLifetime
 
             // Should navigate back to the issues list
             await page.WaitForURLAsync($"**/{projectSlug}/issues",
-                new PageWaitForURLOptions { Timeout = 10_000 });
+                new PageWaitForURLOptions { Timeout = E2ETimeouts.Default });
         }
         finally
         {

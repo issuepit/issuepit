@@ -7,8 +7,7 @@ namespace IssuePit.Tests.E2E.Pages;
 /// </summary>
 public class MergeRequestsPage(IPage page)
 {
-    private const int NavigationFirstAttemptTimeoutMs = 5_000;
-    private const int NavigationRetryDelayMs = 1_500;
+    private const int NavigationRetryDelayMs = E2ETimeouts.RetryDelay;
 
     /// <summary>
     /// Navigates to the merge requests page for the given project and waits for the heading.
@@ -20,7 +19,7 @@ public class MergeRequestsPage(IPage page)
             await page.GotoAsync($"/projects/{projectId}/merge-requests");
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
             await page.WaitForSelectorAsync("a:text-is('Merge Requests')",
-                new PageWaitForSelectorOptions { Timeout = NavigationFirstAttemptTimeoutMs });
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
         }
         catch (Exception ex) when (ex is TimeoutException || (ex is PlaywrightException pe && pe.Message.Contains("ERR_ABORTED")))
         {
@@ -37,7 +36,7 @@ public class MergeRequestsPage(IPage page)
     public async Task CreateMergeRequestAsync(string title, string sourceBranch)
     {
         await page.ClickAsync("button:has-text('New Merge Request')");
-        await page.WaitForSelectorAsync("text=New Merge Request", new PageWaitForSelectorOptions { Timeout = 5_000 });
+        await page.WaitForSelectorAsync("text=New Merge Request", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
 
         await page.FillAsync("input[placeholder='Merge feature branch into main']", title);
 
@@ -57,7 +56,7 @@ public class MergeRequestsPage(IPage page)
         }
 
         await page.ClickAsync("button:has-text('Create Merge Request')");
-        await page.WaitForSelectorAsync($"text={title}", new PageWaitForSelectorOptions { Timeout = 10_000 });
+        await page.WaitForSelectorAsync($"text={title}", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
     }
 
     /// <summary>Returns true if a merge request with the given title is visible on the current tab.</summary>
@@ -65,7 +64,7 @@ public class MergeRequestsPage(IPage page)
     {
         try
         {
-            await page.WaitForSelectorAsync($"text={title}", new PageWaitForSelectorOptions { Timeout = 3_000 });
+            await page.WaitForSelectorAsync($"text={title}", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
             return true;
         }
         catch (TimeoutException)

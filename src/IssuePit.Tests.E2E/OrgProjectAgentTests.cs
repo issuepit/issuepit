@@ -218,13 +218,13 @@ public class OrgProjectAgentTests : IAsyncLifetime
 
         // Open a browser, log in, and navigate to the agent detail page.
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
-        context.SetDefaultTimeout(10_000);
+        context.SetDefaultTimeout(E2ETimeouts.Default);
         var page = await context.NewPageAsync();
 
         try
         {
             await new LoginPage(page).LoginAsync(username, "TestPass1!");
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
 
             var detailPage = new AgentDetailPage(page);
             await detailPage.GotoAsync(agentId);
@@ -253,14 +253,14 @@ public class OrgProjectAgentTests : IAsyncLifetime
     public async Task Ui_CreateOrg_AppearsInList()
     {
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
-        context.SetDefaultTimeout(10_000);
+        context.SetDefaultTimeout(E2ETimeouts.Default);
         var page = await context.NewPageAsync();
 
         try
         {
             var username = $"ui{Guid.NewGuid():N}"[..12];
             await new LoginPage(page).RegisterAsync(username, "TestPass1!");
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
 
             var orgName = $"UI Org {Guid.NewGuid():N}"[..20];
             var orgsPage = new OrgsPage(page);
@@ -283,14 +283,14 @@ public class OrgProjectAgentTests : IAsyncLifetime
     public async Task Ui_CreateProject_AppearsInList()
     {
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
-        context.SetDefaultTimeout(10_000);
+        context.SetDefaultTimeout(E2ETimeouts.Default);
         var page = await context.NewPageAsync();
 
         try
         {
             var username = $"ui{Guid.NewGuid():N}"[..12];
             await new LoginPage(page).RegisterAsync(username, "TestPass1!");
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
 
             var orgName = $"UIProjOrg {Guid.NewGuid():N}"[..20];
             var orgsPage = new OrgsPage(page);
@@ -318,14 +318,14 @@ public class OrgProjectAgentTests : IAsyncLifetime
     public async Task Ui_CreateAgent_AppearsInList()
     {
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
-        context.SetDefaultTimeout(10_000);
+        context.SetDefaultTimeout(E2ETimeouts.Default);
         var page = await context.NewPageAsync();
 
         try
         {
             var username = $"ui{Guid.NewGuid():N}"[..12];
             await new LoginPage(page).RegisterAsync(username, "TestPass1!");
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
 
             var orgName = $"UIAgentOrg {Guid.NewGuid():N}"[..20];
             var orgsPage = new OrgsPage(page);

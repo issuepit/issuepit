@@ -241,6 +241,12 @@ fi
 #   - autoupdate=false prevents opencode from self-updating mid-run
 #   - The IssuePit MCP server is registered when ISSUEPIT_MCP_URL is set
 #   - Agent modes are configured when ISSUEPIT_OPENCODE_AGENTS_JSON is set
+#
+# Plugin loading (opencode auto-discovers plugins — no config.json wiring needed):
+#   - Baked plugins live in /root/.config/opencode/plugins/ (copied during image build)
+#   - Runtime plugins are written to the same directory from ISSUEPIT_OPENCODE_PLUGINS_JSON
+#     Format: [{"name": "my-plugin.js", "content": "export const MyPlugin = ..."}]
+#     This allows injecting or overriding plugins without rebuilding the image.
 
 if command -v opencode > /dev/null 2>&1 && command -v python3 > /dev/null 2>&1; then
     OPENCODE_CONFIG_DIR="${HOME}/.config/opencode"
@@ -299,6 +305,33 @@ if agents_json_str:
             config["mode"] = mode_map
     except Exception as e:
         print(f"[entrypoint] Warning: could not parse ISSUEPIT_OPENCODE_AGENTS_JSON: {e}", file=sys.stderr)
+
+# Write runtime plugins from ISSUEPIT_OPENCODE_PLUGINS_JSON to the opencode
+# global plugins directory. opencode auto-loads every *.js / *.ts file it finds
+# there — no config.json wiring needed. This allows injecting or patching plugins
+# at runtime even when the base image pre-dates a new plugin being added.
+plugins_json_str = os.environ.get("ISSUEPIT_OPENCODE_PLUGINS_JSON", "")
+if plugins_json_str:
+    plugins_dir = os.path.join(os.path.expanduser("~"), ".config", "opencode", "plugins")
+    os.makedirs(plugins_dir, exist_ok=True)
+    try:
+        runtime_plugins = json.loads(plugins_json_str)
+        for i, plugin in enumerate(runtime_plugins):
+            name = plugin.get("name", "")
+            content = plugin.get("content", "")
+            if not name or not content:
+                print(f"[entrypoint] Warning: skipping runtime plugin at index {i} with missing name or content", file=sys.stderr)
+                continue
+            # Ensure the filename ends with .js or .ts so opencode picks it up.
+            if not (name.endswith(".js") or name.endswith(".ts")):
+                name = name + ".js"
+                print(f"[entrypoint] Added .js suffix to runtime plugin: {name}")
+            plugin_path = os.path.join(plugins_dir, name)
+            with open(plugin_path, "w") as f:
+                f.write(content)
+            print(f"[entrypoint] Runtime plugin written: {plugin_path}")
+    except Exception as e:
+        print(f"[entrypoint] Warning: could not parse ISSUEPIT_OPENCODE_PLUGINS_JSON: {e}", file=sys.stderr)
 
 with open(config_file, "w") as f:
     json.dump(config, f, indent=2)

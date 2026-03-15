@@ -42,7 +42,7 @@ public class TodosTests : IAsyncLifetime
             var username = $"todos{Guid.NewGuid():N}"[..12];
             const string password = "TestPass1!";
             await new LoginPage(page).RegisterAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
         }
         finally
         {
@@ -104,7 +104,7 @@ public class TodosTests : IAsyncLifetime
         await todosPage.SwitchCalendarToWeekAsync();
 
         // Week view shows time labels like "08:00"
-        await page.WaitForSelectorAsync("text=08:00", new PageWaitForSelectorOptions { Timeout = 5_000 });
+        await page.WaitForSelectorAsync("text=08:00", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
     }
 
     [Fact]

@@ -12,7 +12,7 @@ public class TodosPage(IPage page)
     {
         await page.GotoAsync("/todos");
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        await page.WaitForSelectorAsync("a:has-text('Todos')", new PageWaitForSelectorOptions { Timeout = 10_000 });
+        await page.WaitForSelectorAsync("a:has-text('Todos')", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
     }
 
     /// <summary>Creates a todo via the New Todo modal and waits for it to appear in the list.</summary>
@@ -21,7 +21,7 @@ public class TodosPage(IPage page)
         await page.ClickAsync("button:has-text('+ Todo')");
         await page.FillAsync("input[placeholder='Todo title']", title);
         await page.ClickAsync("button:has-text('Create')");
-        await page.WaitForSelectorAsync($"text={title}", new PageWaitForSelectorOptions { Timeout = 10_000 });
+        await page.WaitForSelectorAsync($"text={title}", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
     }
 
     /// <summary>Switches to the given view (Board, Calendar, or List).</summary>
@@ -35,7 +35,7 @@ public class TodosPage(IPage page)
     public async Task SwitchToCalendarViewAsync()
     {
         await SwitchViewAsync("Calendar");
-        await page.WaitForSelectorAsync("button:has-text('Month')", new PageWaitForSelectorOptions { Timeout = 5_000 });
+        await page.WaitForSelectorAsync("button:has-text('Month')", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
     }
 
     /// <summary>Switches the calendar to weekly view.</summary>

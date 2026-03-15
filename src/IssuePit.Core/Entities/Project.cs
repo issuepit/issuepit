@@ -93,5 +93,12 @@ public class Project
     /// </summary>
     public bool RequiresRunApproval { get; set; } = false;
 
+    /// <summary>
+    /// Optional accent color for the project (hex, e.g. "#4c6ef5").
+    /// Used to highlight the project in sidebar menus and breadcrumbs.
+    /// </summary>
+    [MaxLength(7)]
+    public string? Color { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

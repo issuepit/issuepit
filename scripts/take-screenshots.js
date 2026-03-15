@@ -104,6 +104,15 @@ async function screenshot(page, name) {
   console.log(`  ✓  ${file}`);
 }
 
+// Screenshot after an interactive action (e.g. modal open, sidebar expanded).
+// Does NOT wait for networkidle — just lets animations settle.
+async function screenshotState(page, name) {
+  const file = path.join(OUTPUT_DIR, `${name}.png`);
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: file, fullPage: false });
+  console.log(`  ✓  ${file}`);
+}
+
 async function main() {
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
@@ -166,16 +175,11 @@ async function main() {
   await page.goto(`${FRONTEND_URL}/issues`);
   await screenshot(page, 'issues');
 
-  // Get the first available project for the kanban screenshot
+  // Get the first available project for project-specific screenshots
   const projectsRes = await apiClient.get(`${API_URL}/api/projects`, {
     headers: tenantId ? { 'X-Tenant-Id': tenantId } : {},
   });
   const projects = await projectsRes.json();
-  if (Array.isArray(projects) && projects.length > 0) {
-    const proj = projects[0];
-    await page.goto(`${FRONTEND_URL}/projects/${proj.id}/kanban`);
-    await screenshot(page, 'kanban');
-  }
 
   await page.goto(`${FRONTEND_URL}/agents`);
   await screenshot(page, 'agents');
@@ -191,11 +195,140 @@ async function main() {
 
   if (Array.isArray(projects) && projects.length > 0) {
     const proj = projects[0];
+
+    // --- Project dashboard ---
+    await page.goto(`${FRONTEND_URL}/projects/${proj.id}`);
+    await screenshot(page, 'project-dashboard');
+
+    // Project dashboard — draft/customize mode
+    try {
+      await page.getByText('Customize dashboard').click({ timeout: 3000 });
+      await screenshotState(page, 'project-dashboard-draft');
+      await page.getByRole('button', { name: 'Cancel' }).click();
+      await page.waitForTimeout(300);
+    } catch (e) {
+      console.warn('  ⚠  project-dashboard-draft skipped:', e.message);
+    }
+
+    // --- Kanban board ---
+    await page.goto(`${FRONTEND_URL}/projects/${proj.id}/kanban`);
+    await screenshot(page, 'kanban');
+
+    // Kanban — issue preview sidebar (click first card)
+    try {
+      await page.locator('div[draggable="true"]').first().click({ timeout: 3000 });
+      await screenshotState(page, 'kanban-card-preview');
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(200);
+    } catch (e) {
+      console.warn('  ⚠  kanban-card-preview skipped:', e.message);
+    }
+
+    // Kanban — new board dialog (lane property selector)
+    try {
+      await page.getByText('+ Board').click({ timeout: 3000 });
+      await screenshotState(page, 'kanban-new-board');
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(200);
+    } catch (e) {
+      console.warn('  ⚠  kanban-new-board skipped:', e.message);
+    }
+
+    // Kanban — transitions dialog
+    try {
+      await page.getByRole('button', { name: 'Transitions' }).click({ timeout: 3000 });
+      await screenshotState(page, 'kanban-transitions');
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(200);
+    } catch (e) {
+      console.warn('  ⚠  kanban-transitions skipped:', e.message);
+    }
+
+    // --- CI/CD and milestones ---
     await page.goto(`${FRONTEND_URL}/projects/${proj.id}/ci-cd`);
     await screenshot(page, 'cicd');
 
     await page.goto(`${FRONTEND_URL}/projects/${proj.id}/milestones`);
     await screenshot(page, 'milestones');
+
+    // --- Test History ---
+    await page.goto(`${FRONTEND_URL}/projects/${proj.id}/runs/test-history`);
+    await screenshot(page, 'test-history-overview');
+
+    // Tests tab
+    try {
+      await page.getByRole('button', { name: 'Tests' }).click({ timeout: 3000 });
+      await screenshotState(page, 'test-history-tests');
+    } catch (e) {
+      console.warn('  ⚠  test-history-tests skipped:', e.message);
+    }
+
+    // Flaky tab
+    try {
+      await page.getByRole('button', { name: 'Flaky' }).click({ timeout: 3000 });
+      await screenshotState(page, 'test-history-flaky');
+    } catch (e) {
+      console.warn('  ⚠  test-history-flaky skipped:', e.message);
+    }
+
+    // Compare tab
+    try {
+      await page.getByRole('button', { name: 'Compare' }).click({ timeout: 3000 });
+      await screenshotState(page, 'test-history-compare');
+    } catch (e) {
+      console.warn('  ⚠  test-history-compare skipped:', e.message);
+    }
+
+    // Import TRX modal
+    try {
+      await page.getByRole('button', { name: 'Import TRX' }).click({ timeout: 3000 });
+      await screenshotState(page, 'test-history-import');
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(200);
+    } catch (e) {
+      console.warn('  ⚠  test-history-import skipped:', e.message);
+    }
+
+    // --- Project Settings — Custom Properties ---
+    await page.goto(`${FRONTEND_URL}/projects/${proj.id}/settings`);
+    await page.waitForLoadState('networkidle');
+    await screenshot(page, 'project-settings');
+
+    // Scroll to Custom Properties section and capture
+    try {
+      const heading = page.getByText('Custom Properties').first();
+      await heading.waitFor({ timeout: 3000 });
+      await heading.scrollIntoViewIfNeeded();
+      await screenshotState(page, 'project-settings-custom-properties');
+    } catch (e) {
+      console.warn('  ⚠  project-settings-custom-properties skipped:', e.message);
+    }
+
+    // Custom property add form — default (Text type)
+    try {
+      await page.getByRole('button', { name: '+ Add Property' }).click({ timeout: 3000 });
+      await screenshotState(page, 'custom-property-form');
+
+      // Use a single stable locator for the type select (all options are always in the DOM)
+      const typeSelect = page.locator('select').filter({ hasText: 'Text' }).first();
+
+      // Switch to Enum type (shows "Allowed values" field)
+      await typeSelect.selectOption({ label: 'Enum (pick list)' });
+      await screenshotState(page, 'custom-property-form-enum');
+
+      // Switch to Number type (shows min/max fields)
+      await typeSelect.selectOption({ label: 'Number' });
+      await screenshotState(page, 'custom-property-form-number');
+
+      // Switch to Date type (shows date range pickers)
+      await typeSelect.selectOption({ label: 'Date' });
+      await screenshotState(page, 'custom-property-form-date');
+
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(300);
+    } catch (e) {
+      console.warn('  ⚠  custom-property-form skipped:', e.message);
+    }
   }
 
   await browser.close();

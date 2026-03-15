@@ -7,8 +7,6 @@ namespace IssuePit.Tests.E2E.Pages;
 /// </summary>
 public class OrgsPage(IPage page)
 {
-    // Short wait before retrying a navigation that may have been redirected by Vue SSR hydration.
-    private const int VueHydrationRetryTimeoutMs = 5_000;
 
     public async Task GotoAsync()
     {
@@ -26,7 +24,7 @@ public class OrgsPage(IPage page)
         try
         {
             await page.WaitForSelectorAsync("button:has-text('New Organization')",
-                new PageWaitForSelectorOptions { Timeout = VueHydrationRetryTimeoutMs });
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
         }
         catch (TimeoutException)
         {
@@ -41,7 +39,7 @@ public class OrgsPage(IPage page)
         try
         {
             await page.WaitForSelectorAsync("input[placeholder='Acme Corp']",
-                new PageWaitForSelectorOptions { Timeout = VueHydrationRetryTimeoutMs });
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
         }
         catch (TimeoutException)
         {
@@ -51,9 +49,9 @@ public class OrgsPage(IPage page)
 
         await page.FillAsync("input[placeholder='Acme Corp']", orgName);
         await page.ClickAsync("button[type='submit']");
-        await page.WaitForSelectorAsync($"text={orgName}", new PageWaitForSelectorOptions { Timeout = 10_000 });
+        await page.WaitForSelectorAsync($"text={orgName}", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
         await page.ClickAsync($"a:has-text('{orgName}')");
-        await page.WaitForURLAsync("**/orgs/**");
+        await page.WaitForURLAsync("**/orgs/**", new PageWaitForURLOptions { Timeout = E2ETimeouts.NavigationLong, WaitUntil = WaitUntilState.Commit });
         return Guid.Parse(page.Url.TrimEnd('/').Split('/').Last());
     }
 
@@ -62,9 +60,9 @@ public class OrgsPage(IPage page)
     /// </summary>
     public async Task NavigateToOrgAsync(string orgId)
     {
-        await page.WaitForSelectorAsync($"a[href*='{orgId}']", new PageWaitForSelectorOptions { Timeout = 20_000 });
+        await page.WaitForSelectorAsync($"a[href*='{orgId}']", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.NavigationLong });
         await page.ClickAsync($"a[href*='{orgId}']");
-        await page.WaitForURLAsync($"**/orgs/{orgId}", new PageWaitForURLOptions { Timeout = 20_000, WaitUntil = WaitUntilState.Commit });
+        await page.WaitForURLAsync($"**/orgs/{orgId}", new PageWaitForURLOptions { Timeout = E2ETimeouts.NavigationLong, WaitUntil = WaitUntilState.Commit });
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
     }
 }

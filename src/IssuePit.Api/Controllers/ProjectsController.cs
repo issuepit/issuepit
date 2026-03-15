@@ -144,6 +144,7 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
         project.RequiresRunApproval = updated.RequiresRunApproval;
         project.IssueKey = string.IsNullOrWhiteSpace(updated.IssueKey) ? null : updated.IssueKey.Trim().ToUpperInvariant();
         project.IssueNumberOffset = updated.IssueNumberOffset;
+        project.Color = updated.Color;
         await db.SaveChangesAsync();
         return Ok(project);
     }
@@ -459,7 +460,8 @@ public record ProjectDto(
     string? LocalRepositories,
     int OpenMergeRequestCount,
     string? IssueKey,
-    int IssueNumberOffset)
+    int IssueNumberOffset,
+    string? Color)
 {
     public static Expression<Func<Project, ProjectDto>> Selector(IssuePitDbContext db) =>
         p => new ProjectDto(
@@ -474,5 +476,6 @@ public record ProjectDto(
             p.LocalRepositories,
             db.MergeRequests.Count(mr => mr.ProjectId == p.Id && mr.Status == MergeRequestStatus.Open),
             p.IssueKey,
-            p.IssueNumberOffset);
+            p.IssueNumberOffset,
+            p.Color);
 }

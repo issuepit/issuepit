@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using Xunit.Abstractions;
 
 namespace IssuePit.Tests.E2E;
 
@@ -18,7 +19,7 @@ namespace IssuePit.Tests.E2E;
 /// </summary>
 [Collection("E2E")]
 [Trait("Category", "E2E")]
-public class McpServerTests(AspireFixture fixture)
+public class McpServerTests(AspireFixture fixture, ITestOutputHelper output)
 {
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
 
@@ -119,8 +120,8 @@ public class McpServerTests(AspireFixture fixture)
         Assert.False(string.IsNullOrWhiteSpace(version),
             $"serverInfo.version should be a non-empty string, got: '{version}' (serverInfo={serverInfo})");
 
-        Console.WriteLine($"[MCP] server name    : {name}");
-        Console.WriteLine($"[MCP] server version : {version}");
+        output.WriteLine($"[MCP] server name    : {name}");
+        output.WriteLine($"[MCP] server version : {version}");
     }
 
     /// <summary>
@@ -182,8 +183,8 @@ public class McpServerTests(AspireFixture fixture)
 
         var countAfter = ParseProjectCount(listAfter);
 
-        Console.WriteLine($"[MCP] project count before: {countBefore}");
-        Console.WriteLine($"[MCP] project count after : {countAfter}");
+        output.WriteLine($"[MCP] project count before: {countBefore}");
+        output.WriteLine($"[MCP] project count after : {countAfter}");
 
         Assert.Equal(countBefore + 1, countAfter);
     }

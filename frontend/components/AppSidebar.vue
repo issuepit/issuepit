@@ -31,7 +31,7 @@ stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
       <SidebarNavLink to="/todos" icon="todos" label="Todos" />
 
       <!-- Issues section -->
-      <SidebarSection label="Issues" icon="issues" :default-open="true">
+      <SidebarSection label="Issues" icon="issues" :default-open="false">
         <SidebarNavLink to="/issues?filter=my" icon="my-issues" label="My Issues" :exact="false" />
         <SidebarNavLink to="/issues?filter=open" icon="open-issues" label="Open Issues" :exact="false" />
         <SidebarNavLink to="/issues?filter=unassigned" icon="unassigned" label="Unassigned" :exact="false" />
@@ -39,7 +39,7 @@ stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
       </SidebarSection>
 
       <!-- Projects section (lazy loaded) -->
-      <SidebarSection label="Projects" icon="projects" :lazy="true" @open="loadProjects">
+      <SidebarSection label="Projects" icon="projects" :default-open="true" :lazy="true" @open="loadProjects">
         <div v-if="projectsLoading" class="px-2 py-1">
           <div class="h-3 bg-gray-800 rounded animate-pulse w-3/4 mb-1.5"/>
           <div class="h-3 bg-gray-800 rounded animate-pulse w-1/2"/>
@@ -48,7 +48,7 @@ stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
           <SidebarNavLink
             v-for="project in projects"
             :key="project.id"
-            :to="`/projects/${project.id}`"
+            :to="getProjectLink(project.id)"
             icon="project-item"
             :label="project.name"
             :color="project.color"
@@ -163,9 +163,23 @@ import { useAgentsStore } from '~/stores/agents'
 import type { Project, Organization, Agent } from '~/types'
 
 const auth = useAuthStore()
+const route = useRoute()
 
 const displayName = computed(() => auth.user?.username ?? auth.user?.email?.split('@')[0] ?? 'User')
 const initials = computed(() => displayName.value.slice(0, 2).padEnd(2, displayName.value[0] ?? 'U').toUpperCase())
+
+// Returns the sidebar link for a project, preserving the current sub-page when possible.
+// e.g. /projects/OLD/kanban → /projects/NEW/kanban
+// e.g. /projects/OLD/issues/8 → /projects/NEW/issues  (specific item pages fall back to the list)
+function getProjectLink(projectId: string): string {
+  const match = route.path.match(/^\/projects\/[^/]+\/(.+)$/)
+  if (!match) return `/projects/${projectId}`
+  const subPath = match[1]
+  const parts = subPath.split('/')
+  // Use only the first segment when deeper than 1 level (e.g. issues/8 → issues)
+  const resolvedSub = parts.length > 1 ? parts[0] : subPath
+  return `/projects/${projectId}/${resolvedSub}`
+}
 
 // Sidebar collapse state
 const sidebarCollapsed = ref(

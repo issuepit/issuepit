@@ -28,6 +28,28 @@ Your new project appears in the project list immediately.
 
 ---
 
+## Project Dashboard
+
+Opening a project takes you to the **project dashboard** — a configurable overview of everything happening in the project.
+
+![Project dashboard]({{ '/assets/screenshots/project-dashboard.png' | relative_url }})
+
+The dashboard includes compact pill stats (open issues, agent runs, CI/CD runs, members), a **Recent Issues** list, inline read-only kanban, recent agent and CI/CD run summaries, and an issue history feed.
+
+### Customising the dashboard layout
+
+Click **Customize dashboard** (bottom of the page) to enter **draft mode**. In draft mode:
+
+- **Drag** any section header to reorder sections.
+- Use the per-section config bar to change **display mode** (list / count / block), **max items**, and **width** (small / medium / large).
+- **Hide** sections you don't need; restore them via the hidden sections row at the bottom.
+- Group sections into **tab groups** — multiple sections share the same space and are switched via tabs.
+- Click **Save** to persist the layout (stored per user in the browser), or **Cancel** to discard changes.
+
+![Project dashboard in draft/customize mode]({{ '/assets/screenshots/project-dashboard-draft.png' | relative_url }})
+
+---
+
 ## Git Origins (Multiple Remotes)
 
 A project can have **multiple git origins**, each with a different role:
@@ -106,6 +128,83 @@ Each project has a **Kanban board** with the following columns by default:
 | Done | Completed |
 
 To reorder or rename columns, go to **Project Settings → Board**.
+
+### Issue Preview Sidebar
+
+Clicking any card on the Kanban board opens a **slide-in preview panel** on the right side. The panel shows the issue's status, priority, type, labels, assignees, milestone, and description excerpt. Click **Open Full Issue** to navigate to the full issue page, or click the × button or the backdrop to dismiss the panel.
+
+![Issue preview sidebar]({{ '/assets/screenshots/kanban-card-preview.png' | relative_url }})
+
+![Issue preview sidebar (detailed)](https://github.com/user-attachments/assets/8891f583-cfc1-4612-bd60-6cfbdb42d75a)
+
+### Lane Properties
+
+By default, Kanban columns group issues by **Status**. You can switch the active board's grouping to any of the following lane properties:
+
+| Lane Property | Description |
+|---------------|-------------|
+| **Status** | Group by issue status (default) |
+| **Priority** | Group by priority (Critical, High, Medium, Low, None) |
+| **Label** | Group by assigned label |
+| **Type** | Group by issue type |
+| **Agent** | Group by assigned agent mode |
+| **Milestone** | Group by assigned milestone |
+
+To change the lane property, click **+ Board** and select the desired **Lane Property**, or view the active board badge in the toolbar to see the current grouping mode. Dragging an issue to a different column automatically updates the corresponding property on that issue.
+
+![New board dialog — lane property selector]({{ '/assets/screenshots/kanban-new-board.png' | relative_url }})
+
+![Lane property selector and board variants](https://github.com/user-attachments/assets/539cb797-210a-4e57-88a8-5fea8bab937b)
+
+### Lane Transitions
+
+The **Transitions** button in the board toolbar lets you define which column-to-column moves are allowed:
+
+1. Click **Transitions** in the toolbar.
+2. Click **Add Transition**.
+3. Fill in the **Name**, **From** column, **To** column, and optionally enable **Auto-trigger** (for agent-driven moves).
+4. Click **Save**.
+
+When transitions are defined, invalid drop targets are visually grayed out during a drag. When no transitions are defined the board is open — any drag is allowed. The Transitions button pulses amber when dragging from a column that has no outgoing transitions configured.
+
+![Lane transitions dialog]({{ '/assets/screenshots/kanban-transitions.png' | relative_url }})
+
+### Custom Issue Properties
+
+Projects can define **custom properties** to capture structured data beyond the built-in fields (status, priority, type, etc.).
+
+![Custom properties list in project settings]({{ '/assets/screenshots/project-settings-custom-properties.png' | relative_url }})
+
+#### Adding a custom property
+
+1. Open your project.
+2. Go to **Settings → Custom Properties**.
+3. Click **+ Add Property**.
+4. Fill in:
+   - **Name** — label shown on the issue form
+   - **Type** — one of `Text`, `Number`, `Date`, `Enum`, `Bool`, `Person`, or `Agent`
+   - **Required** — whether the field must be filled when creating an issue
+   - **Default Value** *(optional)*
+   - **Constraints** *(type-specific)*:
+     - **Enum** — comma-separated or JSON array of allowed values
+
+       ![Custom property form — Enum type]({{ '/assets/screenshots/custom-property-form-enum.png' | relative_url }})
+
+     - **Text** — minimum and maximum character length
+     - **Number** — minimum and maximum numeric range
+
+       ![Custom property form — Number type]({{ '/assets/screenshots/custom-property-form-number.png' | relative_url }})
+
+     - **Date** — minimum and maximum date
+
+       ![Custom property form — Date type]({{ '/assets/screenshots/custom-property-form-date.png' | relative_url }})
+
+     - **Person / Agent** — allow multiple selections (optionally with a max count)
+5. Click **Save**.
+
+![Custom property constraint fields overview](https://github.com/user-attachments/assets/6bb08cc2-04d4-4bbe-b5b8-4a1bbfec0fe2)
+
+Custom property values are stored per issue and displayed inline in the issue detail view.
 
 ---
 
@@ -253,6 +352,48 @@ The **Runs** tab shows a combined list of all agent sessions and CI/CD pipeline 
 Click any run to open its detail page with logs, artifacts, and job status.
 
 You can also view runs across all projects from the global **Runs** page in the sidebar.
+
+---
+
+## Test History
+
+The **Test History** page (`Project → Runs → Test History`) surfaces all test results stored from CI/CD `.trx` artifact files into a queryable dashboard.
+
+![Test history overview]({{ '/assets/screenshots/test-history-overview.png' | relative_url }})
+
+### Tabs
+
+| Tab | Description |
+|-----|-------------|
+| **Overview** | Summary cards (total / passing / failing / flaky count), a stacked bar chart of pass/fail/skip per run, and a sortable run table |
+| **Tests** | Searchable table of all unique tests with a `flaky` badge, fail %, average duration, and last outcome. Click any row for a slide-in panel showing per-run history with error messages and stack traces |
+| **Flaky** | Filtered view of tests with mixed results. Use **Create Issue** to pre-fill a new issue with the test name, fail rate, and error context |
+| **Compare** | Select two runs (baseline A and comparison B) to see a colour-coded diff: regressed (red), fixed (green), new tests (blue), removed tests (strikethrough), significantly slower tests (yellow) |
+
+| Tests tab | Flaky tab |
+|-----------|-----------|
+| ![Tests tab]({{ '/assets/screenshots/test-history-tests.png' | relative_url }}) | ![Flaky tab]({{ '/assets/screenshots/test-history-flaky.png' | relative_url }}) |
+
+| Compare — picker | Compare — results |
+|---|---|
+| <img src="https://github.com/user-attachments/assets/06eb1c2c-646c-44d8-aa2f-8e9c4a79953e"> | <img src="https://github.com/user-attachments/assets/b93cffdd-2151-44d4-85b0-bd8e2ea3aceb"> |
+
+### Importing TRX files
+
+Click **Import TRX** (accessible from any tab) to upload a `.trx` file directly — useful for E2E runs that run outside CI. You can optionally specify a commit SHA, branch name, and artifact label.
+
+![Import TRX modal]({{ '/assets/screenshots/test-history-import.png' | relative_url }})
+
+### MCP tools
+
+Four MCP tools are available for AI-assisted analysis:
+
+| Tool | Description |
+|------|-------------|
+| `get_test_history` | Run summaries for trend analysis |
+| `get_test_list` | All tests sorted by failure count |
+| `get_test_case_history` | Per-test flakiness history |
+| `compare_test_runs` | Diff two runs: new / removed / fixed / regressed / slower |
 
 ---
 
