@@ -491,3 +491,6 @@ $RECYCLE.BIN/
 .output/
 dist/
 frontend/node_modules/
+
+# IssuePit config-repo (runtime import target — rename from config-repo.example/ to use)
+config-repo/

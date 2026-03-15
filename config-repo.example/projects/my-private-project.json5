@@ -1,0 +1,24 @@
+// Project config override for "my-private-project".
+// File name (without extension) is used as the project slug when "slug" is omitted.
+// Only non-null fields are applied — missing fields are left unchanged.
+{
+  "slug": "my-private-project",
+  "orgSlug": "my-org",      // must match an existing org slug
+  "name": "My Private Project",
+  "description": "A private GitHub project managed via infrastructure-as-code config.",
+
+  // Single git origin shorthand (use gitRepos[] for multiple origins)
+  "gitUrl": "https://github.com/my-org/my-private-repo.git",
+  "gitToken": "ghp_REPLACE_ME_WITH_YOUR_PAT",  // PAT with repo:read + contents:write
+  "defaultBranch": "main",
+
+  // Runner settings (inherited from org when omitted)
+  "maxConcurrentRunners": 2,
+  "mountRepositoryInDocker": true,
+
+  // Members — resolved by userId (GUID) or username; permissions are a bitmask
+  "members": [
+    { "username": "alice", "permissions": 127 },
+    { "username": "bob",   "permissions": 67 },
+  ],
+}

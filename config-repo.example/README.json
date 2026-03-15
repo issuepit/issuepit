@@ -1,0 +1,4 @@
+{
+  "_comment": "Rename this directory to 'config-repo' (or any path you prefer) and configure it in IssuePit under Admin → Tenant → Config Repo, or set the ConfigRepo:Url environment variable. All files are applied on startup and every 5 minutes.",
+  "_docs": "https://github.com/issuepit/issuepit/blob/main/docs/config-repo.md"
+}

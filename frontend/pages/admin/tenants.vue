@@ -64,6 +64,12 @@
                   Edit
                 </button>
                 <button
+                  class="text-xs text-brand-400 hover:text-brand-300 px-3 py-1.5 rounded-md border border-brand-900/30 hover:bg-brand-900/20 transition-colors"
+                  @click="openConfigRepo(tenant.id)"
+                >
+                  Config Repo
+                </button>
+                <button
                   class="text-xs text-red-400 hover:text-red-300 px-3 py-1.5 rounded-md border border-red-900/30 hover:bg-red-900/20 transition-colors"
                   @click="confirmDelete(tenant.id, tenant.name)"
                 >
@@ -154,6 +160,108 @@
         </form>
       </div>
     </div>
+
+    <!-- Config Repo Modal -->
+    <div v-if="showConfigRepoModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-lg p-6 shadow-xl">
+        <h2 class="text-lg font-bold text-white mb-5">Config Repo</h2>
+        <form class="space-y-4" @submit.prevent="saveConfigRepo">
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">URL</label>
+            <input
+              v-model="configRepoForm.url"
+              type="text"
+              placeholder="https://github.com/org/config-repo.git or /local/path"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+            <p class="text-xs text-gray-500 mt-1">Git URL (http/https/git@) or local filesystem path.</p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Token / PAT</label>
+            <input
+              v-model="configRepoForm.token"
+              type="password"
+              placeholder="Leave empty to keep existing"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Git Username</label>
+            <input
+              v-model="configRepoForm.username"
+              type="text"
+              placeholder="git"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+          <div class="flex items-center gap-3">
+            <input
+              id="strict-mode"
+              v-model="configRepoForm.strictMode"
+              type="checkbox"
+              class="w-4 h-4 rounded border-gray-600 text-brand-600 focus:ring-brand-500 bg-gray-700"
+            />
+            <label for="strict-mode" class="text-sm text-gray-300 cursor-pointer">
+              Strict mode — log warning for unknown users instead of silently skipping
+            </label>
+          </div>
+          <div class="flex gap-3 pt-1">
+            <button
+              type="submit"
+              :disabled="configRepoSaving"
+              class="flex-1 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
+            >
+              {{ configRepoSaving ? 'Saving…' : 'Save' }}
+            </button>
+            <button
+              type="button"
+              :disabled="configRepoSyncing"
+              class="flex-1 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
+              @click="triggerSync"
+            >
+              {{ configRepoSyncing ? 'Syncing…' : 'Sync Now' }}
+            </button>
+            <button
+              type="button"
+              class="px-4 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 rounded-lg transition-colors"
+              @click="closeConfigRepoModal"
+            >
+              Close
+            </button>
+          </div>
+        </form>
+
+        <!-- Sync result -->
+        <div v-if="syncResult" class="mt-4 space-y-2">
+          <div class="flex items-center gap-2 text-sm text-gray-400">
+            <svg class="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+            Sync completed — {{ syncResult.filesProcessed }} file{{ syncResult.filesProcessed === 1 ? '' : 's' }} processed
+          </div>
+          <div v-if="syncResult.issues.length" class="rounded-lg border border-gray-700 divide-y divide-gray-800 overflow-hidden">
+            <div
+              v-for="(issue, idx) in syncResult.issues"
+              :key="idx"
+              class="px-3 py-2 text-xs flex items-start gap-2"
+              :class="issue.severity === 'error' ? 'bg-red-950/30' : 'bg-yellow-950/20'"
+            >
+              <span
+                class="shrink-0 mt-0.5 font-bold uppercase tracking-wide"
+                :class="issue.severity === 'error' ? 'text-red-400' : 'text-yellow-400'"
+              >{{ issue.severity }}</span>
+              <span class="text-gray-300">
+                <span class="font-mono text-gray-400">{{ issue.file }}</span>: {{ issue.message }}
+              </span>
+            </div>
+          </div>
+          <p v-else class="text-xs text-green-400">No warnings or errors.</p>
+        </div>
+        <div v-if="syncError" class="mt-4 rounded-lg bg-red-950/30 border border-red-800/30 p-3 text-sm text-red-400">
+          {{ syncError }}
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -215,5 +323,78 @@ function confirmDelete(id: string, name: string) {
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
+// ── Config Repo ─────────────────────────────────────────────────────────────
+
+interface SyncIssue { severity: 'error' | 'warning'; file: string; message: string }
+interface SyncResult { filesProcessed: number; issues: SyncIssue[] }
+
+const showConfigRepoModal = ref(false)
+const configRepoTenantId = ref<string | null>(null)
+const configRepoSaving = ref(false)
+const configRepoSyncing = ref(false)
+const syncResult = ref<SyncResult | null>(null)
+const syncError = ref<string | null>(null)
+
+const configRepoForm = reactive({ url: '', token: '', username: '', strictMode: false })
+
+const api = useApi()
+
+async function openConfigRepo(tenantId: string) {
+  configRepoTenantId.value = tenantId
+  syncResult.value = null
+  syncError.value = null
+  try {
+    const data = await api.get<{ url?: string; token?: string; username?: string; strictMode?: boolean }>(
+      `/api/admin/tenants/${tenantId}/config-repo`)
+    Object.assign(configRepoForm, {
+      url: data.url ?? '',
+      token: '',
+      username: data.username ?? '',
+      strictMode: data.strictMode ?? false
+    })
+  } catch {
+    Object.assign(configRepoForm, { url: '', token: '', username: '', strictMode: false })
+  }
+  showConfigRepoModal.value = true
+}
+
+function closeConfigRepoModal() {
+  showConfigRepoModal.value = false
+  configRepoTenantId.value = null
+  syncResult.value = null
+  syncError.value = null
+}
+
+async function saveConfigRepo() {
+  if (!configRepoTenantId.value) return
+  configRepoSaving.value = true
+  try {
+    await api.put(`/api/admin/tenants/${configRepoTenantId.value}/config-repo`, {
+      url: configRepoForm.url || null,
+      token: configRepoForm.token || null,
+      username: configRepoForm.username || null,
+      strictMode: configRepoForm.strictMode
+    })
+  } finally {
+    configRepoSaving.value = false
+  }
+}
+
+async function triggerSync() {
+  if (!configRepoTenantId.value) return
+  syncResult.value = null
+  syncError.value = null
+  configRepoSyncing.value = true
+  try {
+    const result = await api.post<SyncResult>(
+      `/api/admin/tenants/${configRepoTenantId.value}/config-repo/sync`, null)
+    syncResult.value = result
+  } catch (e: unknown) {
+    syncError.value = e instanceof Error ? e.message : 'Sync failed'
+  } finally {
+    configRepoSyncing.value = false
+  }
 }
 </script>

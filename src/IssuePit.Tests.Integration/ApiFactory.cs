@@ -61,6 +61,8 @@ public class ApiFactory : WebApplicationFactory<Program>
             RemoveHostedServiceByImplementation<GitPollingService>(services);
             // Remove metric snapshot service which runs on a timer and doesn't need to run in tests
             RemoveHostedServiceByImplementation<MetricSnapshotService>(services);
+            // Remove config repo sync service which requires git/network access
+            RemoveHostedServiceByImplementation<ConfigRepoSyncService>(services);
 
             // Replace SignalR Redis backplane with the default in-memory backplane
             RemoveByServiceName(services, "SignalR.StackExchangeRedis");

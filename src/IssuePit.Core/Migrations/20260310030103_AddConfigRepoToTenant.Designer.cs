@@ -3,6 +3,7 @@ using System;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace IssuePit.Core.Migrations
 {
     [DbContext(typeof(IssuePitDbContext))]
-    partial class IssuePitDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260310030103_AddConfigRepoToTenant")]
+    partial class AddConfigRepoToTenant
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -43,10 +46,6 @@ namespace IssuePit.Core.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
-                    b.Property<string>("HttpServerPassword")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
@@ -62,9 +61,6 @@ namespace IssuePit.Core.Migrations
                     b.Property<Guid>("OrgId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("ParentAgentId")
-                        .HasColumnType("uuid");
-
                     b.Property<int?>("RunnerType")
                         .HasColumnType("integer");
 
@@ -72,14 +68,9 @@ namespace IssuePit.Core.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<bool>("UseHttpServer")
-                        .HasColumnType("boolean");
-
                     b.HasKey("Id");
 
                     b.HasIndex("OrgId");
-
-                    b.HasIndex("ParentAgentId");
 
                     b.ToTable("agents");
                 });
@@ -161,18 +152,11 @@ namespace IssuePit.Core.Migrations
                     b.Property<Guid?>("RuntimeConfigId")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("ServerWebUiUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
                     b.Property<DateTime>("StartedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
-
-                    b.Property<string>("Warnings")
-                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
@@ -199,12 +183,6 @@ namespace IssuePit.Core.Migrations
                     b.Property<string>("Line")
                         .IsRequired()
                         .HasColumnType("text");
-
-                    b.Property<int?>("Section")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("SectionIndex")
-                        .HasColumnType("integer");
 
                     b.Property<int>("Stream")
                         .HasColumnType("integer");
@@ -345,9 +323,6 @@ namespace IssuePit.Core.Migrations
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("RetryOfRunId")
-                        .HasColumnType("uuid");
-
                     b.Property<DateTime>("StartedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -370,8 +345,6 @@ namespace IssuePit.Core.Migrations
                     b.HasIndex("AgentSessionId");
 
                     b.HasIndex("ProjectId");
-
-                    b.HasIndex("RetryOfRunId");
 
                     b.ToTable("cicd_runs");
                 });
@@ -618,98 +591,6 @@ namespace IssuePit.Core.Migrations
                     b.ToTable("github_identity_projects");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.GitHubSyncConfig", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("GitHubIdentityId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("GitHubRepo")
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("SyncMode")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("TriggerMode")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("GitHubIdentityId");
-
-                    b.HasIndex("ProjectId");
-
-                    b.ToTable("github_sync_configs");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.GitHubSyncRun", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("StartedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Summary")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProjectId");
-
-                    b.ToTable("github_sync_runs");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.GitHubSyncRunLog", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Level")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Message")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("SyncRunId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("Timestamp")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SyncRunId");
-
-                    b.ToTable("github_sync_run_logs");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.GitRepository", b =>
                 {
                     b.Property<Guid>("Id")
@@ -791,9 +672,6 @@ namespace IssuePit.Core.Migrations
 
                     b.Property<string>("GitHubIssueUrl")
                         .HasColumnType("text");
-
-                    b.Property<int>("KanbanRank")
-                        .HasColumnType("integer");
 
                     b.Property<Guid?>("MilestoneId")
                         .HasColumnType("uuid");
@@ -980,41 +858,6 @@ namespace IssuePit.Core.Migrations
                     b.ToTable("issue_events");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.IssueGitMapping", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("BranchName")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("CommitSha")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<DateTime>("DetectedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("IssueId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("RepositoryId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Source")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IssueId");
-
-                    b.HasIndex("RepositoryId");
-
-                    b.ToTable("issue_git_mappings");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.IssueLink", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1040,37 +883,6 @@ namespace IssuePit.Core.Migrations
                     b.HasIndex("TargetIssueId");
 
                     b.ToTable("issue_links");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.IssuePropertyValue", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("IssueId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("PropertyId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Value")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IssueId");
-
-                    b.HasIndex("PropertyId");
-
-                    b.ToTable("issue_property_values");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.IssueTask", b =>
@@ -1123,9 +935,6 @@ namespace IssuePit.Core.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int>("LaneProperty")
-                        .HasColumnType("integer");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -1152,10 +961,6 @@ namespace IssuePit.Core.Migrations
 
                     b.Property<int>("IssueStatus")
                         .HasColumnType("integer");
-
-                    b.Property<string>("LaneValue")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -1427,9 +1232,6 @@ namespace IssuePit.Core.Migrations
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uuid");
 
-                    b.Property<DateTime?>("StartDate")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
@@ -1543,10 +1345,6 @@ namespace IssuePit.Core.Migrations
                     b.Property<bool?>("ActionOfflineMode")
                         .HasColumnType("boolean");
 
-                    b.Property<string>("Color")
-                        .HasMaxLength(7)
-                        .HasColumnType("character varying(7)");
-
                     b.Property<int?>("ConcurrentJobs")
                         .HasColumnType("integer");
 
@@ -1561,13 +1359,6 @@ namespace IssuePit.Core.Migrations
 
                     b.Property<bool>("IsAgenda")
                         .HasColumnType("boolean");
-
-                    b.Property<string>("IssueKey")
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)");
-
-                    b.Property<int>("IssueNumberOffset")
-                        .HasColumnType("integer");
 
                     b.Property<string>("LocalRepositories")
                         .HasColumnType("text");
@@ -1585,9 +1376,6 @@ namespace IssuePit.Core.Migrations
 
                     b.Property<Guid>("OrgId")
                         .HasColumnType("uuid");
-
-                    b.Property<bool>("RequiresRunApproval")
-                        .HasColumnType("boolean");
 
                     b.Property<string>("Slug")
                         .IsRequired()
@@ -1665,46 +1453,6 @@ namespace IssuePit.Core.Migrations
                     b.HasIndex("ProjectId");
 
                     b.ToTable("project_metric_snapshots");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.ProjectProperty", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("AllowedValues")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("DefaultValue")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<bool>("IsRequired")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<int>("Position")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Type")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProjectId");
-
-                    b.ToTable("project_properties");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.RuntimeConfiguration", b =>
@@ -2135,14 +1883,7 @@ namespace IssuePit.Core.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("IssuePit.Core.Entities.Agent", "ParentAgent")
-                        .WithMany("ChildAgents")
-                        .HasForeignKey("ParentAgentId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.Navigation("Organization");
-
-                    b.Navigation("ParentAgent");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.AgentMcpServer", b =>
@@ -2296,15 +2037,9 @@ namespace IssuePit.Core.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("IssuePit.Core.Entities.CiCdRun", "RetryOfRun")
-                        .WithMany()
-                        .HasForeignKey("RetryOfRunId");
-
                     b.Navigation("AgentSession");
 
                     b.Navigation("Project");
-
-                    b.Navigation("RetryOfRun");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.CiCdRunLog", b =>
@@ -2404,45 +2139,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("GitHubIdentity");
 
                     b.Navigation("Project");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.GitHubSyncConfig", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.GitHubIdentity", "GitHubIdentity")
-                        .WithMany()
-                        .HasForeignKey("GitHubIdentityId");
-
-                    b.HasOne("IssuePit.Core.Entities.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("GitHubIdentity");
-
-                    b.Navigation("Project");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.GitHubSyncRun", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Project");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.GitHubSyncRunLog", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.GitHubSyncRun", "SyncRun")
-                        .WithMany("Logs")
-                        .HasForeignKey("SyncRunId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("SyncRun");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.GitRepository", b =>
@@ -2559,25 +2255,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("Issue");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.IssueGitMapping", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Issue", "Issue")
-                        .WithMany()
-                        .HasForeignKey("IssueId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("IssuePit.Core.Entities.GitRepository", "Repository")
-                        .WithMany()
-                        .HasForeignKey("RepositoryId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Issue");
-
-                    b.Navigation("Repository");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.IssueLink", b =>
                 {
                     b.HasOne("IssuePit.Core.Entities.Issue", "Issue")
@@ -2595,25 +2272,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("Issue");
 
                     b.Navigation("TargetIssue");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.IssuePropertyValue", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Issue", "Issue")
-                        .WithMany()
-                        .HasForeignKey("IssueId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("IssuePit.Core.Entities.ProjectProperty", "Property")
-                        .WithMany("Values")
-                        .HasForeignKey("PropertyId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Issue");
-
-                    b.Navigation("Property");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.IssueTask", b =>
@@ -2859,17 +2517,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("Project");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.ProjectProperty", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Project");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.RuntimeConfiguration", b =>
                 {
                     b.HasOne("IssuePit.Core.Entities.Organization", "Organization")
@@ -3041,8 +2688,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("AgentOrgs");
 
                     b.Navigation("AgentProjects");
-
-                    b.Navigation("ChildAgents");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.AgentSession", b =>
@@ -3069,11 +2714,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("Projects");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.GitHubSyncRun", b =>
-                {
-                    b.Navigation("Logs");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.Issue", b =>
                 {
                     b.Navigation("Assignees");
@@ -3095,11 +2735,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("McpServerProjects");
 
                     b.Navigation("Secrets");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.ProjectProperty", b =>
-                {
-                    b.Navigation("Values");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.Team", b =>

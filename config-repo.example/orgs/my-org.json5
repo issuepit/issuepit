@@ -1,0 +1,30 @@
+// Organization config override for "my-org".
+// File name (without extension) is the slug used to match the org in the database.
+// Only non-null fields are applied — missing fields are left unchanged.
+{
+  "slug": "my-org",
+  "name": "My Organization",
+
+  // Runner settings
+  "maxConcurrentRunners": 4,  // 0 = unlimited
+  "concurrentJobs": 2,        // null = use system default (4)
+  "actRunnerImage": "catthehacker/ubuntu:act-22.04",
+
+  // Environment variables passed to every act run (one KEY=VALUE per line)
+  "actEnv": "DOCKER_HOST=unix:///var/run/docker.sock\nNODE_ENV=production",
+
+  // Secrets passed to every act run (one KEY=VALUE per line)
+  "actSecrets": "NPM_TOKEN=replace_me\nDOCKER_PASSWORD=replace_me",
+
+  // Action cache settings
+  "actionCachePath": "/home/runner/.cache/act",
+  "useNewActionCache": true,
+  "actionOfflineMode": false,
+
+  // Members — resolved by userId (GUID) or username
+  "members": [
+    { "username": "alice", "role": "owner" },
+    { "username": "bob", "role": "admin" },
+    { "userId": "00000000-0000-0000-0000-000000000001", "role": "member" },  // trailing comma ok in JSON5
+  ],
+}
