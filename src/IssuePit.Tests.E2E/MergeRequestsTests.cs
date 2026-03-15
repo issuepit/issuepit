@@ -51,7 +51,7 @@ public class MergeRequestsTests : IAsyncLifetime
             var username = GenerateTestUsername();
             const string password = "TestPass1!";
             await new LoginPage(page).RegisterAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
         }
         finally
         {

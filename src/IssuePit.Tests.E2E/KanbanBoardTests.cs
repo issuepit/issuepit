@@ -84,11 +84,11 @@ public class KanbanBoardTests : IAsyncLifetime
         var projectId = project.GetProperty("id").GetString()!;
 
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
-        context.SetDefaultTimeout(15_000);
+        context.SetDefaultTimeout(E2ETimeouts.Navigation);
         var page = await context.NewPageAsync();
 
         await new LoginPage(page).LoginAsync(username, password);
-        await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+        await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
 
         return (context, page, projectId, projectSlug);
     }
@@ -142,7 +142,7 @@ public class KanbanBoardTests : IAsyncLifetime
             await kanbanPage.AddLaneAsync("Backlog");
             await kanbanPage.CloseLanesModalAsync();
 
-            await page.WaitForSelectorAsync("text=Backlog", new PageWaitForSelectorOptions { Timeout = 10_000 });
+            await page.WaitForSelectorAsync("text=Backlog", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
             Assert.True(await page.Locator("h3:has-text('Backlog')").CountAsync() > 0,
                 "Backlog column header should be visible on the board");
         }

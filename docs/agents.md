@@ -160,6 +160,31 @@ When working as a coding agent on this repository, follow these conventions:
   ```
   Fix all lint **errors** (unused variables, type-only imports, etc.). Pre-existing warnings from unrelated code do not need to be resolved.
 
+### E2E Playwright Timeout Conventions
+
+All Playwright timeout values in E2E tests and page objects **must** use the named constants from
+`src/IssuePit.Tests.E2E/E2ETimeouts.cs`. Never use magic numbers like `10_000` directly.
+
+| Constant | Value | When to use |
+|---|---|---|
+| `E2ETimeouts.Short` | 5 s | First-attempt / hydration-retry check; brief UI-feedback waits (modal opened, voice recording started). A second attempt with `Default` will follow on failure. |
+| `E2ETimeouts.Default` | 10 s | General element presence/interaction wait; value passed to `SetDefaultTimeout`. |
+| `E2ETimeouts.Navigation` | 15 s | Full-page navigations (post-login redirect, initial project-page load). |
+| `E2ETimeouts.NavigationLong` | 20 s | Slower cross-page navigations using `WaitUntilState.Commit` (e.g. org or agent detail pages). |
+| `E2ETimeouts.RetryDelay` | 1.5 s | `Task.Delay` between a failed navigation attempt and its retry. Not a Playwright timeout. |
+
+**Example:**
+
+```csharp
+// ✅ correct
+context.SetDefaultTimeout(E2ETimeouts.Default);
+await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
+await page.WaitForSelectorAsync("button:has-text('New Issue')", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+
+// ❌ wrong – magic number, hard to tune globally
+await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+```
+
 ### PR Screenshots
 
 Screenshots in PRs and documentation must show the actual UI **after authentication** — the login page is not useful. The `scripts/take-screenshots.js` script handles this by:

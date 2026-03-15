@@ -11,7 +11,7 @@ public class CiCdConfigPage(IPage page)
         await page.GotoAsync("/config/ci-cd");
 
     public async Task WaitForLoadAsync() =>
-        await page.WaitForSelectorAsync("text=CI/CD Settings", new PageWaitForSelectorOptions { Timeout = 15_000 });
+        await page.WaitForSelectorAsync("text=CI/CD Settings", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
 
     /// <summary>
     /// Clicks a runner image group by its label text and waits for the selected state.
@@ -21,7 +21,7 @@ public class CiCdConfigPage(IPage page)
         // Find the container div that includes the label text and click it
         await page.ClickAsync($"div.cursor-pointer:has-text('{label}')");
         // Wait for the "Selected" badge to appear
-        await page.WaitForSelectorAsync("text=Selected", new PageWaitForSelectorOptions { Timeout = 5_000 });
+        await page.WaitForSelectorAsync("text=Selected", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
     }
 
     /// <summary>
@@ -80,7 +80,7 @@ public class CiCdConfigPage(IPage page)
     public async Task SetCustomImageAsync(string imageString)
     {
         await page.ClickAsync("div.cursor-pointer:has-text('Custom image')");
-        await page.WaitForSelectorAsync("input[placeholder*='ghcr.io']", new PageWaitForSelectorOptions { Timeout = 5_000 });
+        await page.WaitForSelectorAsync("input[placeholder*='ghcr.io']", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
         await page.FillAsync("input[placeholder*='ghcr.io']", imageString);
     }
 

@@ -16,7 +16,7 @@ public class OrgDetailPage(IPage page)
         await page.ClickAsync("button:has-text('New Team')");
         await page.FillAsync("input[placeholder='Engineering']", teamName);
         await page.ClickAsync("button[type='submit']");
-        await page.WaitForSelectorAsync($"text={teamName}", new PageWaitForSelectorOptions { Timeout = 10_000 });
+        await page.WaitForSelectorAsync($"text={teamName}", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
     }
 
     /// <summary>
@@ -36,12 +36,12 @@ public class OrgDetailPage(IPage page)
     {
         await page.ClickAsync("button:has-text('Add Member')");
         await page.FillAsync("input[placeholder='Search by username…']", memberUsername);
-        await page.WaitForSelectorAsync($"text={memberUsername}", new PageWaitForSelectorOptions { Timeout = 8_000 });
+        await page.WaitForSelectorAsync($"text={memberUsername}", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
         await page.ClickAsync($"button:has-text('{memberUsername}')");
         await page.SelectOptionAsync("select", new[] { role });
         // Use button[type='submit'] to target only the form submit button, not the "Add Member"
         // button that opens the modal (which has no type and is blocked by the modal backdrop).
         await page.ClickAsync("button[type='submit']:has-text('Add Member')");
-        await page.WaitForSelectorAsync($"text={memberUsername}", new PageWaitForSelectorOptions { Timeout = 10_000 });
+        await page.WaitForSelectorAsync($"text={memberUsername}", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
     }
 }

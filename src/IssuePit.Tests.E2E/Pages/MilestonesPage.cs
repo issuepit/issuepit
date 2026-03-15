@@ -14,7 +14,7 @@ public class MilestonesPage(IPage page)
     {
         await page.GotoAsync($"/projects/{projectId}/milestones");
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        await page.WaitForSelectorAsync("a:has-text('Milestones')", new PageWaitForSelectorOptions { Timeout = 10_000 });
+        await page.WaitForSelectorAsync("a:has-text('Milestones')", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
     }
 
     /// <summary>
@@ -25,7 +25,7 @@ public class MilestonesPage(IPage page)
         await page.ClickAsync("button:has-text('New Milestone')");
         await page.FillAsync("input[placeholder='Milestone title']", title);
         await page.ClickAsync("button:has-text('Create Milestone')");
-        await page.WaitForSelectorAsync($"text={title}", new PageWaitForSelectorOptions { Timeout = 10_000 });
+        await page.WaitForSelectorAsync($"text={title}", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
     }
 
     /// <summary>
@@ -34,7 +34,7 @@ public class MilestonesPage(IPage page)
     public async Task SwitchToGanttViewAsync()
     {
         await page.ClickAsync("[data-testid='gantt-view-button']");
-        await page.WaitForSelectorAsync(".bar-area-container", new PageWaitForSelectorOptions { Timeout = 10_000 });
+        await page.WaitForSelectorAsync(".bar-area-container", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
     }
 
     /// <summary>

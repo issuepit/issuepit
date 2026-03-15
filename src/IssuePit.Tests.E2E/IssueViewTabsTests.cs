@@ -91,11 +91,11 @@ public class IssueViewTabsTests : IAsyncLifetime
         var issueId = issue.GetProperty("id").GetString()!;
 
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
-        context.SetDefaultTimeout(10_000);
+        context.SetDefaultTimeout(E2ETimeouts.Default);
         var page = await context.NewPageAsync();
 
         await new LoginPage(page).LoginAsync(username, password);
-        await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+        await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
 
         return (context, page, $"/projects/{projectId}/issues/{issueId}");
     }

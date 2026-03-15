@@ -7,9 +7,7 @@ namespace IssuePit.Tests.E2E.Pages;
 /// </summary>
 public class IssuesPage(IPage page)
 {
-    // Short wait before retrying a navigation that may have been aborted or slow to render.
-    private const int NavigationFirstAttemptTimeoutMs = 5_000;
-    private const int NavigationRetryDelayMs = 1_500;
+    private const int NavigationRetryDelayMs = E2ETimeouts.RetryDelay;
 
     /// <summary>
     /// Navigates to the issues page for the given project and waits for the heading.
@@ -23,7 +21,7 @@ public class IssuesPage(IPage page)
             await page.GotoAsync($"/projects/{projectId}/issues");
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
             await page.WaitForSelectorAsync("a:text-is('Issues')",
-                new PageWaitForSelectorOptions { Timeout = NavigationFirstAttemptTimeoutMs });
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
         }
         catch (Exception ex) when (ex is TimeoutException || (ex is PlaywrightException pe && pe.Message.Contains("ERR_ABORTED")))
         {
@@ -42,7 +40,7 @@ public class IssuesPage(IPage page)
         await page.ClickAsync("button:has-text('New Issue')");
         await page.FillAsync("input[placeholder='Issue title']", title);
         await page.ClickAsync("button:has-text('Create Issue')");
-        await page.WaitForSelectorAsync($"text={title}", new PageWaitForSelectorOptions { Timeout = 10_000 });
+        await page.WaitForSelectorAsync($"text={title}", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
     }
 
     /// <summary>
@@ -51,7 +49,7 @@ public class IssuesPage(IPage page)
     public async Task OpenVoiceModalAsync()
     {
         await page.ClickAsync("button:has-text('Voice')");
-        await page.WaitForSelectorAsync("text=Create Issue from Voice", new PageWaitForSelectorOptions { Timeout = 5_000 });
+        await page.WaitForSelectorAsync("text=Create Issue from Voice", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
     }
 
     /// <summary>
@@ -64,7 +62,7 @@ public class IssuesPage(IPage page)
         await page.WaitForSelectorAsync("text=Create Issue from Voice", new PageWaitForSelectorOptions
         {
             State = WaitForSelectorState.Hidden,
-            Timeout = 5_000
+            Timeout = E2ETimeouts.Short
         });
     }
 
@@ -76,7 +74,7 @@ public class IssuesPage(IPage page)
     {
         // The mic button is the preceding sibling of the "Click to start recording" paragraph.
         await page.ClickAsync("xpath=//p[contains(.,'Click to start recording')]/preceding-sibling::button");
-        await page.WaitForSelectorAsync("text=Recording", new PageWaitForSelectorOptions { Timeout = 5_000 });
+        await page.WaitForSelectorAsync("text=Recording", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
     }
 
     /// <summary>
@@ -96,7 +94,7 @@ public class IssuesPage(IPage page)
         await page.WaitForFunctionAsync(
             $"() => {{ const ta = document.querySelector('textarea'); return ta && ta.value.includes({System.Text.Json.JsonSerializer.Serialize(transcription)}); }}",
             null,
-            new PageWaitForFunctionOptions { Timeout = 10_000 });
+            new PageWaitForFunctionOptions { Timeout = E2ETimeouts.Default });
     }
 
     /// <summary>
@@ -105,12 +103,12 @@ public class IssuesPage(IPage page)
     /// </summary>
     public async Task SubmitVoiceCreateAsync()
     {
-        await page.WaitForSelectorAsync("button:has-text('Create Issue')", new PageWaitForSelectorOptions { Timeout = 5_000 });
+        await page.WaitForSelectorAsync("button:has-text('Create Issue')", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
         await page.ClickAsync("button:has-text('Create Issue')");
         await page.WaitForSelectorAsync("text=Create Issue from Voice", new PageWaitForSelectorOptions
         {
             State = WaitForSelectorState.Hidden,
-            Timeout = 10_000
+            Timeout = E2ETimeouts.Default
         });
     }
 }
