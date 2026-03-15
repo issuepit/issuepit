@@ -1079,9 +1079,10 @@ public class IssueWorker(
         Title = $"Fix uncommitted changes for: {original.Title}",
         Body =
             "There are uncommitted changes remaining after the previous agent run.\n" +
-            "Please commit all changes that should be tracked and update .gitignore to exclude\n" +
-            "build artifacts and other generated files that should not be committed.\n" +
-            "Run `git status` to see what is uncommitted.\n" +
+            "Run `git status` to see which files are uncommitted, then:\n" +
+            "1. For source code and configuration files (e.g. .github/workflows/, src/, tests/): run `git add <file>` and `git commit -m \"fix: commit remaining changes\"`\n" +
+            "2. For generated build artifacts (e.g. bin/, obj/, node_modules/, dist/): add them to .gitignore\n" +
+            "If unsure whether a file should be committed or ignored, prefer committing it.\n" +
             "IMPORTANT: Do NOT run `git push` — you do not have remote write access. Only commit changes locally.",
         GitBranch = branchName,
     };
