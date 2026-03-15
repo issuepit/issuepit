@@ -126,6 +126,13 @@
                   <span class="font-semibold text-amber-300">Tab group:</span>
                   <span class="text-amber-400/80">{{ item.sections.map(s => SECTION_LABELS[s]).join(' + ') }}</span>
                 </div>
+                <!-- Width for tab group (uses first section's width) -->
+                <div class="flex items-center gap-0.5">
+                  <button v-for="w in (['xs','sm','md','lg'] as MainWidth[])" :key="w"
+                    @click.stop="updateCfg(item.sections[0], { width: w })"
+                    :class="sectionCfg(item.sections[0]).width === w ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
+                    class="text-xs px-1.5 py-0.5 rounded transition-colors">{{ WIDTH_LABELS[w] }}</button>
+                </div>
                 <button @click.stop="toggleTabGroupWithNext(item.sections[0])"
                   class="text-xs px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-brand-400 hover:text-red-400 transition-colors ml-auto">
                   ⊖ Split tabs
@@ -615,7 +622,6 @@ const renderedItems = computed((): RenderItem[] => {
         j++
       }
       if (grpSids.length > 1) {
-        if (!activeTabInGroup.value[grp]) activeTabInGroup.value[grp] = grpSids[0]
         items.push({ type: 'tabgroup', key: grp, sections: grpSids })
         i = j
         continue
@@ -635,7 +641,7 @@ function mainColSpanClass(width: MainWidth): string {
 }
 
 function itemColSpanClass(item: RenderItem): string {
-  if (item.type === 'tabgroup') return 'col-span-12'
+  if (item.type === 'tabgroup') return mainColSpanClass(sectionCfg(item.sections[0]).width)
   return mainColSpanClass(sectionCfg(item.sid).width)
 }
 
