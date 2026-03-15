@@ -203,8 +203,21 @@
 
       <!-- Main content grid: 6 columns -->
       <div class="grid grid-cols-6 gap-4 items-start">
-        <template v-for="item in renderedItems" :key="item.type === 'tabgroup' ? item.key : item.sid">
-          <div
+        <template v-for="item in renderedItems" :key="getRenderItemKey(item)">
+          <!-- Row break separator -->
+          <template v-if="item.type === 'rowBreak'">
+            <div :class="isDraftMode
+              ? 'col-span-6 border-t border-dashed border-amber-700/40 flex items-center gap-2 py-0.5 my-0'
+              : 'col-span-6 h-0 p-0'">
+              <template v-if="isDraftMode">
+                <span class="text-xs text-amber-700/50 select-none flex-1 text-center">— row break —</span>
+                <button @click="updateCfg(item.afterSid, { rowBreakAfter: false })"
+                  class="text-xs text-gray-600 hover:text-red-400 px-1 transition-colors" title="Remove row break">✕</button>
+              </template>
+            </div>
+          </template>
+          <!-- Section or tab group -->
+          <div v-else
             :class="[
               itemColSpanClass(item),
               isDraftMode ? 'select-none' : '',
@@ -226,15 +239,19 @@
                 :has-max-items="SECTION_HAS_MAX_ITEMS.has(item.sid)"
                 :max-items-options="MAX_ITEMS_OPTIONS"
                 :current-max-items="sectionCfg(item.sid).maxItems"
-                :widths="item.sid !== 'stats' ? PROJECT_WIDTHS : []"
+                :widths="PROJECT_WIDTHS"
                 :current-width="sectionCfg(item.sid).width"
                 :can-tab="layout.order.indexOf(item.sid) < layout.order.length - 1"
                 :is-tabbed="sectionCfg(item.sid).tabGroup !== null"
                 :hidden="sectionCfg(item.sid).hidden"
+                :any-dragging="dragSectionId !== null"
+                :row-break-after="sectionCfg(item.sid).rowBreakAfter"
                 @display-mode-change="m => updateCfg(item.sid, { displayMode: m as SectionDisplayMode })"
                 @max-items-change="n => updateCfg(item.sid, { maxItems: n })"
                 @width-change="w => updateCfg(item.sid, { width: w as SectionWidth })"
                 @tab-toggle="toggleTabGroupWithNext(item.sid)"
+                @tab-drop="tabDropOnSection(item.sid)"
+                @row-break-toggle="updateCfg(item.sid, { rowBreakAfter: !sectionCfg(item.sid).rowBreakAfter })"
                 @hide="hideSection(item.sid)"
                 @show="showSection(item.sid)"
               />
@@ -245,8 +262,10 @@
                 :section-labels="SECTION_LABELS"
                 :widths="PROJECT_WIDTHS"
                 :current-width="sectionCfg(item.sections[0]).width"
+                :row-break-after="sectionCfg(item.sections[item.sections.length - 1]).rowBreakAfter"
                 @split="toggleTabGroupWithNext(item.sections[0])"
                 @width-change="w => updateCfg(item.sections[0], { width: w as SectionWidth })"
+                @row-break-toggle="updateCfg(item.sections[item.sections.length - 1], { rowBreakAfter: !sectionCfg(item.sections[item.sections.length - 1]).rowBreakAfter })"
               />
             </template>
 
@@ -884,6 +903,7 @@ interface SectionConfig {
   maxItems: number
   width: SectionWidth
   tabGroup: string | null
+  rowBreakAfter?: boolean
 }
 interface SectionLayout {
   order: SectionId[]
@@ -1022,6 +1042,7 @@ function onSectionDragEnd() { dragSectionId.value = null }
 type RenderItem =
   | { type: 'section'; sid: SectionId }
   | { type: 'tabgroup'; key: string; sections: SectionId[] }
+  | { type: 'rowBreak'; id: string; afterSid: SectionId }
 
 const renderedItems = computed((): RenderItem[] => {
   const visible: SectionId[] = isDraftMode.value
@@ -1046,15 +1067,28 @@ const renderedItems = computed((): RenderItem[] => {
       }
       if (groupSids.length > 1) {
         items.push({ type: 'tabgroup', key: grp, sections: groupSids })
+        const lastSid = groupSids[groupSids.length - 1]
+        if (sectionCfg(lastSid).rowBreakAfter) {
+          items.push({ type: 'rowBreak', id: `rb-${lastSid}`, afterSid: lastSid })
+        }
         i = j
         continue
       }
     }
     items.push({ type: 'section', sid })
+    if (sectionCfg(sid).rowBreakAfter) {
+      items.push({ type: 'rowBreak', id: `rb-${sid}`, afterSid: sid })
+    }
     i++
   }
   return items
 })
+
+function getRenderItemKey(item: RenderItem): string {
+  if (item.type === 'tabgroup') return item.key
+  if (item.type === 'rowBreak') return item.id
+  return item.sid
+}
 
 // Active tab per tab group
 const activeTabInGroup = ref<Record<string, SectionId>>({})
@@ -1073,7 +1107,33 @@ function colSpanClass(width: SectionWidth): string {
 }
 function itemColSpanClass(item: RenderItem): string {
   if (item.type === 'tabgroup') return colSpanClass(sectionCfg(item.sections[0]).width)
+  if (item.type === 'rowBreak') return 'col-span-6'
   return colSpanClass(sectionCfg(item.sid).width)
+}
+
+// Tab-drop: combine the currently dragged section with a target section as tabs
+function tabDropOnSection(targetSid: SectionId) {
+  const fromSid = dragSectionId.value
+  if (!fromSid || fromSid === targetSid) return
+  const fromGrp = sectionCfg(fromSid).tabGroup
+  const targetGrp = sectionCfg(targetSid).tabGroup
+  if (fromGrp !== null && fromGrp === targetGrp) return  // already in same group
+  // Remove fromSid from its existing group
+  if (fromGrp !== null) {
+    updateCfg(fromSid, { tabGroup: null })
+    const remaining = layout.value.order.filter(s => s !== fromSid && layout.value.configs[s]?.tabGroup === fromGrp)
+    if (remaining.length === 1) updateCfg(remaining[0], { tabGroup: null })
+  }
+  // Get/create group for target
+  const grp = targetGrp ?? `grp-${Date.now()}`
+  if (targetGrp === null) updateCfg(targetSid, { tabGroup: grp })
+  updateCfg(fromSid, { tabGroup: grp })
+  // Move fromSid to right after targetSid
+  const newOrder = layout.value.order.filter(s => s !== fromSid)
+  const idx = newOrder.indexOf(targetSid)
+  newOrder.splice(idx + 1, 0, fromSid)
+  layout.value.order = newOrder
+  dragSectionId.value = null
 }
 
 const commitCountLabel = computed(() => {

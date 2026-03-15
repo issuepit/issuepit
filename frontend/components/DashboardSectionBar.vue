@@ -33,14 +33,26 @@
         :class="currentWidth === w.value ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
         class="text-xs px-1.5 py-0.5 rounded transition-colors">{{ w.label }}</button>
     </div>
-    <!-- Tab with next -->
+    <!-- Row break toggle -->
     <button
-      v-if="canTab"
+      @click.stop="$emit('row-break-toggle')"
+      :class="rowBreakAfter ? 'text-amber-400 bg-gray-700' : 'text-gray-500 hover:text-gray-300'"
+      class="text-xs px-1.5 py-0.5 rounded bg-gray-800 hover:bg-gray-700 transition-colors"
+      title="Toggle row break after this section">↵</button>
+    <!-- Tab with next (also acts as drag-drop target to combine any two sections) -->
+    <button
+      v-if="isTabbed || canTab || anyDragging"
       @click.stop="$emit('tab-toggle')"
+      @dragover.prevent="tabDragOver = true"
+      @dragleave="tabDragOver = false"
+      @drop.prevent="onTabDrop"
       class="text-xs px-1.5 py-0.5 rounded transition-colors bg-gray-800 hover:bg-gray-700"
-      :class="isTabbed ? 'text-brand-400' : 'text-gray-500 hover:text-gray-300'"
-      :title="isTabbed ? 'Ungroup from next' : 'Combine with next as tabs'">
-      {{ isTabbed ? '⊖ Ungroup' : '⊕ Tab with ↓' }}
+      :class="[
+        isTabbed ? 'text-brand-400' : 'text-gray-500 hover:text-gray-300',
+        tabDragOver ? 'bg-brand-600 text-white ring-1 ring-brand-400' : '',
+      ]"
+      :title="isTabbed ? 'Ungroup from next' : (tabDragOver ? 'Drop to combine as tabs' : 'Combine with next as tabs (or drop a block here)')">
+      {{ isTabbed ? '⊖ Ungroup' : (tabDragOver ? '⊕ Drop here' : '⊕ Tab with ↓') }}
     </button>
     <!-- Hide/Show -->
     <button
@@ -53,6 +65,8 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
+
 defineProps<{
   label: string
   displayModes?: string[]
@@ -65,14 +79,25 @@ defineProps<{
   canTab?: boolean
   isTabbed?: boolean
   hidden?: boolean
+  anyDragging?: boolean
+  rowBreakAfter?: boolean
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   'display-mode-change': [mode: string]
   'max-items-change': [n: number]
   'width-change': [value: string]
   'tab-toggle': []
+  'tab-drop': []
+  'row-break-toggle': []
   hide: []
   show: []
 }>()
+
+const tabDragOver = ref(false)
+
+function onTabDrop() {
+  tabDragOver.value = false
+  emit('tab-drop')
+}
 </script>
