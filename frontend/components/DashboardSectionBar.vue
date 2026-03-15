@@ -27,17 +27,21 @@
           :class="currentMaxItems === n ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
           class="text-xs w-5 h-5 flex items-center justify-center rounded transition-colors">{{ n }}</button>
       </div>
-      <!-- Width buttons (custom SVG bar icons) -->
+      <!-- Width buttons (fraction SVG icons: numerator/denominator stacked) -->
       <div v-if="widths.length" class="flex items-center gap-0.5">
         <button
           v-for="w in widths" :key="w.value"
           @click.stop="$emit('width-change', w.value)"
           :title="w.label"
           :class="currentWidth === w.value ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
-          class="px-1 py-1 rounded transition-colors flex items-center justify-center">
-          <svg :width="20" :height="8" viewBox="0 0 20 8" class="fill-current shrink-0">
-            <rect x="0" y="0" width="20" height="8" rx="1.5" class="opacity-20"/>
-            <rect x="0" y="0" :width="widthFill(w.label)" height="8" rx="1.5"/>
+          class="px-1 py-0.5 rounded transition-colors flex items-center justify-center">
+          <svg width="16" height="20" viewBox="0 0 16 20" class="fill-current shrink-0">
+            <!-- Numerator -->
+            <text x="8" y="8" text-anchor="middle" font-size="8" font-family="system-ui,sans-serif">{{ fractionParts(w.label).num }}</text>
+            <!-- Divider bar -->
+            <rect x="1" y="10" width="14" height="1.5" rx="0.5"/>
+            <!-- Denominator -->
+            <text x="8" y="19" text-anchor="middle" font-size="8" font-family="system-ui,sans-serif">{{ fractionParts(w.label).den }}</text>
           </svg>
         </button>
       </div>
@@ -172,18 +176,12 @@ const showSettings = ref(false)
 const tabDragOver = ref(false)
 const stackDragOver = ref(false)
 
-/** Map width fraction labels to filled bar width (out of 20px canvas) matching the 12-col grid. */
-const FRACTION_FILL: Record<string, number> = {
-  '1/12': 20 * 1 / 12,
-  '1/6':  20 * 2 / 12,
-  '1/4':  20 * 3 / 12,
-  '1/3':  20 * 4 / 12,
-  '1/2':  20 * 6 / 12,
-  'Full': 20,
-}
-
-function widthFill(label: string): number {
-  return FRACTION_FILL[label] ?? 20
+/** Split a fraction label like "1/12" into { num, den }. "Full" maps to { num:"1", den:"1" }. */
+function fractionParts(label: string): { num: string; den: string } {
+  if (label === 'Full') return { num: '1', den: '1' }
+  const slash = label.indexOf('/')
+  if (slash === -1) return { num: '1', den: '1' }
+  return { num: label.slice(0, slash), den: label.slice(slash + 1) }
 }
 
 const CHART_DAYS_MIN = 7

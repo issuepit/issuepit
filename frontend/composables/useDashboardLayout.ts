@@ -124,6 +124,8 @@ export function useDashboardLayout(options: {
   // Cached drag group (all sections being moved together); populated on dragstart
   let _dragGroup: string[] = []
   let _dragEscaped = false
+  // Half the gap-4 (16 px); cursor must be within this distance of a card edge to trigger reorder
+  const EDGE_ZONE_PX = 8
 
   function captureSnapshot() {
     _dragSnapshot = JSON.stringify(layout.value)
@@ -145,27 +147,38 @@ export function useDashboardLayout(options: {
     }
   }
 
-  function onDragOver(_e: DragEvent, id: string) {
+  function onDragOver(e: DragEvent, id: string) {
     if (!dragSectionId.value) return
-    // Only highlight cards outside the drag group; reorder is handled by onDragEnter
-    if (!_dragGroup.includes(id)) dragHoverSid.value = id
+    if (_dragGroup.includes(id)) { dragHoverSid.value = null; return }
+    // Only show hover indicator when cursor is near any edge (gap zone).
+    // gap-4 = 16px; EDGE_ZONE_PX = 8px from each side.
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const nearLeft   = e.clientX - rect.left   < EDGE_ZONE_PX
+    const nearRight  = rect.right  - e.clientX < EDGE_ZONE_PX
+    const nearTop    = e.clientY - rect.top    < EDGE_ZONE_PX
+    const nearBottom = rect.bottom - e.clientY < EDGE_ZONE_PX
+    dragHoverSid.value = (nearLeft || nearRight || nearTop || nearBottom) ? id : null
   }
 
   function onDragEnter(e: DragEvent, id: string) {
     if (!dragSectionId.value) return
     // Only fire when truly entering the card from outside (not from a child element)
     if (e.currentTarget instanceof HTMLElement && e.currentTarget.contains(e.relatedTarget as Node)) return
-    // Only reorder if entering from the true gap (not from another card).
-    // When the cursor moves directly from Card A to Card B there is no gap crossing,
-    // so the relatedTarget will be inside a [data-drag-card] element — skip reorder in that case.
-    if ((e.relatedTarget as Element | null)?.closest('[data-drag-card]')) return
+    // Only reorder when the cursor entered from the gap zone around the card.
+    // gap-4 = 16px; we use 8px as the edge zone for both horizontal and vertical gaps.
+    // This reliably detects gap crossings regardless of relatedTarget availability.
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const nearLeft   = e.clientX - rect.left   < EDGE_ZONE_PX
+    const nearRight  = rect.right  - e.clientX < EDGE_ZONE_PX
+    const nearTop    = e.clientY - rect.top    < EDGE_ZONE_PX
+    const nearBottom = rect.bottom - e.clientY < EDGE_ZONE_PX
+    if (!nearLeft && !nearRight && !nearTop && !nearBottom) return
 
     const isSameGroup = _dragGroup.length > 1 && _dragGroup.includes(id)
     // Skip reorder if dragging over ourselves or our group
     if (id === dragSectionId.value || isSameGroup || _dragGroup.includes(id)) return
 
-    // Determine which side the cursor entered from (left = insert before, right = insert after)
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    // Determine insert direction: left-half → insert after target; right-half → insert before
     const enteredFromLeft = e.clientX - rect.left < rect.width / 2
 
     const order = layout.value.order
