@@ -3,6 +3,7 @@ using System;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace IssuePit.Core.Migrations
 {
     [DbContext(typeof(IssuePitDbContext))]
-    partial class IssuePitDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260314225308_AddKanbanLanePropertyAndCustomProperties")]
+    partial class AddKanbanLanePropertyAndCustomProperties
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -58,9 +61,6 @@ namespace IssuePit.Core.Migrations
                     b.Property<Guid>("OrgId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("ParentAgentId")
-                        .HasColumnType("uuid");
-
                     b.Property<int?>("RunnerType")
                         .HasColumnType("integer");
 
@@ -71,8 +71,6 @@ namespace IssuePit.Core.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("OrgId");
-
-                    b.HasIndex("ParentAgentId");
 
                     b.ToTable("agents");
                 });
@@ -159,9 +157,6 @@ namespace IssuePit.Core.Migrations
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
-
-                    b.Property<string>("Warnings")
-                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
@@ -2105,14 +2100,7 @@ namespace IssuePit.Core.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("IssuePit.Core.Entities.Agent", "ParentAgent")
-                        .WithMany("ChildAgents")
-                        .HasForeignKey("ParentAgentId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.Navigation("Organization");
-
-                    b.Navigation("ParentAgent");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.AgentMcpServer", b =>
@@ -3011,8 +2999,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("AgentOrgs");
 
                     b.Navigation("AgentProjects");
-
-                    b.Navigation("ChildAgents");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.AgentSession", b =>

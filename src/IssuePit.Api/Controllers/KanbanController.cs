@@ -1,6 +1,8 @@
+using System.Text.Json;
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
+using IssuePit.Core.Enums;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,6 +12,14 @@ namespace IssuePit.Api.Controllers;
 [Route("api/kanban")]
 public class KanbanController(IssuePitDbContext db, TenantContext ctx) : ControllerBase
 {
+    // Helper: parse a JsonStringEnumMemberName-annotated enum from a lane value string
+    private static T? TryParseJsonEnum<T>(string? value) where T : struct, Enum
+    {
+        if (string.IsNullOrEmpty(value)) return null;
+        try { return JsonSerializer.Deserialize<T>($"\"{value}\""); }
+        catch { return null; }
+    }
+
     // ── Boards ────────────────────────────────────────────────────────────
 
     [HttpGet("boards")]
@@ -41,6 +51,7 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
             Id = Guid.NewGuid(),
             ProjectId = req.ProjectId,
             Name = req.Name,
+            LaneProperty = req.LaneProperty ?? KanbanLaneProperty.Status,
             CreatedAt = DateTime.UtcNow
         };
         db.KanbanBoards.Add(board);
@@ -58,6 +69,7 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
             .FirstOrDefaultAsync(b => b.Id == id && b.Project.Organization.TenantId == ctx.CurrentTenant.Id);
         if (board is null) return NotFound();
         board.Name = req.Name;
+        if (req.LaneProperty.HasValue) board.LaneProperty = req.LaneProperty.Value;
         await db.SaveChangesAsync();
         return Ok(board);
     }
@@ -87,7 +99,8 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
             BoardId = boardId,
             Name = req.Name,
             Position = req.Position,
-            IssueStatus = req.IssueStatus
+            IssueStatus = req.IssueStatus,
+            LaneValue = req.LaneValue
         };
         db.KanbanColumns.Add(column);
         await db.SaveChangesAsync();
@@ -108,6 +121,7 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
         column.Name = req.Name;
         column.Position = req.Position;
         column.IssueStatus = req.IssueStatus;
+        column.LaneValue = req.LaneValue;
         await db.SaveChangesAsync();
         return Ok(column);
     }
@@ -159,26 +173,81 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
     [HttpPost("boards/{boardId:guid}/move-issue")]
     public async Task<IActionResult> MoveIssue(Guid boardId, [FromBody] MoveIssueRequest req)
     {
-        var issue = await db.Issues.FindAsync(req.IssueId);
+        var issue = await db.Issues
+            .Include(i => i.Labels)
+            .Include(i => i.Assignees)
+            .FirstOrDefaultAsync(i => i.Id == req.IssueId);
         if (issue is null) return NotFound();
+
         var column = await db.KanbanColumns.FirstOrDefaultAsync(c => c.Id == req.ColumnId && c.BoardId == boardId);
         if (column is null) return NotFound();
-        issue.Status = column.IssueStatus;
+
+        var board = await db.KanbanBoards.FirstOrDefaultAsync(b => b.Id == boardId);
+        if (board is null) return NotFound();
+
+        // Apply property change based on the board's lane property
+        switch (board.LaneProperty)
+        {
+            case KanbanLaneProperty.Status:
+                issue.Status = column.IssueStatus;
+                break;
+
+            case KanbanLaneProperty.Priority:
+                var parsedPriority = TryParseJsonEnum<IssuePriority>(column.LaneValue);
+                if (parsedPriority.HasValue) issue.Priority = parsedPriority.Value;
+                break;
+
+            case KanbanLaneProperty.Type:
+                var parsedType = TryParseJsonEnum<IssueType>(column.LaneValue);
+                if (parsedType.HasValue) issue.Type = parsedType.Value;
+                break;
+
+            case KanbanLaneProperty.Milestone:
+                if (string.IsNullOrEmpty(column.LaneValue))
+                    issue.MilestoneId = null;
+                else if (Guid.TryParse(column.LaneValue, out var milestoneId))
+                    issue.MilestoneId = milestoneId;
+                break;
+
+            case KanbanLaneProperty.Agent:
+                // Remove all existing agent assignees, then add the new one (if any)
+                var agentAssignees = issue.Assignees.Where(a => a.AgentId.HasValue).ToList();
+                foreach (var aa in agentAssignees)
+                    db.IssueAssignees.Remove(aa);
+                if (!string.IsNullOrEmpty(column.LaneValue) && Guid.TryParse(column.LaneValue, out var agentId))
+                {
+                    db.IssueAssignees.Add(new IssueAssignee { Id = Guid.NewGuid(), IssueId = issue.Id, AgentId = agentId });
+                }
+                break;
+
+            case KanbanLaneProperty.Label:
+                // For label boards, add the column's label to the issue if not already present
+                // (does not remove other labels)
+                if (!string.IsNullOrEmpty(column.LaneValue) && Guid.TryParse(column.LaneValue, out var labelId))
+                {
+                    var alreadyHasLabel = issue.Labels.Any(l => l.Id == labelId);
+                    if (!alreadyHasLabel)
+                    {
+                        var label = await db.Labels.FindAsync(labelId);
+                        if (label is not null) issue.Labels.Add(label);
+                    }
+                }
+                break;
+        }
+
         issue.UpdatedAt = DateTime.UtcNow;
 
-        // Reorder issues within the target column if a position is specified
-        if (req.Position.HasValue)
+        // Reorder issues within the target column if a position is specified (only for status boards)
+        if (req.Position.HasValue && board.LaneProperty == KanbanLaneProperty.Status)
         {
-            // Fetch all other issues in the target column, sorted by current rank
             var siblings = await db.Issues
                 .Where(i => i.ProjectId == issue.ProjectId && i.Status == column.IssueStatus && i.Id != issue.Id)
                 .OrderBy(i => i.KanbanRank)
                 .ThenBy(i => i.CreatedAt)
                 .ToListAsync();
-            // Insert the moved issue at the requested position, then assign sequential ranks to all
             siblings.Insert(Math.Clamp(req.Position.Value, 0, siblings.Count), issue);
             for (var i = 0; i < siblings.Count; i++)
-                siblings[i].KanbanRank = i; // also updates issue.KanbanRank (tracked entity in siblings)
+                siblings[i].KanbanRank = i;
         }
 
         await db.SaveChangesAsync();
@@ -285,12 +354,12 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
     }
 }
 
-public record CreateBoardRequest(Guid ProjectId, string Name);
-public record CreateColumnRequest(string Name, int Position, IssuePit.Core.Enums.IssueStatus IssueStatus);
+public record CreateBoardRequest(Guid ProjectId, string Name, KanbanLaneProperty? LaneProperty = null);
+public record CreateColumnRequest(string Name, int Position, IssuePit.Core.Enums.IssueStatus IssueStatus, string? LaneValue = null);
 public record CreateTransitionRequest(string Name, Guid FromColumnId, Guid ToColumnId, bool IsAuto, Guid? AgentId);
 public record MoveIssueRequest(Guid IssueId, Guid ColumnId, int? Position = null);
 public record ReorderColumnsRequest(List<Guid> ColumnIds);
-public record UpdateBoardRequest(string Name);
-public record UpdateColumnRequest(string Name, int Position, IssuePit.Core.Enums.IssueStatus IssueStatus);
+public record UpdateBoardRequest(string Name, KanbanLaneProperty? LaneProperty = null);
+public record UpdateColumnRequest(string Name, int Position, IssuePit.Core.Enums.IssueStatus IssueStatus, string? LaneValue = null);
 public record UpdateTransitionRequest(string Name, Guid FromColumnId, Guid ToColumnId, bool IsAuto, Guid? AgentId);
 public record TriggerTransitionRequest(Guid IssueId);

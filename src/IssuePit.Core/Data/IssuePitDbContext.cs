@@ -60,6 +60,8 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<GitHubSyncRun> GitHubSyncRuns => Set<GitHubSyncRun>();
     public DbSet<GitHubSyncRunLog> GitHubSyncRunLogs => Set<GitHubSyncRunLog>();
     public DbSet<IssueGitMapping> IssueGitMappings => Set<IssueGitMapping>();
+    public DbSet<ProjectProperty> ProjectProperties => Set<ProjectProperty>();
+    public DbSet<IssuePropertyValue> IssuePropertyValues => Set<IssuePropertyValue>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

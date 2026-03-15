@@ -357,6 +357,57 @@
           <p v-if="moveError" class="text-red-400 text-sm mt-2">{{ moveError }}</p>
         </div>
 
+        <!-- Custom Properties -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h2 class="font-semibold text-white">Custom Properties</h2>
+              <p class="text-sm text-gray-500 mt-0.5">Define extra fields for issues in this project.</p>
+            </div>
+            <button @click="openNewProperty"
+              class="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg transition-colors">
+              + Add Property
+            </button>
+          </div>
+
+          <!-- Properties list -->
+          <div v-if="propsStore.loading" class="text-sm text-gray-500">Loading…</div>
+          <div v-else-if="!propsStore.properties.length" class="text-sm text-gray-600 text-center py-4">No custom properties yet.</div>
+          <div v-else class="space-y-2">
+            <div v-for="prop in propsStore.properties" :key="prop.id"
+              class="flex items-center gap-3 bg-gray-800 rounded-lg px-3 py-2.5">
+              <div class="flex-1 min-w-0">
+                <span class="text-sm text-gray-200 font-medium">{{ prop.name }}</span>
+                <span class="ml-2 text-xs text-gray-500">{{ propertyTypeLabel(prop.type) }}</span>
+                <span v-if="prop.isRequired" class="ml-1 text-xs text-amber-400">required</span>
+                <!-- Constraint summary -->
+                <span v-if="prop.allowedValues" class="ml-1.5 text-xs text-gray-600">
+                  <template v-if="prop.type === ProjectPropertyType.Enum">
+                    {{ tryParseEnumValues(prop.allowedValues) }}
+                  </template>
+                  <template v-else-if="prop.type === ProjectPropertyType.Text">
+                    {{ textConstraintSummary(prop.allowedValues) }}
+                  </template>
+                  <template v-else-if="prop.type === ProjectPropertyType.Number || prop.type === ProjectPropertyType.Date">
+                    {{ rangeConstraintSummary(prop.allowedValues) }}
+                  </template>
+                  <template v-else-if="prop.type === ProjectPropertyType.Person || prop.type === ProjectPropertyType.Agent">
+                    {{ personConstraintSummary(prop.allowedValues) }}
+                  </template>
+                </span>
+              </div>
+              <div class="flex items-center gap-1 shrink-0">
+                <button @click="openEditProperty(prop)" class="text-gray-500 hover:text-gray-300 p-1 rounded transition-colors text-xs">Edit</button>
+                <button @click="deleteProperty(prop.id)" class="text-gray-600 hover:text-red-400 p-1 rounded transition-colors">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Danger Zone -->
         <div class="bg-gray-900 border border-red-900/40 rounded-xl p-6">
           <h2 class="font-semibold text-red-400 mb-1">Danger Zone</h2>
@@ -377,6 +428,115 @@
     </div>
 
     <ToastError :error="projectsStore.error" />
+
+    <!-- New/Edit Property Modal -->
+    <div v-if="showPropertyModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+        <h2 class="text-lg font-bold text-white mb-5">{{ editingPropertyId ? 'Edit Property' : 'New Property' }}</h2>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-xs text-gray-400 mb-1.5">Name</label>
+            <input v-model="propForm.name" type="text" placeholder="e.g. Due Date"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-400 mb-1.5">Type</label>
+            <select v-model="propForm.type"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500">
+              <option :value="ProjectPropertyType.Text">Text</option>
+              <option :value="ProjectPropertyType.Enum">Enum (pick list)</option>
+              <option :value="ProjectPropertyType.Number">Number</option>
+              <option :value="ProjectPropertyType.Date">Date</option>
+              <option :value="ProjectPropertyType.Person">Person</option>
+              <option :value="ProjectPropertyType.Agent">Agent</option>
+              <option :value="ProjectPropertyType.Bool">Boolean</option>
+            </select>
+          </div>
+
+          <!-- Enum: list of allowed values -->
+          <div v-if="propForm.type === ProjectPropertyType.Enum">
+            <label class="block text-xs text-gray-400 mb-1.5">Allowed values <span class="text-gray-600">(comma-separated or JSON array)</span></label>
+            <input v-model="propForm.enumValues" type="text" placeholder='frontend, backend, infra  or  ["a","b","c"]'
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          </div>
+
+          <!-- Text: min/max length -->
+          <div v-if="propForm.type === ProjectPropertyType.Text" class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-gray-400 mb-1.5">Min length <span class="text-gray-600">(optional)</span></label>
+              <input v-model="propForm.minLength" type="number" min="0" placeholder="0"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+            <div>
+              <label class="block text-xs text-gray-400 mb-1.5">Max length <span class="text-gray-600">(optional)</span></label>
+              <input v-model="propForm.maxLength" type="number" min="0" placeholder="e.g. 500"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+          </div>
+
+          <!-- Number: min/max range -->
+          <div v-if="propForm.type === ProjectPropertyType.Number" class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-gray-400 mb-1.5">Min value <span class="text-gray-600">(optional)</span></label>
+              <input v-model="propForm.minValue" type="number" placeholder="None"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+            <div>
+              <label class="block text-xs text-gray-400 mb-1.5">Max value <span class="text-gray-600">(optional)</span></label>
+              <input v-model="propForm.maxValue" type="number" placeholder="None"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+          </div>
+
+          <!-- Date: min/max range -->
+          <div v-if="propForm.type === ProjectPropertyType.Date" class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-gray-400 mb-1.5">Min date <span class="text-gray-600">(optional)</span></label>
+              <input v-model="propForm.minValue" type="date"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+            <div>
+              <label class="block text-xs text-gray-400 mb-1.5">Max date <span class="text-gray-600">(optional)</span></label>
+              <input v-model="propForm.maxValue" type="date"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+          </div>
+
+          <!-- Person / Agent: single vs multiple -->
+          <div v-if="propForm.type === ProjectPropertyType.Person || propForm.type === ProjectPropertyType.Agent">
+            <label class="flex items-center gap-2 cursor-pointer mb-3">
+              <input v-model="propForm.isMultiple" type="checkbox" class="rounded border-gray-600 bg-gray-800 text-brand-600 focus:ring-brand-500" />
+              <span class="text-sm text-gray-300">Allow multiple selections</span>
+            </label>
+            <div v-if="propForm.isMultiple">
+              <label class="block text-xs text-gray-400 mb-1.5">Max selections <span class="text-gray-600">(optional)</span></label>
+              <input v-model="propForm.maxPersons" type="number" min="2" placeholder="Unlimited"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs text-gray-400 mb-1.5">Default value <span class="text-gray-600">(optional)</span></label>
+            <input v-model="propForm.defaultValue" type="text" placeholder="Default value"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          </div>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input v-model="propForm.isRequired" type="checkbox" class="rounded border-gray-600 bg-gray-800 text-brand-600 focus:ring-brand-500" />
+            <span class="text-sm text-gray-300">Required field</span>
+          </label>
+        </div>
+        <div class="flex gap-3 mt-6">
+          <button @click="saveProperty"
+            class="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
+            {{ editingPropertyId ? 'Save Changes' : 'Create' }}
+          </button>
+          <button @click="showPropertyModal = false"
+            class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 rounded-lg transition-colors">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- Link Agent Modal -->
     <div v-if="showLinkAgentModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
@@ -452,7 +612,9 @@ import { useOrgsStore } from '~/stores/orgs'
 import { useGitStore } from '~/stores/git'
 import { useAgentsStore } from '~/stores/agents'
 import { useMcpServersStore } from '~/stores/mcp-servers'
-import type { AgentProject, ProjectMcpServer, GitRepository, GitOriginMode } from '~/types'
+import { useProjectPropertiesStore } from '~/stores/projectProperties'
+import { ProjectPropertyType } from '~/types'
+import type { AgentProject, ProjectMcpServer, GitRepository, GitOriginMode, ProjectProperty } from '~/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -463,6 +625,181 @@ const orgsStore = useOrgsStore()
 const gitStore = useGitStore()
 const agentsStore = useAgentsStore()
 const mcpServersStore = useMcpServersStore()
+const propsStore = useProjectPropertiesStore()
+
+// ── Custom Properties ─────────────────────────────────────────
+const showPropertyModal = ref(false)
+const editingPropertyId = ref<string | null>(null)
+const propForm = reactive({
+  name: '',
+  type: ProjectPropertyType.Text,
+  isRequired: false,
+  defaultValue: '',
+  // Enum: comma-separated or JSON array string
+  enumValues: '',
+  // Text constraints
+  minLength: '',
+  maxLength: '',
+  // Number/Date constraints
+  minValue: '',
+  maxValue: '',
+  // Person/Agent constraints
+  isMultiple: false,
+  maxPersons: '',
+})
+
+function propertyTypeLabel(type: ProjectPropertyType): string {
+  const map: Record<ProjectPropertyType, string> = {
+    [ProjectPropertyType.Text]: 'Text',
+    [ProjectPropertyType.Enum]: 'Enum',
+    [ProjectPropertyType.Number]: 'Number',
+    [ProjectPropertyType.Date]: 'Date',
+    [ProjectPropertyType.Person]: 'Person',
+    [ProjectPropertyType.Agent]: 'Agent',
+    [ProjectPropertyType.Bool]: 'Bool',
+  }
+  return map[type] ?? 'Unknown'
+}
+
+/** Build the allowedValues JSON string from the type-specific form fields. */
+function buildAllowedValues(): string | null {
+  switch (propForm.type) {
+    case ProjectPropertyType.Enum: {
+      const raw = propForm.enumValues.trim()
+      if (!raw) return null
+      // Accept either a JSON array or a comma-separated list
+      if (raw.startsWith('[')) return raw
+      const items = raw.split(',').map(s => s.trim()).filter(Boolean)
+      return items.length ? JSON.stringify(items) : null
+    }
+    case ProjectPropertyType.Text: {
+      const obj: Record<string, number> = {}
+      if (propForm.minLength !== '') obj.minLength = Number(propForm.minLength)
+      if (propForm.maxLength !== '') obj.maxLength = Number(propForm.maxLength)
+      return Object.keys(obj).length ? JSON.stringify(obj) : null
+    }
+    case ProjectPropertyType.Number:
+    case ProjectPropertyType.Date: {
+      const obj: Record<string, string | number> = {}
+      if (propForm.minValue !== '') obj.min = propForm.minValue
+      if (propForm.maxValue !== '') obj.max = propForm.maxValue
+      return Object.keys(obj).length ? JSON.stringify(obj) : null
+    }
+    case ProjectPropertyType.Person:
+    case ProjectPropertyType.Agent: {
+      if (!propForm.isMultiple) return null
+      const obj: Record<string, boolean | number> = { multiple: true }
+      if (propForm.maxPersons !== '') obj.max = Number(propForm.maxPersons)
+      return JSON.stringify(obj)
+    }
+    default:
+      return null
+  }
+}
+
+/** Populate the type-specific form fields from a stored allowedValues JSON string. */
+function parseAllowedValues(raw: string | null | undefined, type: ProjectPropertyType) {
+  propForm.enumValues = ''
+  propForm.minLength = ''
+  propForm.maxLength = ''
+  propForm.minValue = ''
+  propForm.maxValue = ''
+  propForm.isMultiple = false
+  propForm.maxPersons = ''
+  if (!raw) return
+  try {
+    const parsed = JSON.parse(raw)
+    if (type === ProjectPropertyType.Enum && Array.isArray(parsed)) {
+      propForm.enumValues = raw
+    } else if (type === ProjectPropertyType.Text && typeof parsed === 'object') {
+      propForm.minLength = parsed.minLength != null ? String(parsed.minLength) : ''
+      propForm.maxLength = parsed.maxLength != null ? String(parsed.maxLength) : ''
+    } else if ((type === ProjectPropertyType.Number || type === ProjectPropertyType.Date) && typeof parsed === 'object') {
+      propForm.minValue = parsed.min != null ? String(parsed.min) : ''
+      propForm.maxValue = parsed.max != null ? String(parsed.max) : ''
+    } else if ((type === ProjectPropertyType.Person || type === ProjectPropertyType.Agent) && typeof parsed === 'object') {
+      propForm.isMultiple = parsed.multiple === true
+      propForm.maxPersons = parsed.max != null ? String(parsed.max) : ''
+    }
+  } catch { /* ignore */ }
+}
+
+function openNewProperty() {
+  editingPropertyId.value = null
+  Object.assign(propForm, { name: '', type: ProjectPropertyType.Text, isRequired: false, defaultValue: '', enumValues: '', minLength: '', maxLength: '', minValue: '', maxValue: '', isMultiple: false, maxPersons: '' })
+  showPropertyModal.value = true
+}
+
+function openEditProperty(prop: ProjectProperty) {
+  editingPropertyId.value = prop.id
+  Object.assign(propForm, {
+    name: prop.name,
+    type: prop.type,
+    isRequired: prop.isRequired,
+    defaultValue: prop.defaultValue ?? '',
+  })
+  parseAllowedValues(prop.allowedValues, prop.type)
+  showPropertyModal.value = true
+}
+
+async function saveProperty() {
+  if (!propForm.name.trim()) return
+  const payload = {
+    name: propForm.name.trim(),
+    type: propForm.type,
+    isRequired: propForm.isRequired,
+    defaultValue: propForm.defaultValue || null,
+    allowedValues: buildAllowedValues(),
+  }
+  if (editingPropertyId.value) {
+    await propsStore.updateProperty(id, editingPropertyId.value, payload)
+  } else {
+    await propsStore.createProperty(id, payload)
+  }
+  showPropertyModal.value = false
+}
+
+async function deleteProperty(propertyId: string) {
+  if (!confirm('Delete this custom property? All values will be lost.')) return
+  await propsStore.deleteProperty(id, propertyId)
+}
+
+function tryParseEnumValues(raw: string): string {
+  try {
+    const arr = JSON.parse(raw)
+    if (Array.isArray(arr)) return arr.join(' · ')
+  } catch { /* ignore */ }
+  return raw
+}
+
+function textConstraintSummary(raw: string): string {
+  try {
+    const obj = JSON.parse(raw)
+    const parts: string[] = []
+    if (obj.minLength != null) parts.push(`min ${obj.minLength}`)
+    if (obj.maxLength != null) parts.push(`max ${obj.maxLength}`)
+    return parts.length ? `(${parts.join(', ')} chars)` : ''
+  } catch { return '' }
+}
+
+function rangeConstraintSummary(raw: string): string {
+  try {
+    const obj = JSON.parse(raw)
+    const parts: string[] = []
+    if (obj.min != null) parts.push(`≥ ${obj.min}`)
+    if (obj.max != null) parts.push(`≤ ${obj.max}`)
+    return parts.length ? `(${parts.join(', ')})` : ''
+  } catch { return '' }
+}
+
+function personConstraintSummary(raw: string | null | undefined): string {
+  if (!raw) return ''
+  try {
+    const obj = JSON.parse(raw)
+    if (!obj.multiple) return ''
+    return obj.max != null ? `(multiple, max ${obj.max})` : '(multiple)'
+  } catch { return '' }
+}
 
 // ── General form ──────────────────────────────────────────────
 const form = reactive({ name: '', slug: '', description: '', gitHubRepo: '', isAgenda: false, issueKey: '', issueNumberOffset: 0 })
@@ -644,6 +981,7 @@ onMounted(async () => {
     agentsStore.fetchAgents(),
     fetchProjectAgents(),
     fetchProjectMcpServers(),
+    propsStore.fetchProperties(id),
   ])
 
   if (projectsStore.currentProject) {

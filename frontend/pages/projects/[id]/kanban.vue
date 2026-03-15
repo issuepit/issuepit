@@ -14,6 +14,11 @@
           <option v-for="b in kanban.boards" :key="b.id" :value="b.id">{{ b.name }}</option>
         </select>
 
+        <!-- Lane property badge -->
+        <span v-if="activeBoard" class="text-xs bg-gray-800 border border-gray-700 text-gray-400 px-2 py-1 rounded-md">
+          {{ lanePropertyLabel(activeBoard.laneProperty) }}
+        </span>
+
         <!-- Create board -->
         <button @click="showNewBoard = true"
           class="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">
@@ -69,10 +74,10 @@
           @dragend="onColDragEnd">
           <div class="flex items-center gap-2">
             <span class="text-gray-600 select-none">⠿</span>
-            <span :class="statusDotColor(col.issueStatus)" class="w-2.5 h-2.5 rounded-full"></span>
+            <span :class="columnDotColor(col)" class="w-2.5 h-2.5 rounded-full shrink-0"></span>
             <h3 class="text-sm font-semibold text-gray-300">{{ col.name }}</h3>
             <span class="text-xs text-gray-600 bg-gray-800 px-1.5 py-0.5 rounded-full">
-              {{ issuesByStatus[col.issueStatus]?.length ?? 0 }}
+              {{ issuesByLane[col.id]?.length ?? 0 }}
             </span>
           </div>
           <button @click.stop="openCreateForStatus(col.issueStatus)"
@@ -92,7 +97,7 @@
           @dragover.prevent="onIssueDragOver($event, col.id)"
           @dragleave="onIssueDragLeave"
           @drop="onIssueDrop($event, col)">
-          <template v-for="(issue, idx) in issuesByStatus[col.issueStatus]" :key="issue.id">
+          <template v-for="(issue, idx) in issuesByLane[col.id]" :key="issue.id">
             <!-- Placeholder before this item -->
             <div v-if="draggedId && !draggedColId && isValidDropTarget(col.id) && dragHoverColId === col.id && dragHoverInsertIdx === idx"
               role="status" aria-label="Drop zone"
@@ -100,40 +105,49 @@
             </div>
             <div
               :class="[
-                'bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-lg p-3 cursor-pointer group transition-all hover:shadow-lg hover:-translate-y-0.5',
+                'bg-gray-900 border rounded-lg p-3 cursor-pointer group transition-all hover:shadow-lg hover:-translate-y-0.5',
                 issue.id === draggedId ? 'invisible h-14' : '',
+                previewIssue?.id === issue.id ? 'border-brand-500/60 ring-1 ring-brand-500/30' : 'border-gray-800 hover:border-gray-700',
               ]"
               draggable="true"
               @dragstart="onDragStart($event, issue)"
               @dragend="onIssueDragEnd"
-              @click="$router.push(`/projects/${id}/issues/${issue.number}`)">
+              @click="openPreview(issue)">
               <div class="flex items-start justify-between gap-2 mb-2">
                 <span class="text-xs text-gray-600">{{ formatIssueId(issue.number, projectsStore.currentProject) }}</span>
                 <span :class="priorityColor(issue.priority)" class="text-xs shrink-0">
                   {{ priorityIcon(issue.priority) }}
                 </span>
               </div>
-              <p class="text-sm text-gray-200 leading-snug mb-3 group-hover:text-white transition-colors">
+              <p class="text-sm text-gray-200 leading-snug mb-3 group-hover:text-white transition-colors line-clamp-3">
                 {{ issue.title }}
               </p>
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between gap-1 flex-wrap">
                 <span :class="typeBadge(issue.type)"
                   class="text-xs px-1.5 py-0.5 rounded font-medium capitalize">
                   {{ issue.type }}
                 </span>
-                <span v-if="issue.estimate" class="text-xs text-gray-600">{{ issue.estimate }}pt</span>
+                <!-- Label chips -->
+                <div v-if="issue.labels?.length" class="flex gap-1 flex-wrap">
+                  <span v-for="label in issue.labels.slice(0,2)" :key="label.id"
+                    class="text-xs px-1.5 py-0.5 rounded-full text-white font-medium"
+                    :style="{ backgroundColor: label.color + '55', color: label.color }">
+                    {{ label.name }}
+                  </span>
+                  <span v-if="issue.labels.length > 2" class="text-xs text-gray-600">+{{ issue.labels.length - 2 }}</span>
+                </div>
               </div>
             </div>
           </template>
 
           <!-- Drop zone placeholder at the end of the list -->
-          <div v-if="draggedId && !draggedColId && isValidDropTarget(col.id) && dragHoverColId === col.id && dragHoverInsertIdx >= (issuesByStatus[col.issueStatus]?.length ?? 0)"
+          <div v-if="draggedId && !draggedColId && isValidDropTarget(col.id) && dragHoverColId === col.id && dragHoverInsertIdx >= (issuesByLane[col.id]?.length ?? 0)"
             role="status" aria-label="Drop zone"
             class="rounded-lg border-2 border-dashed border-brand-500/50 bg-brand-900/10 h-14 animate-pulse">
           </div>
 
           <!-- Empty placeholder -->
-          <div v-if="!issuesByStatus[col.issueStatus]?.length && !(draggedId && !draggedColId && isValidDropTarget(col.id) && dragHoverColId === col.id)"
+          <div v-if="!issuesByLane[col.id]?.length && !(draggedId && !draggedColId && isValidDropTarget(col.id) && dragHoverColId === col.id)"
             class="flex items-center justify-center h-16 text-gray-700 text-xs">
             Drop issues here
           </div>
@@ -148,6 +162,95 @@
         No lanes yet. Click <strong class="text-gray-400 mx-1">Lanes</strong> to add columns.
       </div>
     </div>
+
+    <!-- Issue Preview Sidebar -->
+    <transition name="slide-right">
+      <div v-if="previewIssue" class="fixed right-0 top-0 h-full w-96 bg-gray-900 border-l border-gray-700 shadow-2xl z-40 flex flex-col overflow-hidden">
+        <!-- Sidebar header -->
+        <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800 shrink-0">
+          <span class="text-xs text-gray-500">{{ formatIssueId(previewIssue.number, projectsStore.currentProject) }}</span>
+          <div class="flex items-center gap-2">
+            <a :href="`/projects/${id}/issues/${previewIssue.number}`"
+              class="text-xs text-brand-400 hover:text-brand-300 transition-colors">
+              Open full issue →
+            </a>
+            <button @click="closePreview" class="text-gray-500 hover:text-gray-300 transition-colors p-1 rounded hover:bg-gray-800">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Sidebar content -->
+        <div class="flex-1 overflow-y-auto p-4 space-y-4">
+          <!-- Title -->
+          <h2 class="text-base font-semibold text-white leading-snug">{{ previewIssue.title }}</h2>
+
+          <!-- Meta grid -->
+          <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+            <div class="text-gray-500">Status</div>
+            <div class="flex items-center gap-1.5">
+              <span :class="statusDotColor(previewIssue.status)" class="w-2 h-2 rounded-full"></span>
+              <span class="text-gray-200 capitalize">{{ previewIssue.status.replace(/_/g, ' ') }}</span>
+            </div>
+
+            <div class="text-gray-500">Priority</div>
+            <div class="flex items-center gap-1">
+              <span :class="priorityColor(previewIssue.priority)" class="text-xs">{{ priorityIcon(previewIssue.priority) }}</span>
+              <span class="text-gray-200 capitalize">{{ previewIssue.priority.replace(/_/g, ' ') }}</span>
+            </div>
+
+            <div class="text-gray-500">Type</div>
+            <span :class="typeBadge(previewIssue.type)" class="text-xs px-1.5 py-0.5 rounded font-medium capitalize w-fit">{{ previewIssue.type }}</span>
+
+            <template v-if="previewIssue.labels?.length">
+              <div class="text-gray-500">Labels</div>
+              <div class="flex flex-wrap gap-1">
+                <span v-for="label in previewIssue.labels" :key="label.id"
+                  class="text-xs px-1.5 py-0.5 rounded-full font-medium"
+                  :style="{ backgroundColor: label.color + '33', color: label.color, border: '1px solid ' + label.color + '66' }">
+                  {{ label.name }}
+                </span>
+              </div>
+            </template>
+
+            <template v-if="previewIssue.assignees?.length">
+              <div class="text-gray-500">Assignees</div>
+              <div class="flex flex-wrap gap-1">
+                <span v-for="a in previewIssue.assignees" :key="a.id"
+                  class="text-xs bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded-full">
+                  {{ a.agent?.name || a.user?.username || 'Unknown' }}
+                </span>
+              </div>
+            </template>
+
+            <template v-if="previewIssue.milestoneId">
+              <div class="text-gray-500">Milestone</div>
+              <span class="text-gray-200 text-xs">
+                {{ milestonesStore.milestones.find(m => m.id === previewIssue!.milestoneId)?.title ?? previewIssue.milestoneId }}
+              </span>
+            </template>
+          </div>
+
+          <!-- Description excerpt -->
+          <div v-if="previewIssue.body" class="border-t border-gray-800 pt-3">
+            <p class="text-xs text-gray-500 mb-2">Description</p>
+            <p class="text-sm text-gray-300 leading-relaxed line-clamp-6 whitespace-pre-wrap">{{ previewIssue.body }}</p>
+          </div>
+        </div>
+
+        <!-- Sidebar footer -->
+        <div class="shrink-0 px-4 py-3 border-t border-gray-800">
+          <a :href="`/projects/${id}/issues/${previewIssue.number}`"
+            class="block w-full text-center text-sm bg-brand-600 hover:bg-brand-700 text-white py-2 rounded-lg transition-colors font-medium">
+            Open Full Issue
+          </a>
+        </div>
+      </div>
+    </transition>
+    <!-- Backdrop for preview sidebar -->
+    <div v-if="previewIssue" class="fixed inset-0 z-30 bg-black/20" @click="closePreview"></div>
 
     <!-- Quick Create Modal -->
     <div v-if="showCreate" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
@@ -191,9 +294,23 @@
     <div v-if="showNewBoard" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
       <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md p-6 shadow-xl">
         <h2 class="text-lg font-bold text-white mb-5">New Board</h2>
-        <input v-model="newBoardName" type="text" placeholder="Board name..."
-          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
-          @keyup.enter="submitNewBoard" />
+        <div class="space-y-4">
+          <input v-model="newBoardName" type="text" placeholder="Board name..."
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            @keyup.enter="submitNewBoard" />
+          <div>
+            <label class="block text-xs text-gray-400 mb-1.5">Lane Property</label>
+            <select v-model="newBoardLaneProperty"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500">
+              <option :value="KanbanLaneProperty.Status">Status</option>
+              <option :value="KanbanLaneProperty.Priority">Priority</option>
+              <option :value="KanbanLaneProperty.Label">Label</option>
+              <option :value="KanbanLaneProperty.Type">Issue Type</option>
+              <option :value="KanbanLaneProperty.Agent">Assigned Agent</option>
+              <option :value="KanbanLaneProperty.Milestone">Milestone</option>
+            </select>
+          </div>
+        </div>
         <div class="flex gap-3 mt-6">
           <button @click="submitNewBoard"
             class="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
@@ -255,6 +372,12 @@
               class="bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500">
               <option v-for="s in statusOptions" :key="s.value" :value="s.value">{{ s.label }}</option>
             </select>
+          </div>
+          <!-- Lane value field for non-status boards -->
+          <div v-if="activeBoard && activeBoard.laneProperty !== KanbanLaneProperty.Status" class="mt-2">
+            <input v-model="newColLaneValue" type="text" :placeholder="lanePlaceholder(activeBoard.laneProperty)"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            <p class="text-xs text-gray-600 mt-1">{{ laneValueHint(activeBoard.laneProperty) }}</p>
           </div>
           <button @click="submitAddColumn"
             class="mt-3 w-full bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
@@ -332,12 +455,13 @@
 </template>
 
 <script setup lang="ts">
-import { IssueStatus, IssuePriority, IssueType } from '~/types'
+import { IssueStatus, IssuePriority, IssueType, KanbanLaneProperty } from '~/types'
 import type { Issue, KanbanColumn } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
 import { useKanbanStore } from '~/stores/kanban'
 import { useMilestonesStore } from '~/stores/milestones'
 import { useProjectsStore } from '~/stores/projects'
+import { useAgentsStore } from '~/stores/agents'
 import { formatIssueId } from '~/composables/useIssueFormat'
 
 const route = useRoute()
@@ -346,7 +470,19 @@ const issueStore = useIssuesStore()
 const kanban = useKanbanStore()
 const milestonesStore = useMilestonesStore()
 const projectsStore = useProjectsStore()
+const agentsStore = useAgentsStore()
 const { priorityIcon, priorityColor } = usePriority()
+
+// ── Issue preview sidebar ─────────────────────────────────────────────────
+const previewIssue = ref<Issue | null>(null)
+
+function openPreview(issue: Issue) {
+  previewIssue.value = issue
+}
+
+function closePreview() {
+  previewIssue.value = null
+}
 
 // ── Issue create state ────────────────────────────────────────────────────
 const showCreate = ref(false)
@@ -372,6 +508,7 @@ const laneHoverInsertIdx = ref<number>(0)
 // ── Board state ───────────────────────────────────────────────────────────
 const showNewBoard = ref(false)
 const newBoardName = ref('')
+const newBoardLaneProperty = ref<KanbanLaneProperty>(KanbanLaneProperty.Status)
 const activeBoardId = ref<string>('')
 
 const activeBoard = computed(() => kanban.boards.find(b => b.id === activeBoardId.value) ?? null)
@@ -383,6 +520,7 @@ const boardColumns = computed(() =>
 const showLanes = ref(false)
 const newColName = ref('')
 const newColStatus = ref<IssueStatus>(IssueStatus.Todo)
+const newColLaneValue = ref<string>('')
 
 // ── Transition state ──────────────────────────────────────────────────────
 const showTransitions = ref(false)
@@ -391,21 +529,79 @@ const newTransFrom = ref('')
 const newTransTo = ref('')
 const newTransIsAuto = ref(false)
 
-const issuesByStatus = computed(() => {
-  if (!filterMilestone.value) return issueStore.issuesByStatus
-  const filtered: Record<IssueStatus, Issue[]> = {
-    [IssueStatus.Backlog]: [],
-    [IssueStatus.Todo]: [],
-    [IssueStatus.InProgress]: [],
-    [IssueStatus.InReview]: [],
-    [IssueStatus.Done]: [],
-    [IssueStatus.Cancelled]: [],
+// ── Lane-property-aware issue grouping ───────────────────────────────────
+// Returns a map of columnId → Issue[] based on the active board's LaneProperty.
+const issuesByLane = computed<Record<string, Issue[]>>(() => {
+  const result: Record<string, Issue[]> = {}
+  for (const col of boardColumns.value) {
+    result[col.id] = []
   }
-  for (const issue of issueStore.issues.filter(i => i.milestoneId === filterMilestone.value)) {
-    filtered[issue.status].push(issue)
+
+  const lp = activeBoard.value?.laneProperty ?? KanbanLaneProperty.Status
+  const issues = filterMilestone.value
+    ? issueStore.issues.filter(i => i.milestoneId === filterMilestone.value)
+    : issueStore.issues
+
+  for (const issue of issues) {
+    switch (lp) {
+      case KanbanLaneProperty.Status: {
+        const col = boardColumns.value.find(c => c.issueStatus === issue.status)
+        if (col) result[col.id].push(issue)
+        break
+      }
+      case KanbanLaneProperty.Priority: {
+        const col = boardColumns.value.find(c => c.laneValue === issue.priority)
+        if (col) result[col.id].push(issue)
+        break
+      }
+      case KanbanLaneProperty.Type: {
+        const col = boardColumns.value.find(c => c.laneValue === issue.type)
+        if (col) result[col.id].push(issue)
+        break
+      }
+      case KanbanLaneProperty.Label: {
+        if (!issue.labels?.length) {
+          // No label → "No Label" column (laneValue === '')
+          const col = boardColumns.value.find(c => c.laneValue === '')
+          if (col) result[col.id].push(issue)
+        } else {
+          // Add to each matching label column (issue may appear in multiple columns)
+          for (const label of issue.labels) {
+            const col = boardColumns.value.find(c => c.laneValue === label.id)
+            if (col) result[col.id].push(issue)
+          }
+        }
+        break
+      }
+      case KanbanLaneProperty.Agent: {
+        const agentAssignees = issue.assignees?.filter(a => a.agentId) ?? []
+        if (!agentAssignees.length) {
+          const col = boardColumns.value.find(c => c.laneValue === '')
+          if (col) result[col.id].push(issue)
+        } else {
+          for (const a of agentAssignees) {
+            const col = boardColumns.value.find(c => c.laneValue === a.agentId)
+            if (col) result[col.id].push(issue)
+          }
+        }
+        break
+      }
+      case KanbanLaneProperty.Milestone: {
+        const mId = issue.milestoneId ?? ''
+        const col = boardColumns.value.find(c => c.laneValue === mId)
+        if (col) result[col.id].push(issue)
+        break
+      }
+    }
   }
-  return filtered
+
+  // Sort each column by kanbanRank then createdAt
+  for (const colId of Object.keys(result)) {
+    result[colId].sort((a, b) => a.kanbanRank - b.kanbanRank || a.createdAt.localeCompare(b.createdAt))
+  }
+  return result
 })
+
 const totalIssues = computed(() => {
   if (!filterMilestone.value) return issueStore.issues.length
   return issueStore.issues.filter(i => i.milestoneId === filterMilestone.value).length
@@ -425,6 +621,7 @@ onMounted(async () => {
     issueStore.fetchIssues(id),
     kanban.fetchBoards(id),
     milestonesStore.fetchMilestones(id),
+    agentsStore.fetchAgents(),
   ])
   if (kanban.boards.length) activeBoardId.value = kanban.boards[0].id
 })
@@ -437,14 +634,26 @@ watch(activeBoardId, (bid) => {
 })
 
 // ── Issue drag & drop ─────────────────────────────────────────────────────
+// Track the source column id when a drag starts (works for all lane properties)
+const draggedSourceColId = ref<string | null>(null)
+
 function onDragStart(e: DragEvent, issue: Issue) {
   draggedId.value = issue.id
   draggedIssueStatus.value = issue.status
   e.dataTransfer!.effectAllowed = 'move'
+  // Determine source column based on lane property
+  const lp = activeBoard.value?.laneProperty ?? KanbanLaneProperty.Status
+  let sourceCol: KanbanColumn | undefined
+  if (lp === KanbanLaneProperty.Status) {
+    sourceCol = boardColumns.value.find(c => c.issueStatus === issue.status)
+  } else {
+    // For non-status boards, find which column this issue appears in
+    sourceCol = boardColumns.value.find(c => issuesByLane.value[c.id]?.some(i => i.id === issue.id))
+  }
+  draggedSourceColId.value = sourceCol?.id ?? null
   // Blink the Transitions button if the source column has no outgoing transitions
-  const sourceCol = boardColumns.value.find(c => c.issueStatus === issue.status)
   if (sourceCol) {
-    const hasOutgoing = kanban.transitions.some(t => t.fromColumnId === sourceCol.id)
+    const hasOutgoing = kanban.transitions.some(t => t.fromColumnId === sourceCol!.id)
     transitionsButtonAlert.value = !hasOutgoing
   } else {
     transitionsButtonAlert.value = false
@@ -454,20 +663,21 @@ function onDragStart(e: DragEvent, issue: Issue) {
 function onIssueDragEnd() {
   draggedId.value = null
   draggedIssueStatus.value = null
+  draggedSourceColId.value = null
   dragHoverColId.value = null
   dragHoverInsertIdx.value = 0
   transitionsButtonAlert.value = false
 }
 
 function isValidDropTarget(targetColId: string): boolean {
-  if (!draggedId.value || !draggedIssueStatus.value) return false
-  const sourceCol = boardColumns.value.find(c => c.issueStatus === draggedIssueStatus.value)
-  if (!sourceCol) return false
+  if (!draggedId.value) return false
+  const srcId = draggedSourceColId.value
+  if (!srcId) return false
   // Same column: always valid (for within-column reordering)
-  if (sourceCol.id === targetColId) return true
+  if (srcId === targetColId) return true
   // If no transitions are defined, all columns are valid drop targets (open board)
   if (kanban.transitions.length === 0) return true
-  return kanban.transitions.some(t => t.fromColumnId === sourceCol.id && t.toColumnId === targetColId)
+  return kanban.transitions.some(t => t.fromColumnId === srcId && t.toColumnId === targetColId)
 }
 
 async function onIssueDrop(e: DragEvent, targetCol: KanbanColumn) {
@@ -477,26 +687,25 @@ async function onIssueDrop(e: DragEvent, targetCol: KanbanColumn) {
   if (!draggedId.value) return
   if (!isValidDropTarget(targetCol.id)) return
   const insertIdx = dragHoverInsertIdx.value
-  const sourceCol = boardColumns.value.find(c => c.issueStatus === draggedIssueStatus.value)
-  const isSameColumn = sourceCol?.id === targetCol.id
+  const isSameColumn = draggedSourceColId.value === targetCol.id
+
   if (!isSameColumn) {
-    // Status change - optimistically update local state
-    await issueStore.updateIssueStatus(id, draggedId.value, targetCol.issueStatus)
+    const lp = activeBoard.value?.laneProperty ?? KanbanLaneProperty.Status
+    // For status boards, optimistically update local status before the API call
+    if (lp === KanbanLaneProperty.Status) {
+      await issueStore.updateIssueStatus(id, draggedId.value, targetCol.issueStatus)
+    }
   }
-  // Update kanban rank via kanban store (pass position for ordering)
-  await kanban.moveIssue(activeBoardId.value, draggedId.value, targetCol.id, insertIdx)
-  // Update local kanbanRank to reflect new order
-  const issues = issueStore.issues.filter(i => i.status === targetCol.issueStatus).sort((a, b) => a.kanbanRank - b.kanbanRank || a.createdAt.localeCompare(b.createdAt))
-  const moved = issues.find(i => i.id === draggedId.value)
-  if (moved) {
-    // Build reordered list: all siblings without the moved item, then splice moved in at target index
-    const reordered = issues.filter(i => i.id !== draggedId.value)
-    reordered.splice(Math.min(insertIdx, reordered.length), 0, moved)
-    // Assign sequential ranks to all items including the moved one (moved is a reference in reordered)
-    reordered.forEach((issue, idx) => { issue.kanbanRank = idx })
+  // Move via kanban store (backend handles the property update, returns updated issue)
+  const updatedIssue = await kanban.moveIssue(activeBoardId.value, draggedId.value, targetCol.id, insertIdx)
+  // Patch the issue in the local store to reflect property changes (avoids a full reload)
+  if (updatedIssue) {
+    const idx = issueStore.issues.findIndex(i => i.id === updatedIssue.id)
+    if (idx !== -1) Object.assign(issueStore.issues[idx], updatedIssue)
   }
   draggedId.value = null
   draggedIssueStatus.value = null
+  draggedSourceColId.value = null
   dragHoverColId.value = null
   dragHoverInsertIdx.value = 0
   transitionsButtonAlert.value = false
@@ -623,9 +832,10 @@ async function submitCreate() {
 // ── Board actions ─────────────────────────────────────────────────────────
 async function submitNewBoard() {
   if (!newBoardName.value.trim()) return
-  const board = await kanban.createBoard(id, newBoardName.value.trim())
+  const board = await kanban.createBoard(id, newBoardName.value.trim(), newBoardLaneProperty.value)
   if (board) activeBoardId.value = board.id
   newBoardName.value = ''
+  newBoardLaneProperty.value = KanbanLaneProperty.Status
   showNewBoard.value = false
 }
 
@@ -633,8 +843,9 @@ async function submitNewBoard() {
 async function submitAddColumn() {
   if (!newColName.value.trim() || !activeBoardId.value) return
   const pos = boardColumns.value.length
-  await kanban.addColumn(activeBoardId.value, newColName.value.trim(), pos, newColStatus.value)
+  await kanban.addColumn(activeBoardId.value, newColName.value.trim(), pos, newColStatus.value, newColLaneValue.value || undefined)
   newColName.value = ''
+  newColLaneValue.value = ''
 }
 
 async function deleteColumn(columnId: string) {
@@ -685,6 +896,27 @@ function statusDotColor(status: IssueStatus) {
   return map[status] ?? 'bg-gray-500'
 }
 
+/** Returns the dot color for a column, considering the board's lane property. */
+function columnDotColor(col: KanbanColumn) {
+  const lp = activeBoard.value?.laneProperty ?? KanbanLaneProperty.Status
+  if (lp === KanbanLaneProperty.Status) return statusDotColor(col.issueStatus)
+  if (lp === KanbanLaneProperty.Priority) {
+    const map: Record<string, string> = {
+      urgent: 'bg-red-500', high: 'bg-orange-400', very_high: 'bg-orange-500',
+      medium: 'bg-yellow-400', low: 'bg-blue-400', no_priority: 'bg-gray-500',
+    }
+    return map[col.laneValue ?? ''] ?? 'bg-gray-500'
+  }
+  if (lp === KanbanLaneProperty.Type) {
+    const map: Record<string, string> = {
+      bug: 'bg-red-500', feature: 'bg-green-400', epic: 'bg-purple-400',
+      task: 'bg-blue-400', issue: 'bg-gray-500',
+    }
+    return map[col.laneValue ?? ''] ?? 'bg-gray-500'
+  }
+  return 'bg-brand-500'
+}
+
 function typeBadge(type: IssueType) {
   const map: Record<IssueType, string> = {
     [IssueType.Bug]: 'bg-red-900/40 text-red-300',
@@ -695,4 +927,50 @@ function typeBadge(type: IssueType) {
   }
   return map[type] ?? 'bg-gray-800 text-gray-400'
 }
+
+function lanePropertyLabel(lp: KanbanLaneProperty): string {
+  const map: Record<KanbanLaneProperty, string> = {
+    [KanbanLaneProperty.Status]: 'By Status',
+    [KanbanLaneProperty.Priority]: 'By Priority',
+    [KanbanLaneProperty.Label]: 'By Label',
+    [KanbanLaneProperty.Type]: 'By Type',
+    [KanbanLaneProperty.Agent]: 'By Agent',
+    [KanbanLaneProperty.Milestone]: 'By Milestone',
+  }
+  return map[lp] ?? 'By Status'
+}
+
+function lanePlaceholder(lp: KanbanLaneProperty): string {
+  const map: Partial<Record<KanbanLaneProperty, string>> = {
+    [KanbanLaneProperty.Priority]: 'e.g. urgent, high, medium, low, no_priority',
+    [KanbanLaneProperty.Label]: 'Label ID (guid) or leave empty for No Label',
+    [KanbanLaneProperty.Type]: 'e.g. bug, feature, task, epic, issue',
+    [KanbanLaneProperty.Agent]: 'Agent ID (guid) or leave empty for Unassigned',
+    [KanbanLaneProperty.Milestone]: 'Milestone ID (guid) or leave empty for No Milestone',
+  }
+  return map[lp] ?? 'Lane value'
+}
+
+function laneValueHint(lp: KanbanLaneProperty): string {
+  const map: Partial<Record<KanbanLaneProperty, string>> = {
+    [KanbanLaneProperty.Priority]: 'Issues with this priority will appear in this lane.',
+    [KanbanLaneProperty.Label]: 'Issues with this label will appear here. Leave blank for unlabelled issues.',
+    [KanbanLaneProperty.Type]: 'Issues of this type will appear in this lane.',
+    [KanbanLaneProperty.Agent]: 'Issues assigned to this agent appear here. Leave blank for unassigned.',
+    [KanbanLaneProperty.Milestone]: 'Issues in this milestone appear here. Leave blank for no milestone.',
+  }
+  return map[lp] ?? ''
+}
 </script>
+
+<style scoped>
+.slide-right-enter-active,
+.slide-right-leave-active {
+  transition: transform 0.25s ease, opacity 0.25s ease;
+}
+.slide-right-enter-from,
+.slide-right-leave-to {
+  transform: translateX(100%);
+  opacity: 0;
+}
+</style>
