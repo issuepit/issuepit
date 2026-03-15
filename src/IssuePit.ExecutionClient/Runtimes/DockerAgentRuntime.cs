@@ -36,6 +36,8 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
     internal const string GitBranchMarker = "[ISSUEPIT:GIT_BRANCH]=";
     internal const string HasUncommittedChangesMarker = "[ISSUEPIT:HAS_UNCOMMITTED_CHANGES]=";
     internal const string OpenCodeSessionIdMarker = "[ISSUEPIT:OPENCODE_SESSION_ID]=";
+    /// <summary>Emitted when <c>git push</c> fails; IssueWorker uses this to trigger a .git archive upload.</summary>
+    internal const string GitPushFailedMarker = "[ISSUEPIT:GIT_PUSH_FAILED]=true";
 
     private static string AppVersion =>
         Assembly.GetEntryAssembly()
@@ -90,7 +92,13 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
             if (!string.IsNullOrWhiteSpace(effectiveBranch))
                 await onLogLine($"[DEBUG] Git branch     : {effectiveBranch}", LogStream.Stdout);
         }
-
+        if (agent.ChildAgents.Count > 0)
+        {
+            await onLogLine($"[DEBUG] Child agents   : {agent.ChildAgents.Count}", LogStream.Stdout);
+            foreach (var child in agent.ChildAgents)
+                await onLogLine($"[DEBUG]   - {child.Name} ({child.Id})", LogStream.Stdout);
+        }
+        
         // Verify Docker daemon is reachable and log its version.
         try
         {
@@ -113,14 +121,28 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         await onLogLine($"[DEBUG] Pull finished  : {DateTime.UtcNow:u} (took {pullDuration:F1}s)", LogStream.Stdout);
 
         // Step 2: Build environment including git repo info so the container can clone the repo on startup.
-        var env = AgentEnvironmentBuilder.Build(session, agent, issue, credentials, gitRepository);
+        // Replace localhost/127.0.0.1 with host.docker.internal so containers can reach the host's services
+        // (e.g. the IssuePit MCP server). The container host-gateway ExtraHost added below makes
+        // host.docker.internal resolvable both on Linux (via host-gateway) and Docker Desktop.
+        //
+        // The Aspire DCP proxy is disabled for the MCP server (IsProxied=false in AppHost) so
+        // McpServer:BaseUrl already contains the direct target port URL (http://localhost:{T}).
+        // ToDockerHostUrl converts localhost → host.docker.internal so the container reaches T
+        // via 172.17.0.1:{T}. The MCP server binds to 0.0.0.0:{T} via ListenAnyIP in Program.cs.
+        var issuePitMcpUrl = ToDockerHostUrl(configuration["McpServer:BaseUrl"]);
+        var env = AgentEnvironmentBuilder.Build(session, agent, issue, credentials, gitRepository, issuePitMcpUrl);
+        if (!string.IsNullOrWhiteSpace(issuePitMcpUrl))
+            await onLogLine($"[DEBUG] IssuePit MCP   : {issuePitMcpUrl}", LogStream.Stdout);
 
         // Step 3: Determine whether to use the exec-based flow (RunnerType set) or the legacy flow.
         //
         // Exec flow  — container CMD = "sleep infinity"; entrypoint does setup and keeps container alive;
         //              C# execs the agent tool and all post-run steps (git check, markers, push).
         // Legacy flow — container CMD from entrypoint default; wait for container to exit (old behaviour).
-        var runnerArgs = RunnerCommandBuilder.BuildArgsList(agent, issue);
+        var comments = issue.Comments.Count > 0 ? (IReadOnlyList<IssueComment>)issue.Comments : null;
+        if (comments is not null)
+            await onLogLine($"[DEBUG] Comments       : {comments.Count} comment(s) included in prompt", LogStream.Stdout);
+        var runnerArgs = RunnerCommandBuilder.BuildArgsList(agent, issue, comments: comments);
         var useExecFlow = runnerArgs.Count > 0;
 
         if (useExecFlow)
@@ -131,7 +153,7 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         }
 
         // Log the task prompt that will be passed to the agent so it is always visible in the logs.
-        var taskPrompt = RunnerCommandBuilder.BuildTaskPrompt(issue);
+        var taskPrompt = RunnerCommandBuilder.BuildTaskPrompt(issue, comments);
         await onLogLine($"[DEBUG] Task prompt    :", LogStream.Stdout);
         foreach (var promptLine in taskPrompt.Split('\n'))
             await onLogLine($"[DEBUG]   {promptLine}", LogStream.Stdout);
@@ -145,20 +167,32 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         var hostConfig = new HostConfig
         {
             Privileged = true,
-            // Exec flow manages its own lifecycle (stopped by StopContainerAsync after all work is done).
-            // Legacy flow uses AutoRemove as before.
-            AutoRemove = useExecFlow ? false : !session.KeepContainer,
+            // Never auto-remove: both exec flow and legacy flow manage container lifetime explicitly.
+            // AutoRemove races with WaitContainerAsync / StreamContainerLogsAsync — the container can
+            // be removed before logs are fully streamed, producing NotFound errors. Instead, we always
+            // remove the container ourselves after all log capture is complete (see below).
+            AutoRemove = false,
+            // Make host.docker.internal resolve to the Docker host gateway so containers can call
+            // the IssuePit MCP server and other host services. "host-gateway" is the Docker-native
+            // special value that resolves to the correct host IP on both Linux and Docker Desktop.
+            ExtraHosts = ["host.docker.internal:host-gateway"],
         };
 
         if (dns is not null)
             hostConfig.DNS = dns;
 
+        // Custom CMD: for non-exec-flow sessions (legacy flow) only. Exec flow always uses
+        // "sleep infinity" so that docker exec can be used for all subsequent operations.
+        // DockerCmdOverride is useful for diagnostic/testing sessions (e.g. connectivity checks).
+        IList<string>? containerCmd = useExecFlow
+            ? ["sleep", "infinity"]
+            : (session.CustomCmd?.Length > 0 ? session.CustomCmd : null);
+
         var createParams = new CreateContainerParameters
         {
             Image = image,
             Env = env,
-            // Exec flow: keep container alive; legacy flow: run container's default CMD.
-            Cmd = useExecFlow ? ["sleep", "infinity"] : null,
+            Cmd = containerCmd,
             HostConfig = hostConfig,
             Labels = new Dictionary<string, string>
             {
@@ -188,6 +222,11 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
             var logStreamTask = StreamContainerLogsAsync(container.ID, onLogLine, cancellationToken);
             var waitResponse = await dockerClient.Containers.WaitContainerAsync(container.ID, cancellationToken);
             await logStreamTask;
+
+            // Explicit cleanup after all logs have been captured. AutoRemove is always disabled to
+            // prevent the race where a fast-exiting container is removed before log streaming completes.
+            if (!session.KeepContainer)
+                await TryStopAndRemoveContainerAsync(container.ID);
 
             if (waitResponse.StatusCode != 0)
                 throw new Exception(
@@ -493,8 +532,9 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
     /// <summary>
     /// Pushes the current branch to origin (allowed to fail), then emits
     /// <c>[ISSUEPIT:GIT_COMMIT_SHA]</c> and <c>[ISSUEPIT:GIT_BRANCH]</c> markers.
+    /// Returns <c>true</c> when the push succeeded, <c>false</c> otherwise.
     /// </summary>
-    private async Task EmitGitMarkersAsync(
+    private async Task<bool> EmitGitMarkersAsync(
         string containerId,
         Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
@@ -504,6 +544,8 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         var commitSha = await ExecReadOutputAsync(
             containerId, ["git", "rev-parse", "HEAD"], cancellationToken);
 
+        var pushSucceeded = false;
+
         // Push is allowed to fail — credentials may not be configured yet.
         if (!string.IsNullOrWhiteSpace(branch))
         {
@@ -512,15 +554,48 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
                 async (line, stream) => await onLogLine($"[entrypoint] {line}", stream),
                 cancellationToken);
             if (pushExit != 0)
+            {
                 await onLogLine(
                     "[entrypoint] Push failed (allowed — credentials may not be configured or push was rejected)",
                     LogStream.Stdout);
+                // Emit a structured marker so IssueWorker can trigger a .git archive upload for recovery.
+                await onLogLine(GitPushFailedMarker, LogStream.Stdout);
+            }
+            else
+                pushSucceeded = true;
         }
 
         if (!string.IsNullOrWhiteSpace(commitSha))
             await onLogLine($"{GitCommitShaMarker}{commitSha}", LogStream.Stdout);
         if (!string.IsNullOrWhiteSpace(branch))
             await onLogLine($"{GitBranchMarker}{branch}", LogStream.Stdout);
+
+        return pushSucceeded;
+    }
+
+    /// <summary>
+    /// Extracts the <c>/workspace/.git</c> directory from the running container using the
+    /// Docker archive API and returns the raw tar stream. The caller is responsible for
+    /// disposing the returned stream. Returns <c>null</c> if the archive could not be read.
+    /// </summary>
+    internal async Task<Stream?> TryGetGitArchiveStreamAsync(
+        string containerId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await dockerClient.Containers.GetArchiveFromContainerAsync(
+                containerId,
+                new Docker.DotNet.Models.ContainerPathStatParameters { Path = "/workspace/.git" },
+                false,
+                cancellationToken);
+            return response.Stream;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not extract .git archive from container {ContainerId}", containerId);
+            return null;
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -631,6 +706,23 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
             return null;
         }
         return [dnsServer];
+    }
+
+    /// <summary>
+    /// Replaces <c>localhost</c> and <c>127.0.0.1</c> host references in a URL with
+    /// <c>host.docker.internal</c> so agent containers can reach services running on the
+    /// Docker host. Handles both port-qualified (<c>http://localhost:8080/</c>) and
+    /// default-port (<c>http://localhost/path</c>) forms.
+    /// Returns <c>null</c> when the input is null or empty.
+    /// </summary>
+    internal static string? ToDockerHostUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return url;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return url;
+        if (!uri.IsLoopback) return url; // already points at a non-localhost host — leave it alone
+
+        var builder = new UriBuilder(uri) { Host = "host.docker.internal" };
+        return builder.Uri.ToString().TrimEnd('/');
     }
 
     /// <summary>Best-effort stop + remove of a container. Used for cleanup on failure paths.</summary>

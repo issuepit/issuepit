@@ -167,6 +167,43 @@ public class RunnerCommandBuilderTests
     }
 
     [Fact]
+    public void BuildTaskPrompt_NoComments_DoesNotIncludeCommentsSection()
+    {
+        var issue = MakeIssue("Fix the bug", "Body text.");
+        var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue);
+        Assert.Contains("Fix the bug", prompt);
+        Assert.Contains("Body text.", prompt);
+        Assert.DoesNotContain("## Comments", prompt);
+    }
+
+    [Fact]
+    public void BuildTaskPrompt_WithComments_IncludesCommentsSection()
+    {
+        var issue = MakeIssue("Fix the bug");
+        var comments = new List<IssueComment>
+        {
+            new() { Id = Guid.NewGuid(), IssueId = issue.Id, Body = "Please also fix the tests.", CreatedAt = DateTime.UtcNow },
+        };
+        var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue, comments);
+        Assert.Contains("## Comments", prompt);
+        Assert.Contains("Please also fix the tests.", prompt);
+    }
+
+    [Fact]
+    public void BuildTaskPrompt_WithComments_IncludesAuthorName()
+    {
+        var issue = MakeIssue("Fix the bug");
+        var user = new User { Id = Guid.NewGuid(), Username = "alice", Email = "alice@example.com", TenantId = Guid.NewGuid() };
+        var comments = new List<IssueComment>
+        {
+            new() { Id = Guid.NewGuid(), IssueId = issue.Id, Body = "Great idea!", User = user, CreatedAt = DateTime.UtcNow },
+        };
+        var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue, comments);
+        Assert.Contains("alice", prompt);
+        Assert.Contains("Great idea!", prompt);
+    }
+
+    [Fact]
     public void BuildRunnerEnv_NoRunnerType_ReturnsEmpty()
     {
         var agent = MakeAgent();

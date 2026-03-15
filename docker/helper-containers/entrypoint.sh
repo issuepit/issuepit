@@ -235,11 +235,77 @@ if command -v dockerd > /dev/null 2>&1 && [ ! -e /var/run/docker.sock ]; then
         || { echo "[entrypoint] dockerd failed to start"; cat /tmp/dockerd.log; exit 1; }
 fi
 
-# ─── Start the container's primary process ────────────────────────────────────
+# ─── Step 4c: Write opencode config ──────────────────────────────────────────
 #
-# The execution client (C#) controls all agent runs via `docker exec`.
-# exec "$@" here starts the CMD passed by the runtime — typically `sleep infinity`
-# to keep the container alive. Setup is complete; C# takes over from here.
+# When opencode is installed, write ~/.config/opencode/config.json so that:
+#   - autoupdate=false prevents opencode from self-updating mid-run
+#   - The IssuePit MCP server is registered when ISSUEPIT_MCP_URL is set
+#   - Agent modes are configured when ISSUEPIT_OPENCODE_AGENTS_JSON is set
 
-exec "$@"
+if command -v opencode > /dev/null 2>&1 && command -v python3 > /dev/null 2>&1; then
+    OPENCODE_CONFIG_DIR="${HOME}/.config/opencode"
+    mkdir -p "${OPENCODE_CONFIG_DIR}"
+    OPENCODE_CONFIG_FILE="${OPENCODE_CONFIG_DIR}/config.json"
+
+    python3 - <<'OPENCODE_PYEOF'
+import json, os, sys
+
+mcp_url = os.environ.get("ISSUEPIT_MCP_URL", "")
+agents_json_str = os.environ.get("ISSUEPIT_OPENCODE_AGENTS_JSON", "")
+config_file = os.path.join(os.path.expanduser("~"), ".config", "opencode", "config.json")
+
+config = {"autoupdate": False}
+
+# Add the IssuePit MCP server when the URL is configured.
+if mcp_url:
+    config["mcp"] = {
+        "issuepit": {
+            "type": "sse",
+            "url": mcp_url,
+        }
+    }
+
+# Add agent modes from ISSUEPIT_OPENCODE_AGENTS_JSON when present.
+# Format expected: [{"name": "...", "model": "...", "prompt": "..."}, ...]
+# Each entry becomes a named mode in the opencode "mode" config section.
+if agents_json_str:
+    try:
+        agents = json.loads(agents_json_str)
+        mode_map = {}
+        for a in agents:
+            mode_key = a.get("name", "").lower().replace(" ", "-")
+            if mode_key:
+                mode_map[mode_key] = {
+                    "model": a.get("model") or None,
+                    "system": a.get("prompt", ""),
+                }
+                # Remove null model to use the global default
+                if mode_map[mode_key]["model"] is None:
+                    del mode_map[mode_key]["model"]
+        if mode_map:
+            config["mode"] = mode_map
+    except Exception as e:
+        print(f"[entrypoint] Warning: could not parse ISSUEPIT_OPENCODE_AGENTS_JSON: {e}", file=sys.stderr)
+
+with open(config_file, "w") as f:
+    json.dump(config, f, indent=2)
+print(f"[entrypoint] opencode config written: {config_file}")
+OPENCODE_PYEOF
+
+    # Debug: list all configured agent modes
+    if [[ -n "${ISSUEPIT_OPENCODE_AGENTS_JSON:-}" ]]; then
+        echo "[entrypoint] Configured agent modes (from ISSUEPIT_OPENCODE_AGENTS_JSON):"
+        python3 -c "
+import sys, json, os
+try:
+    agents = json.loads(os.environ.get('ISSUEPIT_OPENCODE_AGENTS_JSON', '[]'))
+    for a in agents:
+        model = a.get('model') or '(default)'
+        print(f\"  - {a['name']} (model: {model})\")
+except Exception as e:
+    print(f'  (parse error: {e})', file=sys.stderr)
+" 2>&1 || true
+    fi
+fi
+
 

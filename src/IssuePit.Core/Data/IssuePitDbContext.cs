@@ -78,6 +78,12 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
             .WithMany(m => m.AgentMcpServers)
             .HasForeignKey(x => x.McpServerId);
 
+        modelBuilder.Entity<Agent>()
+            .HasOne(a => a.ParentAgent)
+            .WithMany(a => a.ChildAgents)
+            .HasForeignKey(a => a.ParentAgentId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         modelBuilder.Entity<AgentProject>()
             .HasKey(x => new { x.AgentId, x.ProjectId });
 

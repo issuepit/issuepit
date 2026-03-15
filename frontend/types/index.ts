@@ -827,6 +827,8 @@ export interface AgentSessionDetail extends AgentSession {
   projectId: string
   projectName: string
   ciCdRuns: CiCdRun[]
+  /** JSON-serialised string array of warnings (e.g. truncated comments). Null when no warnings. */
+  warnings?: string | null
 }
 
 export interface IssueAgentSession {

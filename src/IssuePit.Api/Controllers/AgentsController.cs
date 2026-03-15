@@ -27,6 +27,7 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
         var agent = await db.Agents
             .Include(a => a.AgentMcpServers)
             .ThenInclude(am => am.McpServer)
+            .Include(a => a.ChildAgents)
             .FirstOrDefaultAsync(a => a.Id == id);
         if (agent is null) return NotFound();
         return Ok(new
@@ -40,6 +41,7 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
             agent.RunnerType,
             agent.Model,
             agent.IsActive,
+            agent.ParentAgentId,
             agent.CreatedAt,
             LinkedMcpServers = agent.AgentMcpServers.Select(am => new
             {
@@ -48,6 +50,14 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
                 am.McpServer.Url,
                 am.McpServer.Description,
                 am.McpServer.AllowedTools,
+            }),
+            ChildAgents = agent.ChildAgents.Select(c => new
+            {
+                c.Id,
+                c.Name,
+                c.Model,
+                c.SystemPrompt,
+                c.IsActive,
             }),
         });
     }
@@ -75,6 +85,7 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
         agent.RunnerType = updated.RunnerType;
         agent.Model = updated.Model;
         agent.IsActive = updated.IsActive;
+        agent.ParentAgentId = updated.ParentAgentId;
         await db.SaveChangesAsync();
         return Ok(agent);
     }

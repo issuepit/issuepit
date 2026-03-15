@@ -1,5 +1,6 @@
 using IssuePit.Core.Entities;
 using IssuePit.Core.Runners;
+using System.Text.Json;
 
 namespace IssuePit.ExecutionClient.Runtimes;
 
@@ -19,7 +20,8 @@ internal static class AgentEnvironmentBuilder
         Agent agent,
         Issue issue,
         IReadOnlyDictionary<string, string> credentials,
-        GitRepository? gitRepository)
+        GitRepository? gitRepository,
+        string? issuePitMcpUrl = null)
     {
         var env = new List<string>
         {
@@ -58,6 +60,34 @@ internal static class AgentEnvironmentBuilder
         foreach (var (key, value) in RunnerCommandBuilder.BuildRunnerEnv(agent))
             env.Add($"{key}={value}");
 
+        // Inject the IssuePit MCP server URL so the entrypoint can write the opencode config.
+        if (!string.IsNullOrWhiteSpace(issuePitMcpUrl))
+            env.Add($"ISSUEPIT_MCP_URL={issuePitMcpUrl}");
+
+        // Inject the agents list (current agent + children) as JSON so the entrypoint can configure
+        // the CLI with nested agent modes. Only one level of nesting is supported.
+        var agentsJson = BuildAgentsJson(agent);
+        if (!string.IsNullOrEmpty(agentsJson))
+            env.Add($"ISSUEPIT_OPENCODE_AGENTS_JSON={agentsJson}");
+
         return env;
+    }
+
+    /// <summary>
+    /// Serialises the current agent and its direct children (one level only) into a JSON array
+    /// for consumption by the container entrypoint when writing the opencode config.
+    /// Format: [{ "name": "...", "model": "...", "prompt": "..." }, ...]
+    /// </summary>
+    private static string BuildAgentsJson(Agent agent)
+    {
+        var agents = new List<object>
+        {
+            new { name = agent.Name, model = agent.Model ?? string.Empty, prompt = agent.SystemPrompt },
+        };
+
+        foreach (var child in agent.ChildAgents)
+            agents.Add(new { name = child.Name, model = child.Model ?? string.Empty, prompt = child.SystemPrompt });
+
+        return JsonSerializer.Serialize(agents);
     }
 }

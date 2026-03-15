@@ -262,10 +262,15 @@ var api = builder.AddProject<Projects.IssuePit_Api>("api")
         u.Url = "/scalar/v1";
     });
 
+// Disable the DCP proxy for the MCP server: the proxy only binds to 127.0.0.1, which Docker
+// agent containers cannot reach via host.docker.internal. With IsProxied=false, GetEndpoint
+// returns the direct target URL (http://localhost:{T}); ToDockerHostUrl() translates it to
+// host.docker.internal:{T}, and the MCP server listens on 0.0.0.0:{T} via ListenAnyIP.
 var mcpServer = builder.AddProject<Projects.IssuePit_McpServer>("mcp-server")
     .WithReference(api)
     .WaitFor(api)
-    .WithEnvironment("IssuePit__ApiBaseUrl", api.GetEndpoint("http"));
+    .WithEnvironment("IssuePit__ApiBaseUrl", api.GetEndpoint("http"))
+    .WithEndpoint("http", e => e.IsProxied = false);
 
 // Allow the API to discover and call the MCP server (e.g. for issue enhancement).
 api.WithEnvironment("McpServer__BaseUrl", mcpServer.GetEndpoint("http"));
@@ -279,6 +284,7 @@ var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("exe
     .WaitForCompletion(kafkaInitializer)
     .WaitFor(kafka)
     .WaitFor(redis)
+    .WithEnvironment("McpServer__BaseUrl", mcpServer.GetEndpoint("http"))
     .WithHttpHealthCheck("/health", endpointName: "http");
 
 // Scale cicd-client horizontally to allow multiple concurrent runs.

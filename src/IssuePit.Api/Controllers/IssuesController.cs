@@ -406,7 +406,7 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
             await producer.ProduceAsync("issue-assigned", new Message<string, string>
             {
                 Key = issue.Id.ToString(),
-                Value = JsonSerializer.Serialize(new { issue.Id, issue.ProjectId, issue.Title, AgentId = req.AgentId.Value })
+                Value = JsonSerializer.Serialize(new { issue.Id, issue.ProjectId, issue.Title, AgentId = req.AgentId.Value, req.DockerCmdOverride })
             });
         }
 
@@ -710,7 +710,8 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
 
 public record CommentRequest(string Body, Guid? UserId);
 public record CodeReviewCommentRequest(string FilePath, int StartLine, int EndLine, string Sha, string? Snippet, string? ContextBefore, string? ContextAfter, string Body);
-public record AssigneeRequest(Guid? UserId, Guid? AgentId);
+/// <param name="DockerCmdOverride">Optional command override for the agent container (for diagnostic/test runs, e.g. a connectivity check). Only applies when no RunnerType is set.</param>
+public record AssigneeRequest(Guid? UserId, Guid? AgentId, string[]? DockerCmdOverride = null);
 public record LabelAssignRequest(Guid LabelId);
 public record IssueLinkRequest(Guid TargetIssueId, IssueLinkType LinkType);
 public record IssueLinkDto(Guid Id, Guid IssueId, Guid TargetIssueId, Issue? TargetIssue, IssueLinkType LinkType, DateTime CreatedAt);

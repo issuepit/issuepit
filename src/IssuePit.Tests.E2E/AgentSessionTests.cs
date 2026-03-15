@@ -230,6 +230,279 @@ public class AgentSessionTests(AspireFixture fixture)
     }
 
     /// <summary>
+    /// Verifies that an agent container can reach the IssuePit MCP server at the URL injected
+    /// via <c>ISSUEPIT_MCP_URL</c>.
+    ///
+    /// The test triggers an agent session with a custom <c>DockerCmdOverride</c> that runs
+    /// <c>wget</c> against the MCP health endpoint and echoes a marker line to stdout.
+    /// Connectivity is confirmed by asserting that <c>[ISSUEPIT:MCP_CHECK]=OK</c> appears in
+    /// the session logs.
+    ///
+    /// This test validates:
+    /// <list type="bullet">
+    ///   <item><c>host.docker.internal</c> is resolvable inside the agent container (via the
+    ///         <c>ExtraHosts: host.docker.internal:host-gateway</c> added to the container).</item>
+    ///   <item><c>ISSUEPIT_MCP_URL</c> has been rewritten from <c>localhost</c> to
+    ///         <c>host.docker.internal</c> so the URL works inside the container.</item>
+    /// </list>
+    ///
+    /// Skipped automatically when Docker is not available on the host.
+    /// </summary>
+    [Fact]
+    public async Task AgentSession_McpConnectivity_ContainerCanReachMcpServer()
+    {
+        if (!IsDockerAvailable()) return;
+
+        using var client = CreateCookieClient();
+        var tenantId = await GetDefaultTenantIdAsync();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"e2e{Guid.NewGuid():N}"[..12];
+        await client.PostAsJsonAsync("/api/auth/register", new { username, password = "TestPass1!" });
+
+        // Create org and project
+        var orgSlug = $"mcp-org-{Guid.NewGuid():N}"[..16];
+        var orgResp = await client.PostAsJsonAsync("/api/orgs", new { name = "MCP Check Org", slug = orgSlug });
+        Assert.Equal(HttpStatusCode.Created, orgResp.StatusCode);
+        var org = await orgResp.Content.ReadFromJsonAsync<JsonElement>();
+        var orgId = org.GetProperty("id").GetString()!;
+
+        var projectSlug = $"mcp-proj-{Guid.NewGuid():N}"[..16];
+        var projResp = await client.PostAsJsonAsync("/api/projects",
+            new { name = "MCP Check Project", slug = projectSlug, orgId = Guid.Parse(orgId) });
+        Assert.Equal(HttpStatusCode.Created, projResp.StatusCode);
+        var project = await projResp.Content.ReadFromJsonAsync<JsonElement>();
+        var projectId = project.GetProperty("id").GetString()!;
+
+        // Create an agent with busybox:latest (has wget and sh); no RunnerType so legacy flow is used.
+        // The session will run a custom command that probes the MCP health endpoint.
+        var agentResp = await client.PostAsJsonAsync("/api/agents",
+            new
+            {
+                name = "MCP Connectivity Agent",
+                orgId = Guid.Parse(orgId),
+                systemPrompt = "You are a diagnostic agent.",
+                dockerImage = "busybox:latest",
+                allowedTools = "[]",
+                isActive = true,
+                // No RunnerType → legacy flow; DockerCmdOverride is sent in the assignment request
+            });
+        Assert.Equal(HttpStatusCode.Created, agentResp.StatusCode);
+        var agent = await agentResp.Content.ReadFromJsonAsync<JsonElement>();
+        var agentId = agent.GetProperty("id").GetString()!;
+
+        // Create the issue
+        var issueResp = await client.PostAsJsonAsync("/api/issues",
+            new { title = "MCP Connectivity Test", projectId = Guid.Parse(projectId) });
+        Assert.Equal(HttpStatusCode.Created, issueResp.StatusCode);
+        var issue = await issueResp.Content.ReadFromJsonAsync<JsonElement>();
+        var issueId = issue.GetProperty("id").GetString()!;
+
+        // Assign the agent with a DockerCmdOverride: use wget to check the MCP health endpoint.
+        // ISSUEPIT_MCP_URL is set to http://host.docker.internal:PORT by the execution client
+        // (localhost is replaced with host.docker.internal before passing to the container).
+        // The sh command always exits 0 so the session status reflects connectivity, not failure.
+        var mcpCheckCmd = new string[]
+        {
+            "sh", "-c",
+            """
+            if wget -qO- "${ISSUEPIT_MCP_URL}/health" 2>&1; then
+              echo '[ISSUEPIT:MCP_CHECK]=OK'
+            else
+              echo '[ISSUEPIT:MCP_CHECK]=FAIL'
+            fi
+            """,
+        };
+
+        var assignResp = await client.PostAsJsonAsync($"/api/issues/{issueId}/assignees",
+            new { agentId = Guid.Parse(agentId), dockerCmdOverride = mcpCheckCmd });
+        Assert.Equal(HttpStatusCode.Created, assignResp.StatusCode);
+
+        // Wait for the session to complete
+        var session = await WaitForAgentSessionAsync(client, issueId, TimeSpan.FromMinutes(3));
+        var sessionId = session.GetProperty("id").GetString()!;
+
+        // Fetch the session logs
+        var logsResp = await client.GetAsync($"/api/agent-sessions/{sessionId}/logs");
+        Assert.Equal(HttpStatusCode.OK, logsResp.StatusCode);
+        var logs = await logsResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        var logLines = logs.EnumerateArray()
+            .Select(l => l.GetProperty("line").GetString() ?? string.Empty)
+            .ToList();
+
+        // The container should have output [ISSUEPIT:MCP_CHECK]=OK if the MCP server is reachable
+        Assert.True(
+            logLines.Any(l => l.Contains("[ISSUEPIT:MCP_CHECK]=OK")),
+            $"Expected '[ISSUEPIT:MCP_CHECK]=OK' in session logs, indicating the MCP server is reachable " +
+            $"from inside the agent container via host.docker.internal.\n" +
+            $"Actual logs:\n{string.Join('\n', logLines.Take(50))}");
+    }
+
+    /// <summary>
+    /// Runs an agent container (busybox:latest) that exercises the MCP server by:
+    /// <list type="bullet">
+    ///   <item>Calling <c>initialize</c> via <c>POST /mcp</c> and printing the server version
+    ///         as <c>[ISSUEPIT:MCP_VERSION]=&lt;version&gt;</c>.</item>
+    ///   <item>Calling the <c>list_projects</c> MCP tool and asserting the project count is at
+    ///         least 1, printed as <c>[ISSUEPIT:MCP_PROJECT_COUNT]=&lt;n&gt;</c>.</item>
+    /// </list>
+    ///
+    /// This verifies that the MCP server is reachable from a Docker container <em>and</em> that
+    /// MCP tool execution works end-to-end from inside the container.
+    ///
+    /// Skipped automatically when Docker is not available on the host.
+    /// </summary>
+    [Fact]
+    public async Task AgentSession_McpToolsWork_ContainerCanQueryProjectsAndGetVersion()
+    {
+        if (!IsDockerAvailable()) return;
+
+        using var client = CreateCookieClient();
+        var tenantId = await GetDefaultTenantIdAsync();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"e2e{Guid.NewGuid():N}"[..12];
+        await client.PostAsJsonAsync("/api/auth/register", new { username, password = "TestPass1!" });
+
+        // Create org and project so list_projects returns at least 1 result
+        var orgSlug = $"mcp-tool-{Guid.NewGuid():N}"[..16];
+        var orgResp = await client.PostAsJsonAsync("/api/orgs", new { name = "MCP Tool Org", slug = orgSlug });
+        Assert.Equal(HttpStatusCode.Created, orgResp.StatusCode);
+        var org = await orgResp.Content.ReadFromJsonAsync<JsonElement>();
+        var orgId = org.GetProperty("id").GetString()!;
+
+        var projectSlug = $"mcp-tp-{Guid.NewGuid():N}"[..14];
+        var projResp = await client.PostAsJsonAsync("/api/projects",
+            new { name = "MCP Tool Project", slug = projectSlug, orgId = Guid.Parse(orgId) });
+        Assert.Equal(HttpStatusCode.Created, projResp.StatusCode);
+        var project = await projResp.Content.ReadFromJsonAsync<JsonElement>();
+        var projectId = project.GetProperty("id").GetString()!;
+
+        // Create an agent with busybox:latest (has wget and sh)
+        var agentResp = await client.PostAsJsonAsync("/api/agents",
+            new
+            {
+                name = "MCP Tool Agent",
+                orgId = Guid.Parse(orgId),
+                systemPrompt = "You are a diagnostic agent.",
+                dockerImage = AgentTestDockerImage,
+                allowedTools = "[]",
+                isActive = true,
+            });
+        Assert.Equal(HttpStatusCode.Created, agentResp.StatusCode);
+        var agent = await agentResp.Content.ReadFromJsonAsync<JsonElement>();
+        var agentId = agent.GetProperty("id").GetString()!;
+
+        // Create the issue
+        var issueResp = await client.PostAsJsonAsync("/api/issues",
+            new { title = "MCP Tool Test", projectId = Guid.Parse(projectId) });
+        Assert.Equal(HttpStatusCode.Created, issueResp.StatusCode);
+        var issue = await issueResp.Content.ReadFromJsonAsync<JsonElement>();
+        var issueId = issue.GetProperty("id").GetString()!;
+
+        // Shell script executed inside the container:
+        //   1. POST /mcp  method=initialize  → capture Mcp-Session-Id header and server version
+        //   2. POST /mcp  method=tools/call  → call list_projects and count returned projects
+        //
+        // Success detection: the MCP SDK omits "isError":false in successful responses (per spec,
+        // isError is optional and defaults to false). So we check for "content" in the response
+        // AND the absence of "isError":true, rather than looking for "isError":false.
+        //
+        // Counting note: the MCP tool response embeds projects as a JSON-encoded string inside
+        // result.content[0].text. In that embedded JSON, the double-quotes are encoded as Unicode
+        // escape sequences (e.g. {\u0022id\u0022:...) because the text is a JSON string value.
+        // ProjectDto has a flat structure (id, orgId, name, ...) with no nested organization object,
+        // so each project contributes exactly ONE {\u0022id\u0022 occurrence. PROJ_COUNT = RAW.
+        var mcpToolsCmd = new string[]
+        {
+            "sh", "-c",
+            """
+            MCP_URL="${ISSUEPIT_MCP_URL%/}/mcp"
+
+            # Step 1: Initialize MCP session — capture session ID (header) and server version (body)
+            wget -qS \
+              -O /tmp/init_body \
+              --post-data='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"e2e","version":"1.0"}}}' \
+              --header='Content-Type: application/json' \
+              --header='Accept: application/json, text/event-stream' \
+              "$MCP_URL" 2>/tmp/init_hdr || { echo '[ISSUEPIT:MCP_TOOLS]=FAIL (init)'; exit 0; }
+
+            SESSION=$(grep -i 'Mcp-Session-Id' /tmp/init_hdr | head -1 | awk '{print $2}' | tr -d '\r')
+            BODY=$(sed 's/^data: //' /tmp/init_body)
+            VER=$(echo "$BODY" | tr '{},' '\n' | grep '"version"' | sed 's/.*"version":"//;s/".*//' | tail -1)
+            echo "[ISSUEPIT:MCP_VERSION]=$VER"
+
+            # Step 2: Call list_projects MCP tool
+            wget -qS \
+              -O /tmp/list_body \
+              --post-data='{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_projects","arguments":{}}}' \
+              --header='Content-Type: application/json' \
+              --header='Accept: application/json, text/event-stream' \
+              --header="Mcp-Session-Id: $SESSION" \
+              "$MCP_URL" 2>/dev/null || { echo '[ISSUEPIT:MCP_TOOLS]=FAIL (list_projects wget)'; exit 0; }
+
+            LIST=$(sed 's/^data: //' /tmp/list_body)
+
+            # Successful tool response has "content" but NO "isError":true.
+            # The MCP SDK omits "isError":false in successful responses (defaults to false per spec).
+            if echo "$LIST" | grep -qF '"content"' && ! echo "$LIST" | grep -qF '"isError":true'; then
+              # ProjectDto is flat (id, orgId, name, ...) — each project has {\u0022id\u0022 (unicode-escaped
+              # quotes) in the embedded JSON string. Count that literal pattern, no division needed.
+              COUNT=$(echo "$LIST" | grep -oF '{\u0022id\u0022' | wc -l | tr -d ' ')
+              echo "[ISSUEPIT:MCP_PROJECT_COUNT]=$COUNT"
+              # Print the raw list response body so CI logs show what was returned
+              echo "[ISSUEPIT:MCP_LIST_RESP]=$LIST"
+              echo '[ISSUEPIT:MCP_TOOLS]=OK'
+            else
+              echo "[ISSUEPIT:MCP_LIST_RESP]=$LIST"
+              echo '[ISSUEPIT:MCP_TOOLS]=FAIL (list_projects error response)'
+            fi
+            """,
+        };
+
+        var assignResp = await client.PostAsJsonAsync($"/api/issues/{issueId}/assignees",
+            new { agentId = Guid.Parse(agentId), dockerCmdOverride = mcpToolsCmd });
+        Assert.Equal(HttpStatusCode.Created, assignResp.StatusCode);
+
+        // Wait for the session to complete
+        var session = await WaitForAgentSessionAsync(client, issueId, TimeSpan.FromMinutes(3));
+        var sessionId = session.GetProperty("id").GetString()!;
+
+        // Fetch the session logs
+        var logsResp = await client.GetAsync($"/api/agent-sessions/{sessionId}/logs");
+        Assert.Equal(HttpStatusCode.OK, logsResp.StatusCode);
+        var logs = await logsResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        var logLines = logs.EnumerateArray()
+            .Select(l => l.GetProperty("line").GetString() ?? string.Empty)
+            .ToList();
+
+        // Print MCP version and raw list response for CI log visibility
+        var versionLine = logLines.FirstOrDefault(l => l.Contains("[ISSUEPIT:MCP_VERSION]="));
+        Console.WriteLine($"[MCP] server version from container: {versionLine ?? "(not found)"}");
+        var listRespLine = logLines.FirstOrDefault(l => l.Contains("[ISSUEPIT:MCP_LIST_RESP]="));
+        if (listRespLine is not null)
+            Console.WriteLine($"[MCP] list_projects raw response: {listRespLine}");
+
+        // Assert MCP tools worked end-to-end from inside the container
+        Assert.True(
+            logLines.Any(l => l.Contains("[ISSUEPIT:MCP_TOOLS]=OK")),
+            $"Expected '[ISSUEPIT:MCP_TOOLS]=OK' in session logs, indicating MCP tools work " +
+            $"from inside the agent container.\n" +
+            $"Actual logs:\n{string.Join('\n', logLines.Take(60))}");
+
+        // Assert list_projects returned at least 1 project
+        var countLine = logLines.FirstOrDefault(l => l.Contains("[ISSUEPIT:MCP_PROJECT_COUNT]="));
+        Assert.NotNull(countLine);
+        var countStr = countLine!.Split('=').Last().Trim();
+        Assert.True(
+            int.TryParse(countStr, out var projCount) && projCount >= 1,
+            $"Expected project count >= 1, got '{countStr}'.\n" +
+            $"Actual logs:\n{string.Join('\n', logLines.Take(60))}");
+    }
+
+    /// <summary>
     /// Polls <c>GET /api/issues/{issueId}/runs</c> until the most-recent agent session reaches a
     /// terminal status (Succeeded, Failed, or Cancelled) or the timeout elapses.
     /// </summary>

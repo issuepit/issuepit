@@ -173,6 +173,18 @@
         </div>
       </Teleport>
 
+      <!-- Warnings -->
+      <div v-if="sessionWarnings.length" class="mb-6 space-y-2">
+        <div v-for="(warning, idx) in sessionWarnings" :key="idx"
+          class="flex items-start gap-3 bg-yellow-950/40 border border-yellow-800/50 rounded-lg px-4 py-3">
+          <svg class="w-4 h-4 text-yellow-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <p class="text-sm text-yellow-300">{{ warning }}</p>
+        </div>
+      </div>
+
       <!-- Logs / Details -->
       <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden mb-6">
         <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800">
@@ -187,8 +199,8 @@
             </button>
           </div>
 
-          <!-- Log stream filter (only in Logs tab) -->
-          <div v-if="activeSection === 'logs'" class="flex items-center gap-2 flex-wrap">
+          <!-- Log stream filter (only in Logs tab and Steps tab selected-step view) -->
+          <div v-if="activeSection === 'logs' || (activeSection === 'steps' && selectedStep)" class="flex items-center gap-2 flex-wrap">
             <div class="flex gap-1">
               <button v-for="s in streamTabs" :key="s.value ?? 'all'"
                 :class="[
@@ -560,7 +572,9 @@ const sessionStepGroups = computed<SessionStepGroup[]>(() => {
     const g = keyToGroup.get(key)!
     g.logs.push(log)
     g.endTs = log.timestamp
-    if (log.stream === 'stderr') g.hasError = true
+    // A step is considered to have errors only when a line with [ERROR] prefix is present.
+    // stderr alone is not an error indicator — opencode writes verbose output to stderr during normal operation.
+    if (log.line.includes('[ERROR]')) g.hasError = true
   }
 
   return groups
@@ -598,7 +612,9 @@ const logsBySection = computed<SessionStepGroup[]>(() => {
     const g = keyToGroup.get(key)!
     g.logs.push(log)
     g.endTs = log.timestamp
-    if (log.stream === 'stderr') g.hasError = true
+    // A step is considered to have errors only when a line with [ERROR] prefix is present.
+    // stderr alone is not an error indicator — opencode writes verbose output to stderr during normal operation.
+    if (log.line.includes('[ERROR]')) g.hasError = true
   }
   return groups
 })
@@ -653,6 +669,19 @@ const debugMetadata = computed(() => {
     if (m) entries.push({ key: m[1].trim(), value: m[2].trim() })
   }
   return entries
+})
+
+/** Parsed warnings array from the session's JSON warnings field. */
+const sessionWarnings = computed<string[]>(() => {
+  const raw = store.currentSession?.warnings
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((w): w is string => typeof w === 'string') : []
+  } catch (e) {
+    console.warn('Failed to parse session warnings JSON:', e)
+    return []
+  }
 })
 
 // `now` is updated on each server-pushed event so the duration display stays live without a timer
