@@ -4,6 +4,10 @@ WORKDIR /src
 COPY src/IssuePit.Core/IssuePit.Core.csproj IssuePit.Core/
 COPY src/IssuePit.ServiceDefaults/IssuePit.ServiceDefaults.csproj IssuePit.ServiceDefaults/
 COPY src/IssuePit.ExecutionClient/IssuePit.ExecutionClient.csproj IssuePit.ExecutionClient/
+# The project embeds entrypoint.sh as a resource. The relative path from the project file
+# (../../docker/helper-containers/entrypoint.sh) resolves to /docker/helper-containers/entrypoint.sh
+# inside the container, so we COPY it to that exact absolute path.
+COPY docker/helper-containers/entrypoint.sh /docker/helper-containers/entrypoint.sh
 
 RUN dotnet restore IssuePit.ExecutionClient/IssuePit.ExecutionClient.csproj
 
