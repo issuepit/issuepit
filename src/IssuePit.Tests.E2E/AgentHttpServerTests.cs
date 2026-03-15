@@ -205,9 +205,9 @@ public class AgentHttpServerTests(AspireFixture fixture)
 
         // Assign the agent to the issue (the session will fail since busybox can't run opencode,
         // but we only need to check that the session is created and the API returns the field).
-        var assignResp = await client.PostAsJsonAsync($"/api/issues/{issueId}/assign-agent",
+        var assignResp = await client.PostAsJsonAsync($"/api/issues/{issueId}/assignees",
             new { agentId = Guid.Parse(agentId) });
-        Assert.Equal(HttpStatusCode.OK, assignResp.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, assignResp.StatusCode);
 
         // Poll for the session to be created (up to 10 s).
         string? sessionId = null;
