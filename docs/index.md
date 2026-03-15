@@ -13,12 +13,15 @@ nav_order: 1
 ## What you can do with IssuePit
 
 - 🗂 **Track issues** across multiple projects and organizations
-- 📋 **Kanban boards** with drag-and-drop cards (Backlog → Todo → In Progress → In Review → Done)
+- 📋 **Kanban boards** with drag-and-drop cards, configurable lane properties (status, priority, label, type, agent, milestone), issue preview sidebar, and lane transition rules
 - 🤖 **AI agents** that automatically work on issues — agent modes define behavior, work agents execute them in Docker/Podman containers
 - 🔗 **Link GitHub repositories** to your projects
 - 🏷 **Labels, milestones, assignees** (users or agents)
 - 🎯 **Common Agenda** — org-wide goal tracker for cross-cutting initiatives across all projects
 - 🔄 **CI/CD integration** — run GitHub Actions workflows locally via [nektos/act](https://github.com/nektos/act) with real-time logs and artifact downloads
+- 🧪 **Test History** — per-project test result dashboard with flakiness analysis, run comparison, TRX import, and MCP tools for AI-assisted analysis
+- 🗃 **Custom issue properties** — define per-project typed fields (text, number, date, enum, bool, person, agent) with optional constraints
+- 📊 **Configurable dashboards** — drag-and-drop sections in draft mode with per-section width, display mode, and max item count saved per user
 - ✅ **Todo Tracker** — personal task board and weekly calendar with iCal subscription
 - 🔍 **Code review** — side-by-side diff viewer with inline comments
 - 🔗 **Issue linking** — relate issues with typed links (blocks, implements, duplicates, and more)
