@@ -53,7 +53,7 @@ public class OrgsPage(IPage page)
         await page.ClickAsync("button[type='submit']");
         await page.WaitForSelectorAsync($"text={orgName}", new PageWaitForSelectorOptions { Timeout = 10_000 });
         await page.ClickAsync($"a:has-text('{orgName}')");
-        await page.WaitForURLAsync("**/orgs/**");
+        await page.WaitForURLAsync("**/orgs/**", new PageWaitForURLOptions { Timeout = 20_000, WaitUntil = WaitUntilState.Commit });
         return Guid.Parse(page.Url.TrimEnd('/').Split('/').Last());
     }
 
