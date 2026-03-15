@@ -1,6 +1,7 @@
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
+using IssuePit.Core.Enums;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -30,8 +31,7 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
             .Include(a => a.ChildAgents)
             .FirstOrDefaultAsync(a => a.Id == id);
         if (agent is null) return NotFound();
-        return Ok(new
-        {
+        return Ok(new AgentDetailResponse(
             agent.Id,
             agent.OrgId,
             agent.Name,
@@ -44,23 +44,14 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
             agent.ParentAgentId,
             agent.UseHttpServer,
             agent.CreatedAt,
-            LinkedMcpServers = agent.AgentMcpServers.Select(am => new
-            {
+            agent.AgentMcpServers.Select(am => new LinkedMcpServerDto(
                 am.McpServer.Id,
                 am.McpServer.Name,
                 am.McpServer.Url,
                 am.McpServer.Description,
-                am.McpServer.AllowedTools,
-            }),
-            ChildAgents = agent.ChildAgents.Select(c => new
-            {
-                c.Id,
-                c.Name,
-                c.Model,
-                c.SystemPrompt,
-                c.IsActive,
-            }),
-        });
+                am.McpServer.AllowedTools)).ToList(),
+            agent.ChildAgents.Select(c => new ChildAgentDto(
+                c.Id, c.Name, c.Model, c.SystemPrompt, c.IsActive)).ToList()));
     }
 
     [HttpPost]
@@ -72,21 +63,7 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
         db.Agents.Add(agent);
         await db.SaveChangesAsync();
         // Return the created agent without the password (security: never expose credentials).
-        return Created($"/api/agents/{agent.Id}", new
-        {
-            agent.Id,
-            agent.OrgId,
-            agent.Name,
-            agent.SystemPrompt,
-            agent.DockerImage,
-            agent.AllowedTools,
-            agent.RunnerType,
-            agent.Model,
-            agent.IsActive,
-            agent.ParentAgentId,
-            agent.UseHttpServer,
-            agent.CreatedAt,
-        });
+        return Created($"/api/agents/{agent.Id}", ToAgentResponse(agent));
     }
 
     [HttpPut("{id:guid}")]
@@ -110,21 +87,7 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
             agent.HttpServerPassword = updated.HttpServerPassword;
         await db.SaveChangesAsync();
         // Return the agent without the password (security: never expose credentials in responses).
-        return Ok(new
-        {
-            agent.Id,
-            agent.OrgId,
-            agent.Name,
-            agent.SystemPrompt,
-            agent.DockerImage,
-            agent.AllowedTools,
-            agent.RunnerType,
-            agent.Model,
-            agent.IsActive,
-            agent.ParentAgentId,
-            agent.UseHttpServer,
-            agent.CreatedAt,
-        });
+        return Ok(ToAgentResponse(agent));
     }
 
     [HttpPatch("{id:guid}/active")]
@@ -167,6 +130,68 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
         await db.SaveChangesAsync();
         return NoContent();
     }
+
+    private static AgentResponse ToAgentResponse(Agent agent) => new(
+        agent.Id,
+        agent.OrgId,
+        agent.Name,
+        agent.SystemPrompt,
+        agent.DockerImage,
+        agent.AllowedTools,
+        agent.RunnerType,
+        agent.Model,
+        agent.IsActive,
+        agent.ParentAgentId,
+        agent.UseHttpServer,
+        agent.CreatedAt);
 }
 
 public sealed record SetAgentActiveRequest(bool IsActive);
+
+/// <summary>Agent summary returned by POST (create) and PUT (update) endpoints.</summary>
+public sealed record AgentResponse(
+    Guid Id,
+    Guid OrgId,
+    string Name,
+    string SystemPrompt,
+    string DockerImage,
+    string AllowedTools,
+    RunnerType? RunnerType,
+    string? Model,
+    bool IsActive,
+    Guid? ParentAgentId,
+    bool UseHttpServer,
+    DateTime CreatedAt);
+
+/// <summary>Detailed agent response returned by GET /agents/{id}, including linked MCP servers and child agents.</summary>
+public sealed record AgentDetailResponse(
+    Guid Id,
+    Guid OrgId,
+    string Name,
+    string SystemPrompt,
+    string DockerImage,
+    string AllowedTools,
+    RunnerType? RunnerType,
+    string? Model,
+    bool IsActive,
+    Guid? ParentAgentId,
+    bool UseHttpServer,
+    DateTime CreatedAt,
+    IReadOnlyList<LinkedMcpServerDto> LinkedMcpServers,
+    IReadOnlyList<ChildAgentDto> ChildAgents);
+
+/// <summary>MCP server link summary included in agent detail responses.</summary>
+public sealed record LinkedMcpServerDto(
+    Guid Id,
+    string Name,
+    string Url,
+    string? Description,
+    string AllowedTools);
+
+/// <summary>Child agent summary included in agent detail responses.</summary>
+public sealed record ChildAgentDto(
+    Guid Id,
+    string Name,
+    string? Model,
+    string SystemPrompt,
+    bool IsActive);

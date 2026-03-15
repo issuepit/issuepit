@@ -1,3 +1,4 @@
+using System.Formats.Tar;
 using System.Reflection;
 using System.Text;
 using Docker.DotNet;
@@ -244,9 +245,24 @@ public class DockerAgentRuntime(
             },
         };
 
-        // Step 5: Create and start the container.
+        // Step 5: Create the container, inject the latest entrypoint script, then start it.
+        // Injecting entrypoint.sh from the embedded resource ensures the container always uses
+        // the version that shipped with this execution client binary, keeping them in sync even
+        // when the Docker image was built with an older entrypoint.
         var container = await dockerClient.Containers.CreateContainerAsync(
             createParams, cancellationToken);
+
+        try
+        {
+            await InjectEntrypointAsync(container.ID, cancellationToken);
+            await onLogLine("[DEBUG] Entrypoint     : injected from execution client binary", LogStream.Stdout);
+        }
+        catch (Exception ex)
+        {
+            // Injection failure is non-fatal — the container's baked-in entrypoint will be used.
+            logger.LogWarning(ex, "Failed to inject entrypoint into container {ContainerId}; using baked-in version", container.ID);
+            await onLogLine($"[WARN] Entrypoint injection failed: {ex.Message} (using baked-in version)", LogStream.Stderr);
+        }
 
         await dockerClient.Containers.StartContainerAsync(
             container.ID, new ContainerStartParameters(), cancellationToken);
@@ -604,6 +620,50 @@ public class DockerAgentRuntime(
             await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
         }
         return false;
+    }
+
+    /// <summary>
+    /// Reads the <c>entrypoint.sh</c> embedded resource compiled into this assembly and
+    /// copies it into a (not-yet-started) container at <c>/usr/local/bin/entrypoint.sh</c>
+    /// with executable permissions (0755).
+    ///
+    /// This keeps the container entrypoint in sync with the execution client binary so that
+    /// updates to the script (new env var handling, tool setup, etc.) take effect without
+    /// requiring a new Docker image build.
+    /// </summary>
+    private async Task InjectEntrypointAsync(string containerId, CancellationToken cancellationToken)
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        // The resource name is the <LogicalName> from the .csproj, which overrides the default
+        // namespace-qualified name. The .fsi/reflection test confirms it resolves to "entrypoint.sh".
+        var resourceName = "entrypoint.sh";
+        await using var resourceStream = assembly.GetManifestResourceStream(resourceName)
+            ?? throw new InvalidOperationException(
+                $"Embedded resource '{resourceName}' not found in assembly '{assembly.GetName().Name}'. " +
+                "Ensure the file is included as an EmbeddedResource in the project.");
+
+        // Build a tar archive containing entrypoint.sh at the root (target path: /usr/local/bin/).
+        using var tarBuffer = new MemoryStream();
+        await using (var tarWriter = new TarWriter(tarBuffer, TarEntryFormat.Ustar, leaveOpen: true))
+        {
+            var entry = new UstarTarEntry(TarEntryType.RegularFile, "entrypoint.sh")
+            {
+                // Octal 0755: owner rwx, group r-x, other r-x
+                Mode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                       | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
+                       | UnixFileMode.OtherRead | UnixFileMode.OtherExecute,
+                DataStream = resourceStream,
+            };
+            await tarWriter.WriteEntryAsync(entry, cancellationToken);
+        }
+
+        tarBuffer.Seek(0, SeekOrigin.Begin);
+
+        await dockerClient.Containers.ExtractArchiveToContainerAsync(
+            containerId,
+            new CopyToContainerParameters { Path = "/usr/local/bin" },
+            tarBuffer,
+            cancellationToken);
     }
 
     // ──────────────────────────────────────────────────────────────────────────

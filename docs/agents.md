@@ -186,6 +186,19 @@ When an agent mode is assigned to an issue, `IssuePit.ExecutionClient` handles t
 
 When working as a coding agent on this repository, follow these conventions:
 
+### API Response Objects
+
+- **Always use named `record` or `class` types for API responses** — do not use anonymous objects (`new { ... }`) in controller actions.
+  Named types improve discoverability, reusability, and compile-time safety.
+  Declare response/request records at the bottom of the controller file (same namespace), following the pattern used throughout the codebase (e.g. `SetAgentActiveRequest`, `AgentResponse`, `AgentDetailResponse`, `LinkedMcpServerDto`, etc.).
+  ```csharp
+  // ✅ Correct
+  return Ok(new AgentResponse(agent.Id, agent.Name, ...));
+
+  // ❌ Avoid
+  return Ok(new { agent.Id, agent.Name, ... });
+  ```
+
 ### Testing Conventions
 
 - **Tests must never be silently skipped to hide failures.** A test that returns without asserting (e.g. `if (condition) return;`) counts as a passing test even when the feature under test is completely broken. This masks real failures.
