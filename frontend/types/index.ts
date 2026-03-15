@@ -796,6 +796,12 @@ export interface AgentSession {
   statusName: string
   startedAt: string
   endedAt?: string
+  /** The opencode session ID captured from the agent run. */
+  openCodeSessionId?: string | null
+  /** URL of the opencode web UI (set during HTTP server mode runs, cleared after session ends). */
+  serverWebUiUrl?: string | null
+  /** S3 URL of the preserved opencode DB snapshot for this session. */
+  openCodeDbS3Url?: string | null
 }
 
 export interface DashboardAgentSession extends AgentSession {
@@ -966,6 +972,10 @@ export interface IssueAgentSession {
   startedAt: string
   endedAt?: string
   ciCdRuns: CiCdRun[]
+  /** The opencode session ID captured from the agent run. */
+  openCodeSessionId?: string | null
+  /** URL of the opencode web UI (set during HTTP server mode runs, cleared after session ends). */
+  serverWebUiUrl?: string | null
 }
 
 export interface IssueRuns {

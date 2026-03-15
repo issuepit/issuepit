@@ -206,6 +206,8 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
                 StatusName = s.Status.ToString(),
                 s.StartedAt,
                 s.EndedAt,
+                s.OpenCodeSessionId,
+                s.ServerWebUiUrl,
             })
             .ToListAsync();
         return Ok(sessions);
