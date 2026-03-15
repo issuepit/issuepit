@@ -208,7 +208,7 @@
             :class="[
               itemColSpanClass(item),
               isDraftMode ? 'select-none' : '',
-              dragSectionId === (item.type === 'section' ? item.sid : null) ? 'opacity-50 pointer-events-none' : '',
+              dragSectionId === (item.type === 'section' ? item.sid : null) ? 'opacity-50' : '',
             ]"
             :draggable="isDraftMode"
             @dragstart="isDraftMode && item.type === 'section' ? onSectionDragStart($event, item.sid as SectionId) : undefined"
@@ -233,6 +233,7 @@
                 :can-stack="SECTION_CAN_STACK.has(item.sid as SectionId) && layout.order.indexOf(item.sid) < layout.order.length - 1"
                 :is-stacked="sectionCfg(item.sid as SectionId).stackGroup !== null"
                 :hidden="sectionCfg(item.sid as SectionId).hidden"
+                :drag-hover="dragSectionId !== null && dragHoverSid === item.sid && dragSectionId !== item.sid"
                 @display-mode-change="m => updateCfg(item.sid as SectionId, { displayMode: m as SectionDisplayMode })"
                 @max-items-change="n => updateCfg(item.sid as SectionId, { maxItems: n })"
                 @width-change="w => updateCfg(item.sid as SectionId, { width: w as SectionWidth })"
@@ -266,7 +267,9 @@
             </template>
 
             <!-- Content area -->
-            <div :class="isDraftMode && item.type === 'section' && sectionCfg(item.sid as SectionId).hidden ? 'opacity-30 saturate-0 pointer-events-none' : ''">
+            <div
+              v-show="!(isDraftMode && dragSectionId !== null && dragHoverSid === (item.type === 'section' ? item.sid : null) && dragSectionId !== (item.type === 'section' ? item.sid : null))"
+              :class="isDraftMode && item.type === 'section' && sectionCfg(item.sid as SectionId).hidden ? 'opacity-30 saturate-0 pointer-events-none' : ''">
 
               <!-- Tab nav header (for tab groups) -->
               <div v-if="item.type === 'tabgroup'"
@@ -932,6 +935,7 @@ const {
   layout,
   isDraftMode,
   dragSectionId,
+  dragHoverSid,
   renderedItems,
   sectionCfg: sectionCfgRaw,
   updateCfg: updateCfgRaw,

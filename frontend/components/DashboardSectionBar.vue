@@ -43,7 +43,7 @@
       class="text-xs px-1.5 py-0.5 rounded transition-colors bg-gray-800 hover:bg-gray-700"
       :class="[
         isTabbed ? 'text-brand-400' : 'text-gray-500 hover:text-gray-300',
-        tabDragOver ? 'ring-1 ring-brand-400 text-brand-300' : '',
+        tabDragOver || dragHover ? 'ring-2 ring-brand-400 text-brand-300 bg-gray-700' : '',
       ]"
       :title="isTabbed ? 'Ungroup from next' : 'Combine with next as tabs (or drop a section here)'">
       {{ isTabbed ? '⊖ Ungroup' : '⊕ Tab with ↓' }}
@@ -58,7 +58,7 @@
       class="text-xs px-1.5 py-0.5 rounded transition-colors bg-gray-800 hover:bg-gray-700"
       :class="[
         isStacked ? 'text-teal-400' : 'text-gray-500 hover:text-gray-300',
-        stackDragOver ? 'ring-1 ring-teal-400 text-teal-300' : '',
+        stackDragOver || dragHover ? 'ring-2 ring-teal-400 text-teal-300 bg-gray-700' : '',
       ]"
       :title="isStacked ? 'Unstack from next' : 'Stack with next section (or drop a section here)'">
       {{ isStacked ? '⊖ Unstack' : '⇕ Stack with ↓' }}
@@ -90,6 +90,7 @@ defineProps<{
   canStack?: boolean
   isStacked?: boolean
   hidden?: boolean
+  dragHover?: boolean
 }>()
 
 const emit = defineEmits<{

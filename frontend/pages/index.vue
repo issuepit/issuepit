@@ -57,7 +57,7 @@
             itemColSpanClass(item),
             isDraftMode ? 'select-none' : '',
             item.type === 'section' && isDraftMode && sectionCfg(item.sid as MainSectionId).hidden ? 'opacity-40 saturate-50' : '',
-            dragSectionId === (item.type === 'section' ? item.sid : item.sections[0]) && isDraftMode ? 'opacity-50 pointer-events-none' : '',
+            dragSectionId === (item.type === 'section' ? item.sid : item.sections[0]) && isDraftMode ? 'opacity-50' : '',
           ]"
           :draggable="isDraftMode"
           @dragstart="isDraftMode && item.type === 'section' ? onDragStart($event, item.sid as MainSectionId) : undefined"
@@ -82,6 +82,7 @@
               :can-stack="SECTION_CAN_STACK.has(item.sid as MainSectionId) && layout.order.indexOf(item.sid) < layout.order.length - 1"
               :is-stacked="sectionCfg(item.sid as MainSectionId).stackGroup !== null"
               :hidden="sectionCfg(item.sid as MainSectionId).hidden"
+              :drag-hover="dragSectionId !== null && dragHoverSid === item.sid && dragSectionId !== item.sid"
               @display-mode-change="m => updateCfg(item.sid as MainSectionId, { displayMode: m as MainDisplayMode })"
               @max-items-change="n => updateCfg(item.sid as MainSectionId, { maxItems: n })"
               @width-change="w => updateCfg(item.sid as MainSectionId, { width: w as MainWidth })"
@@ -115,7 +116,9 @@
           </template>
 
           <!-- Content area -->
-          <div :class="isDraftMode && item.type === 'section' && sectionCfg(item.sid as MainSectionId).hidden ? 'opacity-30 saturate-0 pointer-events-none' : ''">
+          <div
+            v-show="!(isDraftMode && dragSectionId !== null && dragHoverSid === (item.type === 'section' ? item.sid : null) && dragSectionId !== (item.type === 'section' ? item.sid : null))"
+            :class="isDraftMode && item.type === 'section' && sectionCfg(item.sid as MainSectionId).hidden ? 'opacity-30 saturate-0 pointer-events-none' : ''">
 
             <!-- Tab nav (for tabgroup) -->
             <div v-if="item.type === 'tabgroup'"
@@ -447,6 +450,7 @@ const {
   layout,
   isDraftMode,
   dragSectionId,
+  dragHoverSid,
   renderedItems,
   hiddenSections,
   sectionCfg: sectionCfgRaw,

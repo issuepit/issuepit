@@ -96,6 +96,7 @@ export function useDashboardLayout(options: {
 
   // ── Drag & drop ────────────────────────────────────────────────────────────
   const dragSectionId = ref<string | null>(null)
+  const dragHoverSid = ref<string | null>(null)
 
   function onDragStart(e: DragEvent, id: string) {
     dragSectionId.value = id
@@ -106,6 +107,7 @@ export function useDashboardLayout(options: {
   }
 
   function onDragOver(_e: DragEvent, id: string) {
+    dragHoverSid.value = id
     if (!dragSectionId.value || id === dragSectionId.value) return
     const from = layout.value.order.indexOf(dragSectionId.value)
     const to = layout.value.order.indexOf(id)
@@ -118,6 +120,7 @@ export function useDashboardLayout(options: {
 
   function onDragEnd() {
     dragSectionId.value = null
+    dragHoverSid.value = null
   }
 
   // ── Tab group logic ─────────────────────────────────────────────────────────
@@ -292,6 +295,7 @@ export function useDashboardLayout(options: {
     layout,
     isDraftMode,
     dragSectionId,
+    dragHoverSid,
     renderedItems,
     hiddenSections,
     activeTabInGroup,
