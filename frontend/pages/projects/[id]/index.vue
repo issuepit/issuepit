@@ -218,6 +218,15 @@
         </div>
       </div>
 
+      <!-- Import error -->
+      <div v-if="importError" class="mb-3 flex items-center gap-2 bg-red-900/30 border border-red-700/40 rounded-lg px-4 py-2">
+        <svg class="w-3.5 h-3.5 shrink-0 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+        </svg>
+        <p class="text-xs text-red-400 flex-1">{{ importError }}</p>
+        <button @click="importError = null" class="text-red-500 hover:text-red-300 text-xs">✕</button>
+      </div>
+
       <!-- Hidden sections restore row (draft mode) -->
       <div v-if="isDraftMode && layout.configs" class="mb-3 flex flex-wrap items-center gap-2 min-h-0">
         <template v-for="sid in layout.order" :key="sid">
@@ -1080,6 +1089,7 @@ function toggleStackGroupWithNext(sid: SectionId) { toggleStackGroupWithNextRaw(
 // ── Template save / load / export / import ────────────────────────────────
 const showSaveModal = ref(false)
 const showLoadModal = ref(false)
+const importError = ref<string | null>(null)
 
 function handleExportJson() {
   if (!import.meta.client) return
@@ -1096,8 +1106,9 @@ function handleExportJson() {
 function applyImportedLayout(json: string) {
   const ok = importLayoutJson(json)
   if (!ok) {
-    // eslint-disable-next-line no-console
-    console.warn('Invalid dashboard layout JSON')
+    importError.value = 'The selected file is not a valid dashboard layout JSON.'
+  } else {
+    importError.value = null
   }
 }
 

@@ -90,13 +90,14 @@ export function useDashboardLayout(options: {
     try {
       const parsed = JSON.parse(json) as Partial<LayoutData>
       if (Array.isArray(parsed.order) && parsed.order.length) {
-        const valid = parsed.order.filter(s => s in defaultConfigs || isVirtualId(s))
+        // Only accept string items; skip any non-string values to prevent injection
+        const valid = parsed.order.filter((s): s is string => typeof s === 'string' && (s in defaultConfigs || isVirtualId(s)))
         const missing = defaultOrder.filter(s => !valid.includes(s))
         layout.value.order = [...valid, ...missing]
       }
-      if (parsed.configs) {
+      if (parsed.configs && typeof parsed.configs === 'object') {
         for (const sid of defaultOrder) {
-          if (parsed.configs[sid]) {
+          if (parsed.configs[sid] && typeof parsed.configs[sid] === 'object') {
             layout.value.configs[sid] = { ...defaultConfigs[sid], ...parsed.configs[sid] }
           }
         }
