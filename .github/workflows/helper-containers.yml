@@ -27,11 +27,11 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ${{ github.repository_owner }}/issuepit
-  # .NET major version bundled in the Playwright image (update when changing PLAYWRIGHT_VERSION)
+  # .NET SDK channel installed in the helper-base image (used for image tags and DOTNET_SDK_CHANNEL build arg — passed as "$DOTNET_MAJOR.0", e.g. "10" → "10.0")
   DOTNET_MAJOR: "10"
   NODE_MAJOR: "24"
-  PLAYWRIGHT_VERSION: "v1.51.0"
-  ACT_VERSION: "0.2.74"
+  PLAYWRIGHT_VERSION: "v1.58.0"
+  ACT_COMMIT: "7f8e2fe297293c4f1d818692433f885967648101"
   ACTIONLINT_VERSION: "1.7.11"
   OPENCODE_VERSION: "latest"
 
@@ -79,7 +79,6 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-helper-base
           tags: |
-            type=ref,event=branch,suffix=-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }}
             type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
             type=raw,value=${{ steps.semver.outputs.major_minor }},enable=${{ inputs.version != '' }}
             type=raw,value=${{ inputs.version }}-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }},enable=${{ inputs.version != '' }}
@@ -95,7 +94,6 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-helper-act
           tags: |
-            type=ref,event=branch,suffix=-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }}
             type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
             type=raw,value=${{ steps.semver.outputs.major_minor }},enable=${{ inputs.version != '' }}
             type=raw,value=${{ inputs.version }}-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }},enable=${{ inputs.version != '' }}
@@ -111,7 +109,6 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-helper-opencode
           tags: |
-            type=ref,event=branch,suffix=-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }}
             type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
             type=raw,value=${{ steps.semver.outputs.major_minor }},enable=${{ inputs.version != '' }}
             type=raw,value=${{ inputs.version }}-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }},enable=${{ inputs.version != '' }}
@@ -127,7 +124,6 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-helper-opencode-act
           tags: |
-            type=ref,event=branch,suffix=-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }}
             type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
             type=raw,value=${{ steps.semver.outputs.major_minor }},enable=${{ inputs.version != '' }}
             type=raw,value=${{ inputs.version }}-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }},enable=${{ inputs.version != '' }}
@@ -148,6 +144,7 @@ jobs:
           build-args: |
             PLAYWRIGHT_VERSION=${{ env.PLAYWRIGHT_VERSION }}
             NODE_MAJOR=${{ env.NODE_MAJOR }}
+            DOTNET_SDK_CHANNEL=${{ env.DOTNET_MAJOR }}.0
 
       - name: Build helper-act
         uses: docker/build-push-action@v6
@@ -159,7 +156,7 @@ jobs:
           labels: ${{ steps.meta-act.outputs.labels }}
           build-args: |
             BASE_IMAGE=helper-base:local
-            ACT_VERSION=${{ env.ACT_VERSION }}
+            ACT_COMMIT=${{ env.ACT_COMMIT }}
             ACTIONLINT_VERSION=${{ env.ACTIONLINT_VERSION }}
 
       - name: Build helper-opencode
@@ -187,7 +184,7 @@ jobs:
             OPENCODE_VERSION=${{ env.OPENCODE_VERSION }}
 
       - name: Push images to registry
-        if: github.event_name != 'pull_request' && github.event_name != 'merge_group' && env.ISSUEPIT_RUN != 'true'
+        if: (startsWith(github.ref, 'refs/tags/helper-containers-v') || github.event_name == 'workflow_call' || inputs.tag != '' || inputs.version != '') && github.event_name != 'pull_request' && github.event_name != 'merge_group' && env.ISSUEPIT_RUN != 'true'
         env:
           BASE_TAGS: ${{ steps.meta-base.outputs.tags }}
           ACT_TAGS: ${{ steps.meta-act.outputs.tags }}

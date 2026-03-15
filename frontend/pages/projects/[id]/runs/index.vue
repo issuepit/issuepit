@@ -2,9 +2,11 @@
   <div class="p-8">
     <!-- Header -->
     <div class="flex items-center gap-2 mb-6">
-      <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name }}</NuxtLink>
-      <span class="text-gray-600">/</span>
-      <NuxtLink :to="`/projects/${id}/runs`" class="text-xl font-bold text-white">Runs</NuxtLink>
+      <PageBreadcrumb :items="[
+        { label: 'Projects', to: '/projects', icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10' },
+        { label: projectsStore.currentProject?.name || 'Project', to: `/projects/${id}`, color: projectsStore.currentProject?.color || '#4c6ef5' },
+        { label: 'Runs', to: `/projects/${id}/runs`, icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
+      ]" />
       <!-- WS connection indicator -->
       <span v-if="isConnected" class="flex items-center gap-1 text-xs text-green-400 font-normal ml-1">
         <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
@@ -48,7 +50,14 @@
           Trigger Run
         </button>
       </div>
-      <div v-if="store.runs.length" class="rounded-xl border border-gray-800 overflow-hidden">
+      <div v-if="commitShaFilter" class="mb-3 flex items-center gap-2 rounded-lg bg-teal-900/30 border border-teal-700/50 px-3 py-2 text-xs text-teal-300">
+        <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+        </svg>
+        Filtered by commit <span class="font-mono ml-1">{{ commitShaFilter.slice(0, 7) }}</span>
+        <button class="ml-auto text-teal-400 hover:text-teal-200 transition-colors" @click="clearCommitShaFilter">✕</button>
+      </div>
+      <div v-if="filteredRuns.length" class="rounded-xl border border-gray-800 overflow-hidden">
         <table class="w-full text-sm">
           <thead class="bg-gray-900">
             <tr>
@@ -64,7 +73,7 @@
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-800">
-            <tr v-for="run in store.runs" :key="run.id"
+            <tr v-for="run in filteredRuns" :key="run.id"
               class="hover:bg-gray-900/50 transition-colors cursor-pointer"
               @click="navigateTo(`/projects/${id}/runs/cicd/${run.id}`)">
               <td class="px-4 py-3">
@@ -87,9 +96,14 @@
                 <span v-else class="text-gray-600 text-xs">local</span>
               </td>
               <td class="px-4 py-3 text-gray-400 text-xs">{{ formatDate(run.startedAt) }}</td>
-              <td class="px-4 py-3 text-gray-400 text-xs">{{ duration(run.startedAt, run.endedAt) }}</td>
+              <td class="px-4 py-3 text-gray-400 text-xs">{{ run.status === CiCdRunStatus.WaitingForApproval ? '—' : duration(run.startedAt, run.endedAt) }}</td>
               <td class="px-4 py-3 text-right">
-                <button v-if="run.status === CiCdRunStatus.Pending || run.status === CiCdRunStatus.Running"
+                <button v-if="run.status === CiCdRunStatus.WaitingForApproval"
+                  class="text-xs text-purple-400 hover:text-purple-300 transition-colors"
+                  @click.stop="approveRun(run.id)">
+                  Approve
+                </button>
+                <button v-else-if="run.status === CiCdRunStatus.Pending || run.status === CiCdRunStatus.Running"
                   class="text-xs text-red-400 hover:text-red-300 transition-colors"
                   @click.stop="cancelRun(run.id)">
                   Cancel
@@ -136,17 +150,13 @@
               class="hover:bg-gray-900/50 transition-colors cursor-pointer"
               @click="navigateTo(`/projects/${id}/runs/agent-sessions/${session.id}`)">
               <td class="px-4 py-3">
-                <span :class="statusClass(session.status)" class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium">
-                  <span :class="statusDot(session.status)" class="w-1.5 h-1.5 rounded-full" />
-                  {{ session.statusName }}
-                </span>
+                <AgentSessionStatusChip :session="session" />
               </td>
-              <td class="px-4 py-3 text-gray-300">{{ session.agentName }}</td>
               <td class="px-4 py-3">
                 <NuxtLink :to="`/projects/${id}/issues/${session.issueNumber}`"
                   class="text-brand-400 hover:text-brand-300 transition-colors"
                   @click.stop>
-                  #{{ session.issueNumber }} {{ session.issueTitle }}
+                  #{{ formatIssueId(session.issueNumber, projectsStore.currentProject) }} {{ session.issueTitle }}
                 </NuxtLink>
               </td>
               <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ session.gitBranch || '—' }}</td>
@@ -193,14 +203,27 @@
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useProjectsStore } from '~/stores/projects'
 import { CiCdRunStatus, AgentSessionStatus } from '~/types'
+import { formatIssueId } from '~/composables/useIssueFormat'
 
 const route = useRoute()
+const router = useRouter()
 const id = route.params.id as string
 
 const store = useCiCdRunsStore()
 const projectsStore = useProjectsStore()
 const tabs = ['CI/CD Runs', 'Agent Runs'] as const
 const activeTab = ref<typeof tabs[number]>(route.query.tab === 'agent' ? 'Agent Runs' : 'CI/CD Runs')
+
+const commitShaFilter = computed(() => route.query.commitSha as string | undefined)
+const filteredRuns = computed(() =>
+  commitShaFilter.value
+    ? store.runs.filter(r => r.commitSha === commitShaFilter.value)
+    : store.runs,
+)
+
+function clearCommitShaFilter() {
+  router.push({ query: { ...route.query, commitSha: undefined } })
+}
 
 const triggerModal = reactive({ open: false, commitSha: '' })
 
@@ -238,6 +261,11 @@ async function cancelRun(runId: string) {
   await store.cancelRun(runId)
 }
 
+async function approveRun(runId: string) {
+  await store.approveRun(runId)
+  await store.fetchRuns(id)
+}
+
 async function retrySession(sessionId: string) {
   await store.retrySession(sessionId)
   await store.fetchAgentSessions(id)
@@ -262,23 +290,4 @@ function duration(start: string, end?: string) {
   return `${Math.floor(m / 60)}h ${m % 60}m`
 }
 
-function statusClass(status: CiCdRunStatus) {
-  switch (status) {
-    case CiCdRunStatus.Succeeded: return 'bg-green-900/30 text-green-400'
-    case CiCdRunStatus.Running: return 'bg-blue-900/30 text-blue-400'
-    case CiCdRunStatus.Failed: return 'bg-red-900/30 text-red-400'
-    case CiCdRunStatus.Cancelled: return 'bg-gray-800 text-gray-400'
-    default: return 'bg-yellow-900/30 text-yellow-400'
-  }
-}
-
-function statusDot(status: CiCdRunStatus) {
-  switch (status) {
-    case CiCdRunStatus.Succeeded: return 'bg-green-400'
-    case CiCdRunStatus.Running: return 'bg-blue-400 animate-pulse'
-    case CiCdRunStatus.Failed: return 'bg-red-400'
-    case CiCdRunStatus.Cancelled: return 'bg-gray-500'
-    default: return 'bg-yellow-400'
-  }
-}
 </script>

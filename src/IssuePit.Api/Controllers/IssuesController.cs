@@ -10,7 +10,7 @@ namespace IssuePit.Api.Controllers;
 
 [ApiController]
 [Route("api/issues")]
-public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer<string, string> producer, IssueEnhancementService enhancementService, ImageStorageService imageStorage, VoiceTranscriptionService voiceTranscription, ILogger<IssuesController> logger) : ControllerBase
+public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer<string, string> producer, IssueEnhancementService enhancementService, ImageStorageService imageStorage, VoiceTranscriptionService voiceTranscription, GitHubSyncService githubSyncService, ILogger<IssuesController> logger) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetIssues([FromQuery] Guid? projectId, [FromQuery] Guid? orgId)
@@ -128,6 +128,10 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
 
         db.Issues.Add(issue);
         db.IssueEvents.Add(MakeEvent(issue.Id, IssueEventType.Created, newValue: issue.Title));
+        await db.SaveChangesAsync();
+
+        // Auto-create on GitHub if the project sync config has this enabled.
+        await githubSyncService.AutoCreateOnGitHubAsync(issue);
         await db.SaveChangesAsync();
 
         await producer.ProduceAsync("issue-assigned", new Message<string, string>
@@ -402,7 +406,7 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
             await producer.ProduceAsync("issue-assigned", new Message<string, string>
             {
                 Key = issue.Id.ToString(),
-                Value = JsonSerializer.Serialize(new { issue.Id, issue.ProjectId, issue.Title, AgentId = req.AgentId.Value })
+                Value = JsonSerializer.Serialize(new { issue.Id, issue.ProjectId, issue.Title, AgentId = req.AgentId.Value, req.DockerCmdOverride })
             });
         }
 
@@ -614,7 +618,8 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         if (ctx.CurrentTenant is null || ctx.CurrentUser is null) return Unauthorized();
         var attachment = await db.IssueAttachments.FirstOrDefaultAsync(a => a.Id == attachmentId && a.IssueId == id);
         if (attachment is null) return NotFound();
-        if (!attachment.IsVoiceFile) return BadRequest(new { error = "Attachment is not a voice file." });
+        if (!attachment.IsVoiceFile && !attachment.ContentType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { error = "Attachment is not a voice or audio file." });
 
         // Download the voice file and retranscribe
         string transcription;
@@ -652,13 +657,61 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         return Ok(comment);
     }
 
+    /// <summary>
+    /// Returns all runs related to the issue: agent sessions and their associated CI/CD runs.
+    /// </summary>
+    [HttpGet("{id:guid}/runs")]
+    public async Task<IActionResult> GetIssueRuns(Guid id)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+
+        var agentSessions = await db.AgentSessions
+            .Include(s => s.Agent)
+            .Include(s => s.CiCdRuns)
+            .Where(s => s.IssueId == id && s.Issue.Project!.Organization.TenantId == ctx.CurrentTenant.Id)
+            .OrderByDescending(s => s.StartedAt)
+            .Select(s => new
+            {
+                s.Id,
+                s.AgentId,
+                AgentName = s.Agent.Name,
+                s.IssueId,
+                s.CommitSha,
+                s.GitBranch,
+                s.Status,
+                StatusName = s.Status.ToString(),
+                s.StartedAt,
+                s.EndedAt,
+                CiCdRuns = s.CiCdRuns.Select(r => new
+                {
+                    r.Id,
+                    r.ProjectId,
+                    r.AgentSessionId,
+                    r.CommitSha,
+                    r.Branch,
+                    r.Workflow,
+                    r.Status,
+                    StatusName = r.Status.ToString(),
+                    r.StartedAt,
+                    r.EndedAt,
+                    r.ExternalSource,
+                    r.ExternalRunId,
+                    r.EventName,
+                }).ToList(),
+            })
+            .ToListAsync();
+
+        return Ok(new { agentSessions });
+    }
+
     private IssueEvent MakeEvent(Guid issueId, IssueEventType eventType, string? oldValue = null, string? newValue = null)
         => new() { Id = Guid.NewGuid(), IssueId = issueId, EventType = eventType, OldValue = oldValue, NewValue = newValue, ActorUserId = ctx.CurrentUser?.Id, CreatedAt = DateTime.UtcNow };
 }
 
 public record CommentRequest(string Body, Guid? UserId);
 public record CodeReviewCommentRequest(string FilePath, int StartLine, int EndLine, string Sha, string? Snippet, string? ContextBefore, string? ContextAfter, string Body);
-public record AssigneeRequest(Guid? UserId, Guid? AgentId);
+/// <param name="DockerCmdOverride">Optional command override for the agent container (for diagnostic/test runs, e.g. a connectivity check). Only applies when no RunnerType is set.</param>
+public record AssigneeRequest(Guid? UserId, Guid? AgentId, string[]? DockerCmdOverride = null);
 public record LabelAssignRequest(Guid LabelId);
 public record IssueLinkRequest(Guid TargetIssueId, IssueLinkType LinkType);
 public record IssueLinkDto(Guid Id, Guid IssueId, Guid TargetIssueId, Issue? TargetIssue, IssueLinkType LinkType, DateTime CreatedAt);

@@ -8,9 +8,11 @@
     <template v-else-if="projectsStore.currentProject">
       <!-- Breadcrumb -->
       <div class="flex items-center gap-2 mb-4">
-        <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject.name }}</NuxtLink>
-        <span class="text-gray-600">/</span>
-        <NuxtLink :to="`/projects/${id}/ci-cd`" class="text-xl font-bold text-white">CI/CD</NuxtLink>
+        <PageBreadcrumb :items="[
+          { label: 'Projects', to: '/projects', icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10' },
+          { label: projectsStore.currentProject.name, to: `/projects/${id}`, color: projectsStore.currentProject.color || '#4c6ef5' },
+          { label: 'CI/CD', to: `/projects/${id}/ci-cd`, icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
+        ]" />
       </div>
 
       <!-- Tabs -->
@@ -42,6 +44,15 @@
               : 'text-gray-400 hover:text-gray-200 border-transparent'
           ]"
         >Members</NuxtLink>
+        <NuxtLink
+          :to="`/projects/${id}/github-sync`"
+          :class="[
+            'px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
+            $route.path === `/projects/${id}/github-sync`
+              ? 'text-white border-brand-500'
+              : 'text-gray-400 hover:text-gray-200 border-transparent'
+          ]"
+        >GitHub Sync</NuxtLink>
       </div>
 
       <div class="space-y-6 max-w-2xl">
@@ -94,6 +105,21 @@
               <input v-model.number="ciCdForm.concurrentJobs" type="number" min="0" placeholder="inherit (org or default 4)"
                 class="w-40 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
               <p class="text-xs text-gray-500 mt-1">Overrides the organization setting for <code class="bg-gray-800 px-1 rounded">--concurrent-jobs</code>.</p>
+            </div>
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="block text-sm font-medium text-gray-300">Require run approval</label>
+                <p class="text-xs text-gray-500 mt-0.5">Hold auto-triggered runs (git push, agent) for manual approval. User-triggered runs (manual trigger, retry) always bypass approval.</p>
+              </div>
+              <button
+                type="button"
+                :class="ciCdForm.requiresRunApproval ? 'bg-brand-600' : 'bg-gray-700'"
+                class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-gray-900"
+                @click="ciCdForm.requiresRunApproval = !ciCdForm.requiresRunApproval">
+                <span
+                  :class="ciCdForm.requiresRunApproval ? 'translate-x-6' : 'translate-x-1'"
+                  class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" />
+              </button>
             </div>
           </div>
         </div>
@@ -249,6 +275,7 @@ const ciCdForm = reactive({
   useNewActionCache: false as boolean | null,
   actionOfflineMode: false as boolean | null,
   localRepositories: '' as string,
+  requiresRunApproval: false,
 })
 
 const saving = ref(false)
@@ -269,6 +296,7 @@ onMounted(async () => {
     ciCdForm.useNewActionCache = p.useNewActionCache ?? null
     ciCdForm.actionOfflineMode = p.actionOfflineMode ?? null
     ciCdForm.localRepositories = p.localRepositories || ''
+    ciCdForm.requiresRunApproval = p.requiresRunApproval ?? false
   }
 })
 
@@ -291,6 +319,7 @@ async function save() {
       useNewActionCache: ciCdForm.useNewActionCache,
       actionOfflineMode: ciCdForm.actionOfflineMode,
       localRepositories: ciCdForm.localRepositories || null,
+      requiresRunApproval: ciCdForm.requiresRunApproval,
     })
     savedOk.value = true
     setTimeout(() => { savedOk.value = false }, 3000)

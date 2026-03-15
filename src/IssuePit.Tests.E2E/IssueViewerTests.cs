@@ -112,7 +112,7 @@ public class IssueViewerTests : IAsyncLifetime
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
 
             // Issue title should be visible on the page
-            await page.WaitForSelectorAsync("h1:has-text('Viewer Test Issue')",
+            await page.WaitForSelectorAsync("a:has-text('Viewer Test Issue')",
                 new PageWaitForSelectorOptions { Timeout = 10_000 });
         }
         finally
@@ -132,7 +132,7 @@ public class IssueViewerTests : IAsyncLifetime
         {
             await page.GotoAsync($"/projects/{projectSlug}/issues/{issueNumber}");
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-            await page.WaitForSelectorAsync("h1:has-text('Viewer Test Issue')",
+            await page.WaitForSelectorAsync("a:has-text('Viewer Test Issue')",
                 new PageWaitForSelectorOptions { Timeout = 10_000 });
 
             var detail = new IssueDetailPage(page);
@@ -159,7 +159,7 @@ public class IssueViewerTests : IAsyncLifetime
         {
             await page.GotoAsync($"/projects/{projectSlug}/issues/{issueNumber}");
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-            await page.WaitForSelectorAsync("h1:has-text('Viewer Test Issue')",
+            await page.WaitForSelectorAsync("a:has-text('Viewer Test Issue')",
                 new PageWaitForSelectorOptions { Timeout = 10_000 });
 
             var detail = new IssueDetailPage(page);
@@ -167,7 +167,7 @@ public class IssueViewerTests : IAsyncLifetime
             await detail.CancelDeleteAsync();
 
             // Issue title should still be visible
-            Assert.True(await page.Locator("h1:has-text('Viewer Test Issue')").IsVisibleAsync(),
+            Assert.True(await page.Locator("a:has-text('Viewer Test Issue')").IsVisibleAsync(),
                 "Issue should still be visible after cancelling delete");
         }
         finally
@@ -187,7 +187,7 @@ public class IssueViewerTests : IAsyncLifetime
         {
             await page.GotoAsync($"/projects/{projectSlug}/issues/{issueNumber}");
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-            await page.WaitForSelectorAsync("h1:has-text('Viewer Test Issue')",
+            await page.WaitForSelectorAsync("a:has-text('Viewer Test Issue')",
                 new PageWaitForSelectorOptions { Timeout = 10_000 });
 
             var detail = new IssueDetailPage(page);

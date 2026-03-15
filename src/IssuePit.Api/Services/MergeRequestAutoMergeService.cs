@@ -11,39 +11,14 @@ namespace IssuePit.Api.Services;
 public class MergeRequestAutoMergeService(
     ILogger<MergeRequestAutoMergeService> logger,
     IServiceScopeFactory scopeFactory,
-    IConfiguration configuration) : BackgroundService
+    IConfiguration configuration)
+    : PeriodicBackgroundService(
+        logger,
+        TimeSpan.FromSeconds(configuration.GetValue("Git:AutoMergeCheckIntervalSeconds", 30)),
+        startupDelay: TimeSpan.FromSeconds(15))
 {
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        var intervalSeconds = configuration.GetValue("Git:AutoMergeCheckIntervalSeconds", 30);
-
-        logger.LogInformation("MergeRequestAutoMergeService started; interval = {Interval}s", intervalSeconds);
-
-        await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken);
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await CheckAndMergeAsync(stoppingToken);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                logger.LogError(ex, "Unhandled error in MergeRequestAutoMergeService");
-            }
-
-            try
-            {
-                await Task.Delay(TimeSpan.FromSeconds(intervalSeconds), stoppingToken);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-        }
-
-        logger.LogInformation("MergeRequestAutoMergeService stopped");
-    }
+    protected override async Task ExecuteTickAsync(CancellationToken stoppingToken)
+        => await CheckAndMergeAsync(stoppingToken);
 
     private async Task CheckAndMergeAsync(CancellationToken cancellationToken)
     {

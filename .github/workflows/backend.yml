@@ -159,12 +159,67 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      # Authenticate to GHCR so that 'docker pull ghcr.io/issuepit/...' below succeeds.
+      # The helper-act image is published to the issuepit org registry, which is not
+      # publicly accessible without authentication.
+      - name: Login to GitHub Container Registry
+        if: vars.ISSUEPIT_RUN != 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Pre-pull Docker images
         run: |
           docker pull postgres:17.6
           docker pull valkey/valkey:9.0
           docker pull apache/kafka:3.9.0
+          docker pull node:20-slim
           docker pull localstack/localstack:4.3
+
+      - name: Pre-pull GHCR Docker image
+        if: vars.ISSUEPIT_RUN != 'true'
+        run: |
+          docker pull ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24
+
+      - name: Build act from issuepit/act fork
+        run: |
+          # Build from the same issuepit/act commit used in Dockerfile.helper-act.
+          # The issuepit/act fork adds --container-name-suffix (used by NativeCiCdRuntime)
+          # which is not present in the official nektos/act releases.
+          ACT_COMMIT=7f8e2fe297293c4f1d818692433f885967648101
+          git clone https://github.com/issuepit/act.git /tmp/issuepit-act
+          cd /tmp/issuepit-act
+          git checkout "$ACT_COMMIT"
+          go build -ldflags "-X main.version=${ACT_COMMIT}" -o /tmp/act-bin main.go
+          sudo mv /tmp/act-bin /usr/local/bin/act
+          rm -rf /tmp/issuepit-act
+          act --version
+
+      - name: Cache Vosk model
+        id: cache-vosk
+        uses: actions/cache@v4
+        with:
+          path: ~/.vosk/vosk-model-small-en-us-0.15
+          key: vosk-model-small-en-us-0.15
+
+      - name: Download Vosk model
+        if: steps.cache-vosk.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.vosk
+          curl -L https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip -o /tmp/vosk-model.zip
+          unzip /tmp/vosk-model.zip -d ~/.vosk
+          rm /tmp/vosk-model.zip
+
+      - name: Set Vosk model path
+        run: echo "VoiceTranscription__ModelPath=$HOME/.vosk/vosk-model-small-en-us-0.15" >> $GITHUB_ENV
+
+      - name: Install ffmpeg
+        run: sudo apt-get install -y ffmpeg
+
+      - name: Disable ffmpeg auto-download (use system ffmpeg)
+        run: echo "VoiceTranscription__DownloadFfmpeg=false" >> $GITHUB_ENV
 
       - name: Build E2E test project
         run: dotnet build src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj --configuration Release
@@ -175,11 +230,13 @@ jobs:
           pwsh "$PLAYWRIGHT_SCRIPT" install --with-deps chromium
 
       - name: E2E Tests
+        env:
+          CICD_E2E_HELPER_ACT_IMAGE: ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24
         run: >
           dotnet test src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj
           --no-build
           --configuration Release
-          --filter "Category=E2E"
+          --filter "Category=E2E|Category=PoC"
           --verbosity normal
           --logger "trx;LogFileName=e2e-results.trx"
           --blame-hang-timeout 5min

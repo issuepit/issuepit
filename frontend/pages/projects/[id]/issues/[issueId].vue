@@ -1,5 +1,5 @@
 <template>
-  <div class="p-6">
+  <div class="p-8">
     <!-- Loading -->
     <div v-if="store.loading && !store.currentIssue" class="flex items-center justify-center py-20">
       <div class="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
@@ -8,21 +8,17 @@
     <template v-else-if="store.currentIssue">
       <!-- Breadcrumb + action buttons -->
       <div class="flex items-center justify-between mb-5">
+        <PageBreadcrumb :items="issueBreadcrumbItems" />
+        <!-- Issue action buttons -->
         <div class="flex items-center gap-2">
-          <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject?.name || 'Project' }}</NuxtLink>
-          <span class="text-gray-600">/</span>
-          <NuxtLink :to="`/projects/${id}/issues`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">Issues</NuxtLink>
-          <template v-if="store.currentIssue.parentIssue">
-            <span class="text-gray-600">/</span>
-            <NuxtLink :to="`/projects/${id}/issues/${store.currentIssue.parentIssue.number}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">
-              #{{ store.currentIssue.parentIssue.number }} {{ store.currentIssue.parentIssue.title }}
-            </NuxtLink>
-          </template>
-          <span class="text-gray-600">/</span>
-          <NuxtLink :to="`/projects/${id}/issues/${store.currentIssue.number}`" class="text-xl font-bold text-white">#{{ store.currentIssue.number }}</NuxtLink>
-        </div>
-        <!-- Issue creation buttons -->
-        <div class="flex items-center gap-2">
+          <button @click="startEditTitle"
+            class="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
+            title="Rename issue">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+          </button>
           <button @click="showVoiceCreate = true"
             class="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
             title="Create issue from voice">
@@ -42,22 +38,15 @@
         </div>
       </div>
 
+      <!-- Inline title edit -->
+      <div v-if="editingTitle" class="mb-5">
+        <input v-model="titleEdit" @blur="saveTitle" @keyup.enter="saveTitle" autofocus
+          class="w-full bg-gray-800 border border-brand-500 rounded-lg px-3 py-2 text-base font-semibold text-white focus:outline-none focus:ring-2 focus:ring-brand-500" />
+      </div>
+
       <div class="flex gap-6">
         <!-- Main Content -->
         <div class="flex-1 min-w-0 space-y-5">
-          <!-- Title -->
-          <div class="flex items-start gap-3">
-            <span :class="statusColor(store.currentIssue.status)" class="w-3 h-3 rounded-full mt-2 shrink-0"></span>
-            <div class="flex-1">
-              <h1 v-if="!editingTitle" @click="editingTitle = true"
-                class="text-2xl font-bold text-white cursor-text hover:text-brand-300 transition-colors leading-tight">
-                {{ store.currentIssue.title }}
-              </h1>
-              <input v-else v-model="titleEdit" @blur="saveTitle" @keyup.enter="saveTitle"
-                class="w-full text-2xl font-bold bg-transparent border-b border-brand-500 text-white focus:outline-none pb-0.5" />
-            </div>
-          </div>
-
           <!-- Description -->
           <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
             <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Description</h2>
@@ -78,9 +67,13 @@
                   :class="descTab === 'preview' ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'">Preview</button>
               </div>
               <textarea v-if="descTab === 'write'" v-model="bodyEdit" rows="15" autofocus
-                class="w-full bg-transparent text-sm text-gray-300 focus:outline-none resize-y font-mono min-h-[15rem]"
+                class="w-full bg-transparent text-sm text-gray-300 focus:outline-none resize-y font-mono min-h-[15rem] transition-colors"
+                :class="{ 'ring-2 ring-brand-500 bg-brand-500/10': descDragOver }"
                 placeholder="Describe this issue... (Markdown supported)"
-                @paste="e => handleImagePaste(e, md => bodyEdit += md)"></textarea>
+                @paste="e => handleImagePaste(e, md => bodyEdit += md)"
+                @dragover.prevent="descDragOver = true"
+                @dragleave="descDragOver = false"
+                @drop.prevent="e => { descDragOver = false; handleDropAttach(e, md => bodyEdit += md) }"></textarea>
               <div v-else class="prose prose-invert prose-sm max-w-none min-h-16 text-sm"
                 v-html="renderedBodyEdit"></div>
               <div class="flex gap-2 mt-3">
@@ -159,7 +152,7 @@
                 :to="`/projects/${id}/issues/${sub.number}`"
                 class="flex items-center gap-2 text-sm text-gray-300 hover:text-white group py-1 px-2 rounded-lg hover:bg-gray-800/60 transition-colors">
                 <span :class="statusColor(sub.status)" class="w-2.5 h-2.5 rounded-full shrink-0"></span>
-                <span class="text-xs text-gray-600 shrink-0">#{{ sub.number }}</span>
+                <span class="text-xs text-gray-600 shrink-0">{{ formatIssueId(sub.number, projectsStore.currentProject) }}</span>
                 <span>{{ sub.title }}</span>
               </NuxtLink>
             </div>
@@ -211,7 +204,7 @@
                 <span class="text-xs text-brand-400 shrink-0 min-w-[70px]">{{ IssueLinkTypeLabels[link.linkType] }}</span>
                 <NuxtLink :to="`/projects/${link.targetIssue?.projectId ?? id}/issues/${link.targetIssue?.number ?? link.targetIssueId}`"
                   class="flex items-center gap-1.5 text-sm text-gray-300 hover:text-white flex-1 min-w-0">
-                  <span class="text-xs text-gray-600 shrink-0">#{{ link.targetIssue?.number }}</span>
+                  <span class="text-xs text-gray-600 shrink-0">{{ link.targetIssue?.number != null ? formatLinkedIssueId(link.targetIssue.number, link.targetIssue.projectId) : '' }}</span>
                   <span class="truncate">{{ link.targetIssue?.title }}</span>
                   <span v-if="link.targetIssue?.projectId && link.targetIssue.projectId !== actualProjectId" class="text-xs text-gray-600 shrink-0 ml-1">↗ cross-project</span>
                 </NuxtLink>
@@ -353,10 +346,15 @@
             </div>
 
             <!-- Add comment -->
-            <div class="border border-gray-700 rounded-lg overflow-hidden">
+            <div class="border border-gray-700 rounded-lg overflow-hidden"
+              :class="{ 'ring-2 ring-brand-500': commentDragOver }">
               <textarea v-model="newComment" rows="3" placeholder="Leave a comment..."
-                class="w-full bg-gray-800 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none resize-none"
-                @paste="e => handleImagePaste(e, md => newComment += md)" />
+                class="w-full bg-gray-800 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none resize-none transition-colors"
+                :class="{ 'bg-brand-500/10': commentDragOver }"
+                @paste="e => handleImagePaste(e, md => newComment += md)"
+                @dragover.prevent="commentDragOver = true"
+                @dragleave="commentDragOver = false"
+                @drop.prevent="e => { commentDragOver = false; handleDropAttach(e, md => newComment += md) }" />
               <div class="flex justify-end bg-gray-800/50 px-3 py-2 border-t border-gray-700 gap-2">
                 <p v-if="uploadingImage" class="text-xs text-gray-400 mr-auto self-center">Uploading image…</p>
                 <p v-else-if="uploadImageError" class="text-xs text-red-400 mr-auto self-center">{{ uploadImageError }}</p>
@@ -420,7 +418,7 @@
                   </p>
                 </div>
                 <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button v-if="att.isVoiceFile" @click="retranscribeVoice(att.id)"
+                  <button v-if="att.isVoiceFile || att.contentType?.startsWith('audio/')" @click="retranscribeVoice(att.id)"
                     :disabled="retranscribingId === att.id"
                     class="text-xs text-brand-400 hover:text-brand-300 disabled:opacity-40 transition-colors"
                     title="Retry transcription">
@@ -431,6 +429,77 @@
                 </div>
               </div>
             </div>
+          </div>
+
+          <!-- Runs -->
+          <div v-show="isTabActive('runs')" class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-4">Runs</h2>
+
+            <!-- Agent Sessions -->
+            <div v-if="store.currentRuns && store.currentRuns.agentSessions.length">
+              <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">Agent Runs</h3>
+              <div class="rounded-lg border border-gray-800 overflow-hidden mb-5">
+                <table class="w-full text-sm">
+                  <thead class="bg-gray-800/50">
+                    <tr>
+                      <th class="text-left px-3 py-2 text-gray-400 font-medium text-xs">Status</th>
+                      <th class="text-left px-3 py-2 text-gray-400 font-medium text-xs">Agent</th>
+                      <th class="text-left px-3 py-2 text-gray-400 font-medium text-xs">Branch</th>
+                      <th class="text-left px-3 py-2 text-gray-400 font-medium text-xs">Started</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-800">
+                    <tr v-for="session in store.currentRuns.agentSessions" :key="session.id"
+                      class="hover:bg-gray-800/30 transition-colors cursor-pointer"
+                      @click="navigateTo(`/projects/${actualProjectId}/runs/agent-sessions/${session.id}`)">
+                      <td class="px-3 py-2">
+                        <AgentSessionStatusChip :session="session" />
+                      </td>
+                      <td class="px-3 py-2 text-gray-300 text-xs">{{ session.agentName }}</td>
+                      <td class="px-3 py-2 text-gray-400 font-mono text-xs">{{ session.gitBranch || '—' }}</td>
+                      <td class="px-3 py-2 text-gray-400 text-xs">{{ formatDate(session.startedAt) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- CI/CD Runs (from agent sessions) -->
+            <template v-if="store.currentRuns">
+              <div v-if="allCiCdRuns.length">
+                <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">CI/CD Runs</h3>
+                <div class="rounded-lg border border-gray-800 overflow-hidden">
+                  <table class="w-full text-sm">
+                    <thead class="bg-gray-800/50">
+                      <tr>
+                        <th class="text-left px-3 py-2 text-gray-400 font-medium text-xs">Status</th>
+                        <th class="text-left px-3 py-2 text-gray-400 font-medium text-xs">Workflow</th>
+                        <th class="text-left px-3 py-2 text-gray-400 font-medium text-xs">Branch</th>
+                        <th class="text-left px-3 py-2 text-gray-400 font-medium text-xs">Commit</th>
+                        <th class="text-left px-3 py-2 text-gray-400 font-medium text-xs">Started</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-800">
+                      <tr v-for="run in allCiCdRuns" :key="run.id"
+                        class="hover:bg-gray-800/30 transition-colors cursor-pointer"
+                        @click="navigateTo(`/projects/${run.projectId}/runs/cicd/${run.id}`)">
+                        <td class="px-3 py-2">
+                          <CiCdStatusChip :runs="[run]" />
+                        </td>
+                        <td class="px-3 py-2 text-gray-300 text-xs">{{ run.workflow || '—' }}</td>
+                        <td class="px-3 py-2 text-gray-400 font-mono text-xs">{{ run.branch || '—' }}</td>
+                        <td class="px-3 py-2 text-gray-400 font-mono text-xs">{{ run.commitSha?.slice(0, 7) || '—' }}</td>
+                        <td class="px-3 py-2 text-gray-400 text-xs">{{ formatDate(run.startedAt) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div v-if="!store.currentRuns.agentSessions.length && !allCiCdRuns.length" class="text-sm text-gray-600">
+                No runs yet.
+              </div>
+            </template>
+            <div v-else class="text-sm text-gray-600">No runs yet.</div>
           </div>
 
         </div>
@@ -485,10 +554,12 @@
             <div>
               <p class="text-xs text-gray-500 uppercase tracking-wide mb-1.5">Milestone</p>
               <div v-if="store.currentIssue.milestoneId" class="flex items-center gap-1 mb-1.5">
-                <span class="text-xs text-indigo-300 bg-indigo-900/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+                <button
+                  class="text-xs text-indigo-300 bg-indigo-900/30 hover:bg-indigo-900/50 px-2 py-0.5 rounded-full flex items-center gap-1 transition-colors"
+                  @click="navigateTo(`/projects/${actualProjectId}/milestones/${store.currentIssue.milestoneId}`)">
                   🏁 {{ milestonesStore.milestones.find(m => m.id === store.currentIssue!.milestoneId)?.title ?? 'Milestone' }}
-                  <button @click="updateMilestone(null)" class="hover:opacity-70 ml-0.5">×</button>
-                </span>
+                </button>
+                <button @click="updateMilestone(null)" class="text-xs text-gray-500 hover:text-gray-300 hover:opacity-70">×</button>
               </div>
               <select @change="onSetMilestone($event)"
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-400 focus:outline-none focus:ring-1 focus:ring-brand-500">
@@ -554,6 +625,24 @@
             <div v-if="store.currentIssue.dueDate">
               <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Due</p>
               <p class="text-xs text-gray-400">{{ formatDate(store.currentIssue.dueDate) }}</p>
+            </div>
+
+            <!-- GitHub Issue -->
+            <div v-if="store.currentIssue.gitHubIssueUrl || store.currentIssue.gitHubIssueNumber">
+              <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">GitHub Issue</p>
+              <a
+                v-if="store.currentIssue.gitHubIssueUrl"
+                :href="store.currentIssue.gitHubIssueUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-xs text-brand-400 hover:text-brand-300 flex items-center gap-1"
+              >
+                <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" />
+                </svg>
+                #{{ store.currentIssue.gitHubIssueNumber }}
+              </a>
+              <span v-else class="text-xs text-gray-400">#{{ store.currentIssue.gitHubIssueNumber }}</span>
             </div>
           </div>
 
@@ -626,7 +715,7 @@
         <!-- Recording controls -->
         <div class="flex flex-col items-center gap-4 mb-5">
           <button
-            v-if="!voice.recording.value && !voice.uploading.value && !voice.transcription.value"
+            v-if="!voice.recording.value && !voice.uploading.value && !voiceRecordingDone"
             @click="startVoiceRecording"
             class="w-16 h-16 rounded-full bg-brand-600 hover:bg-brand-700 flex items-center justify-center transition-colors shadow-lg">
             <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -634,7 +723,7 @@
                 d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 016 0v6a3 3 0 01-3 3z" />
             </svg>
           </button>
-          <p v-if="!voice.recording.value && !voice.uploading.value && !voice.transcription.value"
+          <p v-if="!voice.recording.value && !voice.uploading.value && !voiceRecordingDone"
             class="text-sm text-gray-400">Click to start recording</p>
 
           <div v-if="voice.recording.value" class="flex flex-col items-center gap-3">
@@ -662,12 +751,17 @@
             <textarea v-model="voice.transcription.value" rows="4" placeholder="Transcription will appear here…"
               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"></textarea>
           </div>
+          <!-- Transcription warning (no model configured, no speech detected, or error from backend) -->
+          <p v-if="voice.transcriptionWarning.value && !voice.transcription.value"
+            class="text-xs text-amber-400">
+            {{ voice.transcriptionWarning.value }}
+          </p>
         </div>
 
         <p v-if="voice.error.value" class="text-sm text-red-400 mb-4">{{ voice.error.value }}</p>
 
         <div class="flex gap-3">
-          <button v-if="voice.transcription.value" @click="submitVoiceCreate"
+          <button v-if="voiceRecordingDone && !voice.uploading.value" @click="submitVoiceCreate"
             class="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
             Create Issue
           </button>
@@ -691,7 +785,7 @@ import { useLabelsStore } from '~/stores/labels'
 import { useAgentsStore } from '~/stores/agents'
 import { useMilestonesStore } from '~/stores/milestones'
 import { useProjectsStore } from '~/stores/projects'
-
+import { formatIssueId } from '~/composables/useIssueFormat'
 const route = useRoute()
 const router = useRouter()
 const id = route.params.id as string
@@ -707,8 +801,19 @@ const projectsStore = useProjectsStore()
 const api = useApi()
 const { uploading: uploadingImage, uploadError: uploadImageError, handlePaste: handleImagePaste } = useImageUpload()
 
+// SignalR: connect to project hub to receive RunsUpdated events (live agent session refresh)
+const { connection: projectConnection, connect: connectProject } = useSignalR('/hubs/project')
+
+const descDragOver = ref(false)
+const commentDragOver = ref(false)
+
 // Resolved project GUID (falls back to URL param before issue is loaded)
 const actualProjectId = computed(() => store.currentIssue?.projectId ?? id)
+
+function formatLinkedIssueId(number: number, projectId: string | undefined): string {
+  const proj = projectsStore.projects.find(p => p.id === projectId)
+  return formatIssueId(number, proj)
+}
 
 const showDeleteConfirm = ref(false)
 
@@ -725,7 +830,7 @@ const editingCommentId = ref<string | null>(null)
 const commentEdit = ref('')
 
 // Issue view tabs
-type IssueTab = 'tasks' | 'subissues' | 'linked' | 'history' | 'comments' | 'attachments'
+type IssueTab = 'tasks' | 'subissues' | 'linked' | 'history' | 'comments' | 'attachments' | 'runs'
 const TABS_STORAGE_KEY = 'issue-view-tabs'
 const DEFAULT_TABS: IssueTab[] = ['tasks', 'comments']
 
@@ -765,6 +870,21 @@ function toggleTab(tab: IssueTab, event: MouseEvent): void {
   }
 }
 
+const issueBreadcrumbItems = computed(() => {
+  const items: { label: string, to: string, icon?: string, color?: string }[] = [
+    { label: 'Projects', to: '/projects', icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10' },
+    { label: projectsStore.currentProject?.name || 'Project', to: `/projects/${id}`, color: projectsStore.currentProject?.color || '#4c6ef5' },
+    { label: 'Issues', to: `/projects/${id}/issues`, icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
+  ]
+  if (store.currentIssue?.parentIssue) {
+    items.push({ label: `#${store.currentIssue.parentIssue.number} ${store.currentIssue.parentIssue.title}`, to: `/projects/${id}/issues/${store.currentIssue.parentIssue.number}`, icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' })
+  }
+  if (store.currentIssue) {
+    items.push({ label: `#${store.currentIssue.number} ${store.currentIssue.title}`, to: `/projects/${id}/issues/${store.currentIssue.number}`, icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' })
+  }
+  return items
+})
+
 const allTabs = computed(() => [
   { id: 'tasks' as IssueTab, label: 'Tasks', count: store.currentTasks.length },
   { id: 'subissues' as IssueTab, label: 'Sub-Issues', count: store.currentIssue?.subIssues?.length ?? 0 },
@@ -772,11 +892,20 @@ const allTabs = computed(() => [
   { id: 'history' as IssueTab, label: 'History', count: store.currentHistory.length },
   { id: 'comments' as IssueTab, label: 'Comments', count: totalCommentsCount.value },
   { id: 'attachments' as IssueTab, label: 'Attachments', count: store.currentAttachments.length },
+  { id: 'runs' as IssueTab, label: 'Runs', count: runsCount.value },
 ])
 
 // Total comments includes regular and code review comments
 const totalCommentsCount = computed(() =>
   store.currentComments.length + store.currentCodeReviewComments.length
+)
+
+// Runs - flatten all CI/CD runs from agent sessions
+const allCiCdRuns = computed(() =>
+  store.currentRuns?.agentSessions.flatMap(s => s.ciCdRuns) ?? []
+)
+const runsCount = computed(() =>
+  (store.currentRuns?.agentSessions.length ?? 0) + allCiCdRuns.value.length
 )
 
 // Links
@@ -835,6 +964,7 @@ onMounted(async () => {
     store.fetchTasks(resolvedIssueId.value),
     store.fetchLinks(resolvedIssueId.value),
     store.fetchHistory(resolvedIssueId.value),
+    store.fetchIssueRuns(resolvedIssueId.value),
     labelsStore.fetchLabels(actualProjectId.value),
     agentsStore.fetchAgents(),
     fetchTenantUsers(),
@@ -864,6 +994,17 @@ onMounted(async () => {
   } catch (e) {
     console.error('Failed to fetch org issues for link selector', e)
   }
+
+  // Connect to project hub for real-time agent session updates
+  await connectProject()
+  if (projectConnection.value) {
+    await projectConnection.value.invoke('JoinProject', actualProjectId.value).catch((e: unknown) => {
+      console.warn('Failed to join project group for issue page', e)
+    })
+    projectConnection.value.on('RunsUpdated', () => {
+      store.fetchIssueRuns(resolvedIssueId.value)
+    })
+  }
 })
 
 const availableLabels = computed(() => {
@@ -885,6 +1026,13 @@ async function saveTitle() {
   editingTitle.value = false
   if (titleEdit.value && titleEdit.value !== store.currentIssue?.title) {
     await store.updateIssue(id, resolvedIssueId.value, { title: titleEdit.value })
+  }
+}
+
+function startEditTitle() {
+  if (store.currentIssue) {
+    titleEdit.value = store.currentIssue.title
+    editingTitle.value = true
   }
 }
 
@@ -1054,8 +1202,9 @@ async function handleFileUpload(e: Event) {
   if (!file) return
   uploadingAttachment.value = true
   attachmentError.value = null
+  const isVoiceFile = file.type.startsWith('audio/')
   try {
-    await store.addAttachment(resolvedIssueId.value, file, false, true)
+    await store.addAttachment(resolvedIssueId.value, file, isVoiceFile, true)
   } catch (err: unknown) {
     attachmentError.value = err instanceof Error ? err.message : 'Upload failed'
   } finally {
@@ -1064,21 +1213,61 @@ async function handleFileUpload(e: Event) {
   }
 }
 
+async function uploadFileTo(endpoint: string, file: File): Promise<string> {
+  const config = useRuntimeConfig()
+  const baseURL = config.public.apiBase as string
+  const body = new FormData()
+  body.append('file', file)
+  const result = await $fetch<{ url: string }>(endpoint, { baseURL, method: 'POST', body, credentials: 'include' })
+  return result.url
+}
+
+async function handleDropAttach(e: DragEvent, insertText: (md: string) => void) {
+  const file = e.dataTransfer?.files[0]
+  if (!file) return
+  try {
+    if (file.type.startsWith('image/')) {
+      const url = await uploadFileTo('/api/uploads/image', file)
+      insertText(`![${file.name}](${url})`)
+    } else if (file.type.startsWith('audio/')) {
+      const att = await store.addAttachment(resolvedIssueId.value, file, /* isVoiceFile */ true, /* isPublic */ true)
+      if (att?.fileUrl) insertText(`[${file.name}](${att.fileUrl})`)
+    } else {
+      const url = await uploadFileTo('/api/uploads/file', file)
+      if (url) insertText(`[${file.name}](${url})`)
+    }
+  } catch (err: unknown) {
+    console.error('Drop file attach failed', err)
+  }
+}
+
 async function handleCommentFileAttach(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
   try {
-    const config = useRuntimeConfig()
-    const baseURL = config.public.apiBase as string
-    const body = new FormData()
-    body.append('file', file)
-    const result = await $fetch<{ url: string }>('/api/uploads/file', {
-      baseURL,
-      method: 'POST',
-      body,
-      credentials: 'include',
-    })
-    newComment.value += (newComment.value ? '\n' : '') + `[${file.name}](${result.url})`
+    let url: string
+    if (file.type.startsWith('audio/')) {
+      // Audio files: store as a proper IssueAttachment so retranscription is available
+      const att = await store.addAttachment(resolvedIssueId.value, file, /* isVoiceFile */ true, /* isPublic */ true)
+      url = att?.fileUrl ?? ''
+    } else {
+      const config = useRuntimeConfig()
+      const baseURL = config.public.apiBase as string
+      const body = new FormData()
+      body.append('file', file)
+      const result = await $fetch<{ url: string }>('/api/uploads/file', {
+        baseURL,
+        method: 'POST',
+        body,
+        credentials: 'include',
+      })
+      url = result.url
+    }
+    if (url) {
+      newComment.value += (newComment.value ? '\n' : '') + `[${file.name}](${url})`
+    } else {
+      console.error('Audio attachment upload returned no URL')
+    }
   } catch (err: unknown) {
     console.error('Comment file attach failed', err)
   } finally {
@@ -1110,7 +1299,7 @@ const createForm = reactive({
 
 async function submitCreate() {
   if (!createForm.title.trim()) return
-  await store.createIssue(actualProjectId.value, {
+  const newIssue = await store.createIssue(actualProjectId.value, {
     title: createForm.title.trim(),
     body: createForm.body || undefined,
     status: createForm.status,
@@ -1119,6 +1308,9 @@ async function submitCreate() {
   showCreate.value = false
   createForm.title = ''
   createForm.body = ''
+  if (newIssue) {
+    await navigateTo(`/projects/${actualProjectId.value}/issues/${newIssue.number}`)
+  }
 }
 
 async function startVoiceRecording() {
@@ -1152,6 +1344,9 @@ async function submitVoiceCreate() {
     }
   }
   closeVoiceModal()
+  if (newIssue) {
+    await navigateTo(`/projects/${actualProjectId.value}/issues/${newIssue.number}`)
+  }
 }
 
 function closeVoiceModal() {

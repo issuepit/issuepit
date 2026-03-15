@@ -8,9 +8,11 @@
     <template v-else-if="projectsStore.currentProject">
       <!-- Breadcrumb -->
       <div class="flex items-center gap-2 mb-4">
-        <NuxtLink :to="`/projects/${id}`" class="text-xl font-bold text-gray-500 hover:text-gray-300 transition-colors">{{ projectsStore.currentProject.name }}</NuxtLink>
-        <span class="text-gray-600">/</span>
-        <NuxtLink :to="`/projects/${id}/settings`" class="text-xl font-bold text-white">Settings</NuxtLink>
+        <PageBreadcrumb :items="[
+          { label: 'Projects', to: '/projects', icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10' },
+          { label: projectsStore.currentProject.name, to: `/projects/${id}`, color: projectsStore.currentProject.color || '#4c6ef5' },
+          { label: 'Settings', to: `/projects/${id}/settings`, icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z' },
+        ]" />
       </div>
 
       <!-- Tabs -->
@@ -42,6 +44,15 @@
               : 'text-gray-400 hover:text-gray-200 border-transparent'
           ]"
         >Members</NuxtLink>
+        <NuxtLink
+          :to="`/projects/${id}/github-sync`"
+          :class="[
+            'px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
+            $route.path === `/projects/${id}/github-sync`
+              ? 'text-white border-brand-500'
+              : 'text-gray-400 hover:text-gray-200 border-transparent'
+          ]"
+        >GitHub Sync</NuxtLink>
       </div>
 
       <div class="space-y-6 max-w-2xl">
@@ -85,6 +96,31 @@
                   class="inline-block h-4 w-4 mt-0.5 rounded-full bg-white transition-transform duration-200"
                 />
               </button>
+            </div>
+            <!-- Issue ID Format -->
+            <div class="border-t border-gray-800 pt-4 mt-2">
+              <h3 class="text-sm font-semibold text-gray-300 mb-3">Issue ID Format</h3>
+              <p class="text-xs text-gray-500 mb-4">Customize how issue numbers are displayed. Useful when syncing with external trackers like Jira or GitHub to avoid ID collisions.</p>
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm font-medium text-gray-300 mb-1.5">Project Key</label>
+                  <div class="flex gap-2">
+                    <input v-model="form.issueKey" type="text" maxlength="10" placeholder="e.g. IP"
+                      class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 uppercase" />
+                    <button type="button" :disabled="suggestingIssueKey" @click="suggestIssueKey"
+                      class="px-3 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-gray-300 text-xs rounded-lg transition-colors whitespace-nowrap">
+                      {{ suggestingIssueKey ? '…' : 'Suggest' }}
+                    </button>
+                  </div>
+                  <p class="text-xs text-gray-600 mt-1">Short key prefix — issues display as <span class="font-mono text-gray-400">{{ form.issueKey ? `#${form.issueKey.toUpperCase()}-${(form.issueNumberOffset || 0) + 1}` : '#1' }}</span></p>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-300 mb-1.5">Number Offset</label>
+                  <input v-model.number="form.issueNumberOffset" type="number" min="0" placeholder="0"
+                    class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                  <p class="text-xs text-gray-600 mt-1">Added to every issue number (e.g. 10000 for Jira sync)</p>
+                </div>
+              </div>
             </div>
             <p v-if="saveGeneralError" class="text-red-400 text-sm">{{ saveGeneralError }}</p>
             <button type="submit" :disabled="savingGeneral"
@@ -164,7 +200,7 @@
         </div>
 
         <!-- Add / Edit Repo modal -->
-        <div v-if="showRepoModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @click.self="showRepoModal = false">
+        <div v-if="showRepoModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @mousedown.self="showRepoModal = false">
           <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 w-full max-w-md shadow-xl space-y-4">
             <h3 class="font-semibold text-white">{{ editingRepoId ? 'Edit Git Origin' : 'Add Git Origin' }}</h3>
             <form class="space-y-3" @submit.prevent="saveRepo">
@@ -429,9 +465,10 @@ const agentsStore = useAgentsStore()
 const mcpServersStore = useMcpServersStore()
 
 // ── General form ──────────────────────────────────────────────
-const form = reactive({ name: '', slug: '', description: '', gitHubRepo: '', isAgenda: false })
+const form = reactive({ name: '', slug: '', description: '', gitHubRepo: '', isAgenda: false, issueKey: '', issueNumberOffset: 0 })
 const savingGeneral = ref(false)
 const saveGeneralError = ref<string | null>(null)
+const suggestingIssueKey = ref(false)
 
 // ── Repo form (multi-origin) ──────────────────────────────────
 const showRepoModal = ref(false)
@@ -615,6 +652,8 @@ onMounted(async () => {
     form.description = projectsStore.currentProject.description || ''
     form.gitHubRepo = projectsStore.currentProject.gitHubRepo || ''
     form.isAgenda = projectsStore.currentProject.isAgenda ?? false
+    form.issueKey = projectsStore.currentProject.issueKey || ''
+    form.issueNumberOffset = projectsStore.currentProject.issueNumberOffset ?? 0
   }
 })
 
@@ -628,11 +667,29 @@ async function saveGeneral() {
       description: form.description,
       gitHubRepo: form.gitHubRepo.trim() || undefined,
       isAgenda: form.isAgenda,
+      issueKey: form.issueKey.trim() || undefined,
+      issueNumberOffset: form.issueNumberOffset,
     })
   } catch (e: unknown) {
     saveGeneralError.value = e instanceof Error ? e.message : 'Failed to save'
   } finally {
     savingGeneral.value = false
+  }
+}
+
+async function suggestIssueKey() {
+  if (!projectsStore.currentProject?.orgId || !form.name) return
+  suggestingIssueKey.value = true
+  try {
+    const api = useApi()
+    const result = await api.get<{ issueKey: string }>(
+      `/api/projects/suggest-issue-key?name=${encodeURIComponent(form.name)}&orgId=${projectsStore.currentProject.orgId}`
+    )
+    form.issueKey = result.issueKey
+  } catch {
+    // silently ignore
+  } finally {
+    suggestingIssueKey.value = false
   }
 }
 

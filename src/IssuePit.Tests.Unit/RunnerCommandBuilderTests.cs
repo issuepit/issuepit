@@ -35,6 +35,7 @@ public class RunnerCommandBuilderTests
         var agent = MakeAgent(RunnerType.OpenCode);
         var issue = MakeIssue("Fix the bug");
         var args = RunnerCommandBuilder.BuildArgs(agent, issue);
+        Assert.StartsWith("run", args);
         Assert.Contains("Fix the bug", args);
     }
 
@@ -85,6 +86,77 @@ public class RunnerCommandBuilderTests
         Assert.Contains("Write tests", args);
     }
 
+    // --- BuildArgsList (Docker CMD format — includes binary name as first element) ---
+
+    [Fact]
+    public void BuildArgsList_NoRunnerType_ReturnsEmpty()
+    {
+        var agent = MakeAgent();
+        var issue = MakeIssue();
+        Assert.Empty(RunnerCommandBuilder.BuildArgsList(agent, issue));
+    }
+
+    [Fact]
+    public void BuildArgsList_OpenCode_StartsWithOpencode()
+    {
+        var agent = MakeAgent(RunnerType.OpenCode);
+        var issue = MakeIssue("Fix the bug");
+        var args = RunnerCommandBuilder.BuildArgsList(agent, issue);
+        Assert.Equal("opencode", args[0]);
+        Assert.Equal("run", args[1]);
+    }
+
+    [Fact]
+    public void BuildArgsList_OpenCode_ContainsTask()
+    {
+        var agent = MakeAgent(RunnerType.OpenCode);
+        var issue = MakeIssue("Fix the bug");
+        var args = RunnerCommandBuilder.BuildArgsList(agent, issue);
+        Assert.Contains(args, a => a.Contains("Fix the bug"));
+    }
+
+    [Fact]
+    public void BuildArgsList_OpenCode_WithModel_ContainsModelFlag()
+    {
+        var agent = MakeAgent(RunnerType.OpenCode, model: "anthropic/claude-opus-4-5");
+        var issue = MakeIssue();
+        var args = RunnerCommandBuilder.BuildArgsList(agent, issue);
+        Assert.Equal("opencode", args[0]);
+        Assert.Equal("run", args[1]);
+        Assert.Contains("--model", args);
+        Assert.Contains("anthropic/claude-opus-4-5", args);
+    }
+
+    [Fact]
+    public void BuildArgsList_Codex_StartsWithCodex()
+    {
+        var agent = MakeAgent(RunnerType.Codex);
+        var issue = MakeIssue();
+        var args = RunnerCommandBuilder.BuildArgsList(agent, issue);
+        Assert.Equal("codex", args[0]);
+    }
+
+    [Fact]
+    public void BuildArgsList_Codex_ContainsFullAutoFlag()
+    {
+        var agent = MakeAgent(RunnerType.Codex);
+        var issue = MakeIssue();
+        var args = RunnerCommandBuilder.BuildArgsList(agent, issue);
+        Assert.Contains("--full-auto", args);
+    }
+
+    [Fact]
+    public void BuildArgsList_GitHubCopilotCli_StartsWithGh()
+    {
+        var agent = MakeAgent(RunnerType.GitHubCopilotCli);
+        var issue = MakeIssue("Write tests");
+        var args = RunnerCommandBuilder.BuildArgsList(agent, issue);
+        Assert.Equal("gh", args[0]);
+        Assert.Contains("copilot", args);
+        Assert.Contains("suggest", args);
+        Assert.Contains(args, a => a.Contains("Write tests"));
+    }
+
     [Fact]
     public void BuildArgs_IncludesIssueBodyInTask()
     {
@@ -92,6 +164,43 @@ public class RunnerCommandBuilderTests
         var issue = MakeIssue("Fix the bug", "The bug causes a crash on startup.");
         var args = RunnerCommandBuilder.BuildArgs(agent, issue);
         Assert.Contains("The bug causes a crash on startup.", args);
+    }
+
+    [Fact]
+    public void BuildTaskPrompt_NoComments_DoesNotIncludeCommentsSection()
+    {
+        var issue = MakeIssue("Fix the bug", "Body text.");
+        var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue);
+        Assert.Contains("Fix the bug", prompt);
+        Assert.Contains("Body text.", prompt);
+        Assert.DoesNotContain("## Comments", prompt);
+    }
+
+    [Fact]
+    public void BuildTaskPrompt_WithComments_IncludesCommentsSection()
+    {
+        var issue = MakeIssue("Fix the bug");
+        var comments = new List<IssueComment>
+        {
+            new() { Id = Guid.NewGuid(), IssueId = issue.Id, Body = "Please also fix the tests.", CreatedAt = DateTime.UtcNow },
+        };
+        var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue, comments);
+        Assert.Contains("## Comments", prompt);
+        Assert.Contains("Please also fix the tests.", prompt);
+    }
+
+    [Fact]
+    public void BuildTaskPrompt_WithComments_IncludesAuthorName()
+    {
+        var issue = MakeIssue("Fix the bug");
+        var user = new User { Id = Guid.NewGuid(), Username = "alice", Email = "alice@example.com", TenantId = Guid.NewGuid() };
+        var comments = new List<IssueComment>
+        {
+            new() { Id = Guid.NewGuid(), IssueId = issue.Id, Body = "Great idea!", User = user, CreatedAt = DateTime.UtcNow },
+        };
+        var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue, comments);
+        Assert.Contains("alice", prompt);
+        Assert.Contains("Great idea!", prompt);
     }
 
     [Fact]

@@ -69,5 +69,29 @@ public class Project
     /// </summary>
     public string? LocalRepositories { get; set; }
 
+    /// <summary>
+    /// Short project key used as prefix for issue IDs in the UI (e.g. "IP" yields "IP-123").
+    /// Auto-generated from the project name using initials. Must be unique within the organization.
+    /// </summary>
+    [MaxLength(10)]
+    public string? IssueKey { get; set; }
+
+    /// <summary>
+    /// Offset added to issue numbers when displayed in the UI.
+    /// Useful to avoid ID collisions when syncing with external trackers like Jira or GitHub (e.g. set to 10000).
+    /// </summary>
+    public int IssueNumberOffset { get; set; } = 0;
+
+    /// <summary>
+    /// When <c>true</c>, triggered CI/CD runs are placed in the
+    /// <see cref="IssuePit.Core.Enums.CiCdRunStatus.WaitingForApproval"/> state and are NOT
+    /// dispatched to the CI/CD worker until explicitly approved via
+    /// <c>POST /api/cicd-runs/{id}/approve</c>.
+    ///
+    /// Use this on demo / seeded projects that have a linked git repository so that the
+    /// automatic git-polling trigger does not launch real CI/CD runners without human intent.
+    /// </summary>
+    public bool RequiresRunApproval { get; set; } = false;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

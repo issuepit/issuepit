@@ -1,12 +1,14 @@
 using Docker.DotNet;
 using IssuePit.Core.Data;
 using IssuePit.ExecutionClient.Runtimes;
+using IssuePit.ExecutionClient.Services;
 using IssuePit.ExecutionClient.Workers;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 builder.AddKafkaHealthCheck();
+builder.AddKafkaProducer();
 builder.AddNpgsqlDbContext<IssuePitDbContext>("issuepit-db");
 builder.AddRedisClient("redis");
 
@@ -24,6 +26,7 @@ builder.Services.AddSingleton<SshDockerAgentRuntime>();
 builder.Services.AddSingleton<HetznerSshAgentRuntime>();
 builder.Services.AddSingleton<OpenSandboxAgentRuntime>();
 builder.Services.AddSingleton<AgentRuntimeFactory>();
+builder.Services.AddSingleton<GitArtifactUploadService>();
 
 builder.Services.AddHostedService<IssueWorker>();
 

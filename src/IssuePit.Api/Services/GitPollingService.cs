@@ -12,40 +12,11 @@ namespace IssuePit.Api.Services;
 public class GitPollingService(
     ILogger<GitPollingService> logger,
     IServiceScopeFactory scopeFactory,
-    IConfiguration configuration) : BackgroundService
+    IConfiguration configuration)
+    : PeriodicBackgroundService(logger, TimeSpan.FromSeconds(configuration.GetValue("Git:PollingIntervalSeconds", 60)))
 {
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        var intervalSeconds = configuration.GetValue("Git:PollingIntervalSeconds", 60);
-
-        logger.LogInformation("GitPollingService started; polling interval = {Interval}s", intervalSeconds);
-
-        // Small initial delay so the application fully starts before first poll.
-        await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await PollAllReposAsync(stoppingToken);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                logger.LogError(ex, "Unhandled error in GitPollingService.PollAllReposAsync");
-            }
-
-            try
-            {
-                await Task.Delay(TimeSpan.FromSeconds(intervalSeconds), stoppingToken);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-        }
-
-        logger.LogInformation("GitPollingService stopped");
-    }
+    protected override async Task ExecuteTickAsync(CancellationToken stoppingToken)
+        => await PollAllReposAsync(stoppingToken);
 
     private async Task PollAllReposAsync(CancellationToken cancellationToken)
     {

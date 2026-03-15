@@ -250,6 +250,12 @@ public partial class DockerCiCdRuntime(
             actBinAndArgs.Add(ContainerActionCachePath);
         }
 
+        // Append a short suffix derived from the run ID so act job containers inside the DinD
+        // daemon are identifiable by run (issuepit/act --container-name-suffix).
+        var actContainerNameSuffix = "-" + $"{run.Id:N}"[..NativeCiCdRuntime.ContainerNameSuffixLength];
+        actBinAndArgs.Add("--container-name-suffix");
+        actBinAndArgs.Add(actContainerNameSuffix);
+
         var containerName = BuildContainerName(run);
 
         // Read the act runner image that is injected into actrc to prevent the interactive
@@ -388,15 +394,10 @@ public partial class DockerCiCdRuntime(
             binds.Add($"{workspacePath}:/workspace");
         }
 
-        // Mount the artifact server directory from the host so artifacts are accessible after the run.
-        // ArtifactServerPath is always an absolute temp-directory path set by the CiCdWorker
-        // (Path.Combine(Path.GetTempPath(), "issuepit-artifacts-{runId}")), so it is safe to use directly.
-        if (!string.IsNullOrWhiteSpace(trigger.ArtifactServerPath))
-        {
-            Directory.CreateDirectory(trigger.ArtifactServerPath);
-            binds.Add($"{trigger.ArtifactServerPath}:{ContainerArtifactPath}");
-            await onLogLine($"[DEBUG] Artifact mount : {trigger.ArtifactServerPath}:{ContainerArtifactPath}", LogStream.Stdout);
-        }
+        // Artifacts are not volume-mounted. After act runs, the cicd-client uses the Docker archive
+        // API (GetArchiveFromContainerAsync) to copy /artifacts out of the container directly into
+        // the local artifactDir. This works in all environments without requiring a shared filesystem
+        // path or an S3-compatible endpoint reachable from inside the container.
 
         // Mount named Docker volumes for package caches so their contents persist across CI/CD runs.
         // The paths inside the container match what act's job containers (DinD) will bind-mount
@@ -520,7 +521,8 @@ public partial class DockerCiCdRuntime(
                 // ── Exec model: run each step inside the container sequentially ─────────────
 
                 // Dynamically compute the number of steps so the [N/M] prefix is always correct.
-                var totalSteps = 3 + (useDind ? 1 : 0) + (hasGitRepo ? 1 : 0) + (!string.IsNullOrWhiteSpace(trigger.Workflow) ? 1 : 0);
+                var hasArtifacts = !string.IsNullOrWhiteSpace(trigger.ArtifactServerPath);
+                var totalSteps = 3 + (useDind ? 1 : 0) + (hasGitRepo ? 1 : 0) + (!string.IsNullOrWhiteSpace(trigger.Workflow) ? 1 : 0) + (hasArtifacts ? 1 : 0);
                 var stepNum = 0;
 
                 // Step: Print act version for diagnostics.
@@ -555,14 +557,29 @@ public partial class DockerCiCdRuntime(
                 if (hasGitRepo)
                 {
                     await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: git clone {trigger.GitRepoUrl}", LogStream.Stdout);
+                    // Clone into /workspace so act can find the repo at its expected path.
+                    // Pass -b when a branch is specified so the correct branch is checked out
+                    // rather than the remote's default branch.
+                    var cloneArgs = new List<string> { "git", "clone", "--depth=1" };
+                    if (!string.IsNullOrWhiteSpace(trigger.Branch))
+                    {
+                        cloneArgs.Add("-b");
+                        cloneArgs.Add(trigger.Branch);
+                    }
+                    cloneArgs.Add(trigger.GitRepoUrl!);
+                    cloneArgs.Add("/workspace");
                     var cloneExitCode = await ExecCommandAsync(
                         container.ID,
-                        // Clone into /workspace so act can find the repo at its expected path.
-                        ["git", "clone", "--depth=1", trigger.GitRepoUrl!, "/workspace"],
+                        cloneArgs,
                         onLogLine,
                         cancellationToken);
                     if (cloneExitCode != 0)
                         throw new Exception($"git clone failed with exit code {cloneExitCode} for URL '{trigger.GitRepoUrl}'");
+
+                    // Verify the actual cloned commit SHA from inside the container and compare
+                    // it with the trigger SHA. This confirms the correct commit was checked out
+                    // and, when triggered by branch, resolves and updates the run's CommitSha.
+                    await VerifyClonedCommitAsync(container.ID, run, trigger, onLogLine, cancellationToken);
 
                     // Parse the workflow graph from the cloned repo by cat-ing the YAML files
                     // inside the container. Sets run.WorkflowGraphJson so the worker can persist it.
@@ -594,6 +611,15 @@ public partial class DockerCiCdRuntime(
                 // Step: Run act.
                 await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: {string.Join(' ', actCmd)}", LogStream.Stdout);
                 var actExitCode = await ExecCommandAsync(container.ID, actCmd, onLogLine, cancellationToken);
+
+                // Step: Copy artifacts from the container to the local artifact directory (best-effort,
+                // regardless of act exit code so artifacts are captured even on partial runs).
+                // Uses the Docker archive API — no S3 or shared filesystem required.
+                if (hasArtifacts)
+                {
+                    await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: collecting artifacts from container", LogStream.Stdout);
+                    await CopyArtifactsFromContainerAsync(container.ID, trigger.ArtifactServerPath!, onLogLine, cancellationToken);
+                }
 
                 if (actExitCode != 0)
                     throw new Exception(
@@ -906,7 +932,8 @@ public partial class DockerCiCdRuntime(
         string containerId,
         IList<string> cmd,
         Func<string, LogStream, Task> onLogLine,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IList<string>? env = null)
     {
         var execCreate = await dockerClient.Exec.CreateContainerExecAsync(
             containerId,
@@ -916,6 +943,7 @@ public partial class DockerCiCdRuntime(
                 AttachStderr = true,
                 Cmd = cmd,
                 WorkingDir = "/workspace",
+                Env = env,
             },
             cancellationToken);
 
@@ -982,6 +1010,162 @@ public partial class DockerCiCdRuntime(
             cancellationToken);
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Runs <c>git rev-parse HEAD</c> inside the container to obtain the commit SHA that was
+    /// actually checked out after the clone. Compares it with the trigger SHA stored on <paramref name="run"/>:
+    /// <list type="bullet">
+    ///   <item>Triggered by <b>full SHA</b>: logs a confirmation or a mismatch warning (the branch
+    ///     may have advanced between trigger and clone).</item>
+    ///   <item>Triggered by <b>branch</b> (CommitSha is not a 40-char hex string): updates
+    ///     <c>run.CommitSha</c> to the resolved tip SHA so the run record is accurate.</item>
+    /// </list>
+    /// Best-effort — errors are logged as warnings and never abort the run.
+    /// </summary>
+    private async Task VerifyClonedCommitAsync(
+        string containerId,
+        CiCdRun run,
+        TriggerPayload trigger,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var actualSha = (await ExecCommandCaptureAsync(
+                containerId, ["git", "rev-parse", "HEAD"], cancellationToken)).Trim();
+
+            if (string.IsNullOrWhiteSpace(actualSha)) return;
+
+            var branchPart = !string.IsNullOrWhiteSpace(trigger.Branch) ? $" (branch: {trigger.Branch})" : "";
+
+            if (IsFullCommitSha(run.CommitSha))
+            {
+                // Triggered by an explicit SHA — verify the clone matches.
+                if (string.Equals(actualSha, run.CommitSha, StringComparison.OrdinalIgnoreCase))
+                {
+                    await onLogLine(
+                        $"[INFO] Commit verified: {actualSha}{branchPart}",
+                        LogStream.Stdout);
+                }
+                else
+                {
+                    await onLogLine(
+                        $"[WARN] Commit SHA mismatch: trigger={run.CommitSha}, cloned={actualSha}{branchPart} — branch may have advanced since trigger",
+                        LogStream.Stdout);
+                    // Update to the actual SHA so the run record reflects what was executed.
+                    run.CommitSha = actualSha;
+                }
+            }
+            else
+            {
+                // Triggered by branch only — CommitSha was a branch name or unresolved.
+                // Update it to the real tip SHA now that we have a clone.
+                run.CommitSha = actualSha;
+                await onLogLine(
+                    $"[INFO] Cloned branch '{trigger.Branch}', tip commit: {actualSha}",
+                    LogStream.Stdout);
+            }
+        }
+        catch (Exception ex)
+        {
+            await onLogLine($"[WARN] Could not verify cloned commit SHA: {ex.Message}", LogStream.Stdout);
+        }
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> when <paramref name="sha"/> is a valid full-length git commit SHA
+    /// (exactly 40 hexadecimal characters). Branch names, abbreviated SHAs, and nulls return <c>false</c>.
+    /// </summary>
+    private static bool IsFullCommitSha(string? sha) =>
+        sha is { Length: 40 } && sha.All(char.IsAsciiHexDigit);
+
+    /// <summary>
+    /// Copies the contents of <c>/artifacts</c> inside the container to <paramref name="artifactDir"/>
+    /// on the local filesystem using the Docker archive (tar) API.
+    /// This replaces the previous S3 upload approach and works in all environments without requiring
+    /// an S3-compatible endpoint to be accessible from inside the container.
+    ///
+    /// The method is best-effort: errors are logged as warnings but never abort the run.
+    /// If <c>/artifacts</c> does not exist in the container (no artifacts uploaded), the call is a no-op.
+    /// </summary>
+    private async Task CopyArtifactsFromContainerAsync(
+        string containerId,
+        string artifactDir,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            ContainerArchiveResponse response;
+            try
+            {
+                response = await dockerClient.Containers.GetArchiveFromContainerAsync(
+                    containerId,
+                    new ContainerPathStatParameters { Path = "/artifacts" },
+                    false,
+                    cancellationToken);
+            }
+            catch (DockerApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                await onLogLine("[DEBUG] No /artifacts directory found in container — no artifacts to collect", LogStream.Stdout);
+                return;
+            }
+
+            // Extract the tar stream. Docker wraps the requested path as the root entry, so
+            // entries are named "artifacts/", "artifacts/1/", "artifacts/1/build-output/..." etc.
+            // Strip the leading "artifacts/" prefix to get the layout that ParseAndStoreArtifactsAsync expects.
+            const string TarPrefix = "artifacts/";
+            var fileCount = 0;
+            var canonicalArtifactDir = Path.GetFullPath(artifactDir);
+
+            using var tarStream = response.Stream;
+            await using var reader = new System.Formats.Tar.TarReader(tarStream);
+            System.Formats.Tar.TarEntry? entry;
+            while ((entry = await reader.GetNextEntryAsync(cancellationToken: cancellationToken)) != null)
+            {
+                var name = entry.Name;
+                if (!name.StartsWith(TarPrefix, StringComparison.Ordinal))
+                    continue;
+                var relativePath = name[TarPrefix.Length..];
+                if (string.IsNullOrEmpty(relativePath))
+                    continue;
+
+                var localPath = Path.GetFullPath(
+                    Path.Combine(canonicalArtifactDir, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+
+                // Guard against path traversal attacks.
+                if (!localPath.StartsWith(canonicalArtifactDir, StringComparison.Ordinal))
+                    continue;
+
+                if (entry.EntryType == System.Formats.Tar.TarEntryType.Directory)
+                {
+                    Directory.CreateDirectory(localPath);
+                }
+                else if (entry.EntryType is System.Formats.Tar.TarEntryType.RegularFile
+                                          or System.Formats.Tar.TarEntryType.V7RegularFile)
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
+                    await using var fileStream = File.Create(localPath);
+                    if (entry.DataStream is not null)
+                        await entry.DataStream.CopyToAsync(fileStream, cancellationToken);
+                    fileCount++;
+                }
+            }
+
+            if (fileCount > 0)
+                await onLogLine($"[DEBUG] Collected {fileCount} artifact file(s) from container", LogStream.Stdout);
+            else
+                await onLogLine("[DEBUG] No artifact files found in /artifacts", LogStream.Stdout);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            await onLogLine($"[WARN] Failed to collect artifacts from container (non-fatal): {ex.Message}", LogStream.Stdout);
+        }
     }
 
     /// <summary>

@@ -2,12 +2,14 @@
   <div class="p-8">
     <div class="flex items-center justify-between mb-6">
       <div>
-        <h1 class="text-2xl font-bold text-white">
-          {{ feedFilter ? filterTitle : 'Issues' }}
-          <span v-if="!feedFilter" class="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full ml-2 font-normal">
+        <div class="flex items-center gap-3">
+          <PageBreadcrumb :items="[
+            { label: feedFilter ? filterTitle : 'Issues', to: feedFilter ? `/issues?filter=${feedFilter}` : '/issues', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
+          ]" />
+          <span v-if="!feedFilter" class="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full font-normal">
             {{ filteredIssues.length }}
           </span>
-        </h1>
+        </div>
         <p v-if="feedFilter" class="text-gray-400 mt-1 text-sm">{{ filterDescription }}</p>
       </div>
     </div>
@@ -64,7 +66,7 @@
             </td>
             <td class="px-4 py-3">
               <div class="flex items-center gap-2">
-                <span class="text-xs text-gray-600">#{{ issue.number }}</span>
+                <span class="text-xs text-gray-600">{{ formatIssueId(issue.number, projectsStore.projects.find(p => p.id === issue.projectId)) }}</span>
                 <span class="text-sm text-gray-200 hover:text-white">{{ issue.title }}</span>
               </div>
             </td>
@@ -93,6 +95,7 @@ import { IssueStatus } from '~/types'
 import type { IssuePriority } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
 import { useProjectsStore } from '~/stores/projects'
+import { formatIssueId } from '~/composables/useIssueFormat'
 
 const store = useIssuesStore()
 const projectsStore = useProjectsStore()

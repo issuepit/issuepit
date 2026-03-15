@@ -52,7 +52,15 @@ public class Issue
 
     public string? GitBranch { get; set; }
 
+    public int KanbanRank { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// Comments loaded for agent prompts. Not persisted — populated on demand before agent launch.
+    /// </summary>
+    [NotMapped]
+    public IList<IssueComment> Comments { get; set; } = [];
 }

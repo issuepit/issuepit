@@ -3,8 +3,10 @@
     <!-- Header -->
     <div class="flex items-center justify-between mb-8">
       <div>
-        <h1 class="text-2xl font-bold text-white">Projects</h1>
-        <p class="text-gray-400 mt-1">{{ store.projects.length }} projects</p>
+        <PageBreadcrumb :items="[
+          { label: 'Projects', to: '/projects', icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10' },
+        ]" />
+        <p class="text-gray-400 mt-1 text-sm">{{ store.projects.length }} projects</p>
       </div>
       <button @click="showCreate = true"
         class="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
@@ -85,6 +87,12 @@
               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
           </div>
           <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Project Key <span class="text-gray-500 font-normal">(optional)</span></label>
+            <input v-model="form.issueKey" type="text" maxlength="10" placeholder="e.g. IP"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 uppercase" />
+            <p class="text-xs text-gray-600 mt-1">Short key for issue IDs — issues will display as <span class="font-mono text-gray-400">{{ form.issueKey ? `#${form.issueKey.toUpperCase()}-1` : '#1' }}</span></p>
+          </div>
+          <div>
             <label class="block text-sm font-medium text-gray-300 mb-1.5">Organization</label>
             <select v-model="form.orgId" data-testid="org-select"
               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
@@ -120,10 +128,19 @@ import { useOrgsStore } from '~/stores/orgs'
 const store = useProjectsStore()
 const orgsStore = useOrgsStore()
 const showCreate = ref(false)
-const form = reactive({ name: '', slug: '', description: '', orgId: '' })
+const form = reactive({ name: '', slug: '', description: '', orgId: '', issueKey: '' })
+
+function generateIssueKey(name: string): string {
+  const words = name.split(/[\s\-_]+/).filter(Boolean)
+  if (words.length === 0) return ''
+  let key = words.map(w => w[0].toUpperCase()).join('')
+  if (key.length === 1 && name.length >= 3) key = name.slice(0, 3).toUpperCase()
+  return key.slice(0, 10)
+}
 
 watch(() => form.name, (val) => {
   form.slug = val.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+  form.issueKey = generateIssueKey(val)
 })
 
 onMounted(async () => {
@@ -132,7 +149,10 @@ onMounted(async () => {
 
 async function submitCreate() {
   if (!form.name || !form.orgId) return
-  await store.createProject(form)
+  await store.createProject({
+    ...form,
+    issueKey: form.issueKey?.trim().toUpperCase() || undefined,
+  })
   showCreate.value = false
   resetForm()
 }
@@ -142,5 +162,6 @@ function resetForm() {
   form.slug = ''
   form.description = ''
   form.orgId = ''
+  form.issueKey = ''
 }
 </script>

@@ -12,7 +12,7 @@ public class TodosPage(IPage page)
     {
         await page.GotoAsync("/todos");
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        await page.WaitForSelectorAsync("h1:has-text('Todos')", new PageWaitForSelectorOptions { Timeout = 10_000 });
+        await page.WaitForSelectorAsync("a:has-text('Todos')", new PageWaitForSelectorOptions { Timeout = 10_000 });
     }
 
     /// <summary>Creates a todo via the New Todo modal and waits for it to appear in the list.</summary>

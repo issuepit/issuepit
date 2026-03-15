@@ -1,4 +1,7 @@
 using System.Text.Json.Serialization;
+using FFMpegCore;
+using FFMpegCore.Extensions.Downloader;
+using FFMpegCore.Extensions.Downloader.Enums;
 using IssuePit.Api.Hubs;
 using IssuePit.Api.Middleware;
 using IssuePit.Api.Services;
@@ -39,6 +42,8 @@ builder.Services.AddHostedService<MergeRequestAutoMergeService>();
 builder.Services.AddHostedService<MetricSnapshotService>();
 builder.Services.AddHostedService<BotNotificationDispatchService>();
 builder.Services.AddHostedService<ConfigRepoSyncService>();
+builder.Services.AddHostedService<GitHubAutoSyncBackgroundService>();
+builder.Services.AddHostedService<BranchDetectionBackgroundService>();
 
 builder.Services.AddScoped<TenantContext>();
 builder.Services.AddScoped<TenantDatabaseService>();
@@ -47,6 +52,8 @@ builder.Services.AddScoped<ApiKeyResolverService>();
 builder.Services.AddScoped<IssueEnhancementService>();
 builder.Services.AddScoped<CiCdRunQueueService>();
 builder.Services.AddScoped<ConfigRepoApplier>();
+builder.Services.AddScoped<GitHubSyncService>();
+builder.Services.AddScoped<BranchDetectionService>();
 builder.Services.Configure<IssuePit.Api.Services.ImageStorageOptions>(
     builder.Configuration.GetSection(IssuePit.Api.Services.ImageStorageOptions.SectionName));
 builder.Services.AddSingleton<IssuePit.Api.Services.ImageStorageService>();
@@ -157,6 +164,40 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+// Auto-download ffmpeg via FFMpegCore if enabled (default: true).
+// Downloads ffmpeg to a subfolder next to the executable and configures GlobalFFOptions.
+// Set VoiceTranscription:DownloadFfmpeg=false to skip (e.g. when ffmpeg is pre-installed on PATH).
+var voiceTranscriptionOptions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<VoiceTranscriptionOptions>>().Value;
+if (voiceTranscriptionOptions.DownloadFfmpeg)
+{
+    var ffmpegBinDir = Path.Combine(AppContext.BaseDirectory, "ffmpeg-bin");
+    Directory.CreateDirectory(ffmpegBinDir);
+    var startupLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("IssuePit.Api.Startup.FFMpegDownload");
+    var ffmpegExe = OperatingSystem.IsWindows()
+        ? Path.Combine(ffmpegBinDir, "ffmpeg.exe")
+        : Path.Combine(ffmpegBinDir, "ffmpeg");
+    if (File.Exists(ffmpegExe))
+    {
+        // Already downloaded in a previous run — configure GlobalFFOptions to use the cached binary.
+        GlobalFFOptions.Configure(new FFOptions { BinaryFolder = ffmpegBinDir });
+    }
+    else
+    {
+        try
+        {
+            startupLogger.LogInformation("Downloading ffmpeg to {FfmpegBinDir}...", ffmpegBinDir);
+            var downloadOpts = new FFOptions { BinaryFolder = ffmpegBinDir };
+            await FFMpegDownloader.DownloadBinaries(FFMpegVersions.LatestAvailable, FFMpegBinaries.FFMpeg, downloadOpts);
+            GlobalFFOptions.Configure(downloadOpts);
+            startupLogger.LogInformation("ffmpeg downloaded successfully");
+        }
+        catch (Exception ex)
+        {
+            startupLogger.LogWarning(ex, "Failed to auto-download ffmpeg — using system ffmpeg from PATH instead");
+        }
+    }
+}
 
 app.MapDefaultEndpoints();
 

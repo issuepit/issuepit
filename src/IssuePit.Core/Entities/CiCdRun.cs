@@ -22,6 +22,12 @@ public class CiCdRun
     [ForeignKey(nameof(AgentSessionId))]
     public AgentSession? AgentSession { get; set; }
 
+    /// <summary>When this run is a manual retry, points to the original run that was retried.</summary>
+    public Guid? RetryOfRunId { get; set; }
+
+    [ForeignKey(nameof(RetryOfRunId))]
+    public CiCdRun? RetryOfRun { get; set; }
+
     [Required, MaxLength(200)]
     public string CommitSha { get; set; } = string.Empty;
 

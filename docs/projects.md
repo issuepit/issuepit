@@ -56,14 +56,38 @@ You can add as many origins as needed. The first **Working** remote is used when
 
 ---
 
-## Importing Issues from GitHub
+## GitHub Sync
 
-Once a repository is linked, you can import individual issues by their GitHub issue number:
+Each project can be configured to synchronise issues with a GitHub repository. Navigate to **Project Settings → GitHub Sync** to configure.
 
-1. Open the project's **Issues** tab.
-2. Click **Import from GitHub**.
-3. Enter the GitHub issue number.
-4. Click **Import** — the issue content, labels, and description are copied into IssuePit.
+### Configuration
+
+| Field | Description |
+|-------|-------------|
+| **GitHub Identity** | A PAT (Personal Access Token) identity from [Config → GitHub Identities](/config/github-identities). Required for all sync operations. |
+| **GitHub Repository** | Repository in `owner/repo` format (e.g. `acme/backend`). |
+| **Trigger Mode** | `Off` (default) · `Manual` (trigger from the Sync page) · `Auto` (periodic automatic sync). |
+| **Auto-Create on GitHub** | When enabled, new issues created in IssuePit are automatically pushed to GitHub. Disabled by default. |
+
+### Importing Issues from GitHub
+
+1. Open **Project Settings → GitHub Sync**.
+2. Configure a GitHub identity and repository, then click **Save Configuration**.
+3. Click **Trigger Sync Now** to import all open and closed issues from GitHub into this project.
+
+Each GitHub issue is imported only once and linked via `GitHubIssueNumber`. A link to the original GitHub issue appears in the issue sidebar.
+
+### Sync Runs (Audit Log)
+
+Every manual or automatic sync creates a **sync run** record. Open the **Sync Runs** tab to:
+
+- View the status (Pending / Running / Succeeded / Failed) and summary of each run.
+- Click **View logs →** to inspect per-line audit output including which issues were imported, updated, or skipped.
+- Trigger a new sync from this tab.
+
+### Conflict Detection
+
+The **Conflicts** tab compares linked issues in both systems and lists any where the title or body has diverged. Click **Open in IssuePit →** to resolve the conflict manually.
 
 ---
 
@@ -89,13 +113,50 @@ To reorder or rename columns, go to **Project Settings → Board**.
 
 Milestones let you group issues into time-boxed deliverables and track progress towards a goal.
 
+### Creating a milestone
+
 1. Open your project.
-2. Go to **Milestones** in the project sidebar.
-3. Click **New Milestone**.
-4. Set a **Title**, optional **Description**, and **Due Date**.
-5. Click **Create**.
+2. Click **Milestones** in the Quick Navigation panel on the project overview, or navigate to the Milestones page from the sidebar.
+3. Click **+ New Milestone**.
+4. Set a **Title**, optional **Description**, **Start Date**, and **Due Date**.
+5. Click **Create Milestone**.
 
 Once a milestone exists, you can assign any issue to it from the issue detail page using the **Milestone** selector.
+
+### List and Gantt views
+
+The milestone list page has three view modes controlled by the toggle in the top-right corner:
+
+| Mode | Description |
+|------|-------------|
+| **List** | Card-based list of milestones with status, dates, and actions |
+| **Both** | List and Gantt chart shown simultaneously (default on larger screens) |
+| **Gantt** | Timeline chart only |
+
+![Milestones list and Gantt view](https://github.com/user-attachments/assets/05ea3a1d-6a2e-4295-909a-c78a66b4a7c6)
+
+#### Gantt chart
+
+Each milestone is rendered as a horizontal bar spanning its start–due date range. Open milestones are shown in indigo; closed milestones in gray. A vertical line marks today.
+
+**Interaction:**
+- **Click** a bar or its label to open the milestone detail page.
+- **Drag** the middle of a bar to shift its start and due dates.
+- **Drag** the left or right edge of a bar to resize it (changing only the start or due date).
+  All date changes are saved automatically via the API.
+
+### Milestone detail page
+
+Click any milestone row or Gantt bar to open the detail page.
+
+![Milestone detail page](https://github.com/user-attachments/assets/05ea3a1d-6a2e-4295-909a-c78a66b4a7c6)
+
+The detail page shows:
+- **Progress bar** with percentage of issues completed
+- **Open / In Progress / Done** issue counts
+- **Issues table** listing all issues assigned to this milestone
+- **Edit** button — opens an inline modal to change the title, description, start date, and due date
+- **Close milestone / Reopen milestone** button — toggles the milestone status
 
 ---
 

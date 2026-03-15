@@ -1,12 +1,10 @@
 <template>
   <div class="p-8">
     <!-- Header -->
-    <div class="flex items-center gap-3 mb-6">
-      <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M13 10V3L4 14h7v7l9-11h-7z" />
-      </svg>
-      <h1 class="text-xl font-bold text-white">All Runs</h1>
+    <div class="mb-6">
+      <PageBreadcrumb :items="[
+        { label: 'All Runs', to: '/runs', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
+      ]" />
     </div>
 
     <!-- Tabs -->
@@ -75,7 +73,9 @@
               class="hover:bg-gray-900/50 transition-colors cursor-pointer"
               @click="navigateTo(item.href)">
               <td class="px-4 py-3">
-                <span :class="statusClass(item.status)" class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium">
+                <CiCdStatusChip v-if="item.cicdRun" :runs="[item.cicdRun]" :run-link="false" />
+                <AgentSessionStatusChip v-else-if="item.agentSession" :session="item.agentSession" />
+                <span v-else :class="statusClass(item.status)" class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium">
                   <span :class="statusDot(item.status)" class="w-1.5 h-1.5 rounded-full" />
                   {{ item.statusName }}
                 </span>
@@ -96,7 +96,7 @@
               <td class="px-4 py-3 text-gray-300 max-w-xs truncate">{{ item.description }}</td>
               <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ item.branch || '—' }}</td>
               <td class="px-4 py-3 text-gray-400 text-xs">{{ formatDate(item.startedAt) }}</td>
-              <td class="px-4 py-3 text-gray-400 text-xs">{{ duration(item.startedAt, item.endedAt) }}</td>
+              <td class="px-4 py-3 text-gray-400 text-xs">{{ item.status === CiCdRunStatus.WaitingForApproval ? '—' : duration(item.startedAt, item.endedAt) }}</td>
             </tr>
           </tbody>
         </table>
@@ -161,9 +161,14 @@
                 <span v-else class="text-gray-600 text-xs">local</span>
               </td>
               <td class="px-4 py-3 text-gray-400 text-xs">{{ formatDate(run.startedAt) }}</td>
-              <td class="px-4 py-3 text-gray-400 text-xs">{{ duration(run.startedAt, run.endedAt) }}</td>
+              <td class="px-4 py-3 text-gray-400 text-xs">{{ run.status === CiCdRunStatus.WaitingForApproval ? '—' : duration(run.startedAt, run.endedAt) }}</td>
               <td class="px-4 py-3 text-right">
-                <button v-if="run.status === CiCdRunStatus.Pending || run.status === CiCdRunStatus.Running"
+                <button v-if="run.status === CiCdRunStatus.WaitingForApproval"
+                  class="text-xs text-purple-400 hover:text-purple-300 transition-colors"
+                  @click.stop="approveRun(run.id)">
+                  Approve
+                </button>
+                <button v-else-if="run.status === CiCdRunStatus.Pending || run.status === CiCdRunStatus.Running"
                   class="text-xs text-red-400 hover:text-red-300 transition-colors"
                   @click.stop="cancelRun(run.id)">
                   Cancel
@@ -210,10 +215,7 @@
               class="hover:bg-gray-900/50 transition-colors cursor-pointer"
               @click="navigateTo(`/projects/${session.projectId}/runs/agent-sessions/${session.id}`)">
               <td class="px-4 py-3">
-                <span :class="statusClass(session.status)" class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium">
-                  <span :class="statusDot(session.status)" class="w-1.5 h-1.5 rounded-full" />
-                  {{ session.statusName }}
-                </span>
+                <AgentSessionStatusChip :session="session" />
               </td>
               <td class="px-4 py-3">
                 <NuxtLink :to="`/projects/${session.projectId}/runs?tab=agent`"
@@ -258,7 +260,7 @@
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useProjectsStore } from '~/stores/projects'
 import { useOrgsStore } from '~/stores/orgs'
-import { CiCdRunStatus, type AgentSessionStatus } from '~/types'
+import { CiCdRunStatus, type AgentSessionStatus, type CiCdRun, type DashboardAgentSession } from '~/types'
 import type { MultiSelectOption } from '~/components/MultiSelect.vue'
 
 const store = useCiCdRunsStore()
@@ -345,6 +347,7 @@ const statusOptions: MultiSelectOption[] = [
   { value: 'succeeded', label: 'Succeeded', dotClass: 'bg-green-400' },
   { value: 'failed', label: 'Failed', dotClass: 'bg-red-400' },
   { value: 'cancelled', label: 'Cancelled', dotClass: 'bg-gray-500' },
+  { value: 'WaitingForApproval', label: 'Waiting for Approval', dotClass: 'bg-purple-400' },
 ]
 
 // Case-insensitive status label matching
@@ -389,6 +392,8 @@ interface MixedRunItem {
   startedAt: string
   endedAt?: string
   href: string
+  cicdRun?: CiCdRun
+  agentSession?: DashboardAgentSession
 }
 
 const allRunsMixed = computed((): MixedRunItem[] => {
@@ -404,6 +409,7 @@ const allRunsMixed = computed((): MixedRunItem[] => {
     startedAt: run.startedAt,
     endedAt: run.endedAt,
     href: `/projects/${run.projectId}/runs/cicd/${run.id}`,
+    cicdRun: run,
   }))
 
   const agentItems: MixedRunItem[] = filteredAgentSessions.value.map(session => ({
@@ -418,6 +424,7 @@ const allRunsMixed = computed((): MixedRunItem[] => {
     startedAt: session.startedAt,
     endedAt: session.endedAt,
     href: `/projects/${session.projectId}/runs/agent-sessions/${session.id}`,
+    agentSession: session,
   }))
 
   return [...cicdItems, ...agentItems].sort(
@@ -436,6 +443,11 @@ onMounted(async () => {
 
 async function cancelRun(runId: string) {
   await store.cancelRun(runId)
+  await store.fetchRuns()
+}
+
+async function approveRun(runId: string) {
+  await store.approveRun(runId)
   await store.fetchRuns()
 }
 
@@ -464,7 +476,8 @@ function statusClass(status: CiCdRunStatus | AgentSessionStatus) {
     case CiCdRunStatus.Running: return 'bg-blue-900/30 text-blue-400'
     case CiCdRunStatus.Failed: return 'bg-red-900/30 text-red-400'
     case CiCdRunStatus.Cancelled: return 'bg-gray-800 text-gray-400'
-    default: return 'bg-yellow-900/30 text-yellow-400'
+    case CiCdRunStatus.WaitingForApproval: return 'bg-purple-900/30 text-purple-400'
+    default: return 'bg-gray-800 text-gray-400'
   }
 }
 
@@ -474,7 +487,8 @@ function statusDot(status: CiCdRunStatus | AgentSessionStatus) {
     case CiCdRunStatus.Running: return 'bg-blue-400 animate-pulse'
     case CiCdRunStatus.Failed: return 'bg-red-400'
     case CiCdRunStatus.Cancelled: return 'bg-gray-500'
-    default: return 'bg-yellow-400'
+    case CiCdRunStatus.WaitingForApproval: return 'bg-purple-400'
+    default: return 'bg-gray-500'
   }
 }
 </script>

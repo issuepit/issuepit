@@ -16,7 +16,7 @@ public class McpPlaygroundPage(IPage page)
     /// <summary>Returns true if the "MCP Playground" heading is visible.</summary>
     public async Task<bool> HeadingIsVisibleAsync()
     {
-        var count = await page.Locator("h2:has-text('MCP Playground')").CountAsync();
+        var count = await page.Locator("a:has-text('MCP Playground')").CountAsync();
         return count > 0;
     }
 

@@ -2,8 +2,10 @@
   <div class="p-8">
     <!-- Header -->
     <div class="mb-8">
-      <h1 class="text-2xl font-bold text-white">Dashboard</h1>
-      <p class="text-gray-400 mt-1">Welcome back — here's what's happening.</p>
+      <PageBreadcrumb :items="[
+        { label: 'Dashboard', to: '/', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
+      ]" class="mb-1" />
+      <p class="text-gray-400 text-sm">Welcome back — here's what's happening.</p>
     </div>
 
     <!-- Stats -->
@@ -153,7 +155,7 @@
                 <td class="px-3 py-2 text-gray-300 font-mono text-xs hidden md:table-cell">{{ run.branch || '—' }}</td>
                 <td class="px-3 py-2 text-gray-300 font-mono text-xs hidden md:table-cell">{{ run.commitSha?.slice(0, 7) || '—' }}</td>
                 <td class="px-3 py-2 text-gray-400 text-xs">{{ formatDate(run.startedAt) }}</td>
-                <td class="px-3 py-2 text-gray-400 text-xs">{{ duration(run.startedAt, run.endedAt) }}</td>
+                <td class="px-3 py-2 text-gray-400 text-xs">{{ run.status === CiCdRunStatus.WaitingForApproval ? '—' : duration(run.startedAt, run.endedAt) }}</td>
               </tr>
             </tbody>
           </table>
@@ -180,17 +182,14 @@
                 class="hover:bg-gray-800/40 transition-colors cursor-pointer"
                 @click="navigateTo(`/projects/${session.projectId}/runs/agent-sessions/${session.id}`)">
                 <td class="px-3 py-2">
-                  <span :class="runStatusClass(session.status)" class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium">
-                    <span :class="runStatusDot(session.status)" class="w-1.5 h-1.5 rounded-full" />
-                    {{ session.statusName }}
-                  </span>
+                  <AgentSessionStatusChip :session="session" />
                 </td>
                 <td class="px-3 py-2 text-gray-300 text-xs">{{ session.agentName }}</td>
                 <td class="px-3 py-2 text-xs">
                   <NuxtLink :to="`/projects/${session.projectId}/issues/${session.issueNumber}`"
                     class="text-brand-400 hover:text-brand-300 transition-colors"
                     @click.stop>
-                    #{{ session.issueNumber }} {{ session.issueTitle }}
+                    #{{ formatIssueId(session.issueNumber, projectsStore.projects.find(p => p.id === session.projectId)) }} {{ session.issueTitle }}
                   </NuxtLink>
                 </td>
                 <td class="px-3 py-2 text-gray-400 text-xs hidden md:table-cell">{{ session.projectName }}</td>
@@ -207,11 +206,12 @@
 </template>
 
 <script setup lang="ts">
-import { IssueStatus, IssuePriority, CiCdRunStatus, type IssueHistoryEntry } from '~/types'
+import { IssueStatus, IssuePriority, type IssueHistoryEntry, CiCdRunStatus } from '~/types'
 import { useProjectsStore } from '~/stores/projects'
 import { useIssuesStore } from '~/stores/issues'
 import { useAgentsStore } from '~/stores/agents'
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
+import { formatIssueId } from '~/composables/useIssueFormat'
 
 const projectsStore = useProjectsStore()
 const issuesStore = useIssuesStore()
@@ -296,26 +296,6 @@ function duration(start: string, end?: string) {
   const m = Math.floor(s / 60)
   if (m < 60) return `${m}m ${s % 60}s`
   return `${Math.floor(m / 60)}h ${m % 60}m`
-}
-
-function runStatusClass(status: CiCdRunStatus) {
-  switch (status) {
-    case CiCdRunStatus.Succeeded: return 'bg-green-900/30 text-green-400'
-    case CiCdRunStatus.Running: return 'bg-blue-900/30 text-blue-400'
-    case CiCdRunStatus.Failed: return 'bg-red-900/30 text-red-400'
-    case CiCdRunStatus.Cancelled: return 'bg-gray-800 text-gray-400'
-    default: return 'bg-yellow-900/30 text-yellow-400'
-  }
-}
-
-function runStatusDot(status: CiCdRunStatus) {
-  switch (status) {
-    case CiCdRunStatus.Succeeded: return 'bg-green-400'
-    case CiCdRunStatus.Running: return 'bg-blue-400 animate-pulse'
-    case CiCdRunStatus.Failed: return 'bg-red-400'
-    case CiCdRunStatus.Cancelled: return 'bg-gray-500'
-    default: return 'bg-yellow-400'
-  }
 }
 
 function statusDot(status: IssueStatus) {

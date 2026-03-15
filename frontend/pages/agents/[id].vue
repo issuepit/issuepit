@@ -7,29 +7,15 @@
 
     <template v-else-if="store.currentAgent">
       <!-- Header -->
-      <div class="flex items-center gap-3 mb-6">
-        <NuxtLink to="/agents" class="text-gray-500 hover:text-gray-300 transition-colors">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-          </svg>
-        </NuxtLink>
-        <div class="flex items-center gap-3 flex-1 min-w-0">
-          <div class="w-10 h-10 bg-indigo-900/40 rounded-lg flex items-center justify-center shrink-0">
-            <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2" />
-            </svg>
-          </div>
-          <div>
-            <h1 class="text-2xl font-bold text-white">{{ store.currentAgent.name }}</h1>
-            <span :class="store.currentAgent.isActive ? 'text-green-400' : 'text-gray-500'" class="text-sm">
-              {{ store.currentAgent.isActive ? 'Active' : 'Inactive' }}
-            </span>
-          </div>
-        </div>
+      <div class="flex items-center justify-between gap-3 mb-6">
+        <PageBreadcrumb :items="[
+          { label: 'Agents', to: '/agents', icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2' },
+          { label: 'Modes', to: '/agents', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
+          { label: store.currentAgent.name, to: `/agents/${store.currentAgent.id}`, icon: 'M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2' },
+        ]" />
         <button @click="store.toggleAgent(store.currentAgent.id, !store.currentAgent.isActive)"
           :class="store.currentAgent.isActive ? 'text-yellow-400 hover:text-yellow-300 border-yellow-900/40' : 'text-green-400 hover:text-green-300 border-green-900/40'"
-          class="text-sm px-3 py-1.5 rounded-md border hover:bg-gray-800 transition-colors">
+          class="text-sm px-3 py-1.5 rounded-md border hover:bg-gray-800 transition-colors shrink-0">
           {{ store.currentAgent.isActive ? 'Deactivate' : 'Activate' }}
         </button>
       </div>
@@ -275,7 +261,7 @@ function buildPayload(allowedTools: string[]) {
     isActive: form.isActive,
     runnerType: form.runnerType ?? undefined,
     model: form.model || undefined,
-    allowedTools,
+    allowedTools: JSON.stringify(allowedTools),
   }
 }
 

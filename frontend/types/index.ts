@@ -163,6 +163,7 @@ export interface Milestone {
   projectId: string
   title: string
   description?: string
+  startDate?: string
   dueDate?: string
   status: 'open' | 'closed'
   createdAt: string
@@ -192,7 +193,12 @@ export interface Project {
   useNewActionCache?: boolean | null
   actionOfflineMode?: boolean | null
   localRepositories?: string | null
+  requiresRunApproval: boolean
   openMergeRequestCount: number
+  /** Short project key used as prefix for issue IDs in the UI (e.g. "IP" yields "IP-123"). */
+  issueKey?: string | null
+  /** Offset added to issue numbers when displayed in the UI. Defaults to 0. */
+  issueNumberOffset: number
   createdAt: string
   updatedAt: string
 }
@@ -302,6 +308,9 @@ export interface Issue {
   parentIssue?: Issue
   dueDate?: string
   estimate?: number
+  kanbanRank: number
+  gitHubIssueNumber?: number
+  gitHubIssueUrl?: string
   createdAt: string
   updatedAt: string
   subIssues?: Issue[]
@@ -637,6 +646,7 @@ export enum CiCdRunStatus {
   Succeeded = 'succeeded',
   Failed = 'failed',
   Cancelled = 'cancelled',
+  WaitingForApproval = 'waiting_for_approval',
 }
 
 export const CiCdRunStatusLabels: Record<CiCdRunStatus, string> = {
@@ -645,6 +655,7 @@ export const CiCdRunStatusLabels: Record<CiCdRunStatus, string> = {
   [CiCdRunStatus.Succeeded]: 'Succeeded',
   [CiCdRunStatus.Failed]: 'Failed',
   [CiCdRunStatus.Cancelled]: 'Cancelled',
+  [CiCdRunStatus.WaitingForApproval]: 'Waiting for Approval',
 }
 
 export interface CiCdRun {
@@ -652,6 +663,7 @@ export interface CiCdRun {
   projectId: string
   projectName?: string
   agentSessionId?: string
+  retryOfRunId?: string
   commitSha: string
   branch?: string
   workflow?: string
@@ -664,6 +676,26 @@ export interface CiCdRun {
   workspacePath?: string
   eventName?: string
   inputsJson?: string
+}
+
+export type LinkedRunType = 'retry-of' | 'retry' | 'agent-triggered' | 'same-sha'
+
+export interface LinkedCiCdRun {
+  id: string
+  projectId: string
+  commitSha?: string
+  branch?: string
+  workflow?: string
+  status: CiCdRunStatus | AgentSessionStatus
+  statusName: string
+  startedAt: string
+  endedAt?: string
+  linkType: LinkedRunType
+  linkLabel: string
+  /** Only for agent-triggered links */
+  issueTitle?: string
+  issueNumber?: number
+  gitBranch?: string
 }
 
 export enum AgentSessionStatus {
@@ -787,12 +819,34 @@ export interface AgentSessionLog {
   stream: string
   streamName: string
   timestamp: string
+  section?: string
+  sectionIndex: number
 }
 
 export interface AgentSessionDetail extends AgentSession {
   projectId: string
   projectName: string
   ciCdRuns: CiCdRun[]
+  /** JSON-serialised string array of warnings (e.g. truncated comments). Null when no warnings. */
+  warnings?: string | null
+}
+
+export interface IssueAgentSession {
+  id: string
+  agentId: string
+  agentName: string
+  issueId: string
+  commitSha?: string
+  gitBranch?: string
+  status: AgentSessionStatus
+  statusName: string
+  startedAt: string
+  endedAt?: string
+  ciCdRuns: CiCdRun[]
+}
+
+export interface IssueRuns {
+  agentSessions: IssueAgentSession[]
 }
 
 export interface IssueHistoryEntry {
@@ -963,3 +1017,119 @@ export interface Todo {
   boardMemberships: TodoBoardMembership[]
   categoryMemberships: TodoCategoryMembership[]
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// GitHub Sync
+// ──────────────────────────────────────────────────────────────────────────────
+
+export enum GitHubSyncTriggerMode {
+  Off = 0,
+  Manual = 1,
+  Auto = 2,
+}
+
+export const GitHubSyncTriggerModeLabels: Record<GitHubSyncTriggerMode, string> = {
+  [GitHubSyncTriggerMode.Off]: 'Off',
+  [GitHubSyncTriggerMode.Manual]: 'Manual',
+  [GitHubSyncTriggerMode.Auto]: 'Auto',
+}
+
+export enum GitHubSyncMode {
+  Import = 0,
+  TwoWay = 1,
+  CreateOnGitHub = 2,
+}
+
+export const GitHubSyncModeLabels: Record<GitHubSyncMode, string> = {
+  [GitHubSyncMode.Import]: 'Import (GitHub → IssuePit)',
+  [GitHubSyncMode.TwoWay]: 'Two-Way (GitHub ↔ IssuePit)',
+  [GitHubSyncMode.CreateOnGitHub]: 'Create on GitHub (IssuePit → GitHub)',
+}
+
+export const GitHubSyncModeDescriptions: Record<GitHubSyncMode, string> = {
+  [GitHubSyncMode.Import]: 'Imports issues from GitHub into IssuePit. Existing IssuePit issues are not modified on GitHub.',
+  [GitHubSyncMode.TwoWay]: 'Imports from GitHub and pushes recent IssuePit changes back to GitHub.',
+  [GitHubSyncMode.CreateOnGitHub]: 'When a new issue is created in IssuePit it is automatically pushed to GitHub.',
+}
+
+export enum GitHubSyncRunStatus {
+  Pending = 0,
+  Running = 1,
+  Succeeded = 2,
+  Failed = 3,
+}
+
+export enum GitHubSyncLogLevel {
+  Info = 0,
+  Warn = 1,
+  Error = 2,
+}
+
+export interface GitHubSyncConfig {
+  id?: string
+  projectId: string
+  gitHubIdentityId?: string
+  gitHubIdentityName?: string
+  gitHubRepo?: string
+  triggerMode: GitHubSyncTriggerMode
+  syncMode: GitHubSyncMode
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface GitHubSyncRun {
+  id: string
+  projectId: string
+  status: GitHubSyncRunStatus
+  summary?: string
+  startedAt: string
+  completedAt?: string
+}
+
+export interface GitHubSyncRunLog {
+  id: string
+  level: GitHubSyncLogLevel
+  message: string
+  timestamp: string
+}
+
+export interface GitHubSyncRunDetail extends GitHubSyncRun {
+  logs: GitHubSyncRunLog[]
+}
+
+export interface GitHubConflict {
+  issueId: string
+  issueNumber: number
+  gitHubIssueNumber: number
+  localTitle: string
+  gitHubTitle: string
+  localBody?: string
+  gitHubBody?: string
+  gitHubUrl: string
+  titleDiffers: boolean
+  bodyDiffers: boolean
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Scheduled Tasks (cross-project view)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// <summary>Type discriminator for scheduled task runs.</summary>
+export type ScheduledTaskType = 'GitHubSync'
+
+export interface ScheduledTaskRun {
+  id: string
+  projectId: string
+  projectName: string
+  type: ScheduledTaskType
+  status: GitHubSyncRunStatus
+  summary?: string
+  startedAt: string
+  completedAt?: string
+}
+
+export interface ScheduledTaskProject {
+  projectId: string
+  name: string
+}
+

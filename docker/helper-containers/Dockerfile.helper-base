@@ -4,12 +4,14 @@
 # Build args (override at build time):
 #   PLAYWRIGHT_VERSION   — Playwright .NET image tag (default: v1.51.0)
 #   NODE_MAJOR           — Node.js major version to install (default: 24)
+#   DOTNET_SDK_CHANNEL   — .NET SDK release channel to install via dotnet-install.sh (default: 10.0)
 
-ARG PLAYWRIGHT_VERSION=v1.51.0
+ARG PLAYWRIGHT_VERSION=v1.58.0
 
 FROM mcr.microsoft.com/playwright/dotnet:${PLAYWRIGHT_VERSION}-noble
 
 ARG NODE_MAJOR=24
+ARG DOTNET_SDK_CHANNEL=10.0
 
 # Install Node.js via NodeSource, git, and dnsmasq.
 # Note: we do NOT run "dotnet workload install aspire" here because modern Aspire (v9+) is
@@ -26,6 +28,33 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
 
+# Install the target .NET SDK channel so that net<MAJOR>.0 projects build correctly.
+# The Playwright base image ships an older SDK version; dotnet-install.sh overlays the
+# requested channel onto the same /usr/share/dotnet directory so both SDKs coexist and
+# the .NET toolchain automatically selects the highest available version.
+RUN curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh && \
+    chmod +x /tmp/dotnet-install.sh && \
+    /tmp/dotnet-install.sh --channel ${DOTNET_SDK_CHANNEL} --install-dir /usr/share/dotnet && \
+    rm /tmp/dotnet-install.sh && \
+    dotnet --list-sdks
+
+# Install s5cmd — a FOSS S3-compatible CLI used by CI/CD runs to upload artifacts
+# directly from inside the container to S3-compatible storage (LocalStack, AWS, B2).
+# awscli is not available in Ubuntu Noble (24.04) apt repos; s5cmd is a lightweight
+# static binary that covers all s3 sync needs.
+ARG S5CMD_VERSION=2.3.0
+RUN set -eux; \
+    ARCH=$(dpkg --print-architecture); \
+    case "${ARCH}" in \
+      amd64) S5CMD_ARCH=Linux-64bit ;; \
+      arm64) S5CMD_ARCH=Linux-arm64 ;; \
+      *) echo "Unsupported arch: ${ARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl --proto '=https' --tlsv1.2 -fsSL \
+        "https://github.com/peak/s5cmd/releases/download/v${S5CMD_VERSION}/s5cmd_${S5CMD_VERSION}_${S5CMD_ARCH}.tar.gz" | \
+    tar -xz -C /usr/local/bin s5cmd; \
+    s5cmd version
+
 # Copy the entrypoint script that handles:
 #   1. git clone (using ISSUEPIT_GIT_REMOTE_URL env var)
 #   2. tool setup (npm install / dotnet restore)
@@ -39,7 +68,10 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # Expose version info as labels
 ARG PLAYWRIGHT_VERSION
 ARG NODE_MAJOR
+ARG DOTNET_SDK_CHANNEL
 LABEL org.opencontainers.image.title="issuepit-helper-base" \
       org.opencontainers.image.description="IssuePit helper base: .NET SDK + Playwright + Chrome + Node.js" \
       issuepit.node.major="${NODE_MAJOR}" \
-      issuepit.playwright.version="${PLAYWRIGHT_VERSION}"
+      issuepit.playwright.version="${PLAYWRIGHT_VERSION}" \
+      issuepit.s5cmd.version="${S5CMD_VERSION}" \
+      issuepit.dotnet.sdk.channel="${DOTNET_SDK_CHANNEL}"

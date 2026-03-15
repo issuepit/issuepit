@@ -1,7 +1,9 @@
 <template>
   <div class="p-8 max-w-2xl">
-    <h1 class="text-2xl font-bold text-white mb-2">About</h1>
-    <p class="text-gray-400 mb-8">IssuePit — Agent Orchestration Platform with Issue Tracking</p>
+    <PageBreadcrumb :items="[
+      { label: 'System', to: '/about', icon: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
+      { label: 'About', to: '/about', icon: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
+    ]" class="mb-8" />
 
     <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
       <div class="space-y-1.5 text-sm">

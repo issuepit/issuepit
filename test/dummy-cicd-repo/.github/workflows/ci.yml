@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build
+        run: |
+          echo "Build succeeded" > build-output.txt
+          cat build-output.txt
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: build-output.txt
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Run tests and generate TRX
+        run: |
+          mkdir -p TestResults
+          cat > TestResults/test-results.trx << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <TestRun id="1" name="DummyRun" start="2024-01-01T10:00:00" finish="2024-01-01T10:00:05" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+            <TestDefinitions>
+              <UnitTest name="DummyTest_Passes" id="test-1">
+                <TestMethod className="DummyProject.DummyTests" name="DummyTest_Passes" />
+              </UnitTest>
+            </TestDefinitions>
+            <Results>
+              <UnitTestResult testId="test-1" testName="DummyTest_Passes" outcome="Passed" duration="00:00:00.1000000" />
+            </Results>
+            <ResultSummary outcome="Completed">
+              <Counters total="1" executed="1" passed="1" failed="0" error="0" />
+            </ResultSummary>
+          </TestRun>
+          EOF
+          echo "Tests passed"
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults/

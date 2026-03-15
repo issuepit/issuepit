@@ -1,5 +1,91 @@
 # Changelog
 
+## [1.7.0](https://github.com/issuepit/issuepit/compare/v1.6.0...v1.7.0) (2026-03-15)
+
+
+### Features
+
+* add CI/CD run approval mode to gate auto-start for seeded projects in E2E tests ([#514](https://github.com/issuepit/issuepit/issues/514)) ([1c859e0](https://github.com/issuepit/issuepit/commit/1c859e0a383cec7f44c43d024fbbe60bf987101c))
+* detect branches and commits and map them to issues ([#538](https://github.com/issuepit/issuepit/issues/538)) ([f490b84](https://github.com/issuepit/issuepit/commit/f490b84ebe12bf80f281b22635e328eb138cff18))
+* expose RequiresRunApproval in CI/CD settings UI; bypass approval for user-triggered runs ([#545](https://github.com/issuepit/issuepit/issues/545)) ([6f6f403](https://github.com/issuepit/issuepit/commit/6f6f40318cf37722c15745fc24fd1991f682d180))
+* improve agent action run flow — git branch setup, CI/CD loop, same-container exec, opencode session forking ([#512](https://github.com/issuepit/issuepit/issues/512)) ([c5a3af8](https://github.com/issuepit/issuepit/commit/c5a3af8babb2523afd908f311b630a5c37b6c7f2))
+* improve agent action runs (MCP injection, nested agents, issue comments, session warnings, git recovery) ([#532](https://github.com/issuepit/issuepit/issues/532)) ([4a156cf](https://github.com/issuepit/issuepit/commit/4a156cffb016cbf463fa44760394bf5179cdd780))
+* link runs — retry chains, agent sessions, same-SHA runs ([#535](https://github.com/issuepit/issuepit/issues/535)) ([b325f17](https://github.com/issuepit/issuepit/commit/b325f17b2b1d3eaabe71a1bbd8a804c37f3937e5))
+* split agent run logs into sections with Steps chain view ([#533](https://github.com/issuepit/issuepit/issues/533)) ([48496b4](https://github.com/issuepit/issuepit/commit/48496b41e176d84b62a65a3be2980f036b974d3f))
+* sync issues with GitHub ([#527](https://github.com/issuepit/issuepit/issues/527)) ([731dfab](https://github.com/issuepit/issuepit/commit/731dfabd28694cde7d2018353a67c968e96e49f3))
+
+
+### Bug Fixes
+
+* add status tooltips to agent session status badges ([#524](https://github.com/issuepit/issuepit/issues/524)) ([448ccd0](https://github.com/issuepit/issuepit/commit/448ccd0d859b15630dbac6fd029e21025753dc32))
+* agents do not start CLI tool ([#505](https://github.com/issuepit/issuepit/issues/505)) ([907000d](https://github.com/issuepit/issuepit/commit/907000d11f0e4155e5230cdf2840c216682ecd65))
+* artifact and test uploads in cicd runner ([#508](https://github.com/issuepit/issuepit/issues/508)) ([4053790](https://github.com/issuepit/issuepit/commit/405379063fdfd40677cb5b955c7635e9aa84b8de))
+* artifact download routes to Nuxt instead of C# backend; artifacts and tests tabs empty ([#544](https://github.com/issuepit/issuepit/issues/544)) ([346a48f](https://github.com/issuepit/issuepit/commit/346a48f194838090a3ac8ba1a3ff69d8970d8e7a))
+* auto-download Vosk model and ffmpeg in local Aspire runs; unblock voice issue creation on transcription failure ([#540](https://github.com/issuepit/issuepit/issues/540)) ([9633ec0](https://github.com/issuepit/issuepit/commit/9633ec0c28532047eda31cf7e392a6600dd20c48))
+* CI/CD status UI — retry trigger, debug mode, slim filter, gap-free layout ([#517](https://github.com/issuepit/issuepit/issues/517)) ([d02eaef](https://github.com/issuepit/issuepit/commit/d02eaef4f72b7806c4e2bd4862edc68f812b1cd7))
+* don't close modals when mousedown is inside modal but mouseup is outside ([#501](https://github.com/issuepit/issuepit/issues/501)) ([2f1c0e2](https://github.com/issuepit/issuepit/commit/2f1c0e20d6e2e27a19bcc789d30e893bd587d184))
+* install .NET 10 SDK in helper-base image via dotnet-install.sh and bump Playwright to v1.58.0 ([#509](https://github.com/issuepit/issuepit/issues/509)) ([c3b04cb](https://github.com/issuepit/issuepit/commit/c3b04cb990e31252862bd88a02a9a111a67cd9db))
+* job tree wrong matching and slim mode nested workflow visibility ([#534](https://github.com/issuepit/issuepit/issues/534)) ([1fe2362](https://github.com/issuepit/issuepit/commit/1fe23626c75bd2a04d8b70bafab5eea28e083417))
+* manual CI/CD trigger supports branch as well as commit SHA ([#529](https://github.com/issuepit/issuepit/issues/529)) ([480e81d](https://github.com/issuepit/issuepit/commit/480e81dd33f8dcb419fd55fb43972ecded4a29ba))
+* navigate to new issue on create; sort issues list by number numerically ([#530](https://github.com/issuepit/issuepit/issues/530)) ([a12cb41](https://github.com/issuepit/issuepit/commit/a12cb419817732fde82b08d665b1cadee1515bc9))
+* stream agent container logs, pin default Docker image tag, and add keep-container option ([#503](https://github.com/issuepit/issuepit/issues/503)) ([275a45f](https://github.com/issuepit/issuepit/commit/275a45f651adef943f4051123ad0ef9fb9ef5691))
+* suppress Vosk native logs and [PoC] diagnostic output in e2e CI runs ([#498](https://github.com/issuepit/issuepit/issues/498)) ([c55ec37](https://github.com/issuepit/issuepit/commit/c55ec3749dcaf4bfa9a8566fc89593ea678c4f80))
+* WaitingForApproval runs show as Succeeded and lack Approve button ([#521](https://github.com/issuepit/issuepit/issues/521)) ([6f322c6](https://github.com/issuepit/issuepit/commit/6f322c67df3e687e126cf164cfe969fd6a805613))
+* WaitingForApproval runs show as Succeeded, approval button never appears, and duration counts incorrectly ([#537](https://github.com/issuepit/issuepit/issues/537)) ([52edac7](https://github.com/issuepit/issuepit/commit/52edac7fb6f07c63567d04f0fd76257288ccc57a))
+
+## [1.6.0](https://github.com/issuepit/issuepit/compare/v1.5.0...v1.6.0) (2026-03-13)
+
+
+### Features
+
+* allow custom issue ID formats (key prefix + number offset) ([#474](https://github.com/issuepit/issuepit/issues/474)) ([5c3adee](https://github.com/issuepit/issuepit/commit/5c3adee1918c988ce07cf4e7226b757ebac0b7a4))
+* attach voice file to voice-created issues, file attachments on issues/comments, retranscription support ([#452](https://github.com/issuepit/issuepit/issues/452)) ([a87f63e](https://github.com/issuepit/issuepit/commit/a87f63e9f4a26e6edcec4826d6dadf585e967333))
+* cache apt packages and CI/CD downloads with optional traffic interception ([#392](https://github.com/issuepit/issuepit/issues/392)) ([3abfbf3](https://github.com/issuepit/issuepit/commit/3abfbf34a8b13e0d3354cfb00bf3221387e46b95))
+* fix "Complete job" step label and add search hit highlighting in CI/CD log viewer ([#379](https://github.com/issuepit/issuepit/issues/379)) ([6784da6](https://github.com/issuepit/issuepit/commit/6784da6f0a947164360610250671214c6529a9d1))
+* hoverable CI/CD status chips with run preview tooltips ([#432](https://github.com/issuepit/issuepit/issues/432)) ([fe3b912](https://github.com/issuepit/issuepit/commit/fe3b9125efc80d75d42a74a0852c0169b25e32cd))
+* idempotent data seeding via AddIfNotExistsAsync ([#396](https://github.com/issuepit/issuepit/issues/396)) ([05c7986](https://github.com/issuepit/issuepit/commit/05c7986e2b5c8e8a9a22059a4b7f323bb912a208))
+* improve Merge Request page ([#447](https://github.com/issuepit/issuepit/issues/447)) ([3c2f648](https://github.com/issuepit/issuepit/commit/3c2f648e744d7ef1bfc476b9815727aab9f58d5c))
+* improve project dashboard ([#403](https://github.com/issuepit/issuepit/issues/403)) ([19770f1](https://github.com/issuepit/issuepit/commit/19770f16a4f2eb87f276440a3c0ab4e305d452ec))
+* inject ISSUEPIT_* env vars into act runs and guard credential-dependent workflow steps ([#401](https://github.com/issuepit/issuepit/issues/401)) ([3a4be2f](https://github.com/issuepit/issuepit/commit/3a4be2f1190e29ed729269a9260bbb614edbe6a2))
+* milestones UX - quick nav link, clickable rows, detail edit/close, Gantt chart with drag, split view, issue sidebar integration, E2E coverage, user docs ([#482](https://github.com/issuepit/issuepit/issues/482)) ([9380ff9](https://github.com/issuepit/issuepit/commit/9380ff9ca1de2af3ebdf2df4c457b2d172b94baf))
+* Minimal merge/pull request workflow ([#416](https://github.com/issuepit/issuepit/issues/416)) ([733e9da](https://github.com/issuepit/issuepit/commit/733e9da1ce049be738ab6d9390fe627de636ef1a))
+* multiple git origins per project with mode (ReadOnly/Working/Release) ([#433](https://github.com/issuepit/issuepit/issues/433)) ([60d4a6d](https://github.com/issuepit/issuepit/commit/60d4a6d3f61852770c61e2d83b3c2966485a83f3))
+* replace artifact volume mounts with S3 upload ([#411](https://github.com/issuepit/issuepit/issues/411)) ([e8fbe0f](https://github.com/issuepit/issuepit/commit/e8fbe0f508daf0b50000532277c6503bd852c84a))
+* searchable multiselect filters on runs page ([#384](https://github.com/issuepit/issuepit/issues/384)) ([b64e864](https://github.com/issuepit/issuepit/commit/b64e8641bba7cf661f80cb07389069855753aa8c))
+* show runs on issue page ([#478](https://github.com/issuepit/issuepit/issues/478)) ([d3dda11](https://github.com/issuepit/issuepit/commit/d3dda114667fc183398997bd3829012493e9ec57))
+* tasks calendar view improvements ([#428](https://github.com/issuepit/issuepit/issues/428)) ([95162c1](https://github.com/issuepit/issuepit/commit/95162c1db7fd36ddadc6b405cbf2dfc6648dd9d4))
+* unify board card drop styling between todo and kanban boards ([#462](https://github.com/issuepit/issuepit/issues/462)) ([2523c8f](https://github.com/issuepit/issuepit/commit/2523c8f3fc027af906c178de9a3530f24d3f9ab0))
+* version tags for docker images and act container version config in UI ([#422](https://github.com/issuepit/issuepit/issues/422)) ([fa88d5c](https://github.com/issuepit/issuepit/commit/fa88d5cd114b28669b24ae5cabfab0620edac739))
+* voice issue creation tests, WAV fixtures, drag-to-voice, audio attachment retranscription, Aspire Vosk model downloader, CI transcription, file drop zones, and FFMpegCore audio normalization ([#480](https://github.com/issuepit/issuepit/issues/480)) ([9183592](https://github.com/issuepit/issuepit/commit/9183592b5d5c21a25c3bd9c636c524186de42427))
+
+
+### Bug Fixes
+
+* agent runs should match cicd backend logic ([#440](https://github.com/issuepit/issuepit/issues/440)) ([3385b06](https://github.com/issuepit/issuepit/commit/3385b068ec371d7b79221822517a06320e871a5d))
+* agent session retry image options + latest tag not pushed on release ([#464](https://github.com/issuepit/issuepit/issues/464)) ([429108d](https://github.com/issuepit/issuepit/commit/429108d655bc7c03b8477bfc28ded5a67cde9230))
+* artifact names show as "1", files cannot be downloaded ([#420](https://github.com/issuepit/issuepit/issues/420)) ([eb51aa2](https://github.com/issuepit/issuepit/commit/eb51aa2c875e63629241f9e487b8e2446eb9f79d))
+* artifacts not downloadable and tests not detected in CI/CD run view ([#443](https://github.com/issuepit/issuepit/issues/443)) ([70a9862](https://github.com/issuepit/issuepit/commit/70a98624de9c1ce94e293c96d38aaad33a2d5ce1))
+* ArtifactStorageService always read null service URL due to wrong config key separator ([#469](https://github.com/issuepit/issuepit/issues/469)) ([8d790d8](https://github.com/issuepit/issuepit/commit/8d790d86421ab1b102bb9d953dc8b78b715c4a85))
+* board drag-and-drop reordering — placeholder position, source visibility, and rank persistence ([#494](https://github.com/issuepit/issuepit/issues/494)) ([d5dc45b](https://github.com/issuepit/issuepit/commit/d5dc45b317ea5937ff63bd42104366bfd3c1ced3))
+* calendar go-to-today button, drag color reset, and board drop zone placeholders ([#468](https://github.com/issuepit/issuepit/issues/468)) ([3d22590](https://github.com/issuepit/issuepit/commit/3d225901f7356a424a98327a4187a3d8fc50b0c8))
+* calendar recurring events, month drag-drop, weekly card sizing, board drag-drop ([#385](https://github.com/issuepit/issuepit/issues/385)) ([b207367](https://github.com/issuepit/issuepit/commit/b207367b5ab1096331039cfbd018cb7482a6d9b1))
+* calendar view — sort stability, "+N more" expand, cross-midnight todos, ISO dates, URL history, modal date format & duration ([#449](https://github.com/issuepit/issuepit/issues/449)) ([57319e8](https://github.com/issuepit/issuepit/commit/57319e831af9eef67b8f30dbe390de1d3c118598))
+* cli act args ([#429](https://github.com/issuepit/issuepit/issues/429)) ([7aea761](https://github.com/issuepit/issuepit/commit/7aea761922fa104f9208bf56ab583e8a089a4ff2))
+* concurrent run processing, trigger type column, and inputs display ([#397](https://github.com/issuepit/issuepit/issues/397)) ([869ed56](https://github.com/issuepit/issuepit/commit/869ed5648026a0173dced8bcd6eca8c4957a138e))
+* dry run env var matching ([#407](https://github.com/issuepit/issuepit/issues/407)) ([112d984](https://github.com/issuepit/issuepit/commit/112d9849f846e6391fdccf71b12f648fd0bcb8e4))
+* exclude queue wait time from CI/CD run duration ([#445](https://github.com/issuepit/issuepit/issues/445)) ([2b1156d](https://github.com/issuepit/issuepit/commit/2b1156d6a94652e46936fa9600887d54c53bdb83))
+* grant `packages: write` to release-please workflow for reusable workflow call ([#495](https://github.com/issuepit/issuepit/issues/495)) ([4d9ab1c](https://github.com/issuepit/issuepit/commit/4d9ab1cdc79005ce4212f34c3ffc3fc73edc59c3))
+* helper-containers tag releases never triggered workflow due to paths filter ([#441](https://github.com/issuepit/issuepit/issues/441)) ([fa55aaa](https://github.com/issuepit/issuepit/commit/fa55aaa0a5edc3a50c9e09039303dd2106acf36f))
+* normalize bare workflow filenames to `.github/workflows/` for act ([#378](https://github.com/issuepit/issuepit/issues/378)) ([8ce370d](https://github.com/issuepit/issuepit/commit/8ce370da2c31a0c3c2abc3b622634533aedbf8fd))
+* push version and latest tags for helper container images on release ([#455](https://github.com/issuepit/issuepit/issues/455)) ([9533e86](https://github.com/issuepit/issuepit/commit/9533e86895abfa10b236e4c4bd0ac1eb4ef79bcd))
+* remove dotnet Aspire workload from helper image, pre-pull localstack for E2E ([#418](https://github.com/issuepit/issuepit/issues/418)) ([073291f](https://github.com/issuepit/issuepit/commit/073291f6ddef822455e96c0caec4712162e5a1a9))
+* retry session modal + eliminate page flicker on agent session detail ([#457](https://github.com/issuepit/issuepit/issues/457)) ([a703b85](https://github.com/issuepit/issuepit/commit/a703b8509f0f0c6b146d2443142425a693c83914))
+* **skills:** delete confirm modal + full-page creation ([#463](https://github.com/issuepit/issuepit/issues/463)) ([1b66ba1](https://github.com/issuepit/issuepit/commit/1b66ba17e093c7079b350a9ea56b12fb7d76cbe2))
+* unify breadcrumb menu sizes across all project pages ([#467](https://github.com/issuepit/issuepit/issues/467)) ([d0cf6aa](https://github.com/issuepit/issuepit/commit/d0cf6aad81f2a1943bd8e020832442397663d8e7))
+* unify breadcrumb menus across all pages with PageBreadcrumb component ([#472](https://github.com/issuepit/issuepit/issues/472)) ([5901d9f](https://github.com/issuepit/issuepit/commit/5901d9fa9603d155e50367a45e7a8a0c2408fd15))
+* unify breadcrumb navigation across project sub-pages ([#458](https://github.com/issuepit/issuepit/issues/458)) ([1448bc9](https://github.com/issuepit/issuepit/commit/1448bc9a6f2f002cf414c062ba819105fefb5161))
+* use vars context for ISSUEPIT_RUN in job-level conditions; log act version ([#415](https://github.com/issuepit/issuepit/issues/415)) ([c651a29](https://github.com/issuepit/issuepit/commit/c651a298fbaca5c5c34870e6966b3d2c435ac764))
+
 ## [1.5.0](https://github.com/issuepit/issuepit/compare/v1.4.0...v1.5.0) (2026-03-05)
 
 
