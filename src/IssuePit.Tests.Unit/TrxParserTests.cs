@@ -280,4 +280,73 @@ public class TrxParserTests
             Directory.Delete(artifactDir, recursive: true);
         }
     }
+
+    [Fact]
+    public void Parse_TrxInsideExtensionlessZip_ReturnsCorrectSuite()
+    {
+        // Simulate act v7+ artifact server structure for archive mode with no .zip extension:
+        // artifactDir/<runNumber>/<artifactName>/<artifactName>  (zip content, no extension)
+        var artifactDir = Path.Combine(Path.GetTempPath(), $"trx-noext-zip-test-{Guid.NewGuid():N}");
+        var artifactSubDir = Path.Combine(artifactDir, "1", "test-results-trx");
+        Directory.CreateDirectory(artifactSubDir);
+
+        // Create a zip file with NO .zip extension (act v7+ archive mode).
+        var zipPath = Path.Combine(artifactSubDir, "test-results-trx");
+        using (var zip = System.IO.Compression.ZipFile.Open(zipPath, System.IO.Compression.ZipArchiveMode.Create))
+        {
+            var entry = zip.CreateEntry("results.trx");
+            using var entryStream = entry.Open();
+            using var writer = new System.IO.StreamWriter(entryStream);
+            writer.Write(SimpleTrx);
+        }
+
+        try
+        {
+            // FindTrxFiles should NOT find it (no .trx extension on the file).
+            var bareTrx = TrxParser.FindTrxFiles(artifactDir).ToList();
+            Assert.Empty(bareTrx);
+
+            // But opening the extensionless file as a zip and parsing the .trx entry should work.
+            using var zip2 = System.IO.Compression.ZipFile.OpenRead(zipPath);
+            var entry = zip2.Entries.First(e => e.FullName.EndsWith(".trx", StringComparison.OrdinalIgnoreCase));
+            using var stream = entry.Open();
+            var suite = TrxParser.Parse(stream, "test-results-trx");
+            Assert.NotNull(suite);
+            Assert.Equal("test-results-trx", suite!.ArtifactName);
+            Assert.Equal(2, suite.TotalTests);
+        }
+        finally
+        {
+            Directory.Delete(artifactDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Parse_RawTrxAsExtensionlessFile_ReturnsCorrectSuite()
+    {
+        // Simulate act v7+ direct upload: artifact stored without extension containing raw TRX XML.
+        var testDir = Path.Combine(Path.GetTempPath(), $"trx-noext-raw-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(testDir);
+        var trxPath = Path.Combine(testDir, "test-results-trx");
+        File.WriteAllText(trxPath, SimpleTrx);
+
+        try
+        {
+            // FindTrxFiles should NOT find it (no .trx extension).
+            var bareTrx = TrxParser.FindTrxFiles(testDir).ToList();
+            Assert.Empty(bareTrx);
+
+            // But Parse(stream, name) should parse the raw TRX XML correctly.
+            using var stream = File.OpenRead(trxPath);
+            var suite = TrxParser.Parse(stream, "test-results-trx");
+            Assert.NotNull(suite);
+            Assert.Equal("test-results-trx", suite!.ArtifactName);
+            Assert.Equal(2, suite.TotalTests);
+            Assert.Equal(1, suite.PassedTests);
+        }
+        finally
+        {
+            Directory.Delete(testDir, recursive: true);
+        }
+    }
 }

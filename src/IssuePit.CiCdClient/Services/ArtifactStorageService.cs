@@ -42,6 +42,8 @@ public class ArtifactStorageService(IConfiguration configuration, ILogger<Artifa
     /// Counts the files contained in the artifact directory.
     /// act stores each artifact file as a <c>.zip</c> entry; this method counts the entries inside
     /// those inner zip files. Falls back to counting raw files for plain (non-zip) artifacts.
+    /// Also handles extensionless files stored by act v7+ (direct-upload format): tries to open
+    /// them as zip archives before falling back to treating them as a single raw file.
     /// </summary>
     /// <returns>A tuple of (fileCount, totalSizeBytes) reflecting the decompressed content.</returns>
     public static (int FileCount, long SizeBytes) CountArtifactFiles(string artifactDir)
@@ -51,7 +53,10 @@ public class ArtifactStorageService(IConfiguration configuration, ILogger<Artifa
 
         foreach (var filePath in Directory.EnumerateFiles(artifactDir, "*", SearchOption.AllDirectories))
         {
-            if (string.Equals(Path.GetExtension(filePath), ".zip", StringComparison.OrdinalIgnoreCase))
+            var ext = Path.GetExtension(filePath);
+            // Try to open as a zip archive for files with .zip extension or no extension at all
+            // (act v7+ stores direct-upload artifacts without a .zip extension).
+            if (string.Equals(ext, ".zip", StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(ext))
             {
                 try
                 {
@@ -272,6 +277,8 @@ public class ArtifactStorageService(IConfiguration configuration, ILogger<Artifa
     /// Files that are themselves ZIP archives (as produced by the act artifact server) are extracted
     /// and their entries are written directly into the output archive so the download is a clean,
     /// single-level ZIP with the actual file names.
+    /// Also handles extensionless files stored by act v7+ (direct-upload format): tries to open
+    /// them as zip archives and unpack their contents; falls back to including them as raw files.
     /// </summary>
     private static async Task ZipDirectoryAsync(string sourceDir, Stream destination, CancellationToken ct)
     {
@@ -281,9 +288,11 @@ public class ArtifactStorageService(IConfiguration configuration, ILogger<Artifa
         {
             ct.ThrowIfCancellationRequested();
 
+            var ext = Path.GetExtension(filePath);
             // act stores artifact files as individual zip archives. Re-package their contents
             // directly so the resulting download archive is a clean, single-level ZIP.
-            if (string.Equals(Path.GetExtension(filePath), ".zip", StringComparison.OrdinalIgnoreCase))
+            // Also try extensionless files (act v7+ direct-upload format) as potential zip archives.
+            if (string.Equals(ext, ".zip", StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(ext))
             {
                 var handledAsZip = false;
                 try

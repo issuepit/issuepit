@@ -81,6 +81,11 @@ public partial class DockerCiCdRuntime(
     internal const int AptCachePort = 3142;
     internal const int HttpCachePort = 3143;
 
+    // ZIP file magic bytes (local file header signature: PK\x03\x04).
+    // Used when extracting artifacts from the container to detect ZIP archives stored
+    // without a .zip extension (act v7+ direct-upload format).
+    private static readonly byte[] ZipMagicBytes = [0x50, 0x4B, 0x03, 0x04];
+
     // Docker bridge IP used by DinD job containers as their default gateway.
     // When InterceptAllTraffic is true, PLAYWRIGHT_DOWNLOAD_HOST is set to this IP + HttpCachePort
     // so job containers reach the http-cache nginx proxy via the iptables DNAT rules on the act container.
@@ -1146,9 +1151,33 @@ public partial class DockerCiCdRuntime(
                                           or System.Formats.Tar.TarEntryType.V7RegularFile)
                 {
                     Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
-                    await using var fileStream = File.Create(localPath);
-                    if (entry.DataStream is not null)
-                        await entry.DataStream.CopyToAsync(fileStream, cancellationToken);
+
+                    // Write the file and detect its MIME type by magic bytes (for extensionless files).
+                    // act v7+ stores zip-content artifacts without a .zip extension (direct-upload format).
+                    // Detecting the format at extraction time — rather than at parse time — means all
+                    // downstream code (TRX parsing, artifact download, S3 upload) can rely on the
+                    // .zip extension being present when the content is a ZIP archive.
+                    var isZipContent = false;
+                    {
+                        await using var fileStream = File.Create(localPath);
+                        if (entry.DataStream is not null)
+                            await entry.DataStream.CopyToAsync(fileStream, cancellationToken);
+
+                        // Only probe extensionless files — files that already have an extension
+                        // (e.g. .zip, .txt, .trx) are already correctly named by the artifact server.
+                        if (string.IsNullOrEmpty(Path.GetExtension(localPath)) && fileStream.Length >= ZipMagicBytes.Length)
+                        {
+                            fileStream.Position = 0;
+                            var header = new byte[ZipMagicBytes.Length];
+                            isZipContent = await fileStream.ReadAsync(header, cancellationToken) == ZipMagicBytes.Length
+                                && header.AsSpan().SequenceEqual(ZipMagicBytes);
+                        }
+                    } // fileStream flushed and closed here — safe to rename below
+
+                    // Rename extensionless ZIP archives so extension-based processing works correctly.
+                    if (isZipContent)
+                        File.Move(localPath, localPath + ".zip", overwrite: true);
+
                     fileCount++;
                 }
             }
