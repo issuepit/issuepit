@@ -21,6 +21,10 @@ type RenderItem =
   | { type: 'section'; sid: string }
   | { type: 'tabgroup'; key: string; sections: string[] }
   | { type: 'stackgroup'; key: string; sections: string[] }
+  | { type: 'rowbreak'; sid: string }
+
+/** Returns true for virtual IDs (e.g. row-break placeholders) that are not real sections. */
+function isVirtualId(id: string) { return id.startsWith('rowbreak-') }
 
 export function useDashboardLayout(options: {
   defaultOrder: string[]
@@ -39,10 +43,12 @@ export function useDashboardLayout(options: {
   let _snapshot: string | null = null
 
   function sectionCfg(s: string): LayoutSectionConfig {
+    if (isVirtualId(s)) return { hidden: false, width: '', displayMode: '', maxItems: 0, tabGroup: null, stackGroup: null }
     return layout.value.configs[s] ?? { ...defaultConfigs[s] }
   }
 
   function updateCfg(s: string, patch: Partial<LayoutSectionConfig>) {
+    if (isVirtualId(s)) return
     layout.value.configs[s] = { ...sectionCfg(s), ...patch }
   }
 
@@ -56,7 +62,8 @@ export function useDashboardLayout(options: {
       if (!saved) return
       const parsed = JSON.parse(saved) as Partial<LayoutData>
       if (Array.isArray(parsed.order) && parsed.order.length) {
-        const valid = parsed.order.filter(s => s in defaultConfigs)
+        // Keep real section IDs plus virtual row-break IDs
+        const valid = parsed.order.filter(s => s in defaultConfigs || isVirtualId(s))
         const missing = defaultOrder.filter(s => !valid.includes(s))
         layout.value.order = [...valid, ...missing]
       }
@@ -97,18 +104,32 @@ export function useDashboardLayout(options: {
     }
   }
 
+  // ── Row break ───────────────────────────────────────────────────────────────
+  let _rowBreakCounter = 0
+
+  function addRowBreak() {
+    const rowBreakId = `rowbreak-${Date.now()}-${++_rowBreakCounter}`
+    layout.value.order = [...layout.value.order, rowBreakId]
+  }
+
+  function removeRowBreak(id: string) {
+    layout.value.order = layout.value.order.filter(s => s !== id)
+  }
+
   // ── Drag & drop ────────────────────────────────────────────────────────────
   const dragSectionId = ref<string | null>(null)
   const dragHoverSid = ref<string | null>(null)
   let _dragSnapshot: string | null = null
   // Cached drag group (all sections being moved together); populated on dragstart
   let _dragGroup: string[] = []
+  let _dragEscaped = false
 
   function onDragStart(e: DragEvent, id: string) {
+    _dragEscaped = false
     dragSectionId.value = id
     _dragSnapshot = JSON.stringify(layout.value)
     // Cache the full drag group for use during dragover (avoids repeated filter calls)
-    const stk = sectionCfg(id).stackGroup ?? null
+    const stk = isVirtualId(id) ? null : (sectionCfg(id).stackGroup ?? null)
     _dragGroup = stk
       ? layout.value.order.filter(s => (sectionCfg(s).stackGroup ?? null) === stk)
       : [id]
@@ -123,14 +144,14 @@ export function useDashboardLayout(options: {
     const isSameGroup = _dragGroup.length > 1 && _dragGroup.includes(id)
     // Only highlight cards outside the drag group
     if (!_dragGroup.includes(id)) dragHoverSid.value = id
-    // Don't reorder when hovering over a config bar — it's a drop target for tab/stack grouping.
-    if ((e.target as HTMLElement)?.closest('[data-no-reorder]')) return
-    if (id === dragSectionId.value || isSameGroup) return
-    if (_dragGroup.includes(id)) return
-    // Only reorder when the cursor is within the card edge zone — 16 px matches Tailwind gap-4,
-    // so this fires only as the cursor crosses the boundary from the gap into the card.
+    // Skip reorder if we're dragging over ourselves or our group
+    if (id === dragSectionId.value || isSameGroup || _dragGroup.includes(id)) return
+    // Only reorder when the cursor is in the edge zone (≤16 px from left/right — matches gap-4).
+    // The edge zone check comes BEFORE the data-no-reorder check so that entering via the
+    // config bar from the side (i.e. from the gap) also triggers the reorder correctly.
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    if (e.clientX - rect.left > 16 && rect.right - e.clientX > 16) return
+    const inEdgeZone = e.clientX - rect.left <= 16 || rect.right - e.clientX <= 16
+    if (!inEdgeZone) return
 
     const order = layout.value.order
     const from = order.indexOf(dragSectionId.value)
@@ -138,7 +159,7 @@ export function useDashboardLayout(options: {
     if (from === -1 || to === -1) return
 
     // If the target card belongs to a stack group, move relative to the whole group
-    const targetStk = sectionCfg(id).stackGroup ?? null
+    const targetStk = isVirtualId(id) ? null : (sectionCfg(id).stackGroup ?? null)
     let insertAnchor: string
     let insertAfter: boolean
     if (targetStk) {
@@ -166,15 +187,21 @@ export function useDashboardLayout(options: {
     layout.value.order = newOrder
   }
 
-  function onDragEnd(e?: DragEvent) {
-    // ESC or aborted drag: dropEffect is 'none' → restore the pre-drag layout
-    if (e && e.dataTransfer?.dropEffect === 'none' && _dragSnapshot) {
+  function onDragEnd(_e?: DragEvent) {
+    // Only restore pre-drag layout on explicit ESC cancel (tracked via keydown listener).
+    // Dropping outside a valid target keeps the current placeholder position.
+    if (_dragEscaped && _dragSnapshot) {
       layout.value = JSON.parse(_dragSnapshot)
     }
+    _dragEscaped = false
     dragSectionId.value = null
     dragHoverSid.value = null
     _dragSnapshot = null
     _dragGroup = []
+  }
+
+  function _onKeyDownDuringDrag(e: KeyboardEvent) {
+    if (e.key === 'Escape' && dragSectionId.value) _dragEscaped = true
   }
 
   // Scroll the page with mouse wheel while dragging (browser suppresses native scroll during DnD)
@@ -182,8 +209,14 @@ export function useDashboardLayout(options: {
     if (dragSectionId.value) window.scrollBy(0, e.deltaY)
   }
 
-  onMounted(() => window.addEventListener('wheel', _onWheelDuringDrag, { passive: true }))
-  onUnmounted(() => window.removeEventListener('wheel', _onWheelDuringDrag))
+  onMounted(() => {
+    window.addEventListener('wheel', _onWheelDuringDrag, { passive: true })
+    window.addEventListener('keydown', _onKeyDownDuringDrag)
+  })
+  onUnmounted(() => {
+    window.removeEventListener('wheel', _onWheelDuringDrag)
+    window.removeEventListener('keydown', _onKeyDownDuringDrag)
+  })
 
   // ── Tab group logic ─────────────────────────────────────────────────────────
   let _tabGroupCounter = 0
@@ -319,6 +352,8 @@ export function useDashboardLayout(options: {
   // ── Rendered items ──────────────────────────────────────────────────────────
   const renderedItems = computed((): RenderItem[] => {
     const visible = layout.value.order.filter(s => {
+      // Row-break virtual IDs are always included (they are invisible in normal mode)
+      if (isVirtualId(s)) return true
       const c = sectionCfg(s)
       if (isDraftMode.value) return true
       if (c.hidden) return false
@@ -329,6 +364,14 @@ export function useDashboardLayout(options: {
     let i = 0
     while (i < visible.length) {
       const sid = visible[i]
+
+      // Virtual row-break — pass through without grouping
+      if (isVirtualId(sid)) {
+        items.push({ type: 'rowbreak', sid })
+        i++
+        continue
+      }
+
       const cfg = sectionCfg(sid)
 
       // Tab group
@@ -391,6 +434,8 @@ export function useDashboardLayout(options: {
     saveDraftMode,
     cancelDraftMode,
     resetLayout,
+    addRowBreak,
+    removeRowBreak,
     onDragStart,
     onDragOver,
     onDragEnd,

@@ -22,6 +22,14 @@
         <span class="text-amber-400/70 text-xs hidden sm:inline">— drag to reorder · configure each section</span>
       </div>
       <div class="flex items-center gap-1.5">
+        <button @click="addRowBreak"
+          aria-label="Add row break to dashboard layout"
+          class="text-xs text-gray-500 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          Row break
+        </button>
         <button @click="resetLayout"
           class="text-xs text-gray-400 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors">
           Reset
@@ -51,19 +59,32 @@
 
     <!-- 12-column grid layout -->
     <div class="grid grid-cols-12 gap-4 items-start">
-      <template v-for="item in renderedItems" :key="item.type === 'section' ? item.sid : item.key">
-        <div
+      <template v-for="item in renderedItems" :key="item.type === 'section' || item.type === 'rowbreak' ? item.sid : item.key">
+        <!-- Row break: forces a new grid row; shows separator handle in draft mode -->
+        <template v-if="item.type === 'rowbreak'">
+          <div v-if="isDraftMode" class="col-span-12 flex items-center gap-2 py-1">
+            <div class="flex-1 border-t border-dashed border-gray-600"></div>
+            <span class="text-xs text-gray-500 select-none whitespace-nowrap">row break</span>
+            <div class="flex-1 border-t border-dashed border-gray-600"></div>
+            <button @click="removeRowBreak(item.sid)"
+              aria-label="Remove row break"
+              class="text-gray-600 hover:text-red-400 transition-colors text-xs leading-none px-1">✕</button>
+          </div>
+          <div v-else class="col-span-12 h-0"></div>
+        </template>
+
+        <div v-else
           :class="[
             itemColSpanClass(item),
             isDraftMode ? 'select-none' : '',
             item.type === 'section' && isDraftMode && sectionCfg(item.sid as MainSectionId).hidden ? 'opacity-40 saturate-50' : '',
-            (item.type === 'section' ? dragSectionId === item.sid : item.sections.includes(dragSectionId as MainSectionId)) && isDraftMode
+            (item.type === 'section' ? dragSectionId === item.sid : (item.sections ?? []).includes(dragSectionId as MainSectionId)) && isDraftMode
               ? 'opacity-50'
               : '',
           ]"
           :draggable="isDraftMode"
-          @dragstart="isDraftMode && (item.type === 'section' || item.type === 'stackgroup') ? onDragStart($event, (item.type === 'section' ? item.sid : item.sections[0]) as MainSectionId) : undefined"
-          @dragover.prevent="isDraftMode ? onDragOver($event, (item.type === 'section' ? item.sid : item.sections[0]) as MainSectionId) : undefined"
+          @dragstart="isDraftMode && (item.type === 'section' || item.type === 'stackgroup') ? onDragStart($event, item.type === 'section' ? item.sid : item.sections[0]) : undefined"
+          @dragover.prevent="isDraftMode ? onDragOver($event, item.type === 'section' ? item.sid : item.sections[0]) : undefined"
           @dragend="isDraftMode ? onDragEnd($event) : undefined">
 
           <!-- Draft mode config bar -->
@@ -405,7 +426,7 @@ type MainSectionId =
 type MainWidth = 'xs' | 'sm' | 'md' | 'lg'
 type MainDisplayMode = 'list' | 'count'
 
-const MAIN_LAYOUT_KEY = 'main-dashboard-layout-v3'
+const MAIN_LAYOUT_KEY = 'main-dashboard-layout-v4'
 
 const DEFAULT_ORDER: MainSectionId[] = [
   'statProjects', 'statOpenIssues', 'statInProgress', 'statAgentRuns',
@@ -469,6 +490,8 @@ const {
   saveDraftMode,
   cancelDraftMode,
   resetLayout,
+  addRowBreak,
+  removeRowBreak,
   onDragStart: onDragStartRaw,
   onDragOver: onDragOverRaw,
   onDragEnd,
@@ -488,8 +511,8 @@ function sectionCfg(s: MainSectionId) { return sectionCfgRaw(s) }
 function updateCfg(s: MainSectionId, patch: object) { updateCfgRaw(s, patch) }
 function hideSection(id: MainSectionId) { hideSectionRaw(id) }
 function showSection(id: MainSectionId) { showSectionRaw(id) }
-function onDragStart(e: DragEvent, id: MainSectionId) { onDragStartRaw(e, id) }
-function onDragOver(e: DragEvent, id: MainSectionId) { onDragOverRaw(e, id) }
+function onDragStart(e: DragEvent, id: string) { onDragStartRaw(e, id) }
+function onDragOver(e: DragEvent, id: string) { onDragOverRaw(e, id) }
 function toggleTabGroupWithNext(sid: MainSectionId) { toggleTabGroupWithNextRaw(sid) }
 function toggleStackGroupWithNext(sid: MainSectionId) { toggleStackGroupWithNextRaw(sid) }
 
@@ -501,6 +524,7 @@ function mainColSpanClass(width: MainWidth): string {
 }
 
 function itemColSpanClass(item: { type: string; sid?: string; sections?: string[] }): string {
+  if (item.type === 'rowbreak') return 'col-span-12'
   const firstSid = item.type === 'section' ? item.sid! : item.sections![0]
   return mainColSpanClass(sectionCfg(firstSid as MainSectionId).width as MainWidth)
 }

@@ -173,6 +173,14 @@
           <span class="text-amber-400/70 text-xs hidden sm:inline">— drag to reorder · configure each section</span>
         </div>
         <div class="flex items-center gap-1.5">
+          <button @click="addRowBreak"
+            aria-label="Add row break to dashboard layout"
+            class="text-xs text-gray-500 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            Row break
+          </button>
           <button @click="resetLayout"
             class="text-xs text-gray-400 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors">
             Reset
@@ -201,20 +209,33 @@
         </template>
       </div>
 
-      <!-- Main content grid: 6 columns -->
-      <div class="grid grid-cols-6 gap-4 items-start">
-        <template v-for="item in renderedItems" :key="item.type === 'section' ? item.sid : item.key">
-          <div
+      <!-- Main content grid: 12 columns -->
+      <div class="grid grid-cols-12 gap-4 items-start">
+        <template v-for="item in renderedItems" :key="item.type === 'section' || item.type === 'rowbreak' ? item.sid : item.key">
+          <!-- Row break: forces a new grid row; shows separator handle in draft mode -->
+          <template v-if="item.type === 'rowbreak'">
+            <div v-if="isDraftMode" class="col-span-12 flex items-center gap-2 py-1">
+              <div class="flex-1 border-t border-dashed border-gray-600"></div>
+              <span class="text-xs text-gray-500 select-none whitespace-nowrap">row break</span>
+              <div class="flex-1 border-t border-dashed border-gray-600"></div>
+              <button @click="removeRowBreak(item.sid)"
+                aria-label="Remove row break"
+                class="text-gray-600 hover:text-red-400 transition-colors text-xs leading-none px-1">✕</button>
+            </div>
+            <div v-else class="col-span-12 h-0"></div>
+          </template>
+
+          <div v-else
             :class="[
               itemColSpanClass(item),
               isDraftMode ? 'select-none' : '',
-              (item.type === 'section' ? dragSectionId === item.sid : item.sections.includes(dragSectionId as SectionId))
+              (item.type === 'section' ? dragSectionId === item.sid : (item.sections ?? []).includes(dragSectionId as SectionId))
                 ? 'opacity-50'
                 : '',
             ]"
             :draggable="isDraftMode"
-            @dragstart="isDraftMode && (item.type === 'section' || item.type === 'stackgroup') ? onSectionDragStart($event, (item.type === 'section' ? item.sid : item.sections[0]) as SectionId) : undefined"
-            @dragover.prevent="isDraftMode ? onSectionDragOver($event, (item.type === 'section' ? item.sid : item.sections[0]) as SectionId) : undefined"
+            @dragstart="isDraftMode && (item.type === 'section' || item.type === 'stackgroup') ? onSectionDragStart($event, item.type === 'section' ? item.sid : item.sections[0]) : undefined"
+            @dragover.prevent="isDraftMode ? onSectionDragOver($event, item.type === 'section' ? item.sid : item.sections[0]) : undefined"
             @dragend="isDraftMode ? onSectionDragEnd($event) : undefined">
 
             <!-- Draft mode header: shows for tab group or single section -->
@@ -607,7 +628,7 @@
                       <template v-if="item.type !== 'tabgroup'">
                         <h2 class="font-semibold text-white mb-4">Kanban Board</h2>
                       </template>
-                      <KanbanBoardInline :project-id="id" :board-id="sectionCfg('kanban').selectedBoardId" />
+                      <KanbanBoardInline :project-id="id" :board-id="sectionCfg('kanban').selectedBoardId ?? null" />
                     </div>
                   </template>
 
@@ -914,7 +935,7 @@ const recentProjectIssues = ref<Issue[]>([])
 // ── Dashboard layout customization ─────────────────────────────────────────
 type SectionId = 'statIssues' | 'statCommits' | 'statMRs' | 'milestones' | 'issues' | 'agentRuns' | 'cicdRuns' | 'history' | 'kanban'
 type SectionDisplayMode = 'list' | 'count' | 'block'
-type SectionWidth = 'xs' | 'sm' | 'md' | 'lg'
+type SectionWidth = 'xs' | 'quarter' | 'sm' | 'md' | 'lg'
 
 const SECTION_LABELS: Record<SectionId, string> = {
   statIssues: 'Issues',
@@ -936,22 +957,22 @@ const SECTION_DISPLAY_MODES: Partial<Record<SectionId, SectionDisplayMode[]>> = 
 const SECTION_HAS_MAX_ITEMS: Set<SectionId> = new Set(['milestones', 'issues', 'agentRuns', 'cicdRuns'])
 const SECTION_CAN_STACK: Set<SectionId> = new Set(['statIssues', 'statCommits', 'statMRs', 'milestones', 'issues', 'agentRuns', 'cicdRuns', 'history', 'kanban'])
 const MAX_ITEMS_OPTIONS = [3, 5, 8, 10]
-const WIDTH_LABELS: Record<SectionWidth, string> = { xs: '1/6', sm: '1/3', md: '1/2', lg: 'Full' }
-const PROJECT_WIDTHS = (['xs', 'sm', 'md', 'lg'] as SectionWidth[]).map(v => ({ value: v, label: WIDTH_LABELS[v] }))
+const WIDTH_LABELS: Record<SectionWidth, string> = { xs: '1/6', quarter: '1/4', sm: '1/3', md: '1/2', lg: 'Full' }
+const PROJECT_WIDTHS = (['xs', 'quarter', 'sm', 'md', 'lg'] as SectionWidth[]).map(v => ({ value: v, label: WIDTH_LABELS[v] }))
 
 const DEFAULT_CONFIGS = {
-  statIssues:  { hidden: false, displayMode: 'list',  maxItems: 3,  width: 'xs', tabGroup: null, stackGroup: null },
-  statCommits: { hidden: false, displayMode: 'list',  maxItems: 3,  width: 'xs', tabGroup: null, stackGroup: null },
-  statMRs:     { hidden: false, displayMode: 'list',  maxItems: 3,  width: 'xs', tabGroup: null, stackGroup: null },
-  milestones:  { hidden: false, displayMode: 'block', maxItems: 3,  width: 'lg', tabGroup: null, stackGroup: null },
-  issues:      { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'sm', tabGroup: null, stackGroup: null },
-  agentRuns:   { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'sm', tabGroup: null, stackGroup: null },
-  cicdRuns:    { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'sm', tabGroup: null, stackGroup: null },
-  history:     { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'md', tabGroup: null, stackGroup: null },
-  kanban:      { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'md', tabGroup: null, stackGroup: null },
+  statIssues:  { hidden: false, displayMode: 'list',  maxItems: 3,  width: 'xs',  tabGroup: null, stackGroup: null },
+  statCommits: { hidden: false, displayMode: 'list',  maxItems: 3,  width: 'xs',  tabGroup: null, stackGroup: null },
+  statMRs:     { hidden: false, displayMode: 'list',  maxItems: 3,  width: 'xs',  tabGroup: null, stackGroup: null },
+  milestones:  { hidden: false, displayMode: 'block', maxItems: 3,  width: 'lg',  tabGroup: null, stackGroup: null },
+  issues:      { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'sm',  tabGroup: null, stackGroup: null },
+  agentRuns:   { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'sm',  tabGroup: null, stackGroup: null },
+  cicdRuns:    { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'sm',  tabGroup: null, stackGroup: null },
+  history:     { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'md',  tabGroup: null, stackGroup: null },
+  kanban:      { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'md',  tabGroup: null, stackGroup: null },
 }
 const DEFAULT_ORDER: SectionId[] = ['statIssues', 'statCommits', 'statMRs', 'milestones', 'issues', 'agentRuns', 'cicdRuns', 'history', 'kanban']
-const DRAFT_LAYOUT_KEY = `project-dashboard-layout-v4-${id}`
+const DRAFT_LAYOUT_KEY = `project-dashboard-layout-v5-${id}`
 
 const {
   layout,
@@ -968,6 +989,8 @@ const {
   saveDraftMode,
   cancelDraftMode,
   resetLayout,
+  addRowBreak,
+  removeRowBreak,
   onDragStart: onDragStartRaw,
   onDragOver: onDragOverRaw,
   onDragEnd: onDragEndRaw,
@@ -991,20 +1014,22 @@ function sectionCfg(s: SectionId) { return sectionCfgRaw(s) }
 function updateCfg(s: SectionId, patch: object) { updateCfgRaw(s, patch) }
 function hideSection(s: SectionId) { hideSectionRaw(s) }
 function showSection(s: SectionId) { showSectionRaw(s) }
-function onSectionDragStart(e: DragEvent, id: SectionId) { onDragStartRaw(e, id) }
-function onSectionDragOver(e: DragEvent, id: SectionId) { onDragOverRaw(e, id) }
+function onSectionDragStart(e: DragEvent, id: string) { onDragStartRaw(e, id) }
+function onSectionDragOver(e: DragEvent, id: string) { onDragOverRaw(e, id) }
 function onSectionDragEnd(e: DragEvent) { onDragEndRaw(e) }
 function toggleTabGroupWithNext(sid: SectionId) { toggleTabGroupWithNextRaw(sid) }
 function toggleStackGroupWithNext(sid: SectionId) { toggleStackGroupWithNextRaw(sid) }
 
-// Column span class based on width (6-col grid)
+// Column span class based on width (12-col grid)
 function colSpanClass(width: SectionWidth): string {
-  if (width === 'xs') return 'col-span-6 sm:col-span-3 lg:col-span-1'
-  if (width === 'sm') return 'col-span-6 md:col-span-3 lg:col-span-2'
-  if (width === 'md') return 'col-span-6 lg:col-span-3'
-  return 'col-span-6'
+  if (width === 'xs')      return 'col-span-12 sm:col-span-6 lg:col-span-2'
+  if (width === 'quarter') return 'col-span-12 sm:col-span-6 lg:col-span-3'
+  if (width === 'sm')      return 'col-span-12 md:col-span-6 lg:col-span-4'
+  if (width === 'md')      return 'col-span-12 lg:col-span-6'
+  return 'col-span-12'
 }
 function itemColSpanClass(item: { type: string; sid?: string; sections?: string[] }): string {
+  if (item.type === 'rowbreak') return 'col-span-12'
   const firstSid = item.type === 'section' ? item.sid! : item.sections![0]
   return colSpanClass(sectionCfg(firstSid as SectionId).width as SectionWidth)
 }

@@ -172,7 +172,7 @@ const CHART_DAYS_MAX = 60
 const hasSettings = computed(() =>
   props.currentChartDays !== undefined ||
   (props.chartHeightOptions?.length ?? 0) > 0 ||
-  (props.kanbanBoards?.length ?? 0) > 0,
+  props.kanbanBoards !== undefined,  // show cog even if boards haven't loaded yet
 )
 
 function onChartDaysChange(e: Event) {
