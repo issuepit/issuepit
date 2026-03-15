@@ -174,8 +174,9 @@ public class AgentHttpServerTests(AspireFixture fixture)
         var (client, orgId) = await SetupOrgAsync(orgSlug);
 
         // Create a project and issue.
+        var projectSlug = $"hs-proj-{Guid.NewGuid():N}"[..16];
         var projResp = await client.PostAsJsonAsync("/api/projects",
-            new { name = "HTTP Server Test Project", orgId = Guid.Parse(orgId) });
+            new { name = "HTTP Server Test Project", slug = projectSlug, orgId = Guid.Parse(orgId) });
         Assert.Equal(HttpStatusCode.Created, projResp.StatusCode);
         var proj = await projResp.Content.ReadFromJsonAsync<JsonElement>();
         var projectId = proj.GetProperty("id").GetString()!;
