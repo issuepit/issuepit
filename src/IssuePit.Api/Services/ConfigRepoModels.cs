@@ -42,7 +42,10 @@ public class ProjectConfigModel
 
     public string? Description { get; set; }
 
-    /// <summary>Remote git URL for this project's repository (cloned for code access and CI/CD).</summary>
+    /// <summary>
+    /// Single git origin shorthand. When set, configures (or creates) a <c>Working</c>-mode
+    /// origin for this project. Use <see cref="GitRepos"/> for multi-origin setups.
+    /// </summary>
     public string? GitUrl { get; set; }
 
     /// <summary>PAT or access token for authenticating with <see cref="GitUrl"/>.</summary>
@@ -51,8 +54,15 @@ public class ProjectConfigModel
     /// <summary>Username used with <see cref="GitToken"/> for HTTP basic auth (defaults to "git").</summary>
     public string? GitUsername { get; set; }
 
-    /// <summary>Default branch name. Defaults to "main".</summary>
+    /// <summary>Default branch name for <see cref="GitUrl"/>. Defaults to "main".</summary>
     public string? DefaultBranch { get; set; }
+
+    /// <summary>
+    /// Full list of git origins for this project. When set, the applier reconciles all origins
+    /// in this list (matched by <c>remoteUrl</c>) and removes any DB origins not present here.
+    /// Takes precedence over the single-origin <see cref="GitUrl"/> shorthand.
+    /// </summary>
+    public List<GitRepoConfigModel>? GitRepos { get; set; }
 
     public bool? MountRepositoryInDocker { get; set; }
     public int? MaxConcurrentRunners { get; set; }
@@ -63,8 +73,33 @@ public class ProjectConfigModel
     public string? ActionCachePath { get; set; }
     public bool? UseNewActionCache { get; set; }
     public bool? ActionOfflineMode { get; set; }
+
+    /// <summary>
+    /// Newline-separated <c>owner/repo=localPath</c> mappings that redirect reusable workflow
+    /// calls to local clones. Passed to <c>act</c> via <c>--local-repository</c> flags.
+    /// </summary>
     public string? LocalRepositories { get; set; }
+
     public List<ProjectMemberConfigModel>? Members { get; set; }
+}
+
+/// <summary>JSON model for a single git origin within a project config file.</summary>
+public class GitRepoConfigModel
+{
+    /// <summary>Remote git URL. Used as the unique key to match existing origins in the DB.</summary>
+    public string RemoteUrl { get; set; } = string.Empty;
+
+    /// <summary>PAT or access token for authenticating with <see cref="RemoteUrl"/>.</summary>
+    public string? GitToken { get; set; }
+
+    /// <summary>Username used with <see cref="GitToken"/> for HTTP basic auth (defaults to "git").</summary>
+    public string? GitUsername { get; set; }
+
+    /// <summary>Default branch name. Defaults to "main".</summary>
+    public string? DefaultBranch { get; set; }
+
+    /// <summary>How this origin is used: <c>Working</c> (agents push here), <c>Release</c>, or <c>ReadOnly</c>.</summary>
+    public GitOriginMode Mode { get; set; } = GitOriginMode.Working;
 }
 
 /// <summary>JSON model for a project member entry in a config override file.</summary>

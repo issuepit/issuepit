@@ -440,4 +440,252 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var resp = await TriggerSyncAsync(Guid.NewGuid());
         Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
     }
+
+    // -----------------------------------------------------------------------
+    // Multiple git origins (gitRepos array)
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task Sync_ProjectConfig_MultipleGitOrigins_CreatesAllModes()
+    {
+        var orgSlug = $"multi-org-{Guid.NewGuid():N}"[..20];
+        var projSlug = $"multi-{Guid.NewGuid():N}"[..20];
+        var (tenantId, _, projectId, _) = await SeedAsync(orgSlug, projSlug, "u7");
+
+        var dir = CreateConfigDir();
+        WriteModel(dir, "projects", $"{projSlug}.json", new ProjectConfigModel
+        {
+            OrgSlug = orgSlug,
+            GitRepos =
+            [
+                new GitRepoConfigModel
+                {
+                    RemoteUrl = "https://github.com/example/my-project.git",
+                    GitToken = "ghp_working_token",
+                    DefaultBranch = "main",
+                    Mode = GitOriginMode.Working
+                },
+                new GitRepoConfigModel
+                {
+                    RemoteUrl = "https://github.com/example/my-project-releases.git",
+                    GitToken = "ghp_release_token",
+                    DefaultBranch = "main",
+                    Mode = GitOriginMode.Release
+                }
+            ]
+        });
+
+        try
+        {
+            await SetConfigRepoAsync(tenantId, dir);
+            await TriggerSyncAsync(tenantId);
+
+            using var scope = factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+            var repos = db.GitRepositories.Where(r => r.ProjectId == projectId).ToList();
+            Assert.Equal(2, repos.Count);
+
+            var workingRepo = repos.Single(r => r.Mode == GitOriginMode.Working);
+            Assert.Equal("https://github.com/example/my-project.git", workingRepo.RemoteUrl);
+            Assert.Equal("ghp_working_token", workingRepo.AuthToken);
+
+            var releaseRepo = repos.Single(r => r.Mode == GitOriginMode.Release);
+            Assert.Equal("https://github.com/example/my-project-releases.git", releaseRepo.RemoteUrl);
+            Assert.Equal("ghp_release_token", releaseRepo.AuthToken);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public async Task Sync_ProjectConfig_GitRepos_UpdatesExistingAndRemovesObsolete()
+    {
+        var orgSlug = $"obs-org-{Guid.NewGuid():N}"[..20];
+        var projSlug = $"obs-{Guid.NewGuid():N}"[..20];
+        var (tenantId, _, projectId, _) = await SeedAsync(orgSlug, projSlug, "u8");
+
+        // Pre-seed two repos; one will be kept, one will be removed
+        using (var setup = factory.Services.CreateScope())
+        {
+            var db = setup.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+            db.GitRepositories.AddRange(
+                new GitRepository
+                {
+                    Id = Guid.NewGuid(), ProjectId = projectId,
+                    RemoteUrl = "https://github.com/example/keep.git", DefaultBranch = "main", Mode = GitOriginMode.Working
+                },
+                new GitRepository
+                {
+                    Id = Guid.NewGuid(), ProjectId = projectId,
+                    RemoteUrl = "https://github.com/example/remove.git", DefaultBranch = "main", Mode = GitOriginMode.ReadOnly
+                });
+            await db.SaveChangesAsync();
+        }
+
+        var dir = CreateConfigDir();
+        WriteModel(dir, "projects", $"{projSlug}.json", new ProjectConfigModel
+        {
+            OrgSlug = orgSlug,
+            GitRepos =
+            [
+                new GitRepoConfigModel
+                {
+                    RemoteUrl = "https://github.com/example/keep.git",
+                    GitToken = "new-token",
+                    Mode = GitOriginMode.Working
+                }
+            ]
+        });
+
+        try
+        {
+            await SetConfigRepoAsync(tenantId, dir);
+            await TriggerSyncAsync(tenantId);
+
+            using var scope = factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+            var repos = db.GitRepositories.Where(r => r.ProjectId == projectId).ToList();
+            Assert.Single(repos); // removed origin is gone
+            Assert.Equal("https://github.com/example/keep.git", repos[0].RemoteUrl);
+            Assert.Equal("new-token", repos[0].AuthToken);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public async Task Sync_ProjectConfig_WithLocalRepositories_SetsReusableWorkflowPaths()
+    {
+        var orgSlug = $"wf-org-{Guid.NewGuid():N}"[..20];
+        var projSlug = $"wf-{Guid.NewGuid():N}"[..20];
+        var (tenantId, _, projectId, _) = await SeedAsync(orgSlug, projSlug, "u9");
+
+        var dir = CreateConfigDir();
+        WriteModel(dir, "projects", $"{projSlug}.json", new ProjectConfigModel
+        {
+            OrgSlug = orgSlug,
+            LocalRepositories = "my-org/reusable-workflows=/home/runner/local/reusable-workflows",
+            ActionCachePath = "/home/runner/act-cache",
+            UseNewActionCache = true
+        });
+
+        try
+        {
+            await SetConfigRepoAsync(tenantId, dir);
+            await TriggerSyncAsync(tenantId);
+
+            using var scope = factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+            var project = await db.Projects.FindAsync(projectId);
+            Assert.NotNull(project);
+            Assert.Equal("my-org/reusable-workflows=/home/runner/local/reusable-workflows", project.LocalRepositories);
+            Assert.Equal("/home/runner/act-cache", project.ActionCachePath);
+            Assert.True(project.UseNewActionCache);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    // -----------------------------------------------------------------------
+    // Resilience / error handling
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task Sync_MalformedJsonFile_IsSkipped_OtherFilesStillApplied()
+    {
+        var orgSlug1 = $"ok-org-{Guid.NewGuid():N}"[..20];
+        var orgSlug2 = $"bad-org-{Guid.NewGuid():N}"[..20];
+        var (tenantId, orgId1, _, _) = await SeedAsync(orgSlug1, $"p-{Guid.NewGuid():N}"[..16], "u10");
+
+        // Seed a second org so we have something to verify unchanged
+        using (var setup = factory.Services.CreateScope())
+        {
+            var db2 = setup.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+            db2.Organizations.Add(new Organization
+            {
+                Id = Guid.NewGuid(), TenantId = tenantId, Name = "Bad Org", Slug = orgSlug2
+            });
+            await db2.SaveChangesAsync();
+        }
+
+        var dir = CreateConfigDir();
+        // Write a valid config for org1
+        WriteModel(dir, "orgs", $"{orgSlug1}.json", new OrgConfigModel { Name = "Valid Updated" });
+        // Write deliberately broken JSON for org2
+        var orgsDir = Path.Combine(dir, "orgs");
+        File.WriteAllText(Path.Combine(orgsDir, $"{orgSlug2}.json"), "{{ not valid json }");
+
+        try
+        {
+            await SetConfigRepoAsync(tenantId, dir);
+            var resp = await TriggerSyncAsync(tenantId);
+            // Sync should still succeed overall
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+            using var scope = factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+            // Valid file was applied
+            var org1 = await db.Organizations.FindAsync(orgId1);
+            Assert.NotNull(org1);
+            Assert.Equal("Valid Updated", org1.Name);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public async Task Sync_ProjectConfig_UnknownOrgSlug_IsSkipped()
+    {
+        var orgSlug = $"punkorg-{Guid.NewGuid():N}"[..20];
+        var projSlug = $"punk-{Guid.NewGuid():N}"[..20];
+        var (tenantId, _, projectId, _) = await SeedAsync(orgSlug, projSlug, "u11");
+
+        var dir = CreateConfigDir();
+        WriteModel(dir, "projects", $"{projSlug}.json", new ProjectConfigModel
+        {
+            OrgSlug = "nonexistent-org-slug", // org not in DB
+            Name = "Should Not Apply"
+        });
+
+        try
+        {
+            await SetConfigRepoAsync(tenantId, dir);
+            var resp = await TriggerSyncAsync(tenantId);
+            // Returns OK — project is skipped, not a failure
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+            using var scope = factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+            var project = await db.Projects.FindAsync(projectId);
+            Assert.NotNull(project);
+            Assert.Equal("Cfg Project", project.Name); // unchanged
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public async Task Sync_OrgMembers_StrictMode_UnknownUser_SkippedButOtherFieldsApplied()
+    {
+        var orgSlug = $"strict2-org-{Guid.NewGuid():N}"[..20];
+        var (tenantId, orgId, _, _) = await SeedAsync(orgSlug, $"p-{Guid.NewGuid():N}"[..16], "strictuser");
+
+        var dir = CreateConfigDir();
+        WriteModel(dir, "orgs", $"{orgSlug}.json", new OrgConfigModel
+        {
+            Name = "Strict Name Update",
+            Members = [new OrgMemberConfigModel { Username = "definitely_not_in_db", Role = OrgRole.Admin }]
+        });
+
+        try
+        {
+            await SetConfigRepoAsync(tenantId, dir, strict: true);
+            var resp = await TriggerSyncAsync(tenantId);
+            // Should not fail — unknown member just logs a warning and is skipped
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+            using var scope = factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+            var org = await db.Organizations.FindAsync(orgId);
+            Assert.NotNull(org);
+            Assert.Equal("Strict Name Update", org.Name); // other fields still applied
+            Assert.Equal(0, db.OrganizationMembers.Count(m => m.OrgId == orgId)); // no member added
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
 }

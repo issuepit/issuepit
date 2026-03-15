@@ -139,7 +139,14 @@ public class ConfigRepoApplier(
 
         Organization? org = null;
         if (!string.IsNullOrEmpty(model.OrgSlug))
+        {
             org = await db.Organizations.FirstOrDefaultAsync(o => o.TenantId == tenant.Id && o.Slug == model.OrgSlug, ct);
+            if (org is null)
+            {
+                logger.LogWarning("Org with slug '{OrgSlug}' not found for tenant {TenantId}; skipping project '{Slug}'", model.OrgSlug, tenant.Id, slug);
+                return;
+            }
+        }
 
         var query = db.Projects.Where(p => p.Slug == slug);
         query = org is not null
@@ -170,6 +177,9 @@ public class ConfigRepoApplier(
         if (!string.IsNullOrEmpty(model.GitUrl))
             await ApplyProjectGitRepoAsync(project, model, ct);
 
+        if (model.GitRepos is not null && model.GitRepos.Count > 0)
+            await ApplyProjectGitReposAsync(project, model.GitRepos, ct);
+
         if (model.Members is not null)
             await ApplyProjectMembersAsync(tenant, project, model.Members, strictMode, ct);
 
@@ -199,6 +209,71 @@ public class ConfigRepoApplier(
             if (model.DefaultBranch is not null) repo.DefaultBranch = model.DefaultBranch;
             if (model.GitUsername is not null) repo.AuthUsername = model.GitUsername;
             if (model.GitToken is not null) repo.AuthToken = model.GitToken;
+        }
+    }
+
+    /// <summary>
+    /// Applies a full list of git origins from <paramref name="gitRepos"/> to the project.
+    /// Origins are matched by <see cref="GitRepository.RemoteUrl"/>. New entries are inserted,
+    /// existing ones are updated, and DB entries whose URL is not in the config list are removed.
+    /// </summary>
+    private async Task ApplyProjectGitReposAsync(
+        Project project, List<GitRepoConfigModel> gitRepos, CancellationToken ct)
+    {
+        var existing = await db.GitRepositories
+            .Where(r => r.ProjectId == project.Id)
+            .ToListAsync(ct);
+
+        // Validate and deduplicate: warn if two entries share the same URL (case-insensitive)
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var validRepos = new List<GitRepoConfigModel>();
+        foreach (var g in gitRepos)
+        {
+            if (string.IsNullOrWhiteSpace(g.RemoteUrl))
+            {
+                logger.LogWarning("gitRepos entry for project {ProjectId} has an empty remoteUrl; skipping", project.Id);
+                continue;
+            }
+            if (!seen.Add(g.RemoteUrl))
+            {
+                logger.LogWarning("gitRepos entry for project {ProjectId} has duplicate remoteUrl '{Url}'; skipping duplicate", project.Id, g.RemoteUrl);
+                continue;
+            }
+            validRepos.Add(g);
+        }
+
+        var configUrls = seen; // same set, already populated
+
+        // Remove origins that are no longer in the config list
+        foreach (var obsolete in existing.Where(r => !configUrls.Contains(r.RemoteUrl)))
+            db.GitRepositories.Remove(obsolete);
+
+        foreach (var gitCfg in validRepos)
+        {
+            var repo = existing.FirstOrDefault(r =>
+                string.Equals(r.RemoteUrl, gitCfg.RemoteUrl, StringComparison.OrdinalIgnoreCase));
+
+            if (repo is null)
+            {
+                db.GitRepositories.Add(new GitRepository
+                {
+                    Id = Guid.NewGuid(),
+                    ProjectId = project.Id,
+                    RemoteUrl = gitCfg.RemoteUrl,
+                    DefaultBranch = gitCfg.DefaultBranch ?? "main",
+                    AuthUsername = gitCfg.GitUsername,
+                    AuthToken = gitCfg.GitToken,
+                    Mode = gitCfg.Mode,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+            else
+            {
+                if (gitCfg.DefaultBranch is not null) repo.DefaultBranch = gitCfg.DefaultBranch;
+                if (gitCfg.GitUsername is not null) repo.AuthUsername = gitCfg.GitUsername;
+                if (gitCfg.GitToken is not null) repo.AuthToken = gitCfg.GitToken;
+                repo.Mode = gitCfg.Mode;
+            }
         }
     }
 
