@@ -287,6 +287,21 @@ if agents_json_str:
     except Exception as e:
         print(f"[entrypoint] Warning: could not parse ISSUEPIT_OPENCODE_AGENTS_JSON: {e}", file=sys.stderr)
 
+# Register IssuePit opencode plugins from the shared plugin directory.
+# Each *.js file found there is added as a file:// reference so opencode
+# loads it without needing an npm install step.
+plugins_dir = "/usr/local/lib/opencode-plugins"
+if os.path.isdir(plugins_dir):
+    plugin_entries = [
+        f"file://{plugins_dir}/{name}"
+        for name in sorted(os.listdir(plugins_dir))
+        if name.endswith(".js")
+    ]
+    if plugin_entries:
+        config["plugin"] = plugin_entries
+        for entry in plugin_entries:
+            print(f"[entrypoint] Registered opencode plugin: {entry}")
+
 with open(config_file, "w") as f:
     json.dump(config, f, indent=2)
 print(f"[entrypoint] opencode config written: {config_file}")

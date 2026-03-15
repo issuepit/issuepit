@@ -63,6 +63,11 @@ RUN set -eux; \
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+# Copy IssuePit opencode plugins so they are available when opencode runs.
+# The entrypoint auto-registers every *.js file it finds here in the
+# opencode config's "plugin" array (using file:// references).
+COPY opencode-plugins/ /usr/local/lib/opencode-plugins/
+
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # Expose version info as labels
