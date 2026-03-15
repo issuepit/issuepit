@@ -410,10 +410,10 @@ public class AgentSessionTests(AspireFixture fixture)
         // AND the absence of "isError":true, rather than looking for "isError":false.
         //
         // Counting note: the MCP tool response embeds projects as a JSON-encoded string inside
-        // result.content[0].text. In that embedded JSON, the double-quotes are escaped with
-        // backslash (e.g. {\"id\":\"...\"}). ProjectDto has a flat structure (id, orgId, name, ...)
-        // with no nested organization object, so each project contributes exactly ONE {\"id\"
-        // occurrence. PROJ_COUNT = RAW (no division).
+        // result.content[0].text. In that embedded JSON, the double-quotes are encoded as Unicode
+        // escape sequences (e.g. {\u0022id\u0022:...) because the text is a JSON string value.
+        // ProjectDto has a flat structure (id, orgId, name, ...) with no nested organization object,
+        // so each project contributes exactly ONE {\u0022id\u0022 occurrence. PROJ_COUNT = RAW.
         var mcpToolsCmd = new string[]
         {
             "sh", "-c",
@@ -447,8 +447,9 @@ public class AgentSessionTests(AspireFixture fixture)
             # Successful tool response has "content" but NO "isError":true.
             # The MCP SDK omits "isError":false in successful responses (defaults to false per spec).
             if echo "$LIST" | grep -qF '"content"' && ! echo "$LIST" | grep -qF '"isError":true'; then
-              # ProjectDto is flat (id, orgId, name, ...) — one {\"id\" per project, no division needed.
-              COUNT=$(echo "$LIST" | grep -oF '{\"id\"' | wc -l | tr -d ' ')
+              # ProjectDto is flat (id, orgId, name, ...) — each project has {\u0022id\u0022 (unicode-escaped
+              # quotes) in the embedded JSON string. Count that literal pattern, no division needed.
+              COUNT=$(echo "$LIST" | grep -oF '{\u0022id\u0022' | wc -l | tr -d ' ')
               echo "[ISSUEPIT:MCP_PROJECT_COUNT]=$COUNT"
               # Print the raw list response body so CI logs show what was returned
               echo "[ISSUEPIT:MCP_LIST_RESP]=$LIST"
