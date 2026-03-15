@@ -101,10 +101,17 @@ export function useDashboardLayout(options: {
   const dragSectionId = ref<string | null>(null)
   const dragHoverSid = ref<string | null>(null)
   let _dragSnapshot: string | null = null
+  // Cached drag group (all sections being moved together); populated on dragstart
+  let _dragGroup: string[] = []
 
   function onDragStart(e: DragEvent, id: string) {
     dragSectionId.value = id
     _dragSnapshot = JSON.stringify(layout.value)
+    // Cache the full drag group for use during dragover (avoids repeated filter calls)
+    const stk = sectionCfg(id).stackGroup ?? null
+    _dragGroup = stk
+      ? layout.value.order.filter(s => (sectionCfg(s).stackGroup ?? null) === stk)
+      : [id]
     if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = 'move'
       e.dataTransfer.setData('text/plain', id)
@@ -112,45 +119,50 @@ export function useDashboardLayout(options: {
   }
 
   function onDragOver(e: DragEvent, id: string) {
-    // Only highlight other cards, not the one being dragged
-    if (id !== dragSectionId.value) dragHoverSid.value = id
+    if (!dragSectionId.value) return
+    const isSameGroup = _dragGroup.length > 1 && _dragGroup.includes(id)
+    // Only highlight cards outside the drag group
+    if (!_dragGroup.includes(id)) dragHoverSid.value = id
     // Don't reorder when hovering over a config bar — it's a drop target for tab/stack grouping.
-    // Skipping the reorder keeps the config bar stable so the user can drop onto the buttons.
     if ((e.target as HTMLElement)?.closest('[data-no-reorder]')) return
-    if (!dragSectionId.value || id === dragSectionId.value) return
-    // Only reorder when cursor is near the left or right edge of the card — these are the
-    // "gap" zones between cards in the horizontal grid flow. Hovering over the card's main body
-    // (center area) only highlights the card for Tab/Stack grouping without moving anything.
+    if (id === dragSectionId.value || isSameGroup) return
+    if (_dragGroup.includes(id)) return
+    // Only reorder when the cursor is within the card edge zone — 16 px matches Tailwind gap-4,
+    // so this fires only as the cursor crosses the boundary from the gap into the card.
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    const fromLeft = e.clientX - rect.left
-    const fromRight = rect.right - e.clientX
-    const edgePx = Math.min(40, rect.width * 0.25)
-    if (fromLeft > edgePx && fromRight > edgePx) return
+    if (e.clientX - rect.left > 16 && rect.right - e.clientX > 16) return
 
     const order = layout.value.order
     const from = order.indexOf(dragSectionId.value)
     const to = order.indexOf(id)
-    if (from === -1 || to === -1 || from === to) return
+    if (from === -1 || to === -1) return
 
-    // If the target section is part of a stack group, treat the group as a single unit:
-    // when dragging downward (from < to), skip to after the last member so we never
-    // insert the dragged card between stack-group members.
-    let insertAt = to
-    const stk = sectionCfg(order[to]).stackGroup
-    if (stk !== null && from < to) {
-      for (let gi = to; gi < order.length; gi++) {
-        if (sectionCfg(order[gi]).stackGroup === stk) insertAt = gi
-        else break
+    // If the target card belongs to a stack group, move relative to the whole group
+    const targetStk = sectionCfg(id).stackGroup ?? null
+    let insertAnchor: string
+    let insertAfter: boolean
+    if (targetStk) {
+      const tGroup = order.filter(s => (sectionCfg(s).stackGroup ?? null) === targetStk)
+      if (from < to) {
+        insertAnchor = tGroup[tGroup.length - 1]
+        insertAfter = true
+      } else {
+        insertAnchor = tGroup[0]
+        insertAfter = false
       }
+    } else {
+      insertAnchor = id
+      insertAfter = from < to
     }
 
-    if (from === insertAt) return
-    const newOrder = [...order]
-    newOrder.splice(from, 1)
-    // insertAt was computed in original-index space; after removing `from` (< insertAt),
-    // elements shift left by 1, so splice(insertAt, …) correctly places the item after
-    // the last group member in the new array.
-    newOrder.splice(insertAt, 0, dragSectionId.value)
+    // Remove the drag group from the order, then reinsert at the anchor position
+    const withoutGroup = order.filter(s => !_dragGroup.includes(s))
+    let anchorIdx = withoutGroup.indexOf(insertAnchor)
+    if (anchorIdx === -1) return
+    if (insertAfter) anchorIdx++
+    const newOrder = [...withoutGroup]
+    newOrder.splice(anchorIdx, 0, ..._dragGroup)
+    if (newOrder.join(',') === order.join(',')) return
     layout.value.order = newOrder
   }
 
@@ -162,6 +174,7 @@ export function useDashboardLayout(options: {
     dragSectionId.value = null
     dragHoverSid.value = null
     _dragSnapshot = null
+    _dragGroup = []
   }
 
   // Scroll the page with mouse wheel while dragging (browser suppresses native scroll during DnD)

@@ -57,12 +57,12 @@
             itemColSpanClass(item),
             isDraftMode ? 'select-none' : '',
             item.type === 'section' && isDraftMode && sectionCfg(item.sid as MainSectionId).hidden ? 'opacity-40 saturate-50' : '',
-            dragSectionId === (item.type === 'section' ? item.sid : item.sections[0]) && isDraftMode
-              ? (dragHoverSid ? 'opacity-0' : 'opacity-50')
+            (item.type === 'section' ? dragSectionId === item.sid : item.sections.includes(dragSectionId as MainSectionId)) && isDraftMode
+              ? 'opacity-50'
               : '',
           ]"
           :draggable="isDraftMode"
-          @dragstart="isDraftMode && item.type === 'section' ? onDragStart($event, item.sid as MainSectionId) : undefined"
+          @dragstart="isDraftMode && (item.type === 'section' || item.type === 'stackgroup') ? onDragStart($event, (item.type === 'section' ? item.sid : item.sections[0]) as MainSectionId) : undefined"
           @dragover.prevent="isDraftMode ? onDragOver($event, (item.type === 'section' ? item.sid : item.sections[0]) as MainSectionId) : undefined"
           @dragend="isDraftMode ? onDragEnd($event) : undefined">
 
@@ -117,8 +117,10 @@
               :section-labels="SECTION_LABELS"
               :widths="MAIN_WIDTHS"
               :current-width="sectionCfg(item.sections[0] as MainSectionId).width"
+              :is-dragging="!!dragSectionId"
               @split="toggleStackGroupWithNext(item.sections[0] as MainSectionId)"
               @width-change="w => updateCfg(item.sections[0] as MainSectionId, { width: w as MainWidth })"
+              @stack-drop="droppedSid => stackWithSection(item.sections[0] as MainSectionId, droppedSid)"
             />
           </template>
 
