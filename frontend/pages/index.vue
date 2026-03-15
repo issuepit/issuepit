@@ -21,7 +21,7 @@
         <span class="font-medium">Draft mode</span>
         <span class="text-amber-400/70 text-xs hidden sm:inline">— drag to reorder · configure each section</span>
       </div>
-      <div class="flex items-center gap-1.5">
+      <div class="flex items-center gap-1.5 flex-wrap justify-end">
         <button
           draggable="true"
           @click="addRowBreak()"
@@ -33,6 +33,20 @@
           </svg>
           Row break
         </button>
+        <button @click="showLoadModal = true"
+          class="text-xs text-gray-500 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+          </svg>
+          Load
+        </button>
+        <button @click="handleExportJson"
+          class="text-xs text-gray-500 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l4 4m0 0l4-4m-4 4V4" />
+          </svg>
+          Export
+        </button>
         <button @click="resetLayout"
           class="text-xs text-gray-400 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors">
           Reset
@@ -40,6 +54,13 @@
         <button @click="cancelDraftMode"
           class="text-xs text-gray-400 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors">
           Cancel
+        </button>
+        <button @click="showSaveModal = true"
+          class="text-xs text-gray-400 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+          </svg>
+          Save as…
         </button>
         <button @click="saveDraftMode"
           class="text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg transition-colors font-medium">
@@ -413,6 +434,23 @@
         Customize dashboard
       </button>
     </div>
+
+    <!-- Save as modal -->
+    <DashboardSaveModal
+      v-if="showSaveModal"
+      :layout-json="exportLayoutJson()"
+      dashboard-type="main"
+      @close="showSaveModal = false"
+      @saved="showSaveModal = false"
+    />
+
+    <!-- Load / import modal -->
+    <DashboardLoadModal
+      v-if="showLoadModal"
+      dashboard-type="main"
+      @close="showLoadModal = false"
+      @apply="applyImportedLayout"
+    />
   </div>
 </template>
 
@@ -506,6 +544,8 @@ const {
   addRowBreak,
   captureSnapshot,
   removeRowBreak,
+  exportLayoutJson,
+  importLayoutJson,
   onDragStart: onDragStartRaw,
   onDragOver: onDragOverRaw,
   onDragEnter: onDragEnterRaw,
@@ -521,6 +561,30 @@ const {
   defaultConfigs: DEFAULT_CONFIGS,
   storageKey: MAIN_LAYOUT_KEY,
 })
+
+// ── Template save / load / export / import ────────────────────────────────
+const showSaveModal = ref(false)
+const showLoadModal = ref(false)
+
+function handleExportJson() {
+  if (!import.meta.client) return
+  const json = exportLayoutJson()
+  const blob = new Blob([json], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'main-dashboard-layout.json'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function applyImportedLayout(json: string) {
+  const ok = importLayoutJson(json)
+  if (!ok) {
+    // eslint-disable-next-line no-console
+    console.warn('Invalid dashboard layout JSON')
+  }
+}
 
 function sectionCfg(s: MainSectionId) { return sectionCfgRaw(s) }
 function updateCfg(s: MainSectionId, patch: object) { updateCfgRaw(s, patch) }

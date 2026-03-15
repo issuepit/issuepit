@@ -82,6 +82,31 @@ export function useDashboardLayout(options: {
     localStorage.setItem(storageKey, JSON.stringify(layout.value))
   }
 
+  function exportLayoutJson(): string {
+    return JSON.stringify(layout.value, null, 2)
+  }
+
+  function importLayoutJson(json: string): boolean {
+    try {
+      const parsed = JSON.parse(json) as Partial<LayoutData>
+      if (Array.isArray(parsed.order) && parsed.order.length) {
+        const valid = parsed.order.filter(s => s in defaultConfigs || isVirtualId(s))
+        const missing = defaultOrder.filter(s => !valid.includes(s))
+        layout.value.order = [...valid, ...missing]
+      }
+      if (parsed.configs) {
+        for (const sid of defaultOrder) {
+          if (parsed.configs[sid]) {
+            layout.value.configs[sid] = { ...defaultConfigs[sid], ...parsed.configs[sid] }
+          }
+        }
+      }
+      return true
+    } catch {
+      return false
+    }
+  }
+
   function enterDraftMode() {
     _snapshot = JSON.stringify(layout.value)
     isDraftMode.value = true
@@ -443,6 +468,8 @@ export function useDashboardLayout(options: {
     showSection,
     loadLayout,
     saveLayout,
+    exportLayoutJson,
+    importLayoutJson,
     enterDraftMode,
     saveDraftMode,
     cancelDraftMode,
