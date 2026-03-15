@@ -15,8 +15,12 @@ builder.AddRedisClient("redis");
 // Register Docker client (used by DockerAgentRuntime)
 builder.Services.AddSingleton(_ => new DockerClientBuilder().Build());
 
-// HttpClient factory (used by OpenSandboxAgentRuntime)
+// HttpClient factory (used by OpenSandboxAgentRuntime and OpenCodeHttpApi)
 builder.Services.AddHttpClient();
+builder.Services.AddSingleton<IAgentHttpApi, OpenCodeHttpApi>(sp =>
+    new OpenCodeHttpApi(
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient("opencode-http-api"),
+        sp.GetRequiredService<ILogger<OpenCodeHttpApi>>()));
 
 // Register runtime implementations
 builder.Services.AddSingleton<DockerAgentRuntime>();

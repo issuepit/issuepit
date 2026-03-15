@@ -252,9 +252,22 @@ import json, os, sys
 
 mcp_url = os.environ.get("ISSUEPIT_MCP_URL", "")
 agents_json_str = os.environ.get("ISSUEPIT_OPENCODE_AGENTS_JSON", "")
+opencode_port = os.environ.get("OPENCODE_PORT", "")
+opencode_password = os.environ.get("OPENCODE_PASSWORD", "")
 config_file = os.path.join(os.path.expanduser("~"), ".config", "opencode", "config.json")
 
 config = {"autoupdate": False}
+
+# Configure the server port when running in HTTP server mode (OPENCODE_PORT env var).
+if opencode_port:
+    try:
+        config["port"] = int(opencode_port)
+    except ValueError:
+        print(f"[entrypoint] Warning: OPENCODE_PORT is not a valid integer: {opencode_port}", file=sys.stderr)
+
+# Configure server authentication password (OPENCODE_PASSWORD env var).
+if opencode_password:
+    config["password"] = opencode_password
 
 # Add the IssuePit MCP server when the URL is configured.
 if mcp_url:

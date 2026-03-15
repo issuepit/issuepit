@@ -20,7 +20,11 @@ namespace IssuePit.ExecutionClient.Runtimes;
 /// When <see cref="Agent.RunnerType"/> is null (legacy mode), the container runs its
 /// default CMD and is waited on as before.
 /// </summary>
-public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient dockerClient, IConfiguration configuration)
+public class DockerAgentRuntime(
+    ILogger<DockerAgentRuntime> logger,
+    DockerClient dockerClient,
+    IConfiguration configuration,
+    IAgentHttpApi agentHttpApi)
     : IExecCapableRuntime
 {
     // Docker image used to run agents. Uses the IssuePit helper-opencode-act image which includes
@@ -38,6 +42,11 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
     internal const string OpenCodeSessionIdMarker = "[ISSUEPIT:OPENCODE_SESSION_ID]=";
     /// <summary>Emitted when <c>git push</c> fails; IssueWorker uses this to trigger a .git archive upload.</summary>
     internal const string GitPushFailedMarker = "[ISSUEPIT:GIT_PUSH_FAILED]=true";
+    /// <summary>
+    /// Emitted when the agent is running in HTTP server mode; carries the URL of the agent's web UI.
+    /// IssueWorker captures this and persists it on <see cref="AgentSession.ServerWebUiUrl"/>.
+    /// </summary>
+    internal const string ServerWebUiUrlMarker = "[ISSUEPIT:SERVER_WEB_UI_URL]=";
 
     private static string AppVersion =>
         Assembly.GetEntryAssembly()
@@ -76,6 +85,8 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
             await onLogLine($"[DEBUG] Runner type    : {agent.RunnerType}", LogStream.Stdout);
         if (!string.IsNullOrWhiteSpace(agent.Model))
             await onLogLine($"[DEBUG] Model          : {agent.Model}", LogStream.Stdout);
+        if (agent.UseHttpServer)
+            await onLogLine($"[DEBUG] Server mode    : HTTP (opencode server API)", LogStream.Stdout);
         await onLogLine($"[DEBUG] DinD           : isolated (Privileged=true, in-container dockerd)", LogStream.Stdout);
         if (agent.DisableInternet)
             await onLogLine($"[DEBUG] Internet       : restricted", LogStream.Stdout);
@@ -134,16 +145,28 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         if (!string.IsNullOrWhiteSpace(issuePitMcpUrl))
             await onLogLine($"[DEBUG] IssuePit MCP   : {issuePitMcpUrl}", LogStream.Stdout);
 
-        // Step 3: Determine whether to use the exec-based flow (RunnerType set) or the legacy flow.
+        // Inject the HTTP server password so opencode can use it for authentication when UseHttpServer=true.
+        if (agent.UseHttpServer && !string.IsNullOrWhiteSpace(agent.HttpServerPassword))
+            env.Add($"OPENCODE_PASSWORD={agent.HttpServerPassword}");
+
+        // Step 3: Determine the execution mode.
         //
-        // Exec flow  — container CMD = "sleep infinity"; entrypoint does setup and keeps container alive;
-        //              C# execs the agent tool and all post-run steps (git check, markers, push).
-        // Legacy flow — container CMD from entrypoint default; wait for container to exit (old behaviour).
+        // HTTP server mode — container CMD = "opencode" (starts the HTTP server); C# uses the REST
+        //                    API to create sessions, send tasks, and poll for results. Supports
+        //                    parallel tasks on the same server. The server's web UI URL is emitted
+        //                    as a [ISSUEPIT:SERVER_WEB_UI_URL]= marker for IssueWorker.
+        // Exec flow        — container CMD = "sleep infinity"; C# drives all agent commands via
+        //                    docker exec. Keeps the same opencode session files across fix runs.
+        // Legacy flow      — container CMD from entrypoint default; wait for container to exit.
+        var useHttpServerMode = agent.UseHttpServer && agent.RunnerType == RunnerType.OpenCode;
+
         var comments = issue.Comments.Count > 0 ? (IReadOnlyList<IssueComment>)issue.Comments : null;
         if (comments is not null)
             await onLogLine($"[DEBUG] Comments       : {comments.Count} comment(s) included in prompt", LogStream.Stdout);
-        var runnerArgs = RunnerCommandBuilder.BuildArgsList(agent, issue, comments: comments);
-        var useExecFlow = runnerArgs.Count > 0;
+
+        // Build CLI args for exec flow (not used in HTTP server mode).
+        var runnerArgs = useHttpServerMode ? [] : RunnerCommandBuilder.BuildArgsList(agent, issue, comments: comments);
+        var useExecFlow = !useHttpServerMode && runnerArgs.Count > 0;
 
         if (useExecFlow)
         {
@@ -161,8 +184,9 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         // Step 4: Configure DNS-based firewall when internet access should be restricted.
         var dns = agent.DisableInternet ? GetRestrictedDns() : null;
 
-        logger.LogInformation("Creating Docker container from image {Image} for agent {AgentId} (DisableInternet={DisableInternet}, ExecFlow={UseExecFlow})",
-            image, agent.Id, agent.DisableInternet, useExecFlow);
+        logger.LogInformation(
+            "Creating Docker container from image {Image} for agent {AgentId} (DisableInternet={DisableInternet}, ExecFlow={UseExecFlow}, HttpServer={UseHttpServer})",
+            image, agent.Id, agent.DisableInternet, useExecFlow, useHttpServerMode);
 
         var hostConfig = new HostConfig
         {
@@ -181,18 +205,36 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         if (dns is not null)
             hostConfig.DNS = dns;
 
-        // Custom CMD: for non-exec-flow sessions (legacy flow) only. Exec flow always uses
-        // "sleep infinity" so that docker exec can be used for all subsequent operations.
-        // DockerCmdOverride is useful for diagnostic/testing sessions (e.g. connectivity checks).
-        IList<string>? containerCmd = useExecFlow
-            ? ["sleep", "infinity"]
-            : (session.CustomCmd?.Length > 0 ? session.CustomCmd : null);
+        // Expose the opencode HTTP server port to the host when running in HTTP server mode.
+        // An empty HostPort causes Docker to assign a random available host port.
+        Dictionary<string, EmptyStruct>? containerExposedPorts = null;
+        if (useHttpServerMode)
+        {
+            var containerPort = $"{OpenCodeHttpApi.DefaultPort}/tcp";
+            containerExposedPorts = new Dictionary<string, EmptyStruct> { { containerPort, new EmptyStruct() } };
+            hostConfig.PortBindings = new Dictionary<string, IList<PortBinding>>
+            {
+                { containerPort, [new PortBinding { HostPort = "" }] },
+            };
+            await onLogLine($"[DEBUG] HTTP server    : port {OpenCodeHttpApi.DefaultPort} (random host port)", LogStream.Stdout);
+        }
+
+        // Container CMD:
+        //   - HTTP server mode: "opencode" (no run subcommand — starts the HTTP server)
+        //   - Exec flow:        "sleep infinity" (entrypoint keeps container alive for docker exec)
+        //   - Legacy flow:      null → use image's default CMD (or session.CustomCmd if set)
+        IList<string>? containerCmd = useHttpServerMode
+            ? ["opencode"]
+            : useExecFlow
+                ? ["sleep", "infinity"]
+                : (session.CustomCmd?.Length > 0 ? session.CustomCmd : null);
 
         var createParams = new CreateContainerParameters
         {
             Image = image,
             Env = env,
             Cmd = containerCmd,
+            ExposedPorts = containerExposedPorts,
             HostConfig = hostConfig,
             Labels = new Dictionary<string, string>
             {
@@ -215,7 +257,7 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         logger.LogInformation("Started Docker container {ContainerId} for agent session {SessionId} (ExecFlow={UseExecFlow})",
             container.ID, session.Id, useExecFlow);
 
-        if (!useExecFlow)
+        if (!useExecFlow && !useHttpServerMode)
         {
             // ── Legacy flow ──────────────────────────────────────────────────────
             // Stream logs and wait for the container to exit naturally.
@@ -234,6 +276,119 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
                     $"(image: {image}, session: {session.Id})");
 
             return container.ID;
+        }
+
+        if (useHttpServerMode)
+        {
+            // ── HTTP server flow ─────────────────────────────────────────────────
+            // The container is running the opencode HTTP server. Drive all session
+            // management via the REST API and git operations via docker exec.
+            try
+            {
+                // Step 6: Resolve the host-side port that Docker mapped to the opencode server port.
+                var inspect = await dockerClient.Containers.InspectContainerAsync(container.ID, cancellationToken);
+                var containerPortKey = $"{OpenCodeHttpApi.DefaultPort}/tcp";
+                var ports = inspect.NetworkSettings?.Ports;
+                IList<PortBinding>? portBindings = null;
+                ports?.TryGetValue(containerPortKey, out portBindings);
+                var hostPort = portBindings?.FirstOrDefault()?.HostPort;
+
+                if (string.IsNullOrWhiteSpace(hostPort))
+                {
+                    var portsInfo = ports is null ? "(null)" : string.Join(", ", ports.Keys);
+                    throw new InvalidOperationException(
+                        $"Could not determine the host port mapped to container port {OpenCodeHttpApi.DefaultPort} " +
+                        $"in container {container.ID[..Math.Min(12, container.ID.Length)]}. " +
+                        $"Exposed ports: [{portsInfo}]. " +
+                        "Ensure the port binding was configured correctly.");
+                }
+
+                var serverBaseUrl = $"http://localhost:{hostPort}";
+                await onLogLine($"[DEBUG] HTTP server URL: {serverBaseUrl}", LogStream.Stdout);
+
+                // Emit the server web UI URL as a structured marker so IssueWorker can persist it
+                // on the session record for display in the UI.
+                await onLogLine($"{ServerWebUiUrlMarker}{serverBaseUrl}", LogStream.Stdout);
+
+                // Step 7: Wait for the opencode server to be ready (up to 60 s).
+                await onLogLine("[INFO] Waiting for opencode HTTP server to become ready…", LogStream.Stdout);
+                var serverReady = await WaitForHttpServerReadyAsync(serverBaseUrl, maxWaitSeconds: 60, cancellationToken);
+                if (!serverReady)
+                    throw new InvalidOperationException(
+                        $"opencode HTTP server did not become ready within 60 seconds (url: {serverBaseUrl}).");
+
+                await onLogLine("[INFO] opencode HTTP server is ready", LogStream.Stdout);
+
+                // Log server info for diagnostics.
+                var serverInfo = await agentHttpApi.GetServerInfoAsync(serverBaseUrl, cancellationToken);
+                if (serverInfo is not null)
+                    await onLogLine($"[DEBUG] Server info    : {serverInfo[..Math.Min(200, serverInfo.Length)]}", LogStream.Stdout);
+
+                // Log the actual commit SHA checked out by the entrypoint.
+                if (gitRepository is not null)
+                {
+                    try
+                    {
+                        var clonedSha = await ExecReadOutputAsync(
+                            container.ID, ["git", "rev-parse", "HEAD"], cancellationToken);
+                        var clonedBranch = await ExecReadOutputAsync(
+                            container.ID, ["git", "branch", "--show-current"], cancellationToken);
+                        if (!string.IsNullOrWhiteSpace(clonedSha))
+                        {
+                            var branchPart = !string.IsNullOrWhiteSpace(clonedBranch)
+                                ? $", branch: {clonedBranch}"
+                                : string.Empty;
+                            await onLogLine($"[INFO] Workspace cloned: SHA={clonedSha}{branchPart}", LogStream.Stdout);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        await onLogLine($"[WARN] Could not read cloned SHA: {ex.Message}", LogStream.Stderr);
+                    }
+                }
+
+                // Step 8: Create a session and send the task via the HTTP API.
+                var httpSessionId = await agentHttpApi.CreateSessionAsync(serverBaseUrl, cancellationToken);
+                await onLogLine($"[INFO] Created opencode HTTP session: {httpSessionId}", LogStream.Stdout);
+
+                await agentHttpApi.SendMessageAsync(serverBaseUrl, httpSessionId, taskPrompt, cancellationToken);
+                await onLogLine("[INFO] Task sent to opencode HTTP session, waiting for completion…", LogStream.Stdout);
+
+                // Step 9: Poll until the session completes.
+                var sessionStatus = await agentHttpApi.WaitForCompletionAsync(
+                    serverBaseUrl, httpSessionId,
+                    line => onLogLine(line, LogStream.Stdout),
+                    cancellationToken);
+
+                await onLogLine($"[INFO] opencode HTTP session completed with status: {sessionStatus}", LogStream.Stdout);
+
+                // Step 10: Check git state and emit markers so IssueWorker can trigger CI/CD.
+                if (gitRepository is not null)
+                {
+                    try
+                    {
+                        await CheckAndEmitUncommittedChangesAsync(container.ID, onLogLine, cancellationToken);
+                        await EmitGitMarkersAsync(container.ID, onLogLine, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        await onLogLine($"[WARN] Git state check failed: {ex.Message}", LogStream.Stderr);
+                    }
+                }
+
+                if (sessionStatus == AgentHttpSessionStatus.Error)
+                    throw new Exception(
+                        $"opencode HTTP session ended with error (session: {httpSessionId}, container: {container.ID[..Math.Min(12, container.ID.Length)]})");
+
+                // Return the container ID — the server is still running for potential parallel sessions.
+                return container.ID;
+            }
+            catch
+            {
+                if (!session.KeepContainer)
+                    await TryStopAndRemoveContainerAsync(container.ID);
+                throw;
+            }
         }
 
         // ── Exec flow ────────────────────────────────────────────────────────
@@ -425,6 +580,30 @@ public class DockerAgentRuntime(ILogger<DockerAgentRuntime> logger, DockerClient
         {
             logger.LogWarning(ex, "Failed to remove container {ContainerId}", containerId);
         }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // HTTP server helpers
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Polls the agent's HTTP server until it is ready to accept requests or the
+    /// <paramref name="maxWaitSeconds"/> deadline is reached. Returns <c>true</c> when
+    /// the server becomes ready, <c>false</c> on timeout.
+    /// </summary>
+    private async Task<bool> WaitForHttpServerReadyAsync(
+        string serverBaseUrl,
+        int maxWaitSeconds,
+        CancellationToken cancellationToken)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(maxWaitSeconds);
+        while (DateTimeOffset.UtcNow < deadline && !cancellationToken.IsCancellationRequested)
+        {
+            if (await agentHttpApi.IsReadyAsync(serverBaseUrl, cancellationToken))
+                return true;
+            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+        }
+        return false;
     }
 
     // ──────────────────────────────────────────────────────────────────────────

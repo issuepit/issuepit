@@ -40,6 +40,24 @@ public class Agent
     /// while keeping development-related domains (GitHub, NuGet, npm, etc.) reachable.</summary>
     public bool DisableInternet { get; set; }
 
+    /// <summary>
+    /// When true, the agent is started as an HTTP server (e.g. <c>opencode</c> without the <c>run</c>
+    /// subcommand) instead of executing CLI commands directly via <c>docker exec</c>.
+    /// The execution client communicates with the agent via its REST API, enables parallel
+    /// sessions on the same server, and exposes the server's web UI URL on each session.
+    /// Only applicable when <see cref="RunnerType"/> supports an HTTP server mode (currently
+    /// <see cref="Enums.RunnerType.OpenCode"/>).
+    /// </summary>
+    public bool UseHttpServer { get; set; }
+
+    /// <summary>
+    /// Optional password/token for authenticating with the agent's HTTP server.
+    /// When set, it is passed to the server process as the <c>OPENCODE_AUTH_TOKEN</c> (or equivalent)
+    /// environment variable so that only requests with this token are accepted.
+    /// </summary>
+    [MaxLength(500)]
+    public string? HttpServerPassword { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     /// <summary>Optional parent agent. When set this agent is a child of the parent and is passed as a nested

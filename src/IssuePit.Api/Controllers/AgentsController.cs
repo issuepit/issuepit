@@ -42,6 +42,7 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
             agent.Model,
             agent.IsActive,
             agent.ParentAgentId,
+            agent.UseHttpServer,
             agent.CreatedAt,
             LinkedMcpServers = agent.AgentMcpServers.Select(am => new
             {
@@ -70,7 +71,22 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
         agent.CreatedAt = DateTime.UtcNow;
         db.Agents.Add(agent);
         await db.SaveChangesAsync();
-        return Created($"/api/agents/{agent.Id}", agent);
+        // Return the created agent without the password (security: never expose credentials).
+        return Created($"/api/agents/{agent.Id}", new
+        {
+            agent.Id,
+            agent.OrgId,
+            agent.Name,
+            agent.SystemPrompt,
+            agent.DockerImage,
+            agent.AllowedTools,
+            agent.RunnerType,
+            agent.Model,
+            agent.IsActive,
+            agent.ParentAgentId,
+            agent.UseHttpServer,
+            agent.CreatedAt,
+        });
     }
 
     [HttpPut("{id:guid}")]
@@ -86,8 +102,29 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
         agent.Model = updated.Model;
         agent.IsActive = updated.IsActive;
         agent.ParentAgentId = updated.ParentAgentId;
+        agent.UseHttpServer = updated.UseHttpServer;
+        // Only update password when a non-empty value is provided so a blank PUT does not clear it.
+        // To clear the password, use a dedicated PATCH endpoint (not yet implemented) or
+        // delete and recreate the agent. This prevents accidental password removal on a full update.
+        if (!string.IsNullOrEmpty(updated.HttpServerPassword))
+            agent.HttpServerPassword = updated.HttpServerPassword;
         await db.SaveChangesAsync();
-        return Ok(agent);
+        // Return the agent without the password (security: never expose credentials in responses).
+        return Ok(new
+        {
+            agent.Id,
+            agent.OrgId,
+            agent.Name,
+            agent.SystemPrompt,
+            agent.DockerImage,
+            agent.AllowedTools,
+            agent.RunnerType,
+            agent.Model,
+            agent.IsActive,
+            agent.ParentAgentId,
+            agent.UseHttpServer,
+            agent.CreatedAt,
+        });
     }
 
     [HttpPatch("{id:guid}/active")]
