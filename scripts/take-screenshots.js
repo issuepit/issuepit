@@ -166,16 +166,11 @@ async function main() {
   await page.goto(`${FRONTEND_URL}/issues`);
   await screenshot(page, 'issues');
 
-  // Get the first available project for the kanban screenshot
+  // Get the first available project for project-specific screenshots
   const projectsRes = await apiClient.get(`${API_URL}/api/projects`, {
     headers: tenantId ? { 'X-Tenant-Id': tenantId } : {},
   });
   const projects = await projectsRes.json();
-  if (Array.isArray(projects) && projects.length > 0) {
-    const proj = projects[0];
-    await page.goto(`${FRONTEND_URL}/projects/${proj.id}/kanban`);
-    await screenshot(page, 'kanban');
-  }
 
   await page.goto(`${FRONTEND_URL}/agents`);
   await screenshot(page, 'agents');
@@ -191,11 +186,23 @@ async function main() {
 
   if (Array.isArray(projects) && projects.length > 0) {
     const proj = projects[0];
+    await page.goto(`${FRONTEND_URL}/projects/${proj.id}`);
+    await screenshot(page, 'project-dashboard');
+
+    await page.goto(`${FRONTEND_URL}/projects/${proj.id}/kanban`);
+    await screenshot(page, 'kanban');
+
     await page.goto(`${FRONTEND_URL}/projects/${proj.id}/ci-cd`);
     await screenshot(page, 'cicd');
 
     await page.goto(`${FRONTEND_URL}/projects/${proj.id}/milestones`);
     await screenshot(page, 'milestones');
+
+    await page.goto(`${FRONTEND_URL}/projects/${proj.id}/runs/test-history`);
+    await screenshot(page, 'test-history');
+
+    await page.goto(`${FRONTEND_URL}/projects/${proj.id}/settings`);
+    await screenshot(page, 'project-settings');
   }
 
   await browser.close();

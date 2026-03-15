@@ -116,6 +116,14 @@ See [Helper Containers →](developer/helper-containers) for details.
 
 ---
 
+## Test History
+
+Every CI/CD run that produces a `.trx` artifact automatically has its test results stored in the IssuePit database. The **Test History** page (`Project → Runs → Test History`) lets you analyse this data over time.
+
+See [Projects → Test History](projects#test-history) for full documentation.
+
+---
+
 ## Next Steps
 
 - [Projects → Runs](projects#runs)
