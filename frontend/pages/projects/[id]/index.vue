@@ -174,7 +174,7 @@
           <button
             draggable="true"
             @click="addRowBreak()"
-            @dragstart.stop="(e: DragEvent) => { const id = addRowBreak(); onSectionDragStart(e, id) }"
+            @dragstart.stop="(e: DragEvent) => { captureSnapshot(); const id = addRowBreak(); onSectionDragStart(e, id) }"
             aria-label="Add row break to dashboard layout"
             class="text-xs text-gray-500 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1 cursor-grab">
             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1001,6 +1001,7 @@ const {
   resetLayout,
   addRowBreak,
   removeRowBreak,
+  captureSnapshot,
   onDragStart: onDragStartRaw,
   onDragOver: onDragOverRaw,
   onDragEnter: onDragEnterRaw,

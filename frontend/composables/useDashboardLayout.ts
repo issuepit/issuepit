@@ -125,10 +125,15 @@ export function useDashboardLayout(options: {
   let _dragGroup: string[] = []
   let _dragEscaped = false
 
+  function captureSnapshot() {
+    _dragSnapshot = JSON.stringify(layout.value)
+  }
+
   function onDragStart(e: DragEvent, id: string) {
     _dragEscaped = false
     dragSectionId.value = id
-    _dragSnapshot = JSON.stringify(layout.value)
+    // Only capture a new snapshot if one hasn't already been taken (e.g. before a pre-insert)
+    if (!_dragSnapshot) _dragSnapshot = JSON.stringify(layout.value)
     // Cache the full drag group for use during dragover (avoids repeated filter calls)
     const stk = isVirtualId(id) ? null : (sectionCfg(id).stackGroup ?? null)
     _dragGroup = stk
@@ -439,6 +444,7 @@ export function useDashboardLayout(options: {
     cancelDraftMode,
     resetLayout,
     addRowBreak,
+    captureSnapshot,
     removeRowBreak,
     onDragStart,
     onDragOver,
