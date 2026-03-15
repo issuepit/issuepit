@@ -240,7 +240,7 @@ fi
 # When opencode is installed, write ~/.config/opencode/config.json so that:
 #   - autoupdate=false prevents opencode from self-updating mid-run
 #   - The IssuePit MCP server is registered when ISSUEPIT_MCP_URL is set
-#   - Agent modes are configured when ISSUEPIT_OPENCODE_AGENTS_JSON is set
+#   - Agents are configured when ISSUEPIT_OPENCODE_AGENTS_JSON is set (written to the "agent" config section)
 #
 # Plugin loading (opencode auto-discovers plugins — no config.json wiring needed):
 #   - Baked plugins live in /root/.config/opencode/plugins/ (copied during image build)
@@ -284,25 +284,30 @@ if mcp_url:
         }
     }
 
-# Add agent modes from ISSUEPIT_OPENCODE_AGENTS_JSON when present.
-# Format expected: [{"name": "...", "model": "...", "prompt": "..."}, ...]
-# Each entry becomes a named mode in the opencode "mode" config section.
+# Add agents from ISSUEPIT_OPENCODE_AGENTS_JSON when present.
+# Format expected: [{"name": "...", "model": "...", "prompt": "...", "agentType": "primary"|"subagent"|null}, ...]
+# Each entry becomes a named entry in the opencode "agent" config section.
+# The "agentType" field maps to the opencode "mode" property ("primary" or "subagent").
+# See https://opencode.ai/docs/agents for details on opencode agent types.
 if agents_json_str:
     try:
         agents = json.loads(agents_json_str)
-        mode_map = {}
+        agent_map = {}
         for a in agents:
-            mode_key = a.get("name", "").lower().replace(" ", "-")
-            if mode_key:
-                mode_map[mode_key] = {
-                    "model": a.get("model") or None,
-                    "system": a.get("prompt", ""),
+            agent_key = a.get("name", "").lower().replace(" ", "-")
+            if agent_key:
+                entry = {
+                    "prompt": a.get("prompt", ""),
                 }
-                # Remove null model to use the global default
-                if mode_map[mode_key]["model"] is None:
-                    del mode_map[mode_key]["model"]
-        if mode_map:
-            config["mode"] = mode_map
+                model = a.get("model") or None
+                if model:
+                    entry["model"] = model
+                agent_type = a.get("agentType") or None
+                if agent_type in ("primary", "subagent"):
+                    entry["mode"] = agent_type
+                agent_map[agent_key] = entry
+        if agent_map:
+            config["agent"] = agent_map
     except Exception as e:
         print(f"[entrypoint] Warning: could not parse ISSUEPIT_OPENCODE_AGENTS_JSON: {e}", file=sys.stderr)
 
@@ -338,16 +343,17 @@ with open(config_file, "w") as f:
 print(f"[entrypoint] opencode config written: {config_file}")
 OPENCODE_PYEOF
 
-    # Debug: list all configured agent modes
+    # Debug: list all configured agents
     if [[ -n "${ISSUEPIT_OPENCODE_AGENTS_JSON:-}" ]]; then
-        echo "[entrypoint] Configured agent modes (from ISSUEPIT_OPENCODE_AGENTS_JSON):"
+        echo "[entrypoint] Configured agents (from ISSUEPIT_OPENCODE_AGENTS_JSON):"
         python3 -c "
 import sys, json, os
 try:
     agents = json.loads(os.environ.get('ISSUEPIT_OPENCODE_AGENTS_JSON', '[]'))
     for a in agents:
         model = a.get('model') or '(default)'
-        print(f\"  - {a['name']} (model: {model})\")
+        agent_type = a.get('agentType') or '(unset)'
+        print(f\"  - {a['name']} (model: {model}, type: {agent_type})\")
 except Exception as e:
     print(f'  (parse error: {e})', file=sys.stderr)
 " 2>&1 || true

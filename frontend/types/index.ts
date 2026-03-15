@@ -368,8 +368,20 @@ export interface Agent {
   isActive: boolean
   runnerType?: RunnerType
   model?: string
+  agentType?: OpenCodeAgentType
+  parentAgentId?: string
+  childAgents?: AgentChild[]
   createdAt: string
   updatedAt: string
+}
+
+export interface AgentChild {
+  id: string
+  name: string
+  model?: string
+  systemPrompt: string
+  agentType?: OpenCodeAgentType
+  isActive: boolean
 }
 
 export interface AgentProject {
@@ -524,6 +536,16 @@ export const RunnerTypeLabels: Record<RunnerType, string> = {
   [RunnerType.OpenCode]: 'OpenCode',
   [RunnerType.Codex]: 'Codex CLI',
   [RunnerType.GitHubCopilotCli]: 'GitHub Copilot CLI',
+}
+
+export enum OpenCodeAgentType {
+  SubAgent = 0,
+  Primary = 1,
+}
+
+export const OpenCodeAgentTypeLabels: Record<OpenCodeAgentType, string> = {
+  [OpenCodeAgentType.SubAgent]: 'Subagent',
+  [OpenCodeAgentType.Primary]: 'Primary',
 }
 
 export interface ApiKey {
