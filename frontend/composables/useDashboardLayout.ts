@@ -155,6 +155,10 @@ export function useDashboardLayout(options: {
     if (!dragSectionId.value) return
     // Only fire when truly entering the card from outside (not from a child element)
     if (e.currentTarget instanceof HTMLElement && e.currentTarget.contains(e.relatedTarget as Node)) return
+    // Only reorder if entering from the true gap (not from another card).
+    // When the cursor moves directly from Card A to Card B there is no gap crossing,
+    // so the relatedTarget will be inside a [data-drag-card] element — skip reorder in that case.
+    if ((e.relatedTarget as Element | null)?.closest('[data-drag-card]')) return
 
     const isSameGroup = _dragGroup.length > 1 && _dragGroup.includes(id)
     // Skip reorder if dragging over ourselves or our group

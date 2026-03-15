@@ -140,14 +140,6 @@
           Members
           <span class="text-xs text-gray-600">{{ store.currentProject.memberCount }}</span>
         </NuxtLink>
-        <button v-if="!isDraftMode" @click="enterDraftMode"
-          class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-gray-800 transition-colors text-sm whitespace-nowrap">
-          <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-          </svg>
-          Customize
-        </button>
         <NuxtLink :to="`/projects/${id}/settings`"
           class="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors text-sm whitespace-nowrap"
           active-class="text-white bg-gray-800">
@@ -157,6 +149,14 @@
           </svg>
           Settings
         </NuxtLink>
+        <button v-if="!isDraftMode" @click="enterDraftMode"
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-gray-800 transition-colors text-sm whitespace-nowrap">
+          <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+          </svg>
+          Customize
+        </button>
       </nav>
 
       <!-- Draft mode toolbar -->
@@ -232,6 +232,7 @@
           </template>
 
           <div v-else
+            data-drag-card
             :class="[
               itemColSpanClass(item),
               isDraftMode ? 'select-none' : '',
@@ -945,7 +946,7 @@ const recentProjectIssues = ref<Issue[]>([])
 // ── Dashboard layout customization ─────────────────────────────────────────
 type SectionId = 'statIssues' | 'statCommits' | 'statMRs' | 'milestones' | 'issues' | 'agentRuns' | 'cicdRuns' | 'history' | 'kanban'
 type SectionDisplayMode = 'list' | 'count' | 'block'
-type SectionWidth = 'xs' | 'quarter' | 'sm' | 'md' | 'lg'
+type SectionWidth = 'xxs' | 'xs' | 'quarter' | 'sm' | 'md' | 'lg'
 
 const SECTION_LABELS: Record<SectionId, string> = {
   statIssues: 'Issues',
@@ -967,8 +968,8 @@ const SECTION_DISPLAY_MODES: Partial<Record<SectionId, SectionDisplayMode[]>> = 
 const SECTION_HAS_MAX_ITEMS: Set<SectionId> = new Set(['milestones', 'issues', 'agentRuns', 'cicdRuns'])
 const SECTION_CAN_STACK: Set<SectionId> = new Set(['statIssues', 'statCommits', 'statMRs', 'milestones', 'issues', 'agentRuns', 'cicdRuns', 'history', 'kanban'])
 const MAX_ITEMS_OPTIONS = [3, 5, 8, 10]
-const WIDTH_LABELS: Record<SectionWidth, string> = { xs: '1/6', quarter: '1/4', sm: '1/3', md: '1/2', lg: 'Full' }
-const PROJECT_WIDTHS = (['xs', 'quarter', 'sm', 'md', 'lg'] as SectionWidth[]).map(v => ({ value: v, label: WIDTH_LABELS[v] }))
+const WIDTH_LABELS: Record<SectionWidth, string> = { xxs: '1/12', xs: '1/6', quarter: '1/4', sm: '1/3', md: '1/2', lg: 'Full' }
+const PROJECT_WIDTHS = (['xxs', 'xs', 'quarter', 'sm', 'md', 'lg'] as SectionWidth[]).map(v => ({ value: v, label: WIDTH_LABELS[v] }))
 
 const DEFAULT_CONFIGS = {
   statIssues:  { hidden: false, displayMode: 'list',  maxItems: 3,  width: 'xs',  tabGroup: null, stackGroup: null },
@@ -982,7 +983,7 @@ const DEFAULT_CONFIGS = {
   kanban:      { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'md',  tabGroup: null, stackGroup: null },
 }
 const DEFAULT_ORDER: SectionId[] = ['statIssues', 'statCommits', 'statMRs', 'milestones', 'issues', 'agentRuns', 'cicdRuns', 'history', 'kanban']
-const DRAFT_LAYOUT_KEY = `project-dashboard-layout-v5-${id}`
+const DRAFT_LAYOUT_KEY = `project-dashboard-layout-v6-${id}`
 
 const {
   layout,
@@ -1035,6 +1036,7 @@ function toggleStackGroupWithNext(sid: SectionId) { toggleStackGroupWithNextRaw(
 
 // Column span class based on width (12-col grid)
 function colSpanClass(width: SectionWidth): string {
+  if (width === 'xxs')     return 'col-span-12 sm:col-span-6 lg:col-span-1'
   if (width === 'xs')      return 'col-span-12 sm:col-span-6 lg:col-span-2'
   if (width === 'quarter') return 'col-span-12 sm:col-span-6 lg:col-span-3'
   if (width === 'sm')      return 'col-span-12 md:col-span-6 lg:col-span-4'

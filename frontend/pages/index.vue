@@ -82,6 +82,7 @@
         </template>
 
         <div v-else
+          data-drag-card
           :class="[
             itemColSpanClass(item),
             isDraftMode ? 'select-none' : '',
@@ -435,10 +436,10 @@ type MainSectionId =
   | 'statProjects' | 'statOpenIssues' | 'statInProgress' | 'statAgentRuns'
   | 'recentIssues' | 'recentProjects' | 'chart' | 'cicdRuns' | 'agentRunsList'
 
-type MainWidth = 'xs' | 'quarter' | 'sm' | 'md' | 'lg'
+type MainWidth = 'xxs' | 'xs' | 'quarter' | 'sm' | 'md' | 'lg'
 type MainDisplayMode = 'list' | 'count'
 
-const MAIN_LAYOUT_KEY = 'main-dashboard-layout-v5'
+const MAIN_LAYOUT_KEY = 'main-dashboard-layout-v6'
 
 const DEFAULT_ORDER: MainSectionId[] = [
   'statProjects', 'statOpenIssues', 'statInProgress', 'statAgentRuns',
@@ -469,8 +470,8 @@ const SECTION_LABELS: Record<MainSectionId, string> = {
   agentRunsList:  'Agent Runs List',
 }
 
-const WIDTH_LABELS: Record<MainWidth, string> = { xs: '1/6', quarter: '1/4', sm: '1/3', md: '1/2', lg: 'Full' }
-const MAIN_WIDTHS = (['xs', 'quarter', 'sm', 'md', 'lg'] as MainWidth[]).map(v => ({ value: v, label: WIDTH_LABELS[v] }))
+const WIDTH_LABELS: Record<MainWidth, string> = { xxs: '1/12', xs: '1/6', quarter: '1/4', sm: '1/3', md: '1/2', lg: 'Full' }
+const MAIN_WIDTHS = (['xxs', 'xs', 'quarter', 'sm', 'md', 'lg'] as MainWidth[]).map(v => ({ value: v, label: WIDTH_LABELS[v] }))
 
 const SECTION_DISPLAY_MODES: Partial<Record<MainSectionId, MainDisplayMode[]>> = {
   recentIssues:   ['list', 'count'],
@@ -532,6 +533,7 @@ function toggleTabGroupWithNext(sid: MainSectionId) { toggleTabGroupWithNextRaw(
 function toggleStackGroupWithNext(sid: MainSectionId) { toggleStackGroupWithNextRaw(sid) }
 
 function mainColSpanClass(width: MainWidth): string {
+  if (width === 'xxs')     return 'col-span-12 sm:col-span-6 lg:col-span-1'
   if (width === 'xs')      return 'col-span-12 sm:col-span-6 lg:col-span-2'
   if (width === 'quarter') return 'col-span-12 sm:col-span-6 lg:col-span-3'
   if (width === 'sm')      return 'col-span-12 sm:col-span-6 lg:col-span-4'

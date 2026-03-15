@@ -27,13 +27,19 @@
           :class="currentMaxItems === n ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
           class="text-xs w-5 h-5 flex items-center justify-center rounded transition-colors">{{ n }}</button>
       </div>
-      <!-- Width buttons -->
+      <!-- Width buttons (custom SVG bar icons) -->
       <div v-if="widths.length" class="flex items-center gap-0.5">
         <button
           v-for="w in widths" :key="w.value"
           @click.stop="$emit('width-change', w.value)"
+          :title="w.label"
           :class="currentWidth === w.value ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
-          class="text-xs px-1.5 py-0.5 rounded transition-colors">{{ w.label }}</button>
+          class="px-1 py-1 rounded transition-colors flex items-center justify-center">
+          <svg :width="20" :height="8" viewBox="0 0 20 8" class="fill-current shrink-0">
+            <rect x="0" y="0" width="20" height="8" rx="1.5" class="opacity-20"/>
+            <rect x="0" y="0" :width="widthFill(w.label)" height="8" rx="1.5"/>
+          </svg>
+        </button>
       </div>
       <!-- Settings cog (chart or kanban settings) -->
       <button
@@ -165,6 +171,20 @@ const emit = defineEmits<{
 const showSettings = ref(false)
 const tabDragOver = ref(false)
 const stackDragOver = ref(false)
+
+/** Map width fraction labels to filled bar width (out of 20px canvas) matching the 12-col grid. */
+const FRACTION_FILL: Record<string, number> = {
+  '1/12': 20 * 1 / 12,
+  '1/6':  20 * 2 / 12,
+  '1/4':  20 * 3 / 12,
+  '1/3':  20 * 4 / 12,
+  '1/2':  20 * 6 / 12,
+  'Full': 20,
+}
+
+function widthFill(label: string): number {
+  return FRACTION_FILL[label] ?? 20
+}
 
 const CHART_DAYS_MIN = 7
 const CHART_DAYS_MAX = 60
