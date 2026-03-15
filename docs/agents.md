@@ -97,6 +97,44 @@ To configure a runtime, go to **Agents → Runtimes**.
 
 ---
 
+## HTTP Server Mode (opencode)
+
+By default, the `opencode` runner is invoked via CLI (`opencode run <task>`). Enabling **HTTP server mode** changes how the execution client controls opencode:
+
+Instead of executing CLI commands, the container starts `opencode` as an HTTP server and all session management is performed through its REST API.
+
+### Benefits
+
+- **Parallel sessions** — a single server container can handle multiple tasks concurrently.
+- **Web UI access** — while a session is running, the opencode web UI is available at the exposed host port, shown as a link in the session's debug info.
+- **Richer control** — session lifecycle (create, send task, poll for results) is managed through the API instead of exit codes.
+
+### Enabling HTTP server mode
+
+1. Open the agent's settings.
+2. Tick **Use HTTP Server** (requires `Runner Type = opencode`).
+3. Optionally set an **HTTP Server Password** — the password is forwarded to the container as the `OPENCODE_PASSWORD` environment variable and is never returned in API responses.
+
+### How it works
+
+1. The container CMD is set to `opencode` (no `run` subcommand), which starts the HTTP server on port `4096`.
+2. The host maps a random available port to the container's port `4096`.
+3. The execution client polls `GET /v1/session` until the server is ready (up to 60 s).
+4. The web UI URL (`http://localhost:<host-port>`) is stored on the session and visible in the UI.
+5. A new session is created via `POST /v1/session`.
+6. The task is sent via `POST /v1/session/<id>/message`.
+7. The client polls `GET /v1/session/<id>` until the session reaches a terminal state.
+8. Git operations (commit, push, markers) are performed via `docker exec` as in the standard exec flow.
+
+### Other tools
+
+The HTTP API integration is designed to be tool-agnostic. The `IAgentHttpApi` interface
+(`IssuePit.ExecutionClient/Runtimes/IAgentHttpApi.cs`) can be implemented for any CLI tool
+that exposes a similar HTTP server API. `OpenCodeHttpApi` provides the concrete implementation
+for opencode.
+
+---
+
 ## MCP Servers
 
 Agent modes can use **MCP (Model Context Protocol) servers** to access external tools such as GitHub, file systems, or custom APIs.
@@ -147,6 +185,19 @@ When an agent mode is assigned to an issue, `IssuePit.ExecutionClient` handles t
 ## Coding Agent Guidelines
 
 When working as a coding agent on this repository, follow these conventions:
+
+### API Response Objects
+
+- **Always use named `record` or `class` types for API responses** — do not use anonymous objects (`new { ... }`) in controller actions.
+  Named types improve discoverability, reusability, and compile-time safety.
+  Declare response/request records at the bottom of the controller file (same namespace), following the pattern used throughout the codebase (e.g. `SetAgentActiveRequest`, `AgentResponse`, `AgentDetailResponse`, `LinkedMcpServerDto`, etc.).
+  ```csharp
+  // ✅ Correct
+  return Ok(new AgentResponse(agent.Id, agent.Name, ...));
+
+  // ❌ Avoid
+  return Ok(new { agent.Id, agent.Name, ... });
+  ```
 
 ### Testing Conventions
 

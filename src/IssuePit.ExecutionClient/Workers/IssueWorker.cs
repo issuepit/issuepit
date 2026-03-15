@@ -46,6 +46,7 @@ public class IssueWorker(
     private const string HasUncommittedChangesMarker = "[ISSUEPIT:HAS_UNCOMMITTED_CHANGES]=";
     private const string OpenCodeSessionIdMarker = "[ISSUEPIT:OPENCODE_SESSION_ID]=";
     private const string GitPushFailedMarker = "[ISSUEPIT:GIT_PUSH_FAILED]=true";
+    private const string ServerWebUiUrlMarker = "[ISSUEPIT:SERVER_WEB_UI_URL]=";
 
     /// <summary>
     /// Maximum total character count for comments included in the task prompt.
@@ -313,6 +314,7 @@ public class IssueWorker(
             string? capturedOpenCodeSessionId = null;
             var capturedHasUncommittedChanges = false;
             var capturedGitPushFailed = false;
+            string? capturedServerWebUiUrl = null;
 
             // Track the current phase of the workflow so every log line is tagged with its section.
             var currentSection = AgentLogSection.InitialAgentRun;
@@ -331,6 +333,8 @@ public class IssueWorker(
                     capturedOpenCodeSessionId = line[OpenCodeSessionIdMarker.Length..].Trim();
                 else if (line == GitPushFailedMarker)
                     capturedGitPushFailed = true;
+                else if (line.StartsWith(ServerWebUiUrlMarker, StringComparison.Ordinal))
+                    capturedServerWebUiUrl = line[ServerWebUiUrlMarker.Length..].Trim();
                 return AppendLogAsync(session.Id, line, stream, currentSection, currentSectionIndex, db, sessionCts.Token);
             }
 
@@ -363,6 +367,9 @@ public class IssueWorker(
                     session.CommitSha = capturedCommitSha;
                 if (!string.IsNullOrEmpty(capturedBranchName))
                     session.GitBranch = capturedBranchName;
+                // Persist the HTTP server web UI URL so the frontend can link to it while the session runs.
+                if (!string.IsNullOrEmpty(capturedServerWebUiUrl))
+                    session.ServerWebUiUrl = capturedServerWebUiUrl;
 
                 // When git push failed, attempt to upload the .git folder as a recovery artifact
                 // so the agent's committed work is not lost. Only attempted for the exec flow

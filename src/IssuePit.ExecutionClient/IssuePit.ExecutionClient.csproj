@@ -16,4 +16,10 @@
     <ProjectReference Include="..\IssuePit.Core\IssuePit.Core.csproj" />
     <ProjectReference Include="..\IssuePit.ServiceDefaults\IssuePit.ServiceDefaults.csproj" />
   </ItemGroup>
+  <!-- Embed entrypoint.sh so the execution client can inject the latest version into containers -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\docker\helper-containers\entrypoint.sh">
+      <LogicalName>entrypoint.sh</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
 </Project>
