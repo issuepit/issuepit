@@ -391,6 +391,9 @@
                   <template v-else-if="prop.type === ProjectPropertyType.Number || prop.type === ProjectPropertyType.Date">
                     {{ rangeConstraintSummary(prop.allowedValues) }}
                   </template>
+                  <template v-else-if="prop.type === ProjectPropertyType.Person || prop.type === ProjectPropertyType.Agent">
+                    {{ personConstraintSummary(prop.allowedValues) }}
+                  </template>
                 </span>
               </div>
               <div class="flex items-center gap-1 shrink-0">
@@ -495,6 +498,19 @@
             <div>
               <label class="block text-xs text-gray-400 mb-1.5">Max date <span class="text-gray-600">(optional)</span></label>
               <input v-model="propForm.maxValue" type="date"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+          </div>
+
+          <!-- Person / Agent: single vs multiple -->
+          <div v-if="propForm.type === ProjectPropertyType.Person || propForm.type === ProjectPropertyType.Agent">
+            <label class="flex items-center gap-2 cursor-pointer mb-3">
+              <input v-model="propForm.isMultiple" type="checkbox" class="rounded border-gray-600 bg-gray-800 text-brand-600 focus:ring-brand-500" />
+              <span class="text-sm text-gray-300">Allow multiple selections</span>
+            </label>
+            <div v-if="propForm.isMultiple">
+              <label class="block text-xs text-gray-400 mb-1.5">Max selections <span class="text-gray-600">(optional)</span></label>
+              <input v-model="propForm.maxPersons" type="number" min="2" placeholder="Unlimited"
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
             </div>
           </div>
@@ -627,6 +643,9 @@ const propForm = reactive({
   // Number/Date constraints
   minValue: '',
   maxValue: '',
+  // Person/Agent constraints
+  isMultiple: false,
+  maxPersons: '',
 })
 
 function propertyTypeLabel(type: ProjectPropertyType): string {
@@ -666,6 +685,13 @@ function buildAllowedValues(): string | null {
       if (propForm.maxValue !== '') obj.max = propForm.maxValue
       return Object.keys(obj).length ? JSON.stringify(obj) : null
     }
+    case ProjectPropertyType.Person:
+    case ProjectPropertyType.Agent: {
+      if (!propForm.isMultiple) return null
+      const obj: Record<string, boolean | number> = { multiple: true }
+      if (propForm.maxPersons !== '') obj.max = Number(propForm.maxPersons)
+      return JSON.stringify(obj)
+    }
     default:
       return null
   }
@@ -678,6 +704,8 @@ function parseAllowedValues(raw: string | null | undefined, type: ProjectPropert
   propForm.maxLength = ''
   propForm.minValue = ''
   propForm.maxValue = ''
+  propForm.isMultiple = false
+  propForm.maxPersons = ''
   if (!raw) return
   try {
     const parsed = JSON.parse(raw)
@@ -689,13 +717,16 @@ function parseAllowedValues(raw: string | null | undefined, type: ProjectPropert
     } else if ((type === ProjectPropertyType.Number || type === ProjectPropertyType.Date) && typeof parsed === 'object') {
       propForm.minValue = parsed.min != null ? String(parsed.min) : ''
       propForm.maxValue = parsed.max != null ? String(parsed.max) : ''
+    } else if ((type === ProjectPropertyType.Person || type === ProjectPropertyType.Agent) && typeof parsed === 'object') {
+      propForm.isMultiple = parsed.multiple === true
+      propForm.maxPersons = parsed.max != null ? String(parsed.max) : ''
     }
   } catch { /* ignore */ }
 }
 
 function openNewProperty() {
   editingPropertyId.value = null
-  Object.assign(propForm, { name: '', type: ProjectPropertyType.Text, isRequired: false, defaultValue: '', enumValues: '', minLength: '', maxLength: '', minValue: '', maxValue: '' })
+  Object.assign(propForm, { name: '', type: ProjectPropertyType.Text, isRequired: false, defaultValue: '', enumValues: '', minLength: '', maxLength: '', minValue: '', maxValue: '', isMultiple: false, maxPersons: '' })
   showPropertyModal.value = true
 }
 
@@ -758,6 +789,15 @@ function rangeConstraintSummary(raw: string): string {
     if (obj.min != null) parts.push(`≥ ${obj.min}`)
     if (obj.max != null) parts.push(`≤ ${obj.max}`)
     return parts.length ? `(${parts.join(', ')})` : ''
+  } catch { return '' }
+}
+
+function personConstraintSummary(raw: string | null | undefined): string {
+  if (!raw) return ''
+  try {
+    const obj = JSON.parse(raw)
+    if (!obj.multiple) return ''
+    return obj.max != null ? `(multiple, max ${obj.max})` : '(multiple)'
   } catch { return '' }
 }
 
