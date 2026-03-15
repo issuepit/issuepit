@@ -409,12 +409,12 @@ export interface KanbanTransition {
 }
 
 export enum KanbanLaneProperty {
-  Status = 0,
-  Priority = 1,
-  Label = 2,
-  Type = 3,
-  Agent = 4,
-  Milestone = 5,
+  Status = 'status',
+  Priority = 'priority',
+  Label = 'label',
+  Type = 'type',
+  Agent = 'agent',
+  Milestone = 'milestone',
 }
 
 export interface KanbanColumn {
