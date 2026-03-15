@@ -228,13 +228,6 @@ public class AgentHttpServerTests(AspireFixture fixture)
 
         if (sessionId is null) return; // session not yet created — skip remaining assertions
 
-        var sessionsResp = await client.GetAsync($"/api/issues/{issueId}/agent-sessions");
-        if (sessionsResp.StatusCode != HttpStatusCode.OK) return; // session may not exist yet
-        var sessions = await sessionsResp.Content.ReadFromJsonAsync<JsonElement>();
-        if (sessions.GetArrayLength() == 0) return; // no session created yet
-
-        var sessionId = sessions[0].GetProperty("id").GetString()!;
-
         // Retrieve the session and verify the serverWebUiUrl field is present in the response.
         var sessionResp = await client.GetAsync($"/api/agent-sessions/{sessionId}");
         Assert.Equal(HttpStatusCode.OK, sessionResp.StatusCode);
