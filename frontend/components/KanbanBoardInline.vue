@@ -9,7 +9,7 @@
       <!-- Board header: board selector + manage link -->
       <div class="flex items-center justify-between mb-4">
         <div class="flex items-center gap-2">
-          <select v-if="kanban.boards.length > 1" v-model="activeBoardId"
+          <select v-if="kanban.boards.length > 1 && !props.boardId" v-model="activeBoardId"
             class="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500">
             <option v-for="b in kanban.boards" :key="b.id" :value="b.id">{{ b.name }}</option>
           </select>
@@ -140,7 +140,7 @@ import { useKanbanStore } from '~/stores/kanban'
 import { useProjectsStore } from '~/stores/projects'
 import { formatIssueId } from '~/composables/useIssueFormat'
 
-const props = defineProps<{ projectId: string }>()
+const props = defineProps<{ projectId: string; boardId?: string }>()
 
 const issueStore = useIssuesStore()
 const kanban = useKanbanStore()
@@ -274,8 +274,15 @@ onMounted(async () => {
     kanban.fetchBoards(props.projectId),
   ])
   if (kanban.boards.length) {
-    activeBoardId.value = kanban.boards[0].id
+    activeBoardId.value = props.boardId || kanban.boards[0].id
     await kanban.fetchTransitions(activeBoardId.value)
+  }
+})
+
+watch(() => props.boardId, async (bid) => {
+  if (bid && bid !== activeBoardId.value) {
+    activeBoardId.value = bid
+    await kanban.fetchTransitions(bid)
   }
 })
 
