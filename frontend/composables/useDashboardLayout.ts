@@ -118,20 +118,39 @@ export function useDashboardLayout(options: {
     // Skipping the reorder keeps the config bar stable so the user can drop onto the buttons.
     if ((e.target as HTMLElement)?.closest('[data-no-reorder]')) return
     if (!dragSectionId.value || id === dragSectionId.value) return
-    // Only reorder when cursor is near the top or bottom edge of the card (simulating the gap
-    // between cards). Hovering over the middle of a card should only highlight it for tab/stack
-    // grouping, not immediately trigger a live reorder — that caused instability.
+    // Only reorder when cursor is near the left or right edge of the card — these are the
+    // "gap" zones between cards in the horizontal grid flow. Hovering over the card's main body
+    // (center area) only highlights the card for Tab/Stack grouping without moving anything.
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    const fromTop = e.clientY - rect.top
-    const fromBottom = rect.bottom - e.clientY
-    const edgePx = Math.min(50, rect.height * 0.3)
-    if (fromTop > edgePx && fromBottom > edgePx) return
-    const from = layout.value.order.indexOf(dragSectionId.value)
-    const to = layout.value.order.indexOf(id)
+    const fromLeft = e.clientX - rect.left
+    const fromRight = rect.right - e.clientX
+    const edgePx = Math.min(40, rect.width * 0.25)
+    if (fromLeft > edgePx && fromRight > edgePx) return
+
+    const order = layout.value.order
+    const from = order.indexOf(dragSectionId.value)
+    const to = order.indexOf(id)
     if (from === -1 || to === -1 || from === to) return
-    const newOrder = [...layout.value.order]
+
+    // If the target section is part of a stack group, treat the group as a single unit:
+    // when dragging downward (from < to), skip to after the last member so we never
+    // insert the dragged card between stack-group members.
+    let insertAt = to
+    const stk = sectionCfg(order[to]).stackGroup
+    if (stk !== null && from < to) {
+      for (let gi = to; gi < order.length; gi++) {
+        if (sectionCfg(order[gi]).stackGroup === stk) insertAt = gi
+        else break
+      }
+    }
+
+    if (from === insertAt) return
+    const newOrder = [...order]
     newOrder.splice(from, 1)
-    newOrder.splice(to, 0, dragSectionId.value)
+    // insertAt was computed in original-index space; after removing `from` (< insertAt),
+    // elements shift left by 1, so splice(insertAt, …) correctly places the item after
+    // the last group member in the new array.
+    newOrder.splice(insertAt, 0, dragSectionId.value)
     layout.value.order = newOrder
   }
 
