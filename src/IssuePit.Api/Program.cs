@@ -41,6 +41,7 @@ builder.Services.AddHostedService<GitPollingService>();
 builder.Services.AddHostedService<MergeRequestAutoMergeService>();
 builder.Services.AddHostedService<MetricSnapshotService>();
 builder.Services.AddHostedService<BotNotificationDispatchService>();
+builder.Services.AddHostedService<ConfigRepoSyncService>();
 builder.Services.AddHostedService<GitHubAutoSyncBackgroundService>();
 builder.Services.AddHostedService<BranchDetectionBackgroundService>();
 
@@ -50,6 +51,7 @@ builder.Services.AddScoped<GitService>();
 builder.Services.AddScoped<ApiKeyResolverService>();
 builder.Services.AddScoped<IssueEnhancementService>();
 builder.Services.AddScoped<CiCdRunQueueService>();
+builder.Services.AddScoped<ConfigRepoApplier>();
 builder.Services.AddScoped<GitHubSyncService>();
 builder.Services.AddScoped<BranchDetectionService>();
 builder.Services.Configure<IssuePit.Api.Services.ImageStorageOptions>(
