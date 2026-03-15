@@ -1,3 +1,4 @@
+using System.Text;
 using IssuePit.McpServer;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -41,6 +42,12 @@ builder.Services.Configure<McpServerOptions>(
 var apiBaseUrl = builder.Configuration["IssuePit:ApiBaseUrl"] ?? "http://localhost:5000";
 var tenantId = builder.Configuration["IssuePit:TenantId"];
 
+// IHttpContextAccessor is required by McpTokenForwardingHandler to read the per-request token.
+builder.Services.AddHttpContextAccessor();
+
+// Register the delegating handler that forwards the MCP bearer token to every API call.
+builder.Services.AddTransient<McpTokenForwardingHandler>();
+
 builder.Services.AddHttpClient<IssuePitApiClient>(client =>
 {
     client.BaseAddress = new Uri(apiBaseUrl);
@@ -48,7 +55,7 @@ builder.Services.AddHttpClient<IssuePitApiClient>(client =>
     {
         client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
     }
-});
+}).AddHttpMessageHandler<McpTokenForwardingHandler>();
 
 builder.Services.AddMcpServer()
     .WithHttpTransport()
@@ -91,6 +98,53 @@ var app = builder.Build();
 
 app.MapDefaultEndpoints();
 app.UseCors();
+
+// Extract bearer / basic-auth token from the Authorization header and store it in
+// HttpContext.Items so McpTokenForwardingHandler can attach it to API calls.
+app.Use(async (context, next) =>
+{
+    var auth = context.Request.Headers.Authorization.FirstOrDefault();
+    if (!string.IsNullOrEmpty(auth))
+    {
+        string? token = null;
+
+        if (auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        {
+            token = auth[7..].Trim();
+        }
+        else if (auth.StartsWith("Basic ", StringComparison.OrdinalIgnoreCase))
+        {
+            // Basic auth: base64(username:password) — we treat the password as the MCP token
+            // so that simple HTTP clients and E2E test setups can authenticate with a token
+            // without needing Bearer support.
+            try
+            {
+                var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(auth[6..].Trim()));
+                var colonIdx = decoded.IndexOf(':');
+                token = colonIdx >= 0 ? decoded[(colonIdx + 1)..] : decoded;
+            }
+            catch (FormatException)
+            {
+                // Ignore malformed Base64 — no token extracted.
+            }
+        }
+
+        if (!string.IsNullOrEmpty(token))
+            context.Items[McpTokenKeys.HttpContextItemKey] = token;
+    }
+
+    // If an ISSUEPIT_MCP_TOKEN env var is set (agent container scenario), use it as a fallback
+    // when no Authorization header was supplied.
+    if (!context.Items.ContainsKey(McpTokenKeys.HttpContextItemKey))
+    {
+        var envToken = Environment.GetEnvironmentVariable("ISSUEPIT_MCP_TOKEN");
+        if (!string.IsNullOrEmpty(envToken))
+            context.Items[McpTokenKeys.HttpContextItemKey] = envToken;
+    }
+
+    await next();
+});
+
 app.MapMcp("/mcp");
 
 // Serve the built-in playground UI for manual tool testing

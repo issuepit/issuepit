@@ -31,4 +31,10 @@ public class McpServerOptions
     /// Attempts to operate on a different project are rejected.
     /// </summary>
     public Guid? ProjectId { get; set; }
+
+    /// <summary>
+    /// When true, write/destructive operations are blocked regardless of the per-request token.
+    /// Useful for read-only deployments.
+    /// </summary>
+    public bool ReadOnly { get; set; } = false;
 }

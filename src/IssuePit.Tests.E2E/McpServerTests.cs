@@ -215,4 +215,204 @@ public class McpServerTests(AspireFixture fixture, ITestOutputHelper output)
 
         return projects.Length;
     }
+
+    /// <summary>
+    /// Creates an <see cref="HttpClient"/> that sends a Bearer token on every request to the MCP server.
+    /// </summary>
+    private static HttpClient CreateMcpClientWithBearer(HttpClient baseClient, string rawToken)
+    {
+        var handler = new AuthorizingHandler(rawToken, baseClient.BaseAddress!);
+        return new HttpClient(handler) { BaseAddress = baseClient.BaseAddress };
+    }
+
+    /// <summary>
+    /// Creates an <see cref="HttpClient"/> that sends a Basic-auth header with the token as the password.
+    /// This verifies the Basic-auth fallback path used by some E2E tooling.
+    /// </summary>
+    private static HttpClient CreateMcpClientWithBasicAuth(HttpClient baseClient, string rawToken)
+    {
+        var handler = new AuthorizingHandler($"Basic {Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($":{rawToken}"))}", baseClient.BaseAddress!, isBearer: false);
+        return new HttpClient(handler) { BaseAddress = baseClient.BaseAddress };
+    }
+
+    // ── auth tests ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Verifies that an MCP token created via the REST API can be used to authenticate to the
+    /// MCP server using a Bearer token.  The test creates a project under the token's tenant
+    /// and verifies that <c>list_projects</c> sees it.
+    /// </summary>
+    [Fact]
+    public async Task Mcp_BearerAuth_TokenGrantsAccess()
+    {
+        // ── Setup: create user, org, and MCP token via REST API ──────────────
+        var handler = new HttpClientHandler { CookieContainer = new System.Net.CookieContainer() };
+        using var apiClient = new HttpClient(handler) { BaseAddress = fixture.ApiClient!.BaseAddress };
+
+        var tenantsResp = await fixture.ApiClient.GetAsync("/api/admin/tenants");
+        tenantsResp.EnsureSuccessStatusCode();
+        var tenants = await tenantsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var tenantId = tenants.EnumerateArray()
+            .Where(t => t.GetProperty("hostname").GetString() == "localhost")
+            .Select(t => t.GetProperty("id").GetString()!)
+            .First();
+
+        apiClient.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+        var username = $"mcpauth{Guid.NewGuid():N}"[..12];
+        await apiClient.PostAsJsonAsync("/api/auth/register", new { username, password = "TestPass1!" });
+
+        var orgSlug = $"mcpauth-org-{Guid.NewGuid():N}"[..16];
+        var orgResp = await apiClient.PostAsJsonAsync("/api/orgs", new { name = "MCP Auth Org", slug = orgSlug });
+        Assert.Equal(HttpStatusCode.Created, orgResp.StatusCode);
+
+        // Create an MCP access token via the REST API.
+        var tokenResp = await apiClient.PostAsJsonAsync("/api/mcp-tokens",
+            new { name = "E2E Test Token", isReadOnly = false });
+        Assert.Equal(HttpStatusCode.Created, tokenResp.StatusCode);
+
+        var tokenPayload = await tokenResp.Content.ReadFromJsonAsync<JsonElement>();
+        var rawToken = tokenPayload.GetProperty("rawToken").GetString()!;
+        Assert.False(string.IsNullOrEmpty(rawToken), "rawToken should not be empty");
+        Assert.StartsWith("mcp_", rawToken);
+
+        // ── Use the Bearer token with the MCP server ──────────────────────────
+        using var mcpClient = CreateMcpClientWithBearer(fixture.McpClient!, rawToken);
+        var (initResult, sessionId) = await McpInitializeAsync(mcpClient);
+        Assert.True(initResult.TryGetProperty("result", out _),
+            $"MCP initialize with Bearer token failed: {initResult}");
+
+        output.WriteLine($"[MCP] Bearer auth test passed. Token: {rawToken[..10]}…");
+    }
+
+    /// <summary>
+    /// Verifies the Basic-auth fallback: encoding the MCP token as the password in a
+    /// Basic-auth header also grants access to the MCP server.
+    /// </summary>
+    [Fact]
+    public async Task Mcp_BasicAuth_TokenGrantsAccess()
+    {
+        // ── Setup: create user and MCP token via REST API ────────────────────
+        var handler = new HttpClientHandler { CookieContainer = new System.Net.CookieContainer() };
+        using var apiClient = new HttpClient(handler) { BaseAddress = fixture.ApiClient!.BaseAddress };
+
+        var tenantsResp = await fixture.ApiClient.GetAsync("/api/admin/tenants");
+        tenantsResp.EnsureSuccessStatusCode();
+        var tenants = await tenantsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var tenantId = tenants.EnumerateArray()
+            .Where(t => t.GetProperty("hostname").GetString() == "localhost")
+            .Select(t => t.GetProperty("id").GetString()!)
+            .First();
+
+        apiClient.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+        var username = $"mcpbasic{Guid.NewGuid():N}"[..12];
+        await apiClient.PostAsJsonAsync("/api/auth/register", new { username, password = "TestPass1!" });
+
+        var orgSlug = $"mcpbasic-org-{Guid.NewGuid():N}"[..16];
+        await apiClient.PostAsJsonAsync("/api/orgs", new { name = "MCP Basic Auth Org", slug = orgSlug });
+
+        var tokenResp = await apiClient.PostAsJsonAsync("/api/mcp-tokens",
+            new { name = "E2E Basic Auth Token", isReadOnly = false });
+        Assert.Equal(HttpStatusCode.Created, tokenResp.StatusCode);
+
+        var tokenPayload = await tokenResp.Content.ReadFromJsonAsync<JsonElement>();
+        var rawToken = tokenPayload.GetProperty("rawToken").GetString()!;
+
+        // ── Use Basic auth with the MCP server ───────────────────────────────
+        using var mcpClient = CreateMcpClientWithBasicAuth(fixture.McpClient!, rawToken);
+        var (initResult, _) = await McpInitializeAsync(mcpClient);
+        Assert.True(initResult.TryGetProperty("result", out _),
+            $"MCP initialize with Basic auth failed: {initResult}");
+
+        output.WriteLine($"[MCP] Basic auth test passed. Token: {rawToken[..10]}…");
+    }
+
+    /// <summary>
+    /// Verifies that a read-only token can call read tools but write tools return an error.
+    /// </summary>
+    [Fact]
+    public async Task Mcp_ReadOnlyToken_BlocksWriteTools()
+    {
+        // ── Setup: create user, org, project, and read-only MCP token ────────
+        var handler = new HttpClientHandler { CookieContainer = new System.Net.CookieContainer() };
+        using var apiClient = new HttpClient(handler) { BaseAddress = fixture.ApiClient!.BaseAddress };
+
+        var tenantsResp = await fixture.ApiClient.GetAsync("/api/admin/tenants");
+        tenantsResp.EnsureSuccessStatusCode();
+        var tenants = await tenantsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var tenantId = tenants.EnumerateArray()
+            .Where(t => t.GetProperty("hostname").GetString() == "localhost")
+            .Select(t => t.GetProperty("id").GetString()!)
+            .First();
+
+        apiClient.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+        var username = $"mcpro{Guid.NewGuid():N}"[..10];
+        await apiClient.PostAsJsonAsync("/api/auth/register", new { username, password = "TestPass1!" });
+
+        var orgSlug = $"mcpro-org-{Guid.NewGuid():N}"[..14];
+        var orgResp = await apiClient.PostAsJsonAsync("/api/orgs", new { name = "MCP RO Org", slug = orgSlug });
+        Assert.Equal(HttpStatusCode.Created, orgResp.StatusCode);
+        var org = await orgResp.Content.ReadFromJsonAsync<JsonElement>();
+        var orgId = org.GetProperty("id").GetString()!;
+
+        var projectSlug = $"mcpro-p-{Guid.NewGuid():N}"[..14];
+        var projResp = await apiClient.PostAsJsonAsync("/api/projects",
+            new { name = "MCP RO Project", slug = projectSlug, orgId = Guid.Parse(orgId) });
+        Assert.Equal(HttpStatusCode.Created, projResp.StatusCode);
+        var proj = await projResp.Content.ReadFromJsonAsync<JsonElement>();
+        var projectId = proj.GetProperty("id").GetString()!;
+
+        // Create a READ-ONLY MCP token.
+        var tokenResp = await apiClient.PostAsJsonAsync("/api/mcp-tokens",
+            new { name = "E2E Read-Only Token", isReadOnly = true });
+        Assert.Equal(HttpStatusCode.Created, tokenResp.StatusCode);
+        var tokenPayload = await tokenResp.Content.ReadFromJsonAsync<JsonElement>();
+        var rawToken = tokenPayload.GetProperty("rawToken").GetString()!;
+
+        // ── Read tool (list_projects) should succeed ──────────────────────────
+        using var mcpClient = CreateMcpClientWithBearer(fixture.McpClient!, rawToken);
+        var (initResult, sessionId) = await McpInitializeAsync(mcpClient);
+        Assert.True(initResult.TryGetProperty("result", out _),
+            $"Initialize with read-only token failed: {initResult}");
+
+        var (listResult, sessionId2) = await McpCallAsync(
+            mcpClient, sessionId, "tools/call",
+            new { name = "list_projects", arguments = new { } }, id: 2);
+        Assert.True(listResult.TryGetProperty("result", out _),
+            $"list_projects with read-only token failed: {listResult}");
+
+        // ── Write tool (create_issue) should return isError: true ────────────
+        var (createResult, _) = await McpCallAsync(
+            mcpClient, sessionId2, "tools/call",
+            new
+            {
+                name = "create_issue",
+                arguments = new
+                {
+                    projectId,
+                    title = "Should fail",
+                }
+            }, id: 3);
+
+        Assert.True(createResult.TryGetProperty("result", out var createResultObj),
+            $"Expected result object from create_issue: {createResult}");
+        Assert.True(createResultObj.TryGetProperty("isError", out var isError) && isError.GetBoolean(),
+            $"create_issue with read-only token should have isError=true, got: {createResultObj}");
+
+        output.WriteLine($"[MCP] Read-only token test passed. Token: {rawToken[..10]}…");
+    }
+
+    // ── private helpers ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Delegating handler that injects a fixed Authorization header on every request.
+    /// </summary>
+    private sealed class AuthorizingHandler(string headerValue, Uri baseAddress, bool isBearer = true) : HttpClientHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            request.Headers.TryAddWithoutValidation("Authorization",
+                isBearer ? $"Bearer {headerValue}" : headerValue);
+            return base.SendAsync(request, ct);
+        }
+    }
 }

@@ -48,6 +48,7 @@ public class IssueTools(IssuePitApiClient api, IOptions<McpServerOptions> option
         [Description("Optional parent issue ID (GUID) to create a sub-issue.")] Guid? parentIssueId = null,
         CancellationToken ct = default)
     {
+        ToolGuard.EnforceNotReadOnly(Opts, "CreateIssue");
         EnforceProjectScope(projectId);
         var payload = new { projectId, title, body, status, priority, type, parentIssueId };
         var result = await api.PostAsync<object>("/api/issues", payload, ct);
@@ -64,6 +65,7 @@ public class IssueTools(IssuePitApiClient api, IOptions<McpServerOptions> option
         [Description("New type: issue, bug, feature, task, epic.")] string type = "issue",
         CancellationToken ct = default)
     {
+        ToolGuard.EnforceNotReadOnly(Opts, "UpdateIssue");
         var payload = new { title, body, status, priority, type };
         var result = await api.PutAsync<object>($"/api/issues/{id}", payload, ct);
         return Serialize(result);
@@ -74,6 +76,7 @@ public class IssueTools(IssuePitApiClient api, IOptions<McpServerOptions> option
         [Description("The issue ID (GUID).")] Guid id,
         CancellationToken ct = default)
     {
+        ToolGuard.EnforceNotReadOnly(Opts, "DeleteIssue");
         ToolGuard.EnforceDestructive(Opts, "DeleteIssue");
         await api.DeleteAsync($"/api/issues/{id}", ct);
         return "Issue deleted successfully.";

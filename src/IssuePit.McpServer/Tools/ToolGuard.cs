@@ -38,4 +38,15 @@ internal static class ToolGuard
                 $"This MCP server is scoped to project {opts.ProjectId.Value}. " +
                 $"Access to project {projectId} is not permitted.");
     }
+
+    /// <summary>
+    /// Blocks write/mutating tools when the server is configured as read-only
+    /// (either globally via <see cref="McpServerOptions.ReadOnly"/> or via a read-only MCP token).
+    /// </summary>
+    public static void EnforceNotReadOnly(McpServerOptions opts, string toolName)
+    {
+        if (opts.ReadOnly)
+            throw new InvalidOperationException(
+                $"Tool '{toolName}' is not allowed because this MCP token is read-only.");
+    }
 }

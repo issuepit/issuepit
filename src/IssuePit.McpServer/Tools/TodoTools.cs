@@ -56,6 +56,7 @@ public class TodoTools(IssuePitApiClient api, IOptions<McpServerOptions> options
         [Description("Optional list of category IDs (GUID) to assign the todo to.")] IEnumerable<Guid>? categoryIds = null,
         CancellationToken ct = default)
     {
+        ToolGuard.EnforceNotReadOnly(Opts, "CreateTodo");
         ToolGuard.EnforceNotEnhanceMode(Opts, "CreateTodo");
         var payload = new
         {
@@ -86,6 +87,7 @@ public class TodoTools(IssuePitApiClient api, IOptions<McpServerOptions> options
         [Description("Category IDs (GUID) to assign the todo to.")] IEnumerable<Guid>? categoryIds = null,
         CancellationToken ct = default)
     {
+        ToolGuard.EnforceNotReadOnly(Opts, "UpdateTodo");
         ToolGuard.EnforceNotEnhanceMode(Opts, "UpdateTodo");
         var payload = new
         {
@@ -108,6 +110,7 @@ public class TodoTools(IssuePitApiClient api, IOptions<McpServerOptions> options
         [Description("The todo ID (GUID).")] Guid id,
         CancellationToken ct = default)
     {
+        ToolGuard.EnforceNotReadOnly(Opts, "DeleteTodo");
         ToolGuard.EnforceDestructive(Opts, "DeleteTodo");
         await api.DeleteAsync($"/api/todos/{id}", ct);
         return "Todo deleted successfully.";

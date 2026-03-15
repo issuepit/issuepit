@@ -105,6 +105,7 @@ stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
         </SidebarSection>
         <SidebarNavLink to="/skills" icon="skills" label="Skills" />
         <SidebarNavLink to="/config/mcp-servers" icon="mcp" label="MCP Servers" />
+        <SidebarNavLink to="/config/mcp-keys" icon="mcp" label="MCP Keys" />
         <SidebarNavLink to="/config/runtimes" icon="config" label="Runtimes" />
       </SidebarSection>
 

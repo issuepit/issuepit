@@ -1232,3 +1232,20 @@ export interface ScheduledTaskProject {
   name: string
 }
 
+
+
+// ──────────────────────────────────────────────────────────────────────────────
+// MCP Access Tokens
+// ──────────────────────────────────────────────────────────────────────────────
+
+export interface McpAccessToken {
+  id: string
+  tenantId?: string
+  orgId?: string
+  projectId?: string
+  userId?: string
+  name: string
+  isReadOnly: boolean
+  createdAt: string
+  expiresAt?: string
+}

@@ -64,6 +64,9 @@ internal static class AgentEnvironmentBuilder
         if (!string.IsNullOrWhiteSpace(issuePitMcpUrl))
             env.Add($"ISSUEPIT_MCP_URL={issuePitMcpUrl}");
 
+        // Note: the ephemeral MCP token is passed through the credentials dictionary
+        // (keyed as ISSUEPIT_MCP_TOKEN) and added via the foreach loop above.
+
         // Inject the agents list (current agent + children) as JSON so the entrypoint can configure
         // the CLI with nested agent modes. Only one level of nesting is supported.
         var agentsJson = BuildAgentsJson(agent);
