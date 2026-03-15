@@ -107,9 +107,10 @@ export function useDashboardLayout(options: {
   // ── Row break ───────────────────────────────────────────────────────────────
   let _rowBreakCounter = 0
 
-  function addRowBreak() {
+  function addRowBreak(): string {
     const rowBreakId = `rowbreak-${Date.now()}-${++_rowBreakCounter}`
     layout.value.order = [...layout.value.order, rowBreakId]
+    return rowBreakId
   }
 
   function removeRowBreak(id: string) {
@@ -139,24 +140,27 @@ export function useDashboardLayout(options: {
     }
   }
 
-  function onDragOver(e: DragEvent, id: string) {
+  function onDragOver(_e: DragEvent, id: string) {
     if (!dragSectionId.value) return
-    const isSameGroup = _dragGroup.length > 1 && _dragGroup.includes(id)
-    // Only highlight cards outside the drag group
+    // Only highlight cards outside the drag group; reorder is handled by onDragEnter
     if (!_dragGroup.includes(id)) dragHoverSid.value = id
-    // Skip reorder if we're dragging over ourselves or our group
+  }
+
+  function onDragEnter(e: DragEvent, id: string) {
+    if (!dragSectionId.value) return
+    // Only fire when truly entering the card from outside (not from a child element)
+    if (e.currentTarget instanceof HTMLElement && e.currentTarget.contains(e.relatedTarget as Node)) return
+
+    const isSameGroup = _dragGroup.length > 1 && _dragGroup.includes(id)
+    // Skip reorder if dragging over ourselves or our group
     if (id === dragSectionId.value || isSameGroup || _dragGroup.includes(id)) return
-    // Only reorder when the cursor is in the edge zone (≤16 px from left/right — matches gap-4).
-    // The edge zone check comes BEFORE the data-no-reorder check so that entering via the
-    // config bar from the side (i.e. from the gap) also triggers the reorder correctly.
+
+    // Determine which side the cursor entered from (left = insert before, right = insert after)
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    const inEdgeZone = e.clientX - rect.left <= 16 || rect.right - e.clientX <= 16
-    if (!inEdgeZone) return
+    const enteredFromLeft = e.clientX - rect.left < rect.width / 2
 
     const order = layout.value.order
-    const from = order.indexOf(dragSectionId.value)
-    const to = order.indexOf(id)
-    if (from === -1 || to === -1) return
+    if (order.indexOf(dragSectionId.value) === -1 || order.indexOf(id) === -1) return
 
     // If the target card belongs to a stack group, move relative to the whole group
     const targetStk = isVirtualId(id) ? null : (sectionCfg(id).stackGroup ?? null)
@@ -164,16 +168,16 @@ export function useDashboardLayout(options: {
     let insertAfter: boolean
     if (targetStk) {
       const tGroup = order.filter(s => (sectionCfg(s).stackGroup ?? null) === targetStk)
-      if (from < to) {
-        insertAnchor = tGroup[tGroup.length - 1]
-        insertAfter = true
-      } else {
+      if (enteredFromLeft) {
         insertAnchor = tGroup[0]
         insertAfter = false
+      } else {
+        insertAnchor = tGroup[tGroup.length - 1]
+        insertAfter = true
       }
     } else {
       insertAnchor = id
-      insertAfter = from < to
+      insertAfter = enteredFromLeft  // entered from left = insert after target (drag source moves right)
     }
 
     // Remove the drag group from the order, then reinsert at the anchor position
@@ -438,6 +442,7 @@ export function useDashboardLayout(options: {
     removeRowBreak,
     onDragStart,
     onDragOver,
+    onDragEnter,
     onDragEnd,
     toggleTabGroupWithNext,
     tabWithSection,

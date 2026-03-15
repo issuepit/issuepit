@@ -22,9 +22,12 @@
         <span class="text-amber-400/70 text-xs hidden sm:inline">— drag to reorder · configure each section</span>
       </div>
       <div class="flex items-center gap-1.5">
-        <button @click="addRowBreak"
+        <button
+          draggable="true"
+          @click="addRowBreak()"
+          @dragstart.stop="(e: DragEvent) => { const id = addRowBreak(); onDragStart(e, id) }"
           aria-label="Add row break to dashboard layout"
-          class="text-xs text-gray-500 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1">
+          class="text-xs text-gray-500 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1 cursor-grab">
           <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>
@@ -62,13 +65,18 @@
       <template v-for="item in renderedItems" :key="item.type === 'section' || item.type === 'rowbreak' ? item.sid : item.key">
         <!-- Row break: forces a new grid row; shows separator handle in draft mode -->
         <template v-if="item.type === 'rowbreak'">
-          <div v-if="isDraftMode" class="col-span-12 flex items-center gap-2 py-1">
-            <div class="flex-1 border-t border-dashed border-gray-600"></div>
-            <span class="text-xs text-gray-500 select-none whitespace-nowrap">row break</span>
-            <div class="flex-1 border-t border-dashed border-gray-600"></div>
+          <div v-if="isDraftMode" class="col-span-12 flex items-center gap-2 py-1 cursor-grab"
+            draggable="true"
+            @dragstart.stop="(e: DragEvent) => onDragStart(e, item.sid)"
+            @dragover.prevent="onDragOver($event, item.sid)"
+            @dragenter="onDragEnter($event, item.sid)"
+            @dragend="onDragEnd($event)">
+            <div class="flex-1 border-t border-dashed border-orange-500/60"></div>
+            <span class="text-xs text-orange-500/80 select-none whitespace-nowrap">⋮⋮ row break</span>
+            <div class="flex-1 border-t border-dashed border-orange-500/60"></div>
             <button @click="removeRowBreak(item.sid)"
               aria-label="Remove row break"
-              class="text-gray-600 hover:text-red-400 transition-colors text-xs leading-none px-1">✕</button>
+              class="text-orange-600/60 hover:text-red-400 transition-colors text-xs leading-none px-1">✕</button>
           </div>
           <div v-else class="col-span-12 h-0"></div>
         </template>
@@ -85,6 +93,7 @@
           :draggable="isDraftMode"
           @dragstart="isDraftMode && (item.type === 'section' || item.type === 'stackgroup') ? onDragStart($event, item.type === 'section' ? item.sid : item.sections[0]) : undefined"
           @dragover.prevent="isDraftMode ? onDragOver($event, item.type === 'section' ? item.sid : item.sections[0]) : undefined"
+          @dragenter="isDraftMode ? onDragEnter($event, item.type === 'section' ? item.sid : item.sections[0]) : undefined"
           @dragend="isDraftMode ? onDragEnd($event) : undefined">
 
           <!-- Draft mode config bar -->
@@ -146,7 +155,10 @@
           </template>
 
           <!-- Content area -->
-          <div :class="isDraftMode && item.type === 'section' && sectionCfg(item.sid as MainSectionId).hidden ? 'opacity-30 saturate-0 pointer-events-none' : ''">
+          <div :class="[
+            isDraftMode && item.type === 'section' && sectionCfg(item.sid as MainSectionId).hidden ? 'opacity-30 saturate-0 pointer-events-none' : '',
+            item.type === 'stackgroup' ? 'flex flex-col gap-2' : '',
+          ]">
 
             <!-- Tab nav (for tabgroup) -->
             <div v-if="item.type === 'tabgroup'"
@@ -171,7 +183,7 @@
                 <!-- ── statProjects ── -->
                 <template v-if="sid === 'statProjects'">
                   <NuxtLink to="/projects"
-                    class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 block transition-colors mb-4">
+                    class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 block transition-colors">
                     <p class="text-sm text-gray-400">Projects</p>
                     <p class="text-3xl font-bold text-blue-400 mt-1">{{ stats.projects }}</p>
                   </NuxtLink>
@@ -180,7 +192,7 @@
                 <!-- ── statOpenIssues ── -->
                 <template v-else-if="sid === 'statOpenIssues'">
                   <NuxtLink to="/issues?status=open"
-                    class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 block transition-colors mb-4">
+                    class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 block transition-colors">
                     <p class="text-sm text-gray-400">Open Issues</p>
                     <p class="text-3xl font-bold text-amber-400 mt-1">{{ stats.openIssues }}</p>
                   </NuxtLink>
@@ -189,7 +201,7 @@
                 <!-- ── statInProgress ── -->
                 <template v-else-if="sid === 'statInProgress'">
                   <NuxtLink to="/issues?status=in_progress"
-                    class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 block transition-colors mb-4">
+                    class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 block transition-colors">
                     <p class="text-sm text-gray-400">In Progress</p>
                     <p class="text-3xl font-bold text-indigo-400 mt-1">{{ stats.inProgress }}</p>
                   </NuxtLink>
@@ -198,7 +210,7 @@
                 <!-- ── statAgentRuns ── -->
                 <template v-else-if="sid === 'statAgentRuns'">
                   <NuxtLink to="/runs"
-                    class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 block transition-colors mb-4">
+                    class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 block transition-colors">
                     <p class="text-sm text-gray-400">Agent Runs</p>
                     <p class="text-3xl font-bold text-green-400 mt-1">{{ stats.agentRuns }}</p>
                   </NuxtLink>
@@ -423,10 +435,10 @@ type MainSectionId =
   | 'statProjects' | 'statOpenIssues' | 'statInProgress' | 'statAgentRuns'
   | 'recentIssues' | 'recentProjects' | 'chart' | 'cicdRuns' | 'agentRunsList'
 
-type MainWidth = 'xs' | 'sm' | 'md' | 'lg'
+type MainWidth = 'xs' | 'quarter' | 'sm' | 'md' | 'lg'
 type MainDisplayMode = 'list' | 'count'
 
-const MAIN_LAYOUT_KEY = 'main-dashboard-layout-v4'
+const MAIN_LAYOUT_KEY = 'main-dashboard-layout-v5'
 
 const DEFAULT_ORDER: MainSectionId[] = [
   'statProjects', 'statOpenIssues', 'statInProgress', 'statAgentRuns',
@@ -434,10 +446,10 @@ const DEFAULT_ORDER: MainSectionId[] = [
 ]
 
 const DEFAULT_CONFIGS = {
-  statProjects:   { hidden: false, width: 'xs', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
-  statOpenIssues: { hidden: false, width: 'xs', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
-  statInProgress: { hidden: false, width: 'xs', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
-  statAgentRuns:  { hidden: false, width: 'xs', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
+  statProjects:   { hidden: false, width: 'quarter', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
+  statOpenIssues: { hidden: false, width: 'quarter', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
+  statInProgress: { hidden: false, width: 'quarter', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
+  statAgentRuns:  { hidden: false, width: 'quarter', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
   recentIssues:   { hidden: false, width: 'md', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
   recentProjects: { hidden: false, width: 'md', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
   chart:          { hidden: false, width: 'lg', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
@@ -457,8 +469,8 @@ const SECTION_LABELS: Record<MainSectionId, string> = {
   agentRunsList:  'Agent Runs List',
 }
 
-const WIDTH_LABELS: Record<MainWidth, string> = { xs: '1/4', sm: '1/3', md: '1/2', lg: 'Full' }
-const MAIN_WIDTHS = (['xs', 'sm', 'md', 'lg'] as MainWidth[]).map(v => ({ value: v, label: WIDTH_LABELS[v] }))
+const WIDTH_LABELS: Record<MainWidth, string> = { xs: '1/6', quarter: '1/4', sm: '1/3', md: '1/2', lg: 'Full' }
+const MAIN_WIDTHS = (['xs', 'quarter', 'sm', 'md', 'lg'] as MainWidth[]).map(v => ({ value: v, label: WIDTH_LABELS[v] }))
 
 const SECTION_DISPLAY_MODES: Partial<Record<MainSectionId, MainDisplayMode[]>> = {
   recentIssues:   ['list', 'count'],
@@ -494,6 +506,7 @@ const {
   removeRowBreak,
   onDragStart: onDragStartRaw,
   onDragOver: onDragOverRaw,
+  onDragEnter: onDragEnterRaw,
   onDragEnd,
   toggleTabGroupWithNext: toggleTabGroupWithNextRaw,
   tabWithSection,
@@ -513,13 +526,15 @@ function hideSection(id: MainSectionId) { hideSectionRaw(id) }
 function showSection(id: MainSectionId) { showSectionRaw(id) }
 function onDragStart(e: DragEvent, id: string) { onDragStartRaw(e, id) }
 function onDragOver(e: DragEvent, id: string) { onDragOverRaw(e, id) }
+function onDragEnter(e: DragEvent, id: string) { onDragEnterRaw(e, id) }
 function toggleTabGroupWithNext(sid: MainSectionId) { toggleTabGroupWithNextRaw(sid) }
 function toggleStackGroupWithNext(sid: MainSectionId) { toggleStackGroupWithNextRaw(sid) }
 
 function mainColSpanClass(width: MainWidth): string {
-  if (width === 'xs') return 'col-span-12 sm:col-span-6 lg:col-span-3'
-  if (width === 'sm') return 'col-span-12 sm:col-span-6 lg:col-span-4'
-  if (width === 'md') return 'col-span-12 lg:col-span-6'
+  if (width === 'xs')      return 'col-span-12 sm:col-span-6 lg:col-span-2'
+  if (width === 'quarter') return 'col-span-12 sm:col-span-6 lg:col-span-3'
+  if (width === 'sm')      return 'col-span-12 sm:col-span-6 lg:col-span-4'
+  if (width === 'md')      return 'col-span-12 lg:col-span-6'
   return 'col-span-12'
 }
 

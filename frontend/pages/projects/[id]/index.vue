@@ -57,16 +57,6 @@
             </svg>
             New Issue
           </button>
-          <NuxtLink :to="`/projects/${id}/settings`"
-            class="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-800 transition-colors"
-            title="Project Settings">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            Settings
-          </NuxtLink>
         </div>
       </div>
       <p v-if="store.currentProject.description" class="text-gray-400 text-sm mb-6">
@@ -150,6 +140,14 @@
           Members
           <span class="text-xs text-gray-600">{{ store.currentProject.memberCount }}</span>
         </NuxtLink>
+        <button v-if="!isDraftMode" @click="enterDraftMode"
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-gray-800 transition-colors text-sm whitespace-nowrap">
+          <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+          </svg>
+          Customize
+        </button>
         <NuxtLink :to="`/projects/${id}/settings`"
           class="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors text-sm whitespace-nowrap"
           active-class="text-white bg-gray-800">
@@ -173,9 +171,12 @@
           <span class="text-amber-400/70 text-xs hidden sm:inline">— drag to reorder · configure each section</span>
         </div>
         <div class="flex items-center gap-1.5">
-          <button @click="addRowBreak"
+          <button
+            draggable="true"
+            @click="addRowBreak()"
+            @dragstart.stop="(e: DragEvent) => { const id = addRowBreak(); onSectionDragStart(e, id) }"
             aria-label="Add row break to dashboard layout"
-            class="text-xs text-gray-500 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1">
+            class="text-xs text-gray-500 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1 cursor-grab">
             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
             </svg>
@@ -214,13 +215,18 @@
         <template v-for="item in renderedItems" :key="item.type === 'section' || item.type === 'rowbreak' ? item.sid : item.key">
           <!-- Row break: forces a new grid row; shows separator handle in draft mode -->
           <template v-if="item.type === 'rowbreak'">
-            <div v-if="isDraftMode" class="col-span-12 flex items-center gap-2 py-1">
-              <div class="flex-1 border-t border-dashed border-gray-600"></div>
-              <span class="text-xs text-gray-500 select-none whitespace-nowrap">row break</span>
-              <div class="flex-1 border-t border-dashed border-gray-600"></div>
+            <div v-if="isDraftMode" class="col-span-12 flex items-center gap-2 py-1 cursor-grab"
+              draggable="true"
+              @dragstart.stop="(e: DragEvent) => onSectionDragStart(e, item.sid)"
+              @dragover.prevent="onSectionDragOver($event, item.sid)"
+              @dragenter="onSectionDragEnter($event, item.sid)"
+              @dragend="onSectionDragEnd($event)">
+              <div class="flex-1 border-t border-dashed border-orange-500/60"></div>
+              <span class="text-xs text-orange-500/80 select-none whitespace-nowrap">⋮⋮ row break</span>
+              <div class="flex-1 border-t border-dashed border-orange-500/60"></div>
               <button @click="removeRowBreak(item.sid)"
                 aria-label="Remove row break"
-                class="text-gray-600 hover:text-red-400 transition-colors text-xs leading-none px-1">✕</button>
+                class="text-orange-600/60 hover:text-red-400 transition-colors text-xs leading-none px-1">✕</button>
             </div>
             <div v-else class="col-span-12 h-0"></div>
           </template>
@@ -236,6 +242,7 @@
             :draggable="isDraftMode"
             @dragstart="isDraftMode && (item.type === 'section' || item.type === 'stackgroup') ? onSectionDragStart($event, item.type === 'section' ? item.sid : item.sections[0]) : undefined"
             @dragover.prevent="isDraftMode ? onSectionDragOver($event, item.type === 'section' ? item.sid : item.sections[0]) : undefined"
+            @dragenter="isDraftMode ? onSectionDragEnter($event, item.type === 'section' ? item.sid : item.sections[0]) : undefined"
             @dragend="isDraftMode ? onSectionDragEnd($event) : undefined">
 
             <!-- Draft mode header: shows for tab group or single section -->
@@ -300,7 +307,10 @@
             </template>
 
             <!-- Content area -->
-            <div :class="isDraftMode && item.type === 'section' && sectionCfg(item.sid as SectionId).hidden ? 'opacity-30 saturate-0 pointer-events-none' : ''">
+            <div :class="[
+              isDraftMode && item.type === 'section' && sectionCfg(item.sid as SectionId).hidden ? 'opacity-30 saturate-0 pointer-events-none' : '',
+              item.type === 'stackgroup' ? 'flex flex-col gap-2' : '',
+            ]">
 
               <!-- Tab nav header (for tab groups) -->
               <div v-if="item.type === 'tabgroup'"
@@ -993,6 +1003,7 @@ const {
   removeRowBreak,
   onDragStart: onDragStartRaw,
   onDragOver: onDragOverRaw,
+  onDragEnter: onDragEnterRaw,
   onDragEnd: onDragEndRaw,
   toggleTabGroupWithNext: toggleTabGroupWithNextRaw,
   tabWithSection,
@@ -1016,6 +1027,7 @@ function hideSection(s: SectionId) { hideSectionRaw(s) }
 function showSection(s: SectionId) { showSectionRaw(s) }
 function onSectionDragStart(e: DragEvent, id: string) { onDragStartRaw(e, id) }
 function onSectionDragOver(e: DragEvent, id: string) { onDragOverRaw(e, id) }
+function onSectionDragEnter(e: DragEvent, id: string) { onDragEnterRaw(e, id) }
 function onSectionDragEnd(e: DragEvent) { onDragEndRaw(e) }
 function toggleTabGroupWithNext(sid: SectionId) { toggleTabGroupWithNextRaw(sid) }
 function toggleStackGroupWithNext(sid: SectionId) { toggleStackGroupWithNextRaw(sid) }
