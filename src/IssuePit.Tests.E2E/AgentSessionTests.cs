@@ -405,6 +405,10 @@ public class AgentSessionTests(AspireFixture fixture)
         //   1. POST /mcp  method=initialize  → capture Mcp-Session-Id header and server version
         //   2. POST /mcp  method=tools/call  → call list_projects and count returned projects
         //
+        // Success detection: the MCP SDK omits "isError":false in successful responses (per spec,
+        // isError is optional and defaults to false). So we check for "content" in the response
+        // AND the absence of "isError":true, rather than looking for "isError":false.
+        //
         // Counting note: the MCP tool response embeds projects as a JSON-encoded string inside
         // result.content[0].text. In that embedded JSON, the double-quotes are escaped with
         // backslash (e.g. {\"id\":\"...\"}). Each project contributes exactly two {\"id\"
@@ -435,15 +439,19 @@ public class AgentSessionTests(AspireFixture fixture)
               --header='Content-Type: application/json' \
               --header='Accept: application/json, text/event-stream' \
               --header="Mcp-Session-Id: $SESSION" \
-              "$MCP_URL" 2>/dev/null || { echo '[ISSUEPIT:MCP_TOOLS]=FAIL (list_projects)'; exit 0; }
+              "$MCP_URL" 2>/dev/null || { echo '[ISSUEPIT:MCP_TOOLS]=FAIL (list_projects wget)'; exit 0; }
 
             LIST=$(sed 's/^data: //' /tmp/list_body)
-            if echo "$LIST" | grep -qF '"isError":false'; then
+
+            # Successful tool response has "content" but NO "isError":true.
+            # The MCP SDK omits "isError":false in successful responses (defaults to false per spec).
+            if echo "$LIST" | grep -qF '"content"' && ! echo "$LIST" | grep -qF '"isError":true'; then
               RAW=$(echo "$LIST" | grep -oF '{\"id\"' | wc -l | tr -d ' ')
               COUNT=$((RAW / 2))
               echo "[ISSUEPIT:MCP_PROJECT_COUNT]=$COUNT"
               echo '[ISSUEPIT:MCP_TOOLS]=OK'
             else
+              echo "[ISSUEPIT:MCP_LIST_RESP]=$LIST"
               echo '[ISSUEPIT:MCP_TOOLS]=FAIL (list_projects error response)'
             fi
             """,
