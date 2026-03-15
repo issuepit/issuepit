@@ -218,72 +218,36 @@
             <!-- Draft mode header: shows for tab group or single section -->
             <template v-if="isDraftMode">
               <!-- For single section: full config bar -->
-              <template v-if="item.type === 'section'">
-                <div class="mb-1.5 rounded-lg bg-gray-900/60 border border-gray-800 px-2 py-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <!-- Drag handle + label -->
-                  <div class="flex items-center gap-1.5 text-xs text-amber-400/80 cursor-grab mr-auto">
-                    <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                      <circle cx="9" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/>
-                      <circle cx="15" cy="6" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="15" cy="18" r="1.5"/>
-                    </svg>
-                    <span class="font-semibold">{{ SECTION_LABELS[item.sid] }}</span>
-                  </div>
-                  <!-- Display mode pills -->
-                  <div v-if="SECTION_DISPLAY_MODES[item.sid]" class="flex items-center gap-0.5">
-                    <button v-for="mode in SECTION_DISPLAY_MODES[item.sid]" :key="mode"
-                      @click.stop="updateCfg(item.sid, { displayMode: mode })"
-                      :class="sectionCfg(item.sid).displayMode === mode ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
-                      class="text-xs px-1.5 py-0.5 rounded transition-colors capitalize">{{ mode }}</button>
-                  </div>
-                  <!-- Max items (list/block modes) -->
-                  <div v-if="SECTION_HAS_MAX_ITEMS.has(item.sid) && sectionCfg(item.sid).displayMode !== 'count'" class="flex items-center gap-0.5">
-                    <span class="text-xs text-gray-600">#</span>
-                    <button v-for="n in MAX_ITEMS_OPTIONS" :key="n"
-                      @click.stop="updateCfg(item.sid, { maxItems: n })"
-                      :class="sectionCfg(item.sid).maxItems === n ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
-                      class="text-xs w-5 h-5 flex items-center justify-center rounded transition-colors">{{ n }}</button>
-                  </div>
-                  <!-- Width buttons (not for stats) -->
-                  <div v-if="item.sid !== 'stats'" class="flex items-center gap-0.5">
-                    <button v-for="w in (['sm','md','lg'] as SectionWidth[])" :key="w"
-                      @click.stop="updateCfg(item.sid, { width: w })"
-                      :class="sectionCfg(item.sid).width === w ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
-                      class="text-xs px-1.5 py-0.5 rounded transition-colors">{{ WIDTH_LABELS[w] }}</button>
-                  </div>
-                  <!-- Combine with next button -->
-                  <button v-if="layout.order.indexOf(item.sid) < layout.order.length - 1"
-                    @click.stop="toggleTabGroupWithNext(item.sid)"
-                    class="text-xs px-1.5 py-0.5 rounded transition-colors bg-gray-800 hover:bg-gray-700"
-                    :class="sectionCfg(item.sid).tabGroup !== null ? 'text-brand-400' : 'text-gray-500 hover:text-gray-300'"
-                    :title="sectionCfg(item.sid).tabGroup !== null ? 'Ungroup from next' : 'Combine with next as tabs'">
-                    {{ sectionCfg(item.sid).tabGroup !== null ? '⊖ Ungroup' : '⊕ Tab with ↓' }}
-                  </button>
-                  <!-- Hide/Show -->
-                  <button @click.stop="sectionCfg(item.sid).hidden ? showSection(item.sid) : hideSection(item.sid)"
-                    :class="sectionCfg(item.sid).hidden ? 'text-green-400' : 'text-gray-400 hover:text-red-400'"
-                    class="text-xs px-1.5 py-0.5 rounded bg-gray-800 hover:bg-gray-700 transition-colors">
-                    {{ sectionCfg(item.sid).hidden ? '+ Show' : '✕ Hide' }}
-                  </button>
-                </div>
-              </template>
-              <!-- For tab group: simple label bar -->
-              <template v-else>
-                <div class="mb-1.5 rounded-lg bg-gray-900/60 border border-gray-800 px-2 py-1.5 flex items-center gap-3 flex-wrap">
-                  <div class="flex items-center gap-1.5 text-xs text-amber-400/80 cursor-grab">
-                    <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                      <circle cx="9" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/>
-                      <circle cx="15" cy="6" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="15" cy="18" r="1.5"/>
-                    </svg>
-                    <span class="font-semibold text-amber-300">Tab group:</span>
-                    <span class="text-amber-400/80">{{ item.sections.map(s => SECTION_LABELS[s]).join(' + ') }}</span>
-                  </div>
-                  <!-- Ungroup first section to split tab group -->
-                  <button @click.stop="toggleTabGroupWithNext(item.sections[0])"
-                    class="text-xs px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-brand-400 hover:text-red-400 transition-colors ml-auto">
-                    ⊖ Split tabs
-                  </button>
-                </div>
-              </template>
+              <DashboardSectionBar
+                v-if="item.type === 'section'"
+                :label="SECTION_LABELS[item.sid]"
+                :display-modes="SECTION_DISPLAY_MODES[item.sid]"
+                :current-display-mode="sectionCfg(item.sid).displayMode"
+                :has-max-items="SECTION_HAS_MAX_ITEMS.has(item.sid)"
+                :max-items-options="MAX_ITEMS_OPTIONS"
+                :current-max-items="sectionCfg(item.sid).maxItems"
+                :widths="item.sid !== 'stats' ? PROJECT_WIDTHS : []"
+                :current-width="sectionCfg(item.sid).width"
+                :can-tab="layout.order.indexOf(item.sid) < layout.order.length - 1"
+                :is-tabbed="sectionCfg(item.sid).tabGroup !== null"
+                :hidden="sectionCfg(item.sid).hidden"
+                @display-mode-change="m => updateCfg(item.sid, { displayMode: m as SectionDisplayMode })"
+                @max-items-change="n => updateCfg(item.sid, { maxItems: n })"
+                @width-change="w => updateCfg(item.sid, { width: w as SectionWidth })"
+                @tab-toggle="toggleTabGroupWithNext(item.sid)"
+                @hide="hideSection(item.sid)"
+                @show="showSection(item.sid)"
+              />
+              <!-- For tab group: label + width + split -->
+              <DashboardTabGroupBar
+                v-else
+                :sections="item.sections"
+                :section-labels="SECTION_LABELS"
+                :widths="PROJECT_WIDTHS"
+                :current-width="sectionCfg(item.sections[0]).width"
+                @split="toggleTabGroupWithNext(item.sections[0])"
+                @width-change="w => updateCfg(item.sections[0], { width: w as SectionWidth })"
+              />
             </template>
 
             <!-- Content area -->
@@ -944,6 +908,7 @@ const SECTION_DISPLAY_MODES: Partial<Record<SectionId, SectionDisplayMode[]>> = 
 const SECTION_HAS_MAX_ITEMS: Set<SectionId> = new Set(['milestones', 'issues', 'agentRuns', 'cicdRuns'])
 const MAX_ITEMS_OPTIONS = [3, 5, 8, 10]
 const WIDTH_LABELS: Record<SectionWidth, string> = { sm: '1/3', md: '1/2', lg: 'Full' }
+const PROJECT_WIDTHS = (['sm', 'md', 'lg'] as SectionWidth[]).map(v => ({ value: v, label: WIDTH_LABELS[v] }))
 
 const DEFAULT_CONFIGS: Record<SectionId, SectionConfig> = {
   stats:      { hidden: false, displayMode: 'list',  maxItems: 3,  width: 'lg', tabGroup: null },
@@ -1107,7 +1072,7 @@ function colSpanClass(width: SectionWidth): string {
   return 'col-span-6'
 }
 function itemColSpanClass(item: RenderItem): string {
-  if (item.type === 'tabgroup') return 'col-span-6'
+  if (item.type === 'tabgroup') return colSpanClass(sectionCfg(item.sections[0]).width)
   return colSpanClass(sectionCfg(item.sid).width)
 }
 
