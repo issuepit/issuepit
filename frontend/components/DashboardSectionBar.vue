@@ -1,5 +1,5 @@
 <template>
-  <div class="mb-1.5 rounded-lg bg-gray-900/60 border border-gray-800 px-2 py-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+  <div data-no-reorder class="mb-1.5 rounded-lg bg-gray-900/60 border border-gray-800 px-2 py-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
     <!-- Drag handle + label -->
     <div class="flex items-center gap-1.5 text-xs text-amber-400/80 cursor-grab mr-auto">
       <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">

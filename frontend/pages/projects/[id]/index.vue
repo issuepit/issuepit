@@ -267,9 +267,7 @@
             </template>
 
             <!-- Content area -->
-            <div
-              v-show="!(isDraftMode && dragSectionId !== null && dragHoverSid === (item.type === 'section' ? item.sid : null) && dragSectionId !== (item.type === 'section' ? item.sid : null))"
-              :class="isDraftMode && item.type === 'section' && sectionCfg(item.sid as SectionId).hidden ? 'opacity-30 saturate-0 pointer-events-none' : ''">
+            <div :class="isDraftMode && item.type === 'section' && sectionCfg(item.sid as SectionId).hidden ? 'opacity-30 saturate-0 pointer-events-none' : ''">
 
               <!-- Tab nav header (for tab groups) -->
               <div v-if="item.type === 'tabgroup'"

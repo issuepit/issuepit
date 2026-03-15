@@ -106,8 +106,11 @@ export function useDashboardLayout(options: {
     }
   }
 
-  function onDragOver(_e: DragEvent, id: string) {
+  function onDragOver(e: DragEvent, id: string) {
     dragHoverSid.value = id
+    // Don't reorder when hovering over a config bar — it's a drop target for tab/stack grouping.
+    // Skipping the reorder keeps the config bar stable so the user can drop onto the buttons.
+    if ((e.target as HTMLElement)?.closest('[data-no-reorder]')) return
     if (!dragSectionId.value || id === dragSectionId.value) return
     const from = layout.value.order.indexOf(dragSectionId.value)
     const to = layout.value.order.indexOf(id)
