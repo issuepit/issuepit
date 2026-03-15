@@ -1,4 +1,5 @@
 using IssuePit.Core.Entities;
+using IssuePit.Core.Enums;
 using IssuePit.Core.Runners;
 using System.Text.Json;
 
@@ -92,10 +93,10 @@ internal static class AgentEnvironmentBuilder
     }
 
     /// <summary>Converts an <see cref="OpenCodeAgentType"/> to the opencode config string value.</summary>
-    private static string? AgentTypeToString(IssuePit.Core.Enums.OpenCodeAgentType? agentType) => agentType switch
+    private static string? AgentTypeToString(OpenCodeAgentType? agentType) => agentType switch
     {
-        IssuePit.Core.Enums.OpenCodeAgentType.Primary => "primary",
-        IssuePit.Core.Enums.OpenCodeAgentType.SubAgent => "subagent",
+        OpenCodeAgentType.Primary => "primary",
+        OpenCodeAgentType.SubAgent => "subagent",
         _ => null,
     };
 }

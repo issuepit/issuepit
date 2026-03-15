@@ -176,7 +176,7 @@ The primary agent can invoke the review subagent: `@review-agent please review t
 
 ---
 
-
+## MCP Servers
 
 Agent modes can use **MCP (Model Context Protocol) servers** to access external tools such as GitHub, file systems, or custom APIs.
 

@@ -199,9 +199,9 @@
               <div class="flex items-center gap-2">
                 <NuxtLink :to="`/agents/${child.id}`" class="text-sm font-medium text-white hover:text-brand-300 transition-colors">{{ child.name }}</NuxtLink>
                 <span v-if="child.agentType != null"
-                  :class="child.agentType === 1 ? 'bg-violet-900/40 text-violet-300' : 'bg-teal-900/40 text-teal-300'"
+                  :class="child.agentType === OpenCodeAgentTypeEnum.Primary ? 'bg-violet-900/40 text-violet-300' : 'bg-teal-900/40 text-teal-300'"
                   class="text-xs px-1.5 py-0.5 rounded-full">
-                  {{ child.agentType === 1 ? 'primary' : 'subagent' }}
+                  {{ child.agentType === OpenCodeAgentTypeEnum.Primary ? 'primary' : 'subagent' }}
                 </span>
                 <span v-else class="text-xs bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded-full">type not set</span>
                 <span :class="child.isActive ? 'text-green-400' : 'text-gray-500'" class="text-xs">
@@ -227,7 +227,7 @@
 import { useAgentsStore } from '~/stores/agents'
 import { useMcpServersStore } from '~/stores/mcp-servers'
 import type { RunnerType, OpenCodeAgentType } from '~/types'
-import { RunnerTypeLabels, RunnerType as RunnerTypeEnum, OpenCodeAgentTypeLabels } from '~/types'
+import { RunnerTypeLabels, RunnerType as RunnerTypeEnum, OpenCodeAgentType as OpenCodeAgentTypeEnum, OpenCodeAgentTypeLabels } from '~/types'
 
 const route = useRoute()
 const store = useAgentsStore()
