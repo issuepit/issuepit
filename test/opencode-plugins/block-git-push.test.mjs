@@ -1,20 +1,39 @@
 /**
  * Unit tests for the block-git-push opencode plugin.
  *
- * Tests are intentionally self-contained and run with the built-in
- * Node.js test runner (node:test) — no extra dependencies required.
+ * opencode auto-loads plugins from:
+ *   ~/.config/opencode/plugins/   (global, baked into the container image)
+ *   .opencode/plugins/            (project-level)
  *
- * Run:  node --test test/opencode-plugins/
+ * The plugin is loaded by importing the JS module and calling the exported
+ * function — exactly what opencode does internally. These tests replicate
+ * that loading path directly, keeping the suite dependency-free.
+ *
+ * Run:  node --test "test/opencode-plugins/*.test.mjs"
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { BlockGitPushPlugin } from "../../docker/helper-containers/opencode-plugins/block-git-push.js";
 
-// Helper: initialise the plugin and return the tool.execute.before hook.
+// Helper: initialise the plugin (mirroring opencode's Plugin.trigger path)
+// and return the tool.execute.before hook.
 async function getHook() {
   const hooks = await BlockGitPushPlugin({});
   return hooks["tool.execute.before"];
 }
+
+// ── Plugin contract ───────────────────────────────────────────────────────────
+
+test("plugin exports an async function", () => {
+  assert.equal(typeof BlockGitPushPlugin, "function");
+  assert.equal(BlockGitPushPlugin.constructor.name, "AsyncFunction");
+});
+
+test("plugin returns a hooks object with tool.execute.before", async () => {
+  const hooks = await BlockGitPushPlugin({});
+  assert.ok(hooks !== null && typeof hooks === "object");
+  assert.equal(typeof hooks["tool.execute.before"], "function");
+});
 
 // ── Blocked commands ──────────────────────────────────────────────────────────
 

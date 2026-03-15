@@ -63,10 +63,12 @@ RUN set -eux; \
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Copy IssuePit opencode plugins so they are available when opencode runs.
-# The entrypoint auto-registers every *.js file it finds here in the
-# opencode config's "plugin" array (using file:// references).
-COPY opencode-plugins/ /usr/local/lib/opencode-plugins/
+# Bake IssuePit opencode plugins into the global opencode plugin directory.
+# opencode auto-discovers *.js / *.ts files placed in ~/.config/opencode/plugins/
+# without any config.json entries, which is the proper opencode way to ship plugins.
+# Additional plugins can be injected at runtime via ISSUEPIT_OPENCODE_PLUGINS_JSON.
+RUN mkdir -p /root/.config/opencode/plugins
+COPY opencode-plugins/ /root/.config/opencode/plugins/
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
