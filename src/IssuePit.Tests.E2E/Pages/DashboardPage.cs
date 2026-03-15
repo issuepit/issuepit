@@ -20,7 +20,7 @@ public class DashboardPage(IPage page)
 
     public ILocator InProgressStatCard => page.Locator("a[href='/issues?status=in_progress']:has-text('In Progress')");
 
-    public ILocator AgentsStatCard => page.Locator("a[href='/agents']:has-text('Agents')");
+    public ILocator AgentsStatCard => page.Locator("a[href='/runs']:has-text('Agent Runs')");
 
     private ILocator RecentIssuesSection => page.Locator("h2:has-text('Recent Issues') ~ div");
 
