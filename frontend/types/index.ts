@@ -822,6 +822,60 @@ export interface CiCdArtifact {
   createdAt: string
 }
 
+export interface TestRunSummary {
+  runId: string
+  commitSha?: string
+  branch?: string
+  startedAt: string
+  endedAt?: string
+  statusName: string
+  totalTests: number
+  passedTests: number
+  failedTests: number
+  skippedTests: number
+  durationMs: number
+  suiteCount: number
+}
+
+export interface TestStats {
+  fullName: string
+  className?: string
+  methodName?: string
+  totalRuns: number
+  passedRuns: number
+  failedRuns: number
+  skippedRuns: number
+  avgDurationMs: number
+  lastOutcome: number
+  lastOutcomeName: string
+  lastRunAt: string
+}
+
+export interface TestCaseHistoryEntry {
+  id: string
+  outcome: number
+  outcomeName: string
+  durationMs: number
+  errorMessage?: string
+  stackTrace?: string
+  runId: string
+  commitSha?: string
+  branch?: string
+  runAt: string
+  artifactName: string
+}
+
+export interface TestRunCompareResult {
+  runA: { id: string; commitSha: string; branch?: string; startedAt: string; testCount: number }
+  runB: { id: string; commitSha: string; branch?: string; startedAt: string; testCount: number }
+  added: { fullName: string; outcomeName: string; durationMs: number }[]
+  removed: { fullName: string; outcomeName: string; durationMs: number }[]
+  fixed_: { fullName: string; durationMsA: number; durationMsB: number }[]
+  regressed: { fullName: string; durationMsA: number; durationMsB: number; errorMessage?: string }[]
+  slowedDown: { fullName: string; durationMsA: number; durationMsB: number; deltaMs: number }[]
+  summary: { addedCount: number; removedCount: number; fixedCount: number; regressedCount: number; slowedDownCount: number }
+}
+
 export interface WorkflowJobNode {
   id: string
   name: string

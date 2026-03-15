@@ -2,7 +2,7 @@ using System.Xml;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
 
-namespace IssuePit.CiCdClient.Services;
+namespace IssuePit.Core.Services;
 
 /// <summary>
 /// Parses Microsoft Visual Studio Test Results (<c>.trx</c>) XML files into

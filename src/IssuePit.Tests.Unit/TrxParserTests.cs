@@ -1,5 +1,5 @@
-using IssuePit.CiCdClient.Services;
 using IssuePit.Core.Enums;
+using IssuePit.Core.Services;
 
 namespace IssuePit.Tests.Unit;
 
