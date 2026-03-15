@@ -527,7 +527,7 @@ public class CiCdWorker(
                         catch (Exception ex) when (ex is not OperationCanceledException)
                         {
                             // Not a valid zip — fall through and try as raw TRX XML below.
-                            logger.LogDebug(ex, "File {ArtifactFile} is not a valid zip for run {RunId}; will try as raw TRX", artifactFile, runId);
+                            logger.LogDebug("File {ArtifactFile} is not a valid zip for run {RunId} ({Message}); will try as raw TRX", artifactFile, runId, ex.Message);
                         }
 
                         if (foundInZip)
@@ -553,7 +553,7 @@ public class CiCdWorker(
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException)
                         {
-                            logger.LogDebug(ex, "File {ArtifactFile} is not a valid TRX for run {RunId}", artifactFile, runId);
+                            logger.LogDebug("File {ArtifactFile} is not a valid TRX for run {RunId} ({Message})", artifactFile, runId, ex.Message);
                         }
                     }
                 }
