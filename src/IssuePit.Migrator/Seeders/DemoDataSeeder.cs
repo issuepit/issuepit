@@ -221,6 +221,7 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
         await new DemoAgentSeeder(db).SeedAsync(org.Id);
 
         // --- IssuePit project ---
+        const string issuePitColor = "#4c6ef5";
         var (issuePitProject, _) = await db.Projects.AddIfNotExistsAsync(
             p => p.OrgId == org.Id && p.Slug == "issuepit",
             new Project
@@ -232,11 +233,15 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
                 Description = "IssuePit — AI-powered issue tracker and agent orchestration platform",
                 GitHubRepo = "https://github.com/issuepit/issuepit",
                 IssueKey = "IP",
+                Color = issuePitColor,
                 // Require explicit approval before dispatching CI/CD runs so that the git-polling
                 // service does not auto-start runners for this seeded project in E2E tests.
                 RequiresRunApproval = true,
                 CreatedAt = DateTime.UtcNow,
             });
+        // Ensure the accent color is set even for pre-existing seeded records
+        if (issuePitProject.Color is null)
+            issuePitProject.Color = issuePitColor;
         await db.SaveChangesAsync();
 
         if (!await db.GitRepositories.AnyAsync(r => r.ProjectId == issuePitProject.Id))
