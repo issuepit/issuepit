@@ -208,7 +208,7 @@
             :class="[
               itemColSpanClass(item),
               isDraftMode ? 'select-none' : '',
-              dragSectionId === (item.type === 'section' ? item.sid : null) ? 'opacity-50' : '',
+              dragSectionId === (item.type === 'section' ? item.sid : null) ? 'opacity-50 pointer-events-none' : '',
             ]"
             :draggable="isDraftMode"
             @dragstart="isDraftMode && item.type === 'section' ? onSectionDragStart($event, item.sid as SectionId) : undefined"
