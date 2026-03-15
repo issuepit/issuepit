@@ -127,9 +127,9 @@ export function useDashboardLayout(options: {
     const cfg = sectionCfg(sid)
     if (cfg.tabGroup !== null) {
       const grp = cfg.tabGroup
-      updateCfg(sid, { tabGroup: null })
+      updateCfg(sid, { tabGroup: null, stackGroup: null })
       for (const s of layout.value.order) {
-        if (s !== sid && sectionCfg(s).tabGroup === grp) updateCfg(s, { tabGroup: null })
+        if (s !== sid && sectionCfg(s).tabGroup === grp) updateCfg(s, { tabGroup: null, stackGroup: null })
       }
     } else {
       const visible = layout.value.order.filter(s => !sectionCfg(s).hidden)
@@ -156,13 +156,13 @@ export function useDashboardLayout(options: {
     const tGrp = sectionCfg(targetSid).tabGroup
     if (tGrp) {
       for (const s of layout.value.order) {
-        if (sectionCfg(s).tabGroup === tGrp) updateCfg(s, { tabGroup: null })
+        if (sectionCfg(s).tabGroup === tGrp) updateCfg(s, { tabGroup: null, stackGroup: null })
       }
     }
     const dGrp = sectionCfg(droppedSid).tabGroup
     if (dGrp) {
       for (const s of layout.value.order) {
-        if (sectionCfg(s).tabGroup === dGrp) updateCfg(s, { tabGroup: null })
+        if (sectionCfg(s).tabGroup === dGrp) updateCfg(s, { tabGroup: null, stackGroup: null })
       }
     }
 
@@ -178,9 +178,9 @@ export function useDashboardLayout(options: {
     const cfg = sectionCfg(sid)
     if (cfg.stackGroup !== null) {
       const grp = cfg.stackGroup
-      updateCfg(sid, { stackGroup: null })
+      updateCfg(sid, { stackGroup: null, tabGroup: null })
       for (const s of layout.value.order) {
-        if (s !== sid && sectionCfg(s).stackGroup === grp) updateCfg(s, { stackGroup: null })
+        if (s !== sid && sectionCfg(s).stackGroup === grp) updateCfg(s, { stackGroup: null, tabGroup: null })
       }
     } else {
       const visible = layout.value.order.filter(s => !sectionCfg(s).hidden)
@@ -205,13 +205,13 @@ export function useDashboardLayout(options: {
     const tGrp = sectionCfg(targetSid).stackGroup
     if (tGrp) {
       for (const s of layout.value.order) {
-        if (sectionCfg(s).stackGroup === tGrp) updateCfg(s, { stackGroup: null })
+        if (sectionCfg(s).stackGroup === tGrp) updateCfg(s, { stackGroup: null, tabGroup: null })
       }
     }
     const dGrp = sectionCfg(droppedSid).stackGroup
     if (dGrp) {
       for (const s of layout.value.order) {
-        if (sectionCfg(s).stackGroup === dGrp) updateCfg(s, { stackGroup: null })
+        if (sectionCfg(s).stackGroup === dGrp) updateCfg(s, { stackGroup: null, tabGroup: null })
       }
     }
 
