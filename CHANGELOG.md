@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.7.0](https://github.com/issuepit/issuepit/compare/v1.6.0...v1.7.0) (2026-03-15)
+
+
+### Features
+
+* add CI/CD run approval mode to gate auto-start for seeded projects in E2E tests ([#514](https://github.com/issuepit/issuepit/issues/514)) ([1c859e0](https://github.com/issuepit/issuepit/commit/1c859e0a383cec7f44c43d024fbbe60bf987101c))
+* detect branches and commits and map them to issues ([#538](https://github.com/issuepit/issuepit/issues/538)) ([f490b84](https://github.com/issuepit/issuepit/commit/f490b84ebe12bf80f281b22635e328eb138cff18))
+* expose RequiresRunApproval in CI/CD settings UI; bypass approval for user-triggered runs ([#545](https://github.com/issuepit/issuepit/issues/545)) ([6f6f403](https://github.com/issuepit/issuepit/commit/6f6f40318cf37722c15745fc24fd1991f682d180))
+* improve agent action run flow — git branch setup, CI/CD loop, same-container exec, opencode session forking ([#512](https://github.com/issuepit/issuepit/issues/512)) ([c5a3af8](https://github.com/issuepit/issuepit/commit/c5a3af8babb2523afd908f311b630a5c37b6c7f2))
+* improve agent action runs (MCP injection, nested agents, issue comments, session warnings, git recovery) ([#532](https://github.com/issuepit/issuepit/issues/532)) ([4a156cf](https://github.com/issuepit/issuepit/commit/4a156cffb016cbf463fa44760394bf5179cdd780))
+* link runs — retry chains, agent sessions, same-SHA runs ([#535](https://github.com/issuepit/issuepit/issues/535)) ([b325f17](https://github.com/issuepit/issuepit/commit/b325f17b2b1d3eaabe71a1bbd8a804c37f3937e5))
+* split agent run logs into sections with Steps chain view ([#533](https://github.com/issuepit/issuepit/issues/533)) ([48496b4](https://github.com/issuepit/issuepit/commit/48496b41e176d84b62a65a3be2980f036b974d3f))
+* sync issues with GitHub ([#527](https://github.com/issuepit/issuepit/issues/527)) ([731dfab](https://github.com/issuepit/issuepit/commit/731dfabd28694cde7d2018353a67c968e96e49f3))
+
+
+### Bug Fixes
+
+* add status tooltips to agent session status badges ([#524](https://github.com/issuepit/issuepit/issues/524)) ([448ccd0](https://github.com/issuepit/issuepit/commit/448ccd0d859b15630dbac6fd029e21025753dc32))
+* agents do not start CLI tool ([#505](https://github.com/issuepit/issuepit/issues/505)) ([907000d](https://github.com/issuepit/issuepit/commit/907000d11f0e4155e5230cdf2840c216682ecd65))
+* artifact and test uploads in cicd runner ([#508](https://github.com/issuepit/issuepit/issues/508)) ([4053790](https://github.com/issuepit/issuepit/commit/405379063fdfd40677cb5b955c7635e9aa84b8de))
+* artifact download routes to Nuxt instead of C# backend; artifacts and tests tabs empty ([#544](https://github.com/issuepit/issuepit/issues/544)) ([346a48f](https://github.com/issuepit/issuepit/commit/346a48f194838090a3ac8ba1a3ff69d8970d8e7a))
+* auto-download Vosk model and ffmpeg in local Aspire runs; unblock voice issue creation on transcription failure ([#540](https://github.com/issuepit/issuepit/issues/540)) ([9633ec0](https://github.com/issuepit/issuepit/commit/9633ec0c28532047eda31cf7e392a6600dd20c48))
+* CI/CD status UI — retry trigger, debug mode, slim filter, gap-free layout ([#517](https://github.com/issuepit/issuepit/issues/517)) ([d02eaef](https://github.com/issuepit/issuepit/commit/d02eaef4f72b7806c4e2bd4862edc68f812b1cd7))
+* don't close modals when mousedown is inside modal but mouseup is outside ([#501](https://github.com/issuepit/issuepit/issues/501)) ([2f1c0e2](https://github.com/issuepit/issuepit/commit/2f1c0e20d6e2e27a19bcc789d30e893bd587d184))
+* install .NET 10 SDK in helper-base image via dotnet-install.sh and bump Playwright to v1.58.0 ([#509](https://github.com/issuepit/issuepit/issues/509)) ([c3b04cb](https://github.com/issuepit/issuepit/commit/c3b04cb990e31252862bd88a02a9a111a67cd9db))
+* job tree wrong matching and slim mode nested workflow visibility ([#534](https://github.com/issuepit/issuepit/issues/534)) ([1fe2362](https://github.com/issuepit/issuepit/commit/1fe23626c75bd2a04d8b70bafab5eea28e083417))
+* manual CI/CD trigger supports branch as well as commit SHA ([#529](https://github.com/issuepit/issuepit/issues/529)) ([480e81d](https://github.com/issuepit/issuepit/commit/480e81dd33f8dcb419fd55fb43972ecded4a29ba))
+* navigate to new issue on create; sort issues list by number numerically ([#530](https://github.com/issuepit/issuepit/issues/530)) ([a12cb41](https://github.com/issuepit/issuepit/commit/a12cb419817732fde82b08d665b1cadee1515bc9))
+* stream agent container logs, pin default Docker image tag, and add keep-container option ([#503](https://github.com/issuepit/issuepit/issues/503)) ([275a45f](https://github.com/issuepit/issuepit/commit/275a45f651adef943f4051123ad0ef9fb9ef5691))
+* suppress Vosk native logs and [PoC] diagnostic output in e2e CI runs ([#498](https://github.com/issuepit/issuepit/issues/498)) ([c55ec37](https://github.com/issuepit/issuepit/commit/c55ec3749dcaf4bfa9a8566fc89593ea678c4f80))
+* WaitingForApproval runs show as Succeeded and lack Approve button ([#521](https://github.com/issuepit/issuepit/issues/521)) ([6f322c6](https://github.com/issuepit/issuepit/commit/6f322c67df3e687e126cf164cfe969fd6a805613))
+* WaitingForApproval runs show as Succeeded, approval button never appears, and duration counts incorrectly ([#537](https://github.com/issuepit/issuepit/issues/537)) ([52edac7](https://github.com/issuepit/issuepit/commit/52edac7fb6f07c63567d04f0fd76257288ccc57a))
+
 ## [1.6.0](https://github.com/issuepit/issuepit/compare/v1.5.0...v1.6.0) (2026-03-13)
 
 
