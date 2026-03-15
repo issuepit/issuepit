@@ -208,7 +208,9 @@
             :class="[
               itemColSpanClass(item),
               isDraftMode ? 'select-none' : '',
-              dragSectionId === (item.type === 'section' ? item.sid : null) ? 'opacity-50' : '',
+              dragSectionId === (item.type === 'section' ? item.sid : null)
+                ? (dragHoverSid ? 'opacity-0' : 'opacity-50')
+                : '',
             ]"
             :draggable="isDraftMode"
             @dragstart="isDraftMode && item.type === 'section' ? onSectionDragStart($event, item.sid as SectionId) : undefined"
@@ -228,10 +230,11 @@
                 :current-max-items="sectionCfg(item.sid as SectionId).maxItems"
                 :widths="PROJECT_WIDTHS"
                 :current-width="sectionCfg(item.sid as SectionId).width"
-                :chart-day-options="item.sid === 'history' ? CHART_DAY_OPTIONS : undefined"
                 :current-chart-days="item.sid === 'history' ? (sectionCfg(item.sid as SectionId).chartDays ?? CHART_DAY_DEFAULT) : undefined"
                 :chart-height-options="item.sid === 'history' ? CHART_HEIGHT_OPTIONS : undefined"
                 :current-chart-height="item.sid === 'history' ? (sectionCfg(item.sid as SectionId).chartHeightKey ?? 'md') : undefined"
+                :kanban-boards="item.sid === 'kanban' ? kanbanStore.boards : undefined"
+                :selected-kanban-board-id="item.sid === 'kanban' ? sectionCfg('kanban').selectedBoardId : undefined"
                 :can-tab="layout.order.indexOf(item.sid) < layout.order.length - 1"
                 :is-tabbed="sectionCfg(item.sid as SectionId).tabGroup !== null"
                 :can-stack="SECTION_CAN_STACK.has(item.sid as SectionId) && layout.order.indexOf(item.sid) < layout.order.length - 1"
@@ -243,6 +246,7 @@
                 @width-change="w => updateCfg(item.sid as SectionId, { width: w as SectionWidth })"
                 @chart-days-change="d => updateCfg(item.sid as SectionId, { chartDays: d })"
                 @chart-height-change="k => updateCfg(item.sid as SectionId, { chartHeightKey: k })"
+                @kanban-board-change="boardId => updateCfg('kanban', { selectedBoardId: boardId })"
                 @tab-toggle="toggleTabGroupWithNext(item.sid as SectionId)"
                 @tab-drop="droppedSid => tabWithSection(item.sid, droppedSid)"
                 @stack-toggle="toggleStackGroupWithNext(item.sid as SectionId)"
@@ -295,28 +299,34 @@
                 <div v-show="item.type !== 'tabgroup' || getActiveTab(item.key, item.sections) === sid"
                   :class="item.type === 'tabgroup' ? 'bg-gray-900 border border-gray-800 rounded-b-xl p-5' : ''">
 
-                  <!-- ── STATS section ── -->
-                  <template v-if="sid === 'stats'">
-                    <div class="grid grid-cols-3 gap-3 max-w-md">
-                      <NuxtLink :to="`/projects/${id}/issues`"
-                        class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group">
-                        <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
-                          {{ store.currentProject?.issueCount }}</p>
-                        <p class="text-xs text-gray-500 mt-0.5">Issues</p>
-                      </NuxtLink>
-                      <NuxtLink :to="`/projects/${id}/code?tab=commits`"
-                        class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group">
-                        <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
-                          {{ commitCountLabel }}</p>
-                        <p class="text-xs text-gray-500 mt-0.5">Commits</p>
-                      </NuxtLink>
-                      <NuxtLink :to="`/projects/${id}/merge-requests`"
-                        class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group">
-                        <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
-                          {{ store.currentProject?.openMergeRequestCount }}</p>
-                        <p class="text-xs text-gray-500 mt-0.5">Open MRs</p>
-                      </NuxtLink>
-                    </div>
+                  <!-- ── STAT: Issues ── -->
+                  <template v-if="sid === 'statIssues'">
+                    <NuxtLink :to="`/projects/${id}/issues`"
+                      class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group block">
+                      <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
+                        {{ store.currentProject?.issueCount }}</p>
+                      <p class="text-xs text-gray-500 mt-0.5">Issues</p>
+                    </NuxtLink>
+                  </template>
+
+                  <!-- ── STAT: Commits ── -->
+                  <template v-else-if="sid === 'statCommits'">
+                    <NuxtLink :to="`/projects/${id}/code?tab=commits`"
+                      class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group block">
+                      <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
+                        {{ commitCountLabel }}</p>
+                      <p class="text-xs text-gray-500 mt-0.5">Commits</p>
+                    </NuxtLink>
+                  </template>
+
+                  <!-- ── STAT: Open MRs ── -->
+                  <template v-else-if="sid === 'statMRs'">
+                    <NuxtLink :to="`/projects/${id}/merge-requests`"
+                      class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group block">
+                      <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
+                        {{ store.currentProject?.openMergeRequestCount }}</p>
+                      <p class="text-xs text-gray-500 mt-0.5">Open MRs</p>
+                    </NuxtLink>
                   </template>
 
                   <!-- ── MILESTONES section ── -->
@@ -595,7 +605,7 @@
                       <template v-if="item.type !== 'tabgroup'">
                         <h2 class="font-semibold text-white mb-4">Kanban Board</h2>
                       </template>
-                      <KanbanBoardInline :project-id="id" />
+                      <KanbanBoardInline :project-id="id" :board-id="sectionCfg('kanban').selectedBoardId" />
                     </div>
                   </template>
 
@@ -764,6 +774,7 @@ import { AgentSessionStatus, CiCdRunStatus, IssueStatus, IssuePriority, IssueTyp
 import { useProjectsStore } from '~/stores/projects'
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useIssuesStore } from '~/stores/issues'
+import { useKanbanStore } from '~/stores/kanban'
 import { formatIssueId } from '~/composables/useIssueFormat'
 import { useDashboardLayout } from '~/composables/useDashboardLayout'
 
@@ -772,6 +783,7 @@ const id = route.params.id as string
 const store = useProjectsStore()
 const runsStore = useCiCdRunsStore()
 const issuesStore = useIssuesStore()
+const kanbanStore = useKanbanStore()
 const api = useApi()
 
 // --- Issue creation ---
@@ -898,12 +910,14 @@ const hasMoreCommits = ref(false)
 const recentProjectIssues = ref<Issue[]>([])
 
 // ── Dashboard layout customization ─────────────────────────────────────────
-type SectionId = 'stats' | 'milestones' | 'issues' | 'agentRuns' | 'cicdRuns' | 'history' | 'kanban'
+type SectionId = 'statIssues' | 'statCommits' | 'statMRs' | 'milestones' | 'issues' | 'agentRuns' | 'cicdRuns' | 'history' | 'kanban'
 type SectionDisplayMode = 'list' | 'count' | 'block'
-type SectionWidth = 'sm' | 'md' | 'lg'
+type SectionWidth = 'xs' | 'sm' | 'md' | 'lg'
 
 const SECTION_LABELS: Record<SectionId, string> = {
-  stats: 'Stats',
+  statIssues: 'Issues',
+  statCommits: 'Commits',
+  statMRs: 'Open MRs',
   milestones: 'Milestones',
   issues: 'Recent Issues',
   agentRuns: 'Recent Agent Runs',
@@ -918,22 +932,24 @@ const SECTION_DISPLAY_MODES: Partial<Record<SectionId, SectionDisplayMode[]>> = 
   cicdRuns: ['list', 'count'],
 }
 const SECTION_HAS_MAX_ITEMS: Set<SectionId> = new Set(['milestones', 'issues', 'agentRuns', 'cicdRuns'])
-const SECTION_CAN_STACK: Set<SectionId> = new Set(['stats', 'milestones', 'issues', 'agentRuns', 'cicdRuns', 'history', 'kanban'])
+const SECTION_CAN_STACK: Set<SectionId> = new Set(['statIssues', 'statCommits', 'statMRs', 'milestones', 'issues', 'agentRuns', 'cicdRuns', 'history', 'kanban'])
 const MAX_ITEMS_OPTIONS = [3, 5, 8, 10]
-const WIDTH_LABELS: Record<SectionWidth, string> = { sm: '1/3', md: '1/2', lg: 'Full' }
-const PROJECT_WIDTHS = (['sm', 'md', 'lg'] as SectionWidth[]).map(v => ({ value: v, label: WIDTH_LABELS[v] }))
+const WIDTH_LABELS: Record<SectionWidth, string> = { xs: '1/6', sm: '1/3', md: '1/2', lg: 'Full' }
+const PROJECT_WIDTHS = (['xs', 'sm', 'md', 'lg'] as SectionWidth[]).map(v => ({ value: v, label: WIDTH_LABELS[v] }))
 
 const DEFAULT_CONFIGS = {
-  stats:      { hidden: false, displayMode: 'list',  maxItems: 3,  width: 'lg', tabGroup: null, stackGroup: null },
-  milestones: { hidden: false, displayMode: 'block', maxItems: 3,  width: 'lg', tabGroup: null, stackGroup: null },
-  issues:     { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'sm', tabGroup: null, stackGroup: null },
-  agentRuns:  { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'sm', tabGroup: null, stackGroup: null },
-  cicdRuns:   { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'sm', tabGroup: null, stackGroup: null },
-  history:    { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'md', tabGroup: null, stackGroup: null },
-  kanban:     { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'md', tabGroup: null, stackGroup: null },
+  statIssues:  { hidden: false, displayMode: 'list',  maxItems: 3,  width: 'xs', tabGroup: null, stackGroup: null },
+  statCommits: { hidden: false, displayMode: 'list',  maxItems: 3,  width: 'xs', tabGroup: null, stackGroup: null },
+  statMRs:     { hidden: false, displayMode: 'list',  maxItems: 3,  width: 'xs', tabGroup: null, stackGroup: null },
+  milestones:  { hidden: false, displayMode: 'block', maxItems: 3,  width: 'lg', tabGroup: null, stackGroup: null },
+  issues:      { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'sm', tabGroup: null, stackGroup: null },
+  agentRuns:   { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'sm', tabGroup: null, stackGroup: null },
+  cicdRuns:    { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'sm', tabGroup: null, stackGroup: null },
+  history:     { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'md', tabGroup: null, stackGroup: null },
+  kanban:      { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'md', tabGroup: null, stackGroup: null },
 }
-const DEFAULT_ORDER: SectionId[] = ['stats', 'milestones', 'issues', 'agentRuns', 'cicdRuns', 'history', 'kanban']
-const DRAFT_LAYOUT_KEY = `project-dashboard-layout-v3-${id}`
+const DEFAULT_ORDER: SectionId[] = ['statIssues', 'statCommits', 'statMRs', 'milestones', 'issues', 'agentRuns', 'cicdRuns', 'history', 'kanban']
+const DRAFT_LAYOUT_KEY = `project-dashboard-layout-v4-${id}`
 
 const {
   layout,
@@ -981,6 +997,7 @@ function toggleStackGroupWithNext(sid: SectionId) { toggleStackGroupWithNextRaw(
 
 // Column span class based on width (6-col grid)
 function colSpanClass(width: SectionWidth): string {
+  if (width === 'xs') return 'col-span-6 sm:col-span-3 lg:col-span-1'
   if (width === 'sm') return 'col-span-6 md:col-span-3 lg:col-span-2'
   if (width === 'md') return 'col-span-6 lg:col-span-3'
   return 'col-span-6'
@@ -1076,6 +1093,7 @@ onMounted(async () => {
         hasMoreCommits.value = data.length === 50
       })
       .catch(() => { commitCount.value = null }),
+    kanbanStore.fetchBoards(id).catch((e) => { console.warn('Failed to load kanban boards:', e) }),
   ])
 
   // Connect to SignalR for live run updates
@@ -1134,9 +1152,11 @@ const chartWidth = 600
 const chartPad = 36
 
 const CHART_DAY_DEFAULT = 1  // 1 = last 1 day of snapshots
-const CHART_DAY_OPTIONS = [1, 3, 7]
-const CHART_HEIGHT_OPTIONS = [{ value: 'sm', label: 'S' }, { value: 'md', label: 'M' }, { value: 'lg', label: 'L' }]
-const CHART_HEIGHT_PX: Record<string, number> = { sm: 100, md: 160, lg: 240 }
+const CHART_HEIGHT_OPTIONS = [
+  { value: 'xs', label: 'XS' }, { value: 'sm', label: 'S' }, { value: 'md', label: 'M' },
+  { value: 'lg', label: 'L' }, { value: 'xl', label: 'XL' },
+]
+const CHART_HEIGHT_PX: Record<string, number> = { xs: 80, sm: 120, md: 180, lg: 260, xl: 360 }
 
 const chartHeightPx = computed(() =>
   CHART_HEIGHT_PX[sectionCfg('history').chartHeightKey ?? 'md'] ?? 160,

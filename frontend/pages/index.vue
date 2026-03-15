@@ -57,7 +57,9 @@
             itemColSpanClass(item),
             isDraftMode ? 'select-none' : '',
             item.type === 'section' && isDraftMode && sectionCfg(item.sid as MainSectionId).hidden ? 'opacity-40 saturate-50' : '',
-            dragSectionId === (item.type === 'section' ? item.sid : item.sections[0]) && isDraftMode ? 'opacity-50' : '',
+            dragSectionId === (item.type === 'section' ? item.sid : item.sections[0]) && isDraftMode
+              ? (dragHoverSid ? 'opacity-0' : 'opacity-50')
+              : '',
           ]"
           :draggable="isDraftMode"
           @dragstart="isDraftMode && item.type === 'section' ? onDragStart($event, item.sid as MainSectionId) : undefined"
@@ -77,7 +79,6 @@
               :current-max-items="sectionCfg(item.sid as MainSectionId).maxItems"
               :widths="MAIN_WIDTHS"
               :current-width="sectionCfg(item.sid as MainSectionId).width"
-              :chart-day-options="item.sid === 'chart' ? CHART_DAY_OPTIONS : undefined"
               :current-chart-days="item.sid === 'chart' ? (sectionCfg(item.sid as MainSectionId).chartDays ?? CHART_DAY_DEFAULT) : undefined"
               :chart-height-options="item.sid === 'chart' ? CHART_HEIGHT_OPTIONS : undefined"
               :current-chart-height="item.sid === 'chart' ? (sectionCfg(item.sid as MainSectionId).chartHeightKey ?? 'md') : undefined"
@@ -444,10 +445,10 @@ const SECTION_DISPLAY_MODES: Partial<Record<MainSectionId, MainDisplayMode[]>> =
 }
 
 const SECTION_HAS_MAX_ITEMS = new Set<MainSectionId>(['recentIssues', 'recentProjects', 'cicdRuns', 'agentRunsList'])
-const SECTION_CAN_TAB = new Set<MainSectionId>(['recentIssues', 'recentProjects', 'cicdRuns', 'agentRunsList'])
+const SECTION_CAN_TAB = new Set<MainSectionId>(['recentIssues', 'recentProjects', 'chart', 'cicdRuns', 'agentRunsList'])
 const SECTION_CAN_STACK = new Set<MainSectionId>([
   'statProjects', 'statOpenIssues', 'statInProgress', 'statAgentRuns',
-  'recentIssues', 'recentProjects', 'cicdRuns', 'agentRunsList',
+  'recentIssues', 'recentProjects', 'chart', 'cicdRuns', 'agentRunsList',
 ])
 
 const {
@@ -525,9 +526,11 @@ const chartWidth = 600
 const chartPad = 36
 
 const CHART_DAY_DEFAULT = 14
-const CHART_DAY_OPTIONS = [7, 14, 30]
-const CHART_HEIGHT_OPTIONS = [{ value: 'sm', label: 'S' }, { value: 'md', label: 'M' }, { value: 'lg', label: 'L' }]
-const CHART_HEIGHT_PX: Record<string, number> = { sm: 100, md: 160, lg: 240 }
+const CHART_HEIGHT_OPTIONS = [
+  { value: 'xs', label: 'XS' }, { value: 'sm', label: 'S' }, { value: 'md', label: 'M' },
+  { value: 'lg', label: 'L' }, { value: 'xl', label: 'XL' },
+]
+const CHART_HEIGHT_PX: Record<string, number> = { xs: 80, sm: 120, md: 180, lg: 260, xl: 360 }
 
 const chartHeightPx = computed(() =>
   CHART_HEIGHT_PX[sectionCfg('chart').chartHeightKey ?? 'md'] ?? 160,

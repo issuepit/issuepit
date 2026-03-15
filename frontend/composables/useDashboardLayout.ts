@@ -9,6 +9,7 @@ export interface LayoutSectionConfig {
   stackGroup: string | null
   chartDays?: number
   chartHeightKey?: string
+  selectedBoardId?: string
 }
 
 interface LayoutData {
