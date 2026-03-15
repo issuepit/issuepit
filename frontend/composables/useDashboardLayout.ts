@@ -118,6 +118,14 @@ export function useDashboardLayout(options: {
     // Skipping the reorder keeps the config bar stable so the user can drop onto the buttons.
     if ((e.target as HTMLElement)?.closest('[data-no-reorder]')) return
     if (!dragSectionId.value || id === dragSectionId.value) return
+    // Only reorder when cursor is near the top or bottom edge of the card (simulating the gap
+    // between cards). Hovering over the middle of a card should only highlight it for tab/stack
+    // grouping, not immediately trigger a live reorder — that caused instability.
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const fromTop = e.clientY - rect.top
+    const fromBottom = rect.bottom - e.clientY
+    const edgePx = Math.min(50, rect.height * 0.3)
+    if (fromTop > edgePx && fromBottom > edgePx) return
     const from = layout.value.order.indexOf(dragSectionId.value)
     const to = layout.value.order.indexOf(id)
     if (from === -1 || to === -1 || from === to) return
