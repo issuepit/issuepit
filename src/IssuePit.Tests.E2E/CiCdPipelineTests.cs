@@ -523,7 +523,7 @@ public class CiCdPipelineTests(AspireFixture fixture)
         using var _ = client;
 
         await client.PostAsJsonAsync("/api/cicd-runs/trigger",
-            BuildTriggerPayload(projectId, "e2e-artifact-key-abc", runtimeMode));
+            BuildTriggerPayload(projectId, "e2e-artifact-key-abc", runtimeMode, "ci.yml"));
 
         var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
         var runId = run.GetProperty("id").GetString()!;
@@ -553,7 +553,7 @@ public class CiCdPipelineTests(AspireFixture fixture)
         using var _ = client;
 
         await client.PostAsJsonAsync("/api/cicd-runs/trigger",
-            BuildTriggerPayload(projectId, "e2e-artifact-dl-abc", runtimeMode));
+            BuildTriggerPayload(projectId, "e2e-artifact-dl-abc", runtimeMode, "ci.yml"));
 
         var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
         var runId = run.GetProperty("id").GetString()!;
@@ -590,7 +590,7 @@ public class CiCdPipelineTests(AspireFixture fixture)
         using var _ = client;
 
         await client.PostAsJsonAsync("/api/cicd-runs/trigger",
-            BuildTriggerPayload(projectId, "e2e-artifact-content-abc", runtimeMode));
+            BuildTriggerPayload(projectId, "e2e-artifact-content-abc", runtimeMode, "ci.yml"));
 
         var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
         var runId = run.GetProperty("id").GetString()!;
@@ -639,7 +639,7 @@ public class CiCdPipelineTests(AspireFixture fixture)
         using var _ = client;
 
         await client.PostAsJsonAsync("/api/cicd-runs/trigger",
-            BuildTriggerPayload(projectId, "e2e-artifact-trx-abc", runtimeMode));
+            BuildTriggerPayload(projectId, "e2e-artifact-trx-abc", runtimeMode, "ci.yml"));
 
         var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
         var runId = run.GetProperty("id").GetString()!;
