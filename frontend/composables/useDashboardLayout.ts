@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 
 export interface LayoutSectionConfig {
   hidden: boolean
@@ -7,6 +7,8 @@ export interface LayoutSectionConfig {
   maxItems: number
   tabGroup: string | null
   stackGroup: string | null
+  chartDays?: number
+  chartHeightKey?: string
 }
 
 interface LayoutData {
@@ -97,9 +99,11 @@ export function useDashboardLayout(options: {
   // ── Drag & drop ────────────────────────────────────────────────────────────
   const dragSectionId = ref<string | null>(null)
   const dragHoverSid = ref<string | null>(null)
+  let _dragSnapshot: string | null = null
 
   function onDragStart(e: DragEvent, id: string) {
     dragSectionId.value = id
+    _dragSnapshot = JSON.stringify(layout.value)
     if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = 'move'
       e.dataTransfer.setData('text/plain', id)
@@ -107,7 +111,8 @@ export function useDashboardLayout(options: {
   }
 
   function onDragOver(e: DragEvent, id: string) {
-    dragHoverSid.value = id
+    // Only highlight other cards, not the one being dragged
+    if (id !== dragSectionId.value) dragHoverSid.value = id
     // Don't reorder when hovering over a config bar — it's a drop target for tab/stack grouping.
     // Skipping the reorder keeps the config bar stable so the user can drop onto the buttons.
     if ((e.target as HTMLElement)?.closest('[data-no-reorder]')) return
@@ -121,10 +126,23 @@ export function useDashboardLayout(options: {
     layout.value.order = newOrder
   }
 
-  function onDragEnd() {
+  function onDragEnd(e?: DragEvent) {
+    // ESC or aborted drag: dropEffect is 'none' → restore the pre-drag layout
+    if (e && e.dataTransfer?.dropEffect === 'none' && _dragSnapshot) {
+      layout.value = JSON.parse(_dragSnapshot)
+    }
     dragSectionId.value = null
     dragHoverSid.value = null
+    _dragSnapshot = null
   }
+
+  // Scroll the page with mouse wheel while dragging (browser suppresses native scroll during DnD)
+  function _onWheelDuringDrag(e: WheelEvent) {
+    if (dragSectionId.value) window.scrollBy(0, e.deltaY)
+  }
+
+  onMounted(() => window.addEventListener('wheel', _onWheelDuringDrag, { passive: true }))
+  onUnmounted(() => window.removeEventListener('wheel', _onWheelDuringDrag))
 
   // ── Tab group logic ─────────────────────────────────────────────────────────
   let _tabGroupCounter = 0
@@ -151,29 +169,40 @@ export function useDashboardLayout(options: {
 
   function tabWithSection(targetSid: string, droppedSid: string) {
     if (targetSid === droppedSid) return
-    // Move droppedSid to be right after targetSid in the order, then tab-group them
+    const existingGrp = sectionCfg(targetSid).tabGroup
+    // If already in the same group, nothing to do
+    if (existingGrp && existingGrp === sectionCfg(droppedSid).tabGroup) return
+
+    // Find the last member of target's existing group (so we insert after all current group members)
+    let insertAfterSid = targetSid
+    if (existingGrp) {
+      const order = layout.value.order
+      const targetIdx = order.indexOf(targetSid)
+      let lastIdx = targetIdx
+      for (let j = targetIdx + 1; j < order.length; j++) {
+        if (sectionCfg(order[j]).tabGroup === existingGrp) lastIdx = j
+        else break
+      }
+      insertAfterSid = order[lastIdx]
+    }
+
+    // Move droppedSid to be right after the last group member
     const newOrder = layout.value.order.filter(s => s !== droppedSid)
-    const targetIdx = newOrder.indexOf(targetSid)
-    if (targetIdx === -1) return
-    newOrder.splice(targetIdx + 1, 0, droppedSid)
+    const insertIdx = newOrder.indexOf(insertAfterSid)
+    if (insertIdx === -1) return
+    newOrder.splice(insertIdx + 1, 0, droppedSid)
     layout.value.order = newOrder
 
-    // Remove any existing tab/stack group memberships
-    const tGrp = sectionCfg(targetSid).tabGroup
-    if (tGrp) {
-      for (const s of layout.value.order) {
-        if (sectionCfg(s).tabGroup === tGrp) updateCfg(s, { tabGroup: null, stackGroup: null })
-      }
-    }
+    // Remove dropped's existing group membership (if different from target's group)
     const dGrp = sectionCfg(droppedSid).tabGroup
-    if (dGrp) {
+    if (dGrp && dGrp !== existingGrp) {
       for (const s of layout.value.order) {
         if (sectionCfg(s).tabGroup === dGrp) updateCfg(s, { tabGroup: null, stackGroup: null })
       }
     }
 
-    const grp = `grp-${++_tabGroupCounter}`
-    updateCfg(targetSid, { tabGroup: grp, stackGroup: null })
+    const grp = existingGrp ?? `grp-${++_tabGroupCounter}`
+    if (!existingGrp) updateCfg(targetSid, { tabGroup: grp, stackGroup: null })
     updateCfg(droppedSid, { tabGroup: grp, stackGroup: null })
   }
 
@@ -202,27 +231,36 @@ export function useDashboardLayout(options: {
 
   function stackWithSection(targetSid: string, droppedSid: string) {
     if (targetSid === droppedSid) return
+    const existingGrp = sectionCfg(targetSid).stackGroup
+    if (existingGrp && existingGrp === sectionCfg(droppedSid).stackGroup) return
+
+    let insertAfterSid = targetSid
+    if (existingGrp) {
+      const order = layout.value.order
+      const targetIdx = order.indexOf(targetSid)
+      let lastIdx = targetIdx
+      for (let j = targetIdx + 1; j < order.length; j++) {
+        if (sectionCfg(order[j]).stackGroup === existingGrp) lastIdx = j
+        else break
+      }
+      insertAfterSid = order[lastIdx]
+    }
+
     const newOrder = layout.value.order.filter(s => s !== droppedSid)
-    const targetIdx = newOrder.indexOf(targetSid)
-    if (targetIdx === -1) return
-    newOrder.splice(targetIdx + 1, 0, droppedSid)
+    const insertIdx = newOrder.indexOf(insertAfterSid)
+    if (insertIdx === -1) return
+    newOrder.splice(insertIdx + 1, 0, droppedSid)
     layout.value.order = newOrder
 
-    const tGrp = sectionCfg(targetSid).stackGroup
-    if (tGrp) {
-      for (const s of layout.value.order) {
-        if (sectionCfg(s).stackGroup === tGrp) updateCfg(s, { stackGroup: null, tabGroup: null })
-      }
-    }
     const dGrp = sectionCfg(droppedSid).stackGroup
-    if (dGrp) {
+    if (dGrp && dGrp !== existingGrp) {
       for (const s of layout.value.order) {
         if (sectionCfg(s).stackGroup === dGrp) updateCfg(s, { stackGroup: null, tabGroup: null })
       }
     }
 
-    const grp = `stk-${++_stackGroupCounter}`
-    updateCfg(targetSid, { stackGroup: grp, tabGroup: null })
+    const grp = existingGrp ?? `stk-${++_stackGroupCounter}`
+    if (!existingGrp) updateCfg(targetSid, { stackGroup: grp, tabGroup: null })
     updateCfg(droppedSid, { stackGroup: grp, tabGroup: null })
   }
 

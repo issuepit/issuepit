@@ -62,7 +62,7 @@
           :draggable="isDraftMode"
           @dragstart="isDraftMode && item.type === 'section' ? onDragStart($event, item.sid as MainSectionId) : undefined"
           @dragover.prevent="isDraftMode ? onDragOver($event, (item.type === 'section' ? item.sid : item.sections[0]) as MainSectionId) : undefined"
-          @dragend="isDraftMode ? onDragEnd() : undefined">
+          @dragend="isDraftMode ? onDragEnd($event) : undefined">
 
           <!-- Draft mode config bar -->
           <template v-if="isDraftMode">
@@ -77,6 +77,10 @@
               :current-max-items="sectionCfg(item.sid as MainSectionId).maxItems"
               :widths="MAIN_WIDTHS"
               :current-width="sectionCfg(item.sid as MainSectionId).width"
+              :chart-day-options="item.sid === 'chart' ? CHART_DAY_OPTIONS : undefined"
+              :current-chart-days="item.sid === 'chart' ? (sectionCfg(item.sid as MainSectionId).chartDays ?? CHART_DAY_DEFAULT) : undefined"
+              :chart-height-options="item.sid === 'chart' ? CHART_HEIGHT_OPTIONS : undefined"
+              :current-chart-height="item.sid === 'chart' ? (sectionCfg(item.sid as MainSectionId).chartHeightKey ?? 'md') : undefined"
               :can-tab="SECTION_CAN_TAB.has(item.sid as MainSectionId) && layout.order.indexOf(item.sid) < layout.order.length - 1"
               :is-tabbed="sectionCfg(item.sid as MainSectionId).tabGroup !== null"
               :can-stack="SECTION_CAN_STACK.has(item.sid as MainSectionId) && layout.order.indexOf(item.sid) < layout.order.length - 1"
@@ -86,6 +90,8 @@
               @display-mode-change="m => updateCfg(item.sid as MainSectionId, { displayMode: m as MainDisplayMode })"
               @max-items-change="n => updateCfg(item.sid as MainSectionId, { maxItems: n })"
               @width-change="w => updateCfg(item.sid as MainSectionId, { width: w as MainWidth })"
+              @chart-days-change="d => updateCfg(item.sid as MainSectionId, { chartDays: d })"
+              @chart-height-change="k => updateCfg(item.sid as MainSectionId, { chartHeightKey: k })"
               @tab-toggle="toggleTabGroupWithNext(item.sid as MainSectionId)"
               @tab-drop="droppedSid => tabWithSection(item.sid, droppedSid)"
               @stack-toggle="toggleStackGroupWithNext(item.sid as MainSectionId)"
@@ -246,9 +252,9 @@
                 <!-- ── chart ── -->
                 <template v-else-if="sid === 'chart'">
                   <div :class="item.type !== 'tabgroup' ? 'bg-gray-900 border border-gray-800 rounded-xl p-5 mb-4' : ''">
-                    <h2 class="font-semibold text-white mb-4">Issue Activity (last 14 days)</h2>
-                    <div v-if="issueHistory.length" class="overflow-x-auto">
-                      <svg :viewBox="`0 0 ${chartWidth} ${chartHeight}`" class="w-full" style="min-width:500px">
+                    <h2 class="font-semibold text-white mb-4">Issue Activity (last {{ sectionCfg('chart').chartDays ?? CHART_DAY_DEFAULT }} days)</h2>
+                    <div v-if="filteredIssueHistory.length" class="overflow-x-auto">
+                      <svg :viewBox="`0 0 ${chartWidth} ${chartHeightPx}`" class="w-full" style="min-width:500px">
                         <line v-for="y in gridYValues" :key="y"
                           :x1="chartPad" :y1="yScale(y)" :x2="chartWidth - chartPad" :y2="yScale(y)"
                           stroke="#374151" stroke-width="1" />
@@ -261,8 +267,8 @@
                           stroke-linejoin="round" />
                         <polyline :points="linePoints('done')" fill="none" stroke="#22c55e" stroke-width="2"
                           stroke-linejoin="round" />
-                        <text v-for="(entry, i) in issueHistory" :key="`xl-${i}`"
-                          :x="xPos(i)" :y="chartHeight - 4"
+                        <text v-for="(entry, i) in filteredIssueHistory" :key="`xl-${i}`"
+                          :x="xPos(i)" :y="chartHeightPx - 4"
                           text-anchor="middle" fill="#6b7280" font-size="9">{{ shortDate(entry.date) }}</text>
                       </svg>
                     </div>
@@ -516,11 +522,27 @@ const agentRunsItems = computed(() => runsStore.dashboardSessions.slice(0, secti
 
 // ── Chart helpers ─────────────────────────────────────────────────────────
 const chartWidth = 600
-const chartHeight = 160
 const chartPad = 36
 
+const CHART_DAY_DEFAULT = 14
+const CHART_DAY_OPTIONS = [7, 14, 30]
+const CHART_HEIGHT_OPTIONS = [{ value: 'sm', label: 'S' }, { value: 'md', label: 'M' }, { value: 'lg', label: 'L' }]
+const CHART_HEIGHT_PX: Record<string, number> = { sm: 100, md: 160, lg: 240 }
+
+const chartHeightPx = computed(() =>
+  CHART_HEIGHT_PX[sectionCfg('chart').chartHeightKey ?? 'md'] ?? 160,
+)
+
+const filteredIssueHistory = computed(() => {
+  const days = sectionCfg('chart').chartDays ?? CHART_DAY_DEFAULT
+  if (!issueHistory.value.length) return issueHistory.value
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() - days)
+  return issueHistory.value.filter(e => new Date(e.date) >= cutoff)
+})
+
 const chartMaxY = computed(() => {
-  const max = Math.max(...issueHistory.value.flatMap(e => [e.open, e.inProgress, e.done]), 1)
+  const max = Math.max(...filteredIssueHistory.value.flatMap(e => [e.open, e.inProgress, e.done]), 1)
   return Math.ceil(max / 5) * 5 || 5
 })
 
@@ -530,18 +552,18 @@ const gridYValues = computed(() => {
 })
 
 function yScale(val: number) {
-  const plotH = chartHeight - 30
+  const plotH = chartHeightPx.value - 30
   return plotH - (val / chartMaxY.value) * plotH + 5
 }
 
 function xPos(i: number) {
-  const n = issueHistory.value.length
+  const n = filteredIssueHistory.value.length
   const plotW = chartWidth - chartPad * 2
   return chartPad + (n > 1 ? (i / (n - 1)) * plotW : plotW / 2)
 }
 
 function linePoints(key: 'open' | 'inProgress' | 'done') {
-  return issueHistory.value.map((e, i) => `${xPos(i)},${yScale(e[key])}`).join(' ')
+  return filteredIssueHistory.value.map((e, i) => `${xPos(i)},${yScale(e[key])}`).join(' ')
 }
 
 function shortDate(d: string) {

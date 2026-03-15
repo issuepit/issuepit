@@ -213,7 +213,7 @@
             :draggable="isDraftMode"
             @dragstart="isDraftMode && item.type === 'section' ? onSectionDragStart($event, item.sid as SectionId) : undefined"
             @dragover.prevent="isDraftMode ? onSectionDragOver($event, (item.type === 'section' ? item.sid : item.sections[0]) as SectionId) : undefined"
-            @dragend="isDraftMode ? onSectionDragEnd() : undefined">
+            @dragend="isDraftMode ? onSectionDragEnd($event) : undefined">
 
             <!-- Draft mode header: shows for tab group or single section -->
             <template v-if="isDraftMode">
@@ -228,6 +228,10 @@
                 :current-max-items="sectionCfg(item.sid as SectionId).maxItems"
                 :widths="PROJECT_WIDTHS"
                 :current-width="sectionCfg(item.sid as SectionId).width"
+                :chart-day-options="item.sid === 'history' ? CHART_DAY_OPTIONS : undefined"
+                :current-chart-days="item.sid === 'history' ? (sectionCfg(item.sid as SectionId).chartDays ?? CHART_DAY_DEFAULT) : undefined"
+                :chart-height-options="item.sid === 'history' ? CHART_HEIGHT_OPTIONS : undefined"
+                :current-chart-height="item.sid === 'history' ? (sectionCfg(item.sid as SectionId).chartHeightKey ?? 'md') : undefined"
                 :can-tab="layout.order.indexOf(item.sid) < layout.order.length - 1"
                 :is-tabbed="sectionCfg(item.sid as SectionId).tabGroup !== null"
                 :can-stack="SECTION_CAN_STACK.has(item.sid as SectionId) && layout.order.indexOf(item.sid) < layout.order.length - 1"
@@ -237,6 +241,8 @@
                 @display-mode-change="m => updateCfg(item.sid as SectionId, { displayMode: m as SectionDisplayMode })"
                 @max-items-change="n => updateCfg(item.sid as SectionId, { maxItems: n })"
                 @width-change="w => updateCfg(item.sid as SectionId, { width: w as SectionWidth })"
+                @chart-days-change="d => updateCfg(item.sid as SectionId, { chartDays: d })"
+                @chart-height-change="k => updateCfg(item.sid as SectionId, { chartHeightKey: k })"
                 @tab-toggle="toggleTabGroupWithNext(item.sid as SectionId)"
                 @tab-drop="droppedSid => tabWithSection(item.sid, droppedSid)"
                 @stack-toggle="toggleStackGroupWithNext(item.sid as SectionId)"
@@ -544,10 +550,10 @@
                   <template v-else-if="sid === 'history'">
                     <div :class="item.type === 'tabgroup' ? '' : 'bg-gray-900 border border-gray-800 rounded-xl p-5'">
                       <template v-if="item.type !== 'tabgroup'">
-                        <h2 class="font-semibold text-white mb-4">Issue &amp; Run History (last 24 h)</h2>
+                        <h2 class="font-semibold text-white mb-4">Issue &amp; Run History (last {{ sectionCfg('history').chartDays ?? CHART_DAY_DEFAULT }}d)</h2>
                       </template>
-                      <div v-if="metricSnapshots.length" class="overflow-x-auto">
-                        <svg :viewBox="`0 0 ${chartWidth} ${chartHeight}`" class="w-full" style="min-width:500px">
+                      <div v-if="filteredMetricSnapshots.length" class="overflow-x-auto">
+                        <svg :viewBox="`0 0 ${chartWidth} ${chartHeightPx}`" class="w-full" style="min-width:500px">
                           <line v-for="y in gridYValues" :key="y"
                             :x1="chartPad" :y1="yScale(y)" :x2="chartWidth - chartPad" :y2="yScale(y)"
                             stroke="#374151" stroke-width="1" />
@@ -558,8 +564,8 @@
                           <polyline :points="linePoints('doneIssues')" fill="none" stroke="#22c55e" stroke-width="2" stroke-linejoin="round" />
                           <polyline :points="linePoints('totalAgentRuns')" fill="none" stroke="#e879f9" stroke-width="2" stroke-linejoin="round" stroke-dasharray="4 2" />
                           <polyline :points="linePoints('totalCiCdRuns')" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linejoin="round" stroke-dasharray="4 2" />
-                          <text v-for="(snap, i) in metricSnapshots" :key="`xl-${i}`"
-                            :x="xPos(i)" :y="chartHeight - 4" text-anchor="middle" fill="#6b7280" font-size="9">{{ shortTime(snap.recordedAt) }}</text>
+                          <text v-for="(snap, i) in filteredMetricSnapshots" :key="`xl-${i}`"
+                            :x="xPos(i)" :y="chartHeightPx - 4" text-anchor="middle" fill="#6b7280" font-size="9">{{ shortTime(snap.recordedAt) }}</text>
                         </svg>
                       </div>
                       <div v-else class="py-8 text-center text-sm text-gray-500">No history yet — snapshots are saved hourly</div>
@@ -946,7 +952,7 @@ const {
   resetLayout,
   onDragStart: onDragStartRaw,
   onDragOver: onDragOverRaw,
-  onDragEnd: onSectionDragEnd,
+  onDragEnd: onDragEndRaw,
   toggleTabGroupWithNext: toggleTabGroupWithNextRaw,
   tabWithSection,
   toggleStackGroupWithNext: toggleStackGroupWithNextRaw,
@@ -969,6 +975,7 @@ function hideSection(s: SectionId) { hideSectionRaw(s) }
 function showSection(s: SectionId) { showSectionRaw(s) }
 function onSectionDragStart(e: DragEvent, id: SectionId) { onDragStartRaw(e, id) }
 function onSectionDragOver(e: DragEvent, id: SectionId) { onDragOverRaw(e, id) }
+function onSectionDragEnd(e: DragEvent) { onDragEndRaw(e) }
 function toggleTabGroupWithNext(sid: SectionId) { toggleTabGroupWithNextRaw(sid) }
 function toggleStackGroupWithNext(sid: SectionId) { toggleStackGroupWithNextRaw(sid) }
 
@@ -1124,12 +1131,28 @@ function issuePriorityBadge(priority: IssuePriority) {
 
 // Chart helpers
 const chartWidth = 600
-const chartHeight = 160
 const chartPad = 36
+
+const CHART_DAY_DEFAULT = 1  // 1 = last 1 day of snapshots
+const CHART_DAY_OPTIONS = [1, 3, 7]
+const CHART_HEIGHT_OPTIONS = [{ value: 'sm', label: 'S' }, { value: 'md', label: 'M' }, { value: 'lg', label: 'L' }]
+const CHART_HEIGHT_PX: Record<string, number> = { sm: 100, md: 160, lg: 240 }
+
+const chartHeightPx = computed(() =>
+  CHART_HEIGHT_PX[sectionCfg('history').chartHeightKey ?? 'md'] ?? 160,
+)
+
+const filteredMetricSnapshots = computed(() => {
+  const days = sectionCfg('history').chartDays ?? CHART_DAY_DEFAULT
+  if (!metricSnapshots.value.length) return metricSnapshots.value
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() - days)
+  return metricSnapshots.value.filter(s => new Date(s.recordedAt) >= cutoff)
+})
 
 const chartMaxY = computed(() => {
   const max = Math.max(
-    ...metricSnapshots.value.flatMap(s => [
+    ...filteredMetricSnapshots.value.flatMap(s => [
       s.openIssues, s.inProgressIssues, s.doneIssues, s.totalAgentRuns, s.totalCiCdRuns,
     ]),
     1,
@@ -1143,18 +1166,18 @@ const gridYValues = computed(() => {
 })
 
 function yScale(val: number) {
-  const plotH = chartHeight - 30
+  const plotH = chartHeightPx.value - 30
   return plotH - (val / chartMaxY.value) * plotH + 5
 }
 
 function xPos(i: number) {
-  const n = metricSnapshots.value.length
+  const n = filteredMetricSnapshots.value.length
   const plotW = chartWidth - chartPad * 2
   return chartPad + (n > 1 ? (i / (n - 1)) * plotW : plotW / 2)
 }
 
 function linePoints(key: keyof ProjectMetricSnapshot) {
-  return metricSnapshots.value.map((s, i) => `${xPos(i)},${yScale(s[key] as number)}`).join(' ')
+  return filteredMetricSnapshots.value.map((s, i) => `${xPos(i)},${yScale(s[key] as number)}`).join(' ')
 }
 
 function shortTime(d: string) {

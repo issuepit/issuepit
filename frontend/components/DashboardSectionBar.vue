@@ -33,6 +33,24 @@
         :class="currentWidth === w.value ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
         class="text-xs px-1.5 py-0.5 rounded transition-colors">{{ w.label }}</button>
     </div>
+    <!-- Chart day range (for chart sections) -->
+    <div v-if="chartDayOptions?.length" class="flex items-center gap-0.5">
+      <span class="text-xs text-gray-600">days</span>
+      <button
+        v-for="d in chartDayOptions" :key="d"
+        @click.stop="$emit('chart-days-change', d)"
+        :class="currentChartDays === d ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
+        class="text-xs px-1.5 py-0.5 rounded transition-colors">{{ d }}</button>
+    </div>
+    <!-- Chart height (for chart sections) -->
+    <div v-if="chartHeightOptions?.length" class="flex items-center gap-0.5">
+      <span class="text-xs text-gray-600">h</span>
+      <button
+        v-for="h in chartHeightOptions" :key="h.value"
+        @click.stop="$emit('chart-height-change', h.value)"
+        :class="currentChartHeight === h.value ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
+        class="text-xs px-1.5 py-0.5 rounded transition-colors">{{ h.label }}</button>
+    </div>
     <!-- Tab with next (click or drop) -->
     <button
       v-if="canTab"
@@ -85,6 +103,10 @@ defineProps<{
   currentMaxItems?: number
   widths: { value: string; label: string }[]
   currentWidth: string
+  chartDayOptions?: number[]
+  currentChartDays?: number
+  chartHeightOptions?: { value: string; label: string }[]
+  currentChartHeight?: string
   canTab?: boolean
   isTabbed?: boolean
   canStack?: boolean
@@ -97,6 +119,8 @@ const emit = defineEmits<{
   'display-mode-change': [mode: string]
   'max-items-change': [n: number]
   'width-change': [value: string]
+  'chart-days-change': [days: number]
+  'chart-height-change': [key: string]
   'tab-toggle': []
   'tab-drop': [droppedSid: string]
   'stack-toggle': []
