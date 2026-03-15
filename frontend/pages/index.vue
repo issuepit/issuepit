@@ -51,17 +51,17 @@
 
     <!-- 12-column grid layout -->
     <div class="grid grid-cols-12 gap-4 items-start">
-      <template v-for="item in renderedItems" :key="item.type === 'tabgroup' ? item.key : item.sid">
+      <template v-for="item in renderedItems" :key="item.type === 'section' ? item.sid : item.key">
         <div
           :class="[
             itemColSpanClass(item),
             isDraftMode ? 'select-none' : '',
-            item.type === 'section' && isDraftMode && sectionCfg(item.sid).hidden ? 'opacity-40 saturate-50' : '',
+            item.type === 'section' && isDraftMode && sectionCfg(item.sid as MainSectionId).hidden ? 'opacity-40 saturate-50' : '',
             dragSectionId === (item.type === 'section' ? item.sid : item.sections[0]) && isDraftMode ? 'opacity-50' : '',
           ]"
           :draggable="isDraftMode"
-          @dragstart="isDraftMode && item.type === 'section' ? onDragStart($event, item.sid) : undefined"
-          @dragover.prevent="isDraftMode ? onDragOver($event, item.type === 'section' ? item.sid : item.sections[0]) : undefined"
+          @dragstart="isDraftMode && item.type === 'section' ? onDragStart($event, item.sid as MainSectionId) : undefined"
+          @dragover.prevent="isDraftMode ? onDragOver($event, (item.type === 'section' ? item.sid : item.sections[0]) as MainSectionId) : undefined"
           @dragend="isDraftMode ? onDragEnd() : undefined">
 
           <!-- Draft mode config bar -->
@@ -69,38 +69,53 @@
             <!-- Single section config bar -->
             <DashboardSectionBar
               v-if="item.type === 'section'"
-              :label="SECTION_LABELS[item.sid]"
-              :display-modes="SECTION_DISPLAY_MODES[item.sid]"
-              :current-display-mode="sectionCfg(item.sid).displayMode"
-              :has-max-items="SECTION_HAS_MAX_ITEMS.has(item.sid)"
+              :label="SECTION_LABELS[item.sid as MainSectionId]"
+              :display-modes="SECTION_DISPLAY_MODES[item.sid as MainSectionId]"
+              :current-display-mode="sectionCfg(item.sid as MainSectionId).displayMode"
+              :has-max-items="SECTION_HAS_MAX_ITEMS.has(item.sid as MainSectionId)"
               :max-items-options="[3,5,8,10]"
-              :current-max-items="sectionCfg(item.sid).maxItems"
+              :current-max-items="sectionCfg(item.sid as MainSectionId).maxItems"
               :widths="MAIN_WIDTHS"
-              :current-width="sectionCfg(item.sid).width"
-              :can-tab="SECTION_CAN_TAB.has(item.sid) && layout.order.indexOf(item.sid) < layout.order.length - 1"
-              :is-tabbed="sectionCfg(item.sid).tabGroup !== null"
-              :hidden="sectionCfg(item.sid).hidden"
-              @display-mode-change="m => updateCfg(item.sid, { displayMode: m as MainDisplayMode })"
-              @max-items-change="n => updateCfg(item.sid, { maxItems: n })"
-              @width-change="w => updateCfg(item.sid, { width: w as MainWidth })"
-              @tab-toggle="toggleTabGroupWithNext(item.sid)"
-              @hide="hideSection(item.sid)"
-              @show="showSection(item.sid)"
+              :current-width="sectionCfg(item.sid as MainSectionId).width"
+              :can-tab="SECTION_CAN_TAB.has(item.sid as MainSectionId) && layout.order.indexOf(item.sid) < layout.order.length - 1"
+              :is-tabbed="sectionCfg(item.sid as MainSectionId).tabGroup !== null"
+              :can-stack="SECTION_CAN_STACK.has(item.sid as MainSectionId) && layout.order.indexOf(item.sid) < layout.order.length - 1"
+              :is-stacked="sectionCfg(item.sid as MainSectionId).stackGroup !== null"
+              :hidden="sectionCfg(item.sid as MainSectionId).hidden"
+              @display-mode-change="m => updateCfg(item.sid as MainSectionId, { displayMode: m as MainDisplayMode })"
+              @max-items-change="n => updateCfg(item.sid as MainSectionId, { maxItems: n })"
+              @width-change="w => updateCfg(item.sid as MainSectionId, { width: w as MainWidth })"
+              @tab-toggle="toggleTabGroupWithNext(item.sid as MainSectionId)"
+              @tab-drop="droppedSid => tabWithSection(item.sid, droppedSid)"
+              @stack-toggle="toggleStackGroupWithNext(item.sid as MainSectionId)"
+              @stack-drop="droppedSid => stackWithSection(item.sid, droppedSid)"
+              @hide="hideSection(item.sid as MainSectionId)"
+              @show="showSection(item.sid as MainSectionId)"
             />
             <!-- Tab group config bar -->
             <DashboardTabGroupBar
-              v-else
+              v-else-if="item.type === 'tabgroup'"
               :sections="item.sections"
               :section-labels="SECTION_LABELS"
               :widths="MAIN_WIDTHS"
-              :current-width="sectionCfg(item.sections[0]).width"
-              @split="toggleTabGroupWithNext(item.sections[0])"
-              @width-change="w => updateCfg(item.sections[0], { width: w as MainWidth })"
+              :current-width="sectionCfg(item.sections[0] as MainSectionId).width"
+              @split="toggleTabGroupWithNext(item.sections[0] as MainSectionId)"
+              @width-change="w => updateCfg(item.sections[0] as MainSectionId, { width: w as MainWidth })"
+            />
+            <!-- Stack group config bar -->
+            <DashboardStackGroupBar
+              v-else-if="item.type === 'stackgroup'"
+              :sections="item.sections"
+              :section-labels="SECTION_LABELS"
+              :widths="MAIN_WIDTHS"
+              :current-width="sectionCfg(item.sections[0] as MainSectionId).width"
+              @split="toggleStackGroupWithNext(item.sections[0] as MainSectionId)"
+              @width-change="w => updateCfg(item.sections[0] as MainSectionId, { width: w as MainWidth })"
             />
           </template>
 
           <!-- Content area -->
-          <div :class="isDraftMode && item.type === 'section' && sectionCfg(item.sid).hidden ? 'opacity-30 saturate-0 pointer-events-none' : ''">
+          <div :class="isDraftMode && item.type === 'section' && sectionCfg(item.sid as MainSectionId).hidden ? 'opacity-30 saturate-0 pointer-events-none' : ''">
 
             <!-- Tab nav (for tabgroup) -->
             <div v-if="item.type === 'tabgroup'"
@@ -113,12 +128,12 @@
                     : 'text-gray-500 hover:text-gray-300',
                 ]"
                 class="px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0">
-                {{ SECTION_LABELS[sec] }}
+                {{ SECTION_LABELS[sec as MainSectionId] }}
               </button>
             </div>
 
             <!-- Section(s) content -->
-            <template v-for="sid in (item.type === 'tabgroup' ? item.sections : [item.sid])" :key="sid">
+            <template v-for="sid in (item.type === 'tabgroup' || item.type === 'stackgroup' ? item.sections : [item.sid])" :key="sid">
               <div v-show="item.type !== 'tabgroup' || getActiveTab(item.key, item.sections) === sid"
                 :class="item.type === 'tabgroup' ? 'bg-gray-900 border border-gray-800 rounded-b-xl p-5' : ''">
 
@@ -363,6 +378,7 @@ import { useProjectsStore } from '~/stores/projects'
 import { useIssuesStore } from '~/stores/issues'
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { formatIssueId } from '~/composables/useIssueFormat'
+import { useDashboardLayout } from '~/composables/useDashboardLayout'
 
 const projectsStore = useProjectsStore()
 const issuesStore = useIssuesStore()
@@ -379,36 +395,23 @@ type MainSectionId =
 type MainWidth = 'xs' | 'sm' | 'md' | 'lg'
 type MainDisplayMode = 'list' | 'count'
 
-interface MainSectionConfig {
-  hidden: boolean
-  width: MainWidth
-  displayMode: MainDisplayMode
-  maxItems: number
-  tabGroup: string | null
-}
-
-interface MainLayout {
-  order: MainSectionId[]
-  configs: Record<MainSectionId, MainSectionConfig>
-}
-
-const MAIN_LAYOUT_KEY = 'main-dashboard-layout-v2'
+const MAIN_LAYOUT_KEY = 'main-dashboard-layout-v3'
 
 const DEFAULT_ORDER: MainSectionId[] = [
   'statProjects', 'statOpenIssues', 'statInProgress', 'statAgentRuns',
   'recentIssues', 'recentProjects', 'chart', 'cicdRuns', 'agentRunsList',
 ]
 
-const DEFAULT_CONFIGS: Record<MainSectionId, MainSectionConfig> = {
-  statProjects:   { hidden: false, width: 'xs', displayMode: 'list', maxItems: 5, tabGroup: null },
-  statOpenIssues: { hidden: false, width: 'xs', displayMode: 'list', maxItems: 5, tabGroup: null },
-  statInProgress: { hidden: false, width: 'xs', displayMode: 'list', maxItems: 5, tabGroup: null },
-  statAgentRuns:  { hidden: false, width: 'xs', displayMode: 'list', maxItems: 5, tabGroup: null },
-  recentIssues:   { hidden: false, width: 'md', displayMode: 'list', maxItems: 5, tabGroup: null },
-  recentProjects: { hidden: false, width: 'md', displayMode: 'list', maxItems: 5, tabGroup: null },
-  chart:          { hidden: false, width: 'lg', displayMode: 'list', maxItems: 5, tabGroup: null },
-  cicdRuns:       { hidden: false, width: 'md', displayMode: 'list', maxItems: 5, tabGroup: null },
-  agentRunsList:  { hidden: false, width: 'md', displayMode: 'list', maxItems: 5, tabGroup: null },
+const DEFAULT_CONFIGS = {
+  statProjects:   { hidden: false, width: 'xs', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
+  statOpenIssues: { hidden: false, width: 'xs', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
+  statInProgress: { hidden: false, width: 'xs', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
+  statAgentRuns:  { hidden: false, width: 'xs', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
+  recentIssues:   { hidden: false, width: 'md', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
+  recentProjects: { hidden: false, width: 'md', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
+  chart:          { hidden: false, width: 'lg', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
+  cicdRuns:       { hidden: false, width: 'md', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
+  agentRunsList:  { hidden: false, width: 'md', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
 }
 
 const SECTION_LABELS: Record<MainSectionId, string> = {
@@ -435,162 +438,49 @@ const SECTION_DISPLAY_MODES: Partial<Record<MainSectionId, MainDisplayMode[]>> =
 
 const SECTION_HAS_MAX_ITEMS = new Set<MainSectionId>(['recentIssues', 'recentProjects', 'cicdRuns', 'agentRunsList'])
 const SECTION_CAN_TAB = new Set<MainSectionId>(['recentIssues', 'recentProjects', 'cicdRuns', 'agentRunsList'])
+const SECTION_CAN_STACK = new Set<MainSectionId>([
+  'statProjects', 'statOpenIssues', 'statInProgress', 'statAgentRuns',
+  'recentIssues', 'recentProjects', 'cicdRuns', 'agentRunsList',
+])
 
-const layout = ref<MainLayout>({
-  order: [...DEFAULT_ORDER],
-  configs: JSON.parse(JSON.stringify(DEFAULT_CONFIGS)) as Record<MainSectionId, MainSectionConfig>,
+const {
+  layout,
+  isDraftMode,
+  dragSectionId,
+  renderedItems,
+  hiddenSections,
+  sectionCfg: sectionCfgRaw,
+  updateCfg: updateCfgRaw,
+  hideSection: hideSectionRaw,
+  showSection: showSectionRaw,
+  loadLayout,
+  enterDraftMode,
+  saveDraftMode,
+  cancelDraftMode,
+  resetLayout,
+  onDragStart: onDragStartRaw,
+  onDragOver: onDragOverRaw,
+  onDragEnd,
+  toggleTabGroupWithNext: toggleTabGroupWithNextRaw,
+  tabWithSection,
+  toggleStackGroupWithNext: toggleStackGroupWithNextRaw,
+  stackWithSection,
+  getActiveTab,
+  setActiveTab,
+} = useDashboardLayout({
+  defaultOrder: DEFAULT_ORDER,
+  defaultConfigs: DEFAULT_CONFIGS,
+  storageKey: MAIN_LAYOUT_KEY,
 })
 
-const isDraftMode = ref(false)
-let _draftSnapshot: MainLayout | null = null
-
-const hiddenSections = computed(() =>
-  new Set(layout.value.order.filter(s => layout.value.configs[s]?.hidden))
-)
-
-function sectionCfg(s: MainSectionId): MainSectionConfig {
-  return layout.value.configs[s] ?? { ...DEFAULT_CONFIGS[s] }
-}
-
-function updateCfg(s: MainSectionId, patch: Partial<MainSectionConfig>) {
-  layout.value.configs[s] = { ...sectionCfg(s), ...patch }
-}
-
-function hideSection(id: MainSectionId) { updateCfg(id, { hidden: true }) }
-function showSection(id: MainSectionId) { updateCfg(id, { hidden: false }) }
-
-function loadLayout() {
-  if (!import.meta.client) return
-  try {
-    const saved = localStorage.getItem(MAIN_LAYOUT_KEY)
-    if (saved) {
-      const parsed = JSON.parse(saved) as MainLayout
-      if (Array.isArray(parsed.order) && parsed.order.length) {
-        const valid = parsed.order.filter((s): s is MainSectionId => s in DEFAULT_CONFIGS)
-        const missing = DEFAULT_ORDER.filter(s => !valid.includes(s))
-        layout.value.order = [...valid, ...missing]
-      }
-      if (parsed.configs) {
-        for (const sid of DEFAULT_ORDER) {
-          if (parsed.configs[sid]) {
-            layout.value.configs[sid] = { ...DEFAULT_CONFIGS[sid], ...parsed.configs[sid] }
-          }
-        }
-      }
-    }
-  } catch { /* ignore */ }
-}
-
-function saveLayout() {
-  if (!import.meta.client) return
-  localStorage.setItem(MAIN_LAYOUT_KEY, JSON.stringify(layout.value))
-}
-
-function enterDraftMode() {
-  _draftSnapshot = JSON.parse(JSON.stringify(layout.value))
-  isDraftMode.value = true
-}
-
-function saveDraftMode() {
-  saveLayout()
-  isDraftMode.value = false
-}
-
-function cancelDraftMode() {
-  if (_draftSnapshot) layout.value = JSON.parse(JSON.stringify(_draftSnapshot))
-  isDraftMode.value = false
-}
-
-function resetLayout() {
-  layout.value = { order: [...DEFAULT_ORDER], configs: JSON.parse(JSON.stringify(DEFAULT_CONFIGS)) }
-}
-
-// ── Drag & drop ──────────────────────────────────────────────────────────
-const dragSectionId = ref<MainSectionId | null>(null)
-
-function onDragStart(e: DragEvent, id: MainSectionId) {
-  dragSectionId.value = id
-  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
-}
-
-function onDragOver(_e: DragEvent, id: MainSectionId) {
-  if (!dragSectionId.value || id === dragSectionId.value) return
-  const from = layout.value.order.indexOf(dragSectionId.value)
-  const to = layout.value.order.indexOf(id)
-  if (from === -1 || to === -1 || from === to) return
-  const newOrder = [...layout.value.order]
-  newOrder.splice(from, 1)
-  newOrder.splice(to, 0, dragSectionId.value)
-  layout.value.order = newOrder
-}
-
-function onDragEnd() {
-  dragSectionId.value = null
-}
-
-// ── Tab group logic ──────────────────────────────────────────────────────
-let _tabGroupCounter = 0
-
-function toggleTabGroupWithNext(sid: MainSectionId) {
-  const cfg = sectionCfg(sid)
-  if (cfg.tabGroup !== null) {
-    const grp = cfg.tabGroup
-    updateCfg(sid, { tabGroup: null })
-    for (const s of layout.value.order) {
-      if (s !== sid && sectionCfg(s).tabGroup === grp) updateCfg(s, { tabGroup: null })
-    }
-  } else {
-    const visible = layout.value.order.filter(s => !sectionCfg(s).hidden)
-    const idx = visible.indexOf(sid)
-    const nextSid = idx >= 0 && idx + 1 < visible.length ? visible[idx + 1] : null
-    if (!nextSid) return
-    const nextCfg = sectionCfg(nextSid)
-    const grp = nextCfg.tabGroup ?? `grp-${++_tabGroupCounter}`
-    updateCfg(sid, { tabGroup: grp })
-    if (nextCfg.tabGroup === null) updateCfg(nextSid, { tabGroup: grp })
-  }
-}
-
-const activeTabInGroup = ref<Record<string, MainSectionId>>({})
-
-function getActiveTab(key: string, sections: MainSectionId[]): MainSectionId {
-  return activeTabInGroup.value[key] || sections[0]
-}
-
-function setActiveTab(key: string, sid: MainSectionId) {
-  activeTabInGroup.value[key] = sid
-}
-
-// ── Rendered items (with tab group collapsing) ───────────────────────────
-type RenderItem =
-  | { type: 'section'; sid: MainSectionId }
-  | { type: 'tabgroup'; key: string; sections: MainSectionId[] }
-
-const renderedItems = computed((): RenderItem[] => {
-  const visible = layout.value.order.filter(s => isDraftMode.value || !sectionCfg(s).hidden)
-  const items: RenderItem[] = []
-  let i = 0
-  while (i < visible.length) {
-    const sid = visible[i]
-    const grp = sectionCfg(sid).tabGroup
-    if (grp !== null) {
-      const grpSids: MainSectionId[] = [sid]
-      let j = i + 1
-      while (j < visible.length && sectionCfg(visible[j]).tabGroup === grp) {
-        grpSids.push(visible[j])
-        j++
-      }
-      if (grpSids.length > 1) {
-        items.push({ type: 'tabgroup', key: grp, sections: grpSids })
-        i = j
-        continue
-      }
-    }
-    items.push({ type: 'section', sid })
-    i++
-  }
-  return items
-})
+function sectionCfg(s: MainSectionId) { return sectionCfgRaw(s) }
+function updateCfg(s: MainSectionId, patch: object) { updateCfgRaw(s, patch) }
+function hideSection(id: MainSectionId) { hideSectionRaw(id) }
+function showSection(id: MainSectionId) { showSectionRaw(id) }
+function onDragStart(e: DragEvent, id: MainSectionId) { onDragStartRaw(e, id) }
+function onDragOver(e: DragEvent, id: MainSectionId) { onDragOverRaw(e, id) }
+function toggleTabGroupWithNext(sid: MainSectionId) { toggleTabGroupWithNextRaw(sid) }
+function toggleStackGroupWithNext(sid: MainSectionId) { toggleStackGroupWithNextRaw(sid) }
 
 function mainColSpanClass(width: MainWidth): string {
   if (width === 'xs') return 'col-span-12 sm:col-span-6 lg:col-span-3'
@@ -599,9 +489,9 @@ function mainColSpanClass(width: MainWidth): string {
   return 'col-span-12'
 }
 
-function itemColSpanClass(item: RenderItem): string {
-  if (item.type === 'tabgroup') return mainColSpanClass(sectionCfg(item.sections[0]).width)
-  return mainColSpanClass(sectionCfg(item.sid).width)
+function itemColSpanClass(item: { type: string; sid?: string; sections?: string[] }): string {
+  const firstSid = item.type === 'section' ? item.sid! : item.sections![0]
+  return mainColSpanClass(sectionCfg(firstSid as MainSectionId).width as MainWidth)
 }
 
 // ── Data ─────────────────────────────────────────────────────────────────

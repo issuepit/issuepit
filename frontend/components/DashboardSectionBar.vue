@@ -33,14 +33,35 @@
         :class="currentWidth === w.value ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
         class="text-xs px-1.5 py-0.5 rounded transition-colors">{{ w.label }}</button>
     </div>
-    <!-- Tab with next -->
+    <!-- Tab with next (click or drop) -->
     <button
       v-if="canTab"
       @click.stop="$emit('tab-toggle')"
+      @dragover.prevent="tabDragOver = true"
+      @dragleave="tabDragOver = false"
+      @drop.prevent="onTabDrop"
       class="text-xs px-1.5 py-0.5 rounded transition-colors bg-gray-800 hover:bg-gray-700"
-      :class="isTabbed ? 'text-brand-400' : 'text-gray-500 hover:text-gray-300'"
-      :title="isTabbed ? 'Ungroup from next' : 'Combine with next as tabs'">
+      :class="[
+        isTabbed ? 'text-brand-400' : 'text-gray-500 hover:text-gray-300',
+        tabDragOver ? 'ring-1 ring-brand-400 text-brand-300' : '',
+      ]"
+      :title="isTabbed ? 'Ungroup from next' : 'Combine with next as tabs (or drop a section here)'">
       {{ isTabbed ? '⊖ Ungroup' : '⊕ Tab with ↓' }}
+    </button>
+    <!-- Stack with next (click or drop) -->
+    <button
+      v-if="canStack"
+      @click.stop="$emit('stack-toggle')"
+      @dragover.prevent="stackDragOver = true"
+      @dragleave="stackDragOver = false"
+      @drop.prevent="onStackDrop"
+      class="text-xs px-1.5 py-0.5 rounded transition-colors bg-gray-800 hover:bg-gray-700"
+      :class="[
+        isStacked ? 'text-teal-400' : 'text-gray-500 hover:text-gray-300',
+        stackDragOver ? 'ring-1 ring-teal-400 text-teal-300' : '',
+      ]"
+      :title="isStacked ? 'Unstack from next' : 'Stack with next section (or drop a section here)'">
+      {{ isStacked ? '⊖ Unstack' : '⇕ Stack with ↓' }}
     </button>
     <!-- Hide/Show -->
     <button
@@ -53,6 +74,8 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
+
 defineProps<{
   label: string
   displayModes?: string[]
@@ -64,15 +87,35 @@ defineProps<{
   currentWidth: string
   canTab?: boolean
   isTabbed?: boolean
+  canStack?: boolean
+  isStacked?: boolean
   hidden?: boolean
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   'display-mode-change': [mode: string]
   'max-items-change': [n: number]
   'width-change': [value: string]
   'tab-toggle': []
+  'tab-drop': [droppedSid: string]
+  'stack-toggle': []
+  'stack-drop': [droppedSid: string]
   hide: []
   show: []
 }>()
+
+const tabDragOver = ref(false)
+const stackDragOver = ref(false)
+
+function onTabDrop(e: DragEvent) {
+  tabDragOver.value = false
+  const sid = e.dataTransfer?.getData('text/plain')
+  if (sid) emit('tab-drop', sid)
+}
+
+function onStackDrop(e: DragEvent) {
+  stackDragOver.value = false
+  const sid = e.dataTransfer?.getData('text/plain')
+  if (sid) emit('stack-drop', sid)
+}
 </script>
