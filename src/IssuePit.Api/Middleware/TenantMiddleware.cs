@@ -1,7 +1,6 @@
 using System.Data.Common;
-using System.Security.Cryptography;
-using System.Text;
 using IssuePit.Api.Services;
+using IssuePit.Core;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,7 +16,7 @@ public class TenantMiddleware(RequestDelegate next, ILogger<TenantMiddleware> lo
             var mcpTokenValue = context.Request.Headers["X-Mcp-Token"].FirstOrDefault();
             if (!string.IsNullOrEmpty(mcpTokenValue))
             {
-                var tokenHash = ComputeSha256Hash(mcpTokenValue);
+                var tokenHash = HashHelper.ComputeSha256Hex(mcpTokenValue);
                 var mcpToken = await db.McpTokens
                     .Include(t => t.Tenant)
                     .Include(t => t.User)
@@ -75,9 +74,5 @@ public class TenantMiddleware(RequestDelegate next, ILogger<TenantMiddleware> lo
         await next(context);
     }
 
-    internal static string ComputeSha256Hash(string value)
-    {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
-        return Convert.ToHexStringLower(bytes);
-    }
+    internal static string ComputeSha256Hash(string value) => HashHelper.ComputeSha256Hex(value);
 }

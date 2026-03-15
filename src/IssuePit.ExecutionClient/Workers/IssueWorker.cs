@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Confluent.Kafka;
+using IssuePit.Core;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
@@ -313,7 +314,7 @@ public class IssueWorker(
             // Create an ephemeral MCP token for this agent session and inject it into the environment
             // so the container authenticates to the IssuePit MCP server.
             var ephemeralMcpToken = await CreateEphemeralMcpTokenAsync(
-                session.Id, agent.OrgId, issue.ProjectId, db, sessionCts.Token);
+                session.Id, agent.OrgId, issue.ProjectId, db, logger, sessionCts.Token);
             if (ephemeralMcpToken is not null)
             {
                 var credentialsWithToken = new Dictionary<string, string>(credentials)
@@ -568,6 +569,7 @@ public class IssueWorker(
         Guid? orgId,
         Guid projectId,
         IssuePitDbContext db,
+        ILogger logger,
         CancellationToken cancellationToken)
     {
         try
@@ -601,9 +603,11 @@ public class IssueWorker(
             await db.SaveChangesAsync(cancellationToken);
             return rawToken;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // If the table doesn't exist yet or saving fails, proceed without a token.
+            // Non-fatal: agent can still run without MCP token auth. This may occur when the
+            // mcp_tokens table does not exist yet (migration not yet applied) or on transient DB errors.
+            logger.LogWarning(ex, "Failed to create ephemeral MCP token for session {SessionId}; proceeding without token auth", sessionId);
             return null;
         }
     }
@@ -640,11 +644,7 @@ public class IssueWorker(
         return $"mcp_{Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')}";
     }
 
-    private static string ComputeSha256Hash(string value)
-    {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
-        return Convert.ToHexStringLower(bytes);
-    }
+    private static string ComputeSha256Hash(string value) => HashHelper.ComputeSha256Hex(value);
 
     private static string CredentialEnvVarName(ApiKeyProvider provider) => provider switch
     {

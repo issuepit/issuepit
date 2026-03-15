@@ -113,7 +113,9 @@
       <div class="bg-gray-900 rounded-xl border border-gray-700 w-full max-w-lg p-6 shadow-xl">
         <h3 class="text-lg font-semibold text-white mb-2">Key Created</h3>
         <p class="text-sm text-yellow-400 mb-4">
-          ⚠ Copy this token now — it will <strong>not</strong> be shown again.
+          <span aria-hidden="true">⚠</span>
+          <span class="sr-only">Warning:</span>
+          Copy this token now — it will <strong>not</strong> be shown again.
         </p>
         <div class="flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 mb-4">
           <code class="flex-1 text-sm text-green-300 font-mono break-all select-all">{{ newToken }}</code>

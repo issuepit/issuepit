@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
-using IssuePit.Api.Middleware;
 using IssuePit.Api.Services;
+using IssuePit.Core;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using Microsoft.AspNetCore.Mvc;
@@ -47,7 +47,7 @@ public class McpTokensController(IssuePitDbContext db, TenantContext ctx) : Cont
         if (ctx.CurrentTenant is null) return Unauthorized();
 
         var rawToken = GenerateRawToken();
-        var keyHash = TenantMiddleware.ComputeSha256Hash(rawToken);
+        var keyHash = HashHelper.ComputeSha256Hex(rawToken);
 
         var token = new McpToken
         {
@@ -111,7 +111,7 @@ public class McpTokensController(IssuePitDbContext db, TenantContext ctx) : Cont
         if (ctx.CurrentTenant is null) return Unauthorized();
 
         var rawToken = GenerateRawToken();
-        var keyHash = TenantMiddleware.ComputeSha256Hash(rawToken);
+        var keyHash = HashHelper.ComputeSha256Hex(rawToken);
 
         var token = new McpToken
         {
