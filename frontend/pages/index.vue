@@ -22,6 +22,17 @@
         <span class="text-amber-400/70 text-xs hidden sm:inline">— drag to reorder · configure each section</span>
       </div>
       <div class="flex items-center gap-1.5">
+        <button
+          draggable="true"
+          @click="addRowBreak()"
+          @dragstart.stop="(e: DragEvent) => { captureSnapshot(); const id = addRowBreak(); onDragStart(e, id) }"
+          aria-label="Add row break to dashboard layout"
+          class="text-xs text-gray-500 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1 cursor-grab">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          Row break
+        </button>
         <button @click="resetLayout"
           class="text-xs text-gray-400 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors">
           Reset
@@ -51,56 +62,104 @@
 
     <!-- 12-column grid layout -->
     <div class="grid grid-cols-12 gap-4 items-start">
-      <template v-for="item in renderedItems" :key="item.type === 'tabgroup' ? item.key : item.sid">
-        <div
+      <template v-for="item in renderedItems" :key="item.type === 'section' || item.type === 'rowbreak' ? item.sid : item.key">
+        <!-- Row break: forces a new grid row; shows separator handle in draft mode -->
+        <template v-if="item.type === 'rowbreak'">
+          <div v-if="isDraftMode" class="col-span-12 flex items-center gap-2 py-1 cursor-grab"
+            draggable="true"
+            @dragstart.stop="(e: DragEvent) => onDragStart(e, item.sid)"
+            @dragover.prevent="onDragOver($event, item.sid)"
+            @dragenter="onDragEnter($event, item.sid)"
+            @dragend="onDragEnd($event)">
+            <div class="flex-1 border-t border-dashed border-orange-500/60"></div>
+            <span class="text-xs text-orange-500/80 select-none whitespace-nowrap">⋮⋮ row break</span>
+            <div class="flex-1 border-t border-dashed border-orange-500/60"></div>
+            <button @click="removeRowBreak(item.sid)"
+              aria-label="Remove row break"
+              class="text-orange-600/60 hover:text-red-400 transition-colors text-xs leading-none px-1">✕</button>
+          </div>
+          <div v-else class="col-span-12 h-0"></div>
+        </template>
+
+        <div v-else
+          data-drag-card
           :class="[
             itemColSpanClass(item),
             isDraftMode ? 'select-none' : '',
-            item.type === 'section' && isDraftMode && sectionCfg(item.sid).hidden ? 'opacity-40 saturate-50' : '',
-            dragSectionId === (item.type === 'section' ? item.sid : item.sections[0]) && isDraftMode ? 'opacity-50' : '',
+            item.type === 'section' && isDraftMode && sectionCfg(item.sid as MainSectionId).hidden ? 'opacity-40 saturate-50' : '',
+            (item.type === 'section' ? dragSectionId === item.sid : (item.sections ?? []).includes(dragSectionId as MainSectionId)) && isDraftMode
+              ? 'opacity-50'
+              : '',
           ]"
           :draggable="isDraftMode"
-          @dragstart="isDraftMode && item.type === 'section' ? onDragStart($event, item.sid) : undefined"
+          @dragstart="isDraftMode && (item.type === 'section' || item.type === 'stackgroup') ? onDragStart($event, item.type === 'section' ? item.sid : item.sections[0]) : undefined"
           @dragover.prevent="isDraftMode ? onDragOver($event, item.type === 'section' ? item.sid : item.sections[0]) : undefined"
-          @dragend="isDraftMode ? onDragEnd() : undefined">
+          @dragenter="isDraftMode ? onDragEnter($event, item.type === 'section' ? item.sid : item.sections[0]) : undefined"
+          @dragend="isDraftMode ? onDragEnd($event) : undefined">
 
           <!-- Draft mode config bar -->
           <template v-if="isDraftMode">
             <!-- Single section config bar -->
             <DashboardSectionBar
               v-if="item.type === 'section'"
-              :label="SECTION_LABELS[item.sid]"
-              :display-modes="SECTION_DISPLAY_MODES[item.sid]"
-              :current-display-mode="sectionCfg(item.sid).displayMode"
-              :has-max-items="SECTION_HAS_MAX_ITEMS.has(item.sid)"
+              :label="SECTION_LABELS[item.sid as MainSectionId]"
+              :display-modes="SECTION_DISPLAY_MODES[item.sid as MainSectionId]"
+              :current-display-mode="sectionCfg(item.sid as MainSectionId).displayMode"
+              :has-max-items="SECTION_HAS_MAX_ITEMS.has(item.sid as MainSectionId)"
               :max-items-options="[3,5,8,10]"
-              :current-max-items="sectionCfg(item.sid).maxItems"
+              :current-max-items="sectionCfg(item.sid as MainSectionId).maxItems"
               :widths="MAIN_WIDTHS"
-              :current-width="sectionCfg(item.sid).width"
-              :can-tab="SECTION_CAN_TAB.has(item.sid) && layout.order.indexOf(item.sid) < layout.order.length - 1"
-              :is-tabbed="sectionCfg(item.sid).tabGroup !== null"
-              :hidden="sectionCfg(item.sid).hidden"
-              @display-mode-change="m => updateCfg(item.sid, { displayMode: m as MainDisplayMode })"
-              @max-items-change="n => updateCfg(item.sid, { maxItems: n })"
-              @width-change="w => updateCfg(item.sid, { width: w as MainWidth })"
-              @tab-toggle="toggleTabGroupWithNext(item.sid)"
-              @hide="hideSection(item.sid)"
-              @show="showSection(item.sid)"
+              :current-width="sectionCfg(item.sid as MainSectionId).width"
+              :current-chart-days="item.sid === 'chart' ? (sectionCfg(item.sid as MainSectionId).chartDays ?? CHART_DAY_DEFAULT) : undefined"
+              :chart-height-options="item.sid === 'chart' ? CHART_HEIGHT_OPTIONS : undefined"
+              :current-chart-height="item.sid === 'chart' ? (sectionCfg(item.sid as MainSectionId).chartHeightKey ?? 'md') : undefined"
+              :can-tab="SECTION_CAN_TAB.has(item.sid as MainSectionId) && layout.order.indexOf(item.sid) < layout.order.length - 1"
+              :is-tabbed="sectionCfg(item.sid as MainSectionId).tabGroup !== null"
+              :can-stack="SECTION_CAN_STACK.has(item.sid as MainSectionId) && layout.order.indexOf(item.sid) < layout.order.length - 1"
+              :is-stacked="sectionCfg(item.sid as MainSectionId).stackGroup !== null"
+              :hidden="sectionCfg(item.sid as MainSectionId).hidden"
+              :drag-hover="dragSectionId !== null && dragHoverSid === item.sid && dragSectionId !== item.sid"
+              @display-mode-change="m => updateCfg(item.sid as MainSectionId, { displayMode: m as MainDisplayMode })"
+              @max-items-change="n => updateCfg(item.sid as MainSectionId, { maxItems: n })"
+              @width-change="w => updateCfg(item.sid as MainSectionId, { width: w as MainWidth })"
+              @chart-days-change="d => updateCfg(item.sid as MainSectionId, { chartDays: d })"
+              @chart-height-change="k => updateCfg(item.sid as MainSectionId, { chartHeightKey: k })"
+              @tab-toggle="toggleTabGroupWithNext(item.sid as MainSectionId)"
+              @tab-drop="droppedSid => tabWithSection(item.sid, droppedSid)"
+              @stack-toggle="toggleStackGroupWithNext(item.sid as MainSectionId)"
+              @stack-drop="droppedSid => stackWithSection(item.sid, droppedSid)"
+              @hide="hideSection(item.sid as MainSectionId)"
+              @show="showSection(item.sid as MainSectionId)"
             />
             <!-- Tab group config bar -->
             <DashboardTabGroupBar
-              v-else
+              v-else-if="item.type === 'tabgroup'"
               :sections="item.sections"
               :section-labels="SECTION_LABELS"
               :widths="MAIN_WIDTHS"
-              :current-width="sectionCfg(item.sections[0]).width"
-              @split="toggleTabGroupWithNext(item.sections[0])"
-              @width-change="w => updateCfg(item.sections[0], { width: w as MainWidth })"
+              :current-width="sectionCfg(item.sections[0] as MainSectionId).width"
+              @split="toggleTabGroupWithNext(item.sections[0] as MainSectionId)"
+              @width-change="w => updateCfg(item.sections[0] as MainSectionId, { width: w as MainWidth })"
+            />
+            <!-- Stack group config bar -->
+            <DashboardStackGroupBar
+              v-else-if="item.type === 'stackgroup'"
+              :sections="item.sections"
+              :section-labels="SECTION_LABELS"
+              :widths="MAIN_WIDTHS"
+              :current-width="sectionCfg(item.sections[0] as MainSectionId).width"
+              :is-dragging="!!dragSectionId"
+              @split="toggleStackGroupWithNext(item.sections[0] as MainSectionId)"
+              @width-change="w => updateCfg(item.sections[0] as MainSectionId, { width: w as MainWidth })"
+              @stack-drop="droppedSid => stackWithSection(item.sections[0] as MainSectionId, droppedSid)"
             />
           </template>
 
           <!-- Content area -->
-          <div :class="isDraftMode && item.type === 'section' && sectionCfg(item.sid).hidden ? 'opacity-30 saturate-0 pointer-events-none' : ''">
+          <div :class="[
+            isDraftMode && item.type === 'section' && sectionCfg(item.sid as MainSectionId).hidden ? 'opacity-30 saturate-0 pointer-events-none' : '',
+            item.type === 'stackgroup' ? 'flex flex-col gap-2' : '',
+          ]">
 
             <!-- Tab nav (for tabgroup) -->
             <div v-if="item.type === 'tabgroup'"
@@ -113,19 +172,19 @@
                     : 'text-gray-500 hover:text-gray-300',
                 ]"
                 class="px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0">
-                {{ SECTION_LABELS[sec] }}
+                {{ SECTION_LABELS[sec as MainSectionId] }}
               </button>
             </div>
 
             <!-- Section(s) content -->
-            <template v-for="sid in (item.type === 'tabgroup' ? item.sections : [item.sid])" :key="sid">
+            <template v-for="sid in (item.type === 'tabgroup' || item.type === 'stackgroup' ? item.sections : [item.sid])" :key="sid">
               <div v-show="item.type !== 'tabgroup' || getActiveTab(item.key, item.sections) === sid"
                 :class="item.type === 'tabgroup' ? 'bg-gray-900 border border-gray-800 rounded-b-xl p-5' : ''">
 
                 <!-- ── statProjects ── -->
                 <template v-if="sid === 'statProjects'">
                   <NuxtLink to="/projects"
-                    class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 block transition-colors mb-4">
+                    class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 block transition-colors">
                     <p class="text-sm text-gray-400">Projects</p>
                     <p class="text-3xl font-bold text-blue-400 mt-1">{{ stats.projects }}</p>
                   </NuxtLink>
@@ -134,7 +193,7 @@
                 <!-- ── statOpenIssues ── -->
                 <template v-else-if="sid === 'statOpenIssues'">
                   <NuxtLink to="/issues?status=open"
-                    class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 block transition-colors mb-4">
+                    class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 block transition-colors">
                     <p class="text-sm text-gray-400">Open Issues</p>
                     <p class="text-3xl font-bold text-amber-400 mt-1">{{ stats.openIssues }}</p>
                   </NuxtLink>
@@ -143,7 +202,7 @@
                 <!-- ── statInProgress ── -->
                 <template v-else-if="sid === 'statInProgress'">
                   <NuxtLink to="/issues?status=in_progress"
-                    class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 block transition-colors mb-4">
+                    class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 block transition-colors">
                     <p class="text-sm text-gray-400">In Progress</p>
                     <p class="text-3xl font-bold text-indigo-400 mt-1">{{ stats.inProgress }}</p>
                   </NuxtLink>
@@ -152,7 +211,7 @@
                 <!-- ── statAgentRuns ── -->
                 <template v-else-if="sid === 'statAgentRuns'">
                   <NuxtLink to="/runs"
-                    class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 block transition-colors mb-4">
+                    class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 block transition-colors">
                     <p class="text-sm text-gray-400">Agent Runs</p>
                     <p class="text-3xl font-bold text-green-400 mt-1">{{ stats.agentRuns }}</p>
                   </NuxtLink>
@@ -230,9 +289,9 @@
                 <!-- ── chart ── -->
                 <template v-else-if="sid === 'chart'">
                   <div :class="item.type !== 'tabgroup' ? 'bg-gray-900 border border-gray-800 rounded-xl p-5 mb-4' : ''">
-                    <h2 class="font-semibold text-white mb-4">Issue Activity (last 14 days)</h2>
-                    <div v-if="issueHistory.length" class="overflow-x-auto">
-                      <svg :viewBox="`0 0 ${chartWidth} ${chartHeight}`" class="w-full" style="min-width:500px">
+                    <h2 class="font-semibold text-white mb-4">Issue Activity (last {{ sectionCfg('chart').chartDays ?? CHART_DAY_DEFAULT }} days)</h2>
+                    <div v-if="filteredIssueHistory.length" class="overflow-x-auto">
+                      <svg :viewBox="`0 0 ${chartWidth} ${chartHeightPx}`" class="w-full" style="min-width:500px">
                         <line v-for="y in gridYValues" :key="y"
                           :x1="chartPad" :y1="yScale(y)" :x2="chartWidth - chartPad" :y2="yScale(y)"
                           stroke="#374151" stroke-width="1" />
@@ -245,8 +304,8 @@
                           stroke-linejoin="round" />
                         <polyline :points="linePoints('done')" fill="none" stroke="#22c55e" stroke-width="2"
                           stroke-linejoin="round" />
-                        <text v-for="(entry, i) in issueHistory" :key="`xl-${i}`"
-                          :x="xPos(i)" :y="chartHeight - 4"
+                        <text v-for="(entry, i) in filteredIssueHistory" :key="`xl-${i}`"
+                          :x="xPos(i)" :y="chartHeightPx - 4"
                           text-anchor="middle" fill="#6b7280" font-size="9">{{ shortDate(entry.date) }}</text>
                       </svg>
                     </div>
@@ -363,6 +422,7 @@ import { useProjectsStore } from '~/stores/projects'
 import { useIssuesStore } from '~/stores/issues'
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { formatIssueId } from '~/composables/useIssueFormat'
+import { useDashboardLayout } from '~/composables/useDashboardLayout'
 
 const projectsStore = useProjectsStore()
 const issuesStore = useIssuesStore()
@@ -376,39 +436,26 @@ type MainSectionId =
   | 'statProjects' | 'statOpenIssues' | 'statInProgress' | 'statAgentRuns'
   | 'recentIssues' | 'recentProjects' | 'chart' | 'cicdRuns' | 'agentRunsList'
 
-type MainWidth = 'xs' | 'sm' | 'md' | 'lg'
+type MainWidth = 'xxs' | 'xs' | 'quarter' | 'sm' | 'md' | 'lg'
 type MainDisplayMode = 'list' | 'count'
 
-interface MainSectionConfig {
-  hidden: boolean
-  width: MainWidth
-  displayMode: MainDisplayMode
-  maxItems: number
-  tabGroup: string | null
-}
-
-interface MainLayout {
-  order: MainSectionId[]
-  configs: Record<MainSectionId, MainSectionConfig>
-}
-
-const MAIN_LAYOUT_KEY = 'main-dashboard-layout-v2'
+const MAIN_LAYOUT_KEY = 'main-dashboard-layout-v6'
 
 const DEFAULT_ORDER: MainSectionId[] = [
   'statProjects', 'statOpenIssues', 'statInProgress', 'statAgentRuns',
   'recentIssues', 'recentProjects', 'chart', 'cicdRuns', 'agentRunsList',
 ]
 
-const DEFAULT_CONFIGS: Record<MainSectionId, MainSectionConfig> = {
-  statProjects:   { hidden: false, width: 'xs', displayMode: 'list', maxItems: 5, tabGroup: null },
-  statOpenIssues: { hidden: false, width: 'xs', displayMode: 'list', maxItems: 5, tabGroup: null },
-  statInProgress: { hidden: false, width: 'xs', displayMode: 'list', maxItems: 5, tabGroup: null },
-  statAgentRuns:  { hidden: false, width: 'xs', displayMode: 'list', maxItems: 5, tabGroup: null },
-  recentIssues:   { hidden: false, width: 'md', displayMode: 'list', maxItems: 5, tabGroup: null },
-  recentProjects: { hidden: false, width: 'md', displayMode: 'list', maxItems: 5, tabGroup: null },
-  chart:          { hidden: false, width: 'lg', displayMode: 'list', maxItems: 5, tabGroup: null },
-  cicdRuns:       { hidden: false, width: 'md', displayMode: 'list', maxItems: 5, tabGroup: null },
-  agentRunsList:  { hidden: false, width: 'md', displayMode: 'list', maxItems: 5, tabGroup: null },
+const DEFAULT_CONFIGS = {
+  statProjects:   { hidden: false, width: 'quarter', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
+  statOpenIssues: { hidden: false, width: 'quarter', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
+  statInProgress: { hidden: false, width: 'quarter', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
+  statAgentRuns:  { hidden: false, width: 'quarter', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
+  recentIssues:   { hidden: false, width: 'md', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
+  recentProjects: { hidden: false, width: 'md', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
+  chart:          { hidden: false, width: 'lg', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
+  cicdRuns:       { hidden: false, width: 'md', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
+  agentRunsList:  { hidden: false, width: 'md', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
 }
 
 const SECTION_LABELS: Record<MainSectionId, string> = {
@@ -423,8 +470,8 @@ const SECTION_LABELS: Record<MainSectionId, string> = {
   agentRunsList:  'Agent Runs List',
 }
 
-const WIDTH_LABELS: Record<MainWidth, string> = { xs: '1/4', sm: '1/3', md: '1/2', lg: 'Full' }
-const MAIN_WIDTHS = (['xs', 'sm', 'md', 'lg'] as MainWidth[]).map(v => ({ value: v, label: WIDTH_LABELS[v] }))
+const WIDTH_LABELS: Record<MainWidth, string> = { xxs: '1/12', xs: '1/6', quarter: '1/4', sm: '1/3', md: '1/2', lg: 'Full' }
+const MAIN_WIDTHS = (['xxs', 'xs', 'quarter', 'sm', 'md', 'lg'] as MainWidth[]).map(v => ({ value: v, label: WIDTH_LABELS[v] }))
 
 const SECTION_DISPLAY_MODES: Partial<Record<MainSectionId, MainDisplayMode[]>> = {
   recentIssues:   ['list', 'count'],
@@ -434,174 +481,70 @@ const SECTION_DISPLAY_MODES: Partial<Record<MainSectionId, MainDisplayMode[]>> =
 }
 
 const SECTION_HAS_MAX_ITEMS = new Set<MainSectionId>(['recentIssues', 'recentProjects', 'cicdRuns', 'agentRunsList'])
-const SECTION_CAN_TAB = new Set<MainSectionId>(['recentIssues', 'recentProjects', 'cicdRuns', 'agentRunsList'])
+const SECTION_CAN_TAB = new Set<MainSectionId>(['recentIssues', 'recentProjects', 'chart', 'cicdRuns', 'agentRunsList'])
+const SECTION_CAN_STACK = new Set<MainSectionId>([
+  'statProjects', 'statOpenIssues', 'statInProgress', 'statAgentRuns',
+  'recentIssues', 'recentProjects', 'chart', 'cicdRuns', 'agentRunsList',
+])
 
-const layout = ref<MainLayout>({
-  order: [...DEFAULT_ORDER],
-  configs: JSON.parse(JSON.stringify(DEFAULT_CONFIGS)) as Record<MainSectionId, MainSectionConfig>,
+const {
+  layout,
+  isDraftMode,
+  dragSectionId,
+  dragHoverSid,
+  renderedItems,
+  hiddenSections,
+  sectionCfg: sectionCfgRaw,
+  updateCfg: updateCfgRaw,
+  hideSection: hideSectionRaw,
+  showSection: showSectionRaw,
+  loadLayout,
+  enterDraftMode,
+  saveDraftMode,
+  cancelDraftMode,
+  resetLayout,
+  addRowBreak,
+  captureSnapshot,
+  removeRowBreak,
+  onDragStart: onDragStartRaw,
+  onDragOver: onDragOverRaw,
+  onDragEnter: onDragEnterRaw,
+  onDragEnd,
+  toggleTabGroupWithNext: toggleTabGroupWithNextRaw,
+  tabWithSection,
+  toggleStackGroupWithNext: toggleStackGroupWithNextRaw,
+  stackWithSection,
+  getActiveTab,
+  setActiveTab,
+} = useDashboardLayout({
+  defaultOrder: DEFAULT_ORDER,
+  defaultConfigs: DEFAULT_CONFIGS,
+  storageKey: MAIN_LAYOUT_KEY,
 })
 
-const isDraftMode = ref(false)
-let _draftSnapshot: MainLayout | null = null
-
-const hiddenSections = computed(() =>
-  new Set(layout.value.order.filter(s => layout.value.configs[s]?.hidden))
-)
-
-function sectionCfg(s: MainSectionId): MainSectionConfig {
-  return layout.value.configs[s] ?? { ...DEFAULT_CONFIGS[s] }
-}
-
-function updateCfg(s: MainSectionId, patch: Partial<MainSectionConfig>) {
-  layout.value.configs[s] = { ...sectionCfg(s), ...patch }
-}
-
-function hideSection(id: MainSectionId) { updateCfg(id, { hidden: true }) }
-function showSection(id: MainSectionId) { updateCfg(id, { hidden: false }) }
-
-function loadLayout() {
-  if (!import.meta.client) return
-  try {
-    const saved = localStorage.getItem(MAIN_LAYOUT_KEY)
-    if (saved) {
-      const parsed = JSON.parse(saved) as MainLayout
-      if (Array.isArray(parsed.order) && parsed.order.length) {
-        const valid = parsed.order.filter((s): s is MainSectionId => s in DEFAULT_CONFIGS)
-        const missing = DEFAULT_ORDER.filter(s => !valid.includes(s))
-        layout.value.order = [...valid, ...missing]
-      }
-      if (parsed.configs) {
-        for (const sid of DEFAULT_ORDER) {
-          if (parsed.configs[sid]) {
-            layout.value.configs[sid] = { ...DEFAULT_CONFIGS[sid], ...parsed.configs[sid] }
-          }
-        }
-      }
-    }
-  } catch { /* ignore */ }
-}
-
-function saveLayout() {
-  if (!import.meta.client) return
-  localStorage.setItem(MAIN_LAYOUT_KEY, JSON.stringify(layout.value))
-}
-
-function enterDraftMode() {
-  _draftSnapshot = JSON.parse(JSON.stringify(layout.value))
-  isDraftMode.value = true
-}
-
-function saveDraftMode() {
-  saveLayout()
-  isDraftMode.value = false
-}
-
-function cancelDraftMode() {
-  if (_draftSnapshot) layout.value = JSON.parse(JSON.stringify(_draftSnapshot))
-  isDraftMode.value = false
-}
-
-function resetLayout() {
-  layout.value = { order: [...DEFAULT_ORDER], configs: JSON.parse(JSON.stringify(DEFAULT_CONFIGS)) }
-}
-
-// ── Drag & drop ──────────────────────────────────────────────────────────
-const dragSectionId = ref<MainSectionId | null>(null)
-
-function onDragStart(e: DragEvent, id: MainSectionId) {
-  dragSectionId.value = id
-  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
-}
-
-function onDragOver(_e: DragEvent, id: MainSectionId) {
-  if (!dragSectionId.value || id === dragSectionId.value) return
-  const from = layout.value.order.indexOf(dragSectionId.value)
-  const to = layout.value.order.indexOf(id)
-  if (from === -1 || to === -1 || from === to) return
-  const newOrder = [...layout.value.order]
-  newOrder.splice(from, 1)
-  newOrder.splice(to, 0, dragSectionId.value)
-  layout.value.order = newOrder
-}
-
-function onDragEnd() {
-  dragSectionId.value = null
-}
-
-// ── Tab group logic ──────────────────────────────────────────────────────
-let _tabGroupCounter = 0
-
-function toggleTabGroupWithNext(sid: MainSectionId) {
-  const cfg = sectionCfg(sid)
-  if (cfg.tabGroup !== null) {
-    const grp = cfg.tabGroup
-    updateCfg(sid, { tabGroup: null })
-    for (const s of layout.value.order) {
-      if (s !== sid && sectionCfg(s).tabGroup === grp) updateCfg(s, { tabGroup: null })
-    }
-  } else {
-    const visible = layout.value.order.filter(s => !sectionCfg(s).hidden)
-    const idx = visible.indexOf(sid)
-    const nextSid = idx >= 0 && idx + 1 < visible.length ? visible[idx + 1] : null
-    if (!nextSid) return
-    const nextCfg = sectionCfg(nextSid)
-    const grp = nextCfg.tabGroup ?? `grp-${++_tabGroupCounter}`
-    updateCfg(sid, { tabGroup: grp })
-    if (nextCfg.tabGroup === null) updateCfg(nextSid, { tabGroup: grp })
-  }
-}
-
-const activeTabInGroup = ref<Record<string, MainSectionId>>({})
-
-function getActiveTab(key: string, sections: MainSectionId[]): MainSectionId {
-  return activeTabInGroup.value[key] || sections[0]
-}
-
-function setActiveTab(key: string, sid: MainSectionId) {
-  activeTabInGroup.value[key] = sid
-}
-
-// ── Rendered items (with tab group collapsing) ───────────────────────────
-type RenderItem =
-  | { type: 'section'; sid: MainSectionId }
-  | { type: 'tabgroup'; key: string; sections: MainSectionId[] }
-
-const renderedItems = computed((): RenderItem[] => {
-  const visible = layout.value.order.filter(s => isDraftMode.value || !sectionCfg(s).hidden)
-  const items: RenderItem[] = []
-  let i = 0
-  while (i < visible.length) {
-    const sid = visible[i]
-    const grp = sectionCfg(sid).tabGroup
-    if (grp !== null) {
-      const grpSids: MainSectionId[] = [sid]
-      let j = i + 1
-      while (j < visible.length && sectionCfg(visible[j]).tabGroup === grp) {
-        grpSids.push(visible[j])
-        j++
-      }
-      if (grpSids.length > 1) {
-        items.push({ type: 'tabgroup', key: grp, sections: grpSids })
-        i = j
-        continue
-      }
-    }
-    items.push({ type: 'section', sid })
-    i++
-  }
-  return items
-})
+function sectionCfg(s: MainSectionId) { return sectionCfgRaw(s) }
+function updateCfg(s: MainSectionId, patch: object) { updateCfgRaw(s, patch) }
+function hideSection(id: MainSectionId) { hideSectionRaw(id) }
+function showSection(id: MainSectionId) { showSectionRaw(id) }
+function onDragStart(e: DragEvent, id: string) { onDragStartRaw(e, id) }
+function onDragOver(e: DragEvent, id: string) { onDragOverRaw(e, id) }
+function onDragEnter(e: DragEvent, id: string) { onDragEnterRaw(e, id) }
+function toggleTabGroupWithNext(sid: MainSectionId) { toggleTabGroupWithNextRaw(sid) }
+function toggleStackGroupWithNext(sid: MainSectionId) { toggleStackGroupWithNextRaw(sid) }
 
 function mainColSpanClass(width: MainWidth): string {
-  if (width === 'xs') return 'col-span-12 sm:col-span-6 lg:col-span-3'
-  if (width === 'sm') return 'col-span-12 sm:col-span-6 lg:col-span-4'
-  if (width === 'md') return 'col-span-12 lg:col-span-6'
+  if (width === 'xxs')     return 'col-span-12 sm:col-span-6 lg:col-span-1'
+  if (width === 'xs')      return 'col-span-12 sm:col-span-6 lg:col-span-2'
+  if (width === 'quarter') return 'col-span-12 sm:col-span-6 lg:col-span-3'
+  if (width === 'sm')      return 'col-span-12 sm:col-span-6 lg:col-span-4'
+  if (width === 'md')      return 'col-span-12 lg:col-span-6'
   return 'col-span-12'
 }
 
-function itemColSpanClass(item: RenderItem): string {
-  if (item.type === 'tabgroup') return mainColSpanClass(sectionCfg(item.sections[0]).width)
-  return mainColSpanClass(sectionCfg(item.sid).width)
+function itemColSpanClass(item: { type: string; sid?: string; sections?: string[] }): string {
+  if (item.type === 'rowbreak') return 'col-span-12'
+  const firstSid = item.type === 'section' ? item.sid! : item.sections![0]
+  return mainColSpanClass(sectionCfg(firstSid as MainSectionId).width as MainWidth)
 }
 
 // ── Data ─────────────────────────────────────────────────────────────────
@@ -624,11 +567,29 @@ const agentRunsItems = computed(() => runsStore.dashboardSessions.slice(0, secti
 
 // ── Chart helpers ─────────────────────────────────────────────────────────
 const chartWidth = 600
-const chartHeight = 160
 const chartPad = 36
 
+const CHART_DAY_DEFAULT = 14
+const CHART_HEIGHT_OPTIONS = [
+  { value: 'xs', label: 'XS' }, { value: 'sm', label: 'S' }, { value: 'md', label: 'M' },
+  { value: 'lg', label: 'L' }, { value: 'xl', label: 'XL' },
+]
+const CHART_HEIGHT_PX: Record<string, number> = { xs: 80, sm: 120, md: 180, lg: 260, xl: 360 }
+
+const chartHeightPx = computed(() =>
+  CHART_HEIGHT_PX[sectionCfg('chart').chartHeightKey ?? 'md'] ?? 160,
+)
+
+const filteredIssueHistory = computed(() => {
+  const days = sectionCfg('chart').chartDays ?? CHART_DAY_DEFAULT
+  if (!issueHistory.value.length) return issueHistory.value
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() - days)
+  return issueHistory.value.filter(e => new Date(e.date) >= cutoff)
+})
+
 const chartMaxY = computed(() => {
-  const max = Math.max(...issueHistory.value.flatMap(e => [e.open, e.inProgress, e.done]), 1)
+  const max = Math.max(...filteredIssueHistory.value.flatMap(e => [e.open, e.inProgress, e.done]), 1)
   return Math.ceil(max / 5) * 5 || 5
 })
 
@@ -638,18 +599,18 @@ const gridYValues = computed(() => {
 })
 
 function yScale(val: number) {
-  const plotH = chartHeight - 30
+  const plotH = chartHeightPx.value - 30
   return plotH - (val / chartMaxY.value) * plotH + 5
 }
 
 function xPos(i: number) {
-  const n = issueHistory.value.length
+  const n = filteredIssueHistory.value.length
   const plotW = chartWidth - chartPad * 2
   return chartPad + (n > 1 ? (i / (n - 1)) * plotW : plotW / 2)
 }
 
 function linePoints(key: 'open' | 'inProgress' | 'done') {
-  return issueHistory.value.map((e, i) => `${xPos(i)},${yScale(e[key])}`).join(' ')
+  return filteredIssueHistory.value.map((e, i) => `${xPos(i)},${yScale(e[key])}`).join(' ')
 }
 
 function shortDate(d: string) {
