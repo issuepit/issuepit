@@ -270,7 +270,7 @@ public class AgentHttpServerTests(AspireFixture fixture)
         Assert.Equal(HttpStatusCode.OK, getResp.StatusCode);
         var agent = await getResp.Content.ReadFromJsonAsync<JsonElement>();
 
-        Assert.Equal(1, agent.GetProperty("agentType").GetInt32());
+        Assert.Equal("primary", agent.GetProperty("agentType").GetString());
     }
 
     /// <summary>
@@ -320,7 +320,7 @@ public class AgentHttpServerTests(AspireFixture fixture)
         var childGetResp = await client.GetAsync($"/api/agents/{childId}");
         Assert.Equal(HttpStatusCode.OK, childGetResp.StatusCode);
         var childAgent = await childGetResp.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal(0, childAgent.GetProperty("agentType").GetInt32());
+        Assert.Equal("sub_agent", childAgent.GetProperty("agentType").GetString());
 
         // Verify the parent's childAgents list includes the child with the correct type.
         var parentGetResp = await client.GetAsync($"/api/agents/{parentId}");
@@ -330,7 +330,38 @@ public class AgentHttpServerTests(AspireFixture fixture)
         Assert.Equal(1, childAgents.GetArrayLength());
         var firstChild = childAgents[0];
         Assert.Equal(childId, firstChild.GetProperty("id").GetString());
-        Assert.Equal(0, firstChild.GetProperty("agentType").GetInt32());
+        Assert.Equal("sub_agent", firstChild.GetProperty("agentType").GetString());
+    }
+
+    /// <summary>
+    /// Verifies that <c>AgentType = "all"</c> (All = 2) is persisted and returned as the string "all".
+    /// </summary>
+    [Fact]
+    public async Task Agent_WithAgentTypeAll_IsPersistedAndReturned()
+    {
+        var orgSlug = $"at-org-{Guid.NewGuid():N}"[..16];
+        var (client, orgId) = await SetupOrgAsync(orgSlug);
+
+        var createResp = await client.PostAsJsonAsync("/api/agents", new
+        {
+            name = "All Type Agent",
+            orgId = Guid.Parse(orgId),
+            systemPrompt = "You are an all-type agent.",
+            dockerImage = "busybox:latest",
+            allowedTools = "[]",
+            isActive = true,
+            runnerType = 0, // OpenCode = 0
+            agentType = 2,  // All = 2
+        });
+        Assert.Equal(HttpStatusCode.Created, createResp.StatusCode);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var agentId = created.GetProperty("id").GetString()!;
+
+        var getResp = await client.GetAsync($"/api/agents/{agentId}");
+        Assert.Equal(HttpStatusCode.OK, getResp.StatusCode);
+        var agent = await getResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal("all", agent.GetProperty("agentType").GetString());
     }
 
     /// <summary>

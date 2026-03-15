@@ -198,11 +198,11 @@
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2">
                 <NuxtLink :to="`/agents/${child.id}`" class="text-sm font-medium text-white hover:text-brand-300 transition-colors">{{ child.name }}</NuxtLink>
-                <span v-if="child.agentType != null"
-                  :class="child.agentType === OpenCodeAgentTypeEnum.Primary ? 'bg-violet-900/40 text-violet-300' : 'bg-teal-900/40 text-teal-300'"
-                  class="text-xs px-1.5 py-0.5 rounded-full">
-                  {{ child.agentType === OpenCodeAgentTypeEnum.Primary ? 'primary' : 'subagent' }}
-                </span>
+                <template v-if="child.agentType != null">
+                  <template v-for="badge in [agentTypeBadge(child.agentType)]" :key="badge.label">
+                    <span :class="badge.cls" class="text-xs px-1.5 py-0.5 rounded-full">{{ badge.label }}</span>
+                  </template>
+                </template>
                 <span v-else class="text-xs bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded-full">type not set</span>
                 <span :class="child.isActive ? 'text-green-400' : 'text-gray-500'" class="text-xs">
                   {{ child.isActive ? '● active' : '○ inactive' }}
@@ -304,6 +304,40 @@ function toggleTool(tool: string) {
   toolsInput.value = current.join(', ')
 }
 
+// The API uses JsonStringEnumConverter(SnakeCaseLower), so enum values come back as strings.
+// These helpers convert the API string values back to TypeScript numeric enum values.
+const runnerTypeMap: Record<string, RunnerType> = {
+  open_code: RunnerTypeEnum.OpenCode,
+  codex: RunnerTypeEnum.Codex,
+  git_hub_copilot_cli: RunnerTypeEnum.GitHubCopilotCli,
+}
+const agentTypeMap: Record<string, OpenCodeAgentType> = {
+  sub_agent: OpenCodeAgentTypeEnum.SubAgent,
+  primary: OpenCodeAgentTypeEnum.Primary,
+  all: OpenCodeAgentTypeEnum.All,
+}
+
+function toRunnerType(val: unknown): RunnerType | null {
+  if (val == null) return null
+  if (typeof val === 'number') return val as RunnerType
+  return runnerTypeMap[val as string] ?? null
+}
+
+function toAgentType(val: unknown): OpenCodeAgentType | null {
+  if (val == null) return null
+  if (typeof val === 'number') return val as OpenCodeAgentType
+  return agentTypeMap[val as string] ?? null
+}
+
+/** Returns badge class and label for displaying a child agent's type. */
+function agentTypeBadge(agentType: unknown): { cls: string; label: string } {
+  const type = toAgentType(agentType)
+  if (type === OpenCodeAgentTypeEnum.Primary) return { cls: 'bg-violet-900/40 text-violet-300', label: 'Primary' }
+  if (type === OpenCodeAgentTypeEnum.SubAgent) return { cls: 'bg-teal-900/40 text-teal-300', label: 'Subagent' }
+  if (type === OpenCodeAgentTypeEnum.All) return { cls: 'bg-gray-700/40 text-gray-300', label: 'All' }
+  return { cls: 'bg-gray-800 text-gray-500', label: String(agentType) }
+}
+
 function loadForm() {
   const agent = store.currentAgent
   if (!agent) return
@@ -311,9 +345,9 @@ function loadForm() {
   form.systemPrompt = agent.systemPrompt
   form.dockerImage = agent.dockerImage
   form.isActive = agent.isActive
-  form.runnerType = agent.runnerType ?? null
+  form.runnerType = toRunnerType(agent.runnerType)
   form.model = agent.model ?? ''
-  form.agentType = agent.agentType ?? null
+  form.agentType = toAgentType(agent.agentType)
   toolsInput.value = parseTools(agent.allowedTools).join(', ')
 }
 

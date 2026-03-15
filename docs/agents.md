@@ -147,6 +147,7 @@ opencode supports two agent types — see the [opencode agents documentation](ht
 |------|-------------|
 | **Primary** | The main agent you interact with directly. Can be switched using the Tab key. |
 | **Subagent** | A specialized assistant invoked by primary agents or via `@mention`. |
+| **All** | Available in both primary and subagent modes (opencode default when no type is set). |
 
 ### Configuring agent types in IssuePit
 

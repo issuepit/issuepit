@@ -541,11 +541,13 @@ export const RunnerTypeLabels: Record<RunnerType, string> = {
 export enum OpenCodeAgentType {
   SubAgent = 0,
   Primary = 1,
+  All = 2,
 }
 
 export const OpenCodeAgentTypeLabels: Record<OpenCodeAgentType, string> = {
   [OpenCodeAgentType.SubAgent]: 'Subagent',
   [OpenCodeAgentType.Primary]: 'Primary',
+  [OpenCodeAgentType.All]: 'All (default)',
 }
 
 export interface ApiKey {

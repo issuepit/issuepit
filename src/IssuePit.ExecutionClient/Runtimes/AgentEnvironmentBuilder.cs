@@ -97,6 +97,7 @@ internal static class AgentEnvironmentBuilder
     {
         OpenCodeAgentType.Primary => "primary",
         OpenCodeAgentType.SubAgent => "subagent",
+        OpenCodeAgentType.All => "all",
         _ => null,
     };
 }

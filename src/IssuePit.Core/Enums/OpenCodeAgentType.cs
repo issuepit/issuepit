@@ -18,4 +18,10 @@ public enum OpenCodeAgentType
     /// Primary agents can be cycled through with the Tab key.
     /// </summary>
     Primary = 1,
+
+    /// <summary>
+    /// The agent is available in all modes (both as a primary agent and as a subagent).
+    /// This is the opencode default when no mode is specified.
+    /// </summary>
+    All = 2,
 }

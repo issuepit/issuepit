@@ -303,7 +303,7 @@ if agents_json_str:
                 if model:
                     entry["model"] = model
                 agent_type = a.get("agentType") or None
-                if agent_type in ("primary", "subagent"):
+                if agent_type in ("primary", "subagent", "all"):
                     entry["mode"] = agent_type
                 agent_map[agent_key] = entry
         if agent_map:

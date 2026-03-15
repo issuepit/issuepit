@@ -63,6 +63,16 @@ public class AgentEnvironmentBuilderTests
     }
 
     [Fact]
+    public void BuildAgentsJson_AllAgentType_SerialisesAll()
+    {
+        var agent = MakeAgent(agentType: OpenCodeAgentType.All);
+        var json = AgentEnvironmentBuilder.BuildAgentsJson(agent);
+        var doc = JsonDocument.Parse(json);
+        var entry = doc.RootElement[0];
+        Assert.Equal("all", entry.GetProperty("agentType").GetString());
+    }
+
+    [Fact]
     public void BuildAgentsJson_IncludesChildAgents()
     {
         var child = MakeAgent(name: "sub-agent", agentType: OpenCodeAgentType.SubAgent);
