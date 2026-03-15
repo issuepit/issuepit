@@ -649,11 +649,11 @@ function tabDropOnSection(targetSid: MainSectionId) {
   // Remove fromSid from its existing group
   if (fromGrp !== null) {
     updateCfg(fromSid, { tabGroup: null })
-    const remaining = layout.value.order.filter(s => s !== fromSid && layout.value.configs[s]?.tabGroup === fromGrp)
+    const remaining = layout.value.order.filter(s => s !== fromSid && sectionCfg(s).tabGroup === fromGrp)
     if (remaining.length === 1) updateCfg(remaining[0], { tabGroup: null })
   }
   // Get/create group for target
-  const grp = targetGrp ?? `grp-${Date.now()}`
+  const grp = targetGrp ?? `grp-${++_tabGroupCounter}`
   if (targetGrp === null) updateCfg(targetSid, { tabGroup: grp })
   updateCfg(fromSid, { tabGroup: grp })
   // Move fromSid to right after targetSid

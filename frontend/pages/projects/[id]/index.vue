@@ -1002,6 +1002,7 @@ function hideSection(s: SectionId) { updateCfg(s, { hidden: true }) }
 function showSection(s: SectionId) { updateCfg(s, { hidden: false }) }
 
 // Tab grouping: combine adjacent section with the one after it
+let _tabGroupCounter = 0
 function toggleTabGroupWithNext(sid: SectionId) {
   const cfg = sectionCfg(sid)
   const idx = layout.value.order.indexOf(sid)
@@ -1014,7 +1015,7 @@ function toggleTabGroupWithNext(sid: SectionId) {
     if (sectionCfg(nextSid).tabGroup === grp) updateCfg(nextSid, { tabGroup: null })
   } else {
     const nextCfg = sectionCfg(nextSid)
-    const grp = nextCfg.tabGroup ?? `grp-${Date.now()}`
+    const grp = nextCfg.tabGroup ?? `grp-${++_tabGroupCounter}`
     updateCfg(sid, { tabGroup: grp })
     if (nextCfg.tabGroup === null) updateCfg(nextSid, { tabGroup: grp })
   }
@@ -1121,11 +1122,11 @@ function tabDropOnSection(targetSid: SectionId) {
   // Remove fromSid from its existing group
   if (fromGrp !== null) {
     updateCfg(fromSid, { tabGroup: null })
-    const remaining = layout.value.order.filter(s => s !== fromSid && layout.value.configs[s]?.tabGroup === fromGrp)
+    const remaining = layout.value.order.filter(s => s !== fromSid && sectionCfg(s).tabGroup === fromGrp)
     if (remaining.length === 1) updateCfg(remaining[0], { tabGroup: null })
   }
   // Get/create group for target
-  const grp = targetGrp ?? `grp-${Date.now()}`
+  const grp = targetGrp ?? `grp-${++_tabGroupCounter}`
   if (targetGrp === null) updateCfg(targetSid, { tabGroup: grp })
   updateCfg(fromSid, { tabGroup: grp })
   // Move fromSid to right after targetSid
