@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.8.0](https://github.com/issuepit/issuepit/compare/v1.7.0...v1.8.0) (2026-03-15)
+
+
+### Features
+
+* improve project and main dashboard UI with advanced draft mode ([#550](https://github.com/issuepit/issuepit/issues/550)) ([eea0d53](https://github.com/issuepit/issuepit/commit/eea0d5335648f07f453d2ad23c6dba2c3efbab1f))
+* kanban issue preview sidebar, lane properties, custom issue properties, and lane transitions ([#552](https://github.com/issuepit/issuepit/issues/552)) ([208651d](https://github.com/issuepit/issuepit/commit/208651d8da27d50139465c2b1d2ce5abadb2fcf2))
+* opencode plugin to block `git push` ([#559](https://github.com/issuepit/issuepit/issues/559)) ([6928c6d](https://github.com/issuepit/issuepit/commit/6928c6d3386c6c9eccd14ac075bdff6fc5153cb5))
+* sidebar project switch with sub-page preservation and project accent colors ([#570](https://github.com/issuepit/issuepit/issues/570)) ([9d52be0](https://github.com/issuepit/issuepit/commit/9d52be08ce029af6f7978a4c521269e6ee231432))
+* test history dashboard with flakiness analysis, run comparison, MCP tools, and TRX import ([#548](https://github.com/issuepit/issuepit/issues/548)) ([83d60a7](https://github.com/issuepit/issuepit/commit/83d60a7ae5a8925d9496b4bff7a80ea1499cf19b))
+
+
+### Bug Fixes
+
+* flaky Ui_CreateProject_AppearsInList, MCP console noise, and centralize E2E timeouts ([#565](https://github.com/issuepit/issuepit/issues/565)) ([2584bbf](https://github.com/issuepit/issuepit/commit/2584bbf0794cb64d0383626dc35e501da3caff88))
+* handle extensionless artifact files (act v7+ direct-upload) in TRX parsing and artifact counting ([#575](https://github.com/issuepit/issuepit/issues/575)) ([09216cb](https://github.com/issuepit/issuepit/commit/09216cba7a4fcc9fee01e6cec4444dbbdb8aa8d4))
+* improve uncommitted-changes fix-run prompt to guide agent to commit ([#573](https://github.com/issuepit/issuepit/issues/573)) ([e22d3f4](https://github.com/issuepit/issuepit/commit/e22d3f4a1d0356b542cfbc581495e3ef1963ca71))
+
 ## [1.7.0](https://github.com/issuepit/issuepit/compare/v1.6.0...v1.7.0) (2026-03-15)
 
 
