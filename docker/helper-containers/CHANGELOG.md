@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.3.0](https://github.com/issuepit/issuepit/compare/helper-containers-v1.2.4...helper-containers-v1.3.0) (2026-03-15)
+
+
+### Features
+
+* improve agent action run flow — git branch setup, CI/CD loop, same-container exec, opencode session forking ([#512](https://github.com/issuepit/issuepit/issues/512)) ([c5a3af8](https://github.com/issuepit/issuepit/commit/c5a3af8babb2523afd908f311b630a5c37b6c7f2))
+* improve agent action runs (MCP injection, nested agents, issue comments, session warnings, git recovery) ([#532](https://github.com/issuepit/issuepit/issues/532)) ([4a156cf](https://github.com/issuepit/issuepit/commit/4a156cffb016cbf463fa44760394bf5179cdd780))
+
+
+### Bug Fixes
+
+* artifact download routes to Nuxt instead of C# backend; artifacts and tests tabs empty ([#544](https://github.com/issuepit/issuepit/issues/544)) ([346a48f](https://github.com/issuepit/issuepit/commit/346a48f194838090a3ac8ba1a3ff69d8970d8e7a))
+
 ## [1.2.4](https://github.com/issuepit/issuepit/compare/helper-containers-v1.2.3...helper-containers-v1.2.4) (2026-03-14)
 
 
