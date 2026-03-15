@@ -64,6 +64,14 @@ public class Agent
     /// agent to the parent's CLI invocation (only 1 level of nesting is supported).</summary>
     public Guid? ParentAgentId { get; set; }
 
+    /// <summary>
+    /// The opencode agent type for this agent (primary or subagent).
+    /// Only relevant when <see cref="RunnerType"/> is <see cref="Enums.RunnerType.OpenCode"/>.
+    /// Null means the type is not explicitly set (opencode will use its own default).
+    /// See https://opencode.ai/docs/agents for details.
+    /// </summary>
+    public OpenCodeAgentType? AgentType { get; set; }
+
     [ForeignKey(nameof(ParentAgentId))]
     public Agent? ParentAgent { get; set; }
 

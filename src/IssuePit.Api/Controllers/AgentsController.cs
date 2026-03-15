@@ -42,6 +42,7 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
             agent.Model,
             agent.IsActive,
             agent.ParentAgentId,
+            agent.AgentType,
             agent.UseHttpServer,
             agent.CreatedAt,
             agent.AgentMcpServers.Select(am => new LinkedMcpServerDto(
@@ -51,7 +52,7 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
                 am.McpServer.Description,
                 am.McpServer.AllowedTools)).ToList(),
             agent.ChildAgents.Select(c => new ChildAgentDto(
-                c.Id, c.Name, c.Model, c.SystemPrompt, c.IsActive)).ToList()));
+                c.Id, c.Name, c.Model, c.SystemPrompt, c.AgentType, c.IsActive)).ToList()));
     }
 
     [HttpPost]
@@ -79,6 +80,7 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
         agent.Model = updated.Model;
         agent.IsActive = updated.IsActive;
         agent.ParentAgentId = updated.ParentAgentId;
+        agent.AgentType = updated.AgentType;
         agent.UseHttpServer = updated.UseHttpServer;
         // Only update password when a non-empty value is provided so a blank PUT does not clear it.
         // To clear the password, use a dedicated PATCH endpoint (not yet implemented) or
@@ -142,6 +144,7 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
         agent.Model,
         agent.IsActive,
         agent.ParentAgentId,
+        agent.AgentType,
         agent.UseHttpServer,
         agent.CreatedAt);
 }
@@ -160,6 +163,7 @@ public sealed record AgentResponse(
     string? Model,
     bool IsActive,
     Guid? ParentAgentId,
+    OpenCodeAgentType? AgentType,
     bool UseHttpServer,
     DateTime CreatedAt);
 
@@ -175,6 +179,7 @@ public sealed record AgentDetailResponse(
     string? Model,
     bool IsActive,
     Guid? ParentAgentId,
+    OpenCodeAgentType? AgentType,
     bool UseHttpServer,
     DateTime CreatedAt,
     IReadOnlyList<LinkedMcpServerDto> LinkedMcpServers,
@@ -194,4 +199,5 @@ public sealed record ChildAgentDto(
     string Name,
     string? Model,
     string SystemPrompt,
+    OpenCodeAgentType? AgentType,
     bool IsActive);

@@ -239,6 +239,161 @@ public class AgentHttpServerTests(AspireFixture fixture)
             "serverWebUiUrl field must be present in the agent session response.");
     }
 
+    // ── Agent type tests ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Verifies that an agent created with <c>AgentType = 1</c> (Primary) is persisted
+    /// and returned correctly by the API.
+    /// </summary>
+    [Fact]
+    public async Task Agent_WithAgentTypePrimary_IsPersistedAndReturned()
+    {
+        var orgSlug = $"at-org-{Guid.NewGuid():N}"[..16];
+        var (client, orgId) = await SetupOrgAsync(orgSlug);
+
+        var createResp = await client.PostAsJsonAsync("/api/agents", new
+        {
+            name = "Primary Type Agent",
+            orgId = Guid.Parse(orgId),
+            systemPrompt = "You are a primary agent.",
+            dockerImage = "busybox:latest",
+            allowedTools = "[]",
+            isActive = true,
+            runnerType = 0, // OpenCode = 0
+            agentType = 1,  // Primary = 1
+        });
+        Assert.Equal(HttpStatusCode.Created, createResp.StatusCode);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var agentId = created.GetProperty("id").GetString()!;
+
+        var getResp = await client.GetAsync($"/api/agents/{agentId}");
+        Assert.Equal(HttpStatusCode.OK, getResp.StatusCode);
+        var agent = await getResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal("primary", agent.GetProperty("agentType").GetString());
+    }
+
+    /// <summary>
+    /// Verifies that an agent created with <c>AgentType = 0</c> (SubAgent) is persisted
+    /// and returned correctly, including in the childAgents list on the parent agent.
+    /// </summary>
+    [Fact]
+    public async Task Agent_WithAgentTypeSubAgent_IsPersistedAndAppearsInChildAgents()
+    {
+        var orgSlug = $"at-org-{Guid.NewGuid():N}"[..16];
+        var (client, orgId) = await SetupOrgAsync(orgSlug);
+
+        // Create a parent agent.
+        var parentResp = await client.PostAsJsonAsync("/api/agents", new
+        {
+            name = "Parent Agent",
+            orgId = Guid.Parse(orgId),
+            systemPrompt = "You are the parent agent.",
+            dockerImage = "busybox:latest",
+            allowedTools = "[]",
+            isActive = true,
+            runnerType = 0, // OpenCode = 0
+            agentType = 1,  // Primary = 1
+        });
+        Assert.Equal(HttpStatusCode.Created, parentResp.StatusCode);
+        var parent = await parentResp.Content.ReadFromJsonAsync<JsonElement>();
+        var parentId = parent.GetProperty("id").GetString()!;
+
+        // Create a subagent nested under the parent.
+        var childResp = await client.PostAsJsonAsync("/api/agents", new
+        {
+            name = "Sub Agent",
+            orgId = Guid.Parse(orgId),
+            systemPrompt = "You are a subagent.",
+            dockerImage = "busybox:latest",
+            allowedTools = "[]",
+            isActive = true,
+            runnerType = 0,                   // OpenCode = 0
+            agentType = 0,                    // SubAgent = 0
+            parentAgentId = Guid.Parse(parentId),
+        });
+        Assert.Equal(HttpStatusCode.Created, childResp.StatusCode);
+        var child = await childResp.Content.ReadFromJsonAsync<JsonElement>();
+        var childId = child.GetProperty("id").GetString()!;
+
+        // Verify the child has agentType = 0 (SubAgent).
+        var childGetResp = await client.GetAsync($"/api/agents/{childId}");
+        Assert.Equal(HttpStatusCode.OK, childGetResp.StatusCode);
+        var childAgent = await childGetResp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("sub_agent", childAgent.GetProperty("agentType").GetString());
+
+        // Verify the parent's childAgents list includes the child with the correct type.
+        var parentGetResp = await client.GetAsync($"/api/agents/{parentId}");
+        Assert.Equal(HttpStatusCode.OK, parentGetResp.StatusCode);
+        var parentAgent = await parentGetResp.Content.ReadFromJsonAsync<JsonElement>();
+        var childAgents = parentAgent.GetProperty("childAgents");
+        Assert.Equal(1, childAgents.GetArrayLength());
+        var firstChild = childAgents[0];
+        Assert.Equal(childId, firstChild.GetProperty("id").GetString());
+        Assert.Equal("sub_agent", firstChild.GetProperty("agentType").GetString());
+    }
+
+    /// <summary>
+    /// Verifies that <c>AgentType = "all"</c> (All = 2) is persisted and returned as the string "all".
+    /// </summary>
+    [Fact]
+    public async Task Agent_WithAgentTypeAll_IsPersistedAndReturned()
+    {
+        var orgSlug = $"at-org-{Guid.NewGuid():N}"[..16];
+        var (client, orgId) = await SetupOrgAsync(orgSlug);
+
+        var createResp = await client.PostAsJsonAsync("/api/agents", new
+        {
+            name = "All Type Agent",
+            orgId = Guid.Parse(orgId),
+            systemPrompt = "You are an all-type agent.",
+            dockerImage = "busybox:latest",
+            allowedTools = "[]",
+            isActive = true,
+            runnerType = 0, // OpenCode = 0
+            agentType = 2,  // All = 2
+        });
+        Assert.Equal(HttpStatusCode.Created, createResp.StatusCode);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var agentId = created.GetProperty("id").GetString()!;
+
+        var getResp = await client.GetAsync($"/api/agents/{agentId}");
+        Assert.Equal(HttpStatusCode.OK, getResp.StatusCode);
+        var agent = await getResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal("all", agent.GetProperty("agentType").GetString());
+    }
+
+    /// <summary>
+    /// Verifies that <c>AgentType</c> defaults to null when not specified.
+    /// </summary>
+    [Fact]
+    public async Task Agent_WithoutAgentType_DefaultsToNull()
+    {
+        var orgSlug = $"at-org-{Guid.NewGuid():N}"[..16];
+        var (client, orgId) = await SetupOrgAsync(orgSlug);
+
+        var createResp = await client.PostAsJsonAsync("/api/agents", new
+        {
+            name = "No Type Agent",
+            orgId = Guid.Parse(orgId),
+            systemPrompt = "You are a test agent.",
+            dockerImage = "busybox:latest",
+            allowedTools = "[]",
+            isActive = true,
+        });
+        Assert.Equal(HttpStatusCode.Created, createResp.StatusCode);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var agentId = created.GetProperty("id").GetString()!;
+
+        var getResp = await client.GetAsync($"/api/agents/{agentId}");
+        var agent = await getResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.True(agent.TryGetProperty("agentType", out var agentTypeProp),
+            "agentType field must be present in the response.");
+        Assert.Equal(JsonValueKind.Null, agentTypeProp.ValueKind);
+    }
+
     private static bool IsDockerAvailable()
     {
         try

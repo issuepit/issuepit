@@ -44,6 +44,24 @@
               <input v-model="form.model" type="text" placeholder="anthropic/claude-opus-4-5"
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500" />
             </div>
+            <!-- Agent Type (opencode only): primary agents are directly interacted with; subagents are invoked by primary agents -->
+            <div v-if="form.runnerType === RunnerTypeEnum.OpenCode" class="col-span-2">
+              <div class="flex items-center gap-2 mb-1.5">
+                <label class="block text-sm font-medium text-gray-300">Agent Type</label>
+                <a href="https://opencode.ai/docs/agents#types" target="_blank" rel="noopener"
+                  class="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
+                  opencode docs ↗
+                </a>
+              </div>
+              <select v-model="form.agentType"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option v-for="opt in agentTypeOptions" :key="String(opt.value)" :value="opt.value">{{ opt.label }}</option>
+              </select>
+              <p class="text-xs text-gray-500 mt-1">
+                <strong class="text-gray-400">Primary</strong> — main agent, user interacts directly (Tab to switch). &nbsp;
+                <strong class="text-gray-400">Subagent</strong> — invoked by primary agents or via @ mention.
+              </p>
+            </div>
             <div class="col-span-2">
               <label class="block text-sm font-medium text-gray-300 mb-1.5">Docker Image</label>
               <input v-model="form.dockerImage" type="text" placeholder="ghcr.io/org/agent:latest"
@@ -160,6 +178,45 @@
           </button>
         </div>
       </div>
+
+      <!-- Nested Agents (child agents configured for this agent) -->
+      <div v-if="store.currentAgent?.childAgents?.length" class="bg-gray-900 border border-gray-800 rounded-xl p-6 mt-6">
+        <div class="flex items-center justify-between mb-1">
+          <h2 class="text-base font-semibold text-white">Nested Agents</h2>
+          <a href="https://opencode.ai/docs/agents" target="_blank" rel="noopener"
+            class="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
+            opencode agent docs ↗
+          </a>
+        </div>
+        <p class="text-sm text-gray-500 mb-4">
+          These agents are injected as opencode subagents or primary agents into this agent's session.
+          Configure their type in each agent's settings.
+        </p>
+        <div class="space-y-2">
+          <div v-for="child in store.currentAgent.childAgents" :key="child.id"
+            class="flex items-center gap-3 bg-gray-800/60 rounded-lg px-4 py-3 border border-gray-700/50">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <NuxtLink :to="`/agents/${child.id}`" class="text-sm font-medium text-white hover:text-brand-300 transition-colors">{{ child.name }}</NuxtLink>
+                <template v-if="child.agentType != null">
+                  <template v-for="badge in [agentTypeBadge(child.agentType)]" :key="badge.label">
+                    <span :class="badge.cls" class="text-xs px-1.5 py-0.5 rounded-full">{{ badge.label }}</span>
+                  </template>
+                </template>
+                <span v-else class="text-xs bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded-full">type not set</span>
+                <span :class="child.isActive ? 'text-green-400' : 'text-gray-500'" class="text-xs">
+                  {{ child.isActive ? '● active' : '○ inactive' }}
+                </span>
+              </div>
+              <p v-if="child.model" class="text-xs text-gray-500 font-mono mt-0.5">{{ child.model }}</p>
+            </div>
+            <NuxtLink :to="`/agents/${child.id}`"
+              class="text-xs text-gray-400 hover:text-gray-200 px-3 py-1.5 rounded-md border border-gray-700 hover:bg-gray-800 transition-colors shrink-0">
+              Edit
+            </NuxtLink>
+          </div>
+        </div>
+      </div>
     </template>
 
     <div v-else-if="!store.loading" class="text-center py-20 text-gray-500">Agent not found.</div>
@@ -169,8 +226,8 @@
 <script setup lang="ts">
 import { useAgentsStore } from '~/stores/agents'
 import { useMcpServersStore } from '~/stores/mcp-servers'
-import type { RunnerType } from '~/types'
-import { RunnerTypeLabels } from '~/types'
+import type { RunnerType, OpenCodeAgentType } from '~/types'
+import { RunnerTypeLabels, RunnerType as RunnerTypeEnum, OpenCodeAgentType as OpenCodeAgentTypeEnum, OpenCodeAgentTypeLabels } from '~/types'
 
 const route = useRoute()
 const store = useAgentsStore()
@@ -189,11 +246,17 @@ const form = reactive({
   isActive: true,
   runnerType: null as RunnerType | null,
   model: '',
+  agentType: null as OpenCodeAgentType | null,
 })
 
 const runnerOptions = [
   { value: null, label: '— None (use container entrypoint)' },
   ...Object.entries(RunnerTypeLabels).map(([k, v]) => ({ value: Number(k) as RunnerType, label: v }))
+]
+
+const agentTypeOptions = [
+  { value: null, label: '— Not set (use opencode default)' },
+  ...Object.entries(OpenCodeAgentTypeLabels).map(([k, v]) => ({ value: Number(k) as OpenCodeAgentType, label: v }))
 ]
 
 function parseTools(value: string | string[] | undefined): string[] {
@@ -241,6 +304,40 @@ function toggleTool(tool: string) {
   toolsInput.value = current.join(', ')
 }
 
+// The API uses JsonStringEnumConverter(SnakeCaseLower), so enum values come back as strings.
+// These helpers convert the API string values back to TypeScript numeric enum values.
+const runnerTypeMap: Record<string, RunnerType> = {
+  open_code: RunnerTypeEnum.OpenCode,
+  codex: RunnerTypeEnum.Codex,
+  git_hub_copilot_cli: RunnerTypeEnum.GitHubCopilotCli,
+}
+const agentTypeMap: Record<string, OpenCodeAgentType> = {
+  sub_agent: OpenCodeAgentTypeEnum.SubAgent,
+  primary: OpenCodeAgentTypeEnum.Primary,
+  all: OpenCodeAgentTypeEnum.All,
+}
+
+function toRunnerType(val: unknown): RunnerType | null {
+  if (val == null) return null
+  if (typeof val === 'number') return val as RunnerType
+  return runnerTypeMap[val as string] ?? null
+}
+
+function toAgentType(val: unknown): OpenCodeAgentType | null {
+  if (val == null) return null
+  if (typeof val === 'number') return val as OpenCodeAgentType
+  return agentTypeMap[val as string] ?? null
+}
+
+/** Returns badge class and label for displaying a child agent's type. */
+function agentTypeBadge(agentType: unknown): { cls: string; label: string } {
+  const type = toAgentType(agentType)
+  if (type === OpenCodeAgentTypeEnum.Primary) return { cls: 'bg-violet-900/40 text-violet-300', label: 'Primary' }
+  if (type === OpenCodeAgentTypeEnum.SubAgent) return { cls: 'bg-teal-900/40 text-teal-300', label: 'Subagent' }
+  if (type === OpenCodeAgentTypeEnum.All) return { cls: 'bg-gray-700/40 text-gray-300', label: 'All' }
+  return { cls: 'bg-gray-800 text-gray-500', label: String(agentType) }
+}
+
 function loadForm() {
   const agent = store.currentAgent
   if (!agent) return
@@ -248,8 +345,9 @@ function loadForm() {
   form.systemPrompt = agent.systemPrompt
   form.dockerImage = agent.dockerImage
   form.isActive = agent.isActive
-  form.runnerType = agent.runnerType ?? null
+  form.runnerType = toRunnerType(agent.runnerType)
   form.model = agent.model ?? ''
+  form.agentType = toAgentType(agent.agentType)
   toolsInput.value = parseTools(agent.allowedTools).join(', ')
 }
 
@@ -261,6 +359,7 @@ function buildPayload(allowedTools: string[]) {
     isActive: form.isActive,
     runnerType: form.runnerType ?? undefined,
     model: form.model || undefined,
+    agentType: form.agentType ?? undefined,
     allowedTools: JSON.stringify(allowedTools),
   }
 }

@@ -1,4 +1,5 @@
 using IssuePit.Core.Entities;
+using IssuePit.Core.Enums;
 using IssuePit.Core.Runners;
 using System.Text.Json;
 
@@ -76,18 +77,27 @@ internal static class AgentEnvironmentBuilder
     /// <summary>
     /// Serialises the current agent and its direct children (one level only) into a JSON array
     /// for consumption by the container entrypoint when writing the opencode config.
-    /// Format: [{ "name": "...", "model": "...", "prompt": "..." }, ...]
+    /// Format: [{ "name": "...", "model": "...", "prompt": "...", "agentType": "primary"|"subagent"|null }, ...]
     /// </summary>
-    private static string BuildAgentsJson(Agent agent)
+    internal static string BuildAgentsJson(Agent agent)
     {
         var agents = new List<object>
         {
-            new { name = agent.Name, model = agent.Model ?? string.Empty, prompt = agent.SystemPrompt },
+            new { name = agent.Name, model = agent.Model ?? string.Empty, prompt = agent.SystemPrompt, agentType = AgentTypeToString(agent.AgentType) },
         };
 
         foreach (var child in agent.ChildAgents)
-            agents.Add(new { name = child.Name, model = child.Model ?? string.Empty, prompt = child.SystemPrompt });
+            agents.Add(new { name = child.Name, model = child.Model ?? string.Empty, prompt = child.SystemPrompt, agentType = AgentTypeToString(child.AgentType) });
 
         return JsonSerializer.Serialize(agents);
     }
+
+    /// <summary>Converts an <see cref="OpenCodeAgentType"/> to the opencode config string value.</summary>
+    private static string? AgentTypeToString(OpenCodeAgentType? agentType) => agentType switch
+    {
+        OpenCodeAgentType.Primary => "primary",
+        OpenCodeAgentType.SubAgent => "subagent",
+        OpenCodeAgentType.All => "all",
+        _ => null,
+    };
 }
