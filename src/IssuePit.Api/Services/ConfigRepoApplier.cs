@@ -1,24 +1,28 @@
-using System.Text.Json;
+using System.ComponentModel.DataAnnotations;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using LibGit2Sharp;
 using Microsoft.EntityFrameworkCore;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using Newtonsoft.Json.Serialization;
 
 namespace IssuePit.Api.Services;
 
 /// <summary>
 /// Scoped service that applies infrastructure-as-code config overrides from a local directory
 /// (already resolved from a git repository or plain filesystem path) to the database.
+/// Config files use JSON5 format (<c>.json5</c>) — comments and trailing commas are supported.
+/// Plain <c>.json</c> files are also accepted for backward compatibility.
 /// </summary>
 public class ConfigRepoApplier(
     IssuePitDbContext db,
     ILogger<ConfigRepoApplier> logger)
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly JsonSerializerSettings JsonSettings = new()
     {
-        PropertyNameCaseInsensitive = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
+        ContractResolver = new CamelCasePropertyNamesContractResolver(),
+        NullValueHandling = NullValueHandling.Ignore,
     };
 
     /// <summary>
@@ -26,44 +30,54 @@ public class ConfigRepoApplier(
     /// <paramref name="tenant"/>. Only existing entities (matched by slug) are updated;
     /// unknown slugs are skipped with a warning.
     /// </summary>
-    public async Task ApplyAsync(Tenant tenant, string configPath, bool strictMode, CancellationToken ct = default)
+    /// <returns>A <see cref="ConfigSyncResult"/> describing what was applied and any issues encountered.</returns>
+    public async Task<ConfigSyncResult> ApplyAsync(Tenant tenant, string configPath, bool strictMode, CancellationToken ct = default)
     {
+        var result = new ConfigSyncResult();
+
         var orgsDir = Path.Combine(configPath, "orgs");
         if (Directory.Exists(orgsDir))
         {
-            foreach (var file in Directory.GetFiles(orgsDir, "*.json"))
+            foreach (var file in EnumerateConfigFiles(orgsDir))
             {
-                await ApplyOrgConfigAsync(tenant, file, strictMode, ct);
+                await ApplyOrgConfigAsync(tenant, file, strictMode, result, ct);
+                result.FilesProcessed++;
             }
         }
 
         var projectsDir = Path.Combine(configPath, "projects");
         if (Directory.Exists(projectsDir))
         {
-            foreach (var file in Directory.GetFiles(projectsDir, "*.json"))
+            foreach (var file in EnumerateConfigFiles(projectsDir))
             {
-                await ApplyProjectConfigAsync(tenant, file, strictMode, ct);
+                await ApplyProjectConfigAsync(tenant, file, strictMode, result, ct);
+                result.FilesProcessed++;
             }
         }
 
         await db.SaveChangesAsync(ct);
+        return result;
     }
 
-    private async Task ApplyOrgConfigAsync(Tenant tenant, string filePath, bool strictMode, CancellationToken ct)
+    /// <summary>Returns <c>.json5</c> and <c>.json</c> files from <paramref name="directory"/>, json5 first.</summary>
+    private static IEnumerable<string> EnumerateConfigFiles(string directory)
+    {
+        foreach (var f in Directory.GetFiles(directory, "*.json5")) yield return f;
+        foreach (var f in Directory.GetFiles(directory, "*.json")) yield return f;
+    }
+
+    private async Task ApplyOrgConfigAsync(Tenant tenant, string filePath, bool strictMode, ConfigSyncResult result, CancellationToken ct)
     {
         OrgConfigModel? model;
-        try
+        if (!TryParseJson5<OrgConfigModel>(filePath, result, out model) || model is null) return;
+
+        var validationErrors = ValidateModel(model);
+        if (validationErrors.Count > 0)
         {
-            await using var stream = File.OpenRead(filePath);
-            model = await JsonSerializer.DeserializeAsync<OrgConfigModel>(stream, JsonOptions, ct);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to parse org config file {File}", filePath);
+            foreach (var err in validationErrors)
+                result.AddError(filePath, err);
             return;
         }
-
-        if (model is null) return;
 
         var slug = model.Slug ?? Path.GetFileNameWithoutExtension(filePath);
         var org = await db.Organizations
@@ -71,6 +85,7 @@ public class ConfigRepoApplier(
 
         if (org is null)
         {
+            result.AddWarning(filePath, $"Org with slug '{slug}' not found; skipping.");
             logger.LogWarning("Org with slug '{Slug}' not found for tenant {TenantId}; skipping", slug, tenant.Id);
             return;
         }
@@ -87,19 +102,28 @@ public class ConfigRepoApplier(
         if (model.LocalRepositories is not null) org.LocalRepositories = model.LocalRepositories;
 
         if (model.Members is not null)
-            await ApplyOrgMembersAsync(tenant, org, model.Members, strictMode, ct);
+            await ApplyOrgMembersAsync(tenant, org, model.Members, strictMode, result, filePath, ct);
 
         logger.LogInformation("Applied org config for '{Slug}' (id={OrgId})", slug, org.Id);
     }
 
     private async Task ApplyOrgMembersAsync(
-        Tenant tenant, Organization org, List<OrgMemberConfigModel> members, bool strictMode, CancellationToken ct)
+        Tenant tenant, Organization org, List<OrgMemberConfigModel> members, bool strictMode,
+        ConfigSyncResult result, string filePath, CancellationToken ct)
     {
         var existing = await db.OrganizationMembers.Where(m => m.OrgId == org.Id).ToListAsync(ct);
 
         foreach (var memberCfg in members)
         {
-            var userId = await ResolveUserIdAsync(tenant, memberCfg.UserId, memberCfg.Username, strictMode, ct);
+            var validationErrors = ValidateModel(memberCfg);
+            if (validationErrors.Count > 0)
+            {
+                foreach (var err in validationErrors)
+                    result.AddError(filePath, $"Member entry: {err}");
+                continue;
+            }
+
+            var userId = await ResolveUserIdAsync(tenant, memberCfg.UserId, memberCfg.Username, strictMode, result, filePath, ct);
             if (userId is null) continue;
 
             var existingMember = existing.FirstOrDefault(m => m.UserId == userId);
@@ -119,21 +143,18 @@ public class ConfigRepoApplier(
         }
     }
 
-    private async Task ApplyProjectConfigAsync(Tenant tenant, string filePath, bool strictMode, CancellationToken ct)
+    private async Task ApplyProjectConfigAsync(Tenant tenant, string filePath, bool strictMode, ConfigSyncResult result, CancellationToken ct)
     {
         ProjectConfigModel? model;
-        try
+        if (!TryParseJson5<ProjectConfigModel>(filePath, result, out model) || model is null) return;
+
+        var validationErrors = ValidateModel(model);
+        if (validationErrors.Count > 0)
         {
-            await using var stream = File.OpenRead(filePath);
-            model = await JsonSerializer.DeserializeAsync<ProjectConfigModel>(stream, JsonOptions, ct);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to parse project config file {File}", filePath);
+            foreach (var err in validationErrors)
+                result.AddError(filePath, err);
             return;
         }
-
-        if (model is null) return;
 
         var slug = model.Slug ?? Path.GetFileNameWithoutExtension(filePath);
 
@@ -143,6 +164,8 @@ public class ConfigRepoApplier(
             org = await db.Organizations.FirstOrDefaultAsync(o => o.TenantId == tenant.Id && o.Slug == model.OrgSlug, ct);
             if (org is null)
             {
+                var msg = $"Org with slug '{model.OrgSlug}' not found; skipping project '{slug}'.";
+                result.AddWarning(filePath, msg);
                 logger.LogWarning("Org with slug '{OrgSlug}' not found for tenant {TenantId}; skipping project '{Slug}'", model.OrgSlug, tenant.Id, slug);
                 return;
             }
@@ -157,6 +180,8 @@ public class ConfigRepoApplier(
 
         if (project is null)
         {
+            var msg = $"Project with slug '{slug}' not found; skipping.";
+            result.AddWarning(filePath, msg);
             logger.LogWarning("Project with slug '{Slug}' not found for tenant {TenantId}; skipping", slug, tenant.Id);
             return;
         }
@@ -178,10 +203,10 @@ public class ConfigRepoApplier(
             await ApplyProjectGitRepoAsync(project, model, ct);
 
         if (model.GitRepos is not null && model.GitRepos.Count > 0)
-            await ApplyProjectGitReposAsync(project, model.GitRepos, ct);
+            await ApplyProjectGitReposAsync(project, model.GitRepos, result, filePath, ct);
 
         if (model.Members is not null)
-            await ApplyProjectMembersAsync(tenant, project, model.Members, strictMode, ct);
+            await ApplyProjectMembersAsync(tenant, project, model.Members, strictMode, result, filePath, ct);
 
         logger.LogInformation("Applied project config for '{Slug}' (id={ProjectId})", slug, project.Id);
     }
@@ -213,43 +238,37 @@ public class ConfigRepoApplier(
     }
 
     /// <summary>
-    /// Applies a full list of git origins from <paramref name="gitRepos"/> to the project.
-    /// Origins are matched by <see cref="GitRepository.RemoteUrl"/>. New entries are inserted,
-    /// existing ones are updated, and DB entries whose URL is not in the config list are removed.
+    /// Upserts a list of git origins for the project matched by <see cref="GitRepository.RemoteUrl"/>.
+    /// New entries are inserted and existing ones are updated; DB origins not present in the config
+    /// list are left unchanged.
     /// </summary>
     private async Task ApplyProjectGitReposAsync(
-        Project project, List<GitRepoConfigModel> gitRepos, CancellationToken ct)
+        Project project, List<GitRepoConfigModel> gitRepos, ConfigSyncResult result, string filePath, CancellationToken ct)
     {
         var existing = await db.GitRepositories
             .Where(r => r.ProjectId == project.Id)
             .ToListAsync(ct);
 
-        // Validate and deduplicate: warn if two entries share the same URL (case-insensitive)
+        // Deduplicate: warn if two entries share the same URL (case-insensitive)
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var validRepos = new List<GitRepoConfigModel>();
-        foreach (var g in gitRepos)
+        foreach (var gitCfg in gitRepos)
         {
-            if (string.IsNullOrWhiteSpace(g.RemoteUrl))
+            var cfgErrors = ValidateModel(gitCfg);
+            if (cfgErrors.Count > 0)
             {
-                logger.LogWarning("gitRepos entry for project {ProjectId} has an empty remoteUrl; skipping", project.Id);
+                foreach (var err in cfgErrors)
+                    result.AddError(filePath, $"gitRepos entry: {err}");
                 continue;
             }
-            if (!seen.Add(g.RemoteUrl))
+
+            if (!seen.Add(gitCfg.RemoteUrl))
             {
-                logger.LogWarning("gitRepos entry for project {ProjectId} has duplicate remoteUrl '{Url}'; skipping duplicate", project.Id, g.RemoteUrl);
+                var msg = $"gitRepos entry has duplicate remoteUrl '{gitCfg.RemoteUrl}'; skipping duplicate.";
+                result.AddWarning(filePath, msg);
+                logger.LogWarning("gitRepos entry for project {ProjectId} has duplicate remoteUrl '{Url}'; skipping duplicate", project.Id, gitCfg.RemoteUrl);
                 continue;
             }
-            validRepos.Add(g);
-        }
 
-        var configUrls = seen; // same set, already populated
-
-        // Remove origins that are no longer in the config list
-        foreach (var obsolete in existing.Where(r => !configUrls.Contains(r.RemoteUrl)))
-            db.GitRepositories.Remove(obsolete);
-
-        foreach (var gitCfg in validRepos)
-        {
             var repo = existing.FirstOrDefault(r =>
                 string.Equals(r.RemoteUrl, gitCfg.RemoteUrl, StringComparison.OrdinalIgnoreCase));
 
@@ -278,13 +297,22 @@ public class ConfigRepoApplier(
     }
 
     private async Task ApplyProjectMembersAsync(
-        Tenant tenant, Project project, List<ProjectMemberConfigModel> members, bool strictMode, CancellationToken ct)
+        Tenant tenant, Project project, List<ProjectMemberConfigModel> members, bool strictMode,
+        ConfigSyncResult result, string filePath, CancellationToken ct)
     {
         var existing = await db.ProjectMembers.Where(m => m.ProjectId == project.Id).ToListAsync(ct);
 
         foreach (var memberCfg in members)
         {
-            var userId = await ResolveUserIdAsync(tenant, memberCfg.UserId, memberCfg.Username, strictMode, ct);
+            var validationErrors = ValidateModel(memberCfg);
+            if (validationErrors.Count > 0)
+            {
+                foreach (var err in validationErrors)
+                    result.AddError(filePath, $"Member entry: {err}");
+                continue;
+            }
+
+            var userId = await ResolveUserIdAsync(tenant, memberCfg.UserId, memberCfg.Username, strictMode, result, filePath, ct);
             if (userId is null) continue;
 
             var existingMember = existing.FirstOrDefault(m => m.UserId == userId);
@@ -310,7 +338,8 @@ public class ConfigRepoApplier(
     /// Returns <c>null</c> when the user cannot be found. In strict mode the absence is logged as a warning.
     /// </summary>
     private async Task<Guid?> ResolveUserIdAsync(
-        Tenant tenant, Guid? userId, string? username, bool strictMode, CancellationToken ct = default)
+        Tenant tenant, Guid? userId, string? username, bool strictMode,
+        ConfigSyncResult result, string filePath, CancellationToken ct = default)
     {
         if (userId.HasValue)
         {
@@ -318,7 +347,11 @@ public class ConfigRepoApplier(
             if (!exists)
             {
                 if (strictMode)
+                {
+                    var msg = $"User with id '{userId}' not found (strict mode).";
+                    result.AddWarning(filePath, msg);
                     logger.LogWarning("User with id '{UserId}' not found in tenant {TenantId} (strict mode)", userId, tenant.Id);
+                }
                 return null;
             }
             return userId;
@@ -330,13 +363,60 @@ public class ConfigRepoApplier(
             if (user is null)
             {
                 if (strictMode)
+                {
+                    var msg = $"User '{username}' not found (strict mode).";
+                    result.AddWarning(filePath, msg);
                     logger.LogWarning("User '{Username}' not found in tenant {TenantId} (strict mode)", username, tenant.Id);
+                }
                 return null;
             }
             return user.Id;
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Parses a JSON5 (or plain JSON) file using Newtonsoft.Json with comment and trailing-comma support.
+    /// Returns <c>false</c> and adds an error to <paramref name="result"/> if the file cannot be parsed.
+    /// </summary>
+    private bool TryParseJson5<T>(string filePath, ConfigSyncResult result, out T? model) where T : class
+    {
+        model = null;
+        try
+        {
+            var text = File.ReadAllText(filePath);
+            var jObject = JObject.Parse(text, new JsonLoadSettings
+            {
+                CommentHandling = CommentHandling.Ignore,
+                LineInfoHandling = LineInfoHandling.Ignore,
+            });
+            model = jObject.ToObject<T>(JsonSerializer.Create(JsonSettings));
+            return true;
+        }
+        catch (JsonException ex)
+        {
+            var msg = $"JSON5 parse error: {ex.Message}";
+            result.AddError(filePath, msg);
+            logger.LogWarning(ex, "Failed to parse config file {File}", filePath);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            var msg = $"Failed to read file: {ex.Message}";
+            result.AddError(filePath, msg);
+            logger.LogWarning(ex, "Failed to read config file {File}", filePath);
+            return false;
+        }
+    }
+
+    /// <summary>Validates a model object using DataAnnotations. Returns a list of error messages.</summary>
+    private static List<string> ValidateModel(object model)
+    {
+        var ctx = new ValidationContext(model);
+        var errors = new List<ValidationResult>();
+        Validator.TryValidateObject(model, ctx, errors, validateAllProperties: true);
+        return errors.Select(e => e.ErrorMessage ?? "Validation error").ToList();
     }
 
     /// <summary>

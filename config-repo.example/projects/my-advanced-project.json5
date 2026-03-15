@@ -1,0 +1,52 @@
+// Advanced project with two git origins and reusable workflow path overrides.
+// - "Working" origin: where agents push feature branches and open PRs.
+// - "Release" origin: where the release pipeline pushes the main branch after merge.
+// Both origins use separate tokens so the release credential can be more restricted.
+{
+  "slug": "my-advanced-project",
+  "orgSlug": "my-org",
+  "name": "My Advanced Project",
+  "description": "Private project with two git origins and reusable workflow overrides.",
+
+  // Multiple git origins (takes precedence over the single-origin "gitUrl" shorthand).
+  // Origins are matched by remoteUrl; missing DB origins are added, existing ones updated.
+  "gitRepos": [
+    {
+      // Working origin — agents push branches here and open PRs
+      "remoteUrl": "https://github.com/my-org/my-advanced-repo.git",
+      "gitToken": "ghp_WORKING_TOKEN_XXXXXXXXXXXXXXXXXXXX",
+      "defaultBranch": "main",
+      "mode": "Working",    // Working | Release | ReadOnly
+    },
+    {
+      // Release origin — release pipeline pushes the default branch here after merge
+      "remoteUrl": "https://github.com/my-org/my-advanced-repo-releases.git",
+      "gitToken": "ghp_RELEASE_TOKEN_XXXXXXXXXXXXXXXXXXXX",
+      "defaultBranch": "main",
+      "mode": "Release",
+    },
+  ],
+
+  // Redirect reusable workflow calls to local clones instead of fetching from GitHub.
+  // Format: owner/repo=localPath  (one mapping per line)
+  // Passed to act via --local-repository flags.
+  "localRepositories": "my-org/reusable-workflows=/home/runner/local/reusable-workflows\nmy-org/shared-actions=/home/runner/local/shared-actions",
+
+  // Action cache (avoids re-downloading actions on every run)
+  "actionCachePath": "/home/runner/.cache/act",
+  "useNewActionCache": true,
+
+  // Runner image and secrets
+  "actRunnerImage": "catthehacker/ubuntu:act-22.04",
+  "actEnv": "DOCKER_HOST=unix:///var/run/docker.sock",
+  "actSecrets": "DEPLOY_TOKEN=replace_me\nNPM_TOKEN=replace_me",
+
+  "maxConcurrentRunners": 2,
+  "concurrentJobs": 4,
+  "mountRepositoryInDocker": true,
+
+  "members": [
+    { "username": "alice", "permissions": 127 },
+    { "username": "bob",   "permissions": 67 },
+  ],
+}

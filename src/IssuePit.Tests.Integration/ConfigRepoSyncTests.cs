@@ -80,7 +80,7 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var (tenantId, orgId, _, _) = await SeedAsync(orgSlug, $"p-{Guid.NewGuid():N}"[..16], "u1");
 
         var dir = CreateConfigDir();
-        WriteModel(dir, "orgs", $"{orgSlug}.json", new OrgConfigModel
+        WriteModel(dir, "orgs", $"{orgSlug}.json5", new OrgConfigModel
         {
             Name = "Updated Org Name",
             MaxConcurrentRunners = 5,
@@ -111,7 +111,7 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var (tenantId, orgId, _, _) = await SeedAsync(orgSlug, $"p-{Guid.NewGuid():N}"[..16], "u2");
 
         var dir = CreateConfigDir();
-        WriteModel(dir, "orgs", $"{orgSlug}.json", new OrgConfigModel { Name = "From FileName" });
+        WriteModel(dir, "orgs", $"{orgSlug}.json5", new OrgConfigModel { Name = "From FileName" });
 
         try
         {
@@ -134,7 +134,7 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var (tenantId, orgId, _, _) = await SeedAsync(orgSlug, $"p-{Guid.NewGuid():N}"[..16], "u3");
 
         var dir = CreateConfigDir();
-        WriteModel(dir, "orgs", "nonexistent-org.json", new OrgConfigModel { Name = "Should Not Apply" });
+        WriteModel(dir, "orgs", "nonexistent-org.json5", new OrgConfigModel { Name = "Should Not Apply" });
 
         try
         {
@@ -167,7 +167,7 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
         var dir = CreateConfigDir();
         // Only update name; actRunnerImage is not set in config file
-        WriteModel(dir, "orgs", $"{orgSlug}.json", new OrgConfigModel { Name = "Partial Update" });
+        WriteModel(dir, "orgs", $"{orgSlug}.json5", new OrgConfigModel { Name = "Partial Update" });
 
         try
         {
@@ -196,7 +196,7 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var (tenantId, _, projectId, _) = await SeedAsync(orgSlug, projSlug, "u5");
 
         var dir = CreateConfigDir();
-        WriteModel(dir, "projects", $"{projSlug}.json", new ProjectConfigModel
+        WriteModel(dir, "projects", $"{projSlug}.json5", new ProjectConfigModel
         {
             OrgSlug = orgSlug,
             Description = "Config description",
@@ -249,7 +249,7 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
         }
 
         var dir = CreateConfigDir();
-        WriteModel(dir, "projects", $"{projSlug}.json", new ProjectConfigModel
+        WriteModel(dir, "projects", $"{projSlug}.json5", new ProjectConfigModel
         {
             OrgSlug = orgSlug,
             GitUrl = "https://github.com/new/repo.git",
@@ -284,7 +284,7 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var (tenantId, orgId, _, userId) = await SeedAsync(orgSlug, $"p-{Guid.NewGuid():N}"[..16], username);
 
         var dir = CreateConfigDir();
-        WriteModel(dir, "orgs", $"{orgSlug}.json", new OrgConfigModel
+        WriteModel(dir, "orgs", $"{orgSlug}.json5", new OrgConfigModel
         {
             Members = [new OrgMemberConfigModel { Username = username, Role = OrgRole.Admin }]
         });
@@ -310,7 +310,7 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var (tenantId, orgId, _, userId) = await SeedAsync(orgSlug, $"p-{Guid.NewGuid():N}"[..16], "uiduser");
 
         var dir = CreateConfigDir();
-        WriteModel(dir, "orgs", $"{orgSlug}.json", new OrgConfigModel
+        WriteModel(dir, "orgs", $"{orgSlug}.json5", new OrgConfigModel
         {
             Members = [new OrgMemberConfigModel { UserId = userId, Role = OrgRole.Owner }]
         });
@@ -336,7 +336,7 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var (tenantId, orgId, _, _) = await SeedAsync(orgSlug, $"p-{Guid.NewGuid():N}"[..16], "realuser");
 
         var dir = CreateConfigDir();
-        WriteModel(dir, "orgs", $"{orgSlug}.json", new OrgConfigModel
+        WriteModel(dir, "orgs", $"{orgSlug}.json5", new OrgConfigModel
         {
             Members = [new OrgMemberConfigModel { Username = "ghost_user_not_in_db", Role = OrgRole.Admin }]
         });
@@ -363,7 +363,7 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var (tenantId, _, projectId, userId) = await SeedAsync(orgSlug, projSlug, username);
 
         var dir = CreateConfigDir();
-        WriteModel(dir, "projects", $"{projSlug}.json", new ProjectConfigModel
+        WriteModel(dir, "projects", $"{projSlug}.json5", new ProjectConfigModel
         {
             OrgSlug = orgSlug,
             Members = [new ProjectMemberConfigModel { Username = username, Permissions = ProjectPermission.Read | ProjectPermission.Write }]
@@ -398,7 +398,7 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
         }
 
         var dir = CreateConfigDir();
-        WriteModel(dir, "orgs", $"{orgSlug}.json", new OrgConfigModel
+        WriteModel(dir, "orgs", $"{orgSlug}.json5", new OrgConfigModel
         {
             Members = [new OrgMemberConfigModel { Username = username, Role = OrgRole.Admin }]
         });
@@ -453,7 +453,7 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var (tenantId, _, projectId, _) = await SeedAsync(orgSlug, projSlug, "u7");
 
         var dir = CreateConfigDir();
-        WriteModel(dir, "projects", $"{projSlug}.json", new ProjectConfigModel
+        WriteModel(dir, "projects", $"{projSlug}.json5", new ProjectConfigModel
         {
             OrgSlug = orgSlug,
             GitRepos =
@@ -497,13 +497,13 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
-    public async Task Sync_ProjectConfig_GitRepos_UpdatesExistingAndRemovesObsolete()
+    public async Task Sync_ProjectConfig_GitRepos_UpsertsWithoutRemovingExisting()
     {
         var orgSlug = $"obs-org-{Guid.NewGuid():N}"[..20];
         var projSlug = $"obs-{Guid.NewGuid():N}"[..20];
         var (tenantId, _, projectId, _) = await SeedAsync(orgSlug, projSlug, "u8");
 
-        // Pre-seed two repos; one will be kept, one will be removed
+        // Pre-seed two repos; config only mentions one — both should remain (no deletion)
         using (var setup = factory.Services.CreateScope())
         {
             var db = setup.ServiceProvider.GetRequiredService<IssuePitDbContext>();
@@ -516,13 +516,13 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
                 new GitRepository
                 {
                     Id = Guid.NewGuid(), ProjectId = projectId,
-                    RemoteUrl = "https://github.com/example/remove.git", DefaultBranch = "main", Mode = GitOriginMode.ReadOnly
+                    RemoteUrl = "https://github.com/example/another.git", DefaultBranch = "main", Mode = GitOriginMode.ReadOnly
                 });
             await db.SaveChangesAsync();
         }
 
         var dir = CreateConfigDir();
-        WriteModel(dir, "projects", $"{projSlug}.json", new ProjectConfigModel
+        WriteModel(dir, "projects", $"{projSlug}.json5", new ProjectConfigModel
         {
             OrgSlug = orgSlug,
             GitRepos =
@@ -544,9 +544,12 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
             using var scope = factory.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
             var repos = db.GitRepositories.Where(r => r.ProjectId == projectId).ToList();
-            Assert.Single(repos); // removed origin is gone
-            Assert.Equal("https://github.com/example/keep.git", repos[0].RemoteUrl);
-            Assert.Equal("new-token", repos[0].AuthToken);
+            // Both DB repos remain (no removal) — only the mentioned one is updated
+            Assert.Equal(2, repos.Count);
+            var updated = repos.Single(r => r.RemoteUrl == "https://github.com/example/keep.git");
+            Assert.Equal("new-token", updated.AuthToken);
+            // The non-mentioned one is untouched
+            Assert.Contains(repos, r => r.RemoteUrl == "https://github.com/example/another.git");
         }
         finally { Directory.Delete(dir, recursive: true); }
     }
@@ -559,7 +562,7 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var (tenantId, _, projectId, _) = await SeedAsync(orgSlug, projSlug, "u9");
 
         var dir = CreateConfigDir();
-        WriteModel(dir, "projects", $"{projSlug}.json", new ProjectConfigModel
+        WriteModel(dir, "projects", $"{projSlug}.json5", new ProjectConfigModel
         {
             OrgSlug = orgSlug,
             LocalRepositories = "my-org/reusable-workflows=/home/runner/local/reusable-workflows",
@@ -607,7 +610,7 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
         var dir = CreateConfigDir();
         // Write a valid config for org1
-        WriteModel(dir, "orgs", $"{orgSlug1}.json", new OrgConfigModel { Name = "Valid Updated" });
+        WriteModel(dir, "orgs", $"{orgSlug1}.json5", new OrgConfigModel { Name = "Valid Updated" });
         // Write deliberately broken JSON for org2
         var orgsDir = Path.Combine(dir, "orgs");
         File.WriteAllText(Path.Combine(orgsDir, $"{orgSlug2}.json"), "{{ not valid json }");
@@ -637,7 +640,7 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var (tenantId, _, projectId, _) = await SeedAsync(orgSlug, projSlug, "u11");
 
         var dir = CreateConfigDir();
-        WriteModel(dir, "projects", $"{projSlug}.json", new ProjectConfigModel
+        WriteModel(dir, "projects", $"{projSlug}.json5", new ProjectConfigModel
         {
             OrgSlug = "nonexistent-org-slug", // org not in DB
             Name = "Should Not Apply"
@@ -666,7 +669,7 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var (tenantId, orgId, _, _) = await SeedAsync(orgSlug, $"p-{Guid.NewGuid():N}"[..16], "strictuser");
 
         var dir = CreateConfigDir();
-        WriteModel(dir, "orgs", $"{orgSlug}.json", new OrgConfigModel
+        WriteModel(dir, "orgs", $"{orgSlug}.json5", new OrgConfigModel
         {
             Name = "Strict Name Update",
             Members = [new OrgMemberConfigModel { Username = "definitely_not_in_db", Role = OrgRole.Admin }]
@@ -685,6 +688,86 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
             Assert.NotNull(org);
             Assert.Equal("Strict Name Update", org.Name); // other fields still applied
             Assert.Equal(0, db.OrganizationMembers.Count(m => m.OrgId == orgId)); // no member added
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    // -----------------------------------------------------------------------
+    // Schema validation tests
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task Sync_OrgConfig_Json5WithComments_ParsedCorrectly()
+    {
+        var orgSlug = $"j5-org-{Guid.NewGuid():N}"[..20];
+        var (tenantId, orgId, _, _) = await SeedAsync(orgSlug, $"p-{Guid.NewGuid():N}"[..16], "u12");
+
+        var dir = CreateConfigDir();
+        var orgsDir = Path.Combine(dir, "orgs");
+        Directory.CreateDirectory(orgsDir);
+        // JSON5 with line comments and trailing comma
+        File.WriteAllText(Path.Combine(orgsDir, $"{orgSlug}.json5"), $$"""
+            {
+              // This is a JSON5 comment
+              "slug": "{{orgSlug}}",
+              "name": "JSON5 Org Name", // trailing comma below
+              "maxConcurrentRunners": 3,
+            }
+            """);
+
+        try
+        {
+            await SetConfigRepoAsync(tenantId, dir);
+            var resp = await TriggerSyncAsync(tenantId);
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+            using var scope = factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+            var org = await db.Organizations.FindAsync(orgId);
+            Assert.NotNull(org);
+            Assert.Equal("JSON5 Org Name", org.Name);
+            Assert.Equal(3, org.MaxConcurrentRunners);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public async Task Sync_OrgConfig_SchemaValidationError_FileSkippedAndErrorInResponse()
+    {
+        var orgSlug = $"schema-org-{Guid.NewGuid():N}"[..20];
+        var (tenantId, orgId, _, _) = await SeedAsync(orgSlug, $"p-{Guid.NewGuid():N}"[..16], "u13");
+
+        var dir = CreateConfigDir();
+        var orgsDir = Path.Combine(dir, "orgs");
+        Directory.CreateDirectory(orgsDir);
+        // maxConcurrentRunners exceeds the [Range(0, 1000)] limit
+        File.WriteAllText(Path.Combine(orgsDir, $"{orgSlug}.json5"), $$"""
+            {
+              "slug": "{{orgSlug}}",
+              "name": "Schema Error Org",
+              "maxConcurrentRunners": 9999
+            }
+            """);
+
+        try
+        {
+            await SetConfigRepoAsync(tenantId, dir);
+            var resp = await TriggerSyncAsync(tenantId);
+            // Sync returns 200 even with validation errors (partial apply)
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+            var body = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            var issues = body.GetProperty("issues").EnumerateArray().ToList();
+            Assert.Contains(issues, i =>
+                i.GetProperty("severity").GetString() == "error" &&
+                i.GetProperty("message").GetString()!.Contains("maxConcurrentRunners"));
+
+            // Validation error means the file was skipped — org name unchanged
+            using var scope = factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+            var org = await db.Organizations.FindAsync(orgId);
+            Assert.NotNull(org);
+            Assert.Equal("Cfg Org", org.Name); // unchanged
         }
         finally { Directory.Delete(dir, recursive: true); }
     }

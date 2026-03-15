@@ -103,9 +103,19 @@ public class TenantsController(IssuePitDbContext db, TenantDatabaseService dbSer
             ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "issuepit", "repos");
 
         var configPath = await ConfigRepoApplier.ResolveConfigPathAsync(url, token, username, tenant.Id, reposBase);
-        await applier.ApplyAsync(tenant, configPath, strict);
+        var syncResult = await applier.ApplyAsync(tenant, configPath, strict);
 
-        return Ok(new { message = "Config repo sync completed." });
+        return Ok(new
+        {
+            message = "Config repo sync completed.",
+            filesProcessed = syncResult.FilesProcessed,
+            issues = syncResult.Issues.Select(i => new
+            {
+                severity = i.Severity.ToString().ToLowerInvariant(),
+                file = Path.GetFileName(i.File),
+                message = i.Message
+            })
+        });
     }
 
     [HttpDelete("{id:guid}")]
