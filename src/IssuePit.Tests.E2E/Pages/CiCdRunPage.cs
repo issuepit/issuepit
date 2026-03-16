@@ -10,6 +10,9 @@ public class CiCdRunPage(IPage page)
     public async Task<IResponse?> GotoAsync(string projectId, string runId) =>
         await page.GotoAsync($"/projects/{projectId}/runs/cicd/{runId}");
 
+    public async Task GotoTestsTabAsync(string projectId, string runId) =>
+        await page.GotoAsync($"/projects/{projectId}/runs/cicd/{runId}?tab=tests");
+
     public async Task WaitForLoadAsync() =>
         await page.WaitForSelectorAsync("text=CI/CD Run", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
 
@@ -24,8 +27,23 @@ public class CiCdRunPage(IPage page)
     }
 
     /// <summary>
-    /// Returns true when the jobs tab shows the empty state message.
+    /// Clicks the Tests tab and waits for the tab content to render.
     /// </summary>
+    public async Task ClickTestsTabAsync()
+    {
+        await page.ClickAsync("button:has-text('Tests')");
+        await page.WaitForTimeoutAsync(E2ETimeouts.RetryDelay * 1000);
+    }
+
+    /// <summary>Returns true when the tests tab shows at least one test suite result.</summary>
+    public async Task<bool> HasTestSuitesAsync() =>
+        await page.IsVisibleAsync(".test-suite, [class*='space-y-4'] > div, text=passed, text=Passed");
+
+    /// <summary>Returns true when the tests tab shows the empty state message.</summary>
+    public async Task<bool> IsTestsTabEmptyAsync() =>
+        await page.IsVisibleAsync("text=No test results available");
+
+    /// <summary>Returns true when the jobs tab shows the empty state message.</summary>
     public async Task<bool> IsJobsTabEmptyAsync() =>
         await page.IsVisibleAsync("text=No job data available");
 
