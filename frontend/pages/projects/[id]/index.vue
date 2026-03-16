@@ -170,7 +170,7 @@
           <span class="font-medium">Draft mode</span>
           <span class="text-amber-400/70 text-xs hidden sm:inline">— drag to reorder · configure each section</span>
         </div>
-        <div class="flex items-center gap-1.5">
+        <div class="flex items-center gap-1.5 flex-wrap justify-end">
           <button
             draggable="true"
             @click="addRowBreak()"
@@ -182,6 +182,20 @@
             </svg>
             Row break
           </button>
+          <button @click="showLoadModal = true"
+            class="text-xs text-gray-500 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            Load
+          </button>
+          <button @click="handleExportJson"
+            class="text-xs text-gray-500 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l4 4m0 0l4-4m-4 4V4" />
+            </svg>
+            Export
+          </button>
           <button @click="resetLayout"
             class="text-xs text-gray-400 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors">
             Reset
@@ -190,11 +204,27 @@
             class="text-xs text-gray-400 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors">
             Cancel
           </button>
+          <button @click="showSaveModal = true"
+            class="text-xs text-gray-400 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+            </svg>
+            Save as…
+          </button>
           <button @click="saveDraftMode"
             class="text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg transition-colors font-medium">
             Save
           </button>
         </div>
+      </div>
+
+      <!-- Import error -->
+      <div v-if="importError" class="mb-3 flex items-center gap-2 bg-red-900/30 border border-red-700/40 rounded-lg px-4 py-2">
+        <svg class="w-3.5 h-3.5 shrink-0 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+        </svg>
+        <p class="text-xs text-red-400 flex-1">{{ importError }}</p>
+        <button @click="importError = null" class="text-red-500 hover:text-red-300 text-xs">✕</button>
       </div>
 
       <!-- Hidden sections restore row (draft mode) -->
@@ -799,6 +829,26 @@
         </div>
       </div>
     </div>
+
+    <!-- Save as modal -->
+    <DashboardSaveModal
+      v-if="showSaveModal"
+      :layout-json="exportLayoutJson()"
+      dashboard-type="project"
+      :project-id="id"
+      :show-project-default="true"
+      @close="showSaveModal = false"
+      @saved="showSaveModal = false"
+    />
+
+    <!-- Load / import modal -->
+    <DashboardLoadModal
+      v-if="showLoadModal"
+      dashboard-type="project"
+      :project-id="id"
+      @close="showLoadModal = false"
+      @apply="applyImportedLayout"
+    />
   </div>
 </template>
 
@@ -1003,6 +1053,8 @@ const {
   addRowBreak,
   removeRowBreak,
   captureSnapshot,
+  exportLayoutJson,
+  importLayoutJson,
   onDragStart: onDragStartRaw,
   onDragOver: onDragOverRaw,
   onDragEnter: onDragEnterRaw,
@@ -1033,6 +1085,32 @@ function onSectionDragEnter(e: DragEvent, id: string) { onDragEnterRaw(e, id) }
 function onSectionDragEnd(e: DragEvent) { onDragEndRaw(e) }
 function toggleTabGroupWithNext(sid: SectionId) { toggleTabGroupWithNextRaw(sid) }
 function toggleStackGroupWithNext(sid: SectionId) { toggleStackGroupWithNextRaw(sid) }
+
+// ── Template save / load / export / import ────────────────────────────────
+const showSaveModal = ref(false)
+const showLoadModal = ref(false)
+const importError = ref<string | null>(null)
+
+function handleExportJson() {
+  if (!import.meta.client) return
+  const json = exportLayoutJson()
+  const blob = new Blob([json], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `project-${id}-dashboard-layout.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function applyImportedLayout(json: string) {
+  const ok = importLayoutJson(json)
+  if (!ok) {
+    importError.value = 'The selected file is not a valid dashboard layout JSON.'
+  } else {
+    importError.value = null
+  }
+}
 
 // Column span class based on width (12-col grid)
 function colSpanClass(width: SectionWidth): string {
