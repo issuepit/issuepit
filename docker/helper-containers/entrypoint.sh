@@ -258,6 +258,7 @@ import json, os, sys
 
 mcp_url = os.environ.get("ISSUEPIT_MCP_URL", "")
 agents_json_str = os.environ.get("ISSUEPIT_OPENCODE_AGENTS_JSON", "")
+extra_mcp_json_str = os.environ.get("ISSUEPIT_OPENCODE_EXTRA_MCP_JSON", "")
 opencode_port = os.environ.get("OPENCODE_PORT", "")
 opencode_password = os.environ.get("OPENCODE_PASSWORD", "")
 config_file = os.path.join(os.path.expanduser("~"), ".config", "opencode", "config.json")
@@ -283,6 +284,29 @@ if mcp_url:
             "url": mcp_url,
         }
     }
+
+# Merge extra (agent-linked) MCP servers from ISSUEPIT_OPENCODE_EXTRA_MCP_JSON.
+# Format: [{"name": "...", "type": "http"|"sse", "url": "...", "headers": {...}|null}, ...]
+if extra_mcp_json_str:
+    try:
+        extra_mcps = json.loads(extra_mcp_json_str)
+        if "mcp" not in config:
+            config["mcp"] = {}
+        for server in extra_mcps:
+            key = server.get("name", "")
+            if not key:
+                continue
+            entry = {
+                "type": server.get("type", "http"),
+                "url": server.get("url", ""),
+            }
+            headers = server.get("headers")
+            if headers:
+                entry["headers"] = headers
+            config["mcp"][key] = entry
+        print(f"[entrypoint] Extra MCP servers merged: {[s.get('name') for s in extra_mcps if s.get('name')]}")
+    except Exception as e:
+        print(f"[entrypoint] Warning: could not parse ISSUEPIT_OPENCODE_EXTRA_MCP_JSON: {e} (value: {extra_mcp_json_str[:200]})", file=sys.stderr)
 
 # Add agents from ISSUEPIT_OPENCODE_AGENTS_JSON when present.
 # Format expected: [{"name": "...", "model": "...", "prompt": "...", "agentType": "primary"|"subagent"|null}, ...]

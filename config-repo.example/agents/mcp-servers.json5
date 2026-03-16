@@ -1,0 +1,53 @@
+// Example MCP server configurations for use with opencode agents.
+//
+// To register these servers go to Configuration → MCP Servers in the IssuePit UI,
+// then link them to agents in the agent settings (Configuration → Agents).
+//
+// Once linked, the server URL and its secrets (as HTTP headers) are automatically
+// injected into the opencode config.json inside the agent container.
+
+// ─── GitHub MCP ───────────────────────────────────────────────────────────────
+//
+// Provides tools for reading/writing GitHub issues, pull requests, branches,
+// and code search via the GitHub API.
+//
+// URL:  https://api.githubcopilot.com/mcp/
+// Auth: Bearer token stored as a secret with key "Authorization"
+//       Value format: "Bearer ghp_XXXXXXXXXXXXXXXXXXXX"
+//
+// Secret setup:
+//   1. Go to Configuration → MCP Servers → Add Server
+//   2. Name: GitHub MCP  |  URL: https://api.githubcopilot.com/mcp/
+//   3. After saving, open the server → Secrets tab → Add Secret
+//      Key: Authorization  |  Value: Bearer ghp_XXXXXXXXXXXXXXXXXXXX
+//
+// GitHub token scopes required: repo, read:org
+// Create a token at: https://github.com/settings/tokens
+{
+  "name": "GitHub MCP",
+  "url": "https://api.githubcopilot.com/mcp/",
+  // Transport type — "http" uses the Streamable HTTP protocol supported by opencode
+  "configuration": { "type": "http" },
+  // Secrets are added via the UI Secrets tab (Configuration → MCP Servers → your server → Secrets),
+  // or inline below (recommended only for private/local repos — keep this file out of public VCS).
+  "secrets": {
+    // Replace with your actual GitHub PAT (scopes: repo, read:org).
+    // Create a token at: https://github.com/settings/tokens
+    "Authorization": "plain:Bearer ghp_XXXXXXXXXXXXXXXXXXXX"
+  }
+}
+
+// ─── Context7 MCP ─────────────────────────────────────────────────────────────
+//
+// Provides up-to-date documentation and code examples for popular libraries
+// (React, Vue, Next.js, .NET, etc.) directly to the agent's context window.
+//
+// No authentication required.
+//
+// URL:  https://mcp.context7.com/mcp
+// Docs: https://context7.com
+{
+  "name": "Context7",
+  "url": "https://mcp.context7.com/mcp",
+  "configuration": { "type": "http" },
+}
