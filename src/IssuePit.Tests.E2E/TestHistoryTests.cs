@@ -133,7 +133,8 @@ public class TestHistoryTests : IAsyncLifetime
     [Fact]
     public async Task Ui_CiCdRunTestsTab_ShowsImportedTrxResults()
     {
-        if (FrontendUrl is null) return;
+        if (FrontendUrl is null)
+            throw Xunit.Sdk.SkipException.ForSkip("Skipping UI test: FRONTEND_URL not set.");
 
         var (apiClient, projectId, username, password) = await SetupProjectAsync();
         using var _ = apiClient;
@@ -180,7 +181,8 @@ public class TestHistoryTests : IAsyncLifetime
     [Fact]
     public async Task Ui_ProjectDashboard_ShowsTestHistorySection()
     {
-        if (FrontendUrl is null) return;
+        if (FrontendUrl is null)
+            throw Xunit.Sdk.SkipException.ForSkip("Skipping UI test: FRONTEND_URL not set.");
 
         var (apiClient, projectId, username, password) = await SetupProjectAsync();
         using var _ = apiClient;
@@ -222,7 +224,8 @@ public class TestHistoryTests : IAsyncLifetime
     [Fact]
     public async Task Ui_TestHistoryPage_ShowsImportedRunSummary()
     {
-        if (FrontendUrl is null) return;
+        if (FrontendUrl is null)
+            throw Xunit.Sdk.SkipException.ForSkip("Skipping UI test: FRONTEND_URL not set.");
 
         var (apiClient, projectId, username, password) = await SetupProjectAsync();
         using var _ = apiClient;
@@ -266,9 +269,11 @@ public class TestHistoryTests : IAsyncLifetime
     [Fact]
     public async Task Ui_CiCdRun_WithTrxArtifact_ShowsResultsInTestsTab()
     {
-        if (FrontendUrl is null) return;
+        if (FrontendUrl is null)
+            throw Xunit.Sdk.SkipException.ForSkip("Skipping UI test: FRONTEND_URL not set.");
         // Requires the dummy CI/CD repo to be available (set by AspireFixture when Docker is present).
-        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CICD_E2E_REPO_PATH"))) return;
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CICD_E2E_REPO_PATH")))
+            throw Xunit.Sdk.SkipException.ForSkip("Skipping UI test: CICD_E2E_REPO_PATH not set (Docker CI/CD test requires dummy repo).");
 
         var (apiClient, projectId, username, password) = await SetupProjectAsync();
         using var _ = apiClient;
