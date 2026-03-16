@@ -246,21 +246,19 @@
             @dragenter="isDraftMode ? onSectionDragEnter($event, item.type === 'section' ? item.sid : item.sections[0]) : undefined"
             @dragend="isDraftMode ? onSectionDragEnd($event) : undefined">
 
-            <!-- Gap zone sentinels: visible strips in the CSS gap on each side of the card.
+            <!-- Gap zone sentinels: invisible divs in the CSS gap on each side of the card.
                  Only rendered when dragging; the card itself does NOT trigger reorder — only these do. -->
             <template v-if="isDraftMode && dragSectionId !== null && !((item.type === 'section' ? dragSectionId === item.sid : (item.sections ?? []).includes(dragSectionId as SectionId)))">
               <!-- Left gap sentinel → insert BEFORE this item -->
               <div
-                class="absolute inset-y-0 -left-2 w-2 z-30 pointer-events-auto transition-colors"
-                :class="dragHoverGap?.id === (item.type === 'section' ? item.sid : item.sections[0]) && !dragHoverGap.after ? 'bg-brand-500/70' : 'bg-brand-500/20'"
+                class="absolute inset-y-0 -left-2 w-2 z-30 pointer-events-auto"
                 @dragover.prevent
                 @dragenter="onSectionGapDragEnter($event, item.type === 'section' ? item.sid : item.sections[0], false)"
                 @dragleave="onGapDragLeave()"
               />
               <!-- Right gap sentinel → insert AFTER this item -->
               <div
-                class="absolute inset-y-0 -right-2 w-2 z-30 pointer-events-auto transition-colors"
-                :class="dragHoverGap?.id === (item.type === 'section' ? item.sid : item.sections[0]) && dragHoverGap.after ? 'bg-brand-500/70' : 'bg-brand-500/20'"
+                class="absolute inset-y-0 -right-2 w-2 z-30 pointer-events-auto"
                 @dragover.prevent
                 @dragenter="onSectionGapDragEnter($event, item.type === 'section' ? item.sid : item.sections[0], true)"
                 @dragleave="onGapDragLeave()"
@@ -1003,15 +1001,14 @@ const DEFAULT_CONFIGS = {
   history:     { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'md',  tabGroup: null, stackGroup: null },
   kanban:      { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'md',  tabGroup: null, stackGroup: null },
 }
-const DEFAULT_ORDER: SectionId[] = ['statIssues', 'statCommits', 'statMRs', 'milestones', 'issues', 'agentRuns', 'cicdRuns', 'history', 'kanban']
-const DRAFT_LAYOUT_KEY = `project-dashboard-layout-v6-${id}`
+const DEFAULT_ORDER: string[] = ['statIssues', 'statCommits', 'statMRs', 'milestones', 'rowbreak-after-milestones', 'issues', 'agentRuns', 'cicdRuns', 'history', 'kanban']
+const DRAFT_LAYOUT_KEY = `project-dashboard-layout-v7-${id}`
 
 const {
   layout,
   isDraftMode,
   dragSectionId,
   dragHoverSid,
-  dragHoverGap,
   renderedItems,
   sectionCfg: sectionCfgRaw,
   updateCfg: updateCfgRaw,

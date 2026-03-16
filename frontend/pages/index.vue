@@ -97,21 +97,19 @@
           @dragenter="isDraftMode ? onDragEnter($event, item.type === 'section' ? item.sid : item.sections[0]) : undefined"
           @dragend="isDraftMode ? onDragEnd($event) : undefined">
 
-          <!-- Gap zone sentinels: visible strips in the CSS gap on each side of the card.
+          <!-- Gap zone sentinels: invisible divs in the CSS gap on each side of the card.
                Only rendered when dragging; the card itself does NOT trigger reorder — only these do. -->
           <template v-if="isDraftMode && dragSectionId !== null && !((item.type === 'section' ? dragSectionId === item.sid : (item.sections ?? []).includes(dragSectionId as MainSectionId)))">
             <!-- Left gap sentinel → insert BEFORE this item -->
             <div
-              class="absolute inset-y-0 -left-2 w-2 z-30 pointer-events-auto transition-colors"
-              :class="dragHoverGap?.id === (item.type === 'section' ? item.sid : item.sections[0]) && !dragHoverGap.after ? 'bg-brand-500/70' : 'bg-brand-500/20'"
+              class="absolute inset-y-0 -left-2 w-2 z-30 pointer-events-auto"
               @dragover.prevent
               @dragenter="onGapDragEnter($event, item.type === 'section' ? item.sid : item.sections[0], false)"
               @dragleave="onGapDragLeave()"
             />
             <!-- Right gap sentinel → insert AFTER this item -->
             <div
-              class="absolute inset-y-0 -right-2 w-2 z-30 pointer-events-auto transition-colors"
-              :class="dragHoverGap?.id === (item.type === 'section' ? item.sid : item.sections[0]) && dragHoverGap.after ? 'bg-brand-500/70' : 'bg-brand-500/20'"
+              class="absolute inset-y-0 -right-2 w-2 z-30 pointer-events-auto"
               @dragover.prevent
               @dragenter="onGapDragEnter($event, item.type === 'section' ? item.sid : item.sections[0], true)"
               @dragleave="onGapDragLeave()"
@@ -513,7 +511,6 @@ const {
   isDraftMode,
   dragSectionId,
   dragHoverSid,
-  dragHoverGap,
   renderedItems,
   hiddenSections,
   sectionCfg: sectionCfgRaw,
