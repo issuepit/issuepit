@@ -1500,6 +1500,13 @@ namespace IssuePit.Core.Migrations
                     b.Property<DateTime?>("MergedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int?>("GitHubPrNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("GitHubPrUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uuid");
 
