@@ -83,4 +83,63 @@ public class ProjectSettingsPage(IPage page)
         await page.ClickAsync("button[type='submit']:has-text('Save Changes')");
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
     }
+
+    // ── Custom Properties ──────────────────────────────────────────────────────
+
+    /// <summary>Opens the "Add Property" modal for custom issue properties.</summary>
+    public async Task OpenAddPropertyAsync()
+    {
+        await page.ClickAsync("button:has-text('+ Add Property')");
+        await page.WaitForSelectorAsync("text=New Property",
+            new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+    }
+
+    /// <summary>Fills the custom property form with a name and type, then saves it.</summary>
+    public async Task AddPropertyAsync(string name, string type = "Text")
+    {
+        // Scope all interactions to the open property modal to avoid matching page-level selects
+        var modal = page.Locator("div.fixed").Filter(new LocatorFilterOptions
+        {
+            Has = page.Locator("h2:has-text('New Property')")
+        });
+        await modal.Locator("input[placeholder='e.g. Due Date']").FillAsync(name);
+        // Select by visible label text — option values are now snake_case strings, not display names
+        await modal.Locator("select").SelectOptionAsync(
+            new[] { new SelectOptionValue { Label = type } });
+        await modal.Locator("button:has-text('Create')").ClickAsync();
+        // Wait for the modal to close before proceeding
+        await modal.WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Hidden,
+            Timeout = E2ETimeouts.Default
+        });
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+    }
+
+    /// <summary>Returns true if a custom property row with the given name is visible.</summary>
+    public async Task<bool> HasPropertyAsync(string name)
+    {
+        try
+        {
+            await page.WaitForSelectorAsync($"text={name}",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Returns the type label shown next to a custom property row (e.g., "Text", "Date", "Enum").
+    /// Returns empty string if the property is not found.
+    /// </summary>
+    public async Task<string> GetPropertyTypeLabelAsync(string propertyName)
+    {
+        // Each property row: <span class="font-medium">Name</span> <span class="text-gray-500">TypeLabel</span>
+        var row = page.Locator($".space-y-2 > div:has-text('{propertyName}')").First;
+        var typeSpan = row.Locator("span.text-xs.text-gray-500").First;
+        return await typeSpan.InnerTextAsync();
+    }
 }

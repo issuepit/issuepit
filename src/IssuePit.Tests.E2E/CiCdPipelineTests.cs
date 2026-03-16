@@ -384,9 +384,9 @@ public class CiCdPipelineTests(AspireFixture fixture)
         var runId = run.GetProperty("id").GetString()!;
         await AssertRunSucceededAsync(client, run, runId);
 
-        var artifactsResp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts");
-        Assert.Equal(HttpStatusCode.OK, artifactsResp.StatusCode);
-        var artifacts = await artifactsResp.Content.ReadFromJsonAsync<JsonElement>();
+        // The dummy workflow uploads two artifacts. Poll until both are visible because
+        // the worker persists terminal run status before completing artifact processing.
+        var artifacts = await WaitForArtifactsAsync(client, runId, 2, TimeSpan.FromSeconds(30));
 
         // The dummy workflow uploads build-output and test-results artifacts.
         // The -W filter must also prevent ci-upload-v7.yml from running; verify its
@@ -422,9 +422,10 @@ public class CiCdPipelineTests(AspireFixture fixture)
         var runId = run.GetProperty("id").GetString()!;
         await AssertRunSucceededAsync(client, run, runId);
 
-        var artifactsResp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts");
-        Assert.Equal(HttpStatusCode.OK, artifactsResp.StatusCode);
-        var artifacts = await artifactsResp.Content.ReadFromJsonAsync<JsonElement>();
+        // The v7 workflow has two jobs and uploads two artifacts. Poll until both are
+        // visible because the worker persists terminal run status before completing
+        // artifact processing, so the list may be empty immediately after the run ends.
+        var artifacts = await WaitForArtifactsAsync(client, runId, 2, TimeSpan.FromSeconds(30));
 
         // The v7 workflow uploads build-output-v7 and test-results-v7 artifacts.
         // The -W filter must also prevent ci.yml from running; verify its non-v7

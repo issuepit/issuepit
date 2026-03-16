@@ -84,4 +84,14 @@ public class IssueDetailPage(IPage page)
                 Timeout = E2ETimeouts.Short
             });
     }
+
+    /// <summary>
+    /// Returns true if a custom property with the given label is visible in the sidebar.
+    /// </summary>
+    public async Task<bool> IsCustomPropertyVisibleAsync(string propertyName)
+    {
+        // The sidebar renders the property name inside a <p> tag with a CSS uppercase class.
+        // Playwright text selectors match the DOM text content (original case), not the CSS-transformed text.
+        return await page.Locator($"p.uppercase:has-text('{propertyName}')").IsVisibleAsync();
+    }
 }
