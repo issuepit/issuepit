@@ -614,17 +614,38 @@ public partial class DockerCiCdRuntime(
                 }
 
                 // Step: Run act.
+                // Capture any non-cancellation exception so that the artifact copy step below
+                // can still run even when act's exec stream fails (e.g. transient network hiccup
+                // while draining logs from a long-running matrix build). Without this, a Docker
+                // API connection reset would silently discard all artifacts produced by the run.
                 await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: {string.Join(' ', actCmd)}", LogStream.Stdout);
-                var actExitCode = await ExecCommandAsync(container.ID, actCmd, onLogLine, cancellationToken);
+                long actExitCode = 0;
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo? actExceptionInfo = null;
+                try
+                {
+                    actExitCode = await ExecCommandAsync(container.ID, actCmd, onLogLine, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    // Preserve the exception so it can be re-thrown after artifacts are collected.
+                    actExceptionInfo = System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex);
+                }
 
                 // Step: Copy artifacts from the container to the local artifact directory (best-effort,
-                // regardless of act exit code so artifacts are captured even on partial runs).
+                // regardless of act exit code or whether act's exec threw an exception).
                 // Uses the Docker archive API — no S3 or shared filesystem required.
                 if (hasArtifacts)
                 {
                     await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: collecting artifacts from container", LogStream.Stdout);
                     await CopyArtifactsFromContainerAsync(container.ID, trigger.ArtifactServerPath!, onLogLine, cancellationToken);
                 }
+
+                // Re-throw if act's exec failed with a non-cancellation exception.
+                actExceptionInfo?.Throw();
 
                 if (actExitCode != 0)
                     throw new Exception(

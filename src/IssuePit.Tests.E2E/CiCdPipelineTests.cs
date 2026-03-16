@@ -475,6 +475,47 @@ public class CiCdPipelineTests(AspireFixture fixture)
         Assert.Equal("DummyTest_Passes", testCases[0].GetProperty("methodName").GetString());
     }
 
+    /// <summary>
+    /// Verifies that a CI/CD run using the <c>ci-trx.yml</c> workflow (which uploads a
+    /// <c>test-results-trx</c> artifact) stores the parsed TRX results and that the
+    /// test-results API endpoint returns them.
+    /// This mirrors the <c>dummy-cicd-action-test</c> project's <c>create-trx</c> job.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(RuntimeModes))]
+    public async Task CiCdRun_StoresTrxTestResults_WithTrxArtifactName(string runtimeMode)
+    {
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip(SkipReason(runtimeMode));
+
+        var (client, projectId) = await SetupProjectAsync();
+        using var _ = client;
+
+        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+            BuildTriggerPayload(projectId, "e2e-trx-name-abc", runtimeMode, "ci-trx.yml"));
+
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
+
+        // Poll for test results — the worker may finish TRX processing slightly after the
+        // run status transitions to Succeeded, so retry for a short window.
+        var suites = await WaitForTestResultsAsync(client, runId, expectedCount: 1, TimeSpan.FromSeconds(30));
+
+        Assert.Equal(1, suites.GetArrayLength());
+
+        var suite = suites[0];
+        Assert.Equal("test-results-trx", suite.GetProperty("artifactName").GetString());
+        Assert.Equal(1, suite.GetProperty("totalTests").GetInt32());
+        Assert.Equal(1, suite.GetProperty("passedTests").GetInt32());
+        Assert.Equal(0, suite.GetProperty("failedTests").GetInt32());
+
+        var testCases = suite.GetProperty("testCases");
+        Assert.Equal(1, testCases.GetArrayLength());
+        Assert.Equal("Passed", testCases[0].GetProperty("outcomeName").GetString());
+        Assert.Equal("DummyTest_Passes", testCases[0].GetProperty("methodName").GetString());
+    }
+
     [Theory]
     [MemberData(nameof(RuntimeModes))]
     public async Task CiCdRun_ArtifactsHaveStorageKey(string runtimeMode)
@@ -825,5 +866,32 @@ public class CiCdPipelineTests(AspireFixture fixture)
         jobId != null &&
         (jobId.Equals(suffix, StringComparison.OrdinalIgnoreCase) ||
          jobId.EndsWith("/" + suffix, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Polls <c>GET /api/cicd-runs/{runId}/test-results</c> until the response contains at
+    /// least <paramref name="expectedCount"/> suites, or the timeout elapses.
+    /// The worker finalises TRX processing after the run status transitions to terminal, so
+    /// callers must not assert immediately on the test-results endpoint.
+    /// </summary>
+    private static async Task<JsonElement> WaitForTestResultsAsync(
+        HttpClient client,
+        string runId,
+        int expectedCount,
+        TimeSpan timeout)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var last = default(JsonElement);
+        while (sw.Elapsed < timeout)
+        {
+            var resp = await client.GetAsync($"/api/cicd-runs/{runId}/test-results");
+            resp.EnsureSuccessStatusCode();
+            last = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            if (last.GetArrayLength() >= expectedCount)
+                return last;
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+        }
+
+        return last; // callers will assert on the content
+    }
 }
 
