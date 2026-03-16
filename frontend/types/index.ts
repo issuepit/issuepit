@@ -1038,6 +1038,17 @@ export interface IssueEvent {
   createdAt: string
 }
 
+export interface IssueGitMapping {
+  id: string
+  issueId: string
+  repositoryId: string
+  repositoryUrl: string
+  branchName?: string
+  commitSha?: string
+  source: 'BranchName' | 'CommitMessage'
+  detectedAt: string
+}
+
 export interface ProjectMetricSnapshot {
   recordedAt: string
   openIssues: number
@@ -1254,7 +1265,7 @@ export interface GitHubConflict {
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// <summary>Type discriminator for scheduled task runs.</summary>
-export type ScheduledTaskType = 'GitHubSync'
+export type ScheduledTaskType = 'GitHubSync' | 'BranchDetection'
 
 export interface ScheduledTaskRun {
   id: string

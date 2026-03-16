@@ -8,8 +8,7 @@ namespace IssuePit.Api.Controllers;
 
 /// <summary>
 /// Provides a cross-project view of scheduled task (background service) runs.
-/// Currently surfaces GitHub sync runs; designed to be extended when more
-/// scheduled task types are added.
+/// Surfaces GitHub sync runs and branch-detection runs, ordered newest first.
 /// </summary>
 [ApiController]
 [Route("api/scheduled-tasks")]
@@ -17,9 +16,20 @@ public class ScheduledTasksController(
     IssuePitDbContext db,
     TenantContext ctx) : ControllerBase
 {
+    private record ScheduledTaskRunDto(
+        Guid Id,
+        Guid ProjectId,
+        string ProjectName,
+        GitHubSyncRunStatus Status,
+        string? Summary,
+        DateTime StartedAt,
+        DateTime? CompletedAt,
+        string Type);
+
     /// <summary>
-    /// Lists all GitHub sync runs visible to the current tenant, newest first.
-    /// Supports filtering by project, status, and optionally limits the result set.
+    /// Lists all scheduled task runs (GitHub sync + branch detection) visible to the current
+    /// tenant, newest first.  Supports filtering by project, status, and optionally limits
+    /// the result set.
     /// </summary>
     [HttpGet("runs")]
     public async Task<IActionResult> ListRuns(
@@ -29,42 +39,77 @@ public class ScheduledTasksController(
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
 
-        // Base query: only runs for projects that belong to this tenant.
-        var query = db.GitHubSyncRuns
+        var cappedTake = Math.Min(take, 500);
+
+        GitHubSyncRunStatus? parsedStatus = null;
+        if (!string.IsNullOrWhiteSpace(status) &&
+            Enum.TryParse<GitHubSyncRunStatus>(status, ignoreCase: true, out var ps))
+        {
+            parsedStatus = ps;
+        }
+
+        // ── GitHub Sync runs ──────────────────────────────────────────────────
+        var ghQuery = db.GitHubSyncRuns
             .Include(r => r.Project)
             .Where(r => r.Project.Organization.TenantId == ctx.CurrentTenant.Id);
 
         if (projectId.HasValue)
-            query = query.Where(r => r.ProjectId == projectId.Value);
+            ghQuery = ghQuery.Where(r => r.ProjectId == projectId.Value);
 
-        // Status filter: parse the enum value or name (case-insensitive).
-        if (!string.IsNullOrWhiteSpace(status) &&
-            Enum.TryParse<GitHubSyncRunStatus>(status, ignoreCase: true, out var parsedStatus))
-        {
-            query = query.Where(r => r.Status == parsedStatus);
-        }
+        if (parsedStatus.HasValue)
+            ghQuery = ghQuery.Where(r => r.Status == parsedStatus.Value);
 
-        var runs = await query
+        var ghRuns = await ghQuery
             .OrderByDescending(r => r.StartedAt)
-            .Take(Math.Min(take, 500))
-            .Select(r => new
-            {
+            .Take(cappedTake)
+            .Select(r => new ScheduledTaskRunDto(
                 r.Id,
                 r.ProjectId,
-                ProjectName = r.Project.Name,
+                r.Project.Name,
                 r.Status,
                 r.Summary,
                 r.StartedAt,
                 r.CompletedAt,
-                Type = "GitHubSync",
-            })
+                "GitHubSync"))
             .ToListAsync();
+
+        // ── Branch Detection runs ─────────────────────────────────────────────
+        var bdQuery = db.BranchDetectionRuns
+            .Include(r => r.Project)
+            .Where(r => r.Project.Organization.TenantId == ctx.CurrentTenant.Id);
+
+        if (projectId.HasValue)
+            bdQuery = bdQuery.Where(r => r.ProjectId == projectId.Value);
+
+        if (parsedStatus.HasValue)
+            bdQuery = bdQuery.Where(r => r.Status == parsedStatus.Value);
+
+        var bdRuns = await bdQuery
+            .OrderByDescending(r => r.StartedAt)
+            .Take(cappedTake)
+            .Select(r => new ScheduledTaskRunDto(
+                r.Id,
+                r.ProjectId,
+                r.Project.Name,
+                r.Status,
+                r.Summary,
+                r.StartedAt,
+                r.CompletedAt,
+                "BranchDetection"))
+            .ToListAsync();
+
+        // Merge and re-sort by StartedAt descending, then cap to requested take.
+        var runs = ghRuns
+            .Concat(bdRuns)
+            .OrderByDescending(r => r.StartedAt)
+            .Take(cappedTake)
+            .ToList();
 
         return Ok(runs);
     }
 
     /// <summary>
-    /// Returns all projects (for the current tenant) that have at least one GitHub sync run,
+    /// Returns all projects (for the current tenant) that have at least one scheduled task run,
     /// for use in the filter dropdown.
     /// </summary>
     [HttpGet("projects")]
@@ -72,13 +117,26 @@ public class ScheduledTasksController(
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
 
-        var projects = await db.GitHubSyncRuns
+        var ghProjects = await db.GitHubSyncRuns
             .Include(r => r.Project)
             .Where(r => r.Project.Organization.TenantId == ctx.CurrentTenant.Id)
             .Select(r => new { r.ProjectId, r.Project.Name })
             .Distinct()
-            .OrderBy(p => p.Name)
             .ToListAsync();
+
+        var bdProjects = await db.BranchDetectionRuns
+            .Include(r => r.Project)
+            .Where(r => r.Project.Organization.TenantId == ctx.CurrentTenant.Id)
+            .Select(r => new { r.ProjectId, r.Project.Name })
+            .Distinct()
+            .ToListAsync();
+
+        var projects = ghProjects
+            .Concat(bdProjects)
+            .DistinctBy(p => p.ProjectId)
+            .OrderBy(p => p.Name)
+            .Select(p => new { p.ProjectId, p.Name })
+            .ToList();
 
         return Ok(projects);
     }

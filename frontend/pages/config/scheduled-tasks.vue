@@ -26,6 +26,7 @@
       >
         <option value="">All Types</option>
         <option value="GitHubSync">GitHub Sync</option>
+        <option value="BranchDetection">Branch Detection</option>
       </select>
 
       <!-- Status filter -->
@@ -151,6 +152,7 @@
             </td>
             <td class="px-4 py-3 text-right">
               <NuxtLink
+                v-if="run.type === 'GitHubSync'"
                 :to="`/projects/${run.projectId}/github-sync?tab=Sync+Runs`"
                 class="text-xs text-brand-400 hover:text-brand-300"
               >
@@ -229,6 +231,7 @@ function statusClass(status: GitHubSyncRunStatus): string {
 function typeLabel(type: ScheduledTaskType): string {
   switch (type) {
     case 'GitHubSync': return 'GitHub Sync'
+    case 'BranchDetection': return 'Branch Detection'
     default: return type
   }
 }
