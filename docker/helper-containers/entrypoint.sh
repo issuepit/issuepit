@@ -306,7 +306,7 @@ if extra_mcp_json_str:
             config["mcp"][key] = entry
         print(f"[entrypoint] Extra MCP servers merged: {[s.get('name') for s in extra_mcps if s.get('name')]}")
     except Exception as e:
-        print(f"[entrypoint] Warning: could not parse ISSUEPIT_OPENCODE_EXTRA_MCP_JSON: {e}", file=sys.stderr)
+        print(f"[entrypoint] Warning: could not parse ISSUEPIT_OPENCODE_EXTRA_MCP_JSON: {e} (value: {extra_mcp_json_str[:200]})", file=sys.stderr)
 
 # Add agents from ISSUEPIT_OPENCODE_AGENTS_JSON when present.
 # Format expected: [{"name": "...", "model": "...", "prompt": "...", "agentType": "primary"|"subagent"|null}, ...]

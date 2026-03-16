@@ -126,11 +126,12 @@ internal static class AgentEnvironmentBuilder
         var entries = linked.Select(s =>
         {
             // Resolve secrets scoped to this agent or global, with agent-scoped taking precedence.
+            // McpSecretScope.Agent (3) > McpSecretScope.Global (0), so OrderByDescending puts agent first.
             var headers = s.Secrets
                 .Where(sec => sec.Scope == McpSecretScope.Global ||
                               (sec.Scope == McpSecretScope.Agent && sec.ScopeId == agent.Id))
                 .GroupBy(sec => sec.Key)
-                .Select(g => g.OrderByDescending(sec => sec.Scope).First())
+                .Select(g => g.OrderBy(sec => sec.Scope == McpSecretScope.Agent ? 0 : 1).First())
                 .ToDictionary(sec => sec.Key, sec => DecryptMcpSecret(sec.EncryptedValue));
 
             return new
@@ -154,7 +155,7 @@ internal static class AgentEnvironmentBuilder
             if (doc.RootElement.TryGetProperty("type", out var typeEl))
                 return typeEl.GetString() ?? "http";
         }
-        catch { }
+        catch (JsonException) { }
         return "http";
     }
 
