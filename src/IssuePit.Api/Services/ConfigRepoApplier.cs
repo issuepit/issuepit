@@ -206,18 +206,39 @@ public class ConfigRepoApplier(
 
         if (project is null)
         {
-            var msg = $"Project with slug '{slug}' not found; skipping.";
-            if (strictMode)
+            if (org is null)
             {
-                result.AddStrictModeError(filePath, msg);
-                logger.LogWarning("Project with slug '{Slug}' not found for tenant {TenantId}; skipping (strict mode — error)", slug, tenant.Id);
+                var msg = $"Project with slug '{slug}' not found and no orgSlug provided; cannot create project without an organization.";
+                if (strictMode)
+                {
+                    result.AddStrictModeError(filePath, msg);
+                    logger.LogWarning("Project with slug '{Slug}' not found for tenant {TenantId}; no orgSlug to create it under (strict mode — error)", slug, tenant.Id);
+                }
+                else
+                {
+                    result.AddWarning(filePath, msg);
+                    logger.LogWarning("Project with slug '{Slug}' not found for tenant {TenantId}; no orgSlug to create it under", slug, tenant.Id);
+                }
+                return;
             }
-            else
+
+            if (string.IsNullOrWhiteSpace(slug) || slug.Length > 100)
             {
-                result.AddWarning(filePath, msg);
-                logger.LogWarning("Project with slug '{Slug}' not found for tenant {TenantId}; skipping", slug, tenant.Id);
+                var msg = $"Cannot create project: slug '{slug}' is invalid (must be 1–100 characters).";
+                result.AddError(filePath, msg);
+                logger.LogWarning("Project slug '{Slug}' is invalid for tenant {TenantId}; skipping creation", slug, tenant.Id);
+                return;
             }
-            return;
+
+            project = new Project
+            {
+                Id = Guid.NewGuid(),
+                OrgId = org.Id,
+                Slug = slug,
+                Name = model.Name ?? slug,
+            };
+            db.Projects.Add(project);
+            logger.LogInformation("Project with slug '{Slug}' not found for tenant {TenantId}; creating it under org '{OrgSlug}'", slug, tenant.Id, model.OrgSlug);
         }
 
         if (model.Name is not null) project.Name = model.Name;

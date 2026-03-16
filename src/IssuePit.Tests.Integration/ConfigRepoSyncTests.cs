@@ -686,6 +686,74 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task Sync_ProjectConfig_UnknownSlug_WithOrgSlug_IsCreated()
+    {
+        var orgSlug = $"newproj-org-{Guid.NewGuid():N}"[..20];
+        var existingProjSlug = $"existing-{Guid.NewGuid():N}"[..20];
+        var (tenantId, orgId, _, _) = await SeedAsync(orgSlug, existingProjSlug, "u14");
+        var newProjSlug = $"newproj-{Guid.NewGuid():N}"[..20];
+
+        var dir = CreateConfigDir();
+        WriteModel(dir, "projects", $"{newProjSlug}.json5", new ProjectConfigModel
+        {
+            OrgSlug = orgSlug,
+            Name = "Auto Created Project",
+            Description = "Created via config repo"
+        });
+
+        try
+        {
+            await SetConfigRepoAsync(tenantId, dir);
+            var resp = await TriggerSyncAsync(tenantId);
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+            using var scope = factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+            var newProject = await db.Projects
+                .FirstOrDefaultAsync(p => p.OrgId == orgId && p.Slug == newProjSlug);
+            Assert.NotNull(newProject);
+            Assert.Equal("Auto Created Project", newProject.Name);
+            Assert.Equal("Created via config repo", newProject.Description);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public async Task Sync_ProjectConfig_UnknownSlug_WithoutOrgSlug_IsSkippedWithWarning()
+    {
+        var orgSlug = $"noslug-org-{Guid.NewGuid():N}"[..20];
+        var (tenantId, _, _, _) = await SeedAsync(orgSlug, $"p-{Guid.NewGuid():N}"[..16], "u15");
+        var newProjSlug = $"noslug-proj-{Guid.NewGuid():N}"[..20];
+
+        var dir = CreateConfigDir();
+        WriteModel(dir, "projects", $"{newProjSlug}.json5", new ProjectConfigModel
+        {
+            // No OrgSlug provided — cannot determine which org to create project under
+            Name = "Should Not Be Created"
+        });
+
+        try
+        {
+            await SetConfigRepoAsync(tenantId, dir);
+            var resp = await TriggerSyncAsync(tenantId);
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+            var body = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            var issues = body.GetProperty("issues").EnumerateArray().ToList();
+            Assert.Contains(issues, i =>
+                i.GetProperty("severity").GetString() == "warning" &&
+                i.GetProperty("message").GetString()!.Contains("orgSlug"));
+
+            using var scope = factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+            var project = await db.Projects.FirstOrDefaultAsync(p =>
+                p.Organization.TenantId == tenantId && p.Slug == newProjSlug);
+            Assert.Null(project); // was not created
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
     public async Task Sync_OrgMembers_StrictMode_UnknownUser_ReturnsError()
     {
         var orgSlug = $"strict2-org-{Guid.NewGuid():N}"[..20];
