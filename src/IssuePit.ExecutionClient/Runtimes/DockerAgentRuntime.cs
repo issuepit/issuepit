@@ -147,8 +147,9 @@ public class DockerAgentRuntime(
             await onLogLine($"[DEBUG] IssuePit MCP   : {issuePitMcpUrl}", LogStream.Stdout);
 
         // Inject the HTTP server password so opencode can use it for authentication when UseHttpServer=true.
+        // opencode serve reads OPENCODE_SERVER_PASSWORD for HTTP basic auth.
         if (agent.UseHttpServer && !string.IsNullOrWhiteSpace(agent.HttpServerPassword))
-            env.Add($"OPENCODE_PASSWORD={agent.HttpServerPassword}");
+            env.Add($"OPENCODE_SERVER_PASSWORD={agent.HttpServerPassword}");
 
         // Explicitly set the opencode server port so the entrypoint writes it to config.json.
         // Without this, opencode uses its built-in default (4096), but setting it explicitly
@@ -232,11 +233,14 @@ public class DockerAgentRuntime(
         }
 
         // Container CMD:
-        //   - HTTP server mode: "opencode" (no run subcommand — starts the HTTP server)
+        //   - HTTP server mode: "opencode serve --hostname 0.0.0.0 --port 4096"
+        //     Starts the opencode HTTP server. The bare "opencode" command (no subcommand) starts
+        //     the TUI instead. "--hostname 0.0.0.0" is required because the default is 127.0.0.1
+        //     (loopback only), which is not reachable via Docker port-mapping from the host.
         //   - Exec flow:        "sleep infinity" (entrypoint keeps container alive for docker exec)
         //   - Legacy flow:      null → use image's default CMD (or session.CustomCmd if set)
         IList<string>? containerCmd = useHttpServerMode
-            ? ["opencode"]
+            ? ["opencode", "serve", "--hostname", "0.0.0.0", "--port", $"{OpenCodeHttpApi.DefaultPort}"]
             : useExecFlow
                 ? ["sleep", "infinity"]
                 : (session.CustomCmd?.Length > 0 ? session.CustomCmd : null);

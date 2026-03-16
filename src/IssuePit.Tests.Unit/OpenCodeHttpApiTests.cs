@@ -19,13 +19,13 @@ public class OpenCodeHttpApiTests
         new(new HttpClient(handler), NullLogger<OpenCodeHttpApi>.Instance);
 
     // ──────────────────────────────────────────────────────────────────────────
-    // IsReadyAsync
+    // IsReadyAsync — uses GET /global/health
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task IsReadyAsync_ServerReturns200_ReturnsTrue()
     {
-        var api = CreateApi(new FakeHandler(HttpStatusCode.OK, "[]"));
+        var api = CreateApi(new FakeHandler(HttpStatusCode.OK, """{"healthy":true,"version":"1.0.0"}"""));
         var result = await api.IsReadyAsync(BaseUrl, CancellationToken.None);
         Assert.True(result);
     }
@@ -46,8 +46,19 @@ public class OpenCodeHttpApiTests
         Assert.False(result);
     }
 
+    [Fact]
+    public async Task IsReadyAsync_UsesGlobalHealthEndpoint()
+    {
+        string? requestedUrl = null;
+        var api = CreateApi(new CapturingHandler(HttpStatusCode.OK, """{"healthy":true,"version":"0.1"}""",
+            url => requestedUrl = url));
+        await api.IsReadyAsync(BaseUrl, CancellationToken.None);
+        Assert.NotNull(requestedUrl);
+        Assert.Contains("/global/health", requestedUrl);
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
-    // GetServerInfoAsync
+    // GetServerInfoAsync — uses GET /session
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -68,7 +79,7 @@ public class OpenCodeHttpApiTests
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // CreateSessionAsync
+    // CreateSessionAsync — uses POST /session (no /v1/ prefix)
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -89,8 +100,44 @@ public class OpenCodeHttpApiTests
         Assert.Equal("ses_created", sessionId);
     }
 
+    [Fact]
+    public async Task CreateSessionAsync_UsesSessionEndpointWithoutV1Prefix()
+    {
+        string? requestedUrl = null;
+        var api = CreateApi(new CapturingHandler(HttpStatusCode.OK, """{"id":"ses_x"}""",
+            url => requestedUrl = url));
+        await api.CreateSessionAsync(BaseUrl, CancellationToken.None);
+        Assert.NotNull(requestedUrl);
+        Assert.DoesNotContain("/v1/", requestedUrl);
+        Assert.Contains("/session", requestedUrl);
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
-    // ListSessionsAsync
+    // SendMessageAsync — uses POST /session/{id}/prompt_async
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task SendMessageAsync_Returns204_Succeeds()
+    {
+        var api = CreateApi(new FakeHandler(HttpStatusCode.NoContent, ""));
+        // Should not throw
+        await api.SendMessageAsync(BaseUrl, "ses_abc", "Fix the bug", CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_UsesPromptAsyncEndpoint()
+    {
+        string? requestedUrl = null;
+        var api = CreateApi(new CapturingHandler(HttpStatusCode.NoContent, "",
+            url => requestedUrl = url));
+        await api.SendMessageAsync(BaseUrl, "ses_abc", "Fix the bug", CancellationToken.None);
+        Assert.NotNull(requestedUrl);
+        Assert.Contains("ses_abc/prompt_async", requestedUrl);
+        Assert.DoesNotContain("/v1/", requestedUrl);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // ListSessionsAsync — uses GET /session (no /v1/ prefix)
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -122,6 +169,18 @@ public class OpenCodeHttpApiTests
         Assert.Equal("ses_ok", sessions[0]);
     }
 
+    [Fact]
+    public async Task ListSessionsAsync_UsesSessionEndpointWithoutV1Prefix()
+    {
+        string? requestedUrl = null;
+        var api = CreateApi(new CapturingHandler(HttpStatusCode.OK, "[]",
+            url => requestedUrl = url));
+        await api.ListSessionsAsync(BaseUrl, CancellationToken.None);
+        Assert.NotNull(requestedUrl);
+        Assert.DoesNotContain("/v1/", requestedUrl);
+        Assert.Contains("/session", requestedUrl);
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // Fake handlers
     // ──────────────────────────────────────────────────────────────────────────
@@ -143,5 +202,22 @@ public class OpenCodeHttpApiTests
             HttpRequestMessage request,
             CancellationToken cancellationToken) =>
             throw exception;
+    }
+
+    private sealed class CapturingHandler(
+        HttpStatusCode statusCode,
+        string responseBody,
+        Action<string> onRequest) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            onRequest(request.RequestUri?.ToString() ?? "");
+            return Task.FromResult(new HttpResponseMessage(statusCode)
+            {
+                Content = new StringContent(responseBody, Encoding.UTF8, "application/json"),
+            });
+        }
     }
 }

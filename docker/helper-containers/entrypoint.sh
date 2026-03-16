@@ -226,18 +226,28 @@ fi
 if command -v dockerd > /dev/null 2>&1 && [ ! -e /var/run/docker.sock ]; then
     echo "[entrypoint] Starting dockerd (DinD)..."
     dockerd > /tmp/dockerd.log 2>&1 &
-    TIMEOUT=60
-    while [ $TIMEOUT -gt 0 ] && ! docker info > /dev/null 2>&1; do
-        sleep 1; TIMEOUT=$((TIMEOUT-1))
-    done
-    if docker info > /dev/null 2>&1; then
-        echo "[entrypoint] dockerd ready"
+
+    # In HTTP server mode (OPENCODE_PORT is set) opencode serve must start quickly so the
+    # execution client's readiness check doesn't time out. We start dockerd in the background
+    # and do NOT block here — Docker will be available by the time any agent task needs it.
+    # In exec flow (no OPENCODE_PORT), we wait for dockerd before handing off to sleep infinity
+    # so that C#'s docker exec commands can use Docker immediately.
+    if [[ -z "${OPENCODE_PORT:-}" ]]; then
+        TIMEOUT=60
+        while [ $TIMEOUT -gt 0 ] && ! docker info > /dev/null 2>&1; do
+            sleep 1; TIMEOUT=$((TIMEOUT-1))
+        done
+        if docker info > /dev/null 2>&1; then
+            echo "[entrypoint] dockerd ready"
+        else
+            # dockerd failed to start or timed out — warn and continue.
+            # The container will stay alive so the agent can still run tasks that
+            # don't require Docker-in-Docker (e.g. opencode without act).
+            echo "[entrypoint] WARNING: dockerd did not start within timeout; continuing without DinD" >&2
+            cat /tmp/dockerd.log >&2 || true
+        fi
     else
-        # dockerd failed to start or timed out — warn and continue.
-        # The container will stay alive so the agent can still run tasks that
-        # don't require Docker-in-Docker (e.g. opencode without act).
-        echo "[entrypoint] WARNING: dockerd did not start within timeout; continuing without DinD" >&2
-        cat /tmp/dockerd.log >&2 || true
+        echo "[entrypoint] dockerd starting in background (HTTP server mode; not waiting for readiness)"
     fi
 fi
 
@@ -266,7 +276,9 @@ mcp_url = os.environ.get("ISSUEPIT_MCP_URL", "")
 agents_json_str = os.environ.get("ISSUEPIT_OPENCODE_AGENTS_JSON", "")
 extra_mcp_json_str = os.environ.get("ISSUEPIT_OPENCODE_EXTRA_MCP_JSON", "")
 opencode_port = os.environ.get("OPENCODE_PORT", "")
-opencode_password = os.environ.get("OPENCODE_PASSWORD", "")
+# OPENCODE_SERVER_PASSWORD is the current env var used by `opencode serve` for HTTP basic auth.
+# Fall back to the legacy OPENCODE_PASSWORD so older configurations keep working.
+opencode_password = os.environ.get("OPENCODE_SERVER_PASSWORD", "") or os.environ.get("OPENCODE_PASSWORD", "")
 config_file = os.path.join(os.path.expanduser("~"), ".config", "opencode", "config.json")
 
 config = {"autoupdate": False}
@@ -278,7 +290,9 @@ if opencode_port:
     except ValueError:
         print(f"[entrypoint] Warning: OPENCODE_PORT is not a valid integer: {opencode_port}", file=sys.stderr)
 
-# Configure server authentication password (OPENCODE_PASSWORD env var).
+# Configure server authentication password.
+# opencode serve also reads OPENCODE_SERVER_PASSWORD directly from the environment,
+# but writing it to config.json ensures it is picked up regardless of how the server is invoked.
 if opencode_password:
     config["password"] = opencode_password
 

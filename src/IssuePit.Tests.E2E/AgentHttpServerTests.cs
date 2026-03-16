@@ -406,12 +406,18 @@ public class AgentHttpServerTests(AspireFixture fixture)
     /// "Exposed ports: []" — the pre-fix error that occurred because the container exited
     /// before the port binding was visible in the Docker inspection.
     ///
+    /// Note: This test validates Docker infrastructure only (port binding, container CMD),
+    /// not that the opencode HTTP server actually becomes ready. A real readiness test
+    /// would require the full opencode image which is only available in production runs.
+    ///
     /// Skipped automatically when Docker is not available on the host.
     /// </summary>
     [Fact]
     public async Task AgentSession_HttpServerMode_PortBindingLoggedAndNoExposedPortsError()
     {
-        if (!IsDockerAvailable()) return;
+        if (!IsDockerAvailable())
+            throw new InvalidOperationException(
+                "Docker is not available on this host. This test requires Docker to create containers.");
 
         var orgSlug = $"hs-org-{Guid.NewGuid():N}"[..16];
         var (client, orgId) = await SetupOrgAsync(orgSlug);
@@ -429,10 +435,11 @@ public class AgentHttpServerTests(AspireFixture fixture)
         var issue = await issueResp.Content.ReadFromJsonAsync<JsonElement>();
         var issueId = issue.GetProperty("id").GetString()!;
 
-        // HTTP server mode agent — busybox image. The container will fail to run opencode
-        // (not installed in busybox) but must NOT fail with the pre-fix "Exposed ports: []"
-        // error. The [DEBUG] HTTP server port line must be logged, proving the port binding
-        // was configured in the Docker create-params before the container was started.
+        // HTTP server mode agent — busybox image. The container will fail to run
+        // "opencode serve ..." (not installed in busybox) but must NOT fail with the
+        // pre-fix "Exposed ports: []" error. The [DEBUG] HTTP server port line must be
+        // logged, proving the port binding was configured in the Docker create-params
+        // before the container was started.
         var agentResp = await client.PostAsJsonAsync("/api/agents", new
         {
             name = "HTTP Port Regression Agent",
