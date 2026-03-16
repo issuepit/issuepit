@@ -644,6 +644,51 @@
               </a>
               <span v-else class="text-xs text-gray-400">#{{ store.currentIssue.gitHubIssueNumber }}</span>
             </div>
+
+            <!-- Custom Properties -->
+            <template v-if="propsStore.properties.length">
+              <div v-for="prop in propsStore.properties" :key="prop.id">
+                <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">{{ prop.name }}</p>
+                <!-- Enum: dropdown of allowed values -->
+                <select v-if="prop.type === ProjectPropertyType.Enum"
+                  :value="getPropertyValue(prop.id)"
+                  @change="onSetPropertyValue(prop.id, ($event.target as HTMLSelectElement).value)"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500">
+                  <option value="">— not set —</option>
+                  <option v-for="v in parseEnumValues(prop.allowedValues)" :key="v" :value="v">{{ v }}</option>
+                </select>
+                <!-- Bool: yes/no/not-set -->
+                <select v-else-if="prop.type === ProjectPropertyType.Bool"
+                  :value="getPropertyValue(prop.id)"
+                  @change="onSetPropertyValue(prop.id, ($event.target as HTMLSelectElement).value)"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500">
+                  <option value="">— not set —</option>
+                  <option value="true">Yes</option>
+                  <option value="false">No</option>
+                </select>
+                <!-- Date -->
+                <input v-else-if="prop.type === ProjectPropertyType.Date"
+                  type="date"
+                  :value="getPropertyValue(prop.id)"
+                  @change="onSetPropertyValue(prop.id, ($event.target as HTMLInputElement).value)"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                />
+                <!-- Number -->
+                <input v-else-if="prop.type === ProjectPropertyType.Number"
+                  type="number"
+                  :value="getPropertyValue(prop.id)"
+                  @change="onSetPropertyValue(prop.id, ($event.target as HTMLInputElement).value)"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                />
+                <!-- Text / Person / Agent: plain text -->
+                <input v-else
+                  type="text"
+                  :value="getPropertyValue(prop.id)"
+                  @change="onSetPropertyValue(prop.id, ($event.target as HTMLInputElement).value)"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                />
+              </div>
+            </template>
           </div>
 
           <!-- Delete -->
@@ -778,13 +823,14 @@
 <script setup lang="ts">
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { IssueStatus, IssueType, IssueLinkType, IssueLinkTypeLabels, IssueEventTypeLabels } from '~/types'
+import { IssueStatus, IssueType, IssueLinkType, IssueLinkTypeLabels, IssueEventTypeLabels, ProjectPropertyType } from '~/types'
 import type { IssuePriority } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
 import { useLabelsStore } from '~/stores/labels'
 import { useAgentsStore } from '~/stores/agents'
 import { useMilestonesStore } from '~/stores/milestones'
 import { useProjectsStore } from '~/stores/projects'
+import { useProjectPropertiesStore } from '~/stores/projectProperties'
 import { formatIssueId } from '~/composables/useIssueFormat'
 const route = useRoute()
 const router = useRouter()
@@ -798,6 +844,7 @@ const labelsStore = useLabelsStore()
 const agentsStore = useAgentsStore()
 const milestonesStore = useMilestonesStore()
 const projectsStore = useProjectsStore()
+const propsStore = useProjectPropertiesStore()
 const api = useApi()
 const { uploading: uploadingImage, uploadError: uploadImageError, handlePaste: handleImagePaste } = useImageUpload()
 
@@ -816,6 +863,34 @@ function formatLinkedIssueId(number: number, projectId: string | undefined): str
 }
 
 const showDeleteConfirm = ref(false)
+
+// Custom property values: map of propertyId → value string
+const issuePropertyValues = ref<Record<string, string>>({})
+
+function getPropertyValue(propertyId: string): string {
+  return issuePropertyValues.value[propertyId] ?? ''
+}
+
+function loadPropertyValues(vals: import('~/types').IssuePropertyValue[]) {
+  const map: Record<string, string> = {}
+  for (const v of vals) map[v.propertyId] = v.value ?? ''
+  issuePropertyValues.value = map
+}
+
+async function onSetPropertyValue(propertyId: string, value: string) {
+  issuePropertyValues.value[propertyId] = value
+  await propsStore.setIssuePropertyValue(actualProjectId.value, resolvedIssueId.value, propertyId, value || null)
+}
+
+function parseEnumValues(allowedValues: string | null | undefined): string[] {
+  if (!allowedValues) return []
+  try {
+    const parsed: unknown = JSON.parse(allowedValues)
+    return Array.isArray(parsed) ? (parsed as string[]) : []
+  } catch {
+    return []
+  }
+}
 
 const editingTitle = ref(false)
 const editingBody = ref(false)
@@ -970,6 +1045,8 @@ onMounted(async () => {
     fetchTenantUsers(),
     milestonesStore.fetchMilestones(actualProjectId.value),
     projectsStore.fetchProject(id),
+    propsStore.fetchProperties(actualProjectId.value),
+    propsStore.fetchIssuePropertyValues(actualProjectId.value, resolvedIssueId.value).then(loadPropertyValues),
   ])
   // Fetch all issues in this org for link target selection (excluding current), with project name for cross-project display
   try {

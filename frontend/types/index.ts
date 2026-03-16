@@ -421,12 +421,12 @@ export interface KanbanTransition {
 }
 
 export enum KanbanLaneProperty {
-  Status = 0,
-  Priority = 1,
-  Label = 2,
-  Type = 3,
-  Agent = 4,
-  Milestone = 5,
+  Status = 'status',
+  Priority = 'priority',
+  Label = 'label',
+  Type = 'type',
+  Agent = 'agent',
+  Milestone = 'milestone',
 }
 
 export interface KanbanColumn {
@@ -450,13 +450,13 @@ export interface KanbanBoard {
 }
 
 export enum ProjectPropertyType {
-  Text = 0,
-  Enum = 1,
-  Number = 2,
-  Date = 3,
-  Person = 4,
-  Agent = 5,
-  Bool = 6,
+  Text = 'text',
+  Enum = 'enum',
+  Number = 'number',
+  Date = 'date',
+  Person = 'person',
+  Agent = 'agent',
+  Bool = 'bool',
 }
 
 export interface ProjectProperty {
