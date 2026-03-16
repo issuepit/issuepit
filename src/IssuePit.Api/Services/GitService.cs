@@ -40,6 +40,29 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
         return opts;
     }
 
+    private PushOptions BuildPushOptions(GitRepository repo)
+    {
+        var opts = new PushOptions();
+        if (!string.IsNullOrEmpty(repo.AuthToken))
+        {
+            var user = string.IsNullOrEmpty(repo.AuthUsername) ? "git" : repo.AuthUsername;
+            opts.CredentialsProvider = (_, _, _) =>
+                new UsernamePasswordCredentials { Username = user, Password = repo.AuthToken };
+        }
+        else if (!string.IsNullOrEmpty(repo.AuthUsername))
+        {
+            opts.CredentialsProvider = (_, _, _) =>
+                new UsernamePasswordCredentials { Username = repo.AuthUsername, Password = string.Empty };
+        }
+        return opts;
+    }
+
+    /// <summary>Finds the remote in the local git repo whose URL matches <paramref name="repo"/>.RemoteUrl, or returns the first remote.</summary>
+    private static Remote? FindMatchingRemote(Repository gitRepo, GitRepository repo) =>
+        gitRepo.Network.Remotes.FirstOrDefault(r =>
+            string.Equals(r.Url, repo.RemoteUrl, StringComparison.OrdinalIgnoreCase))
+        ?? gitRepo.Network.Remotes.FirstOrDefault();
+
     private CloneOptions BuildCloneOptions(GitRepository repo)
     {
         var opts = new CloneOptions { IsBare = false };
@@ -128,6 +151,92 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
                     Commands.Fetch(gitRepo, remote.Name, refSpecs, BuildFetchOptions(repo), null);
                     logger.LogInformation("Fetched from remote '{Remote}' for repo {Id}", remote.Name, repo.Id);
                 }
+            });
+        }
+        finally
+        {
+            sem.Release();
+        }
+    }
+
+    /// <summary>
+    /// Pulls (fetch + fast-forward) the given branch from the remote that matches
+    /// <paramref name="repo"/>.RemoteUrl, serialising concurrent requests per repository.
+    /// </summary>
+    public async Task PullAsync(GitRepository repo, string? branch = null)
+    {
+        var branchName = branch ?? repo.DefaultBranch;
+        var sem = GetRepoLock(repo.Id);
+        await sem.WaitAsync();
+        try
+        {
+            await Task.Run(() =>
+            {
+                var localPath = EnsureClonedCore(repo);
+                using var gitRepo = new Repository(localPath);
+
+                var remote = FindMatchingRemote(gitRepo, repo)
+                    ?? throw new InvalidOperationException("No remote configured in repository.");
+
+                // Fetch from the matched remote
+                var refSpecs = remote.FetchRefSpecs.Select(r => r.Specification).ToArray();
+                Commands.Fetch(gitRepo, remote.Name, refSpecs, BuildFetchOptions(repo), null);
+
+                // Resolve the remote-tracking branch (e.g. origin/main)
+                var remoteBranch = gitRepo.Branches[$"{remote.Name}/{branchName}"]
+                    ?? throw new InvalidOperationException($"Remote branch '{remote.Name}/{branchName}' not found after fetch.");
+
+                // Find or create the local tracking branch, then fast-forward
+                var localBranch = gitRepo.Branches[branchName];
+                if (localBranch == null)
+                {
+                    localBranch = gitRepo.CreateBranch(branchName, remoteBranch.Tip);
+                    gitRepo.Branches.Update(localBranch, b => b.TrackedBranch = remoteBranch.CanonicalName);
+                }
+                else
+                {
+                    // Verify this is a safe fast-forward (local must not be ahead of remote)
+                    var divergence = gitRepo.ObjectDatabase.CalculateHistoryDivergence(localBranch.Tip, remoteBranch.Tip);
+                    if (divergence.AheadBy > 0)
+                        throw new InvalidOperationException(
+                            $"Branch '{branchName}' has {divergence.AheadBy} local commit(s) that are not on the remote. " +
+                            "Cannot fast-forward — please push or resolve the divergence first.");
+
+                    gitRepo.Refs.UpdateTarget(localBranch.Reference, remoteBranch.Tip.Id);
+                }
+
+                logger.LogInformation("Pulled '{Branch}' from remote '{Remote}' for repo {Id}", branchName, remote.Name, repo.Id);
+            });
+        }
+        finally
+        {
+            sem.Release();
+        }
+    }
+
+    /// <summary>
+    /// Pushes the given branch to the remote that matches <paramref name="repo"/>.RemoteUrl,
+    /// serialising concurrent requests per repository.
+    /// </summary>
+    public async Task PushAsync(GitRepository repo, string? branch = null)
+    {
+        var branchName = branch ?? repo.DefaultBranch;
+        var sem = GetRepoLock(repo.Id);
+        await sem.WaitAsync();
+        try
+        {
+            await Task.Run(() =>
+            {
+                var localPath = EnsureClonedCore(repo);
+                using var gitRepo = new Repository(localPath);
+
+                var remote = FindMatchingRemote(gitRepo, repo)
+                    ?? throw new InvalidOperationException("No remote configured in repository.");
+
+                var refspec = $"refs/heads/{branchName}:refs/heads/{branchName}";
+                gitRepo.Network.Push(remote, refspec, BuildPushOptions(repo));
+
+                logger.LogInformation("Pushed '{Branch}' to remote '{Remote}' for repo {Id}", branchName, remote.Name, repo.Id);
             });
         }
         finally

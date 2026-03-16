@@ -76,6 +76,17 @@ You can add as many origins as needed. The first **Working** remote is used when
 
 > **Breaking change (data migration):** Existing single-repository configurations are automatically migrated to `Working` mode.
 
+### Git Remote Operations
+
+Each configured origin exposes the following action buttons directly in the **Settings → Git Origins** section:
+
+| Button | Description |
+|--------|-------------|
+| **Fetch** | Fetches the latest refs from the remote without modifying any local branch. |
+| **Pull** | Fetches and fast-forwards the default branch to match the remote. |
+| **Push** | Pushes the local default branch to the remote. Not available for *Read-only* origins. |
+| **Sync** | Pulls then pushes the default branch (pull → push). Not available for *Read-only* origins. |
+
 ---
 
 ## GitHub Sync

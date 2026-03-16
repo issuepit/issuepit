@@ -203,6 +203,37 @@
                   </button>
                 </div>
               </div>
+              <!-- Git operation buttons -->
+              <div class="flex items-center gap-1 flex-wrap pt-1 border-t border-gray-700/50">
+                <button
+                  :disabled="repoOpsLoading[r.id]"
+                  class="text-xs px-2 py-1 rounded border border-gray-700 text-sky-400 hover:text-sky-300 hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                  title="Fetch latest refs from remote"
+                  @click="fetchRepo(r)">
+                  {{ repoOpsLoading[r.id] ? '…' : 'Fetch' }}
+                </button>
+                <button
+                  :disabled="repoOpsLoading[r.id]"
+                  class="text-xs px-2 py-1 rounded border border-gray-700 text-teal-400 hover:text-teal-300 hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                  title="Pull (fetch + fast-forward) the default branch"
+                  @click="pullRepo(r)">
+                  {{ repoOpsLoading[r.id] ? '…' : 'Pull' }}
+                </button>
+                <button v-if="r.mode !== 'ReadOnly'"
+                  :disabled="repoOpsLoading[r.id]"
+                  class="text-xs px-2 py-1 rounded border border-gray-700 text-violet-400 hover:text-violet-300 hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                  title="Push the default branch to remote"
+                  @click="pushRepo(r)">
+                  {{ repoOpsLoading[r.id] ? '…' : 'Push' }}
+                </button>
+                <button v-if="r.mode !== 'ReadOnly'"
+                  :disabled="repoOpsLoading[r.id]"
+                  class="text-xs px-2 py-1 rounded border border-gray-700 text-orange-400 hover:text-orange-300 hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                  title="Sync: pull then push the default branch"
+                  @click="syncRepo(r)">
+                  {{ repoOpsLoading[r.id] ? '…' : 'Sync' }}
+                </button>
+              </div>
             </div>
           </div>
           <div v-else class="text-sm text-gray-600 py-2">
@@ -881,6 +912,35 @@ async function removeRepo(repoId: string) {
 
 async function enableRepoById(r: GitRepository) {
   await gitStore.enableRepo(id, r.id)
+}
+
+// ── Per-repo git operations ───────────────────────────────────
+const repoOpsLoading = ref<Record<string, boolean>>({})
+
+async function runRepoOp(repoId: string, op: () => Promise<void>) {
+  repoOpsLoading.value[repoId] = true
+  gitStore.error = null
+  try {
+    await op()
+  } finally {
+    repoOpsLoading.value[repoId] = false
+  }
+}
+
+async function fetchRepo(r: GitRepository) {
+  await runRepoOp(r.id, () => gitStore.fetchRemote(id, r.id))
+}
+
+async function pullRepo(r: GitRepository) {
+  await runRepoOp(r.id, () => gitStore.pullRemote(id, r.id))
+}
+
+async function pushRepo(r: GitRepository) {
+  await runRepoOp(r.id, () => gitStore.pushRemote(id, r.id))
+}
+
+async function syncRepo(r: GitRepository) {
+  await runRepoOp(r.id, () => gitStore.syncRemote(id, r.id))
 }
 
 // ── Agents ───────────────────────────────────────────────────

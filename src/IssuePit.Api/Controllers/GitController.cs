@@ -104,6 +104,91 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         return Ok(ToDto(repo));
     }
 
+    // ──────────────────────────── per-repo git operations ──────────────────────
+
+    [HttpPost("repos/{repoId:guid}/fetch")]
+    public async Task<IActionResult> FetchByRepoId(Guid projectId, Guid repoId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var repo = await db.GitRepositories.FirstOrDefaultAsync(r => r.Id == repoId && r.ProjectId == projectId);
+        if (repo is null) return NotFound();
+        try
+        {
+            await gitService.FetchAsync(repo);
+            repo.LastFetchedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+            return Ok(new { message = "Fetched successfully.", lastFetchedAt = repo.LastFetchedAt });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Git fetch failed for repo {RepoId}", repoId);
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("repos/{repoId:guid}/pull")]
+    public async Task<IActionResult> Pull(Guid projectId, Guid repoId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var repo = await db.GitRepositories.FirstOrDefaultAsync(r => r.Id == repoId && r.ProjectId == projectId);
+        if (repo is null) return NotFound();
+        try
+        {
+            await gitService.PullAsync(repo);
+            repo.LastFetchedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+            return Ok(new { message = $"Pulled '{repo.DefaultBranch}' successfully.", lastFetchedAt = repo.LastFetchedAt });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Git pull failed for repo {RepoId}", repoId);
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("repos/{repoId:guid}/push")]
+    public async Task<IActionResult> Push(Guid projectId, Guid repoId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var repo = await db.GitRepositories.FirstOrDefaultAsync(r => r.Id == repoId && r.ProjectId == projectId);
+        if (repo is null) return NotFound();
+        if (repo.Mode == GitOriginMode.ReadOnly)
+            return BadRequest(new { error = "Push is not allowed for read-only origins." });
+        try
+        {
+            await gitService.PushAsync(repo);
+            return Ok(new { message = $"Pushed '{repo.DefaultBranch}' successfully." });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Git push failed for repo {RepoId}", repoId);
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("repos/{repoId:guid}/sync")]
+    public async Task<IActionResult> Sync(Guid projectId, Guid repoId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var repo = await db.GitRepositories.FirstOrDefaultAsync(r => r.Id == repoId && r.ProjectId == projectId);
+        if (repo is null) return NotFound();
+        if (repo.Mode == GitOriginMode.ReadOnly)
+            return BadRequest(new { error = "Sync (push) is not allowed for read-only origins." });
+        try
+        {
+            await gitService.PullAsync(repo);
+            repo.LastFetchedAt = DateTime.UtcNow;
+            await gitService.PushAsync(repo);
+            await db.SaveChangesAsync();
+            return Ok(new { message = $"Synced '{repo.DefaultBranch}' successfully." });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Git sync failed for repo {RepoId}", repoId);
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
     // ──────────────────── legacy single-repo endpoints (kept for backward compat) ────────────────────
 
     [HttpGet("repo")]
