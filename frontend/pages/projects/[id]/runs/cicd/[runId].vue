@@ -109,7 +109,7 @@
             {{ approving ? 'Approving…' : 'Approve Run' }}
           </button>
         </div>
-        <div v-else-if="store.currentRun.status === CiCdRunStatus.Failed || store.currentRun.status === CiCdRunStatus.Cancelled"
+        <div v-else-if="store.currentRun.status === CiCdRunStatus.Failed || store.currentRun.status === CiCdRunStatus.Cancelled || store.currentRun.status === CiCdRunStatus.SucceededWithWarnings"
           class="mt-4 pt-4 border-t border-gray-800 flex justify-end">
           <button
             :disabled="retrying"
@@ -251,6 +251,19 @@
           </div>
         </div>
       </Teleport>
+
+      <!-- SHA mismatch warning banner -->
+      <div v-if="store.currentRun.status === CiCdRunStatus.SucceededWithWarnings && shaWarningMessage"
+        class="mb-6 rounded-xl bg-yellow-900/30 border border-yellow-700/50 p-4 flex items-start gap-3">
+        <svg class="w-5 h-5 text-yellow-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium text-yellow-300">Commit SHA Mismatch</p>
+          <p class="text-xs text-yellow-400/80 mt-1 font-mono">{{ shaWarningMessage }}</p>
+        </div>
+      </div>
 
       <!-- Linked Runs -->
       <div v-if="store.currentRunLinkedRuns.length" class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden mb-6">
@@ -1324,7 +1337,7 @@ const jobLogMap = computed(() => {
 // When the overall run is done, all tracked jobs are also complete (they can't still be running).
 const runIsTerminal = computed(() => {
   const s = store.currentRun?.status
-  return s === CiCdRunStatus.Succeeded || s === CiCdRunStatus.Failed || s === CiCdRunStatus.Cancelled
+  return s === CiCdRunStatus.Succeeded || s === CiCdRunStatus.Failed || s === CiCdRunStatus.Cancelled || s === CiCdRunStatus.SucceededWithWarnings
 })
 
 /** Parsed inputs dictionary for workflow_dispatch runs. Null when no inputs are stored. */
@@ -1832,6 +1845,14 @@ const debugMetadata = computed(() => {
   return entries
 })
 
+// SHA mismatch warning extracted from run logs (set when run is SucceededWithWarnings)
+const shaWarningMessage = computed(() => {
+  for (const log of store.currentRunLogs) {
+    if (log.line.includes('[WARN] Commit SHA mismatch:')) return log.line
+  }
+  return null
+})
+
 // `now` is updated on each server-pushed event so the duration display stays live without a timer
 const now = ref(Date.now())
 
@@ -2066,6 +2087,7 @@ function statusClass(status: CiCdRunStatus) {
     case CiCdRunStatus.Failed: return 'bg-red-900/30 text-red-400'
     case CiCdRunStatus.Cancelled: return 'bg-gray-800 text-gray-400'
     case CiCdRunStatus.WaitingForApproval: return 'bg-purple-900/30 text-purple-400'
+    case CiCdRunStatus.SucceededWithWarnings: return 'bg-yellow-900/30 text-yellow-400'
     default: return 'bg-gray-800 text-gray-400'
   }
 }
@@ -2077,6 +2099,7 @@ function statusDot(status: CiCdRunStatus) {
     case CiCdRunStatus.Failed: return 'bg-red-400'
     case CiCdRunStatus.Cancelled: return 'bg-gray-500'
     case CiCdRunStatus.WaitingForApproval: return 'bg-purple-400'
+    case CiCdRunStatus.SucceededWithWarnings: return 'bg-yellow-400'
     default: return 'bg-gray-500'
   }
 }
@@ -2098,6 +2121,7 @@ function linkedRunStatusClass(link: LinkedCiCdRun) {
   if (s === 'failed' || s === CiCdRunStatus.Failed) return 'bg-red-900/30 text-red-400'
   if (s === 'cancelled' || s === CiCdRunStatus.Cancelled) return 'bg-gray-800 text-gray-400'
   if (s === CiCdRunStatus.WaitingForApproval) return 'bg-purple-900/30 text-purple-400'
+  if (s === CiCdRunStatus.SucceededWithWarnings) return 'bg-yellow-900/30 text-yellow-400'
   return 'bg-gray-800 text-gray-400'
 }
 
@@ -2107,6 +2131,7 @@ function linkedRunStatusDot(link: LinkedCiCdRun) {
   if (s === 'running' || s === CiCdRunStatus.Running) return 'bg-blue-400 animate-pulse'
   if (s === 'failed' || s === CiCdRunStatus.Failed) return 'bg-red-400'
   if (s === 'cancelled' || s === CiCdRunStatus.Cancelled) return 'bg-gray-500'
+  if (s === CiCdRunStatus.SucceededWithWarnings) return 'bg-yellow-400'
   return 'bg-gray-500'
 }
 

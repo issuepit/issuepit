@@ -21,6 +21,13 @@
             <span v-if="branch" class="text-gray-500 text-xs">on {{ branch }}</span>
           </div>
         </div>
+        <!-- Branch-only trigger (no commit SHA, branch pre-selected from Branches tab) -->
+        <div v-else-if="branch">
+          <div class="flex items-center gap-2 text-sm">
+            <span class="text-gray-400">Branch:</span>
+            <code class="text-gray-200 font-mono bg-gray-800 px-2 py-0.5 rounded">{{ branch }}</code>
+          </div>
+        </div>
         <div v-else>
           <!-- Mode toggle: Branch vs SHA -->
           <div class="flex gap-1 mb-3 bg-gray-800 rounded-lg p-1 w-fit">
