@@ -90,7 +90,8 @@ public class IssueDetailPage(IPage page)
     /// </summary>
     public async Task<bool> IsCustomPropertyVisibleAsync(string propertyName)
     {
-        // The sidebar shows the property label as an uppercase tracking-wide text
-        return await page.Locator($"p:has-text('{propertyName.ToUpperInvariant()}')").IsVisibleAsync();
+        // The sidebar renders the property name inside a <p> tag with a CSS uppercase class.
+        // Playwright text selectors match the DOM text content (original case), not the CSS-transformed text.
+        return await page.Locator($"p.uppercase:has-text('{propertyName}')").IsVisibleAsync();
     }
 }

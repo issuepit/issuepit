@@ -871,6 +871,12 @@ function getPropertyValue(propertyId: string): string {
   return issuePropertyValues.value[propertyId] ?? ''
 }
 
+function loadPropertyValues(vals: import('~/types').IssuePropertyValue[]) {
+  const map: Record<string, string> = {}
+  for (const v of vals) map[v.propertyId] = v.value ?? ''
+  issuePropertyValues.value = map
+}
+
 async function onSetPropertyValue(propertyId: string, value: string) {
   issuePropertyValues.value[propertyId] = value
   await propsStore.setIssuePropertyValue(actualProjectId.value, resolvedIssueId.value, propertyId, value || null)
@@ -1040,11 +1046,7 @@ onMounted(async () => {
     milestonesStore.fetchMilestones(actualProjectId.value),
     projectsStore.fetchProject(id),
     propsStore.fetchProperties(actualProjectId.value),
-    propsStore.fetchIssuePropertyValues(actualProjectId.value, resolvedIssueId.value).then(vals => {
-      const map: Record<string, string> = {}
-      for (const v of vals) map[v.propertyId] = v.value ?? ''
-      issuePropertyValues.value = map
-    }),
+    propsStore.fetchIssuePropertyValues(actualProjectId.value, resolvedIssueId.value).then(loadPropertyValues),
   ])
   // Fetch all issues in this org for link target selection (excluding current), with project name for cross-project display
   try {
