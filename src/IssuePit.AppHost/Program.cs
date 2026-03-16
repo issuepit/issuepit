@@ -1,8 +1,50 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
+// In local dev mode, persist the database in a volume named after the current git branch so
+// that each branch has its own independent database state.  In CI (CI=true) no volume is
+// attached so every run starts with a fresh database.
+static string? TryGetGitBranch()
+{
+    try
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo("git", "rev-parse --abbrev-ref HEAD")
+        {
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        using var proc = System.Diagnostics.Process.Start(psi);
+        if (proc is null) return null;
+        var branch = proc.StandardOutput.ReadToEnd().Trim();
+        proc.WaitForExit();
+        // "HEAD" means detached HEAD — no meaningful branch name.
+        return proc.ExitCode == 0 && !string.IsNullOrEmpty(branch) && branch != "HEAD" ? branch : null;
+    }
+    catch
+    {
+        return null;
+    }
+}
+
+static string SanitizeForVolumeName(string branch)
+{
+    // Docker volume names must match [a-zA-Z0-9][a-zA-Z0-9_.-]*
+    // Replace any character outside that set with a hyphen, then trim leading/trailing hyphens.
+    var sanitized = System.Text.RegularExpressions.Regex.Replace(
+        branch.ToLowerInvariant(), @"[^a-z0-9_.-]", "-");
+    sanitized = sanitized.Trim('-', '.');
+    return string.IsNullOrEmpty(sanitized) ? "default" : sanitized;
+}
+
+var isCI = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CI"));
+var gitBranch = isCI ? null : TryGetGitBranch();
+
 var postgresServer = builder.AddPostgres("postgres")
-    //.WithDataVolume()
     .WithImage("postgres", "17.6");
+
+if (gitBranch is not null)
+    postgresServer = postgresServer.WithDataVolume($"issuepit-postgres-{SanitizeForVolumeName(gitBranch)}");
+
 var postgresDb = postgresServer.AddDatabase("issuepit-db");
 
 var kafka = builder.AddKafka("kafka")
