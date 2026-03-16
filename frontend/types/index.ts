@@ -1002,6 +1002,7 @@ export enum IssueEventType {
   AssigneeRemoved = 'assignee_removed',
   MilestoneSet = 'milestone_set',
   MilestoneCleared = 'milestone_cleared',
+  PropertyChanged = 'property_changed',
 }
 
 export const IssueEventTypeLabels: Record<IssueEventType, string> = {
@@ -1017,6 +1018,7 @@ export const IssueEventTypeLabels: Record<IssueEventType, string> = {
   [IssueEventType.AssigneeRemoved]: 'unassigned',
   [IssueEventType.MilestoneSet]: 'set milestone',
   [IssueEventType.MilestoneCleared]: 'cleared milestone',
+  [IssueEventType.PropertyChanged]: 'changed property',
 }
 
 export interface IssueEvent {

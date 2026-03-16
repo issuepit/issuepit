@@ -94,6 +94,7 @@ public class ProjectPropertiesController(IssuePitDbContext db, TenantContext ctx
         if (prop is null) return NotFound();
 
         var existing = await db.IssuePropertyValues.FirstOrDefaultAsync(v => v.IssueId == issueId && v.PropertyId == propertyId);
+        string? oldValue = existing?.Value;
         if (existing is null)
         {
             existing = new IssuePropertyValue
@@ -112,6 +113,21 @@ public class ProjectPropertiesController(IssuePitDbContext db, TenantContext ctx
             existing.Value = req.Value;
             existing.UpdatedAt = DateTime.UtcNow;
         }
+
+        if (oldValue != req.Value)
+        {
+            db.IssueEvents.Add(new IssueEvent
+            {
+                Id = Guid.NewGuid(),
+                IssueId = issueId,
+                EventType = IssueEventType.PropertyChanged,
+                OldValue = string.IsNullOrEmpty(oldValue) ? null : $"{prop.Name}: {oldValue}",
+                NewValue = string.IsNullOrEmpty(req.Value) ? null : $"{prop.Name}: {req.Value}",
+                ActorUserId = ctx.CurrentUser?.Id,
+                CreatedAt = DateTime.UtcNow,
+            });
+        }
+
         await db.SaveChangesAsync();
         return Ok(existing);
     }

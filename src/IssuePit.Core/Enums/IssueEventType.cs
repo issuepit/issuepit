@@ -29,4 +29,6 @@ public enum IssueEventType
     MilestoneSet,
     [JsonStringEnumMemberName("milestone_cleared")]
     MilestoneCleared,
+    [JsonStringEnumMemberName("property_changed")]
+    PropertyChanged,
 }

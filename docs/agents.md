@@ -228,6 +228,10 @@ When an agent mode is assigned to an issue, `IssuePit.ExecutionClient` handles t
 
 When working as a coding agent on this repository, follow these conventions:
 
+### Date Formats
+
+Always use **ISO 8601 format** (`YYYY-MM-DD`) for dates in custom issue properties, API responses, and any user-visible date fields. Do not rely on browser locale formatting (e.g. `mm/dd/yyyy`) for date values stored or displayed in the application. Date inputs in forms should accept and display dates in `YYYY-MM-DD` format.
+
 ### API Response Objects
 
 - **Always use named `record` or `class` types for API responses** — do not use anonymous objects (`new { ... }`) in controller actions.

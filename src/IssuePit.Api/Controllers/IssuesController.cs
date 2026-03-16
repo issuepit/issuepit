@@ -177,12 +177,15 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         if (req.GitBranch is not null) issue.GitBranch = req.GitBranch;
         if (req.ClearMilestoneId && issue.MilestoneId.HasValue)
         {
-            events.Add(MakeEvent(id, IssueEventType.MilestoneCleared, issue.MilestoneId.ToString()));
+            var clearedMilestone = await db.Milestones.FindAsync(issue.MilestoneId.Value);
+            events.Add(MakeEvent(id, IssueEventType.MilestoneCleared, clearedMilestone?.Title ?? issue.MilestoneId.ToString()));
             issue.MilestoneId = null;
         }
         else if (req.MilestoneId.HasValue && req.MilestoneId != issue.MilestoneId)
         {
-            events.Add(MakeEvent(id, IssueEventType.MilestoneSet, issue.MilestoneId?.ToString(), req.MilestoneId.Value.ToString()));
+            var oldMilestone = issue.MilestoneId.HasValue ? await db.Milestones.FindAsync(issue.MilestoneId.Value) : null;
+            var newMilestone = await db.Milestones.FindAsync(req.MilestoneId.Value);
+            events.Add(MakeEvent(id, IssueEventType.MilestoneSet, oldMilestone?.Title, newMilestone?.Title ?? req.MilestoneId.Value.ToString()));
             issue.MilestoneId = req.MilestoneId.Value;
         }
         if (req.ClearParentIssueId && issue.ParentIssueId.HasValue)
