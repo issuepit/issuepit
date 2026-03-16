@@ -719,8 +719,38 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
-    public async Task Sync_ProjectConfig_UnknownSlug_WithoutOrgSlug_IsSkippedWithWarning()
+    public async Task Sync_ProjectConfig_UnknownSlug_WithOrgSlug_NoName_UsesSlugAsName()
     {
+        var orgSlug = $"noname-org-{Guid.NewGuid():N}"[..20];
+        var existingProjSlug = $"existing-{Guid.NewGuid():N}"[..20];
+        var (tenantId, orgId, _, _) = await SeedAsync(orgSlug, existingProjSlug, "u16");
+        var newProjSlug = $"noname-proj-{Guid.NewGuid():N}"[..20];
+
+        var dir = CreateConfigDir();
+        WriteModel(dir, "projects", $"{newProjSlug}.json5", new ProjectConfigModel
+        {
+            OrgSlug = orgSlug,
+            // Name intentionally omitted — slug should be used as fallback
+        });
+
+        try
+        {
+            await SetConfigRepoAsync(tenantId, dir);
+            var resp = await TriggerSyncAsync(tenantId);
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+            using var scope = factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+            var newProject = await db.Projects
+                .FirstOrDefaultAsync(p => p.OrgId == orgId && p.Slug == newProjSlug);
+            Assert.NotNull(newProject);
+            Assert.Equal(newProjSlug, newProject.Name); // slug used as fallback name
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public async Task Sync_ProjectConfig_UnknownSlug_WithoutOrgSlug_IsSkippedWithWarning()    {
         var orgSlug = $"noslug-org-{Guid.NewGuid():N}"[..20];
         var (tenantId, _, _, _) = await SeedAsync(orgSlug, $"p-{Guid.NewGuid():N}"[..16], "u15");
         var newProjSlug = $"noslug-proj-{Guid.NewGuid():N}"[..20];
