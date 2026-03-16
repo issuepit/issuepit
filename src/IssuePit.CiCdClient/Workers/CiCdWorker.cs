@@ -639,6 +639,10 @@ public class CiCdWorker(
                     logger.LogWarning("Artifact '{Name}' for run {RunId} will not be downloadable: artifact storage (S3) is not configured", name, runId);
                 }
 
+                // Mark the artifact as a test-result artifact when it contains .trx files — either
+                // bare .trx files on disk or .trx entries packed inside a .zip/.extensionless archive.
+                var isTestResultArtifact = ArtifactContainsTrxFiles(dir);
+
                 db.CiCdArtifacts.Add(new CiCdArtifact
                 {
                     Id = Guid.NewGuid(),
@@ -648,6 +652,7 @@ public class CiCdWorker(
                     FileCount = fileCount,
                     DownloadUrl = downloadUrl,
                     StorageKey = storageKey,
+                    IsTestResultArtifact = isTestResultArtifact,
                     CreatedAt = DateTime.UtcNow,
                 });
             }
@@ -662,7 +667,44 @@ public class CiCdWorker(
     }
 
     /// <summary>
-    /// Scans <paramref name="artifactDir"/> for workflow YAML files copied from the container
+    /// Returns <c>true</c> when <paramref name="artifactDir"/> contains at least one <c>.trx</c> file —
+    /// either directly on disk or packed inside a <c>.zip</c> or extensionless archive. Used to flag
+    /// test-result artifacts so the frontend can group or hide them behind a toggle.
+    /// </summary>
+    private static bool ArtifactContainsTrxFiles(string artifactDir)
+    {
+        if (!Directory.Exists(artifactDir))
+            return false;
+
+        foreach (var file in Directory.EnumerateFiles(artifactDir, "*", SearchOption.AllDirectories))
+        {
+            var ext = Path.GetExtension(file);
+
+            // Bare .trx file on disk.
+            if (string.Equals(ext, ".trx", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            // .trx entry packed inside a .zip or extensionless archive (act artifact layout).
+            if (string.Equals(ext, ".zip", StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(ext))
+            {
+                try
+                {
+                    using var zip = ZipFile.OpenRead(file);
+                    if (zip.Entries.Any(e => e.FullName.EndsWith(".trx", StringComparison.OrdinalIgnoreCase)))
+                        return true;
+                }
+                catch
+                {
+                    // Not a valid zip — silently skip. This is a detection-only helper;
+                    // ParseAndStoreTestResultsAsync logs the same failures during actual parsing.
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// during the clone step (stored under <c>_workflows/</c>), parses the job graph, and
     /// stores the result in <see cref="CiCdRun.WorkflowGraphJson"/>.
     /// Best-effort: errors are logged but never propagated.

@@ -851,6 +851,7 @@ export interface CiCdArtifact {
   sizeBytes: number
   fileCount: number
   storageKey?: string
+  isTestResultArtifact: boolean
   createdAt: string
 }
 
