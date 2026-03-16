@@ -718,6 +718,7 @@ export enum CiCdRunStatus {
   Failed = 'failed',
   Cancelled = 'cancelled',
   WaitingForApproval = 'waiting_for_approval',
+  SucceededWithWarnings = 'succeeded_with_warnings',
 }
 
 export const CiCdRunStatusLabels: Record<CiCdRunStatus, string> = {
@@ -727,6 +728,7 @@ export const CiCdRunStatusLabels: Record<CiCdRunStatus, string> = {
   [CiCdRunStatus.Failed]: 'Failed',
   [CiCdRunStatus.Cancelled]: 'Cancelled',
   [CiCdRunStatus.WaitingForApproval]: 'Waiting for Approval',
+  [CiCdRunStatus.SucceededWithWarnings]: 'Succeeded with Warnings',
 }
 
 export interface CiCdRun {
@@ -1036,6 +1038,17 @@ export interface IssueEvent {
   createdAt: string
 }
 
+export interface IssueGitMapping {
+  id: string
+  issueId: string
+  repositoryId: string
+  repositoryUrl: string
+  branchName?: string
+  commitSha?: string
+  source: 'BranchName' | 'CommitMessage'
+  detectedAt: string
+}
+
 export interface ProjectMetricSnapshot {
   recordedAt: string
   openIssues: number
@@ -1252,7 +1265,7 @@ export interface GitHubConflict {
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// <summary>Type discriminator for scheduled task runs.</summary>
-export type ScheduledTaskType = 'GitHubSync'
+export type ScheduledTaskType = 'GitHubSync' | 'BranchDetection'
 
 export interface ScheduledTaskRun {
   id: string

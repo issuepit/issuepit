@@ -44,6 +44,7 @@ public partial class BranchDetectionService(
     /// <summary>
     /// Scans all git repositories for all projects and creates/refreshes <see cref="IssueGitMapping"/>
     /// records for any issue references found in branch names or recent commit messages.
+    /// Creates a <see cref="BranchDetectionRun"/> audit record per project.
     /// </summary>
     public async Task DetectAsync(CancellationToken cancellationToken)
     {
@@ -53,22 +54,52 @@ public partial class BranchDetectionService(
 
         logger.LogInformation("BranchDetection: scanning {Count} repository/repositories", repos.Count);
 
-        foreach (var repo in repos)
+        // Group repositories by project so we create one run record per project.
+        var reposByProject = repos.GroupBy(r => r.ProjectId).ToList();
+
+        foreach (var group in reposByProject)
         {
             if (cancellationToken.IsCancellationRequested) break;
 
-            try
+            var projectId = group.Key;
+            var run = new BranchDetectionRun
             {
-                await ScanRepositoryAsync(repo, cancellationToken);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+                Id = Guid.NewGuid(),
+                ProjectId = projectId,
+                Status = GitHubSyncRunStatus.Running,
+                StartedAt = DateTime.UtcNow,
+            };
+            db.BranchDetectionRuns.Add(run);
+            await db.SaveChangesAsync(cancellationToken);
+
+            int projectMappings = 0;
+            bool failed = false;
+
+            foreach (var repo in group)
             {
-                logger.LogError(ex, "BranchDetection: failed for repo {RepoId}", repo.Id);
+                if (cancellationToken.IsCancellationRequested) break;
+
+                try
+                {
+                    projectMappings += await ScanRepositoryAsync(repo, cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger.LogError(ex, "BranchDetection: failed for repo {RepoId}", repo.Id);
+                    failed = true;
+                }
             }
+
+            run.Status = failed ? GitHubSyncRunStatus.Failed : GitHubSyncRunStatus.Succeeded;
+            run.Summary = projectMappings > 0
+                ? $"{projectMappings} new mapping(s)"
+                : "No new mappings";
+            run.CompletedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(cancellationToken);
         }
     }
 
-    private async Task ScanRepositoryAsync(GitRepository repo, CancellationToken cancellationToken)
+    private async Task<int> ScanRepositoryAsync(GitRepository repo, CancellationToken cancellationToken)
     {
         // Load the project to get its IssueKey (the short slug prefix, e.g. "IP", "PROJ").
         var project = await db.Projects.FindAsync([repo.ProjectId], cancellationToken);
@@ -83,7 +114,7 @@ public partial class BranchDetectionService(
         if (issues.Count == 0)
         {
             logger.LogDebug("BranchDetection: repo {RepoId} has no issues — skipping", repo.Id);
-            return;
+            return 0;
         }
 
         // Build lookup maps: IssuePit number → issue id, GitHub number → issue id.
@@ -135,7 +166,7 @@ public partial class BranchDetectionService(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "BranchDetection: could not read branches for repo {RepoId}", repo.Id);
-            return;
+            return 0;
         }
 
         foreach (var branch in branches)
@@ -226,6 +257,8 @@ public partial class BranchDetectionService(
                 "BranchDetection: added {Count} new mapping(s) for repo {RepoId}",
                 newMappings, repo.Id);
         }
+
+        return newMappings;
     }
 
     /// <summary>

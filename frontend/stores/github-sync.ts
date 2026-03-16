@@ -77,11 +77,11 @@ export const useGitHubSyncStore = defineStore('githubSync', () => {
     }
   }
 
-  async function triggerSync(projectId: string) {
+  async function triggerSync(projectId: string, dryRun = false) {
     loading.value = true
     error.value = null
     try {
-      await api.post(`/api/projects/${projectId}/github-sync/trigger`, {})
+      await api.post(`/api/projects/${projectId}/github-sync/trigger${dryRun ? '?dryRun=true' : ''}`, {})
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Failed to trigger sync'
       throw e

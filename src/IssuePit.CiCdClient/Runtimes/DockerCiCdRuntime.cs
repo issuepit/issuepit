@@ -581,6 +581,46 @@ public partial class DockerCiCdRuntime(
                     if (cloneExitCode != 0)
                         throw new Exception($"git clone failed with exit code {cloneExitCode} for URL '{trigger.GitRepoUrl}'");
 
+                    // When a specific full SHA was requested (not just a branch), attempt to check
+                    // out that exact commit. The shallow clone above fetches only the branch tip so
+                    // the requested SHA may not be present yet; if checkout fails we deepen the clone
+                    // by fetching additional history before retrying.
+                    if (IsFullCommitSha(run.CommitSha))
+                    {
+                        await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: git checkout {run.CommitSha}", LogStream.Stdout);
+                        var checkoutExitCode = await ExecCommandAsync(
+                            container.ID,
+                            ["git", "-C", "/workspace", "checkout", run.CommitSha],
+                            onLogLine,
+                            cancellationToken);
+
+                        if (checkoutExitCode != 0)
+                        {
+                            // SHA not in shallow clone — fetch more history and retry.
+                            await onLogLine(
+                                $"[DEBUG] SHA not in shallow clone, fetching more history…",
+                                LogStream.Stdout);
+                            await ExecCommandAsync(
+                                container.ID,
+                                ["git", "-C", "/workspace", "fetch", "--depth=100", "origin"],
+                                onLogLine,
+                                cancellationToken);
+
+                            checkoutExitCode = await ExecCommandAsync(
+                                container.ID,
+                                ["git", "-C", "/workspace", "checkout", run.CommitSha],
+                                onLogLine,
+                                cancellationToken);
+
+                            if (checkoutExitCode != 0)
+                            {
+                                await onLogLine(
+                                    $"[WARN] Could not check out requested commit {run.CommitSha} — continuing with branch tip",
+                                    LogStream.Stdout);
+                            }
+                        }
+                    }
+
                     // Verify the actual cloned commit SHA from inside the container and compare
                     // it with the trigger SHA. This confirms the correct commit was checked out
                     // and, when triggered by branch, resolves and updates the run's CommitSha.
@@ -1043,7 +1083,8 @@ public partial class DockerCiCdRuntime(
     /// actually checked out after the clone. Compares it with the trigger SHA stored on <paramref name="run"/>:
     /// <list type="bullet">
     ///   <item>Triggered by <b>full SHA</b>: logs a confirmation or a mismatch warning (the branch
-    ///     may have advanced between trigger and clone).</item>
+    ///     may have advanced between trigger and clone). Sets <see cref="CiCdRun.HasShaWarning"/> when
+    ///     a mismatch is detected so the run can be marked <c>SucceededWithWarnings</c>.</item>
     ///   <item>Triggered by <b>branch</b> (CommitSha is not a 40-char hex string): updates
     ///     <c>run.CommitSha</c> to the resolved tip SHA so the run record is accurate.</item>
     /// </list>
@@ -1079,6 +1120,8 @@ public partial class DockerCiCdRuntime(
                     await onLogLine(
                         $"[WARN] Commit SHA mismatch: trigger={run.CommitSha}, cloned={actualSha}{branchPart} — branch may have advanced since trigger",
                         LogStream.Stdout);
+                    // Flag the run so the worker transitions it to SucceededWithWarnings.
+                    run.HasShaWarning = true;
                     // Update to the actual SHA so the run record reflects what was executed.
                     run.CommitSha = actualSha;
                 }

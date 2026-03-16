@@ -27,8 +27,9 @@ public class ConfigRepoApplier(
 
     /// <summary>
     /// Applies org and project overrides found in <paramref name="configPath"/> for the given
-    /// <paramref name="tenant"/>. Only existing entities (matched by slug) are updated;
-    /// unknown slugs are skipped with a warning.
+    /// <paramref name="tenant"/>. Unknown entities (unresolvable users, missing orgs, missing
+    /// projects) are always recorded as warnings. When <paramref name="strictMode"/> is
+    /// <c>true</c> every warning is also escalated to an error so that callers can fail fast.
     /// </summary>
     /// <returns>A <see cref="ConfigSyncResult"/> describing what was applied and any issues encountered.</returns>
     public async Task<ConfigSyncResult> ApplyAsync(Tenant tenant, string configPath, bool strictMode, CancellationToken ct = default)
@@ -43,6 +44,9 @@ public class ConfigRepoApplier(
                 await ApplyOrgConfigAsync(tenant, file, strictMode, result, ct);
                 result.FilesProcessed++;
             }
+            // Flush org inserts/updates before processing projects so that
+            // newly created orgs are visible to project config lookups.
+            await db.SaveChangesAsync(ct);
         }
 
         var projectsDir = Path.Combine(configPath, "projects");
@@ -85,9 +89,23 @@ public class ConfigRepoApplier(
 
         if (org is null)
         {
-            result.AddWarning(filePath, $"Org with slug '{slug}' not found; skipping.");
-            logger.LogWarning("Org with slug '{Slug}' not found for tenant {TenantId}; skipping", slug, tenant.Id);
-            return;
+            if (string.IsNullOrWhiteSpace(slug) || slug.Length > 100)
+            {
+                var msg = $"Cannot create org: slug '{slug}' is invalid (must be 1–100 characters).";
+                result.AddError(filePath, msg);
+                logger.LogWarning("Org slug '{Slug}' is invalid for tenant {TenantId}; skipping creation", slug, tenant.Id);
+                return;
+            }
+
+            org = new Organization
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenant.Id,
+                Slug = slug,
+                Name = model.Name ?? slug,
+            };
+            db.Organizations.Add(org);
+            logger.LogInformation("Org with slug '{Slug}' not found for tenant {TenantId}; creating it", slug, tenant.Id);
         }
 
         if (model.Name is not null) org.Name = model.Name;
@@ -165,8 +183,16 @@ public class ConfigRepoApplier(
             if (org is null)
             {
                 var msg = $"Org with slug '{model.OrgSlug}' not found; skipping project '{slug}'.";
-                result.AddWarning(filePath, msg);
-                logger.LogWarning("Org with slug '{OrgSlug}' not found for tenant {TenantId}; skipping project '{Slug}'", model.OrgSlug, tenant.Id, slug);
+                if (strictMode)
+                {
+                    result.AddStrictModeError(filePath, msg);
+                    logger.LogWarning("Org with slug '{OrgSlug}' not found for tenant {TenantId}; skipping project '{Slug}' (strict mode — error)", model.OrgSlug, tenant.Id, slug);
+                }
+                else
+                {
+                    result.AddWarning(filePath, msg);
+                    logger.LogWarning("Org with slug '{OrgSlug}' not found for tenant {TenantId}; skipping project '{Slug}'", model.OrgSlug, tenant.Id, slug);
+                }
                 return;
             }
         }
@@ -181,8 +207,16 @@ public class ConfigRepoApplier(
         if (project is null)
         {
             var msg = $"Project with slug '{slug}' not found; skipping.";
-            result.AddWarning(filePath, msg);
-            logger.LogWarning("Project with slug '{Slug}' not found for tenant {TenantId}; skipping", slug, tenant.Id);
+            if (strictMode)
+            {
+                result.AddStrictModeError(filePath, msg);
+                logger.LogWarning("Project with slug '{Slug}' not found for tenant {TenantId}; skipping (strict mode — error)", slug, tenant.Id);
+            }
+            else
+            {
+                result.AddWarning(filePath, msg);
+                logger.LogWarning("Project with slug '{Slug}' not found for tenant {TenantId}; skipping", slug, tenant.Id);
+            }
             return;
         }
 
@@ -335,7 +369,8 @@ public class ConfigRepoApplier(
 
     /// <summary>
     /// Resolves a user ID from an explicit <paramref name="userId"/> GUID or a <paramref name="username"/> lookup.
-    /// Returns <c>null</c> when the user cannot be found. In strict mode the absence is logged as a warning.
+    /// Returns <c>null</c> when the user cannot be found. The absence is always recorded as a
+    /// warning; in strict mode it is escalated to an error.
     /// </summary>
     private async Task<Guid?> ResolveUserIdAsync(
         Tenant tenant, Guid? userId, string? username, bool strictMode,
@@ -346,11 +381,16 @@ public class ConfigRepoApplier(
             var exists = await db.Users.AnyAsync(u => u.Id == userId.Value && u.TenantId == tenant.Id, ct);
             if (!exists)
             {
+                var msg = $"User with id '{userId}' not found.";
                 if (strictMode)
                 {
-                    var msg = $"User with id '{userId}' not found (strict mode).";
+                    result.AddStrictModeError(filePath, msg);
+                    logger.LogWarning("User with id '{UserId}' not found in tenant {TenantId} (strict mode — error)", userId, tenant.Id);
+                }
+                else
+                {
                     result.AddWarning(filePath, msg);
-                    logger.LogWarning("User with id '{UserId}' not found in tenant {TenantId} (strict mode)", userId, tenant.Id);
+                    logger.LogWarning("User with id '{UserId}' not found in tenant {TenantId}", userId, tenant.Id);
                 }
                 return null;
             }
@@ -362,11 +402,16 @@ public class ConfigRepoApplier(
             var user = await db.Users.FirstOrDefaultAsync(u => u.Username == username && u.TenantId == tenant.Id, ct);
             if (user is null)
             {
+                var msg = $"User '{username}' not found.";
                 if (strictMode)
                 {
-                    var msg = $"User '{username}' not found (strict mode).";
+                    result.AddStrictModeError(filePath, msg);
+                    logger.LogWarning("User '{Username}' not found in tenant {TenantId} (strict mode — error)", username, tenant.Id);
+                }
+                else
+                {
                     result.AddWarning(filePath, msg);
-                    logger.LogWarning("User '{Username}' not found in tenant {TenantId} (strict mode)", username, tenant.Id);
+                    logger.LogWarning("User '{Username}' not found in tenant {TenantId}", username, tenant.Id);
                 }
                 return null;
             }

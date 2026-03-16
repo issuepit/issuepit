@@ -709,6 +709,34 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         return Ok(new { agentSessions });
     }
 
+    /// <summary>
+    /// Returns all git branch/commit mappings linked to this issue (detected by the branch-detection background service).
+    /// </summary>
+    [HttpGet("{id:guid}/git-mappings")]
+    public async Task<IActionResult> GetIssueGitMappings(Guid id)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+
+        var mappings = await db.IssueGitMappings
+            .Include(m => m.Repository)
+            .Where(m => m.IssueId == id && m.Repository.Project.Organization.TenantId == ctx.CurrentTenant.Id)
+            .OrderByDescending(m => m.DetectedAt)
+            .Select(m => new
+            {
+                m.Id,
+                m.IssueId,
+                m.RepositoryId,
+                RepositoryUrl = m.Repository.RemoteUrl,
+                m.BranchName,
+                m.CommitSha,
+                Source = m.Source.ToString(),
+                m.DetectedAt,
+            })
+            .ToListAsync();
+
+        return Ok(mappings);
+    }
+
     private IssueEvent MakeEvent(Guid issueId, IssueEventType eventType, string? oldValue = null, string? newValue = null)
         => new() { Id = Guid.NewGuid(), IssueId = issueId, EventType = eventType, OldValue = oldValue, NewValue = newValue, ActorUserId = ctx.CurrentUser?.Id, CreatedAt = DateTime.UtcNow };
 }

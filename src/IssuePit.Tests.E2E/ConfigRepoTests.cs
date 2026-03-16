@@ -176,12 +176,18 @@ public class ConfigRepoTests
                 $"/api/admin/tenants/{tenantId}/config-repo",
                 new { url = configDir, token = (string?)null, username = (string?)null, strictMode = true });
 
-            // Sync should succeed even with the unknown member in strict mode — it is logged and skipped
+            // In strict mode an unknown member is an error — sync returns 422.
             var syncResp = await _fixture.ApiClient!.PostAsync(
                 $"/api/admin/tenants/{tenantId}/config-repo/sync", null);
-            Assert.Equal(HttpStatusCode.OK, syncResp.StatusCode);
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, syncResp.StatusCode);
 
-            // Org name should still be updated
+            var body = await syncResp.Content.ReadFromJsonAsync<JsonElement>();
+            var issues = body.GetProperty("issues").EnumerateArray().ToList();
+            Assert.Contains(issues, i =>
+                i.GetProperty("severity").GetString() == "error" &&
+                i.GetProperty("message").GetString()!.Contains("totally_nonexistent_user_xyz"));
+
+            // Org name should still be updated despite the error
             var orgGetResp = await client.GetAsync($"/api/orgs/{orgId}");
             var updatedOrg = await orgGetResp.Content.ReadFromJsonAsync<JsonElement>();
             Assert.Equal("Strict Updated", updatedOrg.GetProperty("name").GetString());

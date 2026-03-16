@@ -289,7 +289,7 @@ public class CiCdWorker(
                 },
                 runCts.Token);
 
-            run.Status = CiCdRunStatus.Succeeded;
+            run.Status = run.HasShaWarning ? CiCdRunStatus.SucceededWithWarnings : CiCdRunStatus.Succeeded;
         }
         catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
         {
