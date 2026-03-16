@@ -166,7 +166,12 @@ public class DockerAgentRuntime(
             await onLogLine($"[DEBUG] Comments       : {comments.Count} comment(s) included in prompt", LogStream.Stdout);
 
         // Build CLI args for exec flow (not used in HTTP server mode).
-        var runnerArgs = useHttpServerMode ? [] : RunnerCommandBuilder.BuildArgsList(agent, issue, comments: comments);
+        // When the session has a preserved previous opencode session ID (and the DB was injected),
+        // pass it as --session <id> so opencode continues from the preserved conversation.
+        var runnerArgs = useHttpServerMode ? [] : RunnerCommandBuilder.BuildArgsList(
+            agent, issue,
+            continueSessionId: session.PreviousOpenCodeSessionId,
+            comments: comments);
         var useExecFlow = !useHttpServerMode && runnerArgs.Count > 0;
 
         if (useExecFlow)
@@ -273,6 +278,35 @@ public class DockerAgentRuntime(
         logger.LogInformation("Started Docker container {ContainerId} for agent session {SessionId} (ExecFlow={UseExecFlow})",
             container.ID, session.Id, useExecFlow);
 
+        // Inject the preserved opencode DB snapshot from the previous session so the agent can
+        // continue the previous conversation. The DB is injected after the container starts (so
+        // the entrypoint can create the home directory) but before opencode runs.
+        if (session.PreviousOpenCodeDbTar is { Length: > 0 })
+        {
+            try
+            {
+                await onLogLine($"[INFO] Injecting previous opencode DB snapshot (session: {session.PreviousOpenCodeSessionId ?? "unknown"})…", LogStream.Stdout);
+                using var dbStream = new MemoryStream(session.PreviousOpenCodeDbTar);
+                // The tar archive path must already contain the correct relative directory
+                // so Docker extracts the file to /root/.local/share/opencode/opencode.db.
+                await dockerClient.Containers.ExtractArchiveToContainerAsync(
+                    container.ID,
+                    new CopyToContainerParameters { Path = "/" },
+                    dbStream,
+                    cancellationToken);
+                await onLogLine("[INFO] opencode DB snapshot injected — continuing from previous session", LogStream.Stdout);
+            }
+            catch (Exception ex)
+            {
+                await onLogLine($"[WARN] Failed to inject opencode DB snapshot: {ex.Message} — starting fresh session", LogStream.Stderr);
+                logger.LogWarning(ex, "Failed to inject opencode DB into container {ContainerId}", container.ID);
+            }
+        }
+
+        // Emit previous session ID so it appears in the logs for traceability.
+        if (!string.IsNullOrWhiteSpace(session.PreviousOpenCodeSessionId))
+            await onLogLine($"[INFO] Continuing from previous opencode session: {session.PreviousOpenCodeSessionId}", LogStream.Stdout);
+
         if (!useExecFlow && !useHttpServerMode)
         {
             // ── Legacy flow ──────────────────────────────────────────────────────
@@ -377,6 +411,11 @@ public class DockerAgentRuntime(
                     cancellationToken);
 
                 await onLogLine($"[INFO] opencode HTTP session completed with status: {sessionStatus}", LogStream.Stdout);
+
+                // Emit the opencode HTTP session ID as a structured marker so IssueWorker can
+                // persist it on the session record. This allows subsequent runs for the same issue
+                // to continue from this session (by restoring the opencode DB snapshot).
+                await onLogLine($"{OpenCodeSessionIdMarker}{httpSessionId}", LogStream.Stdout);
 
                 // Step 10: Check git state and emit markers so IssueWorker can trigger CI/CD.
                 if (gitRepository is not null)
@@ -833,6 +872,34 @@ public class DockerAgentRuntime(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Could not extract .git archive from container {ContainerId}", containerId);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Extracts the opencode SQLite database from the container at
+    /// <c>/root/.local/share/opencode/opencode.db</c> and returns the raw tar stream.
+    /// The tar archive preserves the relative path so it can be re-injected into a new container
+    /// at path <c>/</c> to restore to the same location.
+    /// The caller is responsible for disposing the returned stream.
+    /// Returns <c>null</c> if the file does not exist or cannot be read (e.g. no sessions were created).
+    /// </summary>
+    internal async Task<Stream?> TryGetOpenCodeDbStreamAsync(
+        string containerId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await dockerClient.Containers.GetArchiveFromContainerAsync(
+                containerId,
+                new Docker.DotNet.Models.ContainerPathStatParameters { Path = "/root/.local/share/opencode/opencode.db" },
+                false,
+                cancellationToken);
+            return response.Stream;
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Could not extract opencode DB from container {ContainerId} (may not exist yet)", containerId);
             return null;
         }
     }

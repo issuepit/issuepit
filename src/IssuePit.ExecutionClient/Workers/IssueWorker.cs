@@ -290,6 +290,46 @@ public class IssueWorker(
         db.AgentSessions.Add(session);
         await db.SaveChangesAsync(cancellationToken);
 
+        // Look up the most recent completed opencode session for this issue+agent so the new run
+        // can continue from the preserved conversation. Only applies when artifact storage is
+        // configured (S3 URL is available) or when the session ID alone is useful.
+        var previousSession = await db.AgentSessions
+            .Where(s => s.IssueId == issue.Id
+                && s.AgentId == agent.Id
+                && s.Id != session.Id
+                && s.EndedAt != null
+                && s.OpenCodeSessionId != null
+                && (s.Status == AgentSessionStatus.Succeeded || s.Status == AgentSessionStatus.Failed))
+            .OrderByDescending(s => s.EndedAt)
+            .Select(s => new { s.OpenCodeSessionId, s.OpenCodeDbS3Url })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (previousSession is not null)
+        {
+            session.PreviousOpenCodeSessionId = previousSession.OpenCodeSessionId;
+            logger.LogInformation(
+                "Found previous opencode session {PrevSessionId} for issue {IssueId} — will continue from it",
+                previousSession.OpenCodeSessionId, issue.Id);
+
+            // If there is a preserved DB snapshot, download it for injection into the new container.
+            if (!string.IsNullOrEmpty(previousSession.OpenCodeDbS3Url) && gitArtifactUploader.IsConfigured)
+            {
+                try
+                {
+                    session.PreviousOpenCodeDbTar = await gitArtifactUploader.DownloadOpenCodeDbAsync(
+                        previousSession.OpenCodeDbS3Url, cancellationToken);
+                    if (session.PreviousOpenCodeDbTar is not null)
+                        logger.LogInformation(
+                            "Loaded opencode DB snapshot ({Bytes} bytes tar) for injection into new container",
+                            session.PreviousOpenCodeDbTar.Length);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to download opencode DB snapshot for previous session restoration");
+                }
+            }
+        }
+
         // Create a per-session CTS linked to the host stoppingToken so we can cancel this launch independently.
         using var sessionCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _activeSessions[session.Id] = sessionCts;
@@ -385,6 +425,9 @@ public class IssueWorker(
                 // Persist the HTTP server web UI URL so the frontend can link to it while the session runs.
                 if (!string.IsNullOrEmpty(capturedServerWebUiUrl))
                     session.ServerWebUiUrl = capturedServerWebUiUrl;
+                // Persist the opencode session ID so future runs for the same issue can continue from it.
+                if (!string.IsNullOrEmpty(capturedOpenCodeSessionId))
+                    session.OpenCodeSessionId = capturedOpenCodeSessionId;
 
                 // When git push failed, attempt to upload the .git folder as a recovery artifact
                 // so the agent's committed work is not lost. Only attempted for the exec flow
@@ -484,6 +527,31 @@ public class IssueWorker(
                 // cancelled (sessionCts.Token is already cancelled in that case).
                 if (useExecForFixes && runtimeId is not null)
                 {
+                    // Before stopping the container, extract and preserve the opencode DB snapshot
+                    // so the next run for the same issue can continue from this session.
+                    if (!string.IsNullOrEmpty(capturedOpenCodeSessionId)
+                        && execRuntime is DockerAgentRuntime dockerRuntimeForDb
+                        && gitArtifactUploader.IsConfigured)
+                    {
+                        try
+                        {
+                            await using var dbStream = await dockerRuntimeForDb.TryGetOpenCodeDbStreamAsync(runtimeId, CancellationToken.None);
+                            if (dbStream is not null)
+                            {
+                                var dbUrl = await gitArtifactUploader.UploadOpenCodeDbAsync(dbStream, session.Id, CancellationToken.None);
+                                if (dbUrl is not null)
+                                {
+                                    session.OpenCodeDbS3Url = dbUrl;
+                                    logger.LogInformation("Preserved opencode DB for session {SessionId}: {Url}", session.Id, dbUrl);
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            logger.LogWarning(ex, "Failed to preserve opencode DB for session {SessionId}", session.Id);
+                        }
+                    }
+
                     if (session.KeepContainer)
                         // Use CancellationToken.None so the log line is written even when the session was cancelled.
                         await AppendLogAsync(session.Id,

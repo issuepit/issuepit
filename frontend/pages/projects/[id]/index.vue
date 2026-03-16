@@ -57,16 +57,6 @@
             </svg>
             New Issue
           </button>
-          <NuxtLink :to="`/projects/${id}/settings`"
-            class="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-800 transition-colors"
-            title="Project Settings">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            Settings
-          </NuxtLink>
         </div>
       </div>
       <p v-if="store.currentProject.description" class="text-gray-400 text-sm mb-6">
@@ -159,6 +149,14 @@
           </svg>
           Settings
         </NuxtLink>
+        <button v-if="!isDraftMode" @click="enterDraftMode"
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-gray-500 hover:text-amber-400 hover:bg-gray-800 transition-colors text-sm whitespace-nowrap">
+          <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+          </svg>
+          Customize
+        </button>
       </nav>
 
       <!-- Draft mode toolbar -->
@@ -172,7 +170,32 @@
           <span class="font-medium">Draft mode</span>
           <span class="text-amber-400/70 text-xs hidden sm:inline">— drag to reorder · configure each section</span>
         </div>
-        <div class="flex items-center gap-1.5">
+        <div class="flex items-center gap-1.5 flex-wrap justify-end">
+          <button
+            draggable="true"
+            @click="addRowBreak()"
+            @dragstart.stop="(e: DragEvent) => { captureSnapshot(); const id = addRowBreak(); onSectionDragStart(e, id) }"
+            aria-label="Add row break to dashboard layout"
+            class="text-xs text-gray-500 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1 cursor-grab">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            Row break
+          </button>
+          <button @click="showLoadModal = true"
+            class="text-xs text-gray-500 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            Load
+          </button>
+          <button @click="handleExportJson"
+            class="text-xs text-gray-500 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l4 4m0 0l4-4m-4 4V4" />
+            </svg>
+            Export
+          </button>
           <button @click="resetLayout"
             class="text-xs text-gray-400 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors">
             Reset
@@ -181,11 +204,27 @@
             class="text-xs text-gray-400 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors">
             Cancel
           </button>
+          <button @click="showSaveModal = true"
+            class="text-xs text-gray-400 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+            </svg>
+            Save as…
+          </button>
           <button @click="saveDraftMode"
             class="text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg transition-colors font-medium">
             Save
           </button>
         </div>
+      </div>
+
+      <!-- Import error -->
+      <div v-if="importError" class="mb-3 flex items-center gap-2 bg-red-900/30 border border-red-700/40 rounded-lg px-4 py-2">
+        <svg class="w-3.5 h-3.5 shrink-0 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+        </svg>
+        <p class="text-xs text-red-400 flex-1">{{ importError }}</p>
+        <button @click="importError = null" class="text-red-500 hover:text-red-300 text-xs">✕</button>
       </div>
 
       <!-- Hidden sections restore row (draft mode) -->
@@ -201,57 +240,108 @@
         </template>
       </div>
 
-      <!-- Main content grid: 6 columns -->
-      <div class="grid grid-cols-6 gap-4 items-start">
-        <template v-for="item in renderedItems" :key="item.type === 'tabgroup' ? item.key : item.sid">
-          <div
+      <!-- Main content grid: 12 columns -->
+      <div class="grid grid-cols-12 gap-4 items-start">
+        <template v-for="item in renderedItems" :key="item.type === 'section' || item.type === 'rowbreak' ? item.sid : item.key">
+          <!-- Row break: forces a new grid row; shows separator handle in draft mode -->
+          <template v-if="item.type === 'rowbreak'">
+            <div v-if="isDraftMode" class="col-span-12 flex items-center gap-2 py-1 cursor-grab"
+              draggable="true"
+              @dragstart.stop="(e: DragEvent) => onSectionDragStart(e, item.sid)"
+              @dragover.prevent="onSectionDragOver($event, item.sid)"
+              @dragenter="onSectionDragEnter($event, item.sid)"
+              @dragend="onSectionDragEnd($event)">
+              <div class="flex-1 border-t border-dashed border-orange-500/60"></div>
+              <span class="text-xs text-orange-500/80 select-none whitespace-nowrap">⋮⋮ row break</span>
+              <div class="flex-1 border-t border-dashed border-orange-500/60"></div>
+              <button @click="removeRowBreak(item.sid)"
+                aria-label="Remove row break"
+                class="text-orange-600/60 hover:text-red-400 transition-colors text-xs leading-none px-1">✕</button>
+            </div>
+            <div v-else class="col-span-12 h-0"></div>
+          </template>
+
+          <div v-else
+            data-drag-card
             :class="[
               itemColSpanClass(item),
               isDraftMode ? 'select-none' : '',
-              dragSectionId === (item.type === 'section' ? item.sid : null) ? 'opacity-50' : '',
+              (item.type === 'section' ? dragSectionId === item.sid : (item.sections ?? []).includes(dragSectionId as SectionId))
+                ? 'opacity-50'
+                : '',
             ]"
             :draggable="isDraftMode"
-            @dragstart="isDraftMode && item.type === 'section' ? onSectionDragStart($event, item.sid) : undefined"
+            @dragstart="isDraftMode && (item.type === 'section' || item.type === 'stackgroup') ? onSectionDragStart($event, item.type === 'section' ? item.sid : item.sections[0]) : undefined"
             @dragover.prevent="isDraftMode ? onSectionDragOver($event, item.type === 'section' ? item.sid : item.sections[0]) : undefined"
-            @dragend="isDraftMode ? onSectionDragEnd() : undefined">
+            @dragenter="isDraftMode ? onSectionDragEnter($event, item.type === 'section' ? item.sid : item.sections[0]) : undefined"
+            @dragend="isDraftMode ? onSectionDragEnd($event) : undefined">
 
             <!-- Draft mode header: shows for tab group or single section -->
             <template v-if="isDraftMode">
               <!-- For single section: full config bar -->
               <DashboardSectionBar
                 v-if="item.type === 'section'"
-                :label="SECTION_LABELS[item.sid]"
-                :display-modes="SECTION_DISPLAY_MODES[item.sid]"
-                :current-display-mode="sectionCfg(item.sid).displayMode"
-                :has-max-items="SECTION_HAS_MAX_ITEMS.has(item.sid)"
+                :label="SECTION_LABELS[item.sid as SectionId]"
+                :display-modes="SECTION_DISPLAY_MODES[item.sid as SectionId]"
+                :current-display-mode="sectionCfg(item.sid as SectionId).displayMode"
+                :has-max-items="SECTION_HAS_MAX_ITEMS.has(item.sid as SectionId)"
                 :max-items-options="MAX_ITEMS_OPTIONS"
-                :current-max-items="sectionCfg(item.sid).maxItems"
-                :widths="item.sid !== 'stats' ? PROJECT_WIDTHS : []"
-                :current-width="sectionCfg(item.sid).width"
+                :current-max-items="sectionCfg(item.sid as SectionId).maxItems"
+                :widths="PROJECT_WIDTHS"
+                :current-width="sectionCfg(item.sid as SectionId).width"
+                :current-chart-days="item.sid === 'history' ? (sectionCfg(item.sid as SectionId).chartDays ?? CHART_DAY_DEFAULT) : undefined"
+                :chart-height-options="item.sid === 'history' ? CHART_HEIGHT_OPTIONS : undefined"
+                :current-chart-height="item.sid === 'history' ? (sectionCfg(item.sid as SectionId).chartHeightKey ?? 'md') : undefined"
+                :kanban-boards="item.sid === 'kanban' ? kanbanStore.boards : undefined"
+                :selected-kanban-board-id="item.sid === 'kanban' ? sectionCfg('kanban').selectedBoardId : undefined"
                 :can-tab="layout.order.indexOf(item.sid) < layout.order.length - 1"
-                :is-tabbed="sectionCfg(item.sid).tabGroup !== null"
-                :hidden="sectionCfg(item.sid).hidden"
-                @display-mode-change="m => updateCfg(item.sid, { displayMode: m as SectionDisplayMode })"
-                @max-items-change="n => updateCfg(item.sid, { maxItems: n })"
-                @width-change="w => updateCfg(item.sid, { width: w as SectionWidth })"
-                @tab-toggle="toggleTabGroupWithNext(item.sid)"
-                @hide="hideSection(item.sid)"
-                @show="showSection(item.sid)"
+                :is-tabbed="sectionCfg(item.sid as SectionId).tabGroup !== null"
+                :can-stack="SECTION_CAN_STACK.has(item.sid as SectionId) && layout.order.indexOf(item.sid) < layout.order.length - 1"
+                :is-stacked="sectionCfg(item.sid as SectionId).stackGroup !== null"
+                :hidden="sectionCfg(item.sid as SectionId).hidden"
+                :drag-hover="dragSectionId !== null && dragHoverSid === item.sid && dragSectionId !== item.sid"
+                @display-mode-change="m => updateCfg(item.sid as SectionId, { displayMode: m as SectionDisplayMode })"
+                @max-items-change="n => updateCfg(item.sid as SectionId, { maxItems: n })"
+                @width-change="w => updateCfg(item.sid as SectionId, { width: w as SectionWidth })"
+                @chart-days-change="d => updateCfg(item.sid as SectionId, { chartDays: d })"
+                @chart-height-change="k => updateCfg(item.sid as SectionId, { chartHeightKey: k })"
+                @kanban-board-change="boardId => updateCfg('kanban', { selectedBoardId: boardId })"
+                @tab-toggle="toggleTabGroupWithNext(item.sid as SectionId)"
+                @tab-drop="droppedSid => tabWithSection(item.sid, droppedSid)"
+                @stack-toggle="toggleStackGroupWithNext(item.sid as SectionId)"
+                @stack-drop="droppedSid => stackWithSection(item.sid, droppedSid)"
+                @hide="hideSection(item.sid as SectionId)"
+                @show="showSection(item.sid as SectionId)"
               />
               <!-- For tab group: label + width + split -->
               <DashboardTabGroupBar
-                v-else
+                v-else-if="item.type === 'tabgroup'"
                 :sections="item.sections"
                 :section-labels="SECTION_LABELS"
                 :widths="PROJECT_WIDTHS"
-                :current-width="sectionCfg(item.sections[0]).width"
-                @split="toggleTabGroupWithNext(item.sections[0])"
-                @width-change="w => updateCfg(item.sections[0], { width: w as SectionWidth })"
+                :current-width="sectionCfg(item.sections[0] as SectionId).width"
+                @split="toggleTabGroupWithNext(item.sections[0] as SectionId)"
+                @width-change="w => updateCfg(item.sections[0] as SectionId, { width: w as SectionWidth })"
+              />
+              <!-- For stack group: label + width + unstack -->
+              <DashboardStackGroupBar
+                v-else-if="item.type === 'stackgroup'"
+                :sections="item.sections"
+                :section-labels="SECTION_LABELS"
+                :widths="PROJECT_WIDTHS"
+                :current-width="sectionCfg(item.sections[0] as SectionId).width"
+                :is-dragging="!!dragSectionId"
+                @split="toggleStackGroupWithNext(item.sections[0] as SectionId)"
+                @width-change="w => updateCfg(item.sections[0] as SectionId, { width: w as SectionWidth })"
+                @stack-drop="droppedSid => stackWithSection(item.sections[0] as SectionId, droppedSid)"
               />
             </template>
 
             <!-- Content area -->
-            <div :class="isDraftMode && item.type === 'section' && sectionCfg(item.sid).hidden ? 'opacity-30 saturate-0 pointer-events-none' : ''">
+            <div :class="[
+              isDraftMode && item.type === 'section' && sectionCfg(item.sid as SectionId).hidden ? 'opacity-30 saturate-0 pointer-events-none' : '',
+              item.type === 'stackgroup' ? 'flex flex-col gap-2' : '',
+            ]">
 
               <!-- Tab nav header (for tab groups) -->
               <div v-if="item.type === 'tabgroup'"
@@ -264,37 +354,43 @@
                       : 'text-gray-500 hover:text-gray-300',
                   ]"
                   class="px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0">
-                  {{ SECTION_LABELS[sec] }}
+                  {{ SECTION_LABELS[sec as SectionId] }}
                 </button>
               </div>
 
-              <!-- Render each section in the item (for tabgroup: use v-show; for single: always shown) -->
-              <template v-for="sid in (item.type === 'tabgroup' ? item.sections : [item.sid])" :key="sid">
+              <!-- Render each section in the item (for tabgroup: use v-show; for single/stackgroup: always shown) -->
+              <template v-for="sid in (item.type === 'tabgroup' || item.type === 'stackgroup' ? item.sections : [item.sid])" :key="sid">
                 <div v-show="item.type !== 'tabgroup' || getActiveTab(item.key, item.sections) === sid"
                   :class="item.type === 'tabgroup' ? 'bg-gray-900 border border-gray-800 rounded-b-xl p-5' : ''">
 
-                  <!-- ── STATS section ── -->
-                  <template v-if="sid === 'stats'">
-                    <div class="grid grid-cols-3 gap-3 max-w-md">
-                      <NuxtLink :to="`/projects/${id}/issues`"
-                        class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group">
-                        <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
-                          {{ store.currentProject?.issueCount }}</p>
-                        <p class="text-xs text-gray-500 mt-0.5">Issues</p>
-                      </NuxtLink>
-                      <NuxtLink :to="`/projects/${id}/code?tab=commits`"
-                        class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group">
-                        <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
-                          {{ commitCountLabel }}</p>
-                        <p class="text-xs text-gray-500 mt-0.5">Commits</p>
-                      </NuxtLink>
-                      <NuxtLink :to="`/projects/${id}/merge-requests`"
-                        class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group">
-                        <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
-                          {{ store.currentProject?.openMergeRequestCount }}</p>
-                        <p class="text-xs text-gray-500 mt-0.5">Open MRs</p>
-                      </NuxtLink>
-                    </div>
+                  <!-- ── STAT: Issues ── -->
+                  <template v-if="sid === 'statIssues'">
+                    <NuxtLink :to="`/projects/${id}/issues`"
+                      class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group block">
+                      <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
+                        {{ store.currentProject?.issueCount }}</p>
+                      <p class="text-xs text-gray-500 mt-0.5">Issues</p>
+                    </NuxtLink>
+                  </template>
+
+                  <!-- ── STAT: Commits ── -->
+                  <template v-else-if="sid === 'statCommits'">
+                    <NuxtLink :to="`/projects/${id}/code?tab=commits`"
+                      class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group block">
+                      <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
+                        {{ commitCountLabel }}</p>
+                      <p class="text-xs text-gray-500 mt-0.5">Commits</p>
+                    </NuxtLink>
+                  </template>
+
+                  <!-- ── STAT: Open MRs ── -->
+                  <template v-else-if="sid === 'statMRs'">
+                    <NuxtLink :to="`/projects/${id}/merge-requests`"
+                      class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-4 text-center transition-colors group block">
+                      <p class="text-2xl font-bold text-white group-hover:text-brand-300 transition-colors">
+                        {{ store.currentProject?.openMergeRequestCount }}</p>
+                      <p class="text-xs text-gray-500 mt-0.5">Open MRs</p>
+                    </NuxtLink>
                   </template>
 
                   <!-- ── MILESTONES section ── -->
@@ -528,10 +624,10 @@
                   <template v-else-if="sid === 'history'">
                     <div :class="item.type === 'tabgroup' ? '' : 'bg-gray-900 border border-gray-800 rounded-xl p-5'">
                       <template v-if="item.type !== 'tabgroup'">
-                        <h2 class="font-semibold text-white mb-4">Issue &amp; Run History (last 24 h)</h2>
+                        <h2 class="font-semibold text-white mb-4">Issue &amp; Run History (last {{ sectionCfg('history').chartDays ?? CHART_DAY_DEFAULT }}d)</h2>
                       </template>
-                      <div v-if="metricSnapshots.length" class="overflow-x-auto">
-                        <svg :viewBox="`0 0 ${chartWidth} ${chartHeight}`" class="w-full" style="min-width:500px">
+                      <div v-if="filteredMetricSnapshots.length" class="overflow-x-auto">
+                        <svg :viewBox="`0 0 ${chartWidth} ${chartHeightPx}`" class="w-full" style="min-width:500px">
                           <line v-for="y in gridYValues" :key="y"
                             :x1="chartPad" :y1="yScale(y)" :x2="chartWidth - chartPad" :y2="yScale(y)"
                             stroke="#374151" stroke-width="1" />
@@ -542,8 +638,8 @@
                           <polyline :points="linePoints('doneIssues')" fill="none" stroke="#22c55e" stroke-width="2" stroke-linejoin="round" />
                           <polyline :points="linePoints('totalAgentRuns')" fill="none" stroke="#e879f9" stroke-width="2" stroke-linejoin="round" stroke-dasharray="4 2" />
                           <polyline :points="linePoints('totalCiCdRuns')" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linejoin="round" stroke-dasharray="4 2" />
-                          <text v-for="(snap, i) in metricSnapshots" :key="`xl-${i}`"
-                            :x="xPos(i)" :y="chartHeight - 4" text-anchor="middle" fill="#6b7280" font-size="9">{{ shortTime(snap.recordedAt) }}</text>
+                          <text v-for="(snap, i) in filteredMetricSnapshots" :key="`xl-${i}`"
+                            :x="xPos(i)" :y="chartHeightPx - 4" text-anchor="middle" fill="#6b7280" font-size="9">{{ shortTime(snap.recordedAt) }}</text>
                         </svg>
                       </div>
                       <div v-else class="py-8 text-center text-sm text-gray-500">No history yet — snapshots are saved hourly</div>
@@ -573,7 +669,7 @@
                       <template v-if="item.type !== 'tabgroup'">
                         <h2 class="font-semibold text-white mb-4">Kanban Board</h2>
                       </template>
-                      <KanbanBoardInline :project-id="id" />
+                      <KanbanBoardInline :project-id="id" :board-id="sectionCfg('kanban').selectedBoardId ?? null" />
                     </div>
                   </template>
 
@@ -733,6 +829,26 @@
         </div>
       </div>
     </div>
+
+    <!-- Save as modal -->
+    <DashboardSaveModal
+      v-if="showSaveModal"
+      :layout-json="exportLayoutJson()"
+      dashboard-type="project"
+      :project-id="id"
+      :show-project-default="true"
+      @close="showSaveModal = false"
+      @saved="showSaveModal = false"
+    />
+
+    <!-- Load / import modal -->
+    <DashboardLoadModal
+      v-if="showLoadModal"
+      dashboard-type="project"
+      :project-id="id"
+      @close="showLoadModal = false"
+      @apply="applyImportedLayout"
+    />
   </div>
 </template>
 
@@ -742,13 +858,16 @@ import { AgentSessionStatus, CiCdRunStatus, IssueStatus, IssuePriority, IssueTyp
 import { useProjectsStore } from '~/stores/projects'
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useIssuesStore } from '~/stores/issues'
+import { useKanbanStore } from '~/stores/kanban'
 import { formatIssueId } from '~/composables/useIssueFormat'
+import { useDashboardLayout } from '~/composables/useDashboardLayout'
 
 const route = useRoute()
 const id = route.params.id as string
 const store = useProjectsStore()
 const runsStore = useCiCdRunsStore()
 const issuesStore = useIssuesStore()
+const kanbanStore = useKanbanStore()
 const api = useApi()
 
 // --- Issue creation ---
@@ -875,23 +994,14 @@ const hasMoreCommits = ref(false)
 const recentProjectIssues = ref<Issue[]>([])
 
 // ── Dashboard layout customization ─────────────────────────────────────────
-type SectionId = 'stats' | 'milestones' | 'issues' | 'agentRuns' | 'cicdRuns' | 'history' | 'kanban'
+type SectionId = 'statIssues' | 'statCommits' | 'statMRs' | 'milestones' | 'issues' | 'agentRuns' | 'cicdRuns' | 'history' | 'kanban'
 type SectionDisplayMode = 'list' | 'count' | 'block'
-type SectionWidth = 'sm' | 'md' | 'lg'
-interface SectionConfig {
-  hidden: boolean
-  displayMode: SectionDisplayMode
-  maxItems: number
-  width: SectionWidth
-  tabGroup: string | null
-}
-interface SectionLayout {
-  order: SectionId[]
-  configs: Record<SectionId, SectionConfig>
-}
+type SectionWidth = 'xxs' | 'xs' | 'quarter' | 'sm' | 'md' | 'lg'
 
 const SECTION_LABELS: Record<SectionId, string> = {
-  stats: 'Stats',
+  statIssues: 'Issues',
+  statCommits: 'Commits',
+  statMRs: 'Open MRs',
   milestones: 'Milestones',
   issues: 'Recent Issues',
   agentRuns: 'Recent Agent Runs',
@@ -906,174 +1016,115 @@ const SECTION_DISPLAY_MODES: Partial<Record<SectionId, SectionDisplayMode[]>> = 
   cicdRuns: ['list', 'count'],
 }
 const SECTION_HAS_MAX_ITEMS: Set<SectionId> = new Set(['milestones', 'issues', 'agentRuns', 'cicdRuns'])
+const SECTION_CAN_STACK: Set<SectionId> = new Set(['statIssues', 'statCommits', 'statMRs', 'milestones', 'issues', 'agentRuns', 'cicdRuns', 'history', 'kanban'])
 const MAX_ITEMS_OPTIONS = [3, 5, 8, 10]
-const WIDTH_LABELS: Record<SectionWidth, string> = { sm: '1/3', md: '1/2', lg: 'Full' }
-const PROJECT_WIDTHS = (['sm', 'md', 'lg'] as SectionWidth[]).map(v => ({ value: v, label: WIDTH_LABELS[v] }))
+const WIDTH_LABELS: Record<SectionWidth, string> = { xxs: '1/12', xs: '1/6', quarter: '1/4', sm: '1/3', md: '1/2', lg: 'Full' }
+const PROJECT_WIDTHS = (['xxs', 'xs', 'quarter', 'sm', 'md', 'lg'] as SectionWidth[]).map(v => ({ value: v, label: WIDTH_LABELS[v] }))
 
-const DEFAULT_CONFIGS: Record<SectionId, SectionConfig> = {
-  stats:      { hidden: false, displayMode: 'list',  maxItems: 3,  width: 'lg', tabGroup: null },
-  milestones: { hidden: false, displayMode: 'block', maxItems: 3,  width: 'lg', tabGroup: null },
-  issues:     { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'sm', tabGroup: null },
-  agentRuns:  { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'sm', tabGroup: null },
-  cicdRuns:   { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'sm', tabGroup: null },
-  history:    { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'md', tabGroup: null },
-  kanban:     { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'md', tabGroup: null },
+const DEFAULT_CONFIGS = {
+  statIssues:  { hidden: false, displayMode: 'list',  maxItems: 3,  width: 'xs',  tabGroup: null, stackGroup: null },
+  statCommits: { hidden: false, displayMode: 'list',  maxItems: 3,  width: 'xs',  tabGroup: null, stackGroup: null },
+  statMRs:     { hidden: false, displayMode: 'list',  maxItems: 3,  width: 'xs',  tabGroup: null, stackGroup: null },
+  milestones:  { hidden: false, displayMode: 'block', maxItems: 3,  width: 'lg',  tabGroup: null, stackGroup: null },
+  issues:      { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'sm',  tabGroup: null, stackGroup: null },
+  agentRuns:   { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'sm',  tabGroup: null, stackGroup: null },
+  cicdRuns:    { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'sm',  tabGroup: null, stackGroup: null },
+  history:     { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'md',  tabGroup: null, stackGroup: null },
+  kanban:      { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'md',  tabGroup: null, stackGroup: null },
 }
-const DEFAULT_ORDER: SectionId[] = ['stats', 'milestones', 'issues', 'agentRuns', 'cicdRuns', 'history', 'kanban']
-const DRAFT_LAYOUT_KEY = `project-dashboard-layout-v2-${id}`
+const DEFAULT_ORDER: SectionId[] = ['statIssues', 'statCommits', 'statMRs', 'milestones', 'issues', 'agentRuns', 'cicdRuns', 'history', 'kanban']
+const DRAFT_LAYOUT_KEY = `project-dashboard-layout-v6-${id}`
 
-const isDraftMode = ref(false)
-const layout = ref<SectionLayout>({
-  order: [...DEFAULT_ORDER],
-  configs: JSON.parse(JSON.stringify(DEFAULT_CONFIGS)) as Record<SectionId, SectionConfig>,
+const {
+  layout,
+  isDraftMode,
+  dragSectionId,
+  dragHoverSid,
+  renderedItems,
+  sectionCfg: sectionCfgRaw,
+  updateCfg: updateCfgRaw,
+  hideSection: hideSectionRaw,
+  showSection: showSectionRaw,
+  loadLayout,
+  enterDraftMode,
+  saveDraftMode,
+  cancelDraftMode,
+  resetLayout,
+  addRowBreak,
+  removeRowBreak,
+  captureSnapshot,
+  exportLayoutJson,
+  importLayoutJson,
+  onDragStart: onDragStartRaw,
+  onDragOver: onDragOverRaw,
+  onDragEnter: onDragEnterRaw,
+  onDragEnd: onDragEndRaw,
+  toggleTabGroupWithNext: toggleTabGroupWithNextRaw,
+  tabWithSection,
+  toggleStackGroupWithNext: toggleStackGroupWithNextRaw,
+  stackWithSection,
+  getActiveTab,
+  setActiveTab,
+} = useDashboardLayout({
+  defaultOrder: DEFAULT_ORDER,
+  defaultConfigs: DEFAULT_CONFIGS,
+  storageKey: DRAFT_LAYOUT_KEY,
+  filterVisible: (s) => {
+    if (s === 'milestones') return openMilestones.value.length > 0
+    return true
+  },
 })
-let _layoutSnapshot: string | null = null
 
-function sectionCfg(s: SectionId): SectionConfig {
-  return layout.value.configs[s] ?? { ...DEFAULT_CONFIGS[s] }
-}
-function updateCfg(s: SectionId, patch: Partial<SectionConfig>) {
-  layout.value.configs[s] = { ...sectionCfg(s), ...patch }
-}
+function sectionCfg(s: SectionId) { return sectionCfgRaw(s) }
+function updateCfg(s: SectionId, patch: object) { updateCfgRaw(s, patch) }
+function hideSection(s: SectionId) { hideSectionRaw(s) }
+function showSection(s: SectionId) { showSectionRaw(s) }
+function onSectionDragStart(e: DragEvent, id: string) { onDragStartRaw(e, id) }
+function onSectionDragOver(e: DragEvent, id: string) { onDragOverRaw(e, id) }
+function onSectionDragEnter(e: DragEvent, id: string) { onDragEnterRaw(e, id) }
+function onSectionDragEnd(e: DragEvent) { onDragEndRaw(e) }
+function toggleTabGroupWithNext(sid: SectionId) { toggleTabGroupWithNextRaw(sid) }
+function toggleStackGroupWithNext(sid: SectionId) { toggleStackGroupWithNextRaw(sid) }
 
-function loadLayout() {
+// ── Template save / load / export / import ────────────────────────────────
+const showSaveModal = ref(false)
+const showLoadModal = ref(false)
+const importError = ref<string | null>(null)
+
+function handleExportJson() {
   if (!import.meta.client) return
-  try {
-    const saved = localStorage.getItem(DRAFT_LAYOUT_KEY)
-    if (!saved) return
-    const parsed = JSON.parse(saved) as Partial<SectionLayout>
-    if (Array.isArray(parsed.order) && parsed.order.length) {
-      const valid = parsed.order.filter(s => s in DEFAULT_CONFIGS) as SectionId[]
-      const missing = DEFAULT_ORDER.filter(s => !valid.includes(s))
-      layout.value.order = [...valid, ...missing]
-    }
-    if (parsed.configs) {
-      for (const [sid, cfg] of Object.entries(parsed.configs)) {
-        if (sid in layout.value.configs) {
-          Object.assign(layout.value.configs[sid as SectionId], cfg)
-        }
-      }
-    }
-  } catch { /* ignore */ }
+  const json = exportLayoutJson()
+  const blob = new Blob([json], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `project-${id}-dashboard-layout.json`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
-function saveLayout() {
-  if (!import.meta.client) return
-  localStorage.setItem(DRAFT_LAYOUT_KEY, JSON.stringify(layout.value))
-}
-
-function enterDraftMode() {
-  _layoutSnapshot = JSON.stringify(layout.value)
-  isDraftMode.value = true
-}
-function saveDraftMode() {
-  saveLayout()
-  isDraftMode.value = false
-}
-function cancelDraftMode() {
-  if (_layoutSnapshot) layout.value = JSON.parse(_layoutSnapshot)
-  isDraftMode.value = false
-}
-function resetLayout() {
-  layout.value = { order: [...DEFAULT_ORDER], configs: JSON.parse(JSON.stringify(DEFAULT_CONFIGS)) }
-}
-
-function hideSection(s: SectionId) { updateCfg(s, { hidden: true }) }
-function showSection(s: SectionId) { updateCfg(s, { hidden: false }) }
-
-// Tab grouping: combine adjacent section with the one after it
-function toggleTabGroupWithNext(sid: SectionId) {
-  const cfg = sectionCfg(sid)
-  const idx = layout.value.order.indexOf(sid)
-  const nextSid = layout.value.order[idx + 1] as SectionId | undefined
-  if (!nextSid) return
-  if (cfg.tabGroup !== null) {
-    // Ungroup
-    const grp = cfg.tabGroup
-    updateCfg(sid, { tabGroup: null })
-    if (sectionCfg(nextSid).tabGroup === grp) updateCfg(nextSid, { tabGroup: null })
+function applyImportedLayout(json: string) {
+  const ok = importLayoutJson(json)
+  if (!ok) {
+    importError.value = 'The selected file is not a valid dashboard layout JSON.'
   } else {
-    const nextCfg = sectionCfg(nextSid)
-    const grp = nextCfg.tabGroup ?? `grp-${Date.now()}`
-    updateCfg(sid, { tabGroup: grp })
-    if (nextCfg.tabGroup === null) updateCfg(nextSid, { tabGroup: grp })
+    importError.value = null
   }
 }
 
-// Drag-and-drop
-const dragSectionId = ref<SectionId | null>(null)
-function onSectionDragStart(e: DragEvent, id: SectionId) {
-  dragSectionId.value = id
-  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
-}
-function onSectionDragOver(_e: DragEvent, id: SectionId) {
-  if (!dragSectionId.value || id === dragSectionId.value) return
-  const from = layout.value.order.indexOf(dragSectionId.value)
-  const to = layout.value.order.indexOf(id)
-  if (from === -1 || to === -1 || from === to) return
-  const newOrder = [...layout.value.order]
-  newOrder.splice(from, 1)
-  newOrder.splice(to, 0, dragSectionId.value)
-  layout.value.order = newOrder
-}
-function onSectionDragEnd() { dragSectionId.value = null }
-
-// Rendered items: group adjacent sections with the same non-null tabGroup into tab panels
-type RenderItem =
-  | { type: 'section'; sid: SectionId }
-  | { type: 'tabgroup'; key: string; sections: SectionId[] }
-
-const renderedItems = computed((): RenderItem[] => {
-  const visible: SectionId[] = isDraftMode.value
-    ? layout.value.order
-    : layout.value.order.filter(s => {
-        const c = sectionCfg(s)
-        if (c.hidden) return false
-        if (s === 'milestones' && !isDraftMode.value && openMilestones.value.length === 0) return false
-        return true
-      })
-  const items: RenderItem[] = []
-  let i = 0
-  while (i < visible.length) {
-    const sid = visible[i]
-    const grp = sectionCfg(sid).tabGroup
-    if (grp !== null) {
-      const groupSids: SectionId[] = [sid]
-      let j = i + 1
-      while (j < visible.length && sectionCfg(visible[j]).tabGroup === grp) {
-        groupSids.push(visible[j])
-        j++
-      }
-      if (groupSids.length > 1) {
-        items.push({ type: 'tabgroup', key: grp, sections: groupSids })
-        i = j
-        continue
-      }
-    }
-    items.push({ type: 'section', sid })
-    i++
-  }
-  return items
-})
-
-// Active tab per tab group
-const activeTabInGroup = ref<Record<string, SectionId>>({})
-function getActiveTab(key: string, sections: SectionId[]): SectionId {
-  return activeTabInGroup.value[key] || sections[0]
-}
-function setActiveTab(key: string, sid: SectionId) {
-  activeTabInGroup.value[key] = sid
-}
-
-// Column span class based on width (6-col grid)
+// Column span class based on width (12-col grid)
 function colSpanClass(width: SectionWidth): string {
-  if (width === 'sm') return 'col-span-6 md:col-span-3 lg:col-span-2'
-  if (width === 'md') return 'col-span-6 lg:col-span-3'
-  return 'col-span-6'
+  if (width === 'xxs')     return 'col-span-12 sm:col-span-6 lg:col-span-1'
+  if (width === 'xs')      return 'col-span-12 sm:col-span-6 lg:col-span-2'
+  if (width === 'quarter') return 'col-span-12 sm:col-span-6 lg:col-span-3'
+  if (width === 'sm')      return 'col-span-12 md:col-span-6 lg:col-span-4'
+  if (width === 'md')      return 'col-span-12 lg:col-span-6'
+  return 'col-span-12'
 }
-function itemColSpanClass(item: RenderItem): string {
-  if (item.type === 'tabgroup') return colSpanClass(sectionCfg(item.sections[0]).width)
-  return colSpanClass(sectionCfg(item.sid).width)
+function itemColSpanClass(item: { type: string; sid?: string; sections?: string[] }): string {
+  if (item.type === 'rowbreak') return 'col-span-12'
+  const firstSid = item.type === 'section' ? item.sid! : item.sections![0]
+  return colSpanClass(sectionCfg(firstSid as SectionId).width as SectionWidth)
 }
 
 const commitCountLabel = computed(() => {
@@ -1162,6 +1213,7 @@ onMounted(async () => {
         hasMoreCommits.value = data.length === 50
       })
       .catch(() => { commitCount.value = null }),
+    kanbanStore.fetchBoards(id).catch((e) => { console.warn('Failed to load kanban boards:', e) }),
   ])
 
   // Connect to SignalR for live run updates
@@ -1217,12 +1269,30 @@ function issuePriorityBadge(priority: IssuePriority) {
 
 // Chart helpers
 const chartWidth = 600
-const chartHeight = 160
 const chartPad = 36
+
+const CHART_DAY_DEFAULT = 1  // 1 = last 1 day of snapshots
+const CHART_HEIGHT_OPTIONS = [
+  { value: 'xs', label: 'XS' }, { value: 'sm', label: 'S' }, { value: 'md', label: 'M' },
+  { value: 'lg', label: 'L' }, { value: 'xl', label: 'XL' },
+]
+const CHART_HEIGHT_PX: Record<string, number> = { xs: 80, sm: 120, md: 180, lg: 260, xl: 360 }
+
+const chartHeightPx = computed(() =>
+  CHART_HEIGHT_PX[sectionCfg('history').chartHeightKey ?? 'md'] ?? 160,
+)
+
+const filteredMetricSnapshots = computed(() => {
+  const days = sectionCfg('history').chartDays ?? CHART_DAY_DEFAULT
+  if (!metricSnapshots.value.length) return metricSnapshots.value
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() - days)
+  return metricSnapshots.value.filter(s => new Date(s.recordedAt) >= cutoff)
+})
 
 const chartMaxY = computed(() => {
   const max = Math.max(
-    ...metricSnapshots.value.flatMap(s => [
+    ...filteredMetricSnapshots.value.flatMap(s => [
       s.openIssues, s.inProgressIssues, s.doneIssues, s.totalAgentRuns, s.totalCiCdRuns,
     ]),
     1,
@@ -1236,18 +1306,18 @@ const gridYValues = computed(() => {
 })
 
 function yScale(val: number) {
-  const plotH = chartHeight - 30
+  const plotH = chartHeightPx.value - 30
   return plotH - (val / chartMaxY.value) * plotH + 5
 }
 
 function xPos(i: number) {
-  const n = metricSnapshots.value.length
+  const n = filteredMetricSnapshots.value.length
   const plotW = chartWidth - chartPad * 2
   return chartPad + (n > 1 ? (i / (n - 1)) * plotW : plotW / 2)
 }
 
 function linePoints(key: keyof ProjectMetricSnapshot) {
-  return metricSnapshots.value.map((s, i) => `${xPos(i)},${yScale(s[key] as number)}`).join(' ')
+  return filteredMetricSnapshots.value.map((s, i) => `${xPos(i)},${yScale(s[key] as number)}`).join(' ')
 }
 
 function shortTime(d: string) {

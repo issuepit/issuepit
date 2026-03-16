@@ -63,6 +63,7 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<ProjectProperty> ProjectProperties => Set<ProjectProperty>();
     public DbSet<IssuePropertyValue> IssuePropertyValues => Set<IssuePropertyValue>();
     public DbSet<McpToken> McpTokens => Set<McpToken>();
+    public DbSet<DashboardLayout> DashboardLayouts => Set<DashboardLayout>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

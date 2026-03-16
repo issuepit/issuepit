@@ -78,4 +78,42 @@ public class AgentSession
     /// </summary>
     [MaxLength(500)]
     public string? ServerWebUiUrl { get; set; }
+
+    /// <summary>
+    /// The opencode session ID captured from the agent run
+    /// (e.g. <c>ses_abc123</c> for CLI mode or the HTTP API session ID for HTTP server mode).
+    /// Stored so subsequent runs for the same issue can continue from this session by injecting
+    /// the preserved <see cref="OpenCodeDbS3Url">opencode DB snapshot</see> and using
+    /// <c>opencode run --session &lt;id&gt;</c>.
+    /// Null when the runner is not opencode, or when the session ID could not be captured.
+    /// </summary>
+    [MaxLength(200)]
+    public string? OpenCodeSessionId { get; set; }
+
+    /// <summary>
+    /// S3 URL of the opencode SQLite database snapshot copied from the container after the run.
+    /// Used to restore session state (conversation history, context) in a fresh container on the
+    /// next run for the same issue. Null when artifact storage is not configured or the DB could
+    /// not be extracted.
+    /// </summary>
+    [MaxLength(1000)]
+    public string? OpenCodeDbS3Url { get; set; }
+
+    /// <summary>
+    /// Not persisted. Set by <c>IssueWorker</c> before calling <see cref="IAgentRuntime.LaunchAsync"/>
+    /// when a previous session for the same issue+agent has a preserved opencode session ID.
+    /// <see cref="DockerAgentRuntime"/> uses this to pass <c>--session &lt;id&gt;</c> to
+    /// <c>opencode run</c> so the new run continues the previous conversation context.
+    /// </summary>
+    [NotMapped]
+    public string? PreviousOpenCodeSessionId { get; set; }
+
+    /// <summary>
+    /// Not persisted. Set by <c>IssueWorker</c> before calling <see cref="IAgentRuntime.LaunchAsync"/>
+    /// when a previous session for the same issue+agent has a preserved opencode DB snapshot.
+    /// Contains the raw tar-stream bytes of the opencode DB archive to be injected into the
+    /// new container before the agent starts.
+    /// </summary>
+    [NotMapped]
+    public byte[]? PreviousOpenCodeDbTar { get; set; }
 }

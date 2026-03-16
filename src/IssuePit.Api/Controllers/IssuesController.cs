@@ -682,6 +682,8 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
                 StatusName = s.Status.ToString(),
                 s.StartedAt,
                 s.EndedAt,
+                s.OpenCodeSessionId,
+                s.ServerWebUiUrl,
                 CiCdRuns = s.CiCdRuns.Select(r => new
                 {
                     r.Id,
