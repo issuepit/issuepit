@@ -179,6 +179,30 @@ public class GitHubSyncEndpointTests(ApiFactory factory) : IClassFixture<ApiFact
     }
 
     [Fact]
+    public async Task UpsertConfig_WithFullGitHubUrl_NormalizesToOwnerRepo()
+    {
+        var (tenantId, _, projectId, _) = await SeedProjectAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var response = await _client.PutAsJsonAsync($"/api/projects/{projectId}/github-sync/config", new
+        {
+            gitHubIdentityId = (Guid?)null,
+            gitHubRepo = "https://github.com/acme/backend",
+            triggerMode = GitHubSyncTriggerMode.Manual,
+            syncMode = GitHubSyncMode.Import,
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        // URL should be normalised to owner/repo format.
+        Assert.Equal("acme/backend", body.GetProperty("gitHubRepo").GetString());
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
     public async Task ListRuns_WithNoRuns_ReturnsEmptyArray()
     {
         var (tenantId, _, projectId, _) = await SeedProjectAsync();

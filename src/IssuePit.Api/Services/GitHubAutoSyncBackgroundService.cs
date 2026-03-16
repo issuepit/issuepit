@@ -42,7 +42,7 @@ public class GitHubAutoSyncBackgroundService(
 
             try
             {
-                await syncService.SyncAsync(projectId, stoppingToken);
+                await syncService.SyncAsync(projectId, dryRun: false, stoppingToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

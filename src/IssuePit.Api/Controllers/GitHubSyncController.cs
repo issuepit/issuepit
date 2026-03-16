@@ -76,9 +76,14 @@ public class GitHubSyncController(
                 return BadRequest("GitHub identity not found in this tenant.");
         }
 
-        // Validate repo format when provided.
-        if (!string.IsNullOrWhiteSpace(req.GitHubRepo) && !req.GitHubRepo.Trim().Contains('/'))
-            return BadRequest("GitHub repository must be in owner/repo format (e.g. \"acme/backend\").");
+        // Validate repo format when provided — normalize first so full GitHub URLs are accepted.
+        if (!string.IsNullOrWhiteSpace(req.GitHubRepo))
+        {
+            var normalizedRepo = GitHubSyncService.NormalizeRepo(req.GitHubRepo.Trim());
+            if (!normalizedRepo.Contains('/'))
+                return BadRequest("GitHub repository must be in owner/repo format (e.g. \"acme/backend\") or a full GitHub URL (e.g. \"https://github.com/acme/backend\").");
+            req = req with { GitHubRepo = normalizedRepo };
+        }
 
         var config = await db.GitHubSyncConfigs.FirstOrDefaultAsync(c => c.ProjectId == projectId);
         if (config is null)
@@ -93,7 +98,7 @@ public class GitHubSyncController(
         }
 
         config.GitHubIdentityId = req.GitHubIdentityId;
-        config.GitHubRepo = req.GitHubRepo?.Trim();
+        config.GitHubRepo = req.GitHubRepo;  // already normalised above
         config.TriggerMode = req.TriggerMode;
         config.SyncMode = req.SyncMode;
         config.UpdatedAt = DateTime.UtcNow;
@@ -117,7 +122,7 @@ public class GitHubSyncController(
 
     /// <summary>Triggers a manual sync for the project (fire-and-forget; returns 202).</summary>
     [HttpPost("trigger")]
-    public async Task<IActionResult> TriggerSync(Guid projectId)
+    public async Task<IActionResult> TriggerSync(Guid projectId, [FromQuery] bool dryRun = false)
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
         if (!await ProjectExistsInTenantAsync(projectId)) return NotFound();
@@ -127,10 +132,10 @@ public class GitHubSyncController(
         {
             using var scope = HttpContext.RequestServices.CreateScope();
             var svc = scope.ServiceProvider.GetRequiredService<GitHubSyncService>();
-            await svc.SyncAsync(projectId);
+            await svc.SyncAsync(projectId, dryRun: dryRun);
         });
 
-        return Accepted(new { message = "Sync started. Check runs for progress." });
+        return Accepted(new { message = dryRun ? "Dry run started. Check runs for a preview of changes." : "Sync started. Check runs for progress." });
     }
 
     /// <summary>Lists sync runs for the project, newest first.</summary>
