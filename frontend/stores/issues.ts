@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { Issue, IssuePriority, IssueType, IssueComment, IssueAttachment, IssueTask, IssueAssignee, Label, CodeReviewComment, IssueLink, IssueLinkType, IssueEvent, IssueRuns } from '~/types'
+import type { Issue, IssuePriority, IssueType, IssueComment, IssueAttachment, IssueTask, IssueAssignee, Label, CodeReviewComment, IssueLink, IssueLinkType, IssueEvent, IssueRuns, IssueGitMapping } from '~/types'
 import { IssueStatus } from '~/types'
 
 interface IssueFilters {
@@ -22,6 +22,7 @@ export const useIssuesStore = defineStore('issues', () => {
   const currentLinks = ref<IssueLink[]>([])
   const currentHistory = ref<IssueEvent[]>([])
   const currentRuns = ref<IssueRuns | null>(null)
+  const currentGitMappings = ref<IssueGitMapping[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
   const filters = ref<IssueFilters>({})
@@ -415,6 +416,14 @@ export const useIssuesStore = defineStore('issues', () => {
     }
   }
 
+  async function fetchGitMappings(issueId: string) {
+    try {
+      currentGitMappings.value = await api.get<IssueGitMapping[]>(`/api/issues/${issueId}/git-mappings`)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to fetch git mappings'
+    }
+  }
+
   // --- Milestone on Issue ---
 
   async function clearIssueMilestone(projectId: string, issueId: string) {
@@ -447,6 +456,7 @@ export const useIssuesStore = defineStore('issues', () => {
     currentLinks,
     currentHistory,
     currentRuns,
+    currentGitMappings,
     loading,
     error,
     filters,
@@ -483,6 +493,7 @@ export const useIssuesStore = defineStore('issues', () => {
     removeLink,
     fetchHistory,
     fetchIssueRuns,
+    fetchGitMappings,
     clearIssueMilestone,
     setFilters,
     clearFilters

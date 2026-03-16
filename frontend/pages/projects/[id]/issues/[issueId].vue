@@ -645,6 +645,32 @@
               <span v-else class="text-xs text-gray-400">#{{ store.currentIssue.gitHubIssueNumber }}</span>
             </div>
 
+            <!-- Linked Branches / Commits -->
+            <div v-if="store.currentGitMappings.length">
+              <p class="text-xs text-gray-500 uppercase tracking-wide mb-1.5">Linked Branches</p>
+              <div class="space-y-1.5">
+                <div v-for="m in store.currentGitMappings" :key="m.id"
+                  class="flex items-center gap-1.5 text-xs">
+                  <!-- Branch mapping -->
+                  <template v-if="m.source === 'BranchName'">
+                    <svg class="w-3 h-3 text-green-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                    </svg>
+                    <span class="font-mono text-green-300 truncate" :title="m.branchName">{{ m.branchName }}</span>
+                  </template>
+                  <!-- Commit mapping -->
+                  <template v-else>
+                    <svg class="w-3 h-3 text-yellow-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M8 12h.01M12 12h.01M16 12h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span class="font-mono text-yellow-300" :title="m.commitSha">{{ m.commitSha?.slice(0, 7) }}</span>
+                  </template>
+                </div>
+              </div>
+            </div>
+
             <!-- Custom Properties -->
             <template v-if="propsStore.properties.length">
               <div v-for="prop in propsStore.properties" :key="prop.id">
@@ -1040,6 +1066,7 @@ onMounted(async () => {
     store.fetchLinks(resolvedIssueId.value),
     store.fetchHistory(resolvedIssueId.value),
     store.fetchIssueRuns(resolvedIssueId.value),
+    store.fetchGitMappings(resolvedIssueId.value),
     labelsStore.fetchLabels(actualProjectId.value),
     agentsStore.fetchAgents(),
     fetchTenantUsers(),
