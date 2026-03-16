@@ -561,6 +561,131 @@ public class HappyPathTests : IAsyncLifetime
     }
 
 
+    /// <summary>
+    /// UI E2E test: the test history page loads for a project and shows the correct layout.
+    /// Uses a fresh project seeded via the API — no actual CI/CD run needed.
+    /// </summary>
+    [Fact]
+    public async Task Ui_TestHistoryPage_LoadsWithoutErrors()
+    {
+        var tenantId = await GetDefaultTenantIdAsync();
+        using var apiClient = CreateCookieClient();
+        apiClient.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"ui{Guid.NewGuid():N}"[..12];
+        const string password = "TestPass1!";
+        await apiClient.PostAsJsonAsync("/api/auth/register", new { username, password });
+
+        var orgSlug = $"ui-th-org-{Guid.NewGuid():N}"[..16];
+        var orgResp = await apiClient.PostAsJsonAsync("/api/orgs", new { name = "UI TestHistory Org", slug = orgSlug });
+        var org = await orgResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var orgId = org.GetProperty("id").GetString()!;
+
+        var projectSlug = $"ui-th-{Guid.NewGuid():N}"[..14];
+        var projResp = await apiClient.PostAsJsonAsync("/api/projects",
+            new { name = "UI TestHistory Project", slug = projectSlug, orgId });
+        var project = await projResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var projectId = project.GetProperty("id").GetString()!;
+
+        var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
+        context.SetDefaultTimeout(E2ETimeouts.NavigationLong);
+        var page = await context.NewPageAsync();
+
+        try
+        {
+            var errors = new List<IConsoleMessage>();
+            page.Console += (_, e) =>
+            {
+                if (e.Type == "error") errors.Add(e);
+            };
+
+            await new LoginPage(page).LoginAsync(username, password);
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
+
+            var testHistoryPage = new TestHistoryPage(page);
+            var response = await testHistoryPage.GotoAsync(projectId);
+
+            Assert.NotNull(response);
+            Assert.True(response!.Ok, $"Expected 2xx, got {response.Status}");
+            await testHistoryPage.WaitForLoadAsync();
+            Assert.True(await testHistoryPage.IsLoadedAsync(), "Test History heading should be visible");
+
+            // No JS errors should have occurred
+            Assert.Empty(errors);
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
+
+    /// <summary>
+    /// UI E2E test: the Tests tab on a CI/CD run page shows the empty state message
+    /// when there are no TRX test results for that run.
+    /// </summary>
+    [Fact]
+    public async Task Ui_CiCdRunTestsTab_ShowsEmptyStateWhenNoResults()
+    {
+        var tenantId = await GetDefaultTenantIdAsync();
+        using var apiClient = CreateCookieClient();
+        apiClient.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"ui{Guid.NewGuid():N}"[..12];
+        const string password = "TestPass1!";
+        await apiClient.PostAsJsonAsync("/api/auth/register", new { username, password });
+
+        var orgSlug = $"ui-trx-org-{Guid.NewGuid():N}"[..16];
+        var orgResp = await apiClient.PostAsJsonAsync("/api/orgs", new { name = "UI TRX Org", slug = orgSlug });
+        var org = await orgResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var orgId = org.GetProperty("id").GetString()!;
+
+        var projectSlug = $"ui-trx-{Guid.NewGuid():N}"[..14];
+        var projResp = await apiClient.PostAsJsonAsync("/api/projects",
+            new { name = "UI TRX Project", slug = projectSlug, orgId });
+        var project = await projResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var projectId = project.GetProperty("id").GetString()!;
+
+        // Trigger a CI/CD run so we have a run to navigate to; we don't wait for it to
+        // complete — we only verify that the Tests tab UI renders correctly for any run,
+        // even one with no test results.
+        var triggerResp = await apiClient.PostAsJsonAsync("/api/cicd-runs/trigger", new
+        {
+            projectId,
+            commitSha = "abc1234",
+            branch = "main",
+            workflow = "ci.yml",
+            eventName = "push",
+        });
+        Assert.Equal(System.Net.HttpStatusCode.Created, triggerResp.StatusCode);
+        var runJson = await triggerResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var runId = runJson.GetProperty("id").GetString()!;
+
+        var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
+        context.SetDefaultTimeout(E2ETimeouts.NavigationLong);
+        var page = await context.NewPageAsync();
+
+        try
+        {
+            await new LoginPage(page).LoginAsync(username, password);
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
+
+            var runPage = new CiCdRunPage(page);
+            var response = await runPage.GotoAsync(projectId, runId);
+            Assert.NotNull(response);
+            Assert.True(response!.Ok, $"Expected 2xx, got {response.Status}");
+            await runPage.WaitForLoadAsync();
+
+            // Click the Tests tab — it should exist and show the empty state message.
+            await runPage.ClickTestsTabAsync();
+            Assert.True(await runPage.IsTestsTabEmptyAsync(), "Tests tab should show 'No test results available' when no TRX files were processed");
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
+
+
     private HttpClient CreateCookieClient()
     {
         var handler = new HttpClientHandler { CookieContainer = new CookieContainer() };

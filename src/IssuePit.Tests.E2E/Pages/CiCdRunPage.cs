@@ -39,6 +39,31 @@ public class CiCdRunPage(IPage page)
     }
 
     /// <summary>
+    /// Clicks the Tests tab and waits for the tab content to become visible.
+    /// </summary>
+    public async Task ClickTestsTabAsync()
+    {
+        await page.ClickAsync("button:has-text('Tests')");
+        // Wait for the tab switch to settle — either the empty state or test data will appear.
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle, new PageWaitForLoadStateOptions { Timeout = E2ETimeouts.Default });
+    }
+
+    /// <summary>
+    /// Returns true when the Tests tab shows the empty state message.
+    /// </summary>
+    public async Task<bool> IsTestsTabEmptyAsync() =>
+        await page.IsVisibleAsync("text=No test results available");
+
+    /// <summary>
+    /// Returns the count of test suite cards visible in the Tests tab.
+    /// </summary>
+    public async Task<int> GetTestSuiteCountAsync()
+    {
+        var suites = await page.QuerySelectorAllAsync(".bg-gray-900.border.border-gray-800.rounded-lg.overflow-hidden");
+        return suites.Count;
+    }
+
+    /// <summary>
     /// Returns true when the run status badge is visible.
     /// </summary>
     public async Task<bool> IsStatusVisibleAsync() =>

@@ -569,7 +569,16 @@
                               <span class="w-1.5 h-1.5 rounded-full bg-gray-600" /> Offline
                             </span>
                           </h2>
-                          <NuxtLink :to="`/projects/${id}/runs`" class="text-xs text-brand-400 hover:text-brand-300 transition-colors">View all →</NuxtLink>
+                          <div class="flex items-center gap-3">
+                            <NuxtLink :to="`/projects/${id}/runs/test-history`" class="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 transition-colors">
+                              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                              </svg>
+                              Tests
+                            </NuxtLink>
+                            <NuxtLink :to="`/projects/${id}/runs`" class="text-xs text-brand-400 hover:text-brand-300 transition-colors">View all →</NuxtLink>
+                          </div>
                         </div>
                         <div v-if="visibleCiCdRuns.length" class="space-y-2">
                           <div v-for="run in visibleCiCdRuns" :key="run.id"
