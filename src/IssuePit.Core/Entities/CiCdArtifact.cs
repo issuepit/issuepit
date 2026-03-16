@@ -33,5 +33,8 @@ public class CiCdArtifact
     [MaxLength(2000)]
     public string? StorageKey { get; set; }
 
+    /// <summary>True when the artifact contains test result files (e.g. .trx files). Used by the UI to group and optionally hide test-result artifacts.</summary>
+    public bool IsTestResultArtifact { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

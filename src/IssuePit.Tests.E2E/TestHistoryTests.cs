@@ -133,7 +133,8 @@ public class TestHistoryTests : IAsyncLifetime
     [Fact]
     public async Task Ui_CiCdRunTestsTab_ShowsImportedTrxResults()
     {
-        if (FrontendUrl is null) return;
+        if (FrontendUrl is null)
+            throw new InvalidOperationException("FRONTEND_URL is not set. This test requires a running frontend.");
 
         var (apiClient, projectId, username, password) = await SetupProjectAsync();
         using var _ = apiClient;
@@ -166,6 +167,8 @@ public class TestHistoryTests : IAsyncLifetime
             // The Tests tab should show test suites, not the empty state.
             Assert.False(await runPage.IsTestsTabEmptyAsync(),
                 "Tests tab should show test results when a TRX has been imported for the run");
+            Assert.True(await runPage.HasTestSuitesAsync(),
+                "Tests tab should display at least one test suite card with pass/fail counts");
         }
         finally
         {
@@ -180,7 +183,8 @@ public class TestHistoryTests : IAsyncLifetime
     [Fact]
     public async Task Ui_ProjectDashboard_ShowsTestHistorySection()
     {
-        if (FrontendUrl is null) return;
+        if (FrontendUrl is null)
+            throw new InvalidOperationException("FRONTEND_URL is not set. This test requires a running frontend.");
 
         var (apiClient, projectId, username, password) = await SetupProjectAsync();
         using var _ = apiClient;
@@ -222,7 +226,8 @@ public class TestHistoryTests : IAsyncLifetime
     [Fact]
     public async Task Ui_TestHistoryPage_ShowsImportedRunSummary()
     {
-        if (FrontendUrl is null) return;
+        if (FrontendUrl is null)
+            throw new InvalidOperationException("FRONTEND_URL is not set. This test requires a running frontend.");
 
         var (apiClient, projectId, username, password) = await SetupProjectAsync();
         using var _ = apiClient;
@@ -266,9 +271,11 @@ public class TestHistoryTests : IAsyncLifetime
     [Fact]
     public async Task Ui_CiCdRun_WithTrxArtifact_ShowsResultsInTestsTab()
     {
-        if (FrontendUrl is null) return;
+        if (FrontendUrl is null)
+            throw new InvalidOperationException("FRONTEND_URL is not set. This test requires a running frontend.");
         // Requires the dummy CI/CD repo to be available (set by AspireFixture when Docker is present).
-        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CICD_E2E_REPO_PATH"))) return;
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CICD_E2E_REPO_PATH")))
+            throw new InvalidOperationException("CICD_E2E_REPO_PATH is not set. This test requires the Docker runtime with the dummy CI/CD repo.");
 
         var (apiClient, projectId, username, password) = await SetupProjectAsync();
         using var _ = apiClient;
@@ -307,11 +314,34 @@ public class TestHistoryTests : IAsyncLifetime
             await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
 
             var runPage = new CiCdRunPage(page);
+
+            // Verify Tests tab shows the parsed TRX results.
             await runPage.GotoTestsTabAsync(projectId, runId);
             await runPage.WaitForTestsTabContentAsync();
 
             Assert.False(await runPage.IsTestsTabEmptyAsync(),
                 "Tests tab should show test results for a CI/CD run that uploaded a TRX artifact");
+            Assert.True(await runPage.HasTestSuitesAsync(),
+                "Tests tab should display at least one test suite card with parsed pass/fail counts");
+
+            // Verify Artifacts tab: TRX artifact should be hidden behind the toggle by default.
+            await runPage.GotoArtifactsTabAsync(projectId, runId);
+            await runPage.WaitForArtifactsTabContentAsync();
+
+            Assert.False(await runPage.IsArtifactsTabEmptyAsync(),
+                "Artifacts tab should not be empty — the TRX artifact was uploaded");
+
+            Assert.True(await runPage.HasTestResultArtifactToggleAsync(),
+                "Artifacts tab should show the toggle button when at least one test-result artifact is present");
+
+            var countBeforeToggle = await runPage.GetVisibleArtifactCountAsync();
+
+            // Reveal test-result artifacts by clicking the toggle.
+            await runPage.ShowTestResultArtifactsAsync();
+
+            var countAfterToggle = await runPage.GetVisibleArtifactCountAsync();
+            Assert.True(countAfterToggle > countBeforeToggle,
+                "After revealing test-result artifacts the total visible artifact count should increase");
         }
         finally
         {

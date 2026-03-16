@@ -170,6 +170,7 @@ Name test **methods** with the quality level and action:
 - **Helpers**: place `CreateCookieClient()` and `GetDefaultTenantIdAsync()` in the test class as private methods. If a second test class needs the same helpers, duplicate them — do not create a shared base class unless the duplication becomes significant.
 - **Assertions**: assert HTTP status codes on every mutating call, not only on the final read.
 - **Timeouts**: use the Playwright default timeouts; do not increase `WaitForURLAsync` / `WaitForSelectorAsync` timeouts beyond what is already established without investigating the root cause first.
-- **Frontend URL**: if `FrontendUrl` is null in a UI test, skip gracefully or throw an `InvalidOperationException` with a clear message — do not fall back to a hardcoded `localhost` port.
+- **Frontend URL**: if `FrontendUrl` is null in a UI test, throw `InvalidOperationException` with a clear message — do not fall back to a hardcoded `localhost` port.
+- **Missing prerequisites = failure, not skip**: never use `SkipException` (or `return`) to silently skip a test when a required environment variable, service, or runtime is absent. Throw `InvalidOperationException` (or `Assert.Fail`) so the test is recorded as a **failure** and the missing setup is clearly visible in CI. Silently passing tests hide coverage gaps and make CI misleading.
 - **Log noise**: resource logging is disabled in `AspireFixture` and Kafka log handlers are suppressed. Do not re-enable them in tests.
 - **New features**: every new UI feature must include at least one positive E2E test covering create, list, and interact flows.

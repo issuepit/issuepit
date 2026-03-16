@@ -302,6 +302,7 @@ public class CiCdRunsController(
                 a.SizeBytes,
                 a.FileCount,
                 a.StorageKey,
+                a.IsTestResultArtifact,
                 a.CreatedAt,
             })
             .ToListAsync();

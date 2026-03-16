@@ -456,9 +456,9 @@ public class CiCdPipelineTests(AspireFixture fixture)
         var runId = run.GetProperty("id").GetString()!;
         await AssertRunSucceededAsync(client, run, runId);
 
-        var testResultsResp = await client.GetAsync($"/api/cicd-runs/{runId}/test-results");
-        Assert.Equal(HttpStatusCode.OK, testResultsResp.StatusCode);
-        var suites = await testResultsResp.Content.ReadFromJsonAsync<JsonElement>();
+        // Poll for test results — the worker finalises TRX processing just before the run
+        // status transitions to Succeeded, so retry for a short window to be robust.
+        var suites = await CiCdTestPollingHelpers.WaitForTestResultsAsync(client, runId, expectedCount: 1, TimeSpan.FromSeconds(30));
 
         // The dummy workflow uploads exactly one test-results artifact with one TRX file.
         Assert.Equal(1, suites.GetArrayLength());

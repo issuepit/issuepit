@@ -716,10 +716,23 @@
         <template v-else-if="activeSection === 'artifacts'">
           <div class="p-4">
             <template v-if="store.currentRunArtifacts.length">
-              <p class="text-xs text-gray-500 mb-3">{{ store.currentRunArtifacts.length }} artifact{{ store.currentRunArtifacts.length === 1 ? '' : 's' }} produced by this run.</p>
+              <div class="flex items-center justify-between mb-3 gap-3 flex-wrap">
+                <p class="text-xs text-gray-500">{{ store.currentRunArtifacts.length }} artifact{{ store.currentRunArtifacts.length === 1 ? '' : 's' }} produced by this run.</p>
+                <button
+                  v-if="hiddenTestResultArtifactCount > 0"
+                  class="text-xs text-gray-400 hover:text-gray-200 transition-colors flex items-center gap-1"
+                  data-testid="toggle-test-result-artifacts"
+                  @click="showTestResultArtifacts = !showTestResultArtifacts">
+                  <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  {{ showTestResultArtifacts ? 'Hide' : 'Show' }} {{ hiddenTestResultArtifactCount }} test result artifact{{ hiddenTestResultArtifactCount === 1 ? '' : 's' }}
+                </button>
+              </div>
               <div class="space-y-2">
                 <div
-                  v-for="artifact in store.currentRunArtifacts"
+                  v-for="artifact in visibleArtifacts"
                   :key="artifact.id"
                   class="flex items-center gap-3 px-4 py-3 rounded-lg bg-gray-800/60 border border-gray-700">
                   <svg class="w-5 h-5 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2028,6 +2041,16 @@ function formatBytes(bytes: number): string {
 
 const downloadingArtifacts = ref(new Set<string>())
 const downloadError = ref<string | null>(null)
+const showTestResultArtifacts = ref(false)
+
+const visibleArtifacts = computed(() => {
+  if (showTestResultArtifacts.value) return store.currentRunArtifacts
+  return store.currentRunArtifacts.filter(a => !a.isTestResultArtifact)
+})
+
+const hiddenTestResultArtifactCount = computed(() =>
+  store.currentRunArtifacts.filter(a => a.isTestResultArtifact).length
+)
 
 async function downloadArtifact(artifactId: string, name: string) {
   if (downloadingArtifacts.value.has(artifactId)) return
