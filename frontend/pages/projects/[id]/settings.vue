@@ -76,6 +76,19 @@
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none" />
             </div>
             <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">Project Color</label>
+              <div class="flex items-center gap-3">
+                <input v-model="form.color" type="color"
+                  class="w-10 h-10 rounded-lg border border-gray-700 bg-gray-800 cursor-pointer p-0.5"
+                  aria-label="Choose project color" />
+                <input v-model="form.color" type="text" maxlength="7" placeholder="#4c6ef5"
+                  class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
+                  aria-label="Enter color hex code" />
+                <button v-if="form.color" type="button" class="text-xs text-gray-500 hover:text-gray-300 transition-colors" aria-label="Clear project color" @click="form.color = ''">Clear</button>
+              </div>
+              <p class="text-xs text-gray-600 mt-1">Used as the project label color in the sidebar</p>
+            </div>
+            <div>
               <label class="block text-sm font-medium text-gray-300 mb-1.5">GitHub Repository URL</label>
               <input v-model="form.gitHubRepo" type="text" placeholder="https://github.com/org/repo"
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
@@ -802,7 +815,7 @@ function personConstraintSummary(raw: string | null | undefined): string {
 }
 
 // ── General form ──────────────────────────────────────────────
-const form = reactive({ name: '', slug: '', description: '', gitHubRepo: '', isAgenda: false, issueKey: '', issueNumberOffset: 0 })
+const form = reactive({ name: '', slug: '', description: '', gitHubRepo: '', isAgenda: false, issueKey: '', issueNumberOffset: 0, color: '' })
 const savingGeneral = ref(false)
 const saveGeneralError = ref<string | null>(null)
 const suggestingIssueKey = ref(false)
@@ -992,6 +1005,7 @@ onMounted(async () => {
     form.isAgenda = projectsStore.currentProject.isAgenda ?? false
     form.issueKey = projectsStore.currentProject.issueKey || ''
     form.issueNumberOffset = projectsStore.currentProject.issueNumberOffset ?? 0
+    form.color = projectsStore.currentProject.color || ''
   }
 })
 
@@ -1007,6 +1021,7 @@ async function saveGeneral() {
       isAgenda: form.isAgenda,
       issueKey: form.issueKey.trim() || undefined,
       issueNumberOffset: form.issueNumberOffset,
+      color: form.color || undefined,
     })
   } catch (e: unknown) {
     saveGeneralError.value = e instanceof Error ? e.message : 'Failed to save'

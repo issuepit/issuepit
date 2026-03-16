@@ -39,10 +39,11 @@ const tabs = [
   { id: 'telegram-bots', label: 'Telegram Bots', href: '/config/telegram-bots' },
   { id: 'ci-cd', label: 'CI/CD', href: '/config/ci-cd' },
   { id: 'scheduled-tasks', label: 'Scheduled Tasks', href: '/config/scheduled-tasks' },
+  { id: 'runtimes', label: 'Runtimes', href: '/config/runtimes' },
 ]
 
 // These pages belong to the Agents section — they render standalone without System wrapper
-const agentsPaths = ['/config/mcp-servers', '/config/mcp-playground', '/config/runtimes']
+const agentsPaths = ['/config/mcp-servers', '/config/mcp-playground']
 const isAgentsPage = computed(() => agentsPaths.some(p => route.path.startsWith(p)))
 
 const activeTab = computed(() => tabs.find(t => route.path.startsWith(t.href)))

@@ -171,10 +171,13 @@ const initials = computed(() => displayName.value.slice(0, 2).padEnd(2, displayN
 // Returns the sidebar link for a project, preserving the current sub-page when possible.
 // e.g. /projects/OLD/kanban → /projects/NEW/kanban
 // e.g. /projects/OLD/issues/8 → /projects/NEW/issues  (specific item pages fall back to the list)
+// If the project is already open (same project ID), always navigate to its dashboard.
 function getProjectLink(projectId: string): string {
-  const match = route.path.match(/^\/projects\/[^/]+\/(.+)$/)
+  const match = route.path.match(/^\/projects\/([^/]+)\/(.+)$/)
   if (!match) return `/projects/${projectId}`
-  const subPath = match[1]
+  // If this project is already open, go to its dashboard
+  if (match[1] === projectId) return `/projects/${projectId}`
+  const subPath = match[2]
   const parts = subPath.split('/')
   // Use only the first segment when deeper than 1 level (e.g. issues/8 → issues)
   const resolvedSub = parts.length > 1 ? parts[0] : subPath
@@ -302,15 +305,13 @@ const SidebarNavLink = defineComponent({
         isActive.value ? 'bg-gray-800 text-white' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/60'
       ]
     }, () => [
-      props.color
-        ? h('span', {
-            class: 'w-4 h-4 rounded shrink-0 flex-none',
-            style: { background: props.color }
-          })
-        : h('svg', { class: 'w-4 h-4 shrink-0', fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24' },
-            h('path', { 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'stroke-width': '2', d: iconPaths[props.icon] ?? iconPaths.issues })
-          ),
-      h('span', { class: 'truncate' }, props.label)
+      h('svg', {
+        class: 'w-4 h-4 shrink-0',
+        fill: 'none',
+        stroke: props.color || 'currentColor',
+        viewBox: '0 0 24 24'
+      }, h('path', { 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'stroke-width': '2', d: iconPaths[props.icon] ?? iconPaths.issues })),
+      h('span', { class: 'truncate', style: props.color ? { color: props.color } : undefined }, props.label)
     ])
   }
 })
