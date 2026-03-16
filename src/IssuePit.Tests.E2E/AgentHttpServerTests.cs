@@ -394,6 +394,127 @@ public class AgentHttpServerTests(AspireFixture fixture)
         Assert.Equal(JsonValueKind.Null, agentTypeProp.ValueKind);
     }
 
+    /// <summary>
+    /// Regression test for the "Exposed ports: []" startup bug.
+    ///
+    /// Verifies that when an agent is configured with <c>UseHttpServer = true</c> and
+    /// <c>RunnerType = OpenCode</c>, the session logs contain the
+    /// <c>[DEBUG] HTTP server    : port 4096</c> line, which proves that the Docker port
+    /// binding was configured before the container was started.
+    ///
+    /// The session will fail (busybox has no opencode binary) but must NOT fail with
+    /// "Exposed ports: []" — the pre-fix error that occurred because the container exited
+    /// before the port binding was visible in the Docker inspection.
+    ///
+    /// Skipped automatically when Docker is not available on the host.
+    /// </summary>
+    [Fact]
+    public async Task AgentSession_HttpServerMode_PortBindingLoggedAndNoExposedPortsError()
+    {
+        if (!IsDockerAvailable()) return;
+
+        var orgSlug = $"hs-org-{Guid.NewGuid():N}"[..16];
+        var (client, orgId) = await SetupOrgAsync(orgSlug);
+
+        var projectSlug = $"hs-proj-{Guid.NewGuid():N}"[..16];
+        var projResp = await client.PostAsJsonAsync("/api/projects",
+            new { name = "HTTP Port Test Project", slug = projectSlug, orgId = Guid.Parse(orgId) });
+        Assert.Equal(HttpStatusCode.Created, projResp.StatusCode);
+        var proj = await projResp.Content.ReadFromJsonAsync<JsonElement>();
+        var projectId = proj.GetProperty("id").GetString()!;
+
+        var issueResp = await client.PostAsJsonAsync("/api/issues",
+            new { title = "HTTP Port Regression Test Issue", projectId = Guid.Parse(projectId) });
+        Assert.Equal(HttpStatusCode.Created, issueResp.StatusCode);
+        var issue = await issueResp.Content.ReadFromJsonAsync<JsonElement>();
+        var issueId = issue.GetProperty("id").GetString()!;
+
+        // HTTP server mode agent — busybox image. The container will fail to run opencode
+        // (not installed in busybox) but must NOT fail with the pre-fix "Exposed ports: []"
+        // error. The [DEBUG] HTTP server port line must be logged, proving the port binding
+        // was configured in the Docker create-params before the container was started.
+        var agentResp = await client.PostAsJsonAsync("/api/agents", new
+        {
+            name = "HTTP Port Regression Agent",
+            orgId = Guid.Parse(orgId),
+            systemPrompt = "You are a test agent.",
+            dockerImage = "busybox:latest",
+            allowedTools = "[]",
+            isActive = true,
+            runnerType = 0,       // OpenCode = 0
+            useHttpServer = true,
+        });
+        Assert.Equal(HttpStatusCode.Created, agentResp.StatusCode);
+        var agentData = await agentResp.Content.ReadFromJsonAsync<JsonElement>();
+        var agentId = agentData.GetProperty("id").GetString()!;
+
+        var assignResp = await client.PostAsJsonAsync($"/api/issues/{issueId}/assignees",
+            new { agentId = Guid.Parse(agentId) });
+        Assert.Equal(HttpStatusCode.Created, assignResp.StatusCode);
+
+        var session = await WaitForHttpServerSessionAsync(client, issueId, TimeSpan.FromMinutes(1));
+        var sessionId = session.GetProperty("id").GetString()!;
+
+        var logsResp = await client.GetAsync($"/api/agent-sessions/{sessionId}/logs");
+        Assert.Equal(HttpStatusCode.OK, logsResp.StatusCode);
+        var logs = await logsResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        var logLines = logs.EnumerateArray()
+            .Select(l => l.GetProperty("line").GetString() ?? string.Empty)
+            .ToList();
+
+        // The [DEBUG] HTTP server port line must be present: it is emitted when the Docker
+        // port binding is configured, proving the code reached container-creation successfully.
+        // Port 4096 is OpenCodeHttpApi.DefaultPort (the opencode default HTTP server port).
+        Assert.True(
+            logLines.Any(l => l.Contains("[DEBUG] HTTP server") && l.Contains("port 4096")),
+            $"Expected a '[DEBUG] HTTP server ... port 4096' log line, proving the Docker port " +
+            $"binding was configured.\n" +
+            $"Actual logs:\n{string.Join('\n', logLines.Take(40))}");
+
+        // The old bug produced "Exposed ports: []". This must never appear.
+        Assert.DoesNotContain(logLines,
+            l => l.Contains("Exposed ports: []"));
+    }
+
+    /// <summary>
+    /// Polls until the most-recent agent session for <paramref name="issueId"/> reaches a terminal
+    /// status (<c>Succeeded</c>, <c>Failed</c>, or <c>Cancelled</c>) or the timeout elapses.
+    /// </summary>
+    private static async Task<JsonElement> WaitForHttpServerSessionAsync(
+        HttpClient client,
+        string issueId,
+        TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            var runsResp = await client.GetAsync($"/api/issues/{issueId}/runs");
+            if (runsResp.IsSuccessStatusCode)
+            {
+                var runsBody = await runsResp.Content.ReadFromJsonAsync<JsonElement>();
+                if (!runsBody.TryGetProperty("agentSessions", out var sessions))
+                {
+                    await Task.Delay(500);
+                    continue;
+                }
+
+                if (sessions.GetArrayLength() > 0)
+                {
+                    var sessionRef = sessions[0];
+                    var statusName = sessionRef.GetProperty("statusName").GetString();
+                    if (statusName is "Succeeded" or "Failed" or "Cancelled")
+                        return sessionRef;
+                }
+            }
+
+            await Task.Delay(500);
+        }
+
+        throw new TimeoutException(
+            $"Agent session for issue {issueId} did not reach a terminal state within {timeout}.");
+    }
+
     private static bool IsDockerAvailable()
     {
         try
