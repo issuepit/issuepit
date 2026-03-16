@@ -147,7 +147,7 @@ app.Use(async (context, next) =>
             context.Items[McpTokenKeys.HttpContextItemKey] = envToken;
     }
 
-    // Resolve token metadata (IsReadOnly) from the API and populate the scoped McpRequestContext.
+    // Resolve token metadata (IsReadOnly) from the API and populate HttpContext.Items.
     // Only attempted when a token is present; failures are silently ignored.
     if (context.Items.ContainsKey(McpTokenKeys.HttpContextItemKey))
     {
@@ -155,11 +155,8 @@ app.Use(async (context, next) =>
         {
             var apiClient = context.RequestServices.GetRequiredService<IssuePitApiClient>();
             var tokenInfo = await apiClient.GetAsync<McpTokenInfo>("/api/mcp-tokens/me");
-            if (tokenInfo is not null)
-            {
-                var requestCtx = context.RequestServices.GetRequiredService<McpRequestContext>();
-                requestCtx.IsReadOnly = tokenInfo.IsReadOnly;
-            }
+            if (tokenInfo is not null && tokenInfo.IsReadOnly)
+                context.Items[McpRequestContext.IsReadOnlyKey] = true;
         }
         catch
         {
