@@ -384,4 +384,10 @@ except Exception as e:
     fi
 fi
 
+# ─── Start the container's primary process ────────────────────────────────────
+#
+# The execution client (C#) controls all agent runs via `docker exec`.
+# exec "$@" here starts the CMD passed by the runtime — typically `sleep infinity`
+# to keep the container alive. Setup is complete; C# takes over from here.
 
+exec "$@"

@@ -121,15 +121,20 @@ public class AgentSessionsController(IssuePitDbContext db, TenantContext tenant,
             return Conflict(new { error = "Only failed or cancelled sessions can be retried.", session.Status, StatusName = session.Status.ToString() });
 
         // Re-publish issue-assigned so the ExecutionClient creates a new session for the same agent and issue.
+        // AgentIdOverride allows using a different agent for the retry.
         var payload = System.Text.Json.JsonSerializer.Serialize(new
         {
             id = session.IssueId,
             projectId = session.Issue.ProjectId,
             title = session.Issue.Title,
-            agentId = session.AgentId,
+            agentId = body?.AgentIdOverride ?? session.AgentId,
             dockerImageOverride = body?.DockerImageOverride,
             keepContainer = body?.KeepContainer ?? false,
             dockerCmdOverride = body?.DockerCmdOverride,
+            modelOverride = body?.ModelOverride,
+            runnerTypeOverride = body?.RunnerTypeOverride != null ? (int?)body.RunnerTypeOverride.Value : null,
+            useHttpServerOverride = body?.UseHttpServerOverride,
+            runtimeTypeOverride = body?.RuntimeTypeOverride != null ? (int?)body.RuntimeTypeOverride.Value : null,
         });
 
         await producer.ProduceAsync("issue-assigned", new Message<string, string>
@@ -142,4 +147,17 @@ public class AgentSessionsController(IssuePitDbContext db, TenantContext tenant,
     }
 }
 
-public record RetrySessionRequest(string? DockerImageOverride = null, bool KeepContainer = false, string[]? DockerCmdOverride = null);
+public record RetrySessionRequest(
+    string? DockerImageOverride = null,
+    bool KeepContainer = false,
+    string[]? DockerCmdOverride = null,
+    /// <summary>Override the agent used for this retry run. Null = use the same agent as the original session.</summary>
+    Guid? AgentIdOverride = null,
+    /// <summary>Override the model used for this retry run. Null = use the agent's configured model.</summary>
+    string? ModelOverride = null,
+    /// <summary>Override the runner (CLI) type for this retry. Null = use the agent's configured RunnerType.</summary>
+    RunnerType? RunnerTypeOverride = null,
+    /// <summary>Override whether to use HTTP server mode (opencode only). Null = use the agent's setting.</summary>
+    bool? UseHttpServerOverride = null,
+    /// <summary>Override the runtime type (Docker, Native, SSH…) for this retry. Null = use the org default.</summary>
+    RuntimeType? RuntimeTypeOverride = null);
