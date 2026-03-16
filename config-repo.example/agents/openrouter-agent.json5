@@ -1,21 +1,22 @@
 // Example agent configuration using OpenRouter as the AI provider.
 // To use this, create an agent in the IssuePit UI with runner type "opencode".
-// Then store your OpenRouter API key under Configuration → API Keys (provider: OpenRouter).
-// The key is passed to the agent container as OPENROUTER_API_KEY.
 //
-// Available OpenRouter models (recommended):
-//   - openrouter/auto                          — auto-select best model
+// API key setup:
+//   1. Go to Configuration → API Keys → Add Key
+//   2. Provider: OpenRouter  |  Value: sk-or-v1-XXXXXXXXXXXX
+//   The key is passed to the agent container as OPENROUTER_API_KEY.
+//   Get your key at: https://openrouter.ai/settings/keys
+//
+// Available models (set the "model" field below):
+//   - openrouter/auto                          — auto-select best free model (default)
 //   - openrouter/hunter-alpha                  — hunter-alpha preview
 //   - openrouter/healer-alpha                  — healer-alpha preview
 //   - minimax/minimax-m2.5:free                — free MiniMax M2.5
-//   - (empty)                                  — use the provider default
-//
-// API key setup: https://openrouter.ai/settings/keys
 {
   "name": "OpenRouter Agent",
   "runner": "opencode",
 
-  // Model to use — pick one from the list above, or omit to use the opencode default.
+  // Free auto-select model — default. Change to one of the models listed above if needed.
   "model": "openrouter/auto",
 
   // System prompt (instructions for the agent)

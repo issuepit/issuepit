@@ -28,8 +28,15 @@
   "url": "https://api.githubcopilot.com/mcp/",
   // Transport type — "http" uses the Streamable HTTP protocol supported by opencode
   "configuration": { "type": "http" },
-  // Secret (added via the UI Secrets tab, not stored here for security):
-  // Key: Authorization  |  Value: Bearer ghp_XXXXXXXXXXXXXXXXXXXX
+  // Secrets are added via the UI Secrets tab (Configuration → MCP Servers → your server → Secrets).
+  // Example of how the secret looks when configured:
+  //   Key: Authorization
+  //   Value: Bearer ghp_XXXXXXXXXXXXXXXXXXXX
+  //
+  // If you want to configure the secret inline in this file (use only in private/local repos):
+  // "secrets": {
+  //   "Authorization": "plain:Bearer ghp_XXXXXXXXXXXXXXXXXXXX"
+  // }
 }
 
 // ─── Context7 MCP ─────────────────────────────────────────────────────────────

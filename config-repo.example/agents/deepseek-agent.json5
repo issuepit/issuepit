@@ -1,13 +1,15 @@
 // Example agent configuration using DeepSeek as the AI provider.
 // To use this, create an agent in the IssuePit UI with runner type "opencode".
-// Then store your DeepSeek API key under Configuration → API Keys (provider: DeepSeek).
-// The key is passed to the agent container as DEEPSEEK_API_KEY.
 //
-// Available DeepSeek models:
-//   - deepseek-chat    — DeepSeek V3 (recommended)
-//   - deepseek-coder   — code-specialised variant
+// API key setup:
+//   1. Go to Configuration → API Keys → Add Key
+//   2. Provider: DeepSeek  |  Value: sk-XXXXXXXXXXXXXXXXXXXX
+//   The key is passed to the agent container as DEEPSEEK_API_KEY.
+//   Get your key at: https://platform.deepseek.com/api_keys
 //
-// API key setup: https://platform.deepseek.com/api_keys
+// Available models:
+//   - deepseek/deepseek-chat    — DeepSeek V3 (recommended)
+//   - deepseek/deepseek-coder   — code-specialised variant
 {
   "name": "DeepSeek Agent",
   "runner": "opencode",
