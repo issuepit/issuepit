@@ -143,7 +143,7 @@ public class OpenCodeHttpApi(HttpClient httpClient, ILogger<OpenCodeHttpApi> log
                     if (statusMap.TryGetProperty(sessionId, out var sessionStatus)
                         && sessionStatus.TryGetProperty("type", out var typeEl))
                     {
-                        statusType = typeEl.GetString();
+                        statusType = typeEl.GetString() ?? string.Empty;
                     }
                 }
                 else
