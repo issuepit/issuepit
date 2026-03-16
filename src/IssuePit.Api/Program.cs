@@ -53,6 +53,7 @@ builder.Services.AddScoped<IssueEnhancementService>();
 builder.Services.AddScoped<CiCdRunQueueService>();
 builder.Services.AddScoped<ConfigRepoApplier>();
 builder.Services.AddScoped<GitHubSyncService>();
+builder.Services.AddScoped<GitHubActionsArtifactService>();
 builder.Services.AddScoped<BranchDetectionService>();
 builder.Services.Configure<IssuePit.Api.Services.ImageStorageOptions>(
     builder.Configuration.GetSection(IssuePit.Api.Services.ImageStorageOptions.SectionName));

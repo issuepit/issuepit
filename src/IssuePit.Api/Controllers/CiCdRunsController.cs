@@ -19,7 +19,9 @@ public class CiCdRunsController(
     IHubContext<ProjectHub> projectHub,
     CiCdRunQueueService runQueue,
     ImageStorageService imageStorage,
-    GitService gitService) : ControllerBase
+    GitService gitService,
+    IServiceScopeFactory scopeFactory,
+    ILogger<CiCdRunsController> logger) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetRuns([FromQuery] Guid? projectId)
@@ -580,6 +582,38 @@ public class CiCdRunsController(
         await db.SaveChangesAsync();
 
         await NotifyRunsUpdated(run);
+
+        // When a GitHub run reaches a terminal state, download and process artifacts
+        // (e.g. .trx test-result files) from the GitHub Actions API in the background.
+        // Pattern: fire-and-forget with a dedicated DI scope.
+        //   - A new async scope is created so the scoped DbContext and services outlive the HTTP request.
+        //   - All exceptions are caught inside the Task.Run block and logged, preventing unobserved
+        //     task exceptions. The 'await using' on the scope ensures disposal on any code path.
+        //   - HTTP response is returned immediately; artifact processing happens out-of-band because
+        //     downloading ZIPs from the GitHub API can take several seconds.
+        if (run.Status is CiCdRunStatus.Succeeded or CiCdRunStatus.Failed or CiCdRunStatus.Cancelled &&
+            string.Equals(run.ExternalSource, "github", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrEmpty(run.ExternalRunId))
+        {
+            var capturedRunId = run.Id;
+            var capturedProjectId = run.ProjectId;
+            var capturedExternalRunId = run.ExternalRunId;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await using var scope = scopeFactory.CreateAsyncScope();
+                    await scope.ServiceProvider
+                        .GetRequiredService<GitHubActionsArtifactService>()
+                        .ProcessArtifactsAsync(capturedRunId, capturedProjectId, capturedExternalRunId);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex,
+                        "Background artifact processing failed for run {RunId}", capturedRunId);
+                }
+            });
+        }
 
         return Ok(new { run.Id, run.Status, StatusName = run.Status.ToString() });
     }
