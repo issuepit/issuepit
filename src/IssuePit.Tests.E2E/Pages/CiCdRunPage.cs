@@ -13,6 +13,9 @@ public class CiCdRunPage(IPage page)
     public async Task GotoTestsTabAsync(string projectId, string runId) =>
         await page.GotoAsync($"/projects/{projectId}/runs/cicd/{runId}?tab=tests");
 
+    public async Task GotoArtifactsTabAsync(string projectId, string runId) =>
+        await page.GotoAsync($"/projects/{projectId}/runs/cicd/{runId}?tab=artifacts");
+
     public async Task WaitForLoadAsync() =>
         await page.WaitForSelectorAsync("text=CI/CD Run", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
 
@@ -74,4 +77,43 @@ public class CiCdRunPage(IPage page)
     /// </summary>
     public async Task<bool> IsStatusVisibleAsync() =>
         await page.IsVisibleAsync("[class*='rounded-full']:has-text('Status'), p:has-text('Status')");
+
+    // ── Artifacts tab ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Waits for the Artifacts tab content to load — either an artifact list or the empty state message.
+    /// </summary>
+    public async Task WaitForArtifactsTabContentAsync() =>
+        await page.WaitForFunctionAsync(
+            "document.body.innerText.includes('artifact') || document.body.innerText.includes('No artifacts found')",
+            null,
+            new PageWaitForFunctionOptions { Timeout = E2ETimeouts.Navigation });
+
+    /// <summary>Returns true when the artifacts tab shows the empty state message.</summary>
+    public async Task<bool> IsArtifactsTabEmptyAsync() =>
+        await page.IsVisibleAsync("text=No artifacts found for this run.");
+
+    /// <summary>
+    /// Returns true when the toggle button for test-result artifacts is visible
+    /// (i.e. the run produced at least one artifact flagged as a test-result artifact).
+    /// </summary>
+    public async Task<bool> HasTestResultArtifactToggleAsync() =>
+        await page.IsVisibleAsync("[data-testid='toggle-test-result-artifacts']");
+
+    /// <summary>
+    /// Clicks the toggle button that reveals hidden test-result artifacts and waits
+    /// for at least one additional artifact row to appear.
+    /// </summary>
+    public async Task ShowTestResultArtifactsAsync()
+    {
+        await page.ClickAsync("[data-testid='toggle-test-result-artifacts']");
+    }
+
+    /// <summary>Returns the number of artifact rows currently visible in the artifacts tab.</summary>
+    public async Task<int> GetVisibleArtifactCountAsync()
+    {
+        // Each artifact row contains the artifact name in a p.text-sm.font-medium element.
+        var rows = await page.QuerySelectorAllAsync(".space-y-2 > div");
+        return rows.Count;
+    }
 }
