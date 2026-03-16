@@ -32,8 +32,17 @@ public class CiCdRunPage(IPage page)
     public async Task ClickTestsTabAsync()
     {
         await page.ClickAsync("button:has-text('Tests')");
-        await page.WaitForTimeoutAsync(E2ETimeouts.RetryDelay * 1000);
+        await WaitForTestsTabContentAsync();
     }
+
+    /// <summary>
+    /// Waits for the Tests tab content to load — either test suites or the empty state message.
+    /// </summary>
+    public async Task WaitForTestsTabContentAsync() =>
+        await page.WaitForFunctionAsync(
+            "document.body.innerText.includes('passed') || document.body.innerText.includes('No test results available')",
+            null,
+            new PageWaitForFunctionOptions { Timeout = E2ETimeouts.Navigation });
 
     /// <summary>Returns true when the tests tab shows at least one test suite result.</summary>
     public async Task<bool> HasTestSuitesAsync()

@@ -160,11 +160,8 @@ public class TestHistoryTests : IAsyncLifetime
             var runPage = new CiCdRunPage(page);
             await runPage.GotoTestsTabAsync(projectId, runId);
 
-            // Wait for either test results or empty state to appear — avoids arbitrary timeout.
-            // The Tests tab shows "passed" when results exist, or "No test results available" when empty.
-            await page.WaitForFunctionAsync(
-                "document.body.innerText.includes('passed') || document.body.innerText.includes('No test results available')",
-                null, new PageWaitForFunctionOptions { Timeout = E2ETimeouts.Navigation });
+            // Wait for the Tests tab content to load (either test results or empty state).
+            await runPage.WaitForTestsTabContentAsync();
 
             // The Tests tab should show test suites, not the empty state.
             Assert.False(await runPage.IsTestsTabEmptyAsync(),
