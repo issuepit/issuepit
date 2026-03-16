@@ -146,6 +146,8 @@ export function useDashboardLayout(options: {
   // ── Drag & drop ────────────────────────────────────────────────────────────
   const dragSectionId = ref<string | null>(null)
   const dragHoverSid = ref<string | null>(null)
+  /** Which gap zone is currently being hovered: { id: first-section-id, after: true=right-gap / false=left-gap } */
+  const dragHoverGap = ref<{ id: string; after: boolean } | null>(null)
   let _dragSnapshot: string | null = null
   // Cached drag group (all sections being moved together); populated on dragstart
   let _dragGroup: string[] = []
@@ -173,7 +175,7 @@ export function useDashboardLayout(options: {
 
   function onDragOver(_e: DragEvent, id: string) {
     if (!dragSectionId.value) return
-    // Only highlight cards outside the drag group; reorder is handled by onDragEnter
+    // Keep dragHoverSid updated so tab/stack buttons highlight on hover
     if (!_dragGroup.includes(id)) dragHoverSid.value = id
   }
 
@@ -181,18 +183,23 @@ export function useDashboardLayout(options: {
     if (!dragSectionId.value) return
     // Only fire when truly entering the card from outside (not from a child element)
     if (e.currentTarget instanceof HTMLElement && e.currentTarget.contains(e.relatedTarget as Node)) return
-    // Only reorder if entering from the true gap (not from another card).
-    // When the cursor moves directly from Card A to Card B there is no gap crossing,
-    // so the relatedTarget will be inside a [data-drag-card] element — skip reorder in that case.
-    if ((e.relatedTarget as Element | null)?.closest('[data-drag-card]')) return
+    if (_dragGroup.includes(id)) return
+    // Update hover sid for tab/stack button highlights; reorder is handled by gap sentinels
+    dragHoverSid.value = id
+  }
+
+  /**
+   * Called by the gap sentinel divs that live BETWEEN cards (not on the card itself).
+   * `id` is the first section id of the adjacent card; `after=true` means the sentinel
+   * is on the card's RIGHT (insert dragged group AFTER the card), `after=false` means LEFT (insert BEFORE).
+   */
+  function onGapDragEnter(_e: DragEvent, id: string, after: boolean) {
+    if (!dragSectionId.value) return
+    dragHoverGap.value = { id, after }
+    dragHoverSid.value = null  // leaving the card — clear card-level hover
 
     const isSameGroup = _dragGroup.length > 1 && _dragGroup.includes(id)
-    // Skip reorder if dragging over ourselves or our group
     if (id === dragSectionId.value || isSameGroup || _dragGroup.includes(id)) return
-
-    // Determine which side the cursor entered from (left = insert before, right = insert after)
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    const enteredFromLeft = e.clientX - rect.left < rect.width / 2
 
     const order = layout.value.order
     if (order.indexOf(dragSectionId.value) === -1 || order.indexOf(id) === -1) return
@@ -200,30 +207,28 @@ export function useDashboardLayout(options: {
     // If the target card belongs to a stack group, move relative to the whole group
     const targetStk = isVirtualId(id) ? null : (sectionCfg(id).stackGroup ?? null)
     let insertAnchor: string
-    let insertAfter: boolean
+    let insertAfterFinal: boolean
     if (targetStk) {
       const tGroup = order.filter(s => (sectionCfg(s).stackGroup ?? null) === targetStk)
-      if (enteredFromLeft) {
-        insertAnchor = tGroup[0]
-        insertAfter = false
-      } else {
-        insertAnchor = tGroup[tGroup.length - 1]
-        insertAfter = true
-      }
+      insertAnchor = after ? tGroup[tGroup.length - 1] : tGroup[0]
+      insertAfterFinal = after
     } else {
       insertAnchor = id
-      insertAfter = enteredFromLeft  // entered from left = insert after target (drag source moves right)
+      insertAfterFinal = after
     }
 
-    // Remove the drag group from the order, then reinsert at the anchor position
     const withoutGroup = order.filter(s => !_dragGroup.includes(s))
     let anchorIdx = withoutGroup.indexOf(insertAnchor)
     if (anchorIdx === -1) return
-    if (insertAfter) anchorIdx++
+    if (insertAfterFinal) anchorIdx++
     const newOrder = [...withoutGroup]
     newOrder.splice(anchorIdx, 0, ..._dragGroup)
     if (newOrder.join(',') === order.join(',')) return
     layout.value.order = newOrder
+  }
+
+  function onGapDragLeave() {
+    dragHoverGap.value = null
   }
 
   function onDragEnd(_e?: DragEvent) {
@@ -235,6 +240,7 @@ export function useDashboardLayout(options: {
     _dragEscaped = false
     dragSectionId.value = null
     dragHoverSid.value = null
+    dragHoverGap.value = null
     _dragSnapshot = null
     _dragGroup = []
   }
@@ -460,6 +466,7 @@ export function useDashboardLayout(options: {
     isDraftMode,
     dragSectionId,
     dragHoverSid,
+    dragHoverGap,
     renderedItems,
     hiddenSections,
     activeTabInGroup,
@@ -482,6 +489,8 @@ export function useDashboardLayout(options: {
     onDragOver,
     onDragEnter,
     onDragEnd,
+    onGapDragEnter,
+    onGapDragLeave,
     toggleTabGroupWithNext,
     tabWithSection,
     toggleStackGroupWithNext,
