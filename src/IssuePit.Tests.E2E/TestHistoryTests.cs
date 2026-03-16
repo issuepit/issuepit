@@ -159,7 +159,12 @@ public class TestHistoryTests : IAsyncLifetime
 
             var runPage = new CiCdRunPage(page);
             await runPage.GotoTestsTabAsync(projectId, runId);
-            await page.WaitForTimeoutAsync(E2ETimeouts.Default * 1000);
+
+            // Wait for either test results or empty state to appear — avoids arbitrary timeout.
+            // The Tests tab shows "passed" when results exist, or "No test results available" when empty.
+            await page.WaitForFunctionAsync(
+                "document.body.innerText.includes('passed') || document.body.innerText.includes('No test results available')",
+                null, new PageWaitForFunctionOptions { Timeout = E2ETimeouts.Navigation });
 
             // The Tests tab should show test suites, not the empty state.
             Assert.False(await runPage.IsTestsTabEmptyAsync(),
@@ -194,7 +199,9 @@ public class TestHistoryTests : IAsyncLifetime
 
             // Navigate to the project dashboard.
             await page.GotoAsync($"/projects/{projectId}");
-            await page.WaitForTimeoutAsync(E2ETimeouts.Default * 1000);
+
+            // Wait for the project dashboard to fully render (Test History section must be loaded).
+            await page.WaitForSelectorAsync("text=Test History", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
 
             // The Test History section should be visible.
             var testHistorySection = page.Locator("text=Test History").First;
@@ -239,8 +246,8 @@ public class TestHistoryTests : IAsyncLifetime
             await historyPage.GotoAsync(projectId);
             await historyPage.WaitForLoadAsync();
 
-            // The Overview tab should show at least one run summary row.
-            await page.WaitForTimeoutAsync(E2ETimeouts.Default * 1000);
+            // Wait for the overview table to render with at least one row.
+            await page.WaitForSelectorAsync("tbody tr", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
             var rows = historyPage.RunSummaryRows;
             Assert.True(await rows.CountAsync() > 0,
                 "Test history overview should show at least one run summary row after import");

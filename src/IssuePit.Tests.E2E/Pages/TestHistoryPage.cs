@@ -38,6 +38,6 @@ public class TestHistoryPage(IPage page)
     /// <summary>Returns the run summary rows in the Overview tab table.</summary>
     public ILocator RunSummaryRows => page.Locator("tbody tr");
 
-    /// <summary>Returns the "No runs yet" or "No test results" empty state message.</summary>
-    public ILocator EmptyState => page.Locator("text=No test runs yet, text=No run history");
+    /// <summary>Returns the "No test runs yet" or "No test history yet" empty state message.</summary>
+    public ILocator EmptyState => page.Locator("text=No test history yet").Or(page.Locator("text=No run history"));
 }

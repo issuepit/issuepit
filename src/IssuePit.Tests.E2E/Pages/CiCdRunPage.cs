@@ -36,8 +36,12 @@ public class CiCdRunPage(IPage page)
     }
 
     /// <summary>Returns true when the tests tab shows at least one test suite result.</summary>
-    public async Task<bool> HasTestSuitesAsync() =>
-        await page.IsVisibleAsync(".test-suite, [class*='space-y-4'] > div, text=passed, text=Passed");
+    public async Task<bool> HasTestSuitesAsync()
+    {
+        // The Tests tab shows suites in cards that each contain "passed" in the suite header.
+        var suiteHeaders = page.Locator("text=passed").First;
+        return await suiteHeaders.CountAsync() > 0;
+    }
 
     /// <summary>Returns true when the tests tab shows the empty state message.</summary>
     public async Task<bool> IsTestsTabEmptyAsync() =>
