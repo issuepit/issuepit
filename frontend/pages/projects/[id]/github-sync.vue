@@ -276,10 +276,8 @@ const identitiesStore = useGitHubIdentitiesStore()
 const tabs = ['Configuration', 'Sync Runs', 'Conflicts']
 
 // Initialise from URL query param so deep-linked tabs load correctly on page reload.
-const activeTab = ref<string>(() => {
-  const tabParam = route.query.tab as string | undefined
-  return tabParam && tabs.includes(tabParam) ? tabParam : 'Configuration'
-})
+const tabParam = route.query.tab as string | undefined
+const activeTab = ref<string>(tabParam && tabs.includes(tabParam) ? tabParam : 'Configuration')
 
 const form = reactive({
   gitHubIdentityId: '',
@@ -312,7 +310,8 @@ watch(() => syncStore.config, (cfg) => {
 
 // Keep the URL query param in sync with the active tab.
 watch(activeTab, (tab) => {
-  router.replace({ query: { ...route.query, tab } })
+  if (route.query.tab !== tab)
+    router.replace({ query: { ...route.query, tab } })
 })
 
 async function saveConfig() {

@@ -605,7 +605,7 @@ public class GitHubSyncService(
     }
 
     /// <summary>
-    /// Normalises various GitHub repository input formats to <c>owner/repo</c>.
+    /// Normalizes various GitHub repository input formats to <c>owner/repo</c>.
     /// Accepts:
     ///   <c>https://github.com/owner/repo</c>,
     ///   <c>https://github.com/owner/repo.git</c>,
