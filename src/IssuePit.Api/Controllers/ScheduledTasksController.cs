@@ -18,8 +18,8 @@ public class ScheduledTasksController(
 {
     private record ScheduledTaskRunDto(
         Guid Id,
-        Guid ProjectId,
-        string ProjectName,
+        Guid? ProjectId,
+        string? ProjectName,
         GitHubSyncRunStatus Status,
         string? Summary,
         DateTime StartedAt,
@@ -98,17 +98,43 @@ public class ScheduledTasksController(
                 "BranchDetection"))
             .ToListAsync();
 
+        // ── Config Repo Sync runs ─────────────────────────────────────────────
+        // Config repo sync runs are tenant-scoped (not project-scoped); skip when
+        // a project filter is active since they cannot belong to any project.
+        List<ScheduledTaskRunDto> crRuns = [];
+        if (!projectId.HasValue)
+        {
+            var crQuery = db.ConfigRepoSyncRuns
+                .Where(r => r.TenantId == ctx.CurrentTenant.Id);
+
+            if (parsedStatus.HasValue)
+                crQuery = crQuery.Where(r => r.Status == parsedStatus.Value);
+
+            crRuns = await crQuery
+                .OrderByDescending(r => r.StartedAt)
+                .Take(cappedTake)
+                .Select(r => new ScheduledTaskRunDto(
+                    r.Id,
+                    null,
+                    null,
+                    r.Status,
+                    r.Summary,
+                    r.StartedAt,
+                    r.CompletedAt,
+                    "ConfigRepoSync"))
+                .ToListAsync();
+        }
+
         // Merge and re-sort by StartedAt descending, then cap to requested take.
         var runs = ghRuns
             .Concat(bdRuns)
+            .Concat(crRuns)
             .OrderByDescending(r => r.StartedAt)
             .Take(cappedTake)
             .ToList();
 
         return Ok(runs);
     }
-
-    /// <summary>
     /// Returns all projects (for the current tenant) that have at least one scheduled task run,
     /// for use in the filter dropdown.
     /// </summary>
