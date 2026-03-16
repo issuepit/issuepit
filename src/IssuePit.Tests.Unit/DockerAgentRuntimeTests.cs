@@ -105,7 +105,6 @@ public class DockerAgentRuntimeTests
     }
 
     /// <summary>
-<<<<<<< copilot/fix-agent-startup-issue
     /// Verifies that <c>exec "$@"</c> is the last non-empty line of entrypoint.sh.
     /// Adding code after <c>exec "$@"</c> is harmless but accidental removal of the line
     /// (e.g., by a future edit that truncates the file) would break all container starts.
@@ -128,7 +127,9 @@ public class DockerAgentRuntimeTests
             $"exec \"$@\" must be the last non-empty line in entrypoint.sh to ensure the " +
             $"container CMD (sleep infinity / opencode) is started after setup. " +
             $"Actual last non-empty line: '{lastNonEmpty}'");
-=======
+    }
+
+    /// <summary>
     /// Verifies the embedded entrypoint.sh contains no CR (\r) characters.
     /// A CRLF shebang line (#!/usr/bin/env bash\r) causes the kernel to look for
     /// a "bash\r" binary, producing "/usr/bin/env: 'bash\r': No such file or directory"
@@ -145,7 +146,6 @@ public class DockerAgentRuntimeTests
             "entrypoint.sh must not contain CR (\\r) characters. " +
             "CRLF line endings break the shebang on Linux, causing 'bash\\r: No such file or directory'. " +
             "Ensure the file uses LF-only line endings (add *.sh text eol=lf to .gitattributes).");
->>>>>>> copilot/fix-agent-startup
     }
 
     private static string ReadEntrypoint()
