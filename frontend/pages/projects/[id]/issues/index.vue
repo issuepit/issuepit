@@ -107,9 +107,17 @@
               <span :class="statusIcon(issue.status).color" class="w-3.5 h-3.5 rounded-full block"></span>
             </td>
             <td class="px-4 py-3">
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 flex-wrap">
                 <span class="text-xs text-gray-600">{{ formatIssueId(issue.number, projectsStore.currentProject) }}</span>
                 <span class="text-sm text-gray-200 hover:text-white">{{ issue.title }}</span>
+                <a
+                  v-if="issue.gitHubIssueUrl"
+                  :href="issue.gitHubIssueUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-xs bg-gray-800 text-gray-400 hover:text-brand-300 px-1.5 py-0.5 rounded font-mono leading-none shrink-0"
+                  @click.stop
+                >GH#{{ issue.gitHubIssueNumber }}</a>
               </div>
             </td>
             <td class="px-4 py-3 hidden md:table-cell">

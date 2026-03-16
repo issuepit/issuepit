@@ -81,9 +81,9 @@ v-model="form.gitHubIdentityId"
             <div>
               <label class="block text-sm font-medium text-gray-300 mb-1.5">GitHub Repository</label>
               <input
-v-model="form.gitHubRepo" type="text" placeholder="owner/repo (e.g. acme/backend)"
+v-model="form.gitHubRepo" type="text" placeholder="owner/repo or https://github.com/owner/repo"
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" >
-              <p class="text-xs text-gray-600 mt-1">Format: <span class="font-mono">owner/repo</span></p>
+              <p class="text-xs text-gray-600 mt-1">Accepts: <span class="font-mono">owner/repo</span>, <span class="font-mono">https://github.com/owner/repo</span></p>
             </div>
 
             <!-- Sync Mode -->
@@ -128,7 +128,7 @@ v-model.number="form.triggerMode"
             <p v-if="saveError" class="text-red-400 text-sm">{{ saveError }}</p>
             <p v-if="saveSuccess" class="text-green-400 text-sm">Configuration saved.</p>
 
-            <div class="flex gap-3 pt-1">
+            <div class="flex gap-3 pt-1 flex-wrap">
               <button
 type="submit" :disabled="syncStore.loading"
                 class="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
@@ -139,9 +139,18 @@ type="submit" :disabled="syncStore.loading"
                 type="button"
                 :disabled="triggering"
                 class="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-gray-300 text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-                @click="triggerSync"
+                @click="triggerSync(false)"
               >
                 {{ triggering ? 'Triggered…' : 'Trigger Sync Now' }}
+              </button>
+              <button
+                v-if="form.triggerMode !== GitHubSyncTriggerMode.Off && form.syncMode !== GitHubSyncMode.CreateOnGitHub"
+                type="button"
+                :disabled="triggering"
+                class="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-400 text-sm font-medium px-4 py-2 rounded-lg transition-colors border border-gray-700"
+                @click="triggerSync(true)"
+              >
+                {{ triggering ? 'Running…' : 'Dry Run' }}
               </button>
             </div>
           </form>
@@ -257,6 +266,7 @@ import { useGitHubSyncStore } from '~/stores/github-sync'
 import { useGitHubIdentitiesStore } from '~/stores/github-identities'
 
 const route = useRoute()
+const router = useRouter()
 const id = route.params.id as string
 
 const projectsStore = useProjectsStore()
@@ -264,7 +274,10 @@ const syncStore = useGitHubSyncStore()
 const identitiesStore = useGitHubIdentitiesStore()
 
 const tabs = ['Configuration', 'Sync Runs', 'Conflicts']
-const activeTab = ref('Configuration')
+
+// Initialise from URL query param so deep-linked tabs load correctly on page reload.
+const tabParam = route.query.tab as string | undefined
+const activeTab = ref<string>(tabParam && tabs.includes(tabParam) ? tabParam : 'Configuration')
 
 const form = reactive({
   gitHubIdentityId: '',
@@ -285,6 +298,22 @@ const saveSuccess = ref(false)
 const triggering = ref(false)
 const runsComponent = ref<InstanceType<typeof import('~/components/ScheduledTaskRuns.vue').default> | null>(null)
 
+// Populate form whenever the store config is (re)loaded.
+watch(() => syncStore.config, (cfg) => {
+  if (cfg) {
+    form.gitHubIdentityId = cfg.gitHubIdentityId ?? ''
+    form.gitHubRepo = cfg.gitHubRepo ?? ''
+    form.triggerMode = cfg.triggerMode
+    form.syncMode = cfg.syncMode
+  }
+}, { immediate: true })
+
+// Keep the URL query param in sync with the active tab.
+watch(activeTab, (tab) => {
+  if (route.query.tab !== tab)
+    router.replace({ query: { ...route.query, tab } })
+})
+
 async function saveConfig() {
   saveError.value = null
   saveSuccess.value = false
@@ -302,10 +331,10 @@ async function saveConfig() {
   }
 }
 
-async function triggerSync() {
+async function triggerSync(dry = false) {
   triggering.value = true
   try {
-    await syncStore.triggerSync(id)
+    await syncStore.triggerSync(id, dry)
     activeTab.value = 'Sync Runs'
     await new Promise(resolve => setTimeout(resolve, 1500))
     await syncStore.fetchRuns(id)
@@ -332,11 +361,7 @@ onMounted(async () => {
     identitiesStore.fetchIdentities(),
   ])
 
-  if (syncStore.config) {
-    form.gitHubIdentityId = syncStore.config.gitHubIdentityId ?? ''
-    form.gitHubRepo = syncStore.config.gitHubRepo ?? ''
-    form.triggerMode = syncStore.config.triggerMode
-    form.syncMode = syncStore.config.syncMode
-  }
+  if (activeTab.value === 'Sync Runs') await syncStore.fetchRuns(id)
+  if (activeTab.value === 'Conflicts') await syncStore.fetchConflicts(id)
 })
 </script>

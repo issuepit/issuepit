@@ -30,13 +30,16 @@ public class GitHubSyncService(
     /// Import (GitHub→IssuePit), TwoWay (bidirectional), or CreateOnGitHub (no batch import).
     /// Creates a <see cref="GitHubSyncRun"/> audit record with full log output.
     /// </summary>
-    public async Task<GitHubSyncRun> SyncAsync(Guid projectId, CancellationToken ct = default)
+    public async Task<GitHubSyncRun> SyncAsync(Guid projectId, bool dryRun = false, CancellationToken ct = default)
     {
         var run = await CreateRunAsync(projectId, ct);
 
         try
         {
             await SetRunStatusAsync(run, GitHubSyncRunStatus.Running, ct);
+
+            if (dryRun)
+                await AppendLogAsync(run, GitHubSyncLogLevel.Info, "DRY RUN mode — no changes will be saved.", ct);
 
             var config = await db.GitHubSyncConfigs
                 .Include(c => c.GitHubIdentity)
@@ -60,11 +63,35 @@ public class GitHubSyncService(
             var syncMode = config?.SyncMode ?? GitHubSyncMode.Import;
             await AppendLogAsync(run, GitHubSyncLogLevel.Info, $"SyncMode = {syncMode}. Fetching issues from {repo}...", ct);
 
-            var ghIssues = await FetchAllGitHubIssuesAsync(token, repo, run, ct);
-            await AppendLogAsync(run, GitHubSyncLogLevel.Info, $"Fetched {ghIssues.Count} issue(s) from GitHub.", ct);
+            // Fetch issues — throws GitHubApiException when the API returns an error.
+            List<GitHubIssueDto> ghIssues;
+            List<GitHubPullRequestDto> ghPrs;
+            try
+            {
+                ghIssues = await FetchAllGitHubIssuesAsync(token, repo, run, ct);
+                ghPrs = await FetchAllGitHubPullRequestsAsync(token, repo, run, ct);
+            }
+            catch (GitHubApiException ex)
+            {
+                await FailRunAsync(run, ex.Message, ct);
+                return run;
+            }
+
+            await AppendLogAsync(run, GitHubSyncLogLevel.Info,
+                $"Fetched {ghIssues.Count} issue(s) and {ghPrs.Count} PR(s) from GitHub.", ct);
+
+            // Import oldest first so the lowest GitHub numbers get the lowest IssuePit numbers.
+            ghIssues = [.. ghIssues.OrderBy(i => i.Number)];
+            ghPrs = [.. ghPrs.OrderBy(p => p.Number)];
 
             int imported = 0, updated = 0, pushed = 0, skipped = 0;
 
+            // Compute starting number once (avoids N separate MAX queries inside the loop).
+            var nextNumber = (await db.Issues
+                .Where(i => i.ProjectId == projectId)
+                .MaxAsync(i => (int?)i.Number, ct) ?? 0) + 1;
+
+            // ── Issues ────────────────────────────────────────────────────────
             foreach (var ghIssue in ghIssues)
             {
                 var existing = await db.Issues
@@ -72,28 +99,31 @@ public class GitHubSyncService(
 
                 if (existing is null)
                 {
-                    var maxNumber = await db.Issues
-                        .Where(i => i.ProjectId == projectId)
-                        .MaxAsync(i => (int?)i.Number, ct) ?? 0;
-
-                    db.Issues.Add(new Issue
-                    {
-                        Id = Guid.NewGuid(),
-                        ProjectId = projectId,
-                        Number = maxNumber + 1,
-                        Title = ghIssue.Title,
-                        Body = ghIssue.Body,
-                        Status = MapGitHubState(ghIssue.State),
-                        Priority = IssuePriority.NoPriority,
-                        Type = IssueType.Issue,
-                        GitHubIssueNumber = ghIssue.Number,
-                        GitHubIssueUrl = ghIssue.HtmlUrl,
-                        CreatedAt = DateTime.UtcNow,
-                        UpdatedAt = DateTime.UtcNow,
-                    });
-                    imported++;
                     await AppendLogAsync(run, GitHubSyncLogLevel.Info,
-                        $"  Imported: #{ghIssue.Number} \"{TruncateTitle(ghIssue.Title)}\"", ct);
+                        $"Imported: {repo}#{ghIssue.Number} \"{TruncateTitle(ghIssue.Title)}\"", ct);
+
+                    if (!dryRun)
+                    {
+                        db.Issues.Add(new Issue
+                        {
+                            Id = Guid.NewGuid(),
+                            ProjectId = projectId,
+                            Number = nextNumber,
+                            Title = ghIssue.Title,
+                            Body = ghIssue.Body,
+                            Status = MapGitHubState(ghIssue.State),
+                            Priority = IssuePriority.NoPriority,
+                            Type = IssueType.Issue,
+                            GitHubIssueNumber = ghIssue.Number,
+                            GitHubIssueUrl = ghIssue.HtmlUrl,
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow,
+                        });
+                        nextNumber++;
+                        await db.SaveChangesAsync(ct);
+                    }
+
+                    imported++;
                 }
                 else if (syncMode == GitHubSyncMode.TwoWay)
                 {
@@ -106,17 +136,26 @@ public class GitHubSyncService(
 
                     if (localNewer && contentDiffers)
                     {
-                        var pushResult = await PushIssueToGitHubAsync(existing, token, repo, ct);
-                        if (pushResult)
+                        if (!dryRun)
                         {
-                            pushed++;
-                            await AppendLogAsync(run, GitHubSyncLogLevel.Info,
-                                $"  Pushed local changes: #{ghIssue.Number} \"{TruncateTitle(existing.Title)}\"", ct);
+                            var pushResult = await PushIssueToGitHubAsync(existing, token, repo, ct);
+                            if (pushResult)
+                            {
+                                pushed++;
+                                await AppendLogAsync(run, GitHubSyncLogLevel.Info,
+                                    $"Pushed local changes: {repo}#{ghIssue.Number} \"{TruncateTitle(existing.Title)}\"", ct);
+                            }
+                            else
+                            {
+                                await AppendLogAsync(run, GitHubSyncLogLevel.Warn,
+                                    $"Failed to push: {repo}#{ghIssue.Number} \"{TruncateTitle(existing.Title)}\"", ct);
+                            }
                         }
                         else
                         {
-                            await AppendLogAsync(run, GitHubSyncLogLevel.Warn,
-                                $"  Failed to push: #{ghIssue.Number} \"{TruncateTitle(existing.Title)}\"", ct);
+                            pushed++;
+                            await AppendLogAsync(run, GitHubSyncLogLevel.Info,
+                                $"[DRY RUN] Would push local changes: {repo}#{ghIssue.Number} \"{TruncateTitle(existing.Title)}\"", ct);
                         }
                     }
                     else
@@ -124,25 +163,25 @@ public class GitHubSyncService(
                         bool changed = false;
                         if (!string.Equals(existing.Title, ghIssue.Title, StringComparison.Ordinal))
                         {
-                            existing.Title = ghIssue.Title;
+                            if (!dryRun) existing.Title = ghIssue.Title;
                             changed = true;
                         }
                         if (!string.Equals(existing.Body ?? string.Empty, ghIssue.Body ?? string.Empty, StringComparison.Ordinal))
                         {
-                            existing.Body = ghIssue.Body;
+                            if (!dryRun) existing.Body = ghIssue.Body;
                             changed = true;
                         }
                         if (!string.Equals(existing.GitHubIssueUrl, ghIssue.HtmlUrl, StringComparison.Ordinal))
                         {
-                            existing.GitHubIssueUrl = ghIssue.HtmlUrl;
+                            if (!dryRun) existing.GitHubIssueUrl = ghIssue.HtmlUrl;
                             changed = true;
                         }
                         if (changed)
                         {
-                            existing.UpdatedAt = DateTime.UtcNow;
+                            if (!dryRun) existing.UpdatedAt = DateTime.UtcNow;
                             updated++;
                             await AppendLogAsync(run, GitHubSyncLogLevel.Info,
-                                $"  Updated from GitHub: #{ghIssue.Number} \"{TruncateTitle(ghIssue.Title)}\"", ct);
+                                $"{(dryRun ? "[DRY RUN] Would update" : "Updated")} from GitHub: {repo}#{ghIssue.Number} \"{TruncateTitle(ghIssue.Title)}\"", ct);
                         }
                         else
                         {
@@ -155,11 +194,14 @@ public class GitHubSyncService(
                     // Import mode: only patch stale GitHub URL links.
                     if (!string.Equals(existing.GitHubIssueUrl, ghIssue.HtmlUrl, StringComparison.Ordinal))
                     {
-                        existing.GitHubIssueUrl = ghIssue.HtmlUrl;
-                        existing.UpdatedAt = DateTime.UtcNow;
+                        if (!dryRun)
+                        {
+                            existing.GitHubIssueUrl = ghIssue.HtmlUrl;
+                            existing.UpdatedAt = DateTime.UtcNow;
+                        }
                         updated++;
                         await AppendLogAsync(run, GitHubSyncLogLevel.Info,
-                            $"  Updated link: #{ghIssue.Number} \"{TruncateTitle(ghIssue.Title)}\"", ct);
+                            $"{(dryRun ? "[DRY RUN] Would update" : "Updated")} link: {repo}#{ghIssue.Number} \"{TruncateTitle(ghIssue.Title)}\"", ct);
                     }
                     else
                     {
@@ -168,11 +210,57 @@ public class GitHubSyncService(
                 }
             }
 
-            await db.SaveChangesAsync(ct);
+            // ── Pull Requests → MergeRequests ─────────────────────────────────
+            int prsImported = 0, prsSkipped = 0;
+            foreach (var ghPr in ghPrs)
+            {
+                var existingMr = await db.MergeRequests
+                    .FirstOrDefaultAsync(m => m.ProjectId == projectId && m.GitHubPrNumber == ghPr.Number, ct);
+
+                if (existingMr is null)
+                {
+                    await AppendLogAsync(run, GitHubSyncLogLevel.Info,
+                        $"Imported PR: {repo}#{ghPr.Number} \"{TruncateTitle(ghPr.Title)}\"", ct);
+
+                    if (!dryRun)
+                    {
+                        db.MergeRequests.Add(new MergeRequest
+                        {
+                            Id = Guid.NewGuid(),
+                            ProjectId = projectId,
+                            Title = ghPr.Title,
+                            Description = ghPr.Body,
+                            SourceBranch = ghPr.Head?.Ref ?? "unknown",
+                            TargetBranch = ghPr.Base?.Ref ?? "main",
+                            Status = MapGitHubPrState(ghPr.State, ghPr.MergedAt),
+                            AutoMergeEnabled = false,
+                            LastKnownSourceSha = ghPr.Head?.Sha,
+                            GitHubPrNumber = ghPr.Number,
+                            GitHubPrUrl = ghPr.HtmlUrl,
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow,
+                        });
+                        await db.SaveChangesAsync(ct);
+                    }
+
+                    prsImported++;
+                }
+                else
+                {
+                    prsSkipped++;
+                }
+            }
+
+            if (!dryRun)
+                await db.SaveChangesAsync(ct);
 
             run.Summary = syncMode == GitHubSyncMode.TwoWay
-                ? $"{imported} imported, {updated} updated from GitHub, {pushed} pushed to GitHub, {skipped} unchanged"
-                : $"{imported} imported, {updated} updated, {skipped} unchanged";
+                ? $"{imported} imported, {updated} updated from GitHub, {pushed} pushed to GitHub, {skipped} unchanged; {prsImported} PRs imported, {prsSkipped} PRs unchanged"
+                : $"{imported} imported, {updated} updated, {skipped} unchanged; {prsImported} PRs imported, {prsSkipped} PRs unchanged";
+
+            if (dryRun)
+                run.Summary = "[DRY RUN] " + run.Summary;
+
             await CompleteRunAsync(run, ct);
             await AppendLogAsync(run, GitHubSyncLogLevel.Info, $"Done. {run.Summary}", ct);
         }
@@ -412,7 +500,7 @@ public class GitHubSyncService(
             return (null, null);
         }
 
-        return (token, config.GitHubRepo);
+        return (token, NormalizeRepo(config.GitHubRepo));
     }
 
     private string? DecryptToken(string encryptedToken)
@@ -445,9 +533,9 @@ public class GitHubSyncService(
 
             if (!response.IsSuccessStatusCode)
             {
-                await AppendLogAsync(run, GitHubSyncLogLevel.Error,
-                    $"GitHub API returned {(int)response.StatusCode} for page {page}.", ct);
-                break;
+                throw new GitHubApiException(
+                    $"GitHub API returned {(int)response.StatusCode} for issues page {page}. " +
+                    "Check that the repository exists and the token has the required permissions.");
             }
 
             var issues = await response.Content.ReadFromJsonAsync<List<GitHubIssueDto>>(ct) ?? [];
@@ -465,6 +553,39 @@ public class GitHubSyncService(
         return allIssues;
     }
 
+    private async Task<List<GitHubPullRequestDto>> FetchAllGitHubPullRequestsAsync(
+        string token, string repo, GitHubSyncRun? run, CancellationToken ct)
+    {
+        var (owner, repoName) = ParseRepo(repo);
+        var client = CreateHttpClient(token);
+
+        var allPrs = new List<GitHubPullRequestDto>();
+        var page = 1;
+
+        while (true)
+        {
+            var url = $"https://api.github.com/repos/{owner}/{repoName}/pulls?state=all&per_page=100&page={page}";
+            var response = await client.GetAsync(url, ct);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new GitHubApiException(
+                    $"GitHub API returned {(int)response.StatusCode} for pull requests page {page}. " +
+                    "Check that the repository exists and the token has the required permissions.");
+            }
+
+            var prs = await response.Content.ReadFromJsonAsync<List<GitHubPullRequestDto>>(ct) ?? [];
+            allPrs.AddRange(prs);
+
+            if (prs.Count < 100)
+                break;
+
+            page++;
+        }
+
+        return allPrs;
+    }
+
     private HttpClient CreateHttpClient(string token)
     {
         var client = httpClientFactory.CreateClient();
@@ -476,11 +597,47 @@ public class GitHubSyncService(
 
     private static (string owner, string repo) ParseRepo(string ownerRepo)
     {
-        var parts = ownerRepo.Split('/', 2);
+        var normalized = NormalizeRepo(ownerRepo);
+        var parts = normalized.Split('/', 2);
         if (parts.Length != 2 || string.IsNullOrEmpty(parts[0]) || string.IsNullOrEmpty(parts[1]))
             throw new ArgumentException($"Invalid GitHub repository format: \"{ownerRepo}\". Expected owner/repo.", nameof(ownerRepo));
         return (parts[0], parts[1]);
     }
+
+    /// <summary>
+    /// Normalizes various GitHub repository input formats to <c>owner/repo</c>.
+    /// Accepts:
+    ///   <c>https://github.com/owner/repo</c>,
+    ///   <c>https://github.com/owner/repo.git</c>,
+    ///   <c>git@github.com:owner/repo.git</c>,
+    ///   <c>owner/repo</c>.
+    /// </summary>
+    internal static string NormalizeRepo(string raw)
+    {
+        var s = raw.Trim().TrimEnd('/');
+
+        // https://github.com/owner/repo[.git]
+        if (s.StartsWith("https://github.com/", StringComparison.OrdinalIgnoreCase))
+            s = s["https://github.com/".Length..];
+
+        // http://github.com/owner/repo[.git]
+        else if (s.StartsWith("http://github.com/", StringComparison.OrdinalIgnoreCase))
+            s = s["http://github.com/".Length..];
+
+        // git@github.com:owner/repo[.git]
+        else if (s.StartsWith("git@github.com:", StringComparison.OrdinalIgnoreCase))
+            s = s["git@github.com:".Length..];
+
+        // strip trailing .git
+        if (s.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
+            s = s[..^".git".Length];
+
+        return s;
+    }
+
+    private static MergeRequestStatus MapGitHubPrState(string? state, string? mergedAt) =>
+        mergedAt is not null ? MergeRequestStatus.Merged :
+        state?.ToLowerInvariant() == "closed" ? MergeRequestStatus.Closed : MergeRequestStatus.Open;
 
     private static IssueStatus MapGitHubState(string? state) =>
         state?.ToLowerInvariant() == "closed" ? IssueStatus.Done : IssueStatus.Backlog;
@@ -512,7 +669,46 @@ public class GitHubSyncService(
         [System.Text.Json.Serialization.JsonPropertyName("pull_request")]
         public object? PullRequest { get; set; }
     }
+
+    private sealed class GitHubPullRequestDto
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("number")]
+        public int Number { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("title")]
+        public string Title { get; set; } = string.Empty;
+
+        [System.Text.Json.Serialization.JsonPropertyName("body")]
+        public string? Body { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("state")]
+        public string? State { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("html_url")]
+        public string HtmlUrl { get; set; } = string.Empty;
+
+        [System.Text.Json.Serialization.JsonPropertyName("merged_at")]
+        public string? MergedAt { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("head")]
+        public GitHubBranchRef? Head { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("base")]
+        public GitHubBranchRef? Base { get; set; }
+    }
+
+    private sealed class GitHubBranchRef
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("ref")]
+        public string Ref { get; set; } = string.Empty;
+
+        [System.Text.Json.Serialization.JsonPropertyName("sha")]
+        public string? Sha { get; set; }
+    }
 }
+
+/// <summary>Thrown when the GitHub API returns a non-success response during a sync fetch.</summary>
+public sealed class GitHubApiException(string message) : Exception(message);
 
 /// <summary>Represents an issue that exists in both systems with divergent content.</summary>
 public record GitHubConflict(
