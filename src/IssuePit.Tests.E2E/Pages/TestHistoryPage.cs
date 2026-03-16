@@ -26,10 +26,9 @@ public class TestHistoryPage(IPage page)
     public async Task ClickTestsTabAsync()
     {
         await TestsTab.ClickAsync();
-        // Wait for the tab content to be visible (either tests or empty state).
-        await page.WaitForSelectorAsync(
-            "text=No test history yet, text=Total Tests, tbody tr",
-            new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
+        // Wait for the tab content to be visible (either tests table or empty state).
+        await page.Locator("table").Or(page.Locator("text=No test history yet"))
+            .WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Navigation });
     }
 
     /// <summary>Returns all test rows in the Tests tab.</summary>
