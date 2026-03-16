@@ -104,6 +104,31 @@ public class DockerAgentRuntimeTests
             "The container should continue running without DinD.");
     }
 
+    /// <summary>
+    /// Verifies that <c>exec "$@"</c> is the last non-empty line of entrypoint.sh.
+    /// Adding code after <c>exec "$@"</c> is harmless but accidental removal of the line
+    /// (e.g., by a future edit that truncates the file) would break all container starts.
+    /// This test guards against that regression.
+    /// </summary>
+    [Fact]
+    public void EntrypointSh_ExecAtSign_IsLastNonEmptyLine()
+    {
+        var content = ReadEntrypoint();
+
+        // Trim trailing whitespace and find the last non-empty line.
+        var lines = content.Split('\n')
+            .Select(l => l.TrimEnd('\r'))
+            .ToArray();
+
+        var lastNonEmpty = lines.LastOrDefault(l => !string.IsNullOrWhiteSpace(l));
+
+        Assert.True(
+            lastNonEmpty == "exec \"$@\"",
+            $"exec \"$@\" must be the last non-empty line in entrypoint.sh to ensure the " +
+            $"container CMD (sleep infinity / opencode) is started after setup. " +
+            $"Actual last non-empty line: '{lastNonEmpty}'");
+    }
+
     private static string ReadEntrypoint()
     {
         var assembly = Assembly.GetAssembly(typeof(DockerAgentRuntime))
