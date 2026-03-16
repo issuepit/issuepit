@@ -875,7 +875,7 @@ public class IssueWorker(
 
             var cicdStatus = await WaitForCiCdCompletionAsync(cicdRun.Id, cancellationToken);
 
-            if (cicdStatus == CiCdRunStatus.Succeeded)
+            if (cicdStatus == CiCdRunStatus.Succeeded || cicdStatus == CiCdRunStatus.SucceededWithWarnings)
             {
                 await appendCiCdLog(
                     $"[INFO] CI/CD run {cicdRun.Id} succeeded.",
