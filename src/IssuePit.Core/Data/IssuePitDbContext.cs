@@ -62,6 +62,7 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<IssueGitMapping> IssueGitMappings => Set<IssueGitMapping>();
     public DbSet<ProjectProperty> ProjectProperties => Set<ProjectProperty>();
     public DbSet<IssuePropertyValue> IssuePropertyValues => Set<IssuePropertyValue>();
+    public DbSet<McpToken> McpTokens => Set<McpToken>();
     public DbSet<DashboardLayout> DashboardLayouts => Set<DashboardLayout>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -308,5 +309,9 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
             .WithMany()
             .HasForeignKey(a => a.UserId)
             .IsRequired(false);
+
+        modelBuilder.Entity<McpToken>()
+            .HasIndex(t => t.KeyHash)
+            .IsUnique();
     }
 }

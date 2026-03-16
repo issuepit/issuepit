@@ -5,7 +5,7 @@ using ModelContextProtocol.Server;
 namespace IssuePit.McpServer.Tools;
 
 [McpServerToolType]
-public class TaskTools(IssuePitApiClient api, IOptions<McpServerOptions> options)
+public class TaskTools(IssuePitApiClient api, IOptions<McpServerOptions> options, McpRequestContext requestContext)
 {
     private McpServerOptions Opts => options.Value;
 
@@ -27,6 +27,7 @@ public class TaskTools(IssuePitApiClient api, IOptions<McpServerOptions> options
         [Description("Optional assignee user ID (GUID).")] Guid? assigneeId = null,
         CancellationToken ct = default)
     {
+        ToolGuard.EnforceNotReadOnly(Opts, requestContext, "CreateIssueTask");
         var payload = new { issueId, title, body, status, assigneeId };
         var result = await api.PostAsync<object>($"/api/issues/{issueId}/tasks", payload, ct);
         return ToolSerializer.Serialize(result);
@@ -42,6 +43,7 @@ public class TaskTools(IssuePitApiClient api, IOptions<McpServerOptions> options
         [Description("New assignee user ID (GUID).")] Guid? assigneeId = null,
         CancellationToken ct = default)
     {
+        ToolGuard.EnforceNotReadOnly(Opts, requestContext, "UpdateIssueTask");
         var payload = new { issueId, title, body, status, assigneeId };
         var result = await api.PutAsync<object>($"/api/issues/{issueId}/tasks/{id}", payload, ct);
         return ToolSerializer.Serialize(result);
@@ -53,6 +55,7 @@ public class TaskTools(IssuePitApiClient api, IOptions<McpServerOptions> options
         [Description("The task ID (GUID).")] Guid id,
         CancellationToken ct = default)
     {
+        ToolGuard.EnforceNotReadOnly(Opts, requestContext, "DeleteIssueTask");
         ToolGuard.EnforceDestructive(Opts, "DeleteIssueTask");
         await api.DeleteAsync($"/api/issues/{issueId}/tasks/{id}", ct);
         return "Task deleted successfully.";

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { ApiKey, RuntimeConfiguration, ApiKeyProvider, RuntimeType, TelegramBot, DigestInterval, PoolStatus } from '~/types'
+import type { ApiKey, RuntimeConfiguration, ApiKeyProvider, RuntimeType, TelegramBot, DigestInterval, PoolStatus, McpAccessToken } from '~/types'
 
 export const useConfigStore = defineStore('config', () => {
   const { get, post, put, del } = useApi()
@@ -101,10 +101,33 @@ export const useConfigStore = defineStore('config', () => {
     telegramBots.value = telegramBots.value.filter(b => b.id !== id)
   }
 
+  // --- MCP Access Tokens ---
+  const mcpTokens = ref<McpAccessToken[]>([])
+  const mcpTokensLoading = ref(false)
+
+  async function fetchMcpTokens() {
+    mcpTokensLoading.value = true
+    try {
+      mcpTokens.value = await get<McpAccessToken[]>('/api/mcp-tokens')
+    } finally {
+      mcpTokensLoading.value = false
+    }
+  }
+
+  async function createMcpToken(payload: { name: string; isReadOnly: boolean; orgId?: string; projectId?: string; expiresAt?: string }) {
+    return await post<McpAccessToken & { rawToken: string }>('/api/mcp-tokens', payload)
+  }
+
+  async function revokeMcpToken(id: string) {
+    await del(`/api/mcp-tokens/${id}`)
+    mcpTokens.value = mcpTokens.value.filter(t => t.id !== id)
+  }
+
   return {
     apiKeys, keysLoading, fetchApiKeys, createApiKey, deleteApiKey,
     runtimes, runtimesLoading, fetchRuntimes, createRuntime, updateRuntime, deleteRuntime,
     poolStatus, poolStatusLoading, fetchPoolStatus,
     telegramBots, telegramBotsLoading, fetchTelegramBots, createTelegramBot, updateTelegramBot, deleteTelegramBot,
+    mcpTokens, mcpTokensLoading, fetchMcpTokens, createMcpToken, revokeMcpToken,
   }
 })

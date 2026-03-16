@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Confluent.Kafka;
+using IssuePit.Core;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
@@ -349,6 +351,19 @@ public class IssueWorker(
             var credentials = await LoadCredentialsAsync(agent.OrgId, db, sessionCts.Token);
             var runtime = runtimeFactory.Create(runtimeType);
 
+            // Create an ephemeral MCP token for this agent session and inject it into the environment
+            // so the container authenticates to the IssuePit MCP server.
+            var ephemeralMcpToken = await CreateEphemeralMcpTokenAsync(
+                session.Id, agent.OrgId, issue.ProjectId, db, logger, sessionCts.Token);
+            if (ephemeralMcpToken is not null)
+            {
+                var credentialsWithToken = new Dictionary<string, string>(credentials)
+                {
+                    ["ISSUEPIT_MCP_TOKEN"] = ephemeralMcpToken
+                };
+                credentials = credentialsWithToken;
+            }
+
             string? capturedCommitSha = null;
             string? capturedBranchName = null;
             string? capturedOpenCodeSessionId = null;
@@ -572,6 +587,10 @@ public class IssueWorker(
             _activeSessions.TryRemove(session.Id, out _);
             if (session.EndedAt is null)
                 session.EndedAt = DateTime.UtcNow;
+
+            // Revoke the ephemeral MCP token for this session now that it has ended.
+            await RevokeEphemeralMcpTokensAsync(session.Id, db, cancellationToken);
+
             await db.SaveChangesAsync(cancellationToken);
 
             // Notify clients that the session has completed
@@ -608,6 +627,92 @@ public class IssueWorker(
             k => CredentialEnvVarName(k.Provider),
             k => DecryptValue(k.EncryptedValue));
     }
+
+    /// <summary>
+    /// Creates an ephemeral MCP token for the agent session and returns the raw token value.
+    /// Returns null when the DB does not yet have the mcp_tokens table (e.g. during migration rollouts).
+    /// </summary>
+    private static async Task<string?> CreateEphemeralMcpTokenAsync(
+        Guid sessionId,
+        Guid? orgId,
+        Guid projectId,
+        IssuePitDbContext db,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var rawToken = GenerateMcpToken();
+            var keyHash = ComputeSha256Hash(rawToken);
+
+            // Resolve tenant from org (needed for token-based tenant resolution in TenantMiddleware).
+            Guid? tenantId = null;
+            if (orgId.HasValue)
+            {
+                var org = await db.Organizations.FindAsync([orgId.Value], cancellationToken);
+                tenantId = org?.TenantId;
+            }
+
+            var token = new McpToken
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                OrgId = orgId,
+                ProjectId = projectId,
+                AgentSessionId = sessionId,
+                Name = $"ephemeral:{sessionId}",
+                KeyHash = keyHash,
+                IsReadOnly = false,
+                IsEphemeral = true,
+                ExpiresAt = DateTime.UtcNow.AddHours(24),
+            };
+
+            db.McpTokens.Add(token);
+            await db.SaveChangesAsync(cancellationToken);
+            return rawToken;
+        }
+        catch (Exception ex)
+        {
+            // Non-fatal: agent can still run without MCP token auth. This may occur when the
+            // mcp_tokens table does not exist yet (migration not yet applied) or on transient DB errors.
+            logger.LogWarning(ex, "Failed to create ephemeral MCP token for session {SessionId}; proceeding without token auth", sessionId);
+            return null;
+        }
+    }
+
+    /// <summary>Revokes all ephemeral MCP tokens associated with the given agent session.</summary>
+    private static async Task RevokeEphemeralMcpTokensAsync(
+        Guid sessionId,
+        IssuePitDbContext db,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var tokens = await db.McpTokens
+                .Where(t => t.AgentSessionId == sessionId && t.IsEphemeral && t.RevokedAt == null)
+                .ToListAsync(cancellationToken);
+
+            var now = DateTime.UtcNow;
+            foreach (var t in tokens)
+                t.RevokedAt = now;
+
+            if (tokens.Count > 0)
+                await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception)
+        {
+            // Non-critical cleanup — failure is safe to ignore.
+        }
+    }
+
+    private static string GenerateMcpToken()
+    {
+        var bytes = new byte[32];
+        RandomNumberGenerator.Fill(bytes);
+        return $"mcp_{Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')}";
+    }
+
+    private static string ComputeSha256Hash(string value) => HashHelper.ComputeSha256Hex(value);
 
     private static string CredentialEnvVarName(ApiKeyProvider provider) => provider switch
     {

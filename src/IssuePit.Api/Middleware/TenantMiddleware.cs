@@ -1,5 +1,6 @@
 using System.Data.Common;
 using IssuePit.Api.Services;
+using IssuePit.Core;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,17 +12,44 @@ public class TenantMiddleware(RequestDelegate next, ILogger<TenantMiddleware> lo
     {
         try
         {
-            string? tenantId = context.Request.Headers["X-Tenant-Id"].FirstOrDefault();
+            // MCP token authentication: takes priority over header/hostname tenant resolution.
+            var mcpTokenValue = context.Request.Headers["X-Mcp-Token"].FirstOrDefault();
+            if (!string.IsNullOrEmpty(mcpTokenValue))
+            {
+                var tokenHash = HashHelper.ComputeSha256Hex(mcpTokenValue);
+                var mcpToken = await db.McpTokens
+                    .Include(t => t.Tenant)
+                    .Include(t => t.User)
+                    .FirstOrDefaultAsync(t =>
+                        t.KeyHash == tokenHash &&
+                        t.RevokedAt == null &&
+                        (t.ExpiresAt == null || t.ExpiresAt > DateTime.UtcNow));
 
-            if (!string.IsNullOrEmpty(tenantId) && Guid.TryParse(tenantId, out var tid))
-            {
-                tenantContext.CurrentTenant = await db.Tenants.FindAsync(tid);
+                if (mcpToken != null)
+                {
+                    tenantContext.CurrentMcpToken = mcpToken;
+                    if (mcpToken.Tenant != null)
+                        tenantContext.CurrentTenant = mcpToken.Tenant;
+                    if (mcpToken.User != null)
+                        tenantContext.CurrentUser = mcpToken.User;
+                }
             }
-            else
+
+            // Fall back to standard tenant resolution when no MCP token resolved a tenant.
+            if (tenantContext.CurrentTenant == null)
             {
-                var hostname = context.Request.Host.Host;
-                tenantContext.CurrentTenant = await db.Tenants
-                    .FirstOrDefaultAsync(t => t.Hostname == hostname);
+                string? tenantId = context.Request.Headers["X-Tenant-Id"].FirstOrDefault();
+
+                if (!string.IsNullOrEmpty(tenantId) && Guid.TryParse(tenantId, out var tid))
+                {
+                    tenantContext.CurrentTenant = await db.Tenants.FindAsync(tid);
+                }
+                else
+                {
+                    var hostname = context.Request.Host.Host;
+                    tenantContext.CurrentTenant = await db.Tenants
+                        .FirstOrDefaultAsync(t => t.Hostname == hostname);
+                }
             }
         }
         catch (Exception ex) when (ex is DbException or InvalidOperationException)
@@ -32,13 +60,19 @@ public class TenantMiddleware(RequestDelegate next, ILogger<TenantMiddleware> lo
             tenantContext.CurrentTenant = null;
         }
 
-        // Resolve the authenticated user from the session claim set by cookie auth.
-        var userIdClaim = context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        if (!string.IsNullOrEmpty(userIdClaim) && Guid.TryParse(userIdClaim, out var userId))
+        // Resolve the authenticated user from the session claim set by cookie auth (when not already
+        // set by MCP token resolution above).
+        if (tenantContext.CurrentUser == null)
         {
-            tenantContext.CurrentUser = await db.Users.FindAsync(userId);
+            var userIdClaim = context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (!string.IsNullOrEmpty(userIdClaim) && Guid.TryParse(userIdClaim, out var userId))
+            {
+                tenantContext.CurrentUser = await db.Users.FindAsync(userId);
+            }
         }
 
         await next(context);
     }
+
+    internal static string ComputeSha256Hash(string value) => HashHelper.ComputeSha256Hex(value);
 }
