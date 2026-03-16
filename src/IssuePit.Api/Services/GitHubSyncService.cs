@@ -60,8 +60,24 @@ public class GitHubSyncService(
             var syncMode = config?.SyncMode ?? GitHubSyncMode.Import;
             await AppendLogAsync(run, GitHubSyncLogLevel.Info, $"SyncMode = {syncMode}. Fetching issues from {repo}...", ct);
 
-            var ghIssues = await FetchAllGitHubIssuesAsync(token, repo, run, ct);
+            bool fetchError = false;
+            var ghIssues = await FetchAllGitHubIssuesAsync(token, repo, run, ct, out fetchError);
             await AppendLogAsync(run, GitHubSyncLogLevel.Info, $"Fetched {ghIssues.Count} issue(s) from GitHub.", ct);
+
+            if (fetchError && ghIssues.Count == 0)
+            {
+                await FailRunAsync(run, "Failed to fetch issues from GitHub (check token and repository settings).", ct);
+                return run;
+            }
+
+            // Sort ascending so oldest issues (lowest GitHub numbers) get imported first
+            // → they receive the lowest IssuePit numbers
+            ghIssues = ghIssues.OrderBy(i => i.Number).ToList();
+
+            // Compute the current max number once; increment in-memory to avoid per-save race conditions
+            var maxNumber = await db.Issues
+                .Where(i => i.ProjectId == projectId)
+                .MaxAsync(i => (int?)i.Number, ct) ?? 0;
 
             int imported = 0, updated = 0, pushed = 0, skipped = 0;
 
@@ -72,15 +88,12 @@ public class GitHubSyncService(
 
                 if (existing is null)
                 {
-                    var maxNumber = await db.Issues
-                        .Where(i => i.ProjectId == projectId)
-                        .MaxAsync(i => (int?)i.Number, ct) ?? 0;
-
+                    maxNumber++;
                     db.Issues.Add(new Issue
                     {
                         Id = Guid.NewGuid(),
                         ProjectId = projectId,
-                        Number = maxNumber + 1,
+                        Number = maxNumber,
                         Title = ghIssue.Title,
                         Body = ghIssue.Body,
                         Status = MapGitHubState(ghIssue.State),
@@ -93,7 +106,7 @@ public class GitHubSyncService(
                     });
                     imported++;
                     await AppendLogAsync(run, GitHubSyncLogLevel.Info,
-                        $"  Imported: #{ghIssue.Number} \"{TruncateTitle(ghIssue.Title)}\"", ct);
+                        $"  Imported: {repo}#{ghIssue.Number} \"{TruncateTitle(ghIssue.Title)}\"", ct);
                 }
                 else if (syncMode == GitHubSyncMode.TwoWay)
                 {
@@ -111,12 +124,12 @@ public class GitHubSyncService(
                         {
                             pushed++;
                             await AppendLogAsync(run, GitHubSyncLogLevel.Info,
-                                $"  Pushed local changes: #{ghIssue.Number} \"{TruncateTitle(existing.Title)}\"", ct);
+                                $"  Pushed local changes: {repo}#{ghIssue.Number} \"{TruncateTitle(existing.Title)}\"", ct);
                         }
                         else
                         {
                             await AppendLogAsync(run, GitHubSyncLogLevel.Warn,
-                                $"  Failed to push: #{ghIssue.Number} \"{TruncateTitle(existing.Title)}\"", ct);
+                                $"  Failed to push: {repo}#{ghIssue.Number} \"{TruncateTitle(existing.Title)}\"", ct);
                         }
                     }
                     else
@@ -142,7 +155,7 @@ public class GitHubSyncService(
                             existing.UpdatedAt = DateTime.UtcNow;
                             updated++;
                             await AppendLogAsync(run, GitHubSyncLogLevel.Info,
-                                $"  Updated from GitHub: #{ghIssue.Number} \"{TruncateTitle(ghIssue.Title)}\"", ct);
+                                $"  Updated from GitHub: {repo}#{ghIssue.Number} \"{TruncateTitle(ghIssue.Title)}\"", ct);
                         }
                         else
                         {
@@ -159,7 +172,7 @@ public class GitHubSyncService(
                         existing.UpdatedAt = DateTime.UtcNow;
                         updated++;
                         await AppendLogAsync(run, GitHubSyncLogLevel.Info,
-                            $"  Updated link: #{ghIssue.Number} \"{TruncateTitle(ghIssue.Title)}\"", ct);
+                            $"  Updated link: {repo}#{ghIssue.Number} \"{TruncateTitle(ghIssue.Title)}\"", ct);
                     }
                     else
                     {
@@ -173,6 +186,10 @@ public class GitHubSyncService(
             run.Summary = syncMode == GitHubSyncMode.TwoWay
                 ? $"{imported} imported, {updated} updated from GitHub, {pushed} pushed to GitHub, {skipped} unchanged"
                 : $"{imported} imported, {updated} updated, {skipped} unchanged";
+
+            // Import GitHub pull requests as IssuePit merge requests
+            await ImportPullRequestsAsync(token, repo, projectId, run, ct);
+
             await CompleteRunAsync(run, ct);
             await AppendLogAsync(run, GitHubSyncLogLevel.Info, $"Done. {run.Summary}", ct);
         }
@@ -199,7 +216,8 @@ public class GitHubSyncService(
         if (token is null || repo is null)
             return [];
 
-        var ghIssues = await FetchAllGitHubIssuesAsync(token, repo, null, ct);
+        bool fetchError;
+        var ghIssues = await FetchAllGitHubIssuesAsync(token, repo, null, ct, out fetchError);
         var ghMap = ghIssues.ToDictionary(i => i.Number);
 
         var localIssues = await db.Issues
@@ -257,7 +275,7 @@ public class GitHubSyncService(
 
         try
         {
-            var (owner, repo) = ParseRepo(config.GitHubRepo);
+            var (owner, repo) = ParseRepo(NormalizeRepo(config.GitHubRepo));
             var client = CreateHttpClient(token);
 
             var payload = JsonSerializer.Serialize(new { title = issue.Title, body = issue.Body ?? string.Empty });
@@ -286,6 +304,68 @@ public class GitHubSyncService(
     // ──────────────────────────────────────────────────────────────────────────
     // Private helpers
     // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Imports GitHub pull requests as IssuePit merge requests.
+    /// Skips PRs that have already been imported (matched by GitHubPrNumber).
+    /// No CI/CD run is triggered for imported PRs.
+    /// </summary>
+    private async Task ImportPullRequestsAsync(string token, string repo, Guid projectId, GitHubSyncRun? run, CancellationToken ct)
+    {
+        bool prFetchError;
+        var prs = await FetchAllGitHubPullRequestsAsync(token, repo, run, ct, out prFetchError);
+        if (prs.Count == 0) return;
+
+        await AppendLogAsync(run, GitHubSyncLogLevel.Info, $"Fetched {prs.Count} pull request(s) from GitHub.", ct);
+
+        // Sort ascending so oldest PRs get imported first
+        prs = prs.OrderBy(p => p.Number).ToList();
+
+        int prImported = 0, prSkipped = 0;
+        foreach (var pr in prs)
+        {
+            var existing = await db.MergeRequests
+                .FirstOrDefaultAsync(m => m.ProjectId == projectId && m.GitHubPrNumber == pr.Number, ct);
+            if (existing is not null)
+            {
+                prSkipped++;
+                continue;
+            }
+
+            var status = pr.MergedAt.HasValue
+                ? MergeRequestStatus.Merged
+                : pr.State?.ToLowerInvariant() == "closed"
+                    ? MergeRequestStatus.Closed
+                    : MergeRequestStatus.Open;
+
+            db.MergeRequests.Add(new MergeRequest
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = projectId,
+                Title = pr.Title,
+                Description = pr.Body,
+                SourceBranch = pr.Head?.Ref ?? "unknown",
+                TargetBranch = pr.Base?.Ref ?? "main",
+                Status = status,
+                AutoMergeEnabled = false,
+                GitHubPrNumber = pr.Number,
+                GitHubPrUrl = pr.HtmlUrl,
+                CreatedAt = pr.CreatedAt,
+                UpdatedAt = pr.UpdatedAt,
+                MergedAt = pr.MergedAt,
+            });
+            prImported++;
+            await AppendLogAsync(run, GitHubSyncLogLevel.Info,
+                $"  Imported PR: {repo}#{pr.Number} \"{TruncateTitle(pr.Title)}\"", ct);
+        }
+
+        if (prImported > 0 || prSkipped > 0)
+        {
+            await db.SaveChangesAsync(ct);
+            await AppendLogAsync(run, GitHubSyncLogLevel.Info,
+                $"Pull requests: {prImported} imported, {prSkipped} already synced.", ct);
+        }
+    }
 
     private async Task<bool> PushIssueToGitHubAsync(Issue issue, string token, string repo, CancellationToken ct)
     {
@@ -398,7 +478,8 @@ public class GitHubSyncService(
             return (null, null);
         }
 
-        if (!config.GitHubRepo.Contains('/'))
+        var normalizedRepo = NormalizeRepo(config.GitHubRepo);
+        if (!normalizedRepo.Contains('/'))
         {
             await AppendLogAsync(run, GitHubSyncLogLevel.Error,
                 $"GitHub repository \"{config.GitHubRepo}\" is not in the required owner/repo format.", ct);
@@ -412,7 +493,7 @@ public class GitHubSyncService(
             return (null, null);
         }
 
-        return (token, config.GitHubRepo);
+        return (token, normalizedRepo);
     }
 
     private string? DecryptToken(string encryptedToken)
@@ -430,13 +511,14 @@ public class GitHubSyncService(
     }
 
     private async Task<List<GitHubIssueDto>> FetchAllGitHubIssuesAsync(
-        string token, string repo, GitHubSyncRun? run, CancellationToken ct)
+        string token, string repo, GitHubSyncRun? run, CancellationToken ct, out bool fetchError)
     {
         var (owner, repoName) = ParseRepo(repo);
         var client = CreateHttpClient(token);
 
         var allIssues = new List<GitHubIssueDto>();
         var page = 1;
+        fetchError = false;
 
         while (true)
         {
@@ -445,8 +527,9 @@ public class GitHubSyncService(
 
             if (!response.IsSuccessStatusCode)
             {
+                fetchError = true;
                 await AppendLogAsync(run, GitHubSyncLogLevel.Error,
-                    $"GitHub API returned {(int)response.StatusCode} for page {page}.", ct);
+                    $"GitHub API returned {(int)response.StatusCode} for issues page {page}.", ct);
                 break;
             }
 
@@ -465,6 +548,41 @@ public class GitHubSyncService(
         return allIssues;
     }
 
+    private async Task<List<GitHubPullRequestDto>> FetchAllGitHubPullRequestsAsync(
+        string token, string repo, GitHubSyncRun? run, CancellationToken ct, out bool fetchError)
+    {
+        var (owner, repoName) = ParseRepo(repo);
+        var client = CreateHttpClient(token);
+
+        var allPrs = new List<GitHubPullRequestDto>();
+        var page = 1;
+        fetchError = false;
+
+        while (true)
+        {
+            var url = $"https://api.github.com/repos/{owner}/{repoName}/pulls?state=all&per_page=100&page={page}";
+            var response = await client.GetAsync(url, ct);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                fetchError = true;
+                await AppendLogAsync(run, GitHubSyncLogLevel.Warn,
+                    $"GitHub API returned {(int)response.StatusCode} for pulls page {page}.", ct);
+                break;
+            }
+
+            var prs = await response.Content.ReadFromJsonAsync<List<GitHubPullRequestDto>>(ct) ?? [];
+            allPrs.AddRange(prs);
+
+            if (prs.Count < 100)
+                break;
+
+            page++;
+        }
+
+        return allPrs;
+    }
+
     private HttpClient CreateHttpClient(string token)
     {
         var client = httpClientFactory.CreateClient();
@@ -472,6 +590,18 @@ public class GitHubSyncService(
         client.DefaultRequestHeaders.UserAgent.ParseAdd("IssuePit/1.0");
         client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
         return client;
+    }
+
+    /// <summary>
+    /// Strips the <c>https://github.com/</c> prefix from a GitHub URL so that both
+    /// <c>owner/repo</c> and <c>https://github.com/owner/repo</c> are accepted.
+    /// </summary>
+    private static string NormalizeRepo(string ownerRepo)
+    {
+        const string prefix = "https://github.com/";
+        if (ownerRepo.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            return ownerRepo[prefix.Length..].TrimEnd('/');
+        return ownerRepo.Trim();
     }
 
     private static (string owner, string repo) ParseRepo(string ownerRepo)
@@ -511,6 +641,45 @@ public class GitHubSyncService(
 
         [System.Text.Json.Serialization.JsonPropertyName("pull_request")]
         public object? PullRequest { get; set; }
+    }
+
+    private sealed class GitHubPullRequestDto
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("number")]
+        public int Number { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("title")]
+        public string Title { get; set; } = string.Empty;
+
+        [System.Text.Json.Serialization.JsonPropertyName("body")]
+        public string? Body { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("state")]
+        public string? State { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("html_url")]
+        public string HtmlUrl { get; set; } = string.Empty;
+
+        [System.Text.Json.Serialization.JsonPropertyName("merged_at")]
+        public DateTime? MergedAt { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("created_at")]
+        public DateTime CreatedAt { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("updated_at")]
+        public DateTime UpdatedAt { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("head")]
+        public GitHubBranchRefDto? Head { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("base")]
+        public GitHubBranchRefDto? Base { get; set; }
+    }
+
+    private sealed class GitHubBranchRefDto
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("ref")]
+        public string Ref { get; set; } = string.Empty;
     }
 }
 

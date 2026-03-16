@@ -81,9 +81,9 @@ v-model="form.gitHubIdentityId"
             <div>
               <label class="block text-sm font-medium text-gray-300 mb-1.5">GitHub Repository</label>
               <input
-v-model="form.gitHubRepo" type="text" placeholder="owner/repo (e.g. acme/backend)"
+v-model="form.gitHubRepo" type="text" placeholder="owner/repo or https://github.com/owner/repo"
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" >
-              <p class="text-xs text-gray-600 mt-1">Format: <span class="font-mono">owner/repo</span></p>
+              <p class="text-xs text-gray-600 mt-1">Format: <span class="font-mono">owner/repo</span> or <span class="font-mono">https://github.com/owner/repo</span></p>
             </div>
 
             <!-- Sync Mode -->
@@ -264,7 +264,9 @@ const syncStore = useGitHubSyncStore()
 const identitiesStore = useGitHubIdentitiesStore()
 
 const tabs = ['Configuration', 'Sync Runs', 'Conflicts']
-const activeTab = ref('Configuration')
+const activeTab = ref(
+  tabs.includes(route.query.tab as string) ? (route.query.tab as string) : 'Configuration',
+)
 
 const form = reactive({
   gitHubIdentityId: '',
@@ -330,6 +332,8 @@ onMounted(async () => {
     projectsStore.fetchProject(id),
     syncStore.fetchConfig(id),
     identitiesStore.fetchIdentities(),
+    activeTab.value === 'Sync Runs' ? syncStore.fetchRuns(id) : Promise.resolve(),
+    activeTab.value === 'Conflicts' ? syncStore.fetchConflicts(id) : Promise.resolve(),
   ])
 
   if (syncStore.config) {

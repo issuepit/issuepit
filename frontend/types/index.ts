@@ -1186,16 +1186,16 @@ export const GitHubSyncModeDescriptions: Record<GitHubSyncMode, string> = {
 }
 
 export enum GitHubSyncRunStatus {
-  Pending = 0,
-  Running = 1,
-  Succeeded = 2,
-  Failed = 3,
+  Pending = 'pending',
+  Running = 'running',
+  Succeeded = 'succeeded',
+  Failed = 'failed',
 }
 
 export enum GitHubSyncLogLevel {
-  Info = 0,
-  Warn = 1,
-  Error = 2,
+  Info = 'info',
+  Warn = 'warn',
+  Error = 'error',
 }
 
 export interface GitHubSyncConfig {

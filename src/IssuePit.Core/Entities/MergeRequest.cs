@@ -54,4 +54,10 @@ public class MergeRequest
     /// <summary>The merge commit SHA, set after a successful merge.</summary>
     [MaxLength(200)]
     public string? MergeCommitSha { get; set; }
+
+    /// <summary>The GitHub pull request number, set when this MR was imported from GitHub.</summary>
+    public int? GitHubPrNumber { get; set; }
+
+    /// <summary>The GitHub pull request URL, set when this MR was imported from GitHub.</summary>
+    public string? GitHubPrUrl { get; set; }
 }

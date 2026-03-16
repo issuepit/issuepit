@@ -109,6 +109,14 @@
             <td class="px-4 py-3">
               <div class="flex items-center gap-2">
                 <span class="text-xs text-gray-600">{{ formatIssueId(issue.number, projectsStore.currentProject) }}</span>
+                <a
+                  v-if="issue.gitHubIssueUrl && issue.gitHubIssueNumber"
+                  :href="issue.gitHubIssueUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-xs text-gray-500 hover:text-brand-400 transition-colors shrink-0"
+                  @click.stop
+                >GH#{{ issue.gitHubIssueNumber }}</a>
                 <span class="text-sm text-gray-200 hover:text-white">{{ issue.title }}</span>
               </div>
             </td>
