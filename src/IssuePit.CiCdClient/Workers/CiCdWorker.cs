@@ -30,6 +30,11 @@ public class CiCdWorker(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // On startup, mark any runs that were left in Running/Pending state as Failed.
+        // These are stale runs from a previous instance that was shut down mid-execution.
+        // Without this cleanup, those runs would stay stuck in the Running state indefinitely.
+        await MarkStaleRunsAsFailedAsync();
+
         // Run the cancel-signal consumer in parallel with the trigger consumer.
         var cancelConsumerTask = RunCancelConsumerAsync(stoppingToken);
 
@@ -115,6 +120,68 @@ public class CiCdWorker(
             }
             consumer.Close();
         }, stoppingToken);
+    }
+
+    /// <summary>
+    /// Marks any CI/CD runs that are in <see cref="CiCdRunStatus.Running"/> or
+    /// <see cref="CiCdRunStatus.Pending"/> state as <see cref="CiCdRunStatus.Failed"/>.
+    /// These are stale runs from a previous process instance that was shut down mid-execution
+    /// before the terminal status could be persisted. Best-effort: errors are logged and
+    /// ignored so that a transient DB issue at startup doesn't prevent the worker from running.
+    /// </summary>
+    private async Task MarkStaleRunsAsFailedAsync()
+    {
+        try
+        {
+            using var scope = services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+            // Use CancellationToken.None so startup cleanup completes even if the host is
+            // already being stopped — consistent with how the terminal status is saved below.
+            var staleRuns = await db.CiCdRuns
+                .Where(r => r.Status == CiCdRunStatus.Running || r.Status == CiCdRunStatus.Pending)
+                .ToListAsync(CancellationToken.None);
+
+            if (staleRuns.Count == 0)
+                return;
+
+            logger.LogWarning(
+                "CiCdWorker startup: found {Count} stale run(s) in Running/Pending state — marking as Failed",
+                staleRuns.Count);
+
+            var now = DateTime.UtcNow;
+            foreach (var run in staleRuns)
+            {
+                run.Status = CiCdRunStatus.Failed;
+                // EndedAt may already be set if the process was killed after setting EndedAt
+                // but before persisting the terminal status; preserve it to avoid overwriting.
+                run.EndedAt ??= now;
+            }
+
+            await db.SaveChangesAsync(CancellationToken.None);
+
+            // Publish run-completed events so connected frontend clients update their state.
+            foreach (var run in staleRuns)
+            {
+                try
+                {
+                    await PublishLogLineAsync(run.Id.ToString(),
+                        JsonSerializer.Serialize(new { @event = "run-completed", status = run.Status.ToString() }));
+                }
+                catch (Exception ex)
+                {
+                    logger.LogDebug(ex, "Could not publish run-completed event for stale run {RunId}", run.Id);
+                }
+            }
+
+            logger.LogInformation(
+                "CiCdWorker startup: marked {Count} stale run(s) as Failed",
+                staleRuns.Count);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "CiCdWorker startup: failed to clean up stale runs (non-fatal)");
+        }
     }
 
     private async Task ProcessTriggerAsync(string key, string payload, CancellationToken stoppingToken)
@@ -371,7 +438,10 @@ public class CiCdWorker(
             // (ParseAndStore* methods may also call db.SaveChangesAsync internally, which
             // incidentally persists the run entity — the explicit save here is the guaranteed
             // fallback for runs that produced no artifacts or test results.)
-            await db.SaveChangesAsync(stoppingToken);
+            // CancellationToken.None is intentional: terminal status MUST be persisted even
+            // when the host is shutting down (stoppingToken cancelled) to prevent the run
+            // from remaining stuck in the Running state after a graceful restart.
+            await db.SaveChangesAsync(CancellationToken.None);
 
             // Clean up the artifact directory now that results have been collected.
             try { Directory.Delete(artifactDir, recursive: true); }
@@ -386,8 +456,15 @@ public class CiCdWorker(
             }
 
             // Notify clients that the run has completed
-            await PublishLogLineAsync(run.Id.ToString(),
-                JsonSerializer.Serialize(new { @event = "run-completed", status = run.Status.ToString() }));
+            try
+            {
+                await PublishLogLineAsync(run.Id.ToString(),
+                    JsonSerializer.Serialize(new { @event = "run-completed", status = run.Status.ToString() }));
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to publish run-completed event for run {RunId}", run.Id);
+            }
         }
     }
 

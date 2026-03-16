@@ -527,7 +527,9 @@ public partial class DockerCiCdRuntime(
 
                 // Dynamically compute the number of steps so the [N/M] prefix is always correct.
                 var hasArtifacts = !string.IsNullOrWhiteSpace(trigger.ArtifactServerPath);
-                var totalSteps = 3 + (useDind ? 1 : 0) + (hasGitRepo ? 1 : 0) + (!string.IsNullOrWhiteSpace(trigger.Workflow) ? 1 : 0) + (hasArtifacts ? 1 : 0);
+                // The git-checkout step fires only when a full 40-char SHA is requested inside a git-clone run.
+                var hasCheckoutStep = hasGitRepo && IsFullCommitSha(run.CommitSha);
+                var totalSteps = 3 + (useDind ? 1 : 0) + (hasGitRepo ? 1 : 0) + (hasCheckoutStep ? 1 : 0) + (!string.IsNullOrWhiteSpace(trigger.Workflow) ? 1 : 0) + (hasArtifacts ? 1 : 0);
                 var stepNum = 0;
 
                 // Step: Print act version for diagnostics.
@@ -1188,8 +1190,20 @@ public partial class DockerCiCdRuntime(
             var fileCount = 0;
             var canonicalArtifactDir = Path.GetFullPath(artifactDir);
 
+            // Buffer the entire tar stream into memory before processing it with TarReader.
+            // Docker's archive API streams the response over HTTP; the underlying network stream
+            // may deliver data in chunks smaller than the 512-byte tar block size, causing
+            // TarReader.GetNextEntryAsync to throw "Attempted to read past the end of the stream"
+            // when ReadAsync returns 0 bytes mid-block without actually signalling end-of-archive.
+            // A MemoryStream eliminates this: all bytes are present before any tar parsing begins.
+            // Artifact directories for typical CI/CD runs are small (usually < 100 MB), so the
+            // memory overhead is acceptable.  For very large artifact sets the copy itself would
+            // be the first failure point and is caught by the outer exception handler below.
             using var tarStream = response.Stream;
-            await using var reader = new System.Formats.Tar.TarReader(tarStream);
+            using var bufferedArchive = new MemoryStream();
+            await tarStream.CopyToAsync(bufferedArchive, cancellationToken);
+            bufferedArchive.Position = 0;
+            await using var reader = new System.Formats.Tar.TarReader(bufferedArchive);
             System.Formats.Tar.TarEntry? entry;
             while ((entry = await reader.GetNextEntryAsync(cancellationToken: cancellationToken)) != null)
             {
