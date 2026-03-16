@@ -524,19 +524,32 @@ public class IssueWorker(
 
                 // After the agent run completes, trigger the CI/CD pipeline and wait for results.
                 // If CI/CD fails, re-run opencode with the failure context to fix it (up to MaxCiCdFixAttempts).
-                if (gitRepository is not null
+                // Skip CI/CD when the git push failed: the branch does not exist on the remote so
+                // the CI/CD clone step would fail immediately with "remote branch not found".
+                var cicdPrerequisitesMet = gitRepository is not null
                     && !string.IsNullOrEmpty(capturedCommitSha)
-                    && !string.IsNullOrEmpty(capturedBranchName))
+                    && !string.IsNullOrEmpty(capturedBranchName);
+
+                if (cicdPrerequisitesMet && !capturedGitPushFailed)
                 {
                     var cicdSucceeded = await RunCiCdFixLoopAsync(
-                        session, agent, issue, gitRepository, credentials, runtimeConfig,
-                        capturedCommitSha, capturedBranchName, db, sessionCts.Token,
+                        session, agent, issue, gitRepository!, credentials, runtimeConfig,
+                        capturedCommitSha!, capturedBranchName!, db, sessionCts.Token,
                         execRuntime: useExecForFixes ? execRuntime : null,
                         execContainerId: useExecForFixes ? runtimeId : null,
                         openCodeSessionId: capturedOpenCodeSessionId,
                         onLogLine: (line, stream, section, idx) =>
                             AppendLogAsync(session.Id, line, stream, section, idx, db, sessionCts.Token));
                     session.Status = cicdSucceeded ? AgentSessionStatus.Succeeded : AgentSessionStatus.Failed;
+                }
+                else if (cicdPrerequisitesMet && capturedGitPushFailed)
+                {
+                    // Push failed and CI/CD was otherwise ready to run — log a warning and fail the session
+                    // so the user is aware that the branch was never pushed to the remote.
+                    await AppendLogAsync(session.Id,
+                        "[WARN] Git push failed — skipping CI/CD trigger because the branch does not exist on the remote.",
+                        LogStream.Stderr, currentSection, currentSectionIndex, db, sessionCts.Token);
+                    session.Status = AgentSessionStatus.Failed;
                 }
                 else
                 {
@@ -1103,7 +1116,7 @@ public class IssueWorker(
             .Select(g => new
             {
                 JobId = g.Key,
-                HasErrors = g.Any(l => l.Line.EndsWith("Job failed", StringComparison.Ordinal)),
+                HasErrors = g.Any(l => EF.Functions.Like(l.Line, "%Job failed")),
             })
             .ToListAsync(cancellationToken);
 

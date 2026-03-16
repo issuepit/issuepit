@@ -149,18 +149,36 @@ internal static class AgentEnvironmentBuilder
         return JsonSerializer.Serialize(entries);
     }
 
-    /// <summary>Reads the "type" field from the MCP server's JSON configuration, defaulting to "http".</summary>
+    /// <summary>
+    /// Reads the "type" field from the MCP server's JSON configuration and normalises it to a
+    /// value accepted by opencode. Legacy values "http" and "sse" are mapped to "remote".
+    /// Defaults to "remote" when the field is absent or the configuration cannot be parsed.
+    /// </summary>
     private static string ResolveMcpType(string configuration)
     {
         try
         {
             var doc = JsonDocument.Parse(configuration);
             if (doc.RootElement.TryGetProperty("type", out var typeEl))
-                return typeEl.GetString() ?? "http";
+            {
+                var raw = typeEl.GetString() ?? "remote";
+                return NormalizeMcpType(raw);
+            }
         }
         catch (JsonException) { }
-        return "http";
+        return "remote";
     }
+
+    /// <summary>
+    /// Maps legacy MCP type values to opencode-valid ones.
+    /// opencode only accepts "local" and "remote"; "http" and "sse" are not valid.
+    /// </summary>
+    private static string NormalizeMcpType(string type) => type switch
+    {
+        "http" or "sse" => "remote",
+        "local" => "local",
+        _ => "remote",
+    };
 
     /// <summary>Strips the "plain:" placeholder prefix. Production will use proper decryption.</summary>
     private static string DecryptMcpSecret(string encryptedValue) =>
