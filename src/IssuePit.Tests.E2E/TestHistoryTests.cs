@@ -167,6 +167,8 @@ public class TestHistoryTests : IAsyncLifetime
             // The Tests tab should show test suites, not the empty state.
             Assert.False(await runPage.IsTestsTabEmptyAsync(),
                 "Tests tab should show test results when a TRX has been imported for the run");
+            Assert.True(await runPage.HasTestSuitesAsync(),
+                "Tests tab should display at least one test suite card with pass/fail counts");
         }
         finally
         {
@@ -319,6 +321,8 @@ public class TestHistoryTests : IAsyncLifetime
 
             Assert.False(await runPage.IsTestsTabEmptyAsync(),
                 "Tests tab should show test results for a CI/CD run that uploaded a TRX artifact");
+            Assert.True(await runPage.HasTestSuitesAsync(),
+                "Tests tab should display at least one test suite card with parsed pass/fail counts");
 
             // Verify Artifacts tab: TRX artifact should be hidden behind the toggle by default.
             await runPage.GotoArtifactsTabAsync(projectId, runId);
