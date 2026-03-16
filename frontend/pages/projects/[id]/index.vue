@@ -311,8 +311,8 @@
                 :current-chart-days="item.sid === 'history' ? (sectionCfg(item.sid as SectionId).chartDays ?? CHART_DAY_DEFAULT) : undefined"
                 :chart-height-options="item.sid === 'history' ? CHART_HEIGHT_OPTIONS : undefined"
                 :current-chart-height="item.sid === 'history' ? (sectionCfg(item.sid as SectionId).chartHeightKey ?? 'md') : undefined"
-                :kanban-boards="item.sid === 'kanban' ? kanbanStore.boards : undefined"
-                :selected-kanban-board-id="item.sid === 'kanban' ? sectionCfg('kanban').selectedBoardId : undefined"
+                :kanban-boards="(item.sid === 'kanban' || item.sid === 'kanban2') ? kanbanStore.boards : undefined"
+                :selected-kanban-board-id="(item.sid === 'kanban' || item.sid === 'kanban2') ? sectionCfg(item.sid as SectionId).selectedBoardId : undefined"
                 :can-tab="layout.order.indexOf(item.sid) < layout.order.length - 1"
                 :is-tabbed="sectionCfg(item.sid as SectionId).tabGroup !== null"
                 :can-stack="SECTION_CAN_STACK.has(item.sid as SectionId) && layout.order.indexOf(item.sid) < layout.order.length - 1"
@@ -324,7 +324,7 @@
                 @width-change="w => updateCfg(item.sid as SectionId, { width: w as SectionWidth })"
                 @chart-days-change="d => updateCfg(item.sid as SectionId, { chartDays: d })"
                 @chart-height-change="k => updateCfg(item.sid as SectionId, { chartHeightKey: k })"
-                @kanban-board-change="boardId => updateCfg('kanban', { selectedBoardId: boardId })"
+                @kanban-board-change="boardId => updateCfg(item.sid as SectionId, { selectedBoardId: boardId })"
                 @tab-toggle="toggleTabGroupWithNext(item.sid as SectionId)"
                 @tab-drop="droppedSid => tabWithSection(item.sid, droppedSid)"
                 @stack-toggle="toggleStackGroupWithNext(item.sid as SectionId)"
@@ -718,12 +718,12 @@
                   </template>
 
                   <!-- ── KANBAN section ── -->
-                  <template v-else-if="sid === 'kanban'">
+                  <template v-else-if="sid === 'kanban' || sid === 'kanban2'">
                     <div :class="item.type === 'tabgroup' ? '' : 'bg-gray-900 border border-gray-800 rounded-xl p-5'">
                       <template v-if="item.type !== 'tabgroup'">
-                        <h2 class="font-semibold text-white mb-4">Kanban Board</h2>
+                        <h2 class="font-semibold text-white mb-4">{{ SECTION_LABELS[sid as SectionId] }}</h2>
                       </template>
-                      <KanbanBoardInline :project-id="id" :board-id="sectionCfg('kanban').selectedBoardId ?? null" />
+                      <KanbanBoardInline :project-id="id" :board-id="sectionCfg(sid as SectionId).selectedBoardId ?? null" :max-items="sectionCfg(sid as SectionId).maxItems" />
                     </div>
                   </template>
 
@@ -1049,7 +1049,7 @@ const recentProjectIssues = ref<Issue[]>([])
 const dashboardTestRuns = ref<TestRunSummary[]>([])
 
 // ── Dashboard layout customization ─────────────────────────────────────────
-type SectionId = 'statIssues' | 'statCommits' | 'statMRs' | 'milestones' | 'issues' | 'agentRuns' | 'cicdRuns' | 'testHistory' | 'history' | 'kanban'
+type SectionId = 'statIssues' | 'statCommits' | 'statMRs' | 'milestones' | 'issues' | 'agentRuns' | 'cicdRuns' | 'testHistory' | 'history' | 'kanban' | 'kanban2'
 type SectionDisplayMode = 'list' | 'count' | 'block'
 type SectionWidth = 'xxs' | 'xs' | 'quarter' | 'sm' | 'md' | 'lg'
 
@@ -1064,6 +1064,7 @@ const SECTION_LABELS: Record<SectionId, string> = {
   testHistory: 'Test History',
   history: 'Issue History',
   kanban: 'Kanban Board',
+  kanban2: 'Kanban Board 2',
 }
 const SECTION_DISPLAY_MODES: Partial<Record<SectionId, SectionDisplayMode[]>> = {
   milestones: ['block', 'list', 'count'],
@@ -1071,8 +1072,8 @@ const SECTION_DISPLAY_MODES: Partial<Record<SectionId, SectionDisplayMode[]>> = 
   agentRuns: ['list', 'count'],
   cicdRuns: ['list', 'count'],
 }
-const SECTION_HAS_MAX_ITEMS: Set<SectionId> = new Set(['milestones', 'issues', 'agentRuns', 'cicdRuns'])
-const SECTION_CAN_STACK: Set<SectionId> = new Set(['statIssues', 'statCommits', 'statMRs', 'milestones', 'issues', 'agentRuns', 'cicdRuns', 'testHistory', 'history', 'kanban'])
+const SECTION_HAS_MAX_ITEMS: Set<SectionId> = new Set(['milestones', 'issues', 'agentRuns', 'cicdRuns', 'kanban', 'kanban2'])
+const SECTION_CAN_STACK: Set<SectionId> = new Set(['statIssues', 'statCommits', 'statMRs', 'milestones', 'issues', 'agentRuns', 'cicdRuns', 'testHistory', 'history', 'kanban', 'kanban2'])
 const MAX_ITEMS_OPTIONS = [3, 5, 8, 10]
 const WIDTH_LABELS: Record<SectionWidth, string> = { xxs: '1/12', xs: '1/6', quarter: '1/4', sm: '1/3', md: '1/2', lg: 'Full' }
 const PROJECT_WIDTHS = (['xxs', 'xs', 'quarter', 'sm', 'md', 'lg'] as SectionWidth[]).map(v => ({ value: v, label: WIDTH_LABELS[v] }))
@@ -1088,8 +1089,9 @@ const DEFAULT_CONFIGS = {
   testHistory: { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'quarter',  tabGroup: null, stackGroup: null },
   history:     { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'md',  tabGroup: null, stackGroup: null },
   kanban:      { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'md',  tabGroup: null, stackGroup: null },
+  kanban2:     { hidden: true,  displayMode: 'list',  maxItems: 5,  width: 'md',  tabGroup: null, stackGroup: null },
 }
-const DEFAULT_ORDER: SectionId[] = ['statIssues', 'statCommits', 'statMRs', 'milestones', 'rowbreak-after-milestones', 'issues', 'agentRuns', 'cicdRuns', 'testHistory', 'history', 'kanban']
+const DEFAULT_ORDER: SectionId[] = ['statIssues', 'statCommits', 'statMRs', 'milestones', 'rowbreak-after-milestones', 'issues', 'agentRuns', 'cicdRuns', 'testHistory', 'history', 'kanban', 'kanban2']
 const DRAFT_LAYOUT_KEY = `project-dashboard-layout-v7-${id}`
 
 const {
