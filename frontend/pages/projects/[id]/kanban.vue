@@ -238,6 +238,19 @@
             <p class="text-xs text-gray-500 mb-2">Description</p>
             <p class="text-sm text-gray-300 leading-relaxed line-clamp-6 whitespace-pre-wrap">{{ previewIssue.body }}</p>
           </div>
+
+          <!-- Custom Properties -->
+          <template v-if="propsStore.properties.length">
+            <div class="border-t border-gray-800 pt-3">
+              <p class="text-xs text-gray-500 mb-2">Custom Properties</p>
+              <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                <template v-for="prop in propsStore.properties" :key="prop.id">
+                  <div class="text-gray-500">{{ prop.name }}</div>
+                  <div class="text-gray-200">{{ getPreviewPropertyValue(prop.id) || '—' }}</div>
+                </template>
+              </div>
+            </div>
+          </template>
         </div>
 
         <!-- Sidebar footer -->
@@ -456,12 +469,13 @@
 
 <script setup lang="ts">
 import { IssueStatus, IssuePriority, IssueType, KanbanLaneProperty } from '~/types'
-import type { Issue, KanbanColumn } from '~/types'
+import type { Issue, KanbanColumn, IssuePropertyValue } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
 import { useKanbanStore } from '~/stores/kanban'
 import { useMilestonesStore } from '~/stores/milestones'
 import { useProjectsStore } from '~/stores/projects'
 import { useAgentsStore } from '~/stores/agents'
+import { useProjectPropertiesStore } from '~/stores/projectProperties'
 import { formatIssueId } from '~/composables/useIssueFormat'
 
 const route = useRoute()
@@ -471,17 +485,32 @@ const kanban = useKanbanStore()
 const milestonesStore = useMilestonesStore()
 const projectsStore = useProjectsStore()
 const agentsStore = useAgentsStore()
+const propsStore = useProjectPropertiesStore()
 const { priorityIcon, priorityColor } = usePriority()
 
 // ── Issue preview sidebar ─────────────────────────────────────────────────
 const previewIssue = ref<Issue | null>(null)
+const previewPropertyValues = ref<IssuePropertyValue[]>([])
 
-function openPreview(issue: Issue) {
+function getPreviewPropertyValue(propertyId: string): string {
+  return previewPropertyValues.value.find(v => v.propertyId === propertyId)?.value ?? ''
+}
+
+async function openPreview(issue: Issue) {
   previewIssue.value = issue
+  previewPropertyValues.value = []
+  if (propsStore.properties.length) {
+    try {
+      previewPropertyValues.value = await propsStore.fetchIssuePropertyValues(id, issue.id) ?? []
+    } catch (e) {
+      console.error('Failed to load property values for issue preview', e)
+    }
+  }
 }
 
 function closePreview() {
   previewIssue.value = null
+  previewPropertyValues.value = []
 }
 
 // ── Issue create state ────────────────────────────────────────────────────
@@ -622,6 +651,7 @@ onMounted(async () => {
     kanban.fetchBoards(id),
     milestonesStore.fetchMilestones(id),
     agentsStore.fetchAgents(),
+    propsStore.fetchProperties(id),
   ])
   if (kanban.boards.length) activeBoardId.value = kanban.boards[0].id
 })

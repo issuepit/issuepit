@@ -255,15 +255,15 @@
                     </span>
                     <span class="text-xs text-gray-500">{{ IssueEventTypeLabels[event.eventType] }}</span>
                     <template v-if="event.oldValue && event.newValue">
-                      <span class="text-xs text-gray-600 line-through">{{ event.oldValue }}</span>
+                      <span class="text-xs text-gray-600 line-through">{{ resolveEventValue(event.eventType, event.oldValue) }}</span>
                       <span class="text-xs text-gray-500">→</span>
-                      <span class="text-xs text-gray-300">{{ event.newValue }}</span>
+                      <span class="text-xs text-gray-300">{{ resolveEventValue(event.eventType, event.newValue) }}</span>
                     </template>
                     <template v-else-if="event.newValue">
-                      <span class="text-xs text-brand-400 font-medium">{{ event.newValue }}</span>
+                      <span class="text-xs text-brand-400 font-medium">{{ resolveEventValue(event.eventType, event.newValue) }}</span>
                     </template>
                     <template v-else-if="event.oldValue">
-                      <span class="text-xs text-gray-600 line-through">{{ event.oldValue }}</span>
+                      <span class="text-xs text-gray-600 line-through">{{ resolveEventValue(event.eventType, event.oldValue) }}</span>
                     </template>
                     <span class="text-xs text-gray-600 ml-auto shrink-0">{{ formatDate(event.createdAt) }}</span>
                   </div>
@@ -666,9 +666,11 @@
                   <option value="true">Yes</option>
                   <option value="false">No</option>
                 </select>
-                <!-- Date -->
+                <!-- Date: ISO format YYYY-MM-DD -->
                 <input v-else-if="prop.type === ProjectPropertyType.Date"
-                  type="date"
+                  type="text"
+                  placeholder="YYYY-MM-DD"
+                  pattern="\d{4}-\d{2}-\d{2}"
                   :value="getPropertyValue(prop.id)"
                   @change="onSetPropertyValue(prop.id, ($event.target as HTMLInputElement).value)"
                   class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
@@ -680,7 +682,15 @@
                   @change="onSetPropertyValue(prop.id, ($event.target as HTMLInputElement).value)"
                   class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
                 />
-                <!-- Text / Person / Agent: plain text -->
+                <!-- Person: user search select -->
+                <select v-else-if="prop.type === ProjectPropertyType.Person"
+                  :value="getPropertyValue(prop.id)"
+                  @change="onSetPropertyValue(prop.id, ($event.target as HTMLSelectElement).value)"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500">
+                  <option value="">— not set —</option>
+                  <option v-for="u in tenantUsers" :key="u.id" :value="u.username">{{ u.username }}</option>
+                </select>
+                <!-- Text / Agent: plain text -->
                 <input v-else
                   type="text"
                   :value="getPropertyValue(prop.id)"
@@ -823,7 +833,7 @@
 <script setup lang="ts">
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { IssueStatus, IssueType, IssueLinkType, IssueLinkTypeLabels, IssueEventTypeLabels, ProjectPropertyType } from '~/types'
+import { IssueStatus, IssueType, IssueLinkType, IssueLinkTypeLabels, IssueEventTypeLabels, IssueEventType, ProjectPropertyType } from '~/types'
 import type { IssuePriority } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
 import { useLabelsStore } from '~/stores/labels'
@@ -1261,6 +1271,17 @@ function statusColor(status: IssueStatus) {
 
 function formatDate(d: string) {
   return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+// Resolve raw event values to human-readable form.
+// For milestone events, the value may be a GUID (old records) or a title (new records).
+function resolveEventValue(eventType: IssueEventType, value: string | undefined | null): string | undefined | null {
+  if (!value) return value
+  if (eventType === IssueEventType.MilestoneSet || eventType === IssueEventType.MilestoneCleared) {
+    const milestone = milestonesStore.milestones.find(m => m.id === value)
+    return milestone?.title ?? value
+  }
+  return value
 }
 
 function formatFileSize(bytes: number): string {
