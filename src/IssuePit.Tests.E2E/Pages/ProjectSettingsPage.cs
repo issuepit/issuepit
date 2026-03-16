@@ -83,4 +83,41 @@ public class ProjectSettingsPage(IPage page)
         await page.ClickAsync("button[type='submit']:has-text('Save Changes')");
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
     }
+
+    // ── Custom Properties ──────────────────────────────────────────────────────
+
+    /// <summary>Opens the "Add Property" modal for custom issue properties.</summary>
+    public async Task OpenAddPropertyAsync()
+    {
+        await page.ClickAsync("button:has-text('+ Add Property')");
+        await page.WaitForSelectorAsync("text=New Property",
+            new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+    }
+
+    /// <summary>Fills the custom property form with a name and type, then saves it.</summary>
+    public async Task AddPropertyAsync(string name, string type = "Text")
+    {
+        await page.FillAsync("input[placeholder='e.g. Due Date']", name);
+        await page.SelectOptionAsync("select:near(:text('Type'))", new[] { type });
+        await page.ClickAsync("button:has-text('Create')");
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+    }
+
+    /// <summary>Returns true if a custom property row with the given name is visible.</summary>
+    public async Task<bool> HasPropertyAsync(string name)
+    {
+        return await page.Locator($"text={name}").IsVisibleAsync();
+    }
+
+    /// <summary>
+    /// Returns the type label shown next to a custom property row (e.g., "Text", "Date", "Enum").
+    /// Returns empty string if the property is not found.
+    /// </summary>
+    public async Task<string> GetPropertyTypeLabelAsync(string propertyName)
+    {
+        // Each property row: <span class="font-medium">Name</span> <span class="text-gray-500">TypeLabel</span>
+        var row = page.Locator($".space-y-2 > div:has-text('{propertyName}')").First;
+        var typeSpan = row.Locator("span.text-xs.text-gray-500").First;
+        return await typeSpan.InnerTextAsync();
+    }
 }

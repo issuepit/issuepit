@@ -438,13 +438,13 @@ export interface KanbanBoard {
 }
 
 export enum ProjectPropertyType {
-  Text = 0,
-  Enum = 1,
-  Number = 2,
-  Date = 3,
-  Person = 4,
-  Agent = 5,
-  Bool = 6,
+  Text = 'text',
+  Enum = 'enum',
+  Number = 'number',
+  Date = 'date',
+  Person = 'person',
+  Agent = 'agent',
+  Bool = 'bool',
 }
 
 export interface ProjectProperty {

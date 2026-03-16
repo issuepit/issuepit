@@ -84,4 +84,13 @@ public class IssueDetailPage(IPage page)
                 Timeout = E2ETimeouts.Short
             });
     }
+
+    /// <summary>
+    /// Returns true if a custom property with the given label is visible in the sidebar.
+    /// </summary>
+    public async Task<bool> IsCustomPropertyVisibleAsync(string propertyName)
+    {
+        // The sidebar shows the property label as an uppercase tracking-wide text
+        return await page.Locator($"p:has-text('{propertyName.ToUpperInvariant()}')").IsVisibleAsync();
+    }
 }
