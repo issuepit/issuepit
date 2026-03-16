@@ -11,4 +11,5 @@ public enum ApiKeyProvider
     Google,
     OpenRouter,
     Custom,
+    DeepSeek,
 }

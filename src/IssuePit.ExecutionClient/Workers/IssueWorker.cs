@@ -223,6 +223,9 @@ public class IssueWorker(
 
         var agent = await db.Agents
             .Include(a => a.ChildAgents)
+            .Include(a => a.AgentMcpServers)
+                .ThenInclude(ams => ams.McpServer)
+                .ThenInclude(s => s.Secrets)
             .FirstOrDefaultAsync(a => a.Id == agentId, cancellationToken);
         var issue = await db.Issues.FindAsync([issueId], cancellationToken);
 
@@ -617,6 +620,8 @@ public class IssueWorker(
         ApiKeyProvider.Google => "GOOGLE_API_KEY",
         ApiKeyProvider.AzureOpenAi => "AZURE_OPENAI_API_KEY",
         ApiKeyProvider.Hetzner => "HCLOUD_TOKEN",
+        ApiKeyProvider.OpenRouter => "OPENROUTER_API_KEY",
+        ApiKeyProvider.DeepSeek => "DEEPSEEK_API_KEY",
         _ => $"ISSUEPIT_{provider.ToString().ToUpperInvariant()}_API_KEY",
     };
 

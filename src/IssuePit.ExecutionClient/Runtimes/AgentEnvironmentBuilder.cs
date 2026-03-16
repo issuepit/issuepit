@@ -71,6 +71,12 @@ internal static class AgentEnvironmentBuilder
         if (!string.IsNullOrEmpty(agentsJson))
             env.Add($"ISSUEPIT_OPENCODE_AGENTS_JSON={agentsJson}");
 
+        // Inject linked MCP server configs (URL + secrets as headers) so the entrypoint can add
+        // them to the opencode config alongside the IssuePit MCP server.
+        var extraMcpJson = BuildExtraMcpJson(agent);
+        if (!string.IsNullOrEmpty(extraMcpJson))
+            env.Add($"ISSUEPIT_OPENCODE_EXTRA_MCP_JSON={extraMcpJson}");
+
         return env;
     }
 
@@ -100,4 +106,59 @@ internal static class AgentEnvironmentBuilder
         OpenCodeAgentType.All => "all",
         _ => null,
     };
+
+    /// <summary>
+    /// Serialises MCP servers linked to the agent into a JSON array for the container entrypoint
+    /// to merge into the opencode config's <c>mcp</c> section.
+    /// Each entry contains the server name (slug), URL, type, and any secrets as HTTP headers.
+    /// Returns an empty string when no linked MCP servers are configured.
+    /// </summary>
+    internal static string BuildExtraMcpJson(Agent agent)
+    {
+        var linked = agent.AgentMcpServers
+            .Where(ams => ams.McpServer is not null)
+            .Select(ams => ams.McpServer)
+            .ToList();
+
+        if (linked.Count == 0)
+            return string.Empty;
+
+        var entries = linked.Select(s =>
+        {
+            // Resolve secrets scoped to this agent or global, with agent-scoped taking precedence.
+            var headers = s.Secrets
+                .Where(sec => sec.Scope == McpSecretScope.Global ||
+                              (sec.Scope == McpSecretScope.Agent && sec.ScopeId == agent.Id))
+                .GroupBy(sec => sec.Key)
+                .Select(g => g.OrderByDescending(sec => sec.Scope).First())
+                .ToDictionary(sec => sec.Key, sec => DecryptMcpSecret(sec.EncryptedValue));
+
+            return new
+            {
+                name = s.Name.ToLowerInvariant().Replace(' ', '-'),
+                type = ResolveMcpType(s.Configuration),
+                url = s.Url,
+                headers = headers.Count > 0 ? (object)headers : null,
+            };
+        }).ToList();
+
+        return JsonSerializer.Serialize(entries);
+    }
+
+    /// <summary>Reads the "type" field from the MCP server's JSON configuration, defaulting to "http".</summary>
+    private static string ResolveMcpType(string configuration)
+    {
+        try
+        {
+            var doc = JsonDocument.Parse(configuration);
+            if (doc.RootElement.TryGetProperty("type", out var typeEl))
+                return typeEl.GetString() ?? "http";
+        }
+        catch { }
+        return "http";
+    }
+
+    /// <summary>Strips the "plain:" placeholder prefix. Production will use proper decryption.</summary>
+    private static string DecryptMcpSecret(string encryptedValue) =>
+        encryptedValue.StartsWith("plain:") ? encryptedValue["plain:".Length..] : encryptedValue;
 }

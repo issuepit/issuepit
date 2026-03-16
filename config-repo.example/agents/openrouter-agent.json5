@@ -1,0 +1,29 @@
+// Example agent configuration using OpenRouter as the AI provider.
+// To use this, create an agent in the IssuePit UI with runner type "opencode".
+// Then store your OpenRouter API key under Configuration → API Keys (provider: OpenRouter).
+// The key is passed to the agent container as OPENROUTER_API_KEY.
+//
+// Available OpenRouter models (recommended):
+//   - openrouter/auto                          — auto-select best model
+//   - openrouter/hunter-alpha                  — hunter-alpha preview
+//   - openrouter/healer-alpha                  — healer-alpha preview
+//   - minimax/minimax-m2.5:free                — free MiniMax M2.5
+//   - (empty)                                  — use the provider default
+//
+// API key setup: https://openrouter.ai/settings/keys
+{
+  "name": "OpenRouter Agent",
+  "runner": "opencode",
+
+  // Model to use — pick one from the list above, or omit to use the opencode default.
+  "model": "openrouter/auto",
+
+  // System prompt (instructions for the agent)
+  "systemPrompt": "You are a helpful coding assistant. Implement the requested changes and write tests.",
+
+  // (Optional) Docker image — defaults to the org/project image if omitted
+  // "dockerImage": "ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24",
+
+  // MCP servers to link — add these under Configuration → MCP Servers first
+  // "mcpServers": ["github-mcp", "context7"],
+}
