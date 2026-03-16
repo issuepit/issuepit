@@ -185,6 +185,49 @@ export const useGitStore = defineStore('git', () => {
     }
   }
 
+  async function fetchRemote(projectId: string, repoId: string) {
+    error.value = null
+    try {
+      await api.post(`/api/projects/${projectId}/git/repos/${repoId}/fetch`, {})
+      await fetchRepos(projectId)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Fetch failed'
+      throw e
+    }
+  }
+
+  async function pullRemote(projectId: string, repoId: string) {
+    error.value = null
+    try {
+      await api.post(`/api/projects/${projectId}/git/repos/${repoId}/pull`, {})
+      await fetchRepos(projectId)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Pull failed'
+      throw e
+    }
+  }
+
+  async function pushRemote(projectId: string, repoId: string) {
+    error.value = null
+    try {
+      await api.post(`/api/projects/${projectId}/git/repos/${repoId}/push`, {})
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Push failed'
+      throw e
+    }
+  }
+
+  async function syncRemote(projectId: string, repoId: string) {
+    error.value = null
+    try {
+      await api.post(`/api/projects/${projectId}/git/repos/${repoId}/sync`, {})
+      await fetchRepos(projectId)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Sync failed'
+      throw e
+    }
+  }
+
   function reset() {
     repos.value = []
     branches.value = []
@@ -221,6 +264,10 @@ export const useGitStore = defineStore('git', () => {
     triggerFetch,
     triggerClone,
     enableRepo,
+    fetchRemote,
+    pullRemote,
+    pushRemote,
+    syncRemote,
     reset
   }
 })
