@@ -328,7 +328,6 @@ function onIssueDragEnd() {
   dragHoverInsertIdx.value = 0
 }
 
-
 function onIssueDragOver(e: DragEvent, colId: string) {
   if (!draggedId.value || draggedColId.value) return
   dragHoverColId.value = colId
