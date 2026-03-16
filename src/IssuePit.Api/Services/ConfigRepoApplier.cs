@@ -208,17 +208,12 @@ public class ConfigRepoApplier(
         {
             if (org is null)
             {
+                // A project cannot be created without knowing its organization.
+                // This is always an error (not a strict-mode-only escalation) because
+                // it represents a misconfigured file that cannot possibly succeed.
                 var msg = $"Project with slug '{slug}' not found and no orgSlug provided; cannot create project without an organization.";
-                if (strictMode)
-                {
-                    result.AddStrictModeError(filePath, msg);
-                    logger.LogWarning("Project with slug '{Slug}' not found for tenant {TenantId}; no orgSlug to create it under (strict mode — error)", slug, tenant.Id);
-                }
-                else
-                {
-                    result.AddWarning(filePath, msg);
-                    logger.LogWarning("Project with slug '{Slug}' not found for tenant {TenantId}; no orgSlug to create it under", slug, tenant.Id);
-                }
+                result.AddError(filePath, msg);
+                logger.LogWarning("Project with slug '{Slug}' not found for tenant {TenantId}; no orgSlug to create it under", slug, tenant.Id);
                 return;
             }
 
