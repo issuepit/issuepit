@@ -26,6 +26,21 @@ static string? TryGetGitBranch()
     }
 }
 
+// Walk up from the AppHost binary directory looking for a 'config-repo' directory.
+// Returns the absolute path when found, or null when not present (e.g. fresh clone).
+static string? TryFindConfigRepo()
+{
+    var dir = AppContext.BaseDirectory;
+    while (dir is not null)
+    {
+        var candidate = Path.Combine(dir, "config-repo");
+        if (Directory.Exists(candidate))
+            return candidate;
+        dir = Path.GetDirectoryName(dir);
+    }
+    return null;
+}
+
 static string SanitizeForVolumeName(string branch)
 {
     // Docker volume names must match [a-zA-Z0-9][a-zA-Z0-9_.-]*
@@ -38,6 +53,7 @@ static string SanitizeForVolumeName(string branch)
 
 var isCI = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CI"));
 var gitBranch = isCI ? null : TryGetGitBranch();
+var configRepoPath = TryFindConfigRepo();
 
 var postgresServer = builder.AddPostgres("postgres")
     .WithImage("postgres", "17.6");
@@ -257,6 +273,10 @@ var migrator = builder.AddProject<Projects.IssuePit_Migrator>("migrator")
     .WithReference(postgresDb)
     .WaitFor(postgresServer);
 
+// Pass the config-repo path to the migrator so it can seed the default tenant's ConfigRepoUrl.
+if (configRepoPath is not null)
+    migrator.WithEnvironment("ConfigRepo__Url", configRepoPath);
+
 var kafkaInitializer = builder.AddProject<Projects.IssuePit_KafkaInitializer>("kafka-initializer")
     .WithReference(kafka)
     .WaitFor(kafka);
@@ -303,6 +323,10 @@ var api = builder.AddProject<Projects.IssuePit_Api>("api")
         u.DisplayText = "Scalar API Reference";
         u.Url = "/scalar/v1";
     });
+
+// Pass the config-repo path to the API so the background sync service uses the local directory.
+if (configRepoPath is not null)
+    api.WithEnvironment("ConfigRepo__Url", configRepoPath);
 
 // Disable the DCP proxy for the MCP server: the proxy only binds to 127.0.0.1, which Docker
 // agent containers cannot reach via host.docker.internal. With IsProxied=false, GetEndpoint

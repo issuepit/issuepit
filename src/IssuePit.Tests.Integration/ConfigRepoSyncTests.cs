@@ -6,6 +6,7 @@ using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace IssuePit.Tests.Integration;
@@ -128,13 +129,14 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
-    public async Task Sync_OrgConfig_UnknownSlug_IsSkipped()
+    public async Task Sync_OrgConfig_UnknownSlug_IsCreated()
     {
-        var orgSlug = $"real-org-{Guid.NewGuid():N}"[..20];
-        var (tenantId, orgId, _, _) = await SeedAsync(orgSlug, $"p-{Guid.NewGuid():N}"[..16], "u3");
+        var existingOrgSlug = $"real-org-{Guid.NewGuid():N}"[..20];
+        var (tenantId, orgId, _, _) = await SeedAsync(existingOrgSlug, $"p-{Guid.NewGuid():N}"[..16], "u3");
+        var newOrgSlug = $"neworg-{Guid.NewGuid():N}"[..20];
 
         var dir = CreateConfigDir();
-        WriteModel(dir, "orgs", "nonexistent-org.json5", new OrgConfigModel { Name = "Should Not Apply" });
+        WriteModel(dir, "orgs", $"{newOrgSlug}.json5", new OrgConfigModel { Name = "Created Org" });
 
         try
         {
@@ -144,9 +146,17 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
             using var scope = factory.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
-            var org = await db.Organizations.FindAsync(orgId);
-            Assert.NotNull(org);
-            Assert.Equal("Cfg Org", org.Name); // unchanged
+
+            // Existing org must remain unchanged
+            var existingOrg = await db.Organizations.FindAsync(orgId);
+            Assert.NotNull(existingOrg);
+            Assert.Equal("Cfg Org", existingOrg.Name);
+
+            // New org must have been created from the config file
+            var newOrg = await db.Organizations
+                .FirstOrDefaultAsync(o => o.TenantId == tenantId && o.Slug == newOrgSlug);
+            Assert.NotNull(newOrg);
+            Assert.Equal("Created Org", newOrg.Name);
         }
         finally { Directory.Delete(dir, recursive: true); }
     }
@@ -345,7 +355,14 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
         {
             await SetConfigRepoAsync(tenantId, dir, strict: false);
             var resp = await TriggerSyncAsync(tenantId);
+            // Non-strict mode: unknown user is recorded as a warning, not an error → 200 OK.
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+            var body = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            var issues = body.GetProperty("issues").EnumerateArray().ToList();
+            Assert.Contains(issues, i =>
+                i.GetProperty("severity").GetString() == "warning" &&
+                i.GetProperty("message").GetString()!.Contains("ghost_user_not_in_db"));
 
             using var scope = factory.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
@@ -650,8 +667,14 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
         {
             await SetConfigRepoAsync(tenantId, dir);
             var resp = await TriggerSyncAsync(tenantId);
-            // Returns OK — project is skipped, not a failure
+            // Non-strict mode: unknown org slug is a warning, not an error → 200 OK.
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+            var body = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            var issues = body.GetProperty("issues").EnumerateArray().ToList();
+            Assert.Contains(issues, i =>
+                i.GetProperty("severity").GetString() == "warning" &&
+                i.GetProperty("message").GetString()!.Contains("nonexistent-org-slug"));
 
             using var scope = factory.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
@@ -663,7 +686,7 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
-    public async Task Sync_OrgMembers_StrictMode_UnknownUser_SkippedButOtherFieldsApplied()
+    public async Task Sync_OrgMembers_StrictMode_UnknownUser_ReturnsError()
     {
         var orgSlug = $"strict2-org-{Guid.NewGuid():N}"[..20];
         var (tenantId, orgId, _, _) = await SeedAsync(orgSlug, $"p-{Guid.NewGuid():N}"[..16], "strictuser");
@@ -679,8 +702,14 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
         {
             await SetConfigRepoAsync(tenantId, dir, strict: true);
             var resp = await TriggerSyncAsync(tenantId);
-            // Should not fail — unknown member just logs a warning and is skipped
-            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+            // In strict mode an unknown member is an error — sync returns 422.
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, resp.StatusCode);
+
+            var body = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            var issues = body.GetProperty("issues").EnumerateArray().ToList();
+            Assert.Contains(issues, i =>
+                i.GetProperty("severity").GetString() == "error" &&
+                i.GetProperty("message").GetString()!.Contains("definitely_not_in_db"));
 
             using var scope = factory.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
