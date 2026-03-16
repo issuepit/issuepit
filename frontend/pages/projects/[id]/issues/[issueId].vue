@@ -670,6 +670,7 @@
                 <input v-else-if="prop.type === ProjectPropertyType.Date"
                   type="text"
                   placeholder="YYYY-MM-DD"
+                  pattern="\d{4}-\d{2}-\d{2}"
                   :value="getPropertyValue(prop.id)"
                   @change="onSetPropertyValue(prop.id, ($event.target as HTMLInputElement).value)"
                   class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500"

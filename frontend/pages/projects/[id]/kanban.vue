@@ -500,7 +500,11 @@ async function openPreview(issue: Issue) {
   previewIssue.value = issue
   previewPropertyValues.value = []
   if (propsStore.properties.length) {
-    previewPropertyValues.value = await propsStore.fetchIssuePropertyValues(id, issue.id) ?? []
+    try {
+      previewPropertyValues.value = await propsStore.fetchIssuePropertyValues(id, issue.id) ?? []
+    } catch (e) {
+      console.error('Failed to load property values for issue preview', e)
+    }
   }
 }
 
