@@ -107,13 +107,28 @@ public class ProjectSettingsPage(IPage page)
         await modal.Locator("select").SelectOptionAsync(
             new[] { new SelectOptionValue { Label = type } });
         await modal.Locator("button:has-text('Create')").ClickAsync();
+        // Wait for the modal to close before proceeding
+        await modal.WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Hidden,
+            Timeout = E2ETimeouts.Default
+        });
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
     }
 
     /// <summary>Returns true if a custom property row with the given name is visible.</summary>
     public async Task<bool> HasPropertyAsync(string name)
     {
-        return await page.Locator($"text={name}").IsVisibleAsync();
+        try
+        {
+            await page.WaitForSelectorAsync($"text={name}",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            return false;
+        }
     }
 
     /// <summary>
