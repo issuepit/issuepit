@@ -182,6 +182,13 @@
             </svg>
             Row break
           </button>
+          <button @click="addKanbanCard()"
+            class="text-xs text-gray-500 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+            </svg>
+            + Kanban Board
+          </button>
           <button @click="showLoadModal = true"
             class="text-xs text-gray-500 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1">
             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -230,13 +237,20 @@
       <!-- Hidden sections restore row (draft mode) -->
       <div v-if="isDraftMode && layout.configs" class="mb-3 flex flex-wrap items-center gap-2 min-h-0">
         <template v-for="sid in layout.order" :key="sid">
-          <button v-if="sectionCfg(sid as SectionId).hidden" @click="showSection(sid as SectionId)"
-            class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-green-400 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1">
-            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-            </svg>
-            {{ SECTION_LABELS[sid as SectionId] }}
-          </button>
+          <div v-if="sectionCfg(sid).hidden" class="flex items-center gap-1">
+            <button @click="showSection(sid)"
+              class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-green-400 px-2.5 py-1 rounded-l-lg transition-colors flex items-center gap-1">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              </svg>
+              {{ getSectionLabel(sid) }}
+            </button>
+            <button v-if="isDynamicSectionId(sid)" @click="removeDynamicSection(sid)"
+              class="text-xs bg-gray-800 hover:bg-gray-700 text-red-500 hover:text-red-300 px-2 py-1 rounded-r-lg border-l border-gray-700 transition-colors"
+              title="Remove this section">
+              ✕
+            </button>
+          </div>
         </template>
       </div>
 
@@ -300,65 +314,67 @@
               <!-- For single section: full config bar -->
               <DashboardSectionBar
                 v-if="item.type === 'section'"
-                :label="SECTION_LABELS[item.sid as SectionId]"
+                :label="getSectionLabel(item.sid)"
                 :display-modes="SECTION_DISPLAY_MODES[item.sid as SectionId]"
-                :current-display-mode="sectionCfg(item.sid as SectionId).displayMode"
-                :has-max-items="SECTION_HAS_MAX_ITEMS.has(item.sid as SectionId)"
+                :current-display-mode="sectionCfg(item.sid).displayMode"
+                :has-max-items="sectionHasMaxItems(item.sid)"
                 :max-items-options="MAX_ITEMS_OPTIONS"
-                :current-max-items="sectionCfg(item.sid as SectionId).maxItems"
+                :current-max-items="sectionCfg(item.sid).maxItems"
                 :widths="PROJECT_WIDTHS"
-                :current-width="sectionCfg(item.sid as SectionId).width"
-                :current-chart-days="item.sid === 'history' ? (sectionCfg(item.sid as SectionId).chartDays ?? CHART_DAY_DEFAULT) : undefined"
+                :current-width="sectionCfg(item.sid).width"
+                :current-chart-days="item.sid === 'history' ? (sectionCfg(item.sid).chartDays ?? CHART_DAY_DEFAULT) : undefined"
                 :chart-height-options="item.sid === 'history' ? CHART_HEIGHT_OPTIONS : undefined"
-                :current-chart-height="item.sid === 'history' ? (sectionCfg(item.sid as SectionId).chartHeightKey ?? 'md') : undefined"
-                :kanban-boards="(item.sid === 'kanban' || item.sid === 'kanban2') ? kanbanStore.boards : undefined"
-                :selected-kanban-board-id="(item.sid === 'kanban' || item.sid === 'kanban2') ? sectionCfg(item.sid as SectionId).selectedBoardId : undefined"
+                :current-chart-height="item.sid === 'history' ? (sectionCfg(item.sid).chartHeightKey ?? 'md') : undefined"
+                :kanban-boards="isKanbanSid(item.sid) ? kanbanStore.boards : undefined"
+                :selected-kanban-board-id="isKanbanSid(item.sid) ? sectionCfg(item.sid).selectedBoardId : undefined"
                 :can-tab="layout.order.indexOf(item.sid) < layout.order.length - 1"
-                :is-tabbed="sectionCfg(item.sid as SectionId).tabGroup !== null"
-                :can-stack="SECTION_CAN_STACK.has(item.sid as SectionId) && layout.order.indexOf(item.sid) < layout.order.length - 1"
-                :is-stacked="sectionCfg(item.sid as SectionId).stackGroup !== null"
-                :hidden="sectionCfg(item.sid as SectionId).hidden"
+                :is-tabbed="sectionCfg(item.sid).tabGroup !== null"
+                :can-stack="sectionCanStack(item.sid) && layout.order.indexOf(item.sid) < layout.order.length - 1"
+                :is-stacked="sectionCfg(item.sid).stackGroup !== null"
+                :hidden="sectionCfg(item.sid).hidden"
                 :drag-hover="dragSectionId !== null && dragHoverSid === item.sid && dragSectionId !== item.sid"
-                @display-mode-change="m => updateCfg(item.sid as SectionId, { displayMode: m as SectionDisplayMode })"
-                @max-items-change="n => updateCfg(item.sid as SectionId, { maxItems: n })"
-                @width-change="w => updateCfg(item.sid as SectionId, { width: w as SectionWidth })"
-                @chart-days-change="d => updateCfg(item.sid as SectionId, { chartDays: d })"
-                @chart-height-change="k => updateCfg(item.sid as SectionId, { chartHeightKey: k })"
-                @kanban-board-change="boardId => updateCfg(item.sid as SectionId, { selectedBoardId: boardId })"
-                @tab-toggle="toggleTabGroupWithNext(item.sid as SectionId)"
+                :can-remove="isDynamicSectionId(item.sid)"
+                @display-mode-change="m => updateCfg(item.sid, { displayMode: m as SectionDisplayMode })"
+                @max-items-change="n => updateCfg(item.sid, { maxItems: n })"
+                @width-change="w => updateCfg(item.sid, { width: w as SectionWidth })"
+                @chart-days-change="d => updateCfg(item.sid, { chartDays: d })"
+                @chart-height-change="k => updateCfg(item.sid, { chartHeightKey: k })"
+                @kanban-board-change="boardId => updateCfg(item.sid, { selectedBoardId: boardId })"
+                @tab-toggle="toggleTabGroupWithNext(item.sid)"
                 @tab-drop="droppedSid => tabWithSection(item.sid, droppedSid)"
-                @stack-toggle="toggleStackGroupWithNext(item.sid as SectionId)"
+                @stack-toggle="toggleStackGroupWithNext(item.sid)"
                 @stack-drop="droppedSid => stackWithSection(item.sid, droppedSid)"
-                @hide="hideSection(item.sid as SectionId)"
-                @show="showSection(item.sid as SectionId)"
+                @hide="hideSection(item.sid)"
+                @show="showSection(item.sid)"
+                @remove="removeDynamicSection(item.sid)"
               />
               <!-- For tab group: label + width + split -->
               <DashboardTabGroupBar
                 v-else-if="item.type === 'tabgroup'"
                 :sections="item.sections"
-                :section-labels="SECTION_LABELS"
+                :section-labels="allSectionLabels"
                 :widths="PROJECT_WIDTHS"
-                :current-width="sectionCfg(item.sections[0] as SectionId).width"
-                @split="toggleTabGroupWithNext(item.sections[0] as SectionId)"
-                @width-change="w => updateCfg(item.sections[0] as SectionId, { width: w as SectionWidth })"
+                :current-width="sectionCfg(item.sections[0]).width"
+                @split="toggleTabGroupWithNext(item.sections[0])"
+                @width-change="w => updateCfg(item.sections[0], { width: w as SectionWidth })"
               />
               <!-- For stack group: label + width + unstack -->
               <DashboardStackGroupBar
                 v-else-if="item.type === 'stackgroup'"
                 :sections="item.sections"
-                :section-labels="SECTION_LABELS"
+                :section-labels="allSectionLabels"
                 :widths="PROJECT_WIDTHS"
-                :current-width="sectionCfg(item.sections[0] as SectionId).width"
+                :current-width="sectionCfg(item.sections[0]).width"
                 :is-dragging="!!dragSectionId"
-                @split="toggleStackGroupWithNext(item.sections[0] as SectionId)"
-                @width-change="w => updateCfg(item.sections[0] as SectionId, { width: w as SectionWidth })"
-                @stack-drop="droppedSid => stackWithSection(item.sections[0] as SectionId, droppedSid)"
+                @split="toggleStackGroupWithNext(item.sections[0])"
+                @width-change="w => updateCfg(item.sections[0], { width: w as SectionWidth })"
+                @stack-drop="droppedSid => stackWithSection(item.sections[0], droppedSid)"
               />
             </template>
 
             <!-- Content area -->
             <div :class="[
-              isDraftMode && item.type === 'section' && sectionCfg(item.sid as SectionId).hidden ? 'opacity-30 saturate-0 pointer-events-none' : '',
+              isDraftMode && item.type === 'section' && sectionCfg(item.sid).hidden ? 'opacity-30 saturate-0 pointer-events-none' : '',
               item.type === 'stackgroup' ? 'flex flex-col gap-2' : '',
             ]">
 
@@ -718,12 +734,12 @@
                   </template>
 
                   <!-- ── KANBAN section ── -->
-                  <template v-else-if="sid === 'kanban' || sid === 'kanban2'">
+                  <template v-else-if="isKanbanSid(sid)">
                     <div :class="item.type === 'tabgroup' ? '' : 'bg-gray-900 border border-gray-800 rounded-xl p-5'">
                       <template v-if="item.type !== 'tabgroup'">
-                        <h2 class="font-semibold text-white mb-4">{{ SECTION_LABELS[sid as SectionId] }}</h2>
+                        <h2 class="font-semibold text-white mb-4">{{ SECTION_LABELS[sid as SectionId] ?? 'Kanban Board' }}</h2>
                       </template>
-                      <KanbanBoardInline :project-id="id" :board-id="sectionCfg(sid as SectionId).selectedBoardId ?? null" :max-items="sectionCfg(sid as SectionId).maxItems" />
+                      <KanbanBoardInline :project-id="id" :board-id="sectionCfg(sid).selectedBoardId ?? null" :max-items="sectionCfg(sid).maxItems" />
                     </div>
                   </template>
 
@@ -914,7 +930,7 @@ import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useIssuesStore } from '~/stores/issues'
 import { useKanbanStore } from '~/stores/kanban'
 import { formatIssueId } from '~/composables/useIssueFormat'
-import { useDashboardLayout } from '~/composables/useDashboardLayout'
+import { useDashboardLayout, isDynamicSectionId, type LayoutSectionConfig } from '~/composables/useDashboardLayout'
 
 const route = useRoute()
 const id = route.params.id as string
@@ -1049,7 +1065,7 @@ const recentProjectIssues = ref<Issue[]>([])
 const dashboardTestRuns = ref<TestRunSummary[]>([])
 
 // ── Dashboard layout customization ─────────────────────────────────────────
-type SectionId = 'statIssues' | 'statCommits' | 'statMRs' | 'milestones' | 'issues' | 'agentRuns' | 'cicdRuns' | 'testHistory' | 'history' | 'kanban' | 'kanban2'
+type SectionId = 'statIssues' | 'statCommits' | 'statMRs' | 'milestones' | 'issues' | 'agentRuns' | 'cicdRuns' | 'testHistory' | 'history' | 'kanban'
 type SectionDisplayMode = 'list' | 'count' | 'block'
 type SectionWidth = 'xxs' | 'xs' | 'quarter' | 'sm' | 'md' | 'lg'
 
@@ -1064,7 +1080,6 @@ const SECTION_LABELS: Record<SectionId, string> = {
   testHistory: 'Test History',
   history: 'Issue History',
   kanban: 'Kanban Board',
-  kanban2: 'Kanban Board 2',
 }
 const SECTION_DISPLAY_MODES: Partial<Record<SectionId, SectionDisplayMode[]>> = {
   milestones: ['block', 'list', 'count'],
@@ -1072,8 +1087,8 @@ const SECTION_DISPLAY_MODES: Partial<Record<SectionId, SectionDisplayMode[]>> = 
   agentRuns: ['list', 'count'],
   cicdRuns: ['list', 'count'],
 }
-const SECTION_HAS_MAX_ITEMS: Set<SectionId> = new Set(['milestones', 'issues', 'agentRuns', 'cicdRuns', 'kanban', 'kanban2'])
-const SECTION_CAN_STACK: Set<SectionId> = new Set(['statIssues', 'statCommits', 'statMRs', 'milestones', 'issues', 'agentRuns', 'cicdRuns', 'testHistory', 'history', 'kanban', 'kanban2'])
+const SECTION_HAS_MAX_ITEMS: Set<SectionId> = new Set(['milestones', 'issues', 'agentRuns', 'cicdRuns', 'kanban'])
+const SECTION_CAN_STACK: Set<SectionId> = new Set(['statIssues', 'statCommits', 'statMRs', 'milestones', 'issues', 'agentRuns', 'cicdRuns', 'testHistory', 'history', 'kanban'])
 const MAX_ITEMS_OPTIONS = [3, 5, 8, 10]
 const WIDTH_LABELS: Record<SectionWidth, string> = { xxs: '1/12', xs: '1/6', quarter: '1/4', sm: '1/3', md: '1/2', lg: 'Full' }
 const PROJECT_WIDTHS = (['xxs', 'xs', 'quarter', 'sm', 'md', 'lg'] as SectionWidth[]).map(v => ({ value: v, label: WIDTH_LABELS[v] }))
@@ -1089,9 +1104,8 @@ const DEFAULT_CONFIGS = {
   testHistory: { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'quarter',  tabGroup: null, stackGroup: null },
   history:     { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'md',  tabGroup: null, stackGroup: null },
   kanban:      { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'md',  tabGroup: null, stackGroup: null },
-  kanban2:     { hidden: true,  displayMode: 'list',  maxItems: 5,  width: 'md',  tabGroup: null, stackGroup: null },
 }
-const DEFAULT_ORDER: SectionId[] = ['statIssues', 'statCommits', 'statMRs', 'milestones', 'rowbreak-after-milestones', 'issues', 'agentRuns', 'cicdRuns', 'testHistory', 'history', 'kanban', 'kanban2']
+const DEFAULT_ORDER: string[] = ['statIssues', 'statCommits', 'statMRs', 'milestones', 'rowbreak-after-milestones', 'issues', 'agentRuns', 'cicdRuns', 'testHistory', 'history', 'kanban']
 const DRAFT_LAYOUT_KEY = `project-dashboard-layout-v7-${id}`
 
 const {
@@ -1111,6 +1125,8 @@ const {
   resetLayout,
   addRowBreak,
   removeRowBreak,
+  addDynamicSection,
+  removeDynamicSection,
   captureSnapshot,
   exportLayoutJson,
   importLayoutJson,
@@ -1136,17 +1152,58 @@ const {
   },
 })
 
-function sectionCfg(s: SectionId) { return sectionCfgRaw(s) }
-function updateCfg(s: SectionId, patch: object) { updateCfgRaw(s, patch) }
-function hideSection(s: SectionId) { hideSectionRaw(s) }
-function showSection(s: SectionId) { showSectionRaw(s) }
+function sectionCfg(s: string) { return sectionCfgRaw(s) }
+function updateCfg(s: string, patch: object) { updateCfgRaw(s, patch) }
+function hideSection(s: string) { hideSectionRaw(s) }
+function showSection(s: string) { showSectionRaw(s) }
 function onSectionDragStart(e: DragEvent, id: string) { onDragStartRaw(e, id) }
 function onSectionDragOver(e: DragEvent, id: string) { onDragOverRaw(e, id) }
 function onSectionDragEnter(e: DragEvent, id: string) { onDragEnterRaw(e, id) }
 function onSectionDragEnd(e: DragEvent) { onDragEndRaw(e) }
 function onSectionGapDragEnter(e: DragEvent, id: string, after: boolean) { onGapDragEnterRaw(e, id, after) }
-function toggleTabGroupWithNext(sid: SectionId) { toggleTabGroupWithNextRaw(sid) }
-function toggleStackGroupWithNext(sid: SectionId) { toggleStackGroupWithNextRaw(sid) }
+function toggleTabGroupWithNext(sid: string) { toggleTabGroupWithNextRaw(sid) }
+function toggleStackGroupWithNext(sid: string) { toggleStackGroupWithNextRaw(sid) }
+
+// ── Dynamic section helpers ───────────────────────────────────────────────
+/** Returns true for any kanban-like section ID (static 'kanban' + dynamic 'kanban-*'). */
+function isKanbanSid(sid: string): boolean {
+  return sid === 'kanban' || isDynamicSectionId(sid)
+}
+
+/** Returns the display label for any section ID (including dynamic ones). */
+function getSectionLabel(sid: string): string {
+  if (isKanbanSid(sid)) return 'Kanban Board'
+  return SECTION_LABELS[sid as SectionId] ?? sid
+}
+
+/** Computed record of all section labels including dynamic ones; used by tab/stack group bars. */
+const allSectionLabels = computed<Record<string, string>>(() => {
+  const extra: Record<string, string> = {}
+  for (const sid of layout.value.order) {
+    if (isDynamicSectionId(sid)) extra[sid] = 'Kanban Board'
+  }
+  return { ...SECTION_LABELS, ...extra }
+})
+
+/** Whether a section supports a maxItems limit. */
+function sectionHasMaxItems(sid: string): boolean {
+  if (isKanbanSid(sid)) return true
+  return SECTION_HAS_MAX_ITEMS.has(sid as SectionId)
+}
+
+/** Whether a section can be stacked with another. */
+function sectionCanStack(sid: string): boolean {
+  if (isKanbanSid(sid)) return true
+  return SECTION_CAN_STACK.has(sid as SectionId)
+}
+
+/** Default config for newly added kanban cards. */
+const KANBAN_CARD_DEFAULT_CONFIG: LayoutSectionConfig = { hidden: false, displayMode: 'list', maxItems: 5, width: 'md', tabGroup: null, stackGroup: null }
+
+/** Adds a new kanban board card to the dashboard. */
+function addKanbanCard() {
+  addDynamicSection('kanban', { ...KANBAN_CARD_DEFAULT_CONFIG })
+}
 
 // ── Template save / load / export / import ────────────────────────────────
 const showSaveModal = ref(false)
@@ -1186,7 +1243,7 @@ function colSpanClass(width: SectionWidth): string {
 function itemColSpanClass(item: { type: string; sid?: string; sections?: string[] }): string {
   if (item.type === 'rowbreak') return 'col-span-12'
   const firstSid = item.type === 'section' ? item.sid! : item.sections![0]
-  return colSpanClass(sectionCfg(firstSid as SectionId).width as SectionWidth)
+  return colSpanClass(sectionCfg(firstSid).width as SectionWidth)
 }
 
 const commitCountLabel = computed(() => {
