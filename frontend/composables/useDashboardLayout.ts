@@ -120,12 +120,12 @@ export function useDashboardLayout(options: {
   // ── Drag & drop ────────────────────────────────────────────────────────────
   const dragSectionId = ref<string | null>(null)
   const dragHoverSid = ref<string | null>(null)
+  /** Which gap zone is currently being hovered: { id: first-section-id, after: true=right-gap / false=left-gap } */
+  const dragHoverGap = ref<{ id: string; after: boolean } | null>(null)
   let _dragSnapshot: string | null = null
   // Cached drag group (all sections being moved together); populated on dragstart
   let _dragGroup: string[] = []
   let _dragEscaped = false
-  // Half the gap-4 (16 px); cursor must be within this distance of a card edge to trigger reorder
-  const EDGE_ZONE_PX = 8
 
   function captureSnapshot() {
     _dragSnapshot = JSON.stringify(layout.value)
@@ -147,39 +147,33 @@ export function useDashboardLayout(options: {
     }
   }
 
-  function onDragOver(e: DragEvent, id: string) {
+  function onDragOver(_e: DragEvent, id: string) {
     if (!dragSectionId.value) return
-    if (_dragGroup.includes(id)) { dragHoverSid.value = null; return }
-    // Only show hover indicator when cursor is near any edge (gap zone).
-    // gap-4 = 16px; EDGE_ZONE_PX = 8px from each side.
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    const nearLeft   = e.clientX - rect.left   < EDGE_ZONE_PX
-    const nearRight  = rect.right  - e.clientX < EDGE_ZONE_PX
-    const nearTop    = e.clientY - rect.top    < EDGE_ZONE_PX
-    const nearBottom = rect.bottom - e.clientY < EDGE_ZONE_PX
-    dragHoverSid.value = (nearLeft || nearRight || nearTop || nearBottom) ? id : null
+    // Keep dragHoverSid updated so tab/stack buttons highlight on hover
+    if (!_dragGroup.includes(id)) dragHoverSid.value = id
   }
 
   function onDragEnter(e: DragEvent, id: string) {
     if (!dragSectionId.value) return
     // Only fire when truly entering the card from outside (not from a child element)
     if (e.currentTarget instanceof HTMLElement && e.currentTarget.contains(e.relatedTarget as Node)) return
-    // Only reorder when the cursor entered from the gap zone around the card.
-    // gap-4 = 16px; we use 8px as the edge zone for both horizontal and vertical gaps.
-    // This reliably detects gap crossings regardless of relatedTarget availability.
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    const nearLeft   = e.clientX - rect.left   < EDGE_ZONE_PX
-    const nearRight  = rect.right  - e.clientX < EDGE_ZONE_PX
-    const nearTop    = e.clientY - rect.top    < EDGE_ZONE_PX
-    const nearBottom = rect.bottom - e.clientY < EDGE_ZONE_PX
-    if (!nearLeft && !nearRight && !nearTop && !nearBottom) return
+    if (_dragGroup.includes(id)) return
+    // Update hover sid for tab/stack button highlights; reorder is handled by gap sentinels
+    dragHoverSid.value = id
+  }
+
+  /**
+   * Called by the gap sentinel divs that live BETWEEN cards (not on the card itself).
+   * `id` is the first section id of the adjacent card; `after=true` means the sentinel
+   * is on the card's RIGHT (insert dragged group AFTER the card), `after=false` means LEFT (insert BEFORE).
+   */
+  function onGapDragEnter(_e: DragEvent, id: string, after: boolean) {
+    if (!dragSectionId.value) return
+    dragHoverGap.value = { id, after }
+    dragHoverSid.value = null  // leaving the card — clear card-level hover
 
     const isSameGroup = _dragGroup.length > 1 && _dragGroup.includes(id)
-    // Skip reorder if dragging over ourselves or our group
     if (id === dragSectionId.value || isSameGroup || _dragGroup.includes(id)) return
-
-    // Determine insert direction: left-half → insert after target; right-half → insert before
-    const enteredFromLeft = e.clientX - rect.left < rect.width / 2
 
     const order = layout.value.order
     if (order.indexOf(dragSectionId.value) === -1 || order.indexOf(id) === -1) return
@@ -187,30 +181,28 @@ export function useDashboardLayout(options: {
     // If the target card belongs to a stack group, move relative to the whole group
     const targetStk = isVirtualId(id) ? null : (sectionCfg(id).stackGroup ?? null)
     let insertAnchor: string
-    let insertAfter: boolean
+    let insertAfterFinal: boolean
     if (targetStk) {
       const tGroup = order.filter(s => (sectionCfg(s).stackGroup ?? null) === targetStk)
-      if (enteredFromLeft) {
-        insertAnchor = tGroup[0]
-        insertAfter = false
-      } else {
-        insertAnchor = tGroup[tGroup.length - 1]
-        insertAfter = true
-      }
+      insertAnchor = after ? tGroup[tGroup.length - 1] : tGroup[0]
+      insertAfterFinal = after
     } else {
       insertAnchor = id
-      insertAfter = enteredFromLeft  // entered from left = insert after target (drag source moves right)
+      insertAfterFinal = after
     }
 
-    // Remove the drag group from the order, then reinsert at the anchor position
     const withoutGroup = order.filter(s => !_dragGroup.includes(s))
     let anchorIdx = withoutGroup.indexOf(insertAnchor)
     if (anchorIdx === -1) return
-    if (insertAfter) anchorIdx++
+    if (insertAfterFinal) anchorIdx++
     const newOrder = [...withoutGroup]
     newOrder.splice(anchorIdx, 0, ..._dragGroup)
     if (newOrder.join(',') === order.join(',')) return
     layout.value.order = newOrder
+  }
+
+  function onGapDragLeave() {
+    dragHoverGap.value = null
   }
 
   function onDragEnd(_e?: DragEvent) {
@@ -222,6 +214,7 @@ export function useDashboardLayout(options: {
     _dragEscaped = false
     dragSectionId.value = null
     dragHoverSid.value = null
+    dragHoverGap.value = null
     _dragSnapshot = null
     _dragGroup = []
   }
@@ -447,6 +440,7 @@ export function useDashboardLayout(options: {
     isDraftMode,
     dragSectionId,
     dragHoverSid,
+    dragHoverGap,
     renderedItems,
     hiddenSections,
     activeTabInGroup,
@@ -467,6 +461,8 @@ export function useDashboardLayout(options: {
     onDragOver,
     onDragEnter,
     onDragEnd,
+    onGapDragEnter,
+    onGapDragLeave,
     toggleTabGroupWithNext,
     tabWithSection,
     toggleStackGroupWithNext,
