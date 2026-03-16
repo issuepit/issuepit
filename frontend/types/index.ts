@@ -1248,7 +1248,7 @@ export interface GitHubConflict {
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// <summary>Type discriminator for scheduled task runs.</summary>
-export type ScheduledTaskType = 'GitHubSync'
+export type ScheduledTaskType = 'GitHubSync' | 'BranchDetection'
 
 export interface ScheduledTaskRun {
   id: string
