@@ -369,6 +369,8 @@ export interface Agent {
   runnerType?: RunnerType
   model?: string
   agentType?: OpenCodeAgentType
+  useHttpServer?: boolean
+  hasHttpServerPassword?: boolean
   parentAgentId?: string
   childAgents?: AgentChild[]
   createdAt: string

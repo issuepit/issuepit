@@ -62,6 +62,32 @@
                 <strong class="text-gray-400">Subagent</strong> — invoked by primary agents or via @ mention.
               </p>
             </div>
+            <!-- HTTP Server mode (opencode only): start opencode as HTTP server instead of CLI -->
+            <div v-if="form.runnerType === RunnerTypeEnum.OpenCode" class="col-span-2">
+              <div class="flex items-center gap-3">
+                <input id="useHttpServer" v-model="form.useHttpServer" type="checkbox"
+                  class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-brand-500 focus:ring-brand-500 focus:ring-offset-gray-900" />
+                <div>
+                  <label for="useHttpServer" class="text-sm font-medium text-gray-300 cursor-pointer">Use HTTP Server</label>
+                  <p class="text-xs text-gray-500">
+                    Start opencode as an HTTP server instead of running CLI commands.
+                    <a href="https://opencode.ai/docs" target="_blank" rel="noopener" class="text-indigo-400 hover:text-indigo-300 transition-colors">opencode docs ↗</a>
+                  </p>
+                </div>
+              </div>
+            </div>
+            <!-- HTTP Server Password (opencode server mode only) -->
+            <div v-if="form.runnerType === RunnerTypeEnum.OpenCode && form.useHttpServer" class="col-span-2">
+              <div class="flex items-center justify-between mb-1.5">
+                <label class="block text-sm font-medium text-gray-300">HTTP Server Password</label>
+                <span v-if="store.currentAgent?.hasHttpServerPassword && !form.httpServerPassword"
+                  class="text-xs bg-yellow-900/40 text-yellow-400 px-1.5 py-0.5 rounded-full">Password is set</span>
+              </div>
+              <input v-model="form.httpServerPassword" type="password"
+                :placeholder="store.currentAgent?.hasHttpServerPassword ? 'Leave blank to keep existing password' : 'Set a password (optional)'"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+              <p class="text-xs text-gray-500 mt-1">Passed to the container as <code class="text-gray-400">OPENCODE_PASSWORD</code>. Leave blank to keep any existing password.</p>
+            </div>
             <div class="col-span-2">
               <label class="block text-sm font-medium text-gray-300 mb-1.5">Docker Image</label>
               <input v-model="form.dockerImage" type="text" placeholder="ghcr.io/org/agent:latest"
@@ -247,6 +273,8 @@ const form = reactive({
   runnerType: null as RunnerType | null,
   model: '',
   agentType: null as OpenCodeAgentType | null,
+  useHttpServer: false,
+  httpServerPassword: '',
 })
 
 const runnerOptions = [
@@ -348,6 +376,8 @@ function loadForm() {
   form.runnerType = toRunnerType(agent.runnerType)
   form.model = agent.model ?? ''
   form.agentType = toAgentType(agent.agentType)
+  form.useHttpServer = agent.useHttpServer ?? false
+  form.httpServerPassword = ''
   toolsInput.value = parseTools(agent.allowedTools).join(', ')
 }
 
@@ -360,6 +390,8 @@ function buildPayload(allowedTools: string[]) {
     runnerType: form.runnerType ?? undefined,
     model: form.model || undefined,
     agentType: form.agentType ?? undefined,
+    useHttpServer: form.useHttpServer,
+    httpServerPassword: form.httpServerPassword || undefined,
     allowedTools: JSON.stringify(allowedTools),
   }
 }

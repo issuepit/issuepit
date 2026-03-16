@@ -44,6 +44,7 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
             agent.ParentAgentId,
             agent.AgentType,
             agent.UseHttpServer,
+            !string.IsNullOrEmpty(agent.HttpServerPassword),
             agent.CreatedAt,
             agent.AgentMcpServers.Select(am => new LinkedMcpServerDto(
                 am.McpServer.Id,
@@ -181,6 +182,7 @@ public sealed record AgentDetailResponse(
     Guid? ParentAgentId,
     OpenCodeAgentType? AgentType,
     bool UseHttpServer,
+    bool HasHttpServerPassword,
     DateTime CreatedAt,
     IReadOnlyList<LinkedMcpServerDto> LinkedMcpServers,
     IReadOnlyList<ChildAgentDto> ChildAgents);
