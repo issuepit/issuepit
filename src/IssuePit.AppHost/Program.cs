@@ -51,17 +51,31 @@ static string SanitizeForVolumeName(string branch)
     return string.IsNullOrEmpty(sanitized) ? "default" : sanitized;
 }
 
+
+
 var isCI = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CI"));
 var gitBranch = isCI ? null : TryGetGitBranch();
 var configRepoPath = TryFindConfigRepo();
 
-var postgresServer = builder.AddPostgres("postgres")
-    .WithImage("postgres", "17.6");
 
+// https://aspire.dev/integrations/databases/postgres/postgres-host/#add-postgresql-server-resource-with-parameters
+var postgresUsername = builder.AddParameter("username", "ShityUsername", secret: true);
+var postgresPassword = builder.AddParameter("password", "Shity password since when adding a volume we get an auth error like in aspire 8.0", secret: true);
+var postgresServer = builder.AddPostgres("postgres")
+    //.WithDbGate() // https://aspire.dev/integrations/databases/postgres/postgresql-extensions/
+    .WithImage("postgres", "17.6")
+    //.WithUserName("ShityUsername")
+    //.WithPassword("Shity password since when adding a volume we get an auth error like in aspire 8.0") // https://github.com/dotnet/aspire/issues/1151
+    .WithUserName(postgresUsername)
+    .WithPassword(postgresPassword)
+    ;
 if (gitBranch is not null)
-    postgresServer = postgresServer.WithDataVolume($"issuepit-postgres-{SanitizeForVolumeName(gitBranch)}");
+    postgresServer = postgresServer
+        .WithDataVolume($"issuepit-postgres-{SanitizeForVolumeName(gitBranch)}", false); // https://aspire.dev/integrations/databases/postgres/postgres-host/#add-postgresql-server-resource-with-data-volume
 
 var postgresDb = postgresServer.AddDatabase("issuepit-db");
+
+
 
 var kafka = builder.AddKafka("kafka")
     .WithImage("apache/kafka", "3.9.0") // Official Apache Kafka 3.9.0 (KRaft) - more stable than confluent-local in E2E tests
@@ -71,9 +85,17 @@ var kafka = builder.AddKafka("kafka")
     .WithEnvironment("KAFKA_CONTROLLER_LISTENER_NAMES", "CONTROLLER")
     .WithEnvironment("KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR", "1")
     .WithEnvironment("KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS", "0");
+if (gitBranch is not null)
+    kafka = kafka.WithDataVolume($"issuepit-kafka-{SanitizeForVolumeName(gitBranch)}", false);
+
+
 
 var redis = builder.AddValkey("redis")
     .WithImage("valkey/valkey", "9.0");
+if (gitBranch is not null)
+    redis = redis.WithDataVolume($"issuepit-redis-{SanitizeForVolumeName(gitBranch)}", false);
+
+
 
 // npm package cache (Verdaccio proxy): caches npm packages across CI/CD runs to speed up builds.
 // Packages are fetched from the upstream registry on first request and served locally thereafter.
