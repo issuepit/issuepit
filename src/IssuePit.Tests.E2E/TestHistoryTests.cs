@@ -254,4 +254,68 @@ public class TestHistoryTests : IAsyncLifetime
             await context.CloseAsync();
         }
     }
+
+    /// <summary>
+    /// Verifies that the Tests tab on a completed CI/CD run page shows the TRX results that
+    /// were uploaded during the run using the <c>ci-trx.yml</c> workflow.
+    /// This exercises the full pipeline: act runs the workflow, uploads a <c>test-results-trx</c>
+    /// artifact containing a TRX file, and the CiCdWorker parses and stores the results.
+    /// The test then opens the browser, navigates to the run's Tests tab, and asserts the results
+    /// are displayed — confirming the end-to-end flow from artifact upload to UI visibility.
+    /// </summary>
+    [Fact]
+    public async Task Ui_CiCdRun_WithTrxArtifact_ShowsResultsInTestsTab()
+    {
+        if (FrontendUrl is null) return;
+        // Requires the dummy CI/CD repo to be available (set by AspireFixture when Docker is present).
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CICD_E2E_REPO_PATH"))) return;
+
+        var (apiClient, projectId, username, password) = await SetupProjectAsync();
+        using var _ = apiClient;
+
+        // Trigger a CI/CD run using the Docker runtime with the TRX workflow.
+        var triggerResp = await apiClient.PostAsJsonAsync("/api/cicd-runs/trigger", new
+        {
+            projectId = Guid.Parse(projectId),
+            commitSha = "e2e-cicd-trx-ui-test",
+            eventName = "push",
+            branch = "main",
+            workflow = "ci-trx.yml",
+            runtimeOverride = "Docker",
+        });
+        Assert.Equal(HttpStatusCode.Accepted, triggerResp.StatusCode);
+        var triggerBody = await triggerResp.Content.ReadFromJsonAsync<JsonElement>();
+        var runId = triggerBody.GetProperty("runId").GetString()!;
+
+        // Wait for the run to reach a terminal state.
+        await CiCdTestPollingHelpers.WaitForRunCompletionAsync(apiClient, runId, TimeSpan.FromMinutes(5));
+
+        // Poll for test results — the worker finalises TRX processing shortly after the run
+        // status transitions to terminal, so we retry for a short window.
+        var suites = await CiCdTestPollingHelpers.WaitForTestResultsAsync(apiClient, runId, 1, TimeSpan.FromSeconds(30));
+        Assert.True(suites.GetArrayLength() > 0,
+            $"API should return test suites for run {runId} after a CI/CD run with TRX artifact");
+
+        // Open the browser and navigate to the run's Tests tab.
+        var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
+        context.SetDefaultTimeout(E2ETimeouts.Navigation);
+        var page = await context.NewPageAsync();
+
+        try
+        {
+            await new LoginPage(page).LoginAsync(username, password);
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
+
+            var runPage = new CiCdRunPage(page);
+            await runPage.GotoTestsTabAsync(projectId, runId);
+            await runPage.WaitForTestsTabContentAsync();
+
+            Assert.False(await runPage.IsTestsTabEmptyAsync(),
+                "Tests tab should show test results for a CI/CD run that uploaded a TRX artifact");
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
 }
