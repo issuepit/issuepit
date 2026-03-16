@@ -43,6 +43,9 @@ public class ConfigRepoApplier(
                 await ApplyOrgConfigAsync(tenant, file, strictMode, result, ct);
                 result.FilesProcessed++;
             }
+            // Flush org inserts/updates before processing projects so that
+            // newly created orgs are visible to project config lookups.
+            await db.SaveChangesAsync(ct);
         }
 
         var projectsDir = Path.Combine(configPath, "projects");
@@ -85,9 +88,23 @@ public class ConfigRepoApplier(
 
         if (org is null)
         {
-            result.AddWarning(filePath, $"Org with slug '{slug}' not found; skipping.");
-            logger.LogWarning("Org with slug '{Slug}' not found for tenant {TenantId}; skipping", slug, tenant.Id);
-            return;
+            if (string.IsNullOrWhiteSpace(slug) || slug.Length > 100)
+            {
+                var msg = $"Cannot create org: slug '{slug}' is invalid (must be 1–100 characters).";
+                result.AddError(filePath, msg);
+                logger.LogWarning("Org slug '{Slug}' is invalid for tenant {TenantId}; skipping creation", slug, tenant.Id);
+                return;
+            }
+
+            org = new Organization
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenant.Id,
+                Slug = slug,
+                Name = model.Name ?? slug,
+            };
+            db.Organizations.Add(org);
+            logger.LogInformation("Org with slug '{Slug}' not found for tenant {TenantId}; creating it", slug, tenant.Id);
         }
 
         if (model.Name is not null) org.Name = model.Name;

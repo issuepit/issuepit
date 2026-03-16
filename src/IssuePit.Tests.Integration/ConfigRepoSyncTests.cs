@@ -6,6 +6,7 @@ using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace IssuePit.Tests.Integration;
@@ -128,13 +129,14 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
-    public async Task Sync_OrgConfig_UnknownSlug_IsSkipped()
+    public async Task Sync_OrgConfig_UnknownSlug_IsCreated()
     {
-        var orgSlug = $"real-org-{Guid.NewGuid():N}"[..20];
-        var (tenantId, orgId, _, _) = await SeedAsync(orgSlug, $"p-{Guid.NewGuid():N}"[..16], "u3");
+        var existingOrgSlug = $"real-org-{Guid.NewGuid():N}"[..20];
+        var (tenantId, orgId, _, _) = await SeedAsync(existingOrgSlug, $"p-{Guid.NewGuid():N}"[..16], "u3");
+        var newOrgSlug = $"neworg-{Guid.NewGuid():N}"[..20];
 
         var dir = CreateConfigDir();
-        WriteModel(dir, "orgs", "nonexistent-org.json5", new OrgConfigModel { Name = "Should Not Apply" });
+        WriteModel(dir, "orgs", $"{newOrgSlug}.json5", new OrgConfigModel { Name = "Created Org" });
 
         try
         {
@@ -144,9 +146,17 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
             using var scope = factory.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
-            var org = await db.Organizations.FindAsync(orgId);
-            Assert.NotNull(org);
-            Assert.Equal("Cfg Org", org.Name); // unchanged
+
+            // Existing org must remain unchanged
+            var existingOrg = await db.Organizations.FindAsync(orgId);
+            Assert.NotNull(existingOrg);
+            Assert.Equal("Cfg Org", existingOrg.Name);
+
+            // New org must have been created from the config file
+            var newOrg = await db.Organizations
+                .FirstOrDefaultAsync(o => o.TenantId == tenantId && o.Slug == newOrgSlug);
+            Assert.NotNull(newOrg);
+            Assert.Equal("Created Org", newOrg.Name);
         }
         finally { Directory.Delete(dir, recursive: true); }
     }

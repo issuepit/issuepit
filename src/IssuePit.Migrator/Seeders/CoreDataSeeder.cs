@@ -1,11 +1,12 @@
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace IssuePit.Migrator.Seeders;
 
-public class CoreDataSeeder(IssuePitDbContext db, ILogger<CoreDataSeeder> logger)
+public class CoreDataSeeder(IssuePitDbContext db, ILogger<CoreDataSeeder> logger, IConfiguration? configuration = null)
 {
     public async Task SeedAsync()
     {
@@ -17,6 +18,14 @@ public class CoreDataSeeder(IssuePitDbContext db, ILogger<CoreDataSeeder> logger
             logger.LogInformation("Seeded default tenant.");
 
         var defaultTenant = await db.Tenants.FirstAsync(t => t.Hostname == "localhost");
+
+        var configRepoUrl = configuration?["ConfigRepo:Url"];
+        if (!string.IsNullOrWhiteSpace(configRepoUrl) && defaultTenant.ConfigRepoUrl != configRepoUrl)
+        {
+            defaultTenant.ConfigRepoUrl = configRepoUrl;
+            await db.SaveChangesAsync();
+            logger.LogInformation("Set config-repo URL for default tenant to '{Url}'.", configRepoUrl);
+        }
 
         if (!await db.Users.AnyAsync(u => u.Username == "admin" && u.TenantId == defaultTenant.Id))
         {
