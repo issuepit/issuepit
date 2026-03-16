@@ -513,6 +513,13 @@ public class AgentSessionTests(AspireFixture fixture)
     /// immediately after startup (missing <c>exec "$@"</c> in entrypoint.sh or fatal dockerd
     /// failure) and the session never logged a Container ID.
     ///
+    /// <b>Note:</b> <c>busybox:latest</c> does not define a custom ENTRYPOINT, so the injected
+    /// <c>entrypoint.sh</c> is never called and CRLF line-ending issues cannot be detected here.
+    /// The CRLF regression is instead covered by the unit test
+    /// <c>EntrypointSh_HasNoCarriageReturns</c> and by the runtime normalisation in
+    /// <c>InjectEntrypointAsync</c>. This E2E test validates that the container stays alive
+    /// long enough for the exec flow to start.
+    ///
     /// Skipped automatically when Docker is not available on the host.
     /// </summary>
     [Fact]
@@ -541,8 +548,10 @@ public class AgentSessionTests(AspireFixture fixture)
         var projectId = project.GetProperty("id").GetString()!;
 
         // OpenCode exec-flow agent — uses busybox which keeps a `sleep infinity` CMD alive
-        // while the exec-flow sends docker exec commands. opencode is absent so the session
-        // fails, but the container must live long enough to reach exec-flow startup.
+        // (busybox has no custom ENTRYPOINT so the injected entrypoint.sh is bypassed;
+        // the container stays running via CMD = sleep infinity).
+        // opencode is absent so the session fails during exec, but the container must live
+        // long enough to reach exec-flow startup (Container ID logged, no CRLF error).
         var agentResp = await client.PostAsJsonAsync("/api/agents",
             new
             {
@@ -592,6 +601,14 @@ public class AgentSessionTests(AspireFixture fixture)
         Assert.True(
             logLines.Any(l => l.StartsWith("[DEBUG] Runtime")),
             $"Expected a '[DEBUG] Runtime' startup line.\nActual logs:\n{string.Join('\n', logLines.Take(20))}");
+
+        // The container must NOT have exited during startup with a CRLF-related error.
+        // (busybox bypasses entrypoint.sh so this is about general startup health check)
+        Assert.False(
+            logLines.Any(l => l.Contains("exited with code") && l.Contains("during startup")),
+            $"Container must not exit during startup. A 'exited with code ... during startup' error " +
+            $"indicates the container CMD failed before the exec flow could begin.\n" +
+            $"Actual logs:\n{string.Join('\n', logLines.Take(30))}");
     }
 
     /// <summary>
