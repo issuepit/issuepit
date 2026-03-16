@@ -185,7 +185,7 @@ public class ConfigRepoApplier(
                 var msg = $"Org with slug '{model.OrgSlug}' not found; skipping project '{slug}'.";
                 if (strictMode)
                 {
-                    result.AddError(filePath, msg);
+                    result.AddStrictModeError(filePath, msg);
                     logger.LogWarning("Org with slug '{OrgSlug}' not found for tenant {TenantId}; skipping project '{Slug}' (strict mode — error)", model.OrgSlug, tenant.Id, slug);
                 }
                 else
@@ -209,7 +209,7 @@ public class ConfigRepoApplier(
             var msg = $"Project with slug '{slug}' not found; skipping.";
             if (strictMode)
             {
-                result.AddError(filePath, msg);
+                result.AddStrictModeError(filePath, msg);
                 logger.LogWarning("Project with slug '{Slug}' not found for tenant {TenantId}; skipping (strict mode — error)", slug, tenant.Id);
             }
             else
@@ -384,7 +384,7 @@ public class ConfigRepoApplier(
                 var msg = $"User with id '{userId}' not found.";
                 if (strictMode)
                 {
-                    result.AddError(filePath, msg);
+                    result.AddStrictModeError(filePath, msg);
                     logger.LogWarning("User with id '{UserId}' not found in tenant {TenantId} (strict mode — error)", userId, tenant.Id);
                 }
                 else
@@ -405,7 +405,7 @@ public class ConfigRepoApplier(
                 var msg = $"User '{username}' not found.";
                 if (strictMode)
                 {
-                    result.AddError(filePath, msg);
+                    result.AddStrictModeError(filePath, msg);
                     logger.LogWarning("User '{Username}' not found in tenant {TenantId} (strict mode — error)", username, tenant.Id);
                 }
                 else

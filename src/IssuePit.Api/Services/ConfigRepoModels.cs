@@ -14,11 +14,24 @@ public class ConfigSyncResult
 
     public bool HasErrors => Issues.Any(i => i.Severity == ConfigSyncSeverity.Error);
 
+    /// <summary>
+    /// True when at least one strict-mode warning was escalated to an error.
+    /// Only this flag triggers a 422 response; regular parse/validation errors do not.
+    /// </summary>
+    public bool HasStrictModeErrors { get; private set; }
+
     public void AddWarning(string file, string message) =>
         Issues.Add(new ConfigSyncIssue(ConfigSyncSeverity.Warning, file, message));
 
     public void AddError(string file, string message) =>
         Issues.Add(new ConfigSyncIssue(ConfigSyncSeverity.Error, file, message));
+
+    /// <summary>Records an error that was promoted from a warning because strict mode is active.</summary>
+    public void AddStrictModeError(string file, string message)
+    {
+        HasStrictModeErrors = true;
+        AddError(file, message);
+    }
 }
 
 public record ConfigSyncIssue(ConfigSyncSeverity Severity, string File, string Message);

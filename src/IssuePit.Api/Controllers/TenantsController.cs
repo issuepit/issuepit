@@ -117,7 +117,7 @@ public class TenantsController(IssuePitDbContext db, TenantDatabaseService dbSer
             })
         };
 
-        return syncResult.HasErrors ? UnprocessableEntity(body) : Ok(body);
+        return syncResult.HasStrictModeErrors ? UnprocessableEntity(body) : Ok(body);
     }
 
     [HttpDelete("{id:guid}")]
