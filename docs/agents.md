@@ -135,6 +135,48 @@ for opencode.
 
 ---
 
+## Nested Agents (opencode)
+
+When using the **opencode** runner, you can configure nested (child) agent modes that are injected into opencode's agent configuration. This allows a primary opencode agent to spawn specialized subagents for specific tasks.
+
+### Agent Types
+
+opencode supports two agent types — see the [opencode agents documentation](https://opencode.ai/docs/agents) for full details:
+
+| Type | Description |
+|------|-------------|
+| **Primary** | The main agent you interact with directly. Can be switched using the Tab key. |
+| **Subagent** | A specialized assistant invoked by primary agents or via `@mention`. |
+| **All** | Available in both primary and subagent modes (opencode default when no type is set). |
+
+### Configuring agent types in IssuePit
+
+1. Open an agent's settings page.
+2. Set **Runner** to `OpenCode`.
+3. Choose the **Agent Type**:
+   - **Primary** — the agent acts as a primary opencode agent.
+   - **Subagent** — the agent is available as a subagent invoked by primary agents.
+   - **Not set** — opencode uses its default behavior.
+
+For nested agents, open the child agent's settings and set its **Agent Type** to `Subagent`. The parent (primary) agent will be able to invoke it via `@mention`.
+
+To link a child agent to its parent, set the **Parent Agent** on the child agent when creating or editing it.
+
+The nested agents are injected into opencode's `agent` config section automatically by the container entrypoint.
+
+### Example configuration
+
+For a typical setup with a primary coding agent and a code-review subagent:
+
+| Agent | Type | Purpose |
+|-------|------|---------|
+| `code-agent` | Primary | Implements features and fixes |
+| `review-agent` | Subagent | Reviews code quality and suggests improvements |
+
+The primary agent can invoke the review subagent: `@review-agent please review the changes in this PR`.
+
+---
+
 ## MCP Servers
 
 Agent modes can use **MCP (Model Context Protocol) servers** to access external tools such as GitHub, file systems, or custom APIs.

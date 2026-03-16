@@ -61,6 +61,31 @@
             <p class="text-xs text-gray-500 mb-1">Duration</p>
             <p class="text-sm text-gray-400">{{ duration(store.currentSession.startedAt, store.currentSession.endedAt) }}</p>
           </div>
+          <!-- opencode Session ID — shown when available -->
+          <div v-if="store.currentSession.openCodeSessionId" class="col-span-2 md:col-span-4">
+            <p class="text-xs text-gray-500 mb-1">opencode Session</p>
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-xs text-gray-300 font-mono bg-gray-800 px-2 py-0.5 rounded">{{ store.currentSession.openCodeSessionId }}</span>
+              <a v-if="store.currentSession.serverWebUiUrl"
+                :href="store.currentSession.serverWebUiUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="flex items-center gap-1 text-xs text-brand-400 hover:text-brand-300 transition-colors">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+                Open in opencode UI
+              </a>
+              <span v-if="store.currentSession.openCodeDbS3Url" class="flex items-center gap-1 text-xs text-green-400">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M5 13l4 4L19 7" />
+                </svg>
+                Session preserved
+              </span>
+            </div>
+          </div>
         </div>
         <!-- Cancel button for active sessions -->
         <div v-if="store.currentSession.status === AgentSessionStatus.Running || store.currentSession.status === AgentSessionStatus.Pending"

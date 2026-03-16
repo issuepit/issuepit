@@ -39,6 +39,15 @@
         </svg>
         Test History
       </NuxtLink>
+      <NuxtLink
+        :to="`/projects/${id}/runs/opencode-sessions`"
+        class="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1.5 transition-colors">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+        opencode Sessions
+      </NuxtLink>
     </div>
 
     <!-- Loading -->
@@ -138,7 +147,7 @@
       </div>
     </template>
 
-    <!-- Agent Runs -->
+            <!-- Agent Runs -->
     <template v-else-if="activeTab === 'Agent Runs'">
       <div v-if="store.agentSessions.length" class="rounded-xl border border-gray-800 overflow-hidden">
         <table class="w-full text-sm">
@@ -149,6 +158,7 @@
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Issue</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Branch</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Commit</th>
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Session</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Started</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Duration</th>
               <th class="px-4 py-3" />
@@ -170,6 +180,15 @@
               </td>
               <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ session.gitBranch || '—' }}</td>
               <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ session.commitSha?.slice(0, 7) || '—' }}</td>
+              <!-- opencode session ID badge (shown when available) -->
+              <td class="px-4 py-3">
+                <span v-if="session.openCodeSessionId"
+                  class="inline-flex items-center gap-1 text-xs text-gray-400 font-mono bg-gray-800 px-1.5 py-0.5 rounded"
+                  :title="session.openCodeSessionId">
+                  {{ session.openCodeSessionId.slice(0, 10) }}…
+                </span>
+                <span v-else class="text-gray-600 text-xs">—</span>
+              </td>
               <td class="px-4 py-3 text-gray-400 text-xs">{{ formatDate(session.startedAt) }}</td>
               <td class="px-4 py-3 text-gray-400 text-xs">{{ duration(session.startedAt, session.endedAt) }}</td>
               <td class="px-4 py-3 text-right">

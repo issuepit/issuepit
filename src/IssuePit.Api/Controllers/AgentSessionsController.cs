@@ -37,6 +37,8 @@ public class AgentSessionsController(IssuePitDbContext db, TenantContext tenant,
                 s.EndedAt,
                 s.Warnings,
                 s.ServerWebUiUrl,
+                s.OpenCodeSessionId,
+                s.OpenCodeDbS3Url,
                 CiCdRuns = s.CiCdRuns.Select(r => new
                 {
                     r.Id,

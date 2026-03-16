@@ -234,4 +234,45 @@ public class RunnerCommandBuilderTests
         var agent = MakeAgent(RunnerType.GitHubCopilotCli);
         Assert.Empty(RunnerCommandBuilder.BuildRunnerEnv(agent));
     }
+
+    // --- Session continuation / fork ---
+
+    [Fact]
+    public void BuildArgsList_OpenCode_WithForkSessionId_IncludesForkFlags()
+    {
+        var agent = MakeAgent(RunnerType.OpenCode);
+        var issue = MakeIssue("Fix a bug");
+        var args = RunnerCommandBuilder.BuildArgsList(agent, issue, forkSessionId: "ses_abc123");
+        Assert.Contains("--session", args);
+        Assert.Contains("ses_abc123", args);
+        Assert.Contains("--fork", args);
+        // fork flag should immediately follow --session + id
+        var argsList = args.ToList();
+        var sessionIdx = argsList.IndexOf("--session");
+        Assert.Equal("ses_abc123", argsList[sessionIdx + 1]);
+        Assert.Equal("--fork", argsList[sessionIdx + 2]);
+    }
+
+    [Fact]
+    public void BuildArgsList_OpenCode_WithContinueSessionId_IncludesSessionFlagWithoutFork()
+    {
+        var agent = MakeAgent(RunnerType.OpenCode);
+        var issue = MakeIssue("Continue work");
+        var args = RunnerCommandBuilder.BuildArgsList(agent, issue, continueSessionId: "ses_xyz789");
+        Assert.Contains("--session", args);
+        Assert.Contains("ses_xyz789", args);
+        Assert.DoesNotContain("--fork", args);
+    }
+
+    [Fact]
+    public void BuildArgsList_OpenCode_ForkTakesPrecedenceOverContinue()
+    {
+        // When both forkSessionId and continueSessionId are provided, fork takes precedence.
+        var agent = MakeAgent(RunnerType.OpenCode);
+        var issue = MakeIssue("Fix");
+        var args = RunnerCommandBuilder.BuildArgsList(agent, issue, forkSessionId: "ses_fork", continueSessionId: "ses_cont");
+        Assert.Contains("ses_fork", args);
+        Assert.Contains("--fork", args);
+        Assert.DoesNotContain("ses_cont", args);
+    }
 }

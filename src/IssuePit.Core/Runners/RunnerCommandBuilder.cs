@@ -44,8 +44,13 @@ public static class RunnerCommandBuilder
     /// (opencode: <c>--session &lt;id&gt; --fork</c>), the fix run will continue from the given
     /// session so it retains full conversation context and workspace state.
     /// </para>
+    /// <para>
+    /// When <paramref name="continueSessionId"/> is provided the run resumes the same opencode
+    /// session without forking (<c>--session &lt;id&gt;</c> only). Use this for the initial run
+    /// of a new agent session that should continue a preserved previous session.
+    /// </para>
     /// </summary>
-    public static IReadOnlyList<string> BuildArgsList(Agent agent, Issue issue, string? forkSessionId = null, IReadOnlyList<IssueComment>? comments = null)
+    public static IReadOnlyList<string> BuildArgsList(Agent agent, Issue issue, string? forkSessionId = null, string? continueSessionId = null, IReadOnlyList<IssueComment>? comments = null)
     {
         if (agent.RunnerType is null)
             return [];
@@ -54,7 +59,7 @@ public static class RunnerCommandBuilder
 
         return agent.RunnerType switch
         {
-            RunnerType.OpenCode => BuildOpenCodeArgsList(agent, task, forkSessionId),
+            RunnerType.OpenCode => BuildOpenCodeArgsList(agent, task, forkSessionId, continueSessionId),
             RunnerType.Codex => BuildCodexArgsList(agent, task),
             RunnerType.GitHubCopilotCli => BuildCopilotArgsList(task),
             _ => [],
@@ -102,7 +107,7 @@ public static class RunnerCommandBuilder
         return args.ToString();
     }
 
-    private static IReadOnlyList<string> BuildOpenCodeArgsList(Agent agent, string task, string? forkSessionId = null)
+    private static IReadOnlyList<string> BuildOpenCodeArgsList(Agent agent, string task, string? forkSessionId = null, string? continueSessionId = null)
     {
         var args = new List<string> { "opencode", "run" };
         if (!string.IsNullOrWhiteSpace(forkSessionId))
@@ -113,6 +118,13 @@ public static class RunnerCommandBuilder
             args.Add("--session");
             args.Add(forkSessionId);
             args.Add("--fork");
+        }
+        else if (!string.IsNullOrWhiteSpace(continueSessionId))
+        {
+            // Resume the same session without forking — used when starting a fresh container run
+            // that should continue a preserved previous session (the opencode DB was injected).
+            args.Add("--session");
+            args.Add(continueSessionId);
         }
         if (!string.IsNullOrWhiteSpace(agent.Model))
         {
