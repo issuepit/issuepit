@@ -107,7 +107,7 @@
           <button
             :disabled="retrying"
             class="flex items-center gap-1.5 text-sm text-brand-400 hover:text-brand-300 disabled:opacity-50 transition-colors"
-            @click="showRetryModal = true">
+            @click="openRetryModal">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -120,18 +120,53 @@
       <!-- Retry options modal -->
       <Teleport to="body">
         <div v-if="showRetryModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @mousedown.self="showRetryModal = false">
-          <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-xl p-6 w-full max-w-md">
+          <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <h3 class="text-base font-semibold text-white mb-4">Retry Session</h3>
 
-            <div class="mb-4 space-y-2 text-sm text-gray-400">
+            <div class="mb-4 space-y-1 text-sm text-gray-400">
               <div class="flex gap-2">
                 <span class="text-gray-500 w-16 shrink-0">Issue</span>
                 <span class="text-gray-300">#{{ formatIssueId(store.currentSession.issueNumber, projectsStore.currentProject) }} {{ store.currentSession.issueTitle }}</span>
               </div>
-              <div class="flex gap-2">
-                <span class="text-gray-500 w-16 shrink-0">Agent</span>
-                <span class="text-gray-300">{{ store.currentSession.agentName }}</span>
-              </div>
+            </div>
+
+            <!-- Agent selector -->
+            <div class="mb-4">
+              <label class="block text-xs text-gray-500 mb-1.5">Agent</label>
+              <select v-model="retryAgentId"
+                class="w-full bg-gray-800 border border-gray-700 rounded-md text-sm text-gray-300 px-2.5 py-1.5 focus:outline-none focus:border-brand-500">
+                <option v-for="agent in agentsStore.agents" :key="agent.id" :value="agent.id">
+                  {{ agent.name }}{{ agent.id === store.currentSession?.agentId ? ' (current)' : '' }}
+                </option>
+              </select>
+            </div>
+
+            <!-- Model override -->
+            <div class="mb-4">
+              <label class="block text-xs text-gray-500 mb-1.5">Model override</label>
+              <input
+                v-model="retryModel"
+                type="text"
+                placeholder="Leave blank to use agent default (e.g. anthropic/claude-opus-4-5)"
+                class="w-full bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-300 px-2.5 py-1.5 placeholder-gray-600 focus:outline-none focus:border-brand-500" />
+            </div>
+
+            <!-- CLI selector -->
+            <div class="mb-4">
+              <label class="block text-xs text-gray-500 mb-1.5">CLI / Runner mode</label>
+              <select v-model="retryCli"
+                class="w-full bg-gray-800 border border-gray-700 rounded-md text-sm text-gray-300 px-2.5 py-1.5 focus:outline-none focus:border-brand-500">
+                <option v-for="opt in cliOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+              </select>
+            </div>
+
+            <!-- Runtime selector -->
+            <div class="mb-4">
+              <label class="block text-xs text-gray-500 mb-1.5">Runtime</label>
+              <select v-model="retryRuntimeType"
+                class="w-full bg-gray-800 border border-gray-700 rounded-md text-sm text-gray-300 px-2.5 py-1.5 focus:outline-none focus:border-brand-500">
+                <option v-for="opt in runtimeOptions" :key="String(opt.value)" :value="opt.value">{{ opt.label }}</option>
+              </select>
             </div>
 
             <!-- Docker image selection -->
@@ -167,7 +202,7 @@
               </div>
             </div>
 
-            <p class="text-xs text-gray-500 mb-5">A new session will be started for the same issue and agent.</p>
+            <p class="text-xs text-gray-500 mb-4">A new session will be started for the same issue.</p>
 
             <!-- Keep container option -->
             <label class="flex items-start gap-2.5 cursor-pointer mb-5">
@@ -477,7 +512,8 @@
 <script setup lang="ts">
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useProjectsStore } from '~/stores/projects'
-import { CiCdRunStatus, AgentSessionStatus, type AgentSessionLog } from '~/types'
+import { useAgentsStore } from '~/stores/agents'
+import { CiCdRunStatus, AgentSessionStatus, RunnerType, RuntimeTypeLabels, type AgentSessionLog } from '~/types'
 import { formatIssueId } from '~/composables/useIssueFormat'
 import { parseAnsiToHtml, stripAnsiCodes } from '~/composables/useAnsiParser'
 
@@ -487,6 +523,7 @@ const sessionId = route.params.sessionId as string
 
 const store = useCiCdRunsStore()
 const projectsStore = useProjectsStore()
+const agentsStore = useAgentsStore()
 const { prefs } = useUserPreferences()
 
 function renderLogLine(line: string, highlight?: string): string {
@@ -796,6 +833,44 @@ const retryDockerImage = ref(agentImageOptions[0].value)
 const retryCustomDockerImage = ref('')
 const retryKeepContainer = ref(false)
 
+// Retry override state — all default to "use original / agent default"
+const retryAgentId = ref<string>('')
+const retryModel = ref('')
+// CLI mode: combines RunnerType + UseHttpServer into a single choice.
+// '' = use agent defaults; 'opencode' = OpenCode CLI; 'opencode-server' = OpenCode HTTP Server;
+// 'codex' = Codex CLI; 'copilot' = GitHub Copilot CLI; 'none' = no runner (entrypoint default)
+const retryCli = ref('')
+const retryRuntimeType = ref<number | ''>('')
+
+// CLI options shown in the retry modal dropdown
+const cliOptions = [
+  { value: '', label: '— Use agent defaults' },
+  { value: 'opencode', label: 'OpenCode (CLI)' },
+  { value: 'opencode-server', label: 'OpenCode (HTTP Server)' },
+  { value: 'codex', label: 'Codex CLI' },
+  { value: 'copilot', label: 'GitHub Copilot CLI' },
+]
+
+// Runtime options shown in the retry modal dropdown
+const runtimeOptions = [
+  { value: '', label: '— Use org default' },
+  ...Object.entries(RuntimeTypeLabels).map(([k, v]) => ({ value: Number(k), label: v })),
+]
+
+async function openRetryModal() {
+  // Load available agents for the agent-selector dropdown
+  if (!agentsStore.agents.length) await agentsStore.fetchAgents()
+  // Pre-select the current agent
+  retryAgentId.value = store.currentSession?.agentId ?? ''
+  retryModel.value = ''
+  retryCli.value = ''
+  retryRuntimeType.value = ''
+  retryDockerImage.value = agentImageOptions[0].value
+  retryCustomDockerImage.value = ''
+  retryKeepContainer.value = false
+  showRetryModal.value = true
+}
+
 async function retrySession() {
   showRetryModal.value = false
   retrying.value = true
@@ -806,9 +881,32 @@ async function retrySession() {
     } else if (retryDockerImage.value !== agentImageOptions[0].value) {
       imageOverride = retryDockerImage.value
     }
+
+    // Compute CLI overrides from the combined retryCli selector
+    let runnerTypeOverride: number | undefined
+    let useHttpServerOverride: boolean | undefined
+    if (retryCli.value === 'opencode') {
+      runnerTypeOverride = RunnerType.OpenCode
+      useHttpServerOverride = false
+    } else if (retryCli.value === 'opencode-server') {
+      runnerTypeOverride = RunnerType.OpenCode
+      useHttpServerOverride = true
+    } else if (retryCli.value === 'codex') {
+      runnerTypeOverride = RunnerType.Codex
+      useHttpServerOverride = false
+    } else if (retryCli.value === 'copilot') {
+      runnerTypeOverride = RunnerType.GitHubCopilotCli
+      useHttpServerOverride = false
+    }
+
     await store.retrySession(sessionId, {
       dockerImageOverride: imageOverride,
       keepContainer: retryKeepContainer.value || undefined,
+      agentIdOverride: retryAgentId.value !== store.currentSession?.agentId ? retryAgentId.value : undefined,
+      modelOverride: retryModel.value.trim() || undefined,
+      runnerTypeOverride,
+      useHttpServerOverride,
+      runtimeTypeOverride: retryRuntimeType.value !== '' ? retryRuntimeType.value as number : undefined,
     })
     await store.fetchAgentSessions(projectId)
     navigateTo(`/projects/${projectId}/runs?tab=agent`)

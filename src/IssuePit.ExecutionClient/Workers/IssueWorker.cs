@@ -209,7 +209,9 @@ public class IssueWorker(
 
         // Launch all assigned agents in parallel; each task manages its own DB scope
         await Task.WhenAll(agentIds.Select(agentId =>
-            LaunchAgentAsync(agentId, message.Id, message.DockerImageOverride, message.KeepContainer, message.DockerCmdOverride, cancellationToken)));
+            LaunchAgentAsync(agentId, message.Id, message.DockerImageOverride, message.KeepContainer, message.DockerCmdOverride,
+                message.ModelOverride, message.RunnerTypeOverride, message.UseHttpServerOverride, message.RuntimeTypeOverride,
+                cancellationToken)));
     }
 
     private async Task LaunchAgentAsync(
@@ -218,6 +220,10 @@ public class IssueWorker(
         string? dockerImageOverride,
         bool keepContainer,
         string[]? dockerCmdOverride,
+        string? modelOverride,
+        int? runnerTypeOverride,
+        bool? useHttpServerOverride,
+        int? runtimeTypeOverride,
         CancellationToken cancellationToken)
     {
         using var scope = services.CreateScope();
@@ -234,12 +240,23 @@ public class IssueWorker(
             return;
         }
 
-        // Apply image override if specified. Detach the entity so the change is never saved to the database.
-        if (!string.IsNullOrWhiteSpace(dockerImageOverride))
-        {
+        // Apply overrides that change agent properties. Detach the entity so the changes are never saved to the database.
+        bool needsDetach = !string.IsNullOrWhiteSpace(dockerImageOverride)
+            || !string.IsNullOrWhiteSpace(modelOverride)
+            || runnerTypeOverride.HasValue
+            || useHttpServerOverride.HasValue;
+
+        if (needsDetach)
             db.Entry(agent).State = EntityState.Detached;
+
+        if (!string.IsNullOrWhiteSpace(dockerImageOverride))
             agent.DockerImage = dockerImageOverride;
-        }
+        if (!string.IsNullOrWhiteSpace(modelOverride))
+            agent.Model = modelOverride;
+        if (runnerTypeOverride.HasValue)
+            agent.RunnerType = (RunnerType)runnerTypeOverride.Value;
+        if (useHttpServerOverride.HasValue)
+            agent.UseHttpServer = useHttpServerOverride.Value;
 
         // Load issue comments for context. Truncate old comments if the total size would be too large
         // to avoid exceeding LLM context limits. Newest comments are kept; a warning is stored when any
@@ -260,6 +277,10 @@ public class IssueWorker(
             .FirstOrDefaultAsync(cancellationToken);
 
         var runtimeType = runtimeConfig?.Type ?? RuntimeType.Docker;
+
+        // Apply runtime type override when specified (takes precedence over org default).
+        if (runtimeTypeOverride.HasValue)
+            runtimeType = (RuntimeType)runtimeTypeOverride.Value;
 
         // Load the git repository for the project so the container can clone it on startup.
         // Prefer Working-mode remote so agents use the correct push target; fall back to first.
@@ -1267,7 +1288,7 @@ public class IssueWorker(
         GitBranch = branchName,
     };
 
-    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? DockerCmdOverride = null);
+    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? DockerCmdOverride = null, string? ModelOverride = null, int? RunnerTypeOverride = null, bool? UseHttpServerOverride = null, int? RuntimeTypeOverride = null);
 
     /// <summary>
     /// Trims the comment list so that the combined character count of all comment bodies stays
