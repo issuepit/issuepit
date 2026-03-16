@@ -288,11 +288,11 @@ public class TestHistoryTests : IAsyncLifetime
         var runId = triggerBody.GetProperty("runId").GetString()!;
 
         // Wait for the run to reach a terminal state.
-        await WaitForRunCompletionAsync(apiClient, runId, TimeSpan.FromMinutes(5));
+        await CiCdTestPollingHelpers.WaitForRunCompletionAsync(apiClient, runId, TimeSpan.FromMinutes(5));
 
         // Poll for test results — the worker finalises TRX processing shortly after the run
         // status transitions to terminal, so we retry for a short window.
-        var suites = await WaitForTestResultsAsync(apiClient, runId, 1, TimeSpan.FromSeconds(30));
+        var suites = await CiCdTestPollingHelpers.WaitForTestResultsAsync(apiClient, runId, 1, TimeSpan.FromSeconds(30));
         Assert.True(suites.GetArrayLength() > 0,
             $"API should return test suites for run {runId} after a CI/CD run with TRX artifact");
 
@@ -317,57 +317,5 @@ public class TestHistoryTests : IAsyncLifetime
         {
             await context.CloseAsync();
         }
-    }
-
-    /// <summary>
-    /// Polls <c>GET /api/cicd-runs/{runId}</c> until the run reaches a terminal state
-    /// (Succeeded, Failed, or Cancelled) or the timeout elapses.
-    /// </summary>
-    private static async Task WaitForRunCompletionAsync(
-        HttpClient client,
-        string runId,
-        TimeSpan timeout)
-    {
-        var deadline = DateTime.UtcNow + timeout;
-        while (DateTime.UtcNow < deadline)
-        {
-            var resp = await client.GetAsync($"/api/cicd-runs/{runId}");
-            if (resp.IsSuccessStatusCode)
-            {
-                var run = await resp.Content.ReadFromJsonAsync<JsonElement>();
-                var status = run.GetProperty("statusName").GetString();
-                if (status is "Succeeded" or "Failed" or "Cancelled")
-                    return;
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(500));
-        }
-
-        throw new TimeoutException($"CI/CD run {runId} did not reach a terminal state within {timeout}.");
-    }
-
-    /// <summary>
-    /// Polls <c>GET /api/cicd-runs/{runId}/test-results</c> until at least
-    /// <paramref name="expectedCount"/> suites are returned, or the timeout elapses.
-    /// </summary>
-    private static async Task<JsonElement> WaitForTestResultsAsync(
-        HttpClient client,
-        string runId,
-        int expectedCount,
-        TimeSpan timeout)
-    {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        var last = default(JsonElement);
-        while (sw.Elapsed < timeout)
-        {
-            var resp = await client.GetAsync($"/api/cicd-runs/{runId}/test-results");
-            resp.EnsureSuccessStatusCode();
-            last = await resp.Content.ReadFromJsonAsync<JsonElement>();
-            if (last.GetArrayLength() >= expectedCount)
-                return last;
-            await Task.Delay(TimeSpan.FromMilliseconds(500));
-        }
-
-        return last;
     }
 }

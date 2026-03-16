@@ -500,7 +500,7 @@ public class CiCdPipelineTests(AspireFixture fixture)
 
         // Poll for test results — the worker may finish TRX processing slightly after the
         // run status transitions to Succeeded, so retry for a short window.
-        var suites = await WaitForTestResultsAsync(client, runId, expectedCount: 1, TimeSpan.FromSeconds(30));
+        var suites = await CiCdTestPollingHelpers.WaitForTestResultsAsync(client, runId, expectedCount: 1, TimeSpan.FromSeconds(30));
 
         Assert.Equal(1, suites.GetArrayLength());
 
@@ -866,32 +866,5 @@ public class CiCdPipelineTests(AspireFixture fixture)
         jobId != null &&
         (jobId.Equals(suffix, StringComparison.OrdinalIgnoreCase) ||
          jobId.EndsWith("/" + suffix, StringComparison.OrdinalIgnoreCase));
-
-    /// <summary>
-    /// Polls <c>GET /api/cicd-runs/{runId}/test-results</c> until the response contains at
-    /// least <paramref name="expectedCount"/> suites, or the timeout elapses.
-    /// The worker finalises TRX processing after the run status transitions to terminal, so
-    /// callers must not assert immediately on the test-results endpoint.
-    /// </summary>
-    private static async Task<JsonElement> WaitForTestResultsAsync(
-        HttpClient client,
-        string runId,
-        int expectedCount,
-        TimeSpan timeout)
-    {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        var last = default(JsonElement);
-        while (sw.Elapsed < timeout)
-        {
-            var resp = await client.GetAsync($"/api/cicd-runs/{runId}/test-results");
-            resp.EnsureSuccessStatusCode();
-            last = await resp.Content.ReadFromJsonAsync<JsonElement>();
-            if (last.GetArrayLength() >= expectedCount)
-                return last;
-            await Task.Delay(TimeSpan.FromMilliseconds(500));
-        }
-
-        return last; // callers will assert on the content
-    }
 }
 
