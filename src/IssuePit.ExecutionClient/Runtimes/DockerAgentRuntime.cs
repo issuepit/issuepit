@@ -774,6 +774,16 @@ public class DockerAgentRuntime(
                 $"Embedded resource '{resourceName}' not found in assembly '{assembly.GetName().Name}'. " +
                 "Ensure the file is included as an EmbeddedResource in the project.");
 
+        // Normalise to Unix LF line endings so the shebang (#!/usr/bin/env bash) is interpreted
+        // correctly on Linux containers. The embedded resource may contain CRLF if the build ran
+        // on Windows or if git.autocrlf converted the line endings at checkout time.
+        // Without this the first line becomes "#!/usr/bin/env bash\r" and the kernel reports
+        // "/usr/bin/env: 'bash\r': No such file or directory", killing the container on startup.
+        var rawContent = await new System.IO.StreamReader(resourceStream, leaveOpen: false).ReadToEndAsync(cancellationToken);
+        var normalised = rawContent.Replace("\r\n", "\n").Replace("\r", "\n");
+        var normalisedBytes = System.Text.Encoding.UTF8.GetBytes(normalised);
+        var normalisedStream = new MemoryStream(normalisedBytes);
+
         // Build a tar archive containing entrypoint.sh at the root (target path: /usr/local/bin/).
         using var tarBuffer = new MemoryStream();
         await using (var tarWriter = new TarWriter(tarBuffer, TarEntryFormat.Ustar, leaveOpen: true))
@@ -784,7 +794,7 @@ public class DockerAgentRuntime(
                 Mode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
                        | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
                        | UnixFileMode.OtherRead | UnixFileMode.OtherExecute,
-                DataStream = resourceStream,
+                DataStream = normalisedStream,
             };
             await tarWriter.WriteEntryAsync(entry, cancellationToken);
         }
