@@ -639,6 +639,41 @@
                     </template>
                   </template>
 
+                  <!-- ── TEST HISTORY section ── -->
+                  <template v-else-if="sid === 'testHistory'">
+                    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                      <div class="flex items-center justify-between mb-4">
+                        <h2 class="font-semibold text-white flex items-center gap-2">
+                          <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                          </svg>
+                          Test History
+                        </h2>
+                        <NuxtLink :to="`/projects/${id}/runs/test-history`" class="text-xs text-brand-400 hover:text-brand-300 transition-colors">View all →</NuxtLink>
+                      </div>
+                      <div v-if="dashboardTestRuns.length" class="space-y-2">
+                        <div v-for="run in dashboardTestRuns" :key="run.runId"
+                          class="flex items-center gap-3 py-2 border-b border-gray-800 last:border-0 cursor-pointer"
+                          @click="navigateTo(`/projects/${id}/runs/cicd/${run.runId}?tab=tests`)">
+                          <span v-if="run.failedTests > 0" class="text-red-400 text-xs shrink-0">✗</span>
+                          <span v-else-if="run.passedTests > 0" class="text-green-400 text-xs shrink-0">✓</span>
+                          <span v-else class="text-yellow-500 text-xs shrink-0">–</span>
+                          <div class="flex-1 min-w-0">
+                            <p class="text-sm text-gray-300 font-mono truncate">{{ run.commitSha?.slice(0, 7) || '—' }}<span v-if="run.branch" class="text-gray-500"> · {{ run.branch }}</span></p>
+                            <p class="text-xs text-gray-500">
+                              {{ run.passedTests }} passed
+                              <span v-if="run.failedTests > 0" class="text-red-400">, {{ run.failedTests }} failed</span>
+                              <span v-if="run.skippedTests > 0">, {{ run.skippedTests }} skipped</span>
+                            </p>
+                          </div>
+                          <span class="text-xs text-gray-600 shrink-0">{{ relativeTime(run.startedAt) }}</span>
+                        </div>
+                      </div>
+                      <p v-else class="text-sm text-gray-600 py-4 text-center">No test results yet</p>
+                    </div>
+                  </template>
+
                   <!-- ── HISTORY section ── -->
                   <template v-else-if="sid === 'history'">
                     <div :class="item.type === 'tabgroup' ? '' : 'bg-gray-900 border border-gray-800 rounded-xl p-5'">
@@ -872,7 +907,7 @@
 </template>
 
 <script setup lang="ts">
-import type { ProjectMetricSnapshot, Milestone, GitCommit, Issue } from '~/types'
+import type { ProjectMetricSnapshot, Milestone, GitCommit, Issue, TestRunSummary } from '~/types'
 import { AgentSessionStatus, CiCdRunStatus, IssueStatus, IssuePriority, IssueType } from '~/types'
 import { useProjectsStore } from '~/stores/projects'
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
@@ -1011,9 +1046,10 @@ const mcpCount = ref(0)
 const commitCount = ref<number | null>(null)
 const hasMoreCommits = ref(false)
 const recentProjectIssues = ref<Issue[]>([])
+const dashboardTestRuns = ref<TestRunSummary[]>([])
 
 // ── Dashboard layout customization ─────────────────────────────────────────
-type SectionId = 'statIssues' | 'statCommits' | 'statMRs' | 'milestones' | 'issues' | 'agentRuns' | 'cicdRuns' | 'history' | 'kanban'
+type SectionId = 'statIssues' | 'statCommits' | 'statMRs' | 'milestones' | 'issues' | 'agentRuns' | 'cicdRuns' | 'testHistory' | 'history' | 'kanban'
 type SectionDisplayMode = 'list' | 'count' | 'block'
 type SectionWidth = 'xxs' | 'xs' | 'quarter' | 'sm' | 'md' | 'lg'
 
@@ -1025,6 +1061,7 @@ const SECTION_LABELS: Record<SectionId, string> = {
   issues: 'Recent Issues',
   agentRuns: 'Recent Agent Runs',
   cicdRuns: 'Recent CI/CD Runs',
+  testHistory: 'Test History',
   history: 'Issue History',
   kanban: 'Kanban Board',
 }
@@ -1035,7 +1072,7 @@ const SECTION_DISPLAY_MODES: Partial<Record<SectionId, SectionDisplayMode[]>> = 
   cicdRuns: ['list', 'count'],
 }
 const SECTION_HAS_MAX_ITEMS: Set<SectionId> = new Set(['milestones', 'issues', 'agentRuns', 'cicdRuns'])
-const SECTION_CAN_STACK: Set<SectionId> = new Set(['statIssues', 'statCommits', 'statMRs', 'milestones', 'issues', 'agentRuns', 'cicdRuns', 'history', 'kanban'])
+const SECTION_CAN_STACK: Set<SectionId> = new Set(['statIssues', 'statCommits', 'statMRs', 'milestones', 'issues', 'agentRuns', 'cicdRuns', 'testHistory', 'history', 'kanban'])
 const MAX_ITEMS_OPTIONS = [3, 5, 8, 10]
 const WIDTH_LABELS: Record<SectionWidth, string> = { xxs: '1/12', xs: '1/6', quarter: '1/4', sm: '1/3', md: '1/2', lg: 'Full' }
 const PROJECT_WIDTHS = (['xxs', 'xs', 'quarter', 'sm', 'md', 'lg'] as SectionWidth[]).map(v => ({ value: v, label: WIDTH_LABELS[v] }))
@@ -1048,10 +1085,11 @@ const DEFAULT_CONFIGS = {
   issues:      { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'sm',  tabGroup: null, stackGroup: null },
   agentRuns:   { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'sm',  tabGroup: null, stackGroup: null },
   cicdRuns:    { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'sm',  tabGroup: null, stackGroup: null },
+  testHistory: { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'sm',  tabGroup: null, stackGroup: null },
   history:     { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'md',  tabGroup: null, stackGroup: null },
   kanban:      { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'md',  tabGroup: null, stackGroup: null },
 }
-const DEFAULT_ORDER: string[] = ['statIssues', 'statCommits', 'statMRs', 'milestones', 'rowbreak-after-milestones', 'issues', 'agentRuns', 'cicdRuns', 'history', 'kanban']
+const DEFAULT_ORDER: SectionId[] = ['statIssues', 'statCommits', 'statMRs', 'milestones', 'rowbreak-after-milestones', 'issues', 'agentRuns', 'cicdRuns', 'testHistory', 'history', 'kanban']
 const DRAFT_LAYOUT_KEY = `project-dashboard-layout-v7-${id}`
 
 const {
@@ -1236,6 +1274,9 @@ onMounted(async () => {
       })
       .catch(() => { commitCount.value = null }),
     kanbanStore.fetchBoards(id).catch((e) => { console.warn('Failed to load kanban boards:', e) }),
+    api.get<TestRunSummary[]>(`/api/projects/${id}/test-history/runs?take=5`)
+      .then(data => { dashboardTestRuns.value = data })
+      .catch((e) => { console.warn(`Failed to load test history for project ${id}`, e) }),
   ])
 
   // Connect to SignalR for live run updates

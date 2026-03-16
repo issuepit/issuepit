@@ -10,6 +10,9 @@ public class CiCdRunPage(IPage page)
     public async Task<IResponse?> GotoAsync(string projectId, string runId) =>
         await page.GotoAsync($"/projects/{projectId}/runs/cicd/{runId}");
 
+    public async Task GotoTestsTabAsync(string projectId, string runId) =>
+        await page.GotoAsync($"/projects/{projectId}/runs/cicd/{runId}?tab=tests");
+
     public async Task WaitForLoadAsync() =>
         await page.WaitForSelectorAsync("text=CI/CD Run", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
 
@@ -24,8 +27,36 @@ public class CiCdRunPage(IPage page)
     }
 
     /// <summary>
-    /// Returns true when the jobs tab shows the empty state message.
+    /// Clicks the Tests tab and waits for the tab content to render.
     /// </summary>
+    public async Task ClickTestsTabAsync()
+    {
+        await page.ClickAsync("button:has-text('Tests')");
+        await WaitForTestsTabContentAsync();
+    }
+
+    /// <summary>
+    /// Waits for the Tests tab content to load — either test suites or the empty state message.
+    /// </summary>
+    public async Task WaitForTestsTabContentAsync() =>
+        await page.WaitForFunctionAsync(
+            "document.body.innerText.includes('passed') || document.body.innerText.includes('No test results available')",
+            null,
+            new PageWaitForFunctionOptions { Timeout = E2ETimeouts.Navigation });
+
+    /// <summary>Returns true when the tests tab shows at least one test suite result.</summary>
+    public async Task<bool> HasTestSuitesAsync()
+    {
+        // The Tests tab shows suites in cards that each contain "passed" in the suite header.
+        var suiteHeaders = page.Locator("text=passed").First;
+        return await suiteHeaders.CountAsync() > 0;
+    }
+
+    /// <summary>Returns true when the tests tab shows the empty state message.</summary>
+    public async Task<bool> IsTestsTabEmptyAsync() =>
+        await page.IsVisibleAsync("text=No test results available");
+
+    /// <summary>Returns true when the jobs tab shows the empty state message.</summary>
     public async Task<bool> IsJobsTabEmptyAsync() =>
         await page.IsVisibleAsync("text=No job data available");
 
