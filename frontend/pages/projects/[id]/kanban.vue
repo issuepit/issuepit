@@ -170,10 +170,10 @@
         <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800 shrink-0">
           <span class="text-xs text-gray-500">{{ formatIssueId(previewIssue.number, projectsStore.currentProject) }}</span>
           <div class="flex items-center gap-2">
-            <a :href="`/projects/${id}/issues/${previewIssue.number}`"
+            <NuxtLink :to="`/projects/${id}/issues/${previewIssue.number}`"
               class="text-xs text-brand-400 hover:text-brand-300 transition-colors">
               Open full issue →
-            </a>
+            </NuxtLink>
             <button @click="closePreview" class="text-gray-500 hover:text-gray-300 transition-colors p-1 rounded hover:bg-gray-800">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -255,10 +255,10 @@
 
         <!-- Sidebar footer -->
         <div class="shrink-0 px-4 py-3 border-t border-gray-800">
-          <a :href="`/projects/${id}/issues/${previewIssue.number}`"
+          <NuxtLink :to="`/projects/${id}/issues/${previewIssue.number}`"
             class="block w-full text-center text-sm bg-brand-600 hover:bg-brand-700 text-white py-2 rounded-lg transition-colors font-medium">
             Open Full Issue
-          </a>
+          </NuxtLink>
         </div>
       </div>
     </transition>
@@ -541,9 +541,19 @@ const newBoardLaneProperty = ref<KanbanLaneProperty>(KanbanLaneProperty.Status)
 const activeBoardId = ref<string>('')
 
 const activeBoard = computed(() => kanban.boards.find(b => b.id === activeBoardId.value) ?? null)
-const boardColumns = computed(() =>
-  (activeBoard.value?.columns ?? []).slice().sort((a, b) => a.position - b.position)
-)
+const boardColumns = computed(() => {
+  const lp = activeBoard.value?.laneProperty ?? KanbanLaneProperty.Status
+  return (activeBoard.value?.columns ?? []).slice().sort((a, b) => {
+    // For non-status boards, put the "unassigned/no label/no milestone" column (empty laneValue) first
+    if (lp !== KanbanLaneProperty.Status) {
+      const aEmpty = !a.laneValue
+      const bEmpty = !b.laneValue
+      if (aEmpty && !bEmpty) return -1
+      if (!aEmpty && bEmpty) return 1
+    }
+    return a.position - b.position
+  })
+})
 
 // ── Lane state ────────────────────────────────────────────────────────────
 const showLanes = ref(false)
