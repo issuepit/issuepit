@@ -355,7 +355,14 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
         {
             await SetConfigRepoAsync(tenantId, dir, strict: false);
             var resp = await TriggerSyncAsync(tenantId);
+            // Non-strict mode: unknown user is recorded as a warning, not an error → 200 OK.
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+            var body = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            var issues = body.GetProperty("issues").EnumerateArray().ToList();
+            Assert.Contains(issues, i =>
+                i.GetProperty("severity").GetString() == "warning" &&
+                i.GetProperty("message").GetString()!.Contains("ghost_user_not_in_db"));
 
             using var scope = factory.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
@@ -660,8 +667,14 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
         {
             await SetConfigRepoAsync(tenantId, dir);
             var resp = await TriggerSyncAsync(tenantId);
-            // Returns OK — project is skipped, not a failure
+            // Non-strict mode: unknown org slug is a warning, not an error → 200 OK.
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+            var body = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            var issues = body.GetProperty("issues").EnumerateArray().ToList();
+            Assert.Contains(issues, i =>
+                i.GetProperty("severity").GetString() == "warning" &&
+                i.GetProperty("message").GetString()!.Contains("nonexistent-org-slug"));
 
             using var scope = factory.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
@@ -673,7 +686,7 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
-    public async Task Sync_OrgMembers_StrictMode_UnknownUser_SkippedButOtherFieldsApplied()
+    public async Task Sync_OrgMembers_StrictMode_UnknownUser_ReturnsError()
     {
         var orgSlug = $"strict2-org-{Guid.NewGuid():N}"[..20];
         var (tenantId, orgId, _, _) = await SeedAsync(orgSlug, $"p-{Guid.NewGuid():N}"[..16], "strictuser");
@@ -689,8 +702,14 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
         {
             await SetConfigRepoAsync(tenantId, dir, strict: true);
             var resp = await TriggerSyncAsync(tenantId);
-            // Should not fail — unknown member just logs a warning and is skipped
-            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+            // In strict mode an unknown member is an error — sync returns 422.
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, resp.StatusCode);
+
+            var body = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            var issues = body.GetProperty("issues").EnumerateArray().ToList();
+            Assert.Contains(issues, i =>
+                i.GetProperty("severity").GetString() == "error" &&
+                i.GetProperty("message").GetString()!.Contains("definitely_not_in_db"));
 
             using var scope = factory.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();

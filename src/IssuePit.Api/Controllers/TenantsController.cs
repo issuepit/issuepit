@@ -105,9 +105,9 @@ public class TenantsController(IssuePitDbContext db, TenantDatabaseService dbSer
         var configPath = await ConfigRepoApplier.ResolveConfigPathAsync(url, token, username, tenant.Id, reposBase);
         var syncResult = await applier.ApplyAsync(tenant, configPath, strict);
 
-        return Ok(new
+        var body = new
         {
-            message = "Config repo sync completed.",
+            message = syncResult.HasErrors ? "Config repo sync completed with errors." : "Config repo sync completed.",
             filesProcessed = syncResult.FilesProcessed,
             issues = syncResult.Issues.Select(i => new
             {
@@ -115,7 +115,9 @@ public class TenantsController(IssuePitDbContext db, TenantDatabaseService dbSer
                 file = Path.GetFileName(i.File),
                 message = i.Message
             })
-        });
+        };
+
+        return syncResult.HasErrors ? UnprocessableEntity(body) : Ok(body);
     }
 
     [HttpDelete("{id:guid}")]
