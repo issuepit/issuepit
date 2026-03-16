@@ -88,7 +88,7 @@ public class AgentEnvironmentBuilderTests
         var entry = doc.RootElement[0];
 
         Assert.Equal("context7", entry.GetProperty("name").GetString());
-        Assert.Equal("http", entry.GetProperty("type").GetString());
+        Assert.Equal("remote", entry.GetProperty("type").GetString());
         Assert.Equal("https://mcp.context7.com/mcp", entry.GetProperty("url").GetString());
         Assert.Equal(JsonValueKind.Null, entry.GetProperty("headers").ValueKind);
     }
@@ -183,7 +183,25 @@ public class AgentEnvironmentBuilderTests
     }
 
     [Fact]
-    public void BuildExtraMcpJson_ConfigurationTypeOverridesDefault()
+    public void BuildExtraMcpJson_RemoteTypePassedThrough()
+    {
+        var server = MakeMcpServer("My Remote Server", "https://example.com/mcp", configuration: """{"type":"remote"}""");
+        var agent = new Agent
+        {
+            Id = Guid.NewGuid(),
+            Name = "my-agent",
+            SystemPrompt = "help",
+            DockerImage = "img",
+            AgentMcpServers = [new AgentMcpServer { McpServer = server }],
+        };
+
+        var json = AgentEnvironmentBuilder.BuildExtraMcpJson(agent);
+        var doc = JsonDocument.Parse(json);
+        Assert.Equal("remote", doc.RootElement[0].GetProperty("type").GetString());
+    }
+
+    [Fact]
+    public void BuildExtraMcpJson_LegacySseTypeNormalisedToRemote()
     {
         var server = MakeMcpServer("My SSE Server", "https://example.com/mcp", configuration: """{"type":"sse"}""");
         var agent = new Agent
@@ -197,7 +215,25 @@ public class AgentEnvironmentBuilderTests
 
         var json = AgentEnvironmentBuilder.BuildExtraMcpJson(agent);
         var doc = JsonDocument.Parse(json);
-        Assert.Equal("sse", doc.RootElement[0].GetProperty("type").GetString());
+        Assert.Equal("remote", doc.RootElement[0].GetProperty("type").GetString());
+    }
+
+    [Fact]
+    public void BuildExtraMcpJson_LegacyHttpTypeNormalisedToRemote()
+    {
+        var server = MakeMcpServer("My HTTP Server", "https://example.com/mcp", configuration: """{"type":"http"}""");
+        var agent = new Agent
+        {
+            Id = Guid.NewGuid(),
+            Name = "my-agent",
+            SystemPrompt = "help",
+            DockerImage = "img",
+            AgentMcpServers = [new AgentMcpServer { McpServer = server }],
+        };
+
+        var json = AgentEnvironmentBuilder.BuildExtraMcpJson(agent);
+        var doc = JsonDocument.Parse(json);
+        Assert.Equal("remote", doc.RootElement[0].GetProperty("type").GetString());
     }
 
     [Fact]
