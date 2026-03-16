@@ -150,6 +150,12 @@ public class DockerAgentRuntime(
         if (agent.UseHttpServer && !string.IsNullOrWhiteSpace(agent.HttpServerPassword))
             env.Add($"OPENCODE_PASSWORD={agent.HttpServerPassword}");
 
+        // Explicitly set the opencode server port so the entrypoint writes it to config.json.
+        // Without this, opencode uses its built-in default (4096), but setting it explicitly
+        // ensures the port in config.json matches the container port binding.
+        if (agent.UseHttpServer && agent.RunnerType == RunnerType.OpenCode)
+            env.Add($"OPENCODE_PORT={OpenCodeHttpApi.DefaultPort}");
+
         // Step 3: Determine the execution mode.
         //
         // HTTP server mode — container CMD = "opencode" (starts the HTTP server); C# uses the REST
@@ -327,6 +333,12 @@ public class DockerAgentRuntime(
 
             return container.ID;
         }
+
+        // For exec flow and HTTP server mode the container must stay alive.
+        // Give the entrypoint a moment to complete initial setup (git clone, dockerd, etc.)
+        // and then verify the container is still running. If it exited early, capture its
+        // logs and throw a meaningful error so the root cause is visible in the session logs.
+        await EnsureContainerRunningAsync(container.ID, onLogLine, cancellationToken);
 
         if (useHttpServerMode)
         {
@@ -640,6 +652,87 @@ public class DockerAgentRuntime(
     // ──────────────────────────────────────────────────────────────────────────
     // HTTP server helpers
     // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Verifies that the container is still running after startup.
+    /// Polls the container status for up to <c>ContainerStartupPollSeconds</c> seconds.
+    /// If the container has exited, captures its recent logs and throws an
+    /// <see cref="InvalidOperationException"/> with the exit code and log snippet so the
+    /// root cause is visible in the agent session logs.
+    /// </summary>
+    private async Task EnsureContainerRunningAsync(
+        string containerId,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        // Poll until the container is confirmed running or the deadline is reached.
+        // The entrypoint can take several seconds (git clone, dockerd startup) before
+        // it reaches `exec "$@"` and the container settles into its long-running state.
+        const int pollIntervalMs = 500;
+        const int maxPollSeconds = 5;
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(maxPollSeconds);
+
+        ContainerInspectResponse? inspect = null;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            try
+            {
+                inspect = await dockerClient.Containers.InspectContainerAsync(containerId, cancellationToken);
+            }
+            catch
+            {
+                // InspectContainerAsync can fail transiently; treat as not-yet-running.
+                inspect = null;
+            }
+
+            if (inspect?.State?.Running == true)
+                return; // container is alive — proceed
+
+            if (inspect?.State?.Running == false)
+                break; // container exited — stop polling
+
+            await Task.Delay(pollIntervalMs, cancellationToken);
+        }
+
+        // Container is not (or no longer) running. Collect recent logs for diagnostics.
+        var exitCode = inspect?.State?.ExitCode ?? -1;
+        var recentLogs = await TryGetContainerLogsSnippetAsync(containerId);
+        var logSection = string.IsNullOrWhiteSpace(recentLogs)
+            ? string.Empty
+            : $"\nRecent container output:\n{recentLogs}";
+
+        await onLogLine(
+            $"[ERROR] Container {containerId[..Math.Min(12, containerId.Length)]} exited with code {exitCode} during startup. " +
+            $"Check the entrypoint logs for errors (git clone failure, dockerd timeout, etc.).{logSection}",
+            LogStream.Stderr);
+
+        throw new InvalidOperationException(
+            $"Container {containerId[..Math.Min(12, containerId.Length)]} exited with code {exitCode} during startup. " +
+            $"Check the session logs for entrypoint output.");
+    }
+
+    /// <summary>
+    /// Attempts to read the last ~50 lines of a container's stdout/stderr logs.
+    /// Returns an empty string on any failure so callers can use it purely for diagnostics.
+    /// </summary>
+    private async Task<string> TryGetContainerLogsSnippetAsync(string containerId)
+    {
+        try
+        {
+            var lines = new System.Collections.Generic.List<string>();
+            await StreamContainerLogsAsync(
+                containerId,
+                (line, _) => { lines.Add(line); return Task.CompletedTask; },
+                CancellationToken.None);
+            // Return only the last 50 lines to keep the error message concise.
+            var tail = lines.Count > 50 ? lines.Skip(lines.Count - 50) : lines;
+            return string.Join('\n', tail);
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
 
     /// <summary>
     /// Polls the agent's HTTP server until it is ready to accept requests or the

@@ -503,6 +503,98 @@ public class AgentSessionTests(AspireFixture fixture)
     }
 
     /// <summary>
+    /// Verifies that an agent running in exec-flow mode (RunnerType=OpenCode, busybox image)
+    /// produces a <c>[DEBUG] Container ID</c> log line, indicating the container was started
+    /// and the startup health check (<c>EnsureContainerRunningAsync</c>) did not immediately
+    /// fail the session. The session itself will fail (opencode is not in busybox) but the
+    /// container must have been alive long enough for the exec flow to begin.
+    ///
+    /// This test specifically guards against the regression where the container exited
+    /// immediately after startup (missing <c>exec "$@"</c> in entrypoint.sh or fatal dockerd
+    /// failure) and the session never logged a Container ID.
+    ///
+    /// Skipped automatically when Docker is not available on the host.
+    /// </summary>
+    [Fact]
+    public async Task AgentSession_ExecFlow_ContainerIdLoggedBeforeSessionFails()
+    {
+        if (!IsDockerAvailable()) return;
+
+        using var client = CreateCookieClient();
+        var tenantId = await GetDefaultTenantIdAsync();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"e2e{Guid.NewGuid():N}"[..12];
+        await client.PostAsJsonAsync("/api/auth/register", new { username, password = "TestPass1!" });
+
+        var orgSlug = $"agt-org-{Guid.NewGuid():N}"[..16];
+        var orgResp = await client.PostAsJsonAsync("/api/orgs", new { name = "Exec Flow Org", slug = orgSlug });
+        Assert.Equal(HttpStatusCode.Created, orgResp.StatusCode);
+        var org = await orgResp.Content.ReadFromJsonAsync<JsonElement>();
+        var orgId = org.GetProperty("id").GetString()!;
+
+        var projectSlug = $"agt-proj-{Guid.NewGuid():N}"[..16];
+        var projResp = await client.PostAsJsonAsync("/api/projects",
+            new { name = "Exec Flow Project", slug = projectSlug, orgId = Guid.Parse(orgId) });
+        Assert.Equal(HttpStatusCode.Created, projResp.StatusCode);
+        var project = await projResp.Content.ReadFromJsonAsync<JsonElement>();
+        var projectId = project.GetProperty("id").GetString()!;
+
+        // OpenCode exec-flow agent — uses busybox which keeps a `sleep infinity` CMD alive
+        // while the exec-flow sends docker exec commands. opencode is absent so the session
+        // fails, but the container must live long enough to reach exec-flow startup.
+        var agentResp = await client.PostAsJsonAsync("/api/agents",
+            new
+            {
+                name = "Exec Flow Test Agent",
+                orgId = Guid.Parse(orgId),
+                systemPrompt = "You are a test agent.",
+                dockerImage = AgentTestDockerImage,
+                runnerType = 0, // OpenCode = 0
+                allowedTools = "[]",
+                isActive = true,
+            });
+        Assert.Equal(HttpStatusCode.Created, agentResp.StatusCode);
+        var agent = await agentResp.Content.ReadFromJsonAsync<JsonElement>();
+        var agentId = agent.GetProperty("id").GetString()!;
+
+        var issueResp = await client.PostAsJsonAsync("/api/issues",
+            new { title = "Exec Flow Test Issue", projectId = Guid.Parse(projectId) });
+        Assert.Equal(HttpStatusCode.Created, issueResp.StatusCode);
+        var issue = await issueResp.Content.ReadFromJsonAsync<JsonElement>();
+        var issueId = issue.GetProperty("id").GetString()!;
+
+        var assignResp = await client.PostAsJsonAsync($"/api/issues/{issueId}/assignees",
+            new { agentId = Guid.Parse(agentId) });
+        Assert.Equal(HttpStatusCode.Created, assignResp.StatusCode);
+
+        var session = await WaitForAgentSessionAsync(client, issueId, TimeSpan.FromMinutes(3));
+        var sessionId = session.GetProperty("id").GetString()!;
+
+        var logsResp = await client.GetAsync($"/api/agent-sessions/{sessionId}/logs");
+        Assert.Equal(HttpStatusCode.OK, logsResp.StatusCode);
+        var logs = await logsResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        var logLines = logs.EnumerateArray()
+            .Select(l => l.GetProperty("line").GetString() ?? string.Empty)
+            .ToList();
+
+        // The [DEBUG] Container ID line MUST be present. Its absence means the container
+        // either was never started or StartContainerAsync failed. A container that exits
+        // immediately would still have this line logged before the health check fires.
+        Assert.True(
+            logLines.Any(l => l.StartsWith("[DEBUG] Container ID")),
+            $"Expected a '[DEBUG] Container ID' log line proving the container was started. " +
+            $"If missing, the container may have exited before startup completed.\n" +
+            $"Actual logs:\n{string.Join('\n', logLines.Take(30))}");
+
+        // The [DEBUG] Runtime line must also appear (emitted very early, before Docker API calls).
+        Assert.True(
+            logLines.Any(l => l.StartsWith("[DEBUG] Runtime")),
+            $"Expected a '[DEBUG] Runtime' startup line.\nActual logs:\n{string.Join('\n', logLines.Take(20))}");
+    }
+
+    /// <summary>
     /// Polls <c>GET /api/issues/{issueId}/runs</c> until the most-recent agent session reaches a
     /// terminal status (Succeeded, Failed, or Cancelled) or the timeout elapses.
     /// </summary>

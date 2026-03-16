@@ -230,9 +230,15 @@ if command -v dockerd > /dev/null 2>&1 && [ ! -e /var/run/docker.sock ]; then
     while [ $TIMEOUT -gt 0 ] && ! docker info > /dev/null 2>&1; do
         sleep 1; TIMEOUT=$((TIMEOUT-1))
     done
-    docker info > /dev/null 2>&1 \
-        && echo "[entrypoint] dockerd ready" \
-        || { echo "[entrypoint] dockerd failed to start"; cat /tmp/dockerd.log; exit 1; }
+    if docker info > /dev/null 2>&1; then
+        echo "[entrypoint] dockerd ready"
+    else
+        # dockerd failed to start or timed out — warn and continue.
+        # The container will stay alive so the agent can still run tasks that
+        # don't require Docker-in-Docker (e.g. opencode without act).
+        echo "[entrypoint] WARNING: dockerd did not start within timeout; continuing without DinD" >&2
+        cat /tmp/dockerd.log >&2 || true
+    fi
 fi
 
 # ─── Step 4c: Write opencode config ──────────────────────────────────────────
