@@ -1103,7 +1103,7 @@ public class IssueWorker(
             .Select(g => new
             {
                 JobId = g.Key,
-                HasErrors = g.Any(l => l.Line.EndsWith("Job failed", StringComparison.Ordinal)),
+                HasErrors = g.Any(l => EF.Functions.Like(l.Line, "%Job failed")),
             })
             .ToListAsync(cancellationToken);
 
