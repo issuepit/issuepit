@@ -97,9 +97,16 @@ public class ProjectSettingsPage(IPage page)
     /// <summary>Fills the custom property form with a name and type, then saves it.</summary>
     public async Task AddPropertyAsync(string name, string type = "Text")
     {
-        await page.FillAsync("input[placeholder='e.g. Due Date']", name);
-        await page.SelectOptionAsync("select:near(:text('Type'))", new[] { type });
-        await page.ClickAsync("button:has-text('Create')");
+        // Scope all interactions to the open property modal to avoid matching page-level selects
+        var modal = page.Locator("div.fixed").Filter(new LocatorFilterOptions
+        {
+            Has = page.Locator("h2:has-text('New Property')")
+        });
+        await modal.Locator("input[placeholder='e.g. Due Date']").FillAsync(name);
+        // Select by visible label text — option values are now snake_case strings, not display names
+        await modal.Locator("select").SelectOptionAsync(
+            new[] { new SelectOptionValue { Label = type } });
+        await modal.Locator("button:has-text('Create')").ClickAsync();
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
     }
 
