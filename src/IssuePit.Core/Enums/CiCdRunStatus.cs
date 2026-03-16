@@ -12,4 +12,9 @@ public enum CiCdRunStatus
     /// Set when the project has <see cref="IssuePit.Core.Entities.Project.RequiresRunApproval"/> = true.
     /// </summary>
     WaitingForApproval,
+    /// <summary>
+    /// The run completed successfully but with non-fatal warnings (e.g. the cloned commit SHA did
+    /// not match the requested trigger SHA because the branch advanced between trigger and clone).
+    /// </summary>
+    SucceededWithWarnings,
 }

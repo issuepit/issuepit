@@ -70,5 +70,14 @@ public class CiCdRun
     /// </summary>
     public string? WorkflowGraphJson { get; set; }
 
+    /// <summary>
+    /// Transient runtime flag (not persisted). Set by the CI/CD runtime when the cloned commit SHA
+    /// does not match the requested trigger SHA. The <see cref="CiCdWorker"/> uses this flag to
+    /// transition a successful run to <see cref="CiCdRunStatus.SucceededWithWarnings"/> rather than
+    /// <see cref="CiCdRunStatus.Succeeded"/>.
+    /// </summary>
+    [NotMapped]
+    public bool HasShaWarning { get; set; }
+
     public ICollection<CiCdRunLog> Logs { get; set; } = [];
 }

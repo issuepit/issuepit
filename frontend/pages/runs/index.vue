@@ -477,6 +477,7 @@ function statusClass(status: CiCdRunStatus | AgentSessionStatus) {
     case CiCdRunStatus.Failed: return 'bg-red-900/30 text-red-400'
     case CiCdRunStatus.Cancelled: return 'bg-gray-800 text-gray-400'
     case CiCdRunStatus.WaitingForApproval: return 'bg-purple-900/30 text-purple-400'
+    case CiCdRunStatus.SucceededWithWarnings: return 'bg-yellow-900/30 text-yellow-400'
     default: return 'bg-gray-800 text-gray-400'
   }
 }
@@ -488,6 +489,7 @@ function statusDot(status: CiCdRunStatus | AgentSessionStatus) {
     case CiCdRunStatus.Failed: return 'bg-red-400'
     case CiCdRunStatus.Cancelled: return 'bg-gray-500'
     case CiCdRunStatus.WaitingForApproval: return 'bg-purple-400'
+    case CiCdRunStatus.SucceededWithWarnings: return 'bg-yellow-400'
     default: return 'bg-gray-500'
   }
 }

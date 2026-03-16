@@ -176,7 +176,7 @@ public class BadgesController(IssuePitDbContext db) : ControllerBase
         var query = db.CiCdRuns
             .AsNoTracking()
             .Where(r => r.ProjectId == projectId && r.StartedAt >= since
-                     && (r.Status == CiCdRunStatus.Succeeded || r.Status == CiCdRunStatus.Failed));
+                     && (r.Status == CiCdRunStatus.Succeeded || r.Status == CiCdRunStatus.SucceededWithWarnings || r.Status == CiCdRunStatus.Failed));
 
         if (!string.IsNullOrWhiteSpace(branch))
             query = query.Where(r => r.Branch == branch);

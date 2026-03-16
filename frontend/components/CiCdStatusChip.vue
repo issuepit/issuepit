@@ -64,6 +64,7 @@ const summaryStatus = computed((): CiCdRunStatus => {
   if (props.runs.some(r => r.status === CiCdRunStatus.Running)) return CiCdRunStatus.Running
   if (props.runs.some(r => r.status === CiCdRunStatus.Pending)) return CiCdRunStatus.Pending
   if (props.runs.some(r => r.status === CiCdRunStatus.WaitingForApproval)) return CiCdRunStatus.WaitingForApproval
+  if (props.runs.some(r => r.status === CiCdRunStatus.SucceededWithWarnings)) return CiCdRunStatus.SucceededWithWarnings
   return CiCdRunStatus.Succeeded
 })
 
@@ -76,6 +77,7 @@ const label = computed(() => {
     [CiCdRunStatus.Failed]: 'Failed',
     [CiCdRunStatus.Cancelled]: 'Cancelled',
     [CiCdRunStatus.WaitingForApproval]: 'Waiting for Approval',
+    [CiCdRunStatus.SucceededWithWarnings]: 'Succeeded with Warnings',
   }
   return labels[s] ?? 'Unknown'
 })
@@ -87,6 +89,7 @@ const chipClass = computed(() => {
     case CiCdRunStatus.Failed: return 'bg-red-900/30 text-red-400'
     case CiCdRunStatus.Cancelled: return 'bg-gray-800 text-gray-400'
     case CiCdRunStatus.WaitingForApproval: return 'bg-purple-900/30 text-purple-400'
+    case CiCdRunStatus.SucceededWithWarnings: return 'bg-yellow-900/30 text-yellow-400'
     default: return 'bg-gray-800 text-gray-400'
   }
 })
@@ -98,6 +101,7 @@ const dotClass = computed(() => {
     case CiCdRunStatus.Failed: return 'bg-red-400'
     case CiCdRunStatus.Cancelled: return 'bg-gray-500'
     case CiCdRunStatus.WaitingForApproval: return 'bg-purple-400'
+    case CiCdRunStatus.SucceededWithWarnings: return 'bg-yellow-400'
     default: return 'bg-gray-500'
   }
 })
@@ -109,6 +113,7 @@ function runChipClass(status: CiCdRunStatus) {
     case CiCdRunStatus.Failed: return 'bg-red-900/30 text-red-400'
     case CiCdRunStatus.Cancelled: return 'bg-gray-800 text-gray-400'
     case CiCdRunStatus.WaitingForApproval: return 'bg-purple-900/30 text-purple-400'
+    case CiCdRunStatus.SucceededWithWarnings: return 'bg-yellow-900/30 text-yellow-400'
     default: return 'bg-gray-800 text-gray-400'
   }
 }
@@ -120,6 +125,7 @@ function runDotClass(status: CiCdRunStatus) {
     case CiCdRunStatus.Failed: return 'bg-red-400'
     case CiCdRunStatus.Cancelled: return 'bg-gray-500'
     case CiCdRunStatus.WaitingForApproval: return 'bg-purple-400'
+    case CiCdRunStatus.SucceededWithWarnings: return 'bg-yellow-400'
     default: return 'bg-gray-500'
   }
 }
