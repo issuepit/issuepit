@@ -45,6 +45,9 @@ public class GitHubIdentitiesController(
                 g.UpdatedAt,
                 Projects = g.Projects.Select(p => new { p.ProjectId, p.Project.Name }),
                 Orgs = g.Orgs.Select(o => new { o.OrgId, o.Organization.Name }),
+                SyncProjects = db.GitHubSyncConfigs
+                    .Where(c => c.GitHubIdentityId == g.Id)
+                    .Select(c => new { c.ProjectId, c.Project.Name }),
             })
             .ToListAsync();
 
@@ -61,14 +64,6 @@ public class GitHubIdentitiesController(
         var githubUser = await GetGitHubUserAsync(req.Token);
         if (githubUser is null)
             return BadRequest("Invalid token or unable to fetch GitHub user profile.");
-
-        // Check if this GitHub identity already exists for the tenant.
-        var existing = await db.GitHubIdentities
-            .Include(g => g.User)
-            .FirstOrDefaultAsync(g => g.GitHubId == githubUser.Id && g.User.TenantId == ctx.CurrentTenant.Id);
-
-        if (existing is not null)
-            return Conflict("A GitHub identity for this GitHub account already exists in this tenant.");
 
         var protector = dpProvider.CreateProtector(ProtectorPurpose);
 

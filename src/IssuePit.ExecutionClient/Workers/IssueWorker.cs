@@ -181,11 +181,15 @@ public class IssueWorker(
             // Otherwise (e.g. issue created with pre-assigned agents), launch all agent assignees.
             if (message.AgentId.HasValue)
             {
-                var isAssigned = issue.Assignees.Any(a => a.AgentId == message.AgentId.Value);
-                if (!isAssigned)
+                // ForceAgentId bypasses the assignment check — used when retrying with a different agent.
+                if (!message.ForceAgentId)
                 {
-                    logger.LogWarning("Agent {AgentId} is not assigned to issue {IssueId}, skipping", message.AgentId.Value, issue.Id);
-                    return;
+                    var isAssigned = issue.Assignees.Any(a => a.AgentId == message.AgentId.Value);
+                    if (!isAssigned)
+                    {
+                        logger.LogWarning("Agent {AgentId} is not assigned to issue {IssueId}, skipping", message.AgentId.Value, issue.Id);
+                        return;
+                    }
                 }
                 agentIds = [message.AgentId.Value];
             }
@@ -1306,7 +1310,7 @@ public class IssueWorker(
         GitBranch = branchName,
     };
 
-    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? DockerCmdOverride = null, string? ModelOverride = null, int? RunnerTypeOverride = null, bool? UseHttpServerOverride = null, int? RuntimeTypeOverride = null);
+    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? DockerCmdOverride = null, string? ModelOverride = null, int? RunnerTypeOverride = null, bool? UseHttpServerOverride = null, int? RuntimeTypeOverride = null, bool ForceAgentId = false);
 
     /// <summary>
     /// Trims the comment list so that the combined character count of all comment bodies stays

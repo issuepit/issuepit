@@ -35,7 +35,7 @@ export const useGitStore = defineStore('git', () => {
     return fetchRepos(projectId)
   }
 
-  async function addRepo(projectId: string, payload: { remoteUrl: string; defaultBranch?: string; authUsername?: string; authToken?: string; mode?: GitOriginMode }) {
+  async function addRepo(projectId: string, payload: { remoteUrl: string; defaultBranch?: string; authUsername?: string; authToken?: string; mode?: GitOriginMode; gitHubIdentityId?: string }) {
     loading.value = true
     error.value = null
     try {
@@ -49,7 +49,7 @@ export const useGitStore = defineStore('git', () => {
     }
   }
 
-  async function updateRepo(projectId: string, repoId: string, payload: { remoteUrl: string; defaultBranch?: string; authUsername?: string; authToken?: string; mode?: GitOriginMode }) {
+  async function updateRepo(projectId: string, repoId: string, payload: { remoteUrl: string; defaultBranch?: string; authUsername?: string; authToken?: string; mode?: GitOriginMode; gitHubIdentityId?: string }) {
     loading.value = true
     error.value = null
     try {
@@ -77,7 +77,7 @@ export const useGitStore = defineStore('git', () => {
   }
 
   /** @deprecated Use addRepo instead. Kept for backward compatibility. */
-  async function createRepo(projectId: string, payload: { remoteUrl: string; defaultBranch?: string; authUsername?: string; authToken?: string; mode?: GitOriginMode }) {
+  async function createRepo(projectId: string, payload: { remoteUrl: string; defaultBranch?: string; authUsername?: string; authToken?: string; mode?: GitOriginMode; gitHubIdentityId?: string }) {
     return addRepo(projectId, payload)
   }
 
@@ -185,6 +185,16 @@ export const useGitStore = defineStore('git', () => {
     }
   }
 
+  async function disableRepo(projectId: string, repoId: string) {
+    error.value = null
+    try {
+      const updated = await api.post<GitRepository>(`/api/projects/${projectId}/git/repos/${repoId}/disable`, {})
+      repos.value = repos.value.map(r => r.id === repoId ? updated : r)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to disable repository'
+    }
+  }
+
   async function fetchRemote(projectId: string, repoId: string) {
     error.value = null
     try {
@@ -264,6 +274,7 @@ export const useGitStore = defineStore('git', () => {
     triggerFetch,
     triggerClone,
     enableRepo,
+    disableRepo,
     fetchRemote,
     pullRemote,
     pushRemote,

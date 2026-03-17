@@ -567,16 +567,22 @@ public partial class DockerCiCdRuntime(
                     // Clone into /workspace so act can find the repo at its expected path.
                     // Pass -b when a branch is specified so the correct branch is checked out
                     // rather than the remote's default branch.
+                    
+                    // Build an authenticated clone URL when the trigger carries credentials.
+                    // The plain GitRepoUrl is used for logging; the authenticated URL is never emitted.
+                    var cloneUrl = BuildAuthenticatedCloneUrl(trigger.GitRepoUrl!, trigger.GitAuthUsername, trigger.GitAuthToken);
+
+                    var cloneArgs = new List<string> { "git", "clone", "--depth=1" };
+                    
                     // Strip the "origin/" prefix if present — git clone -b expects a remote branch
                     // name (e.g. "main"), not a remote-tracking ref (e.g. "origin/main").
-                    var cloneArgs = new List<string> { "git", "clone", "--depth=1" };
                     if (!string.IsNullOrWhiteSpace(trigger.Branch))
                     {
                         var cloneBranch = StripOriginPrefix(trigger.Branch);
                         cloneArgs.Add("-b");
                         cloneArgs.Add(cloneBranch);
                     }
-                    cloneArgs.Add(trigger.GitRepoUrl!);
+                    cloneArgs.Add(cloneUrl);
                     cloneArgs.Add("/workspace");
                     var cloneExitCode = await ExecCommandAsync(
                         container.ID,
@@ -1168,6 +1174,26 @@ public partial class DockerCiCdRuntime(
         branch.StartsWith("origin/", StringComparison.OrdinalIgnoreCase)
             ? branch["origin/".Length..]
             : branch;
+            
+    /// <summary>
+    /// Builds an authenticated clone URL by injecting <paramref name="username"/> and
+    /// <paramref name="token"/> into an HTTPS URL using <see cref="UriBuilder"/>.
+    /// Returns the original <paramref name="url"/> unchanged when no token is provided or the
+    /// URL is not HTTPS (e.g. SSH URLs do not support embedded credentials).
+    /// </summary>
+    private static string BuildAuthenticatedCloneUrl(string url, string? username, string? token)
+    {
+        if (string.IsNullOrEmpty(token) ||
+            !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            return url;
+
+        var builder = new UriBuilder(url)
+        {
+            UserName = Uri.EscapeDataString(string.IsNullOrEmpty(username) ? "git" : username),
+            Password = Uri.EscapeDataString(token),
+        };
+        return builder.Uri.AbsoluteUri;
+    }
 
     /// <summary>
     /// Copies the contents of <c>/artifacts</c> inside the container to <paramref name="artifactDir"/>
