@@ -40,6 +40,17 @@ public class KanbanPage(IPage page)
             new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
     }
 
+    /// <summary>Creates a new board with a specific lane property.</summary>
+    public async Task CreateBoardWithLanePropertyAsync(string name, string lanePropertyLabel)
+    {
+        await page.ClickAsync("button:has-text('+ Board')");
+        await page.FillAsync("input[placeholder='Board name...']", name);
+        await page.SelectOptionAsync("select", new SelectOptionValue { Label = lanePropertyLabel });
+        await page.ClickAsync("button:has-text('Create')");
+        await page.WaitForSelectorAsync("button:has-text('Lanes')",
+            new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+    }
+
     /// <summary>Opens the Lanes modal.</summary>
     public async Task OpenLanesModalAsync()
     {
@@ -47,10 +58,33 @@ public class KanbanPage(IPage page)
         await page.WaitForSelectorAsync("text=Manage Lanes", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
     }
 
-    /// <summary>Adds a lane via the Lanes modal.</summary>
+    /// <summary>Adds a lane via the Lanes modal (for Status boards).</summary>
     public async Task AddLaneAsync(string name)
     {
         await page.FillAsync("input[placeholder='Lane name']", name);
+        await page.ClickAsync("button:has-text('Add Lane')");
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+    }
+
+    /// <summary>Adds an unassigned lane via the Lanes modal (for non-Status boards).</summary>
+    public async Task AddUnassignedLaneAsync(string name)
+    {
+        await page.FillAsync("input[placeholder='Lane name']", name);
+        // For agent boards the dropdown defaults to "Unassigned" — just click Add Lane
+        await page.ClickAsync("button:has-text('Add Lane')");
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+    }
+
+    /// <summary>Adds an agent lane by agent name via the Lanes modal (for Agent boards).</summary>
+    public async Task AddAgentLaneAsync(string name, string agentName)
+    {
+        await page.FillAsync("input[placeholder='Lane name']", name);
+        // Open the agent search dropdown
+        await page.ClickAsync("[data-testid='agent-search-dropdown-trigger']");
+        // Type the agent name to filter
+        await page.FillAsync("input[placeholder='Search agents...']", agentName);
+        // Click the matching agent button
+        await page.ClickAsync($"button:has-text('{agentName}'):not(:has-text('Unassigned'))");
         await page.ClickAsync("button:has-text('Add Lane')");
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
     }

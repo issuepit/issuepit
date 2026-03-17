@@ -58,7 +58,7 @@ public class KanbanBoardTests : IAsyncLifetime
         throw new InvalidOperationException("Default 'localhost' tenant not found.");
     }
 
-    private async Task<(IBrowserContext context, IPage page, string projectId, string projectSlug)> SetUpAsync()
+    private async Task<(IBrowserContext context, IPage page, string projectId, string projectSlug, string orgId)> SetUpAsync()
     {
         var tenantId = await GetDefaultTenantIdAsync();
 
@@ -90,13 +90,13 @@ public class KanbanBoardTests : IAsyncLifetime
         await new LoginPage(page).LoginAsync(username, password);
         await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
 
-        return (context, page, projectId, projectSlug);
+        return (context, page, projectId, projectSlug, orgId);
     }
 
     [Fact]
     public async Task Kanban_PageLoads_WithNewBoardButton()
     {
-        var (context, page, projectId, _) = await SetUpAsync();
+        var (context, page, projectId, _, _) = await SetUpAsync();
         try
         {
             var kanbanPage = new KanbanPage(page);
@@ -114,7 +114,7 @@ public class KanbanBoardTests : IAsyncLifetime
     [Fact]
     public async Task Kanban_CreateBoard_ShowsLanesButton()
     {
-        var (context, page, projectId, _) = await SetUpAsync();
+        var (context, page, projectId, _, _) = await SetUpAsync();
         try
         {
             var kanbanPage = new KanbanPage(page);
@@ -132,7 +132,7 @@ public class KanbanBoardTests : IAsyncLifetime
     [Fact]
     public async Task Kanban_AddLane_ShowsColumnOnBoard()
     {
-        var (context, page, projectId, _) = await SetUpAsync();
+        var (context, page, projectId, _, _) = await SetUpAsync();
         try
         {
             var kanbanPage = new KanbanPage(page);
@@ -145,6 +145,73 @@ public class KanbanBoardTests : IAsyncLifetime
             await page.WaitForSelectorAsync("text=Backlog", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
             Assert.True(await page.Locator("h3:has-text('Backlog')").CountAsync() > 0,
                 "Backlog column header should be visible on the board");
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Kanban_AgentBoard_AddUnassignedLane_ShowsColumnOnBoard()
+    {
+        var (context, page, projectId, _, _) = await SetUpAsync();
+        try
+        {
+            var kanbanPage = new KanbanPage(page);
+            await kanbanPage.GotoAsync(projectId);
+            await kanbanPage.CreateBoardWithLanePropertyAsync("Agent Board", "Assigned Agent");
+            await kanbanPage.OpenLanesModalAsync();
+            await kanbanPage.AddUnassignedLaneAsync("Unassigned");
+            await kanbanPage.CloseLanesModalAsync();
+
+            await page.WaitForSelectorAsync("text=Unassigned", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+            Assert.True(await page.Locator("h3:has-text('Unassigned')").CountAsync() > 0,
+                "Unassigned column header should be visible on the agent board");
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Kanban_AgentBoard_AddAgentLane_ShowsColumnOnBoard()
+    {
+        var (context, page, projectId, _, orgId) = await SetUpAsync();
+        try
+        {
+            var tenantId = await GetDefaultTenantIdAsync();
+
+            // Create an agent via API under the same org as the project
+            using var apiClient = CreateCookieClient();
+            apiClient.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+            var username = $"kbagent{Guid.NewGuid():N}"[..14];
+            const string password = "TestPass1!";
+            var regResp = await apiClient.PostAsJsonAsync("/api/auth/register", new { username, password });
+            Assert.Equal(System.Net.HttpStatusCode.Created, regResp.StatusCode);
+
+            var agentResp = await apiClient.PostAsJsonAsync("/api/agents", new
+            {
+                name = "TestAgent-KanbanLane",
+                orgId = Guid.Parse(orgId),
+                systemPrompt = "You are a test agent.",
+                dockerImage = "test/image",
+                allowedTools = "[]",
+            });
+            Assert.Equal(System.Net.HttpStatusCode.Created, agentResp.StatusCode);
+
+            var kanbanPage = new KanbanPage(page);
+            await kanbanPage.GotoAsync(projectId);
+            await kanbanPage.CreateBoardWithLanePropertyAsync("Agent Board", "Assigned Agent");
+            await kanbanPage.OpenLanesModalAsync();
+            await kanbanPage.AddAgentLaneAsync("TestAgent Lane", "TestAgent-KanbanLane");
+            await kanbanPage.CloseLanesModalAsync();
+
+            await page.WaitForSelectorAsync("text=TestAgent Lane", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+            Assert.True(await page.Locator("h3:has-text('TestAgent Lane')").CountAsync() > 0,
+                "Agent lane column header should be visible on the board");
         }
         finally
         {

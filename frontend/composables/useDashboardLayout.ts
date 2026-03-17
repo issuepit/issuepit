@@ -10,6 +10,10 @@ export interface LayoutSectionConfig {
   chartDays?: number
   chartHeightKey?: string
   selectedBoardId?: string
+  testHistoryBranch?: string | null
+  testHistoryColorMode?: 'failure-rate' | 'pass-fail' | 'groups'
+  testHistoryYAxis?: 'count' | 'duration'
+  testHistoryXMode?: 'date' | 'runs'
 }
 
 interface LayoutData {
@@ -26,8 +30,8 @@ type RenderItem =
 /** Returns true for virtual IDs (e.g. row-break placeholders) that are not real sections. */
 function isVirtualId(id: string) { return id.startsWith('rowbreak-') }
 
-/** Returns true for dynamically added section IDs (e.g. 'kanban-1234567890-1'). */
-export function isDynamicSectionId(id: string) { return /^kanban-\d/.test(id) }
+/** Returns true for dynamically added section IDs (e.g. 'kanban-1234567890-1', 'testHistory-1234567890-1'). */
+export function isDynamicSectionId(id: string) { return /^(kanban|testHistory)-\d/.test(id) }
 
 export function useDashboardLayout(options: {
   defaultOrder: string[]
