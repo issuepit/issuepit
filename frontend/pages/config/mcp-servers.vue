@@ -73,7 +73,7 @@
 
         <!-- Allowed Tools & Meta -->
         <div class="mt-3 flex flex-wrap gap-3 text-xs text-gray-500">
-          <span>Created {{ formatDate(server.createdAt) }}</span>
+          <span>Created <DateDisplay :date="server.createdAt" mode="absolute" resolution="date" /></span>
           <span v-if="allowedToolsList(server).length">
             Tools:
             <span v-for="t in allowedToolsList(server).slice(0, 3)" :key="t" class="ml-1 bg-blue-900/30 text-blue-300 px-1.5 py-0.5 rounded font-mono">{{ t }}</span>
@@ -182,7 +182,7 @@
             </div>
             <div class="flex gap-4">
               <dt class="w-32 text-gray-500 shrink-0">Created</dt>
-              <dd class="text-gray-400">{{ formatDate(detailServer.createdAt) }}</dd>
+              <dd class="text-gray-400"><DateDisplay :date="detailServer.createdAt" mode="absolute" resolution="date" /></dd>
             </div>
           </dl>
           <div class="mt-5 pt-5 border-t border-gray-800 flex gap-3">
@@ -217,7 +217,7 @@
                   }">{{ s.scope }}</span>
               </div>
               <div class="flex items-center gap-3 text-xs text-gray-500 shrink-0">
-                <span>{{ formatDate(s.createdAt) }}</span>
+                <span><DateDisplay :date="s.createdAt" mode="absolute" resolution="date" /></span>
                 <button class="text-red-400 hover:text-red-300" @click="removeSecret(s.id)">Delete</button>
               </div>
             </div>
@@ -394,10 +394,6 @@ function allowedToolsList(server: McpServer): string[] {
   } catch {
     return []
   }
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 // ── Templates ────────────────────────────────────────────────────────────────

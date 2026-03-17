@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using IssuePit.Core.Data;
+using IssuePit.Core.Entities;
+using IssuePit.Core.Enums;
 
 namespace IssuePit.Api.Services;
 
@@ -62,10 +64,38 @@ public class ConfigRepoSyncService(
                     var reposBase = configuration["Git:ReposBasePath"]
                         ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "issuepit", "repos");
 
-                    var configPath = await ConfigRepoApplier.ResolveConfigPathAsync(url, token, username, tenant.Id, reposBase, ct);
+                    var run = new ConfigRepoSyncRun
+                    {
+                        Id = Guid.NewGuid(),
+                        TenantId = tenant.Id,
+                        Status = GitHubSyncRunStatus.Running,
+                        StartedAt = DateTime.UtcNow,
+                    };
+                    db.ConfigRepoSyncRuns.Add(run);
+                    await db.SaveChangesAsync(ct);
 
-                    var applier = scope.ServiceProvider.GetRequiredService<ConfigRepoApplier>();
-                    await applier.ApplyAsync(tenant, configPath, strict, ct);
+                    ConfigSyncResult syncResult;
+                    try
+                    {
+                        var configPath = await ConfigRepoApplier.ResolveConfigPathAsync(url, token, username, tenant.Id, reposBase, ct);
+
+                        var applier = scope.ServiceProvider.GetRequiredService<ConfigRepoApplier>();
+                        syncResult = await applier.ApplyAsync(tenant, configPath, strict, ct);
+                    }
+                    catch (Exception ex)
+                    {
+                        run.Status = GitHubSyncRunStatus.Failed;
+                        run.Summary = $"Error: {ex.Message}";
+                        run.CompletedAt = DateTime.UtcNow;
+                        await db.SaveChangesAsync(ct);
+                        logger.LogError(ex, "Config repo sync failed for tenant {TenantId}", tenant.Id);
+                        continue;
+                    }
+
+                    run.Status = syncResult.HasErrors ? GitHubSyncRunStatus.Failed : GitHubSyncRunStatus.Succeeded;
+                    run.Summary = BuildSummary(syncResult);
+                    run.CompletedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync(ct);
 
                     logger.LogInformation("Config repo sync completed for tenant {TenantId}", tenant.Id);
                 }
@@ -94,5 +124,16 @@ public class ConfigRepoSyncService(
             : tenant.ConfigStrictMode;
 
         return (url, token, username, strict);
+    }
+
+    private static string BuildSummary(ConfigSyncResult result)
+    {
+        var parts = new List<string>();
+        parts.Add($"{result.FilesProcessed} file(s) processed");
+        var warnings = result.Issues.Count(i => i.Severity == ConfigSyncSeverity.Warning);
+        var errors = result.Issues.Count(i => i.Severity == ConfigSyncSeverity.Error);
+        if (warnings > 0) parts.Add($"{warnings} warning(s)");
+        if (errors > 0) parts.Add($"{errors} error(s)");
+        return string.Join(", ", parts);
     }
 }

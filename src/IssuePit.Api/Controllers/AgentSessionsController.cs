@@ -135,6 +135,8 @@ public class AgentSessionsController(IssuePitDbContext db, TenantContext tenant,
             runnerTypeOverride = body?.RunnerTypeOverride != null ? (int?)body.RunnerTypeOverride.Value : null,
             useHttpServerOverride = body?.UseHttpServerOverride,
             runtimeTypeOverride = body?.RuntimeTypeOverride != null ? (int?)body.RuntimeTypeOverride.Value : null,
+            // When retrying with a different agent, bypass the assignee check so the run is queued.
+            forceAgentId = body?.AgentIdOverride.HasValue ?? false,
         });
 
         await producer.ProduceAsync("issue-assigned", new Message<string, string>

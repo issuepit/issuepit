@@ -38,7 +38,7 @@
               <span :class="statusDotColor(col.issueStatus)" class="w-2 h-2 rounded-full shrink-0"></span>
               <h3 class="text-xs font-semibold text-gray-400">{{ col.name }}</h3>
               <span class="text-xs text-gray-600 bg-gray-800 px-1.5 py-0.5 rounded-full">
-                {{ issuesByStatus[col.issueStatus]?.length ?? 0 }}
+                {{ issuesByLane[col.id]?.length ?? 0 }}
               </span>
             </div>
             <button @click.stop="openCreateForStatus(col.issueStatus)"
@@ -59,7 +59,7 @@
             @dragover.prevent="onIssueDragOver($event, col.id)"
             @dragleave="onIssueDragLeave"
             @drop="onIssueDrop($event, col)">
-            <template v-for="(issue, idx) in issuesByStatus[col.issueStatus]" :key="issue.id">
+            <template v-for="(issue, idx) in visibleIssues(col.id)" :key="issue.id">
               <div v-if="draggedId && !draggedColId && isValidDropTarget(col.id) && dragHoverColId === col.id && dragHoverInsertIdx === idx"
                 role="status" aria-label="Drop zone"
                 class="rounded border-2 border-dashed border-brand-500/50 bg-brand-900/10 h-10 animate-pulse">
@@ -84,12 +84,20 @@
             </template>
 
             <!-- Drop zone at end -->
-            <div v-if="draggedId && !draggedColId && isValidDropTarget(col.id) && dragHoverColId === col.id && dragHoverInsertIdx >= (issuesByStatus[col.issueStatus]?.length ?? 0)"
+            <div v-if="draggedId && !draggedColId && isValidDropTarget(col.id) && dragHoverColId === col.id && dragHoverInsertIdx >= (visibleIssues(col.id)?.length ?? 0)"
               role="status" aria-label="Drop zone"
               class="rounded border-2 border-dashed border-brand-500/50 bg-brand-900/10 h-10 animate-pulse">
             </div>
 
-            <div v-if="!issuesByStatus[col.issueStatus]?.length && !(draggedId && !draggedColId && isValidDropTarget(col.id) && dragHoverColId === col.id)"
+            <!-- Show more / show less -->
+            <button
+              v-if="maxItems && (issuesByLane[col.id]?.length ?? 0) > maxItems"
+              @click.stop="toggleExpand(col.id)"
+              class="w-full text-xs text-gray-500 hover:text-gray-300 py-1 text-center transition-colors">
+              {{ isColExpanded(col.id) ? '↑ Show less' : `↓ Show all ${issuesByLane[col.id].length}` }}
+            </button>
+
+            <div v-if="!issuesByLane[col.id]?.length && !(draggedId && !draggedColId && isValidDropTarget(col.id) && dragHoverColId === col.id)"
               class="flex items-center justify-center h-12 text-gray-700 text-xs">
               Drop here
             </div>
@@ -134,13 +142,13 @@
 
 <script setup lang="ts">
 import type { Issue, KanbanColumn } from '~/types'
-import { IssueStatus, IssuePriority, IssueType } from '~/types'
+import { IssueStatus, IssuePriority, IssueType, KanbanLaneProperty } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
 import { useKanbanStore } from '~/stores/kanban'
 import { useProjectsStore } from '~/stores/projects'
 import { formatIssueId } from '~/composables/useIssueFormat'
 
-const props = defineProps<{ projectId: string; boardId?: string | null }>()
+const props = defineProps<{ projectId: string; boardId?: string | null; maxItems?: number }>()
 
 const issueStore = useIssuesStore()
 const kanban = useKanbanStore()
@@ -149,16 +157,117 @@ const { priorityIcon, priorityColor } = usePriority()
 
 const activeBoardId = ref('')
 const activeBoard = computed(() => kanban.boards.find(b => b.id === activeBoardId.value) ?? null)
-const boardColumns = computed(() =>
-  (activeBoard.value?.columns ?? []).slice().sort((a, b) => a.position - b.position)
-)
+const boardColumns = computed(() => {
+  const lp = activeBoard.value?.laneProperty ?? KanbanLaneProperty.Status
+  return (activeBoard.value?.columns ?? []).slice().sort((a, b) => {
+    // For non-status boards, put the "unassigned/no label/no milestone" column (empty laneValue) first
+    if (lp !== KanbanLaneProperty.Status) {
+      const aEmpty = !a.laneValue
+      const bEmpty = !b.laneValue
+      if (aEmpty && !bEmpty) return -1
+      if (!aEmpty && bEmpty) return 1
+    }
+    return a.position - b.position
+  })
+})
 
-const issuesByStatus = computed(() => issueStore.issuesByStatus)
+// ── Lane-property-aware issue grouping ────────────────────────────────────
+const issuesByLane = computed<Record<string, Issue[]>>(() => {
+  const result: Record<string, Issue[]> = {}
+  for (const col of boardColumns.value) {
+    result[col.id] = []
+  }
+
+  const lp = activeBoard.value?.laneProperty ?? KanbanLaneProperty.Status
+  const allIssues = issueStore.issues
+
+  for (const issue of allIssues) {
+    switch (lp) {
+      case KanbanLaneProperty.Status: {
+        const col = boardColumns.value.find(c => c.issueStatus === issue.status)
+        if (col) result[col.id].push(issue)
+        break
+      }
+      case KanbanLaneProperty.Priority: {
+        const col = boardColumns.value.find(c => c.laneValue === issue.priority)
+        if (col) result[col.id].push(issue)
+        break
+      }
+      case KanbanLaneProperty.Type: {
+        const col = boardColumns.value.find(c => c.laneValue === issue.type)
+        if (col) result[col.id].push(issue)
+        break
+      }
+      case KanbanLaneProperty.Label: {
+        if (!issue.labels?.length) {
+          const col = boardColumns.value.find(c => c.laneValue === '')
+          if (col) result[col.id].push(issue)
+        } else {
+          for (const label of issue.labels) {
+            const col = boardColumns.value.find(c => c.laneValue === label.id)
+            if (col) result[col.id].push(issue)
+          }
+        }
+        break
+      }
+      case KanbanLaneProperty.Agent: {
+        const agentAssignees = issue.assignees?.filter(a => a.agentId) ?? []
+        if (!agentAssignees.length) {
+          const col = boardColumns.value.find(c => c.laneValue === '')
+          if (col) result[col.id].push(issue)
+        } else {
+          for (const a of agentAssignees) {
+            const col = boardColumns.value.find(c => c.laneValue === a.agentId)
+            if (col) result[col.id].push(issue)
+          }
+        }
+        break
+      }
+      case KanbanLaneProperty.Milestone: {
+        const mId = issue.milestoneId ?? ''
+        const col = boardColumns.value.find(c => c.laneValue === mId)
+        if (col) result[col.id].push(issue)
+        break
+      }
+    }
+  }
+
+  // Sort each column by kanbanRank then createdAt
+  for (const colId of Object.keys(result)) {
+    result[colId].sort((a, b) => a.kanbanRank - b.kanbanRank || a.createdAt.localeCompare(b.createdAt))
+  }
+  return result
+})
+
 const totalIssues = computed(() => issueStore.issues.length)
+
+// ── Max items (per-column limit) ──────────────────────────────────────────
+const expandedCols = ref<Set<string>>(new Set())
+
+function isColExpanded(colId: string): boolean {
+  return !props.maxItems || expandedCols.value.has(colId)
+}
+
+function visibleIssues(colId: string): Issue[] {
+  const all = issuesByLane.value[colId] ?? []
+  if (isColExpanded(colId)) return all
+  return all.slice(0, props.maxItems)
+}
+
+function toggleExpand(colId: string) {
+  if (expandedCols.value.has(colId)) {
+    expandedCols.value.delete(colId)
+  } else {
+    expandedCols.value.add(colId)
+  }
+  // Trigger reactivity
+  expandedCols.value = new Set(expandedCols.value)
+}
 
 // ── Issue drag state ──────────────────────────────────────────────────────
 const draggedId = ref<string | null>(null)
 const draggedIssueStatus = ref<IssueStatus | null>(null)
+const draggedSourceColId = ref<string | null>(null)
 const dragHoverColId = ref<string | null>(null)
 const dragHoverInsertIdx = ref<number>(0)
 const draggedColId = ref<string | null>(null)
@@ -188,23 +297,33 @@ async function submitCreate() {
 
 // ── Drag & drop ───────────────────────────────────────────────────────────
 function isValidDropTarget(targetColId: string): boolean {
-  if (!draggedId.value || !draggedIssueStatus.value) return false
-  const sourceCol = boardColumns.value.find(c => c.issueStatus === draggedIssueStatus.value)
-  if (!sourceCol) return false
-  if (sourceCol.id === targetColId) return true
+  if (!draggedId.value) return false
+  const srcId = draggedSourceColId.value
+  if (!srcId) return false
+  if (srcId === targetColId) return true
   if (kanban.transitions.length === 0) return true
-  return kanban.transitions.some(t => t.fromColumnId === sourceCol.id && t.toColumnId === targetColId)
+  return kanban.transitions.some(t => t.fromColumnId === srcId && t.toColumnId === targetColId)
 }
 
 function onDragStart(e: DragEvent, issue: Issue) {
   draggedId.value = issue.id
   draggedIssueStatus.value = issue.status
   e.dataTransfer!.effectAllowed = 'move'
+  // Determine source column based on lane property
+  const lp = activeBoard.value?.laneProperty ?? KanbanLaneProperty.Status
+  let sourceCol: KanbanColumn | undefined
+  if (lp === KanbanLaneProperty.Status) {
+    sourceCol = boardColumns.value.find(c => c.issueStatus === issue.status)
+  } else {
+    sourceCol = boardColumns.value.find(c => issuesByLane.value[c.id]?.some(i => i.id === issue.id))
+  }
+  draggedSourceColId.value = sourceCol?.id ?? null
 }
 
 function onIssueDragEnd() {
   draggedId.value = null
   draggedIssueStatus.value = null
+  draggedSourceColId.value = null
   dragHoverColId.value = null
   dragHoverInsertIdx.value = 0
 }
@@ -236,13 +355,12 @@ async function onIssueDrop(e: DragEvent, targetCol: KanbanColumn) {
   if (draggedColId.value || !draggedId.value) return
   if (!isValidDropTarget(targetCol.id)) return
   const insertIdx = dragHoverInsertIdx.value
-  const sourceCol = boardColumns.value.find(c => c.issueStatus === draggedIssueStatus.value)
-  const isSameColumn = sourceCol?.id === targetCol.id
+  const isSameColumn = draggedSourceColId.value === targetCol.id
   if (!isSameColumn) {
     await issueStore.updateIssueStatus(props.projectId, draggedId.value, targetCol.issueStatus)
   }
   await kanban.moveIssue(activeBoardId.value, draggedId.value, targetCol.id, insertIdx)
-  const issues = issueStore.issues.filter(i => i.status === targetCol.issueStatus).sort((a, b) => a.kanbanRank - b.kanbanRank || a.createdAt.localeCompare(b.createdAt))
+  const issues = issuesByLane.value[targetCol.id] ?? []
   const moved = issues.find(i => i.id === draggedId.value)
   if (moved) {
     const reordered = issues.filter(i => i.id !== draggedId.value)
@@ -251,6 +369,7 @@ async function onIssueDrop(e: DragEvent, targetCol: KanbanColumn) {
   }
   draggedId.value = null
   draggedIssueStatus.value = null
+  draggedSourceColId.value = null
   dragHoverColId.value = null
   dragHoverInsertIdx.value = 0
 }

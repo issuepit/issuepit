@@ -101,8 +101,8 @@
 
         <!-- Meta row -->
         <div class="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-500">
-          <span>Created {{ formatDate(mr.createdAt) }}</span>
-          <span v-if="mr.mergedAt">Merged {{ formatDate(mr.mergedAt) }}</span>
+          <span>Created <DateDisplay :date="mr.createdAt" mode="auto" resolution="date" /></span>
+          <span v-if="mr.mergedAt">Merged <DateDisplay :date="mr.mergedAt" mode="auto" resolution="date" /></span>
           <span v-if="mr.mergeCommitSha">
             Merge commit:
             <code class="bg-gray-800 px-1 rounded text-gray-400">{{ mr.mergeCommitSha.slice(0, 8) }}</code>
@@ -416,10 +416,6 @@ function ciStatusClass(statusName: string): string {
     case 'Cancelled': return 'bg-gray-700 text-gray-400'
     default: return 'bg-gray-700 text-gray-400'
   }
-}
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 // ── Diff rendering helpers ────────────────────────────────────

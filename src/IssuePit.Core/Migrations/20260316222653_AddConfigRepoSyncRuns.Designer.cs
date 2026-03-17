@@ -3,6 +3,7 @@ using System;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace IssuePit.Core.Migrations
 {
     [DbContext(typeof(IssuePitDbContext))]
-    partial class IssuePitDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260316222653_AddConfigRepoSyncRuns")]
+    partial class AddConfigRepoSyncRuns
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -855,9 +858,6 @@ namespace IssuePit.Core.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
-                    b.Property<Guid?>("GitHubIdentityId")
-                        .HasColumnType("uuid");
-
                     b.Property<DateTime?>("LastFetchedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -891,8 +891,6 @@ namespace IssuePit.Core.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("GitHubIdentityId");
 
                     b.HasIndex("ProjectId");
 
@@ -2689,17 +2687,11 @@ namespace IssuePit.Core.Migrations
 
             modelBuilder.Entity("IssuePit.Core.Entities.GitRepository", b =>
                 {
-                    b.HasOne("IssuePit.Core.Entities.GitHubIdentity", "GitHubIdentity")
-                        .WithMany()
-                        .HasForeignKey("GitHubIdentityId");
-
                     b.HasOne("IssuePit.Core.Entities.Project", "Project")
                         .WithMany()
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("GitHubIdentity");
 
                     b.Navigation("Project");
                 });

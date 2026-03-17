@@ -50,7 +50,7 @@
         <div class="flex items-center justify-between mb-1">
           <h2 class="text-base font-semibold text-white">Git Repository</h2>
           <span v-if="store.currentSkill.lastSyncedAt" class="text-xs text-gray-500">
-            Last synced {{ new Date(store.currentSkill.lastSyncedAt).toLocaleString() }}
+            Last synced <DateDisplay :date="store.currentSkill.lastSyncedAt" mode="auto" />
           </span>
         </div>
         <p class="text-sm text-gray-500 mb-5">

@@ -46,7 +46,7 @@
               <span :class="scopeClass(t.scope)" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium">
                 {{ scopeLabel(t.scope) }}
               </span>
-              <span class="ml-2 text-gray-600">{{ formatDate(t.updatedAt) }}</span>
+              <span class="ml-2 text-gray-600"><DateDisplay :date="t.updatedAt" mode="auto" resolution="date" /></span>
             </p>
           </div>
           <div class="flex items-center gap-1 shrink-0">
@@ -140,7 +140,4 @@ function scopeClass(scope: string) {
   return 'bg-green-900/60 text-green-300'
 }
 
-function formatDate(d: string) {
-  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
 </script>

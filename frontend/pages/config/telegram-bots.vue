@@ -56,7 +56,7 @@
             <td class="px-4 py-3 text-gray-400 text-xs">
               {{ DigestIntervalLabels[bot.digestInterval] }}{{ bot.isSilent ? ' · Silent' : '' }}
             </td>
-            <td class="px-4 py-3 text-gray-400">{{ formatDate(bot.createdAt) }}</td>
+            <td class="px-4 py-3 text-gray-400"><DateDisplay :date="bot.createdAt" mode="absolute" resolution="date" /></td>
             <td class="px-4 py-3 text-right space-x-3">
               <button class="text-gray-500 hover:text-brand-400 transition-colors text-xs" @click="openEdit(bot)">Edit</button>
               <button class="text-gray-500 hover:text-red-400 transition-colors text-xs" @click="confirmDelete(bot.id, bot.name)">Delete</button>
@@ -223,10 +223,6 @@ function scopeLabel(bot: TelegramBot): string {
   if (bot.projectId) return `Project: ${bot.projectId.slice(0, 8)}…`
   if (bot.orgId) return `Org: ${bot.orgId.slice(0, 8)}…`
   return 'Global'
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 async function handleSubmit() {

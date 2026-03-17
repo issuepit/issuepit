@@ -119,6 +119,9 @@ fi
 # tool-generated shell commands and conventional git usage.
 
 REAL_GIT=$(command -v git 2>/dev/null || echo "/usr/bin/git")
+# Save the real git binary path so the execution client can bypass the push-blocking
+# wrapper installed below when it needs to push branches from docker exec.
+echo "${REAL_GIT}" > /tmp/.issuepit-real-git
 cat > /usr/local/bin/git << GITWRAPPER
 #!/usr/bin/env bash
 # IssuePit git wrapper — blocks push; all other subcommands are forwarded unchanged.
@@ -300,13 +303,22 @@ if opencode_password:
 if mcp_url:
     config["mcp"] = {
         "issuepit": {
-            "type": "sse",
+            "type": "remote",
             "url": mcp_url,
         }
     }
 
+def normalize_mcp_type(t):
+    """Map legacy MCP type values to opencode-valid ones.
+    opencode only accepts "local" and "remote"; "http" and "sse" are not valid."""
+    if t in ("http", "sse"):
+        return "remote"
+    if t == "local":
+        return "local"
+    return "remote"
+
 # Merge extra (agent-linked) MCP servers from ISSUEPIT_OPENCODE_EXTRA_MCP_JSON.
-# Format: [{"name": "...", "type": "http"|"sse", "url": "...", "headers": {...}|null}, ...]
+# Format: [{"name": "...", "type": "remote"|"local", "url": "...", "headers": {...}|null}, ...]
 if extra_mcp_json_str:
     try:
         extra_mcps = json.loads(extra_mcp_json_str)
@@ -317,7 +329,7 @@ if extra_mcp_json_str:
             if not key:
                 continue
             entry = {
-                "type": server.get("type", "http"),
+                "type": normalize_mcp_type(server.get("type", "remote")),
                 "url": server.get("url", ""),
             }
             headers = server.get("headers")

@@ -527,7 +527,9 @@ public partial class DockerCiCdRuntime(
 
                 // Dynamically compute the number of steps so the [N/M] prefix is always correct.
                 var hasArtifacts = !string.IsNullOrWhiteSpace(trigger.ArtifactServerPath);
-                var totalSteps = 3 + (useDind ? 1 : 0) + (hasGitRepo ? 1 : 0) + (!string.IsNullOrWhiteSpace(trigger.Workflow) ? 1 : 0) + (hasArtifacts ? 1 : 0);
+                // The git-checkout step fires only when a full 40-char SHA is requested inside a git-clone run.
+                var hasCheckoutStep = hasGitRepo && IsFullCommitSha(run.CommitSha);
+                var totalSteps = 3 + (useDind ? 1 : 0) + (hasGitRepo ? 1 : 0) + (hasCheckoutStep ? 1 : 0) + (!string.IsNullOrWhiteSpace(trigger.Workflow) ? 1 : 0) + (hasArtifacts ? 1 : 0);
                 var stepNum = 0;
 
                 // Step: Print act version for diagnostics.
@@ -565,13 +567,22 @@ public partial class DockerCiCdRuntime(
                     // Clone into /workspace so act can find the repo at its expected path.
                     // Pass -b when a branch is specified so the correct branch is checked out
                     // rather than the remote's default branch.
+                    
+                    // Build an authenticated clone URL when the trigger carries credentials.
+                    // The plain GitRepoUrl is used for logging; the authenticated URL is never emitted.
+                    var cloneUrl = BuildAuthenticatedCloneUrl(trigger.GitRepoUrl!, trigger.GitAuthUsername, trigger.GitAuthToken);
+
                     var cloneArgs = new List<string> { "git", "clone", "--depth=1" };
+                    
+                    // Strip the "origin/" prefix if present — git clone -b expects a remote branch
+                    // name (e.g. "main"), not a remote-tracking ref (e.g. "origin/main").
                     if (!string.IsNullOrWhiteSpace(trigger.Branch))
                     {
+                        var cloneBranch = StripOriginPrefix(trigger.Branch);
                         cloneArgs.Add("-b");
-                        cloneArgs.Add(trigger.Branch);
+                        cloneArgs.Add(cloneBranch);
                     }
-                    cloneArgs.Add(trigger.GitRepoUrl!);
+                    cloneArgs.Add(cloneUrl);
                     cloneArgs.Add("/workspace");
                     var cloneExitCode = await ExecCommandAsync(
                         container.ID,
@@ -585,12 +596,16 @@ public partial class DockerCiCdRuntime(
                     // out that exact commit. The shallow clone above fetches only the branch tip so
                     // the requested SHA may not be present yet; if checkout fails we deepen the clone
                     // by fetching additional history before retrying.
+                    // Use "git checkout -B issuepit-run <sha>" instead of a bare checkout to avoid
+                    // a detached HEAD — act repeatedly warns about unresolvable refs when HEAD is
+                    // detached, which spams the run log. -B (force-create) is used so the command
+                    // is idempotent even if the branch already exists in the same container.
                     if (IsFullCommitSha(run.CommitSha))
                     {
                         await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: git checkout {run.CommitSha}", LogStream.Stdout);
                         var checkoutExitCode = await ExecCommandAsync(
                             container.ID,
-                            ["git", "-C", "/workspace", "checkout", run.CommitSha],
+                            ["git", "-C", "/workspace", "checkout", "-B", "issuepit-run", run.CommitSha],
                             onLogLine,
                             cancellationToken);
 
@@ -608,7 +623,7 @@ public partial class DockerCiCdRuntime(
 
                             checkoutExitCode = await ExecCommandAsync(
                                 container.ID,
-                                ["git", "-C", "/workspace", "checkout", run.CommitSha],
+                                ["git", "-C", "/workspace", "checkout", "-B", "issuepit-run", run.CommitSha],
                                 onLogLine,
                                 cancellationToken);
 
@@ -1150,6 +1165,37 @@ public partial class DockerCiCdRuntime(
         sha is { Length: 40 } && sha.All(char.IsAsciiHexDigit);
 
     /// <summary>
+    /// Strips the leading <c>origin/</c> prefix from a branch name if present.
+    /// <c>git clone -b</c> expects a remote branch name (e.g. <c>main</c>), not a
+    /// remote-tracking ref (e.g. <c>origin/main</c>). The UI and external callers may
+    /// supply either form, so we normalise here before passing the value to git.
+    /// </summary>
+    internal static string StripOriginPrefix(string branch) =>
+        branch.StartsWith("origin/", StringComparison.OrdinalIgnoreCase)
+            ? branch["origin/".Length..]
+            : branch;
+            
+    /// <summary>
+    /// Builds an authenticated clone URL by injecting <paramref name="username"/> and
+    /// <paramref name="token"/> into an HTTPS URL using <see cref="UriBuilder"/>.
+    /// Returns the original <paramref name="url"/> unchanged when no token is provided or the
+    /// URL is not HTTPS (e.g. SSH URLs do not support embedded credentials).
+    /// </summary>
+    private static string BuildAuthenticatedCloneUrl(string url, string? username, string? token)
+    {
+        if (string.IsNullOrEmpty(token) ||
+            !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            return url;
+
+        var builder = new UriBuilder(url)
+        {
+            UserName = Uri.EscapeDataString(string.IsNullOrEmpty(username) ? "git" : username),
+            Password = Uri.EscapeDataString(token),
+        };
+        return builder.Uri.AbsoluteUri;
+    }
+
+    /// <summary>
     /// Copies the contents of <c>/artifacts</c> inside the container to <paramref name="artifactDir"/>
     /// on the local filesystem using the Docker archive (tar) API.
     /// This replaces the previous S3 upload approach and works in all environments without requiring
@@ -1188,8 +1234,20 @@ public partial class DockerCiCdRuntime(
             var fileCount = 0;
             var canonicalArtifactDir = Path.GetFullPath(artifactDir);
 
+            // Buffer the entire tar stream into memory before processing it with TarReader.
+            // Docker's archive API streams the response over HTTP; the underlying network stream
+            // may deliver data in chunks smaller than the 512-byte tar block size, causing
+            // TarReader.GetNextEntryAsync to throw "Attempted to read past the end of the stream"
+            // when ReadAsync returns 0 bytes mid-block without actually signalling end-of-archive.
+            // A MemoryStream eliminates this: all bytes are present before any tar parsing begins.
+            // Artifact directories for typical CI/CD runs are small (usually < 100 MB), so the
+            // memory overhead is acceptable.  For very large artifact sets the copy itself would
+            // be the first failure point and is caught by the outer exception handler below.
             using var tarStream = response.Stream;
-            await using var reader = new System.Formats.Tar.TarReader(tarStream);
+            using var bufferedArchive = new MemoryStream();
+            await tarStream.CopyToAsync(bufferedArchive, cancellationToken);
+            bufferedArchive.Position = 0;
+            await using var reader = new System.Formats.Tar.TarReader(bufferedArchive);
             System.Formats.Tar.TarEntry? entry;
             while ((entry = await reader.GetNextEntryAsync(cancellationToken: cancellationToken)) != null)
             {

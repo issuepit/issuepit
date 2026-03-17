@@ -63,7 +63,7 @@
               </span>
               <span v-else class="text-xs text-gray-500">SSO only</span>
             </td>
-            <td class="px-4 py-3 text-gray-400">{{ formatDate(user.createdAt) }}</td>
+            <td class="px-4 py-3 text-gray-400"><DateDisplay :date="user.createdAt" mode="absolute" resolution="date" /></td>
             <td class="px-4 py-3 text-right">
               <div class="flex items-center justify-end gap-2">
                 <button
@@ -241,7 +241,4 @@ function confirmDelete(id: string, username: string) {
   }
 }
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
-}
 </script>

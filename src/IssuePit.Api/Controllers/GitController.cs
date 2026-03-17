@@ -2,6 +2,7 @@ using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
@@ -10,8 +11,9 @@ namespace IssuePit.Api.Controllers;
 
 [ApiController]
 [Route("api/projects/{projectId:guid}/git")]
-public class GitController(IssuePitDbContext db, TenantContext ctx, GitService gitService, ILogger<GitController> logger, IServiceScopeFactory scopeFactory) : ControllerBase
+public class GitController(IssuePitDbContext db, TenantContext ctx, GitService gitService, ILogger<GitController> logger, IServiceScopeFactory scopeFactory, IDataProtectionProvider dpProvider) : ControllerBase
 {
+    private static readonly string IdentityProtectorPurpose = "GitHubOAuthToken";
     // ──────────────────────── repository config (multi-origin) ──────────────────────
 
     [HttpGet("repos")]
@@ -22,6 +24,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         if (project is null) return NotFound();
 
         var repos = await db.GitRepositories
+            .Include(r => r.GitHubIdentity)
             .Where(r => r.ProjectId == projectId)
             .OrderBy(r => r.CreatedAt)
             .ToListAsync();
@@ -35,14 +38,29 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         var project = await GetProjectAsync(projectId);
         if (project is null) return NotFound();
 
+        string? authUsername = req.AuthUsername;
+        string? authToken = req.AuthToken;
+
+        if (req.GitHubIdentityId.HasValue)
+        {
+            var identity = await db.GitHubIdentities
+                .Include(g => g.User)
+                .FirstOrDefaultAsync(g => g.Id == req.GitHubIdentityId.Value && g.User.TenantId == ctx.CurrentTenant.Id);
+            if (identity is null) return BadRequest("GitHub identity not found.");
+            var protector = dpProvider.CreateProtector(IdentityProtectorPurpose);
+            authUsername = identity.GitHubUsername;
+            authToken = protector.Unprotect(identity.EncryptedToken);
+        }
+
         var repo = new GitRepository
         {
             Id = Guid.NewGuid(),
             ProjectId = projectId,
             RemoteUrl = req.RemoteUrl,
             DefaultBranch = req.DefaultBranch ?? "main",
-            AuthUsername = req.AuthUsername,
-            AuthToken = req.AuthToken,
+            AuthUsername = authUsername,
+            AuthToken = authToken,
+            GitHubIdentityId = req.GitHubIdentityId,
             Mode = req.Mode ?? GitOriginMode.Working,
             CreatedAt = DateTime.UtcNow
         };
@@ -67,9 +85,28 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
 
         repo.RemoteUrl = req.RemoteUrl;
         repo.DefaultBranch = req.DefaultBranch ?? repo.DefaultBranch;
-        if (req.AuthUsername is not null) repo.AuthUsername = req.AuthUsername;
-        if (req.AuthToken is not null) repo.AuthToken = req.AuthToken;
         if (req.Mode.HasValue) repo.Mode = req.Mode.Value;
+
+        if (req.GitHubIdentityId.HasValue)
+        {
+            var identity = await db.GitHubIdentities
+                .Include(g => g.User)
+                .FirstOrDefaultAsync(g => g.Id == req.GitHubIdentityId.Value && g.User.TenantId == ctx.CurrentTenant.Id);
+            if (identity is null) return BadRequest("GitHub identity not found.");
+            var protector = dpProvider.CreateProtector(IdentityProtectorPurpose);
+            repo.AuthUsername = identity.GitHubUsername;
+            repo.AuthToken = protector.Unprotect(identity.EncryptedToken);
+            repo.GitHubIdentityId = req.GitHubIdentityId;
+        }
+        else
+        {
+            // Clear identity link if explicitly set to null
+            if (req.GitHubIdentityId == null && repo.GitHubIdentityId.HasValue)
+                repo.GitHubIdentityId = null;
+            if (req.AuthUsername is not null) repo.AuthUsername = req.AuthUsername;
+            if (req.AuthToken is not null) repo.AuthToken = req.AuthToken;
+        }
+
         await db.SaveChangesAsync();
         return Ok(ToDto(repo));
     }
@@ -99,6 +136,20 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         repo.Status = GitRepoStatus.Active;
         repo.StatusMessage = null;
         repo.ThrottledUntil = null;
+        await db.SaveChangesAsync();
+
+        return Ok(ToDto(repo));
+    }
+
+    [HttpPost("repos/{repoId:guid}/disable")]
+    public async Task<IActionResult> DisableRepoById(Guid projectId, Guid repoId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var repo = await db.GitRepositories.FirstOrDefaultAsync(r => r.Id == repoId && r.ProjectId == projectId);
+        if (repo is null) return NotFound();
+
+        repo.Status = GitRepoStatus.Disabled;
+        repo.StatusMessage = "Manually disabled";
         await db.SaveChangesAsync();
 
         return Ok(ToDto(repo));
@@ -439,7 +490,11 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         status = repo.Status.ToString(),
         repo.StatusMessage,
         repo.ThrottledUntil,
-        mode = repo.Mode.ToString()
+        mode = repo.Mode.ToString(),
+        repo.GitHubIdentityId,
+        gitHubIdentityName = repo.GitHubIdentity != null
+            ? (repo.GitHubIdentity.Name ?? $"@{repo.GitHubIdentity.GitHubUsername}")
+            : null,
     };
 
     /// <summary>Background task: clones/fetches the newly linked repo and triggers an initial CI/CD run.</summary>
@@ -486,4 +541,4 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
     }
 }
 
-public record GitRepoRequest(string RemoteUrl, string? DefaultBranch, string? AuthUsername, string? AuthToken, GitOriginMode? Mode);
+public record GitRepoRequest(string RemoteUrl, string? DefaultBranch, string? AuthUsername, string? AuthToken, GitOriginMode? Mode, Guid? GitHubIdentityId = null);

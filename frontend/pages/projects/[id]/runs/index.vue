@@ -113,7 +113,7 @@
                 </span>
                 <span v-else class="text-gray-600 text-xs">local</span>
               </td>
-              <td class="px-4 py-3 text-gray-400 text-xs">{{ formatDate(run.startedAt) }}</td>
+              <td class="px-4 py-3 text-gray-400 text-xs"><DateDisplay :date="run.startedAt" mode="auto" /></td>
               <td class="px-4 py-3 text-gray-400 text-xs">{{ run.status === CiCdRunStatus.WaitingForApproval ? '—' : duration(run.startedAt, run.endedAt) }}</td>
               <td class="px-4 py-3 text-right">
                 <button v-if="run.status === CiCdRunStatus.WaitingForApproval"
@@ -171,6 +171,7 @@
               <td class="px-4 py-3">
                 <AgentSessionStatusChip :session="session" />
               </td>
+              <td class="px-4 py-3 text-gray-300">{{ session.agentName || '—' }}</td>
               <td class="px-4 py-3">
                 <NuxtLink :to="`/projects/${id}/issues/${session.issueNumber}`"
                   class="text-brand-400 hover:text-brand-300 transition-colors"
@@ -189,7 +190,7 @@
                 </span>
                 <span v-else class="text-gray-600 text-xs">—</span>
               </td>
-              <td class="px-4 py-3 text-gray-400 text-xs">{{ formatDate(session.startedAt) }}</td>
+              <td class="px-4 py-3 text-gray-400 text-xs"><DateDisplay :date="session.startedAt" mode="auto" /></td>
               <td class="px-4 py-3 text-gray-400 text-xs">{{ duration(session.startedAt, session.endedAt) }}</td>
               <td class="px-4 py-3 text-right">
                 <button v-if="session.status === AgentSessionStatus.Failed || session.status === AgentSessionStatus.Cancelled"
@@ -302,10 +303,6 @@ async function retrySession(sessionId: string) {
 async function retryRun(runId: string) {
   await store.retryRun(runId)
   await store.fetchRuns(id)
-}
-
-function formatDate(d: string) {
-  return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 function duration(start: string, end?: string) {

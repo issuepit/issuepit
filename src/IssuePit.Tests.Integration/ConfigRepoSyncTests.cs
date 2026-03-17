@@ -686,6 +686,143 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task Sync_ProjectConfig_UnknownSlug_WithOrgSlug_IsCreated()
+    {
+        var orgSlug = $"newproj-org-{Guid.NewGuid():N}"[..20];
+        var existingProjSlug = $"existing-{Guid.NewGuid():N}"[..20];
+        var (tenantId, orgId, _, _) = await SeedAsync(orgSlug, existingProjSlug, "u14");
+        var newProjSlug = $"newproj-{Guid.NewGuid():N}"[..20];
+
+        var dir = CreateConfigDir();
+        WriteModel(dir, "projects", $"{newProjSlug}.json5", new ProjectConfigModel
+        {
+            OrgSlug = orgSlug,
+            Name = "Auto Created Project",
+            Description = "Created via config repo"
+        });
+
+        try
+        {
+            await SetConfigRepoAsync(tenantId, dir);
+            var resp = await TriggerSyncAsync(tenantId);
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+            using var scope = factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+            var newProject = await db.Projects
+                .FirstOrDefaultAsync(p => p.OrgId == orgId && p.Slug == newProjSlug);
+            Assert.NotNull(newProject);
+            Assert.Equal("Auto Created Project", newProject.Name);
+            Assert.Equal("Created via config repo", newProject.Description);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public async Task Sync_ProjectConfig_UnknownSlug_WithOrgSlug_NoName_UsesSlugAsName()
+    {
+        var orgSlug = $"noname-org-{Guid.NewGuid():N}"[..20];
+        var existingProjSlug = $"existing-{Guid.NewGuid():N}"[..20];
+        var (tenantId, orgId, _, _) = await SeedAsync(orgSlug, existingProjSlug, "u16");
+        var newProjSlug = $"noname-proj-{Guid.NewGuid():N}"[..20];
+
+        var dir = CreateConfigDir();
+        WriteModel(dir, "projects", $"{newProjSlug}.json5", new ProjectConfigModel
+        {
+            OrgSlug = orgSlug,
+            // Name intentionally omitted — slug should be used as fallback
+        });
+
+        try
+        {
+            await SetConfigRepoAsync(tenantId, dir);
+            var resp = await TriggerSyncAsync(tenantId);
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+            using var scope = factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+            var newProject = await db.Projects
+                .FirstOrDefaultAsync(p => p.OrgId == orgId && p.Slug == newProjSlug);
+            Assert.NotNull(newProject);
+            Assert.Equal(newProjSlug, newProject.Name); // slug used as fallback name
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public async Task Sync_ProjectConfig_UnknownSlug_WithoutOrgSlug_IsAlwaysError()
+    {
+        var orgSlug = $"noslug-org-{Guid.NewGuid():N}"[..20];
+        var (tenantId, _, _, _) = await SeedAsync(orgSlug, $"p-{Guid.NewGuid():N}"[..16], "u15");
+        var newProjSlug = $"noslug-proj-{Guid.NewGuid():N}"[..20];
+
+        var dir = CreateConfigDir();
+        WriteModel(dir, "projects", $"{newProjSlug}.json5", new ProjectConfigModel
+        {
+            // No OrgSlug provided — cannot determine which org to create project under
+            Name = "Should Not Be Created"
+        });
+
+        try
+        {
+            // Non-strict mode: missing orgSlug for a new project is always an error
+            await SetConfigRepoAsync(tenantId, dir, strict: false);
+            var resp = await TriggerSyncAsync(tenantId);
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode); // non-strict errors still 200
+
+            var body = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            var issues = body.GetProperty("issues").EnumerateArray().ToList();
+            Assert.Contains(issues, i =>
+                i.GetProperty("severity").GetString() == "error" &&
+                i.GetProperty("message").GetString()!.Contains("orgSlug"));
+
+            using var scope = factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+            var project = await db.Projects.FirstOrDefaultAsync(p =>
+                p.Organization.TenantId == tenantId && p.Slug == newProjSlug);
+            Assert.Null(project); // was not created
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public async Task Sync_ProjectConfig_UnknownSlug_WithoutOrgSlug_StrictMode_ReturnsError()
+    {
+        var orgSlug = $"noslug-strict-{Guid.NewGuid():N}"[..19];
+        var (tenantId, _, _, _) = await SeedAsync(orgSlug, $"p-{Guid.NewGuid():N}"[..16], "u17");
+        var newProjSlug = $"noslug-sproj-{Guid.NewGuid():N}"[..20];
+
+        var dir = CreateConfigDir();
+        WriteModel(dir, "projects", $"{newProjSlug}.json5", new ProjectConfigModel
+        {
+            // No OrgSlug provided — cannot determine which org to create project under
+            Name = "Should Not Be Created"
+        });
+
+        try
+        {
+            // Strict mode: missing orgSlug for a new project is a hard error — same result as non-strict
+            // (AddError, not AddStrictModeError, because this is a config error, not a warning elevation)
+            await SetConfigRepoAsync(tenantId, dir, strict: true);
+            var resp = await TriggerSyncAsync(tenantId);
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+            var body = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            var issues = body.GetProperty("issues").EnumerateArray().ToList();
+            Assert.Contains(issues, i =>
+                i.GetProperty("severity").GetString() == "error" &&
+                i.GetProperty("message").GetString()!.Contains("orgSlug"));
+
+            using var scope = factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+            var project = await db.Projects.FirstOrDefaultAsync(p =>
+                p.Organization.TenantId == tenantId && p.Slug == newProjSlug);
+            Assert.Null(project); // was not created
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
     public async Task Sync_OrgMembers_StrictMode_UnknownUser_ReturnsError()
     {
         var orgSlug = $"strict2-org-{Guid.NewGuid():N}"[..20];

@@ -27,6 +27,7 @@
         <option value="">All Types</option>
         <option value="GitHubSync">GitHub Sync</option>
         <option value="BranchDetection">Branch Detection</option>
+        <option value="ConfigRepoSync">Config Repo Sync</option>
       </select>
 
       <!-- Status filter -->
@@ -135,17 +136,22 @@
             </td>
             <td class="px-4 py-3 text-gray-300 text-xs font-medium">
               <NuxtLink
+                v-if="run.projectId"
                 :to="`/projects/${run.projectId}/github-sync`"
                 class="hover:text-brand-400 transition-colors"
               >
                 {{ run.projectName }}
               </NuxtLink>
+              <span
+                v-else
+                class="text-gray-500"
+              >—</span>
             </td>
             <td class="px-4 py-3 text-gray-400 text-xs max-w-xs truncate">
               {{ run.summary || '—' }}
             </td>
             <td class="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
-              {{ formatDate(run.startedAt) }}
+              <DateDisplay :date="run.startedAt" mode="auto" />
             </td>
             <td class="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
               {{ duration(run.startedAt, run.completedAt) }}
@@ -232,12 +238,9 @@ function typeLabel(type: ScheduledTaskType): string {
   switch (type) {
     case 'GitHubSync': return 'GitHub Sync'
     case 'BranchDetection': return 'Branch Detection'
+    case 'ConfigRepoSync': return 'Config Repo Sync'
     default: return type
   }
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString()
 }
 
 function duration(start: string, end?: string | null): string {

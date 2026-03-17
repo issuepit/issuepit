@@ -26,6 +26,9 @@ type RenderItem =
 /** Returns true for virtual IDs (e.g. row-break placeholders) that are not real sections. */
 function isVirtualId(id: string) { return id.startsWith('rowbreak-') }
 
+/** Returns true for dynamically added section IDs (e.g. 'kanban-1234567890-1'). */
+export function isDynamicSectionId(id: string) { return /^kanban-\d/.test(id) }
+
 export function useDashboardLayout(options: {
   defaultOrder: string[]
   defaultConfigs: Record<string, LayoutSectionConfig>
@@ -62,8 +65,8 @@ export function useDashboardLayout(options: {
       if (!saved) return
       const parsed = JSON.parse(saved) as Partial<LayoutData>
       if (Array.isArray(parsed.order) && parsed.order.length) {
-        // Keep real section IDs plus virtual row-break IDs
-        const valid = parsed.order.filter(s => s in defaultConfigs || isVirtualId(s))
+        // Keep real section IDs plus virtual row-break IDs and dynamic section IDs
+        const valid = parsed.order.filter(s => s in defaultConfigs || isVirtualId(s) || isDynamicSectionId(s))
         const missing = defaultOrder.filter(s => !valid.includes(s))
         layout.value.order = [...valid, ...missing]
       }
@@ -71,6 +74,12 @@ export function useDashboardLayout(options: {
         for (const sid of defaultOrder) {
           if (parsed.configs[sid]) {
             layout.value.configs[sid] = { ...defaultConfigs[sid], ...parsed.configs[sid] }
+          }
+        }
+        // Also restore configs for dynamic sections found in the order
+        for (const sid of layout.value.order) {
+          if (isDynamicSectionId(sid) && parsed.configs[sid]) {
+            layout.value.configs[sid] = { ...parsed.configs[sid] }
           }
         }
       }
@@ -91,7 +100,7 @@ export function useDashboardLayout(options: {
       const parsed = JSON.parse(json) as Partial<LayoutData>
       if (Array.isArray(parsed.order) && parsed.order.length) {
         // Only accept string items; skip any non-string values to prevent injection
-        const valid = parsed.order.filter((s): s is string => typeof s === 'string' && (s in defaultConfigs || isVirtualId(s)))
+        const valid = parsed.order.filter((s): s is string => typeof s === 'string' && (s in defaultConfigs || isVirtualId(s) || isDynamicSectionId(s)))
         const missing = defaultOrder.filter(s => !valid.includes(s))
         layout.value.order = [...valid, ...missing]
       }
@@ -99,6 +108,12 @@ export function useDashboardLayout(options: {
         for (const sid of defaultOrder) {
           if (parsed.configs[sid] && typeof parsed.configs[sid] === 'object') {
             layout.value.configs[sid] = { ...defaultConfigs[sid], ...parsed.configs[sid] }
+          }
+        }
+        // Also import configs for dynamic sections
+        for (const sid of layout.value.order) {
+          if (isDynamicSectionId(sid) && parsed.configs[sid] && typeof parsed.configs[sid] === 'object') {
+            layout.value.configs[sid] = { ...parsed.configs[sid] }
           }
         }
       }
@@ -141,6 +156,28 @@ export function useDashboardLayout(options: {
 
   function removeRowBreak(id: string) {
     layout.value.order = layout.value.order.filter(s => s !== id)
+  }
+
+  // ── Dynamic sections ────────────────────────────────────────────────────────
+
+  let _dynamicSectionCounter = 0
+
+  /** Adds a dynamic section with the given prefix (e.g. 'kanban') and initial config.
+   *  Returns the generated unique section ID. */
+  function addDynamicSection(prefix: string, config: LayoutSectionConfig): string {
+    const id = `${prefix}-${Date.now()}-${++_dynamicSectionCounter}`
+    layout.value.configs[id] = { ...config }
+    layout.value.order = [...layout.value.order, id]
+    return id
+  }
+
+  /** Removes a dynamic section from order and configs. No-op for static/virtual IDs. */
+  function removeDynamicSection(id: string) {
+    if (!isDynamicSectionId(id)) return
+    layout.value.order = layout.value.order.filter(s => s !== id)
+    layout.value.configs = Object.fromEntries(
+      Object.entries(layout.value.configs).filter(([k]) => k !== id)
+    ) as Record<string, LayoutSectionConfig>
   }
 
   // ── Drag & drop ────────────────────────────────────────────────────────────
@@ -485,6 +522,8 @@ export function useDashboardLayout(options: {
     addRowBreak,
     captureSnapshot,
     removeRowBreak,
+    addDynamicSection,
+    removeDynamicSection,
     onDragStart,
     onDragOver,
     onDragEnter,

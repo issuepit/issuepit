@@ -94,6 +94,14 @@
         class="text-xs px-1.5 py-0.5 rounded bg-gray-800 hover:bg-gray-700 transition-colors">
         {{ hidden ? '+ Show' : '✕ Hide' }}
       </button>
+      <!-- Remove (for dynamically added sections) -->
+      <button
+        v-if="canRemove"
+        @click.stop="$emit('remove')"
+        class="text-xs px-1.5 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-red-500 hover:text-red-300 transition-colors"
+        title="Remove this section from the dashboard">
+        ⊗ Remove
+      </button>
     </div>
 
     <!-- Settings panel (chart days/height, kanban board) -->
@@ -155,6 +163,7 @@ const props = defineProps<{
   isStacked?: boolean
   hidden?: boolean
   dragHover?: boolean
+  canRemove?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -170,6 +179,7 @@ const emit = defineEmits<{
   'stack-drop': [droppedSid: string]
   hide: []
   show: []
+  remove: []
 }>()
 
 const showSettings = ref(false)

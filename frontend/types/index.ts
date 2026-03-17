@@ -75,6 +75,7 @@ export interface GitHubIdentity {
   updatedAt: string
   projects: Array<{ projectId: string; name: string }>
   orgs: Array<{ orgId: string; name: string }>
+  syncProjects: Array<{ projectId: string; name: string }>
 }
 
 export interface AuthUser {
@@ -609,6 +610,8 @@ export interface GitRepository {
   statusMessage?: string
   throttledUntil?: string
   mode: GitOriginMode
+  gitHubIdentityId?: string
+  gitHubIdentityName?: string
 }
 
 export interface GitBranch {
@@ -1266,12 +1269,12 @@ export interface GitHubConflict {
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// <summary>Type discriminator for scheduled task runs.</summary>
-export type ScheduledTaskType = 'GitHubSync' | 'BranchDetection'
+export type ScheduledTaskType = 'GitHubSync' | 'BranchDetection' | 'ConfigRepoSync'
 
 export interface ScheduledTaskRun {
   id: string
-  projectId: string
-  projectName: string
+  projectId?: string | null
+  projectName?: string | null
   type: ScheduledTaskType
   status: GitHubSyncRunStatus
   summary?: string

@@ -734,7 +734,7 @@ async function finishReview() {
       await issuesStore.addComment(issueId, body)
     } else {
       // Create a new issue and auto-assign to the current user
-      const title = reviewTitle.value.trim() || `Code Review: ${compareBranch.value} → ${baseBranch.value} (${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })})`
+      const title = reviewTitle.value.trim() || `Code Review: ${compareBranch.value} → ${baseBranch.value} (${new Date().toLocaleDateString('de-DE', { day: 'numeric', month: 'long', year: 'numeric' })})`
       const newIssue = await issuesStore.createIssue(id, {
         title,
         body,

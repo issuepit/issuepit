@@ -130,7 +130,7 @@
               <span class="text-xs text-gray-400 capitalize">{{ issue.type }}</span>
             </td>
             <td class="px-4 py-3 hidden xl:table-cell">
-              <span class="text-xs text-gray-500">{{ formatDate(issue.updatedAt) }}</span>
+              <span class="text-xs text-gray-500"><DateDisplay :date="issue.updatedAt" mode="auto" resolution="date" /></span>
             </td>
           </tr>
         </tbody>
@@ -337,7 +337,7 @@ async function stopVoiceRecording() {
 }
 
 async function submitVoiceCreate() {
-  const title = `Voice Issue - ${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+  const title = `Voice Issue - ${new Date().toLocaleString('de-DE', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}`
   const newIssue = await store.createIssue(id, {
     title,
     body: voice.transcription.value,
@@ -440,10 +440,6 @@ function statusIcon(status: IssueStatus) {
     [IssueStatus.Cancelled]: { color: 'bg-red-400' }
   }
   return map[status] ?? { color: 'bg-gray-500' }
-}
-
-function formatDate(d: string) {
-  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 // Inline badge components
