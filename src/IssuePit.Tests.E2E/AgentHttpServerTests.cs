@@ -587,8 +587,8 @@ public class AgentHttpServerTests(AspireFixture fixture)
 
         // Poll the session logs until "[INFO] opencode HTTP server is ready" appears, meaning
         // the execution client confirmed readiness both inside the container (docker exec curl)
-        // and via the container bridge IP. Allow up to 60 s (image is pre-pulled; server starts
-        // in ~20 s under normal conditions).
+        // and via the externally-reachable URL. Allow up to 60 s (image is pre-pulled; server
+        // starts in ~20 s under normal conditions).
         string? serverInternalUrl = null;
         var readyDeadline = DateTimeOffset.UtcNow.AddSeconds(60);
         while (DateTimeOffset.UtcNow < readyDeadline)
@@ -601,8 +601,11 @@ public class AgentHttpServerTests(AspireFixture fixture)
                     .Select(l => l.GetProperty("line").GetString() ?? string.Empty)
                     .ToList();
 
-                // Prefer the container bridge IP URL (accessible from any container on the same
-                // Docker bridge). Fall back to the display URL if the internal marker is absent.
+                // Prefer the "[DEBUG] HTTP internal URL:" marker, which is logged when the
+                // execution client is running inside a container and uses the Docker host
+                // gateway IP to route through port-mapping (e.g. http://172.17.0.1:{port}).
+                // Fall back to "[ISSUEPIT:SERVER_WEB_UI_URL]=" (http://localhost:{port}), which
+                // is always logged and works when running directly on the Docker host.
                 var internalLine = logLines.FirstOrDefault(l => l.StartsWith("[DEBUG] HTTP internal URL: "));
                 if (internalLine is not null)
                     serverInternalUrl = internalLine["[DEBUG] HTTP internal URL: ".Length..].Trim();
@@ -639,8 +642,9 @@ public class AgentHttpServerTests(AspireFixture fixture)
                 $"Server URL marker was not found in session logs.");
 
         // Verify directly that the opencode health endpoint is reachable.
-        // Use the container bridge IP URL so this works regardless of whether the test process
-        // itself runs on the Docker host or inside a container (e.g. on a containerised CI runner).
+        // serverInternalUrl is either the host-gateway-routed URL (when the execution client
+        // runs inside a container) or the localhost-based display URL (on host runners).
+        // Both are reachable from the test process, which runs in the same environment.
         using var http = new HttpClient();
         var healthResp = await http.GetAsync($"{serverInternalUrl}/global/health");
         Assert.Equal(HttpStatusCode.OK, healthResp.StatusCode);

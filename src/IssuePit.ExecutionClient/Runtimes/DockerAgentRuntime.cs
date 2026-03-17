@@ -354,7 +354,7 @@ public class DockerAgentRuntime(
             // management via the REST API and git operations via docker exec.
             try
             {
-                // Step 6: Resolve the host-side port AND container bridge IP.
+                // Step 6: Resolve the host-side port.
                 var inspect = await dockerClient.Containers.InspectContainerAsync(container.ID, cancellationToken);
                 var containerPortKey = $"{OpenCodeHttpApi.DefaultPort}/tcp";
                 var ports = inspect.NetworkSettings?.Ports;
@@ -372,34 +372,33 @@ public class DockerAgentRuntime(
                         "Ensure the port binding was configured correctly.");
                 }
 
-                // Get the container's internal bridge IP so we can communicate directly with the
-                // opencode server without going through Docker's host port-mapping.
-                //
-                // When the execution client itself runs inside a Docker container (e.g. on a
-                // container-based CI runner such as the IssuePit runner), "localhost:{hostPort}"
-                // refers to the runner container's own loopback — the port mapped on the outer
-                // Docker host is not reachable from there. The container's bridge IP (172.17.x.x)
-                // is directly accessible from any container on the same bridge or from the host.
-                //
-                // NetworkSettings.Networks is a dict of network-name → EndpointSettings, each of
-                // which has an IPAddress field (Docker.DotNet.Enhanced NetworkSettings has only
-                // Ports and Networks at the top level — IPAddress lives on EndpointSettings).
-                var containerIp = inspect.NetworkSettings?.Networks?.Values
-                    .Select(n => n.IPAddress)
-                    .FirstOrDefault(ip => !string.IsNullOrWhiteSpace(ip));
-
-                // serverBaseUrl  — internal URL used for all C# ↔ opencode REST API calls.
+                // serverBaseUrl  — URL used for all C# ↔ opencode REST API calls.
                 // serverDisplayUrl — shown to users and persisted as the web UI URL (localhost-based
                 //                    so users can open the opencode web UI from their own browser).
-                var serverBaseUrl = !string.IsNullOrWhiteSpace(containerIp)
-                    ? $"http://{containerIp}:{OpenCodeHttpApi.DefaultPort}"
-                    : $"http://localhost:{hostPort}";
+                //
+                // When the execution client runs directly on the Docker host, "localhost:{hostPort}"
+                // is routed through Docker's port-mapping to the opencode container and works fine.
+                //
+                // When the execution client itself runs inside a Docker container (e.g. on the
+                // IssuePit runner), "localhost" refers to that container's own loopback — the port
+                // mapped on the outer Docker host is NOT reachable from there. In that case we read
+                // the Docker host gateway IP from /proc/net/route (the container's default route)
+                // and use "{hostGateway}:{hostPort}" instead. Docker binds mapped ports on
+                // 0.0.0.0 (all host interfaces), so they are reachable via the host gateway from
+                // any container whose default route points to that host.
                 var serverDisplayUrl = $"http://localhost:{hostPort}";
+                var serverBaseUrl = serverDisplayUrl;
 
-                if (string.IsNullOrWhiteSpace(containerIp))
-                    await onLogLine(
-                        "[WARN] Could not resolve container bridge IP; falling back to localhost port mapping " +
-                        "(may fail when execution client runs inside a container)", LogStream.Stderr);
+                if (IsRunningInContainer())
+                {
+                    var hostGateway = GetDockerHostGatewayIp();
+                    if (!string.IsNullOrWhiteSpace(hostGateway))
+                        serverBaseUrl = $"http://{hostGateway}:{hostPort}";
+                    else
+                        await onLogLine(
+                            "[WARN] Running inside a container but could not resolve Docker host gateway; " +
+                            "falling back to localhost port mapping (opencode API calls may fail)", LogStream.Stderr);
+                }
 
                 await onLogLine($"[DEBUG] HTTP server URL: {serverDisplayUrl}", LogStream.Stdout);
 
@@ -407,7 +406,9 @@ public class DockerAgentRuntime(
                 // on the session record for display in the UI.
                 await onLogLine($"{ServerWebUiUrlMarker}{serverDisplayUrl}", LogStream.Stdout);
 
-                // Emit the internal (bridge IP) URL for diagnostic use and E2E test verification.
+                // Emit the internal (gateway-routed) URL for diagnostic use and E2E test
+                // verification. Only logged when it differs from the display URL, i.e. when the
+                // execution client is running inside a container and has resolved a host gateway.
                 if (serverBaseUrl != serverDisplayUrl)
                     await onLogLine($"[DEBUG] HTTP internal URL: {serverBaseUrl}", LogStream.Stdout);
 
@@ -415,8 +416,9 @@ public class DockerAgentRuntime(
                 // The check runs in two stages:
                 //   1. Inside the container via docker exec curl — always reliable, independent of
                 //      Docker network topology (works even when execution client is containerised).
-                //   2. External HTTP GET using the container bridge IP — confirms the server is
-                //      reachable via the same URL used for all subsequent REST API calls.
+                //   2. External HTTP GET using serverBaseUrl — confirms the server is reachable via
+                //      the same URL used for all subsequent REST API calls (either localhost or the
+                //      host-gateway-routed URL depending on whether we are inside a container).
                 await onLogLine("[INFO] Waiting for opencode HTTP server to become ready…", LogStream.Stdout);
                 var serverReady = await WaitForHttpServerReadyAsync(
                     container.ID, serverBaseUrl, maxWaitSeconds: 60, cancellationToken);
@@ -814,8 +816,9 @@ public class DockerAgentRuntime(
             }
             catch { /* container not yet ready for exec — try again */ }
 
-            // Step 2 — external check via container bridge IP.
-            // Confirms the server is reachable through the same URL used for REST API calls.
+            // Step 2 — external check via serverBaseUrl.
+            // Confirms the server is reachable through the same URL used for REST API calls
+            // (either localhost or the host-gateway-routed URL).
             if (innerReady && await agentHttpApi.IsReadyAsync(serverBaseUrl, cancellationToken))
                 return true;
 
@@ -1225,5 +1228,74 @@ public class DockerAgentRuntime(
         {
             logger.LogWarning(ex, "Failed to clean up container {ContainerId} after error", containerId);
         }
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> when the execution client process is running inside a Docker container.
+    /// Detected by the presence of <c>/.dockerenv</c>, which Docker automatically creates inside
+    /// every Linux container. This is a Linux-specific heuristic and may produce false negatives
+    /// in non-standard or Windows container setups.
+    /// </summary>
+    private static bool IsRunningInContainer() => File.Exists("/.dockerenv");
+
+    /// <summary>
+    /// Reads the Docker host gateway IP from the container's default route in
+    /// <c>/proc/net/route</c>. Returns <c>null</c> when not running on Linux, when
+    /// <c>/proc/net/route</c> is unavailable, or when no default route is found.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>/proc/net/route</c> stores each route as a tab-separated line with the fields:
+    /// <c>Iface Destination Gateway Flags …</c>. The Destination and Gateway columns are
+    /// unsigned 32-bit integers written as 8-character little-endian hex strings
+    /// (e.g. <c>010011AC</c> = 172.17.0.1). The default route has Destination = "00000000".
+    /// </para>
+    /// <para>
+    /// Docker binds mapped ports on <c>0.0.0.0</c> (all host interfaces), so a port mapped
+    /// on the host is reachable at <c>{hostGatewayIp}:{hostPort}</c> from any container
+    /// whose default route leads to that host — regardless of which bridge the container
+    /// or the execution client container is on.
+    /// </para>
+    /// </remarks>
+    internal static string? GetDockerHostGatewayIp()
+    {
+        try
+        {
+            foreach (var line in File.ReadAllLines("/proc/net/route").Skip(1))
+            {
+                var parts = line.Split('\t');
+                if (parts.Length < 3) continue;
+                if (parts[1].Trim() != "00000000") continue; // only the default route
+                var hex = parts[2].Trim();
+                if (ParseProcNetRouteGatewayHex(hex) is string ip)
+                    return ip;
+            }
+        }
+        catch { /* not available on Windows or in non-Linux environments */ }
+        return null;
+    }
+
+    /// <summary>
+    /// Parses an 8-character little-endian hex gateway value from <c>/proc/net/route</c>
+    /// into a dotted-decimal IPv4 string. Returns <c>null</c> for invalid input.
+    /// </summary>
+    /// <example>
+    /// <c>"010011AC"</c> → <c>"172.17.0.1"</c> (Docker default bridge gateway)
+    /// </example>
+    internal static string? ParseProcNetRouteGatewayHex(string? hex)
+    {
+        if (hex is null || hex.Length != 8) return null;
+        try
+        {
+            // /proc/net/route stores IPs as little-endian 32-bit hex.
+            // "010011AC" as bytes in memory order is [01, 00, 11, AC]
+            //   = read right-to-left as IP octets → 172.17.0.1
+            var b0 = Convert.ToByte(hex[6..8], 16); // most-significant byte (first octet)
+            var b1 = Convert.ToByte(hex[4..6], 16);
+            var b2 = Convert.ToByte(hex[2..4], 16);
+            var b3 = Convert.ToByte(hex[0..2], 16); // least-significant byte (fourth octet)
+            return $"{b0}.{b1}.{b2}.{b3}";
+        }
+        catch { return null; }
     }
 }
