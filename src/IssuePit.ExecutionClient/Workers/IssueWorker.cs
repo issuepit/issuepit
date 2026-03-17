@@ -215,6 +215,8 @@ public class IssueWorker(
         await Task.WhenAll(agentIds.Select(agentId =>
             LaunchAgentAsync(agentId, message.Id, message.DockerImageOverride, message.KeepContainer, message.DockerCmdOverride,
                 message.ModelOverride, message.RunnerTypeOverride, message.UseHttpServerOverride, message.RuntimeTypeOverride,
+                // Only pass the pre-created session ID when exactly one agent is being launched (retry case).
+                agentIds.Count == 1 ? message.SessionId : null,
                 cancellationToken)));
     }
 
@@ -228,6 +230,7 @@ public class IssueWorker(
         int? runnerTypeOverride,
         bool? useHttpServerOverride,
         int? runtimeTypeOverride,
+        Guid? existingSessionId,
         CancellationToken cancellationToken)
     {
         using var scope = services.CreateScope();
@@ -296,27 +299,57 @@ public class IssueWorker(
             .OrderByDescending(r => r.Mode == GitOriginMode.Working)
             .FirstOrDefaultAsync(cancellationToken);
 
-        var session = new AgentSession
+        AgentSession session;
+        if (existingSessionId.HasValue)
         {
-            Id = Guid.NewGuid(),
-            AgentId = agent.Id,
-            IssueId = issue.Id,
-            RuntimeConfigId = runtimeConfig?.Id,
-            Status = AgentSessionStatus.Running,
-            StartedAt = DateTime.UtcNow,
-            KeepContainer = keepContainer,
-            CustomCmd = dockerCmdOverride,
-            Warnings = commentsWarning is not null
-                ? System.Text.Json.JsonSerializer.Serialize(new[] { commentsWarning })
-                : null,
-        };
+            // Reuse the pre-created queued session (created by the retry API endpoint).
+            var preCreated = await db.AgentSessions.FindAsync([existingSessionId.Value], cancellationToken);
+            if (preCreated is null)
+            {
+                logger.LogWarning(
+                    "Pre-created session {SessionId} not found — creating a new session instead",
+                    existingSessionId.Value);
+                preCreated = new AgentSession { Id = Guid.NewGuid(), IssueId = issue.Id, Status = AgentSessionStatus.Pending };
+                db.AgentSessions.Add(preCreated);
+            }
 
-        // If the runtime has a concurrency limit, record the session as Pending until a slot is available.
-        if (runtimeConfig is { MaxConcurrentAgents: > 0 })
-            session.Status = AgentSessionStatus.Pending;
+            preCreated.AgentId = agent.Id;
+            preCreated.RuntimeConfigId = runtimeConfig?.Id;
+            preCreated.KeepContainer = keepContainer;
+            preCreated.CustomCmd = dockerCmdOverride;
+            preCreated.StartedAt = DateTime.UtcNow;
+            preCreated.Status = AgentSessionStatus.Running;
+            if (runtimeConfig is { MaxConcurrentAgents: > 0 })
+                preCreated.Status = AgentSessionStatus.Pending;
+            if (commentsWarning is not null)
+                preCreated.Warnings = System.Text.Json.JsonSerializer.Serialize(new[] { commentsWarning });
+            await db.SaveChangesAsync(cancellationToken);
+            session = preCreated;
+        }
+        else
+        {
+            session = new AgentSession
+            {
+                Id = Guid.NewGuid(),
+                AgentId = agent.Id,
+                IssueId = issue.Id,
+                RuntimeConfigId = runtimeConfig?.Id,
+                Status = AgentSessionStatus.Running,
+                StartedAt = DateTime.UtcNow,
+                KeepContainer = keepContainer,
+                CustomCmd = dockerCmdOverride,
+                Warnings = commentsWarning is not null
+                    ? System.Text.Json.JsonSerializer.Serialize(new[] { commentsWarning })
+                    : null,
+            };
 
-        db.AgentSessions.Add(session);
-        await db.SaveChangesAsync(cancellationToken);
+            // If the runtime has a concurrency limit, record the session as Pending until a slot is available.
+            if (runtimeConfig is { MaxConcurrentAgents: > 0 })
+                session.Status = AgentSessionStatus.Pending;
+
+            db.AgentSessions.Add(session);
+            await db.SaveChangesAsync(cancellationToken);
+        }
 
         // Look up the most recent completed opencode session for this issue+agent so the new run
         // can continue from the preserved conversation. Only applies when artifact storage is
@@ -1310,7 +1343,7 @@ public class IssueWorker(
         GitBranch = branchName,
     };
 
-    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? DockerCmdOverride = null, string? ModelOverride = null, int? RunnerTypeOverride = null, bool? UseHttpServerOverride = null, int? RuntimeTypeOverride = null, bool ForceAgentId = false);
+    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, Guid? SessionId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? DockerCmdOverride = null, string? ModelOverride = null, int? RunnerTypeOverride = null, bool? UseHttpServerOverride = null, int? RuntimeTypeOverride = null, bool ForceAgentId = false);
 
     /// <summary>
     /// Trims the comment list so that the combined character count of all comment bodies stays
