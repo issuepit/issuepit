@@ -1231,12 +1231,33 @@ public class DockerAgentRuntime(
     }
 
     /// <summary>
-    /// Returns <c>true</c> when the execution client process is running inside a Docker container.
-    /// Detected by the presence of <c>/.dockerenv</c>, which Docker automatically creates inside
-    /// every Linux container. This is a Linux-specific heuristic and may produce false negatives
-    /// in non-standard or Windows container setups.
+    /// Returns <c>true</c> when the execution client process is running inside a container.
+    /// Uses two detection methods:
+    /// <list type="bullet">
+    ///   <item><c>/.dockerenv</c> — Docker Engine creates this file in every container.</item>
+    ///   <item><c>/proc/self/cgroup</c> — contains <c>/docker/</c> or <c>/containerd/</c>
+    ///         path segments in cgroup v1 layouts used by many container runtimes.</item>
+    /// </list>
+    /// Returns <c>false</c> on Windows and when neither indicator is found (bare host).
     /// </summary>
-    private static bool IsRunningInContainer() => File.Exists("/.dockerenv");
+    private static bool IsRunningInContainer()
+    {
+        // /.dockerenv is created by Docker Engine in every standard Linux container.
+        if (File.Exists("/.dockerenv")) return true;
+
+        // Fallback: /proc/self/cgroup contains container-specific path segments in runtimes
+        // that don't create /.dockerenv (e.g. some containerd or rootless Docker setups).
+        // Example line (cgroup v1): "12:memory:/docker/abc123..."
+        try
+        {
+            var cgroup = File.ReadAllText("/proc/self/cgroup");
+            if (cgroup.Contains("/docker/") || cgroup.Contains("/containerd/"))
+                return true;
+        }
+        catch { /* /proc/self/cgroup not available on Windows or non-Linux */ }
+
+        return false;
+    }
 
     /// <summary>
     /// Reads the Docker host gateway IP from the container's default route in

@@ -589,7 +589,14 @@ public class AgentHttpServerTests(AspireFixture fixture)
         // the execution client confirmed readiness both inside the container (docker exec curl)
         // and via the externally-reachable URL. Allow up to 60 s (image is pre-pulled; server
         // starts in ~20 s under normal conditions).
+        //
+        // When "server is ready" is detected we cancel the session immediately and do the health
+        // check in the same polling iteration. Cancelling interrupts the execution client's
+        // WaitForCompletionAsync before it can detect an opencode error (e.g. no LLM keys) and
+        // stop the container, giving the health check the maximum possible window.
         string? serverInternalUrl = null;
+        var healthCheckPassed = false;
+        string? lastHealthError = null;
         var readyDeadline = DateTimeOffset.UtcNow.AddSeconds(60);
         while (DateTimeOffset.UtcNow < readyDeadline)
         {
@@ -616,8 +623,32 @@ public class AgentHttpServerTests(AspireFixture fixture)
                         serverInternalUrl = displayLine["[ISSUEPIT:SERVER_WEB_UI_URL]=".Length..].Trim();
                 }
 
-                if (logLines.Any(l => l.Contains("[INFO] opencode HTTP server is ready")))
+                if (logLines.Any(l => l.Contains("[INFO] opencode HTTP server is ready")) && serverInternalUrl is not null)
+                {
+                    // Cancel the session immediately to stop WaitForCompletionAsync from
+                    // detecting the opencode error (no LLM keys) and stopping the container.
+                    // Cancellation interrupts the 3-second poll delay, keeping the container
+                    // alive while IssueWorker processes the cancellation.
+                    await client.PostAsync($"/api/agent-sessions/{sessionId}/cancel", null);
+
+                    // Attempt the health check immediately. Retry briefly in case the container
+                    // is still in the process of being stopped despite the cancel.
+                    for (var attempt = 0; attempt < 10 && !healthCheckPassed; attempt++)
+                    {
+                        try
+                        {
+                            using var healthHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+                            var healthResp = await healthHttp.GetAsync($"{serverInternalUrl}/global/health");
+                            if (healthResp.IsSuccessStatusCode)
+                                healthCheckPassed = true;
+                        }
+                        catch (HttpRequestException ex) { lastHealthError = ex.Message; }
+
+                        if (!healthCheckPassed)
+                            await Task.Delay(TimeSpan.FromMilliseconds(500));
+                    }
                     break;
+                }
 
                 // If the session has already reached a terminal state before the server became
                 // ready, fail fast with a diagnostic message.
@@ -641,19 +672,12 @@ public class AgentHttpServerTests(AspireFixture fixture)
                 $"opencode HTTP server did not become ready within 60 seconds. " +
                 $"Server URL marker was not found in session logs.");
 
-        // Verify directly that the opencode health endpoint is reachable.
-        // serverInternalUrl is either the host-gateway-routed URL (when the execution client
-        // runs inside a container) or the localhost-based display URL (on host runners).
-        // Both are reachable from the test process, which runs in the same environment.
-        using var http = new HttpClient();
-        var healthResp = await http.GetAsync($"{serverInternalUrl}/global/health");
-        Assert.Equal(HttpStatusCode.OK, healthResp.StatusCode);
-
-        // Cancel the session — we do not need LLM completion.
-        var cancelResp = await client.PostAsync($"/api/agent-sessions/{sessionId}/cancel", null);
         Assert.True(
-            cancelResp.IsSuccessStatusCode,
-            $"Expected cancel to succeed, got {cancelResp.StatusCode}.");
+            healthCheckPassed,
+            $"opencode HTTP server reported ready (via execution client) but the health endpoint " +
+            $"was not accessible from the test process at {serverInternalUrl}. " +
+            $"The container may have stopped before the health check could complete. " +
+            $"Last error: {lastHealthError ?? "(none)"}.");
 
         // Wait for the session to reach a terminal state (Cancelled or Failed).
         await WaitForHttpServerSessionAsync(client, issueId, TimeSpan.FromMinutes(2));
