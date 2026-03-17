@@ -140,7 +140,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     useHttpServerOverride?: boolean
     runtimeTypeOverride?: number
   }) {
-    await api.post(`/api/agent-sessions/${sessionId}/retry`, options ?? {})
+    return await api.post<{ retriedSessionId: string }>(`/api/agent-sessions/${sessionId}/retry`, options ?? {})
   }
 
   async function cancelSession(sessionId: string) {
