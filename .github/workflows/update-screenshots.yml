@@ -188,7 +188,7 @@ jobs:
         if: ${{ github.event_name != 'pull_request' && env.ISSUEPIT_RUN != 'true' }}
         uses: peter-evans/create-pull-request@v7
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
           commit-message: "docs: update screenshots"
           branch: docs/update-screenshots
           delete-branch: true
