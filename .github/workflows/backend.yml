@@ -215,10 +215,26 @@ jobs:
       - name: Set Vosk model path
         run: echo "VoiceTranscription__ModelPath=$HOME/.vosk/vosk-model-small-en-us-0.15" >> $GITHUB_ENV
 
+      - name: Cache ffmpeg apt packages
+        id: cache-ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: /tmp/apt-ffmpeg
+          key: apt-ffmpeg-noble-amd64
+
       - name: Install ffmpeg
         # https://github.com/orgs/community/discussions/145882
         run: |
+          if [ "${{ steps.cache-ffmpeg.outputs.cache-hit }}" = "true" ]; then
+            sudo cp /tmp/apt-ffmpeg/*.deb /var/cache/apt/archives/
+          fi
           sudo apt-get -y update
+          if [ "${{ steps.cache-ffmpeg.outputs.cache-hit }}" != "true" ]; then
+            # Download packages first so we can cache only the ffmpeg-related debs
+            sudo apt-get install -y --download-only ffmpeg
+            mkdir -p /tmp/apt-ffmpeg
+            sudo cp /var/cache/apt/archives/*.deb /tmp/apt-ffmpeg/
+          fi
           sudo apt-get install -y ffmpeg
 
       - name: Disable ffmpeg auto-download (use system ffmpeg)
