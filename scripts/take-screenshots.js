@@ -6,11 +6,25 @@
  * Usage:
  *   FRONTEND_URL=http://localhost:3000 node scripts/take-screenshots.js [output-dir]
  *
+ * Options (environment variables):
+ *   FRONTEND_URL          Frontend base URL (default: http://localhost:3000)
+ *   API_URL               API base URL (default: http://localhost:5000)
+ *   SCREENSHOT_USERNAME   Pre-seeded username (Aspire: alice)
+ *   SCREENSHOT_PASSWORD   Pre-seeded password (Aspire: alice)
+ *   GITHUB_TOKEN          GitHub token — required for --create-pr
+ *   GITHUB_REPO           owner/repo for the PR (default: issuepit/issuepit)
+ *   PR_BRANCH             Branch to commit screenshots to (default: docs/update-screenshots-<timestamp>)
+ *   PR_BASE               Base branch for the PR (default: main)
+ *
+ * Flags:
+ *   --create-pr           Commit screenshots and open a GitHub PR after taking them.
+ *
  * The script:
  *   1. Logs in (or registers) a user.
  *   2. Seeds minimal demo data when no pre-seeded user is configured.
- *   3. Takes screenshots of each main UI page.
+ *   3. Takes screenshots of each main UI page + the /demo component pages.
  *   4. Saves them to <output-dir> (defaults to docs/assets/screenshots).
+ *   5. If --create-pr: pushes a new branch and opens a draft PR on GitHub.
  *
  * When running against an Aspire-managed stack the Migrator already seeds demo data
  * (alice/alice with the Acme Corp org). Set SCREENSHOT_USERNAME=alice and
@@ -33,6 +47,13 @@ const USE_SEEDED_USER = !!SEEDED_USERNAME;
 
 const USERNAME = USE_SEEDED_USER ? SEEDED_USERNAME : `docs${Math.random().toString(36).slice(2, 10)}`;
 const PASSWORD = USE_SEEDED_USER ? SEEDED_PASSWORD : 'DocsPass1!';
+
+// PR creation (--create-pr flag)
+const CREATE_PR = process.argv.includes('--create-pr');
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
+const GITHUB_REPO = process.env.GITHUB_REPO || 'issuepit/issuepit';
+const PR_BRANCH = process.env.PR_BRANCH || `docs/update-screenshots-${Date.now()}`;
+const PR_BASE = process.env.PR_BASE || 'main';
 
 async function waitForBackend(maxWaitMs = 120_000) {
   const start = Date.now();
@@ -331,8 +352,145 @@ async function main() {
     }
   }
 
+  // --- Demo component pages ---
+  console.log('Taking demo page screenshots…');
+  try {
+    await page.goto(`${FRONTEND_URL}/demo`);
+    await screenshot(page, 'demo-index');
+
+    // Test History chart — failure-rate mode (default)
+    await page.goto(`${FRONTEND_URL}/demo/test-history-chart`);
+    await screenshot(page, 'project-dashboard-test-history-failure-rate');
+
+    // Switch to pass/fail mode
+    try {
+      await page.getByText('Pass/Fail').first().click({ timeout: 3000 });
+      await screenshotState(page, 'project-dashboard-test-history-pass-fail');
+    } catch (e) {
+      console.warn('  ⚠  test-history pass/fail switch skipped:', e.message);
+    }
+
+    // Switch to groups mode
+    try {
+      await page.getByText('Groups').first().click({ timeout: 3000 });
+      await screenshotState(page, 'project-dashboard-test-history-groups');
+    } catch (e) {
+      console.warn('  ⚠  test-history groups switch skipped:', e.message);
+    }
+
+    // Switch to runs x-mode
+    try {
+      await page.getByText('Runs').first().click({ timeout: 3000 });
+      await screenshotState(page, 'project-dashboard-test-history-runs-mode');
+    } catch (e) {
+      console.warn('  ⚠  test-history runs mode switch skipped:', e.message);
+    }
+
+    // Demo kanban page
+    await page.goto(`${FRONTEND_URL}/demo/kanban`);
+    await screenshot(page, 'project-dashboard-kanban-card');
+  } catch (e) {
+    console.warn('  ⚠  Demo pages skipped:', e.message);
+  }
+
   await browser.close();
   console.log('Done.');
+
+  if (CREATE_PR) {
+    console.log('Creating GitHub Pull Request…');
+    await createPullRequest();
+  }
+}
+
+/**
+ * Create a GitHub Pull Request with the updated screenshots.
+ * Encodes each PNG in the output directory as base64, commits them to a new branch,
+ * and opens a draft PR. Requires GITHUB_TOKEN with `repo` scope.
+ */
+async function createPullRequest() {
+  if (!GITHUB_TOKEN) throw new Error('GITHUB_TOKEN is required for --create-pr');
+
+  const [owner, repo] = GITHUB_REPO.split('/');
+  const apiBase = `https://api.github.com/repos/${owner}/${repo}`;
+  const headers = {
+    Authorization: `Bearer ${GITHUB_TOKEN}`,
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+    'Content-Type': 'application/json',
+  };
+
+  // Get the SHA of the base branch HEAD
+  const baseRef = await fetch(`${apiBase}/git/ref/heads/${PR_BASE}`, { headers });
+  if (!baseRef.ok) {
+    const err = await baseRef.text();
+    throw new Error(`Failed to resolve base branch '${PR_BASE}': ${err}`);
+  }
+  const baseRefJson = await baseRef.json();
+  const baseSha = baseRefJson.object?.sha;
+  if (!baseSha) throw new Error(`Could not read SHA for base branch '${PR_BASE}': ${JSON.stringify(baseRefJson)}`);
+
+  // Create the new branch
+  const branchRes = await fetch(`${apiBase}/git/refs`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ ref: `refs/heads/${PR_BRANCH}`, sha: baseSha }),
+  });
+  if (!branchRes.ok) {
+    const err = await branchRes.text();
+    throw new Error(`Failed to create branch ${PR_BRANCH}: ${err}`);
+  }
+  console.log(`  Branch created: ${PR_BRANCH}`);
+
+  // Commit each screenshot file
+  const screenshots = fs.readdirSync(OUTPUT_DIR).filter(f => f.endsWith('.png'));
+  for (const file of screenshots) {
+    const filePath = path.join(OUTPUT_DIR, file);
+    const content64 = fs.readFileSync(filePath).toString('base64');
+    const repoPath = `docs/assets/screenshots/${file}`;
+
+    // Check if file exists to get its current SHA (required for update)
+    let fileSha;
+    const existing = await fetch(`${apiBase}/contents/${repoPath}?ref=${PR_BRANCH}`, { headers });
+    if (existing.ok) {
+      const existingJson = await existing.json();
+      fileSha = existingJson.sha;
+    }
+
+    const body = {
+      message: `docs: update screenshot ${file}`,
+      content: content64,
+      branch: PR_BRANCH,
+      ...(fileSha ? { sha: fileSha } : {}),
+    };
+    const putRes = await fetch(`${apiBase}/contents/${repoPath}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(body),
+    });
+    if (!putRes.ok) {
+      const err = await putRes.text();
+      console.warn(`  ⚠  Failed to commit ${file}: ${err}`);
+    } else {
+      console.log(`  ✓  Committed ${repoPath}`);
+    }
+  }
+
+  // Open the PR
+  const now = new Date().toISOString().slice(0, 10);
+  const prRes = await fetch(`${apiBase}/pulls`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      title: `docs: update screenshots (${now})`,
+      body: `Automated screenshot update generated by \`scripts/take-screenshots.js --create-pr\`.\n\nUpdated ${screenshots.length} screenshot(s).`,
+      head: PR_BRANCH,
+      base: PR_BASE,
+      draft: true,
+    }),
+  });
+  const prJson = await prRes.json();
+  if (!prRes.ok) throw new Error(`Failed to create PR: ${JSON.stringify(prJson)}`);
+  console.log(`  PR created: ${prJson.html_url}`);
 }
 
 main().catch(err => {

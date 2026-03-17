@@ -89,6 +89,17 @@ public class CiCdRunPage(IPage page)
             null,
             new PageWaitForFunctionOptions { Timeout = E2ETimeouts.Navigation });
 
+    /// <summary>
+    /// Waits for the Artifacts tab to show at least one artifact (the "produced by this run" text).
+    /// Use this instead of <see cref="WaitForArtifactsTabContentAsync"/> when you know the run
+    /// should have artifacts, to avoid resolving early on the transient empty-state shown during loading.
+    /// </summary>
+    public async Task WaitForNonEmptyArtifactsTabAsync() =>
+        await page.WaitForFunctionAsync(
+            "document.body.innerText.includes('produced by this run')",
+            null,
+            new PageWaitForFunctionOptions { Timeout = E2ETimeouts.Navigation });
+
     /// <summary>Returns true when the artifacts tab shows the empty state message.</summary>
     public async Task<bool> IsArtifactsTabEmptyAsync() =>
         await page.IsVisibleAsync("text=No artifacts found for this run.");
@@ -96,9 +107,22 @@ public class CiCdRunPage(IPage page)
     /// <summary>
     /// Returns true when the toggle button for test-result artifacts is visible
     /// (i.e. the run produced at least one artifact flagged as a test-result artifact).
+    /// Waits up to <see cref="E2ETimeouts.Default"/> for the button to appear.
     /// </summary>
-    public async Task<bool> HasTestResultArtifactToggleAsync() =>
-        await page.IsVisibleAsync("[data-testid='toggle-test-result-artifacts']");
+    public async Task<bool> HasTestResultArtifactToggleAsync()
+    {
+        try
+        {
+            await page.WaitForSelectorAsync(
+                "[data-testid='toggle-test-result-artifacts']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default, State = WaitForSelectorState.Visible });
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            return false;
+        }
+    }
 
     /// <summary>
     /// Clicks the toggle button that reveals hidden test-result artifacts and waits

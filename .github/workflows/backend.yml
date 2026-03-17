@@ -217,7 +217,10 @@ jobs:
         run: echo "VoiceTranscription__ModelPath=$HOME/.vosk/vosk-model-small-en-us-0.15" >> $GITHUB_ENV
 
       - name: Install ffmpeg
-        run: sudo apt-get install -y ffmpeg
+        # https://github.com/orgs/community/discussions/145882
+        run: |
+          sudo apt-get -y update
+          sudo apt-get install -y ffmpeg
 
       - name: Disable ffmpeg auto-download (use system ffmpeg)
         run: echo "VoiceTranscription__DownloadFfmpeg=false" >> $GITHUB_ENV

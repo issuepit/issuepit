@@ -47,9 +47,9 @@
             <p class="text-xs text-gray-500 mb-1">Commit</p>
             <NuxtLink
               v-if="store.currentRun.commitSha"
-              :to="`/projects/${projectId}/runs?commitSha=${store.currentRun.commitSha}`"
+              :to="commitUrl(store.currentRun.commitSha)!"
               class="text-sm text-brand-400 hover:text-brand-300 font-mono transition-colors"
-              :title="`Show all runs for ${store.currentRun.commitSha}`">
+              :title="`View commit ${store.currentRun.commitSha} in code viewer`">
               {{ store.currentRun.commitSha.slice(0, 7) }}
             </NuxtLink>
             <span v-else class="text-sm text-gray-300 font-mono">—</span>
@@ -693,7 +693,7 @@
                     <span v-else-if="tc.outcomeName === 'Failed'" class="text-red-400 shrink-0">✗</span>
                     <span v-else class="text-yellow-500 shrink-0">–</span>
                     <NuxtLink
-                      :to="`/projects/${projectId}/runs/test-history?tab=Tests`"
+                      :to="`/projects/${projectId}/runs/test-history?tab=Tests&test=${encodeURIComponent(tc.fullName)}`"
                       class="text-xs text-gray-300 font-mono truncate flex-1 hover:text-brand-400 transition-colors"
                       :title="tc.fullName">
                       {{ tc.methodName || tc.fullName }}
@@ -2087,6 +2087,12 @@ function formatTestDuration(ms: number) {
   const s = ms / 1000
   if (s < 60) return `${s.toFixed(1)}s`
   return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`
+}
+
+/** Returns the internal code viewer URL for a specific commit SHA, if one is provided. */
+function commitUrl(sha?: string): string | null {
+  if (!sha) return null
+  return `/projects/${projectId}/code?sha=${sha}`
 }
 
 function duration(start: string, end?: string) {
