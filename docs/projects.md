@@ -48,6 +48,42 @@ Click **Customize dashboard** (bottom of the page) to enter **draft mode**. In d
 
 ![Project dashboard in draft/customize mode]({{ '/assets/screenshots/project-dashboard-draft.png' | relative_url }})
 
+### Test History Chart Card
+
+The **Test History** card can be switched between **list mode** (recent run table) and **chart mode** (interactive bar chart). In chart mode the settings cog exposes:
+
+| Setting | Options |
+|---------|---------|
+| **Timeframe** | 7 – 60 days (number input) |
+| **Branch** | All branches or a specific branch filter |
+| **Color mode** | `Fail %` · `Pass/Fail` · `Groups` |
+| **Y axis** | `Count` (test count) · `Time` (duration in seconds) |
+| **X axis** | `Date` (one bar per calendar day, gaps for idle days) · `Runs` (one bar per CI run, no gaps, multiple runs per day OK) |
+
+**Color modes:**
+
+- **Fail %** — single bar whose color blends green → yellow → red proportional to the day's failure percentage.
+- **Pass/Fail** — stacked green (passed) / red (failed) bar. In Time mode the bar height is the total duration, split proportionally green/red by the pass/fail test count ratio.
+- **Groups** — stacked segments per test artifact name (e.g. `unit`, `integration`, `e2e`). Each group segment uses a stable hue that shifts toward dark red as that group's own failure rate increases. The legend shows each group's own gradient chip — vivid base color = healthy, dark red = failing.
+
+![Test History chart — failure rate mode]({{ '/assets/screenshots/project-dashboard-test-history-failure-rate.png' | relative_url }})
+
+![Test History chart — pass/fail and groups modes]({{ '/assets/screenshots/project-dashboard-test-history-groups.png' | relative_url }})
+
+Multiple Test History chart cards can be placed on the same dashboard (e.g. one per branch) by dragging the **+ Test History** button from the draft-mode toolbar.
+
+### Kanban Dashboard Card
+
+The **Kanban Board** dashboard card shows an inline read-only kanban view. To add one (or more) to the dashboard:
+
+1. Click **Customize dashboard** to enter draft mode.
+2. Drag the **+ Kanban Board** button from the toolbar onto the layout, or click it to append it at the end.
+3. Use the settings cog on the card to pick which board to display.
+
+Each card is independent — you can place the same board twice or show different boards side by side.
+
+![Dashboard kanban card]({{ '/assets/screenshots/project-dashboard-kanban-card.png' | relative_url }})
+
 ---
 
 ## Git Origins (Multiple Remotes)

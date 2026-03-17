@@ -17,6 +17,81 @@ namespace IssuePit.Api.Controllers;
 public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : ControllerBase
 {
     // ──────────────────────────────────────────────────────────────────────────
+    // Daily summary (chart data)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns per-day aggregated test counts for the given project, ordered by date ascending.
+    /// Each day includes a <c>groups</c> array with per-artifact-name breakdowns, enabling
+    /// stacked-bar charts per test group (unit, e2e, integration, …).
+    /// Optionally filtered by branch and limited to the most recent <paramref name="days"/> calendar days.
+    /// </summary>
+    [HttpGet("daily-summary")]
+    public async Task<IActionResult> GetDailySummary(
+        Guid projectId,
+        [FromQuery] string? branch = null,
+        [FromQuery] int days = 30)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        if (!await ProjectExistsInTenantAsync(projectId)) return NotFound();
+
+        const int MaxDailySummaryDays = 90;
+        days = Math.Clamp(days, 1, MaxDailySummaryDays);
+        var since = DateTime.UtcNow.Date.AddDays(-days + 1);
+
+        var query = db.CiCdTestSuites
+            .Where(s => s.CiCdRun.ProjectId == projectId
+                     && s.CiCdRun.Project.Organization.TenantId == ctx.CurrentTenant.Id
+                     && s.CiCdRun.StartedAt >= since);
+
+        if (!string.IsNullOrWhiteSpace(branch))
+            query = query.Where(s => s.CiCdRun.Branch == branch);
+
+        var raw = await query
+            .Select(s => new
+            {
+                Date = s.CiCdRun.StartedAt.Date,
+                s.ArtifactName,
+                s.TotalTests,
+                s.PassedTests,
+                s.FailedTests,
+                s.SkippedTests,
+                s.DurationMs,
+            })
+            .ToListAsync();
+
+        var result = raw
+            .GroupBy(s => s.Date)
+            .Select(g => new
+            {
+                Date = g.Key.ToString("yyyy-MM-dd"),
+                TotalTests = g.Sum(s => s.TotalTests),
+                PassedTests = g.Sum(s => s.PassedTests),
+                FailedTests = g.Sum(s => s.FailedTests),
+                SkippedTests = g.Sum(s => s.SkippedTests),
+                DurationMs = g.Sum(s => s.DurationMs),
+                RunCount = g.Count(),
+                Groups = g
+                    .GroupBy(s => s.ArtifactName)
+                    .Select(ag => new
+                    {
+                        Name = ag.Key,
+                        TotalTests = ag.Sum(s => s.TotalTests),
+                        PassedTests = ag.Sum(s => s.PassedTests),
+                        FailedTests = ag.Sum(s => s.FailedTests),
+                        SkippedTests = ag.Sum(s => s.SkippedTests),
+                        DurationMs = ag.Sum(s => s.DurationMs),
+                    })
+                    .OrderBy(ag => ag.Name)
+                    .ToList(),
+            })
+            .OrderBy(r => r.Date)
+            .ToList();
+
+        return Ok(result);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
     // Run summaries
     // ──────────────────────────────────────────────────────────────────────────
 
@@ -41,35 +116,58 @@ public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : Co
         if (!string.IsNullOrWhiteSpace(branch))
             query = query.Where(s => s.CiCdRun.Branch == branch);
 
-        // Group suites by run and aggregate counts.
-        var rows = await query
-            .GroupBy(s => new
+        // Materialise raw suite rows first so that nested client-side grouping (Groups) works.
+        var raw = await query
+            .Select(s => new
             {
                 s.CiCdRunId,
                 s.CiCdRun.CommitSha,
                 s.CiCdRun.Branch,
                 s.CiCdRun.StartedAt,
                 s.CiCdRun.EndedAt,
-                s.CiCdRun.Status,
+                StatusName = s.CiCdRun.Status.ToString(),
+                s.ArtifactName,
+                s.TotalTests,
+                s.PassedTests,
+                s.FailedTests,
+                s.SkippedTests,
+                s.DurationMs,
             })
+            .ToListAsync();
+
+        var rows = raw
+            .GroupBy(s => s.CiCdRunId)
             .Select(g => new
             {
-                RunId = g.Key.CiCdRunId,
-                g.Key.CommitSha,
-                g.Key.Branch,
-                g.Key.StartedAt,
-                g.Key.EndedAt,
-                StatusName = g.Key.Status.ToString(),
+                RunId = g.Key,
+                CommitSha = g.First().CommitSha,
+                Branch = g.First().Branch,
+                StartedAt = g.First().StartedAt,
+                EndedAt = g.First().EndedAt,
+                StatusName = g.First().StatusName,
                 TotalTests = g.Sum(s => s.TotalTests),
                 PassedTests = g.Sum(s => s.PassedTests),
                 FailedTests = g.Sum(s => s.FailedTests),
                 SkippedTests = g.Sum(s => s.SkippedTests),
                 DurationMs = g.Sum(s => s.DurationMs),
                 SuiteCount = g.Count(),
+                Groups = g
+                    .GroupBy(s => s.ArtifactName)
+                    .Select(ag => new
+                    {
+                        Name = ag.Key,
+                        TotalTests = ag.Sum(s => s.TotalTests),
+                        PassedTests = ag.Sum(s => s.PassedTests),
+                        FailedTests = ag.Sum(s => s.FailedTests),
+                        SkippedTests = ag.Sum(s => s.SkippedTests),
+                        DurationMs = ag.Sum(s => s.DurationMs),
+                    })
+                    .OrderBy(ag => ag.Name)
+                    .ToList(),
             })
             .OrderByDescending(r => r.StartedAt)
             .Take(Math.Min(take, 200))
-            .ToListAsync();
+            .ToList();
 
         return Ok(rows);
     }
