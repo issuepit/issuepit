@@ -85,7 +85,7 @@ public class CiCdRunPage(IPage page)
     /// </summary>
     public async Task WaitForArtifactsTabContentAsync() =>
         await page.WaitForFunctionAsync(
-            "document.body.innerText.includes('artifact') || document.body.innerText.includes('No artifacts found')",
+            "document.body.innerText.includes('produced by this run') || document.body.innerText.includes('No artifacts found for this run')",
             null,
             new PageWaitForFunctionOptions { Timeout = E2ETimeouts.Navigation });
 
