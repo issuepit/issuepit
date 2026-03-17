@@ -103,7 +103,7 @@
               <code class="bg-gray-800 px-1 rounded text-gray-300">{{ mr.sourceBranch }}</code>
               <span class="mx-1">→</span>
               <code class="bg-gray-800 px-1 rounded text-gray-300">{{ mr.targetBranch }}</code>
-              <span class="ml-2 text-gray-600">{{ formatDate(mr.createdAt) }}</span>
+              <span class="ml-2 text-gray-600"><DateDisplay :date="mr.createdAt" mode="auto" resolution="date" /></span>
             </p>
           </div>
 
@@ -379,11 +379,6 @@ function ciStatusClass(statusName: string): string {
     case 'Cancelled': return 'bg-gray-700 text-gray-400'
     default: return 'bg-gray-700 text-gray-400'
   }
-}
-
-function formatDate(dateStr: string): string {
-  const d = new Date(dateStr)
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 onMounted(async () => {

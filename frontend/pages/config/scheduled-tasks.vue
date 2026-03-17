@@ -151,7 +151,7 @@
               {{ run.summary || '—' }}
             </td>
             <td class="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
-              {{ formatDate(run.startedAt) }}
+              <DateDisplay :date="run.startedAt" mode="auto" />
             </td>
             <td class="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
               {{ duration(run.startedAt, run.completedAt) }}
@@ -241,10 +241,6 @@ function typeLabel(type: ScheduledTaskType): string {
     case 'ConfigRepoSync': return 'Config Repo Sync'
     default: return type
   }
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString()
 }
 
 function duration(start: string, end?: string | null): string {

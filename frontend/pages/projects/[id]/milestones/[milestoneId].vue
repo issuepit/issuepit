@@ -62,10 +62,10 @@
         <p v-if="progress.description" class="text-gray-400">{{ progress.description }}</p>
         <div class="flex items-center gap-4 mt-1">
           <p v-if="progress.startDate" class="text-sm text-gray-500">
-            Start {{ formatDate(progress.startDate) }}
+            Start <DateDisplay :date="progress.startDate" mode="absolute" resolution="date" />
           </p>
           <p v-if="progress.dueDate" class="text-sm text-gray-500">
-            Due {{ formatDate(progress.dueDate) }}
+            Due <DateDisplay :date="progress.dueDate" mode="absolute" resolution="date" />
           </p>
         </div>
       </div>
@@ -264,10 +264,6 @@ async function toggleStatus() {
   if (updated && progress.value) {
     progress.value.status = updated.status
   }
-}
-
-function formatDate(d: string) {
-  return new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 function statusDotColor(status: IssueStatus) {

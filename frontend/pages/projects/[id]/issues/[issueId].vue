@@ -265,7 +265,7 @@
                     <template v-else-if="event.oldValue">
                       <span class="text-xs text-gray-600 line-through">{{ resolveEventValue(event.eventType, event.oldValue) }}</span>
                     </template>
-                    <span class="text-xs text-gray-600 ml-auto shrink-0">{{ formatDate(event.createdAt) }}</span>
+                    <span class="text-xs text-gray-600 ml-auto shrink-0"><DateDisplay :date="event.createdAt" mode="relative" resolution="datetime" /></span>
                   </div>
                 </div>
               </div>
@@ -289,7 +289,7 @@
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-2 mb-1">
                     <span class="text-xs font-medium text-gray-300">{{ comment.user?.username ?? 'Unknown' }}</span>
-                    <span class="text-xs text-gray-600">{{ formatDate(comment.createdAt) }}</span>
+                    <span class="text-xs text-gray-600"><DateDisplay :date="comment.createdAt" mode="relative" resolution="datetime" /></span>
                     <div class="ml-auto flex gap-2 opacity-0 group-hover:opacity-100 transition-all">
                       <button @click="startEditingComment(comment)"
                         class="text-gray-600 hover:text-brand-400 text-xs">Edit</button>
@@ -414,7 +414,7 @@
                   <p class="text-xs text-gray-500">
                     {{ formatFileSize(att.fileSize) }} · {{ att.contentType }}
                     <span v-if="!att.isPublic" class="ml-1 text-yellow-600" title="Private — only visible to you">🔒 Private</span>
-                    · {{ formatDate(att.createdAt) }}
+                    · <DateDisplay :date="att.createdAt" mode="auto" resolution="date" />
                   </p>
                 </div>
                 <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -457,7 +457,7 @@
                       </td>
                       <td class="px-3 py-2 text-gray-300 text-xs">{{ session.agentName }}</td>
                       <td class="px-3 py-2 text-gray-400 font-mono text-xs">{{ session.gitBranch || '—' }}</td>
-                      <td class="px-3 py-2 text-gray-400 text-xs">{{ formatDate(session.startedAt) }}</td>
+                      <td class="px-3 py-2 text-gray-400 text-xs"><DateDisplay :date="session.startedAt" mode="auto" /></td>
                     </tr>
                   </tbody>
                 </table>
@@ -489,7 +489,7 @@
                         <td class="px-3 py-2 text-gray-300 text-xs">{{ run.workflow || '—' }}</td>
                         <td class="px-3 py-2 text-gray-400 font-mono text-xs">{{ run.branch || '—' }}</td>
                         <td class="px-3 py-2 text-gray-400 font-mono text-xs">{{ run.commitSha?.slice(0, 7) || '—' }}</td>
-                        <td class="px-3 py-2 text-gray-400 text-xs">{{ formatDate(run.startedAt) }}</td>
+                        <td class="px-3 py-2 text-gray-400 text-xs"><DateDisplay :date="run.startedAt" mode="auto" /></td>
                       </tr>
                     </tbody>
                   </table>
@@ -620,11 +620,11 @@
             <!-- Dates -->
             <div>
               <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Created</p>
-              <p class="text-xs text-gray-400">{{ formatDate(store.currentIssue.createdAt) }}</p>
+              <p class="text-xs text-gray-400"><DateDisplay :date="store.currentIssue.createdAt" mode="absolute" resolution="datetime" /></p>
             </div>
             <div v-if="store.currentIssue.dueDate">
               <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Due</p>
-              <p class="text-xs text-gray-400">{{ formatDate(store.currentIssue.dueDate) }}</p>
+              <p class="text-xs text-gray-400"><DateDisplay :date="store.currentIssue.dueDate" mode="absolute" resolution="date" /></p>
             </div>
 
             <!-- GitHub Issue -->
@@ -1296,10 +1296,6 @@ function statusColor(status: IssueStatus) {
   return map[status] ?? 'bg-gray-500'
 }
 
-function formatDate(d: string) {
-  return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
 // Resolve raw event values to human-readable form.
 // For milestone events, the value may be a GUID (old records) or a title (new records).
 function resolveEventValue(eventType: IssueEventType, value: string | undefined | null): string | undefined | null {
@@ -1452,7 +1448,7 @@ async function stopVoiceRecording() {
 }
 
 async function submitVoiceCreate() {
-  const title = `Voice Issue - ${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+  const title = `Voice Issue - ${new Date().toLocaleString('de-DE', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}`
   const newIssue = await store.createIssue(actualProjectId.value, {
     title,
     body: voice.transcription.value,

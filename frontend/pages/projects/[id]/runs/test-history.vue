@@ -158,7 +158,7 @@
                 <td class="px-4 py-3 text-right text-yellow-500/70">{{ run.skippedTests || '—' }}</td>
                 <td class="px-4 py-3 text-right text-gray-400">{{ run.totalTests }}</td>
                 <td class="px-4 py-3 text-right text-gray-400 text-xs">{{ formatDuration(run.durationMs) }}</td>
-                <td class="px-4 py-3 text-gray-500 text-xs">{{ formatDate(run.startedAt) }}</td>
+                <td class="px-4 py-3 text-gray-500 text-xs"><DateDisplay :date="run.startedAt" mode="auto" /></td>
               </tr>
             </tbody>
           </table>
@@ -214,7 +214,7 @@
                 <td class="px-4 py-3">
                   <span :class="outcomeClass(test.lastOutcomeName)" class="text-xs">{{ test.lastOutcomeName }}</span>
                 </td>
-                <td class="px-4 py-3 text-gray-500 text-xs">{{ formatDate(test.lastRunAt) }}</td>
+                <td class="px-4 py-3 text-gray-500 text-xs"><DateDisplay :date="test.lastRunAt" mode="auto" /></td>
               </tr>
             </tbody>
           </table>
@@ -259,7 +259,7 @@
                     </span>
                   </td>
                   <td class="px-4 py-3 text-right text-gray-400 text-xs">{{ formatDuration(test.avgDurationMs) }}</td>
-                  <td class="px-4 py-3 text-gray-500 text-xs">{{ formatDate(test.lastRunAt) }}</td>
+                  <td class="px-4 py-3 text-gray-500 text-xs"><DateDisplay :date="test.lastRunAt" mode="auto" /></td>
                   <td class="px-4 py-3 text-right">
                     <button
                       class="text-xs text-brand-400 hover:text-brand-300 transition-colors"
@@ -567,7 +567,7 @@
                   <span v-if="entry.outcomeName === 'Passed'" class="text-green-400 text-sm font-bold">✓</span>
                   <span v-else-if="entry.outcomeName === 'Failed'" class="text-red-400 text-sm font-bold">✗</span>
                   <span v-else class="text-yellow-500 text-sm font-bold">–</span>
-                  <span class="text-xs text-gray-500">{{ formatDate(entry.runAt) }}</span>
+                  <span class="text-xs text-gray-500"><DateDisplay :date="entry.runAt" mode="auto" /></span>
                   <NuxtLink
                     :to="`/projects/${projectId}/runs/cicd/${entry.runId}`"
                     class="text-xs text-brand-400 hover:text-brand-300 font-mono transition-colors"
@@ -720,7 +720,14 @@ function formatCommit(sha?: string) {
 }
 
 function formatDate(d: string) {
-  return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  const dt = new Date(d)
+  const day = dt.getDate()
+  const month = dt.toLocaleDateString('de-DE', { month: 'short' })
+  const monthStr = month.charAt(0).toUpperCase() + month.slice(1).replace('.', '')
+  const year = dt.getFullYear()
+  const h = String(dt.getHours()).padStart(2, '0')
+  const m = String(dt.getMinutes()).padStart(2, '0')
+  return `${day}. ${monthStr} ${year}, ${h}:${m}`
 }
 
 function formatDuration(ms: number) {

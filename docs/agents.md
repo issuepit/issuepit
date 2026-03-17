@@ -232,6 +232,27 @@ When working as a coding agent on this repository, follow these conventions:
 
 Always use **ISO 8601 format** (`YYYY-MM-DD`) for dates in custom issue properties, API responses, and any user-visible date fields. Do not rely on browser locale formatting (e.g. `mm/dd/yyyy`) for date values stored or displayed in the application. Date inputs in forms should accept and display dates in `YYYY-MM-DD` format.
 
+For **displaying** dates and times in the Vue frontend, always use the shared `<DateDisplay>` component (`frontend/components/DateDisplay.vue`) instead of inline `toLocaleString`/`toLocaleDateString` calls:
+
+```vue
+<!-- Absolute date, European format: "16. Jan 2025" -->
+<DateDisplay :date="item.createdAt" mode="absolute" resolution="date" />
+
+<!-- Absolute datetime, 24h clock: "16. Jan 2025, 14:30" -->
+<DateDisplay :date="item.startedAt" mode="absolute" resolution="datetime" />
+
+<!-- Relative: "3 minutes ago", "2 hours ago", "yesterday" (tooltip shows full datetime) -->
+<DateDisplay :date="item.updatedAt" mode="relative" />
+
+<!-- Auto: relative for recent dates (<7d), absolute beyond that -->
+<DateDisplay :date="item.startedAt" mode="auto" />
+```
+
+Key formatting rules enforced by `<DateDisplay>`:
+- **24-hour clock** — never use AM/PM
+- **European day-first format** — `16. Jan 2025` not `Jan 16, 2025`
+- Relative labels: `just now`, `X minutes ago`, `X hours ago`, `yesterday`, `X days ago`
+
 ### API Response Objects
 
 - **Always use named `record` or `class` types for API responses** — do not use anonymous objects (`new { ... }`) in controller actions.

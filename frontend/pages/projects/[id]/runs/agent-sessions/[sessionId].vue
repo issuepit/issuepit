@@ -55,7 +55,7 @@
           </div>
           <div>
             <p class="text-xs text-gray-500 mb-1">Started</p>
-            <p class="text-sm text-gray-400">{{ formatDate(store.currentSession.startedAt) }}</p>
+            <p class="text-sm text-gray-400"><DateDisplay :date="store.currentSession.startedAt" mode="auto" /></p>
           </div>
           <div>
             <p class="text-xs text-gray-500 mb-1">Duration</p>
@@ -491,7 +491,7 @@
                   </span>
                   <span v-else class="text-gray-600 text-xs">local</span>
                 </td>
-                <td class="px-4 py-3 text-gray-400 text-xs">{{ formatDate(run.startedAt) }}</td>
+                <td class="px-4 py-3 text-gray-400 text-xs"><DateDisplay :date="run.startedAt" mode="auto" /></td>
                 <td class="px-4 py-3 text-gray-400 text-xs">{{ duration(run.startedAt, run.endedAt) }}</td>
               </tr>
             </tbody>
@@ -930,10 +930,6 @@ async function copyLogsToClipboard() {
     document.execCommand('copy')
     document.body.removeChild(ta)
   }
-}
-
-function formatDate(d: string) {
-  return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 function formatLogTime(d: string) {

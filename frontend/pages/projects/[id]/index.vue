@@ -458,7 +458,7 @@
                             class="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-800 transition-colors group">
                             <span class="w-2 h-2 rounded-full bg-indigo-400 shrink-0"></span>
                             <span class="text-sm text-gray-200 truncate group-hover:text-brand-300 flex-1">{{ m.title }}</span>
-                            <span v-if="m.dueDate" class="text-xs text-gray-500 shrink-0">{{ formatDate(m.dueDate) }}</span>
+                            <span v-if="m.dueDate" class="text-xs text-gray-500 shrink-0"><DateDisplay :date="m.dueDate" mode="absolute" resolution="date" /></span>
                           </NuxtLink>
                         </div>
                         <p v-else class="text-sm text-gray-600 py-3 text-center">No open milestones</p>
@@ -488,7 +488,7 @@
                             <span class="text-xs bg-green-900/40 text-green-400 px-1.5 py-0.5 rounded-full shrink-0">Open</span>
                           </div>
                           <p v-if="milestone.description" class="text-xs text-gray-500 line-clamp-1 mb-2">{{ milestone.description }}</p>
-                          <p v-if="milestone.dueDate" class="text-xs text-gray-500">Due {{ formatDate(milestone.dueDate) }}</p>
+                          <p v-if="milestone.dueDate" class="text-xs text-gray-500">Due <DateDisplay :date="milestone.dueDate" mode="absolute" resolution="date" /></p>
                         </NuxtLink>
                       </div>
                       <p v-else class="text-sm text-gray-600 py-2">No open milestones</p>
@@ -530,7 +530,7 @@
                             <span :class="issueStatusDot(issue.status)" class="w-2 h-2 rounded-full shrink-0 mt-1.5"></span>
                             <div class="flex-1 min-w-0">
                               <p class="text-sm text-gray-200 truncate group-hover:text-brand-300 transition-colors">{{ issue.title }}</p>
-                              <p class="text-xs text-gray-500">{{ formatIssueId(issue.number, store.currentProject) }} · {{ relativeTime(issue.updatedAt) }}</p>
+                              <p class="text-xs text-gray-500">{{ formatIssueId(issue.number, store.currentProject) }} · <DateDisplay :date="issue.updatedAt" mode="relative" /></p>
                             </div>
                             <span :class="issuePriorityBadge(issue.priority)" class="text-xs px-1.5 py-0.5 rounded font-medium shrink-0">
                               {{ issue.priority === 'no_priority' ? '—' : issue.priority }}
@@ -591,7 +591,7 @@
                               </NuxtLink>
                               <p class="text-xs text-gray-500 truncate">{{ session.agentName }}</p>
                             </div>
-                            <span class="text-xs text-gray-600 shrink-0">{{ relativeTime(session.startedAt) }}</span>
+                            <span class="text-xs text-gray-600 shrink-0"><DateDisplay :date="session.startedAt" mode="relative" /></span>
                           </div>
                         </div>
                         <p v-else class="text-sm text-gray-600 py-4 text-center">No agent runs yet</p>
@@ -647,7 +647,7 @@
                                 {{ run.commitSha?.slice(0, 7) || '—' }}<span v-if="run.branch"> · {{ run.branch }}</span>
                               </p>
                             </div>
-                            <span class="text-xs text-gray-600 shrink-0">{{ relativeTime(run.startedAt) }}</span>
+                            <span class="text-xs text-gray-600 shrink-0"><DateDisplay :date="run.startedAt" mode="relative" /></span>
                           </div>
                         </div>
                         <p v-else class="text-sm text-gray-600 py-4 text-center">No CI/CD runs yet</p>
@@ -683,7 +683,7 @@
                               <span v-if="run.skippedTests > 0">, {{ run.skippedTests }} skipped</span>
                             </p>
                           </div>
-                          <span class="text-xs text-gray-600 shrink-0">{{ relativeTime(run.startedAt) }}</span>
+                          <span class="text-xs text-gray-600 shrink-0"><DateDisplay :date="run.startedAt" mode="relative" /></span>
                         </div>
                       </div>
                       <p v-else class="text-sm text-gray-600 py-4 text-center">No test results yet</p>
@@ -1028,7 +1028,7 @@ async function stopVoiceRecording() {
 }
 
 async function submitVoiceCreate() {
-  const title = `Voice Issue - ${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+  const title = `Voice Issue - ${new Date().toLocaleString('de-DE', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}`
   const newIssue = await issuesStore.createIssue(id, {
     title,
     body: voice.transcription.value,
@@ -1350,21 +1350,6 @@ onMounted(async () => {
     })
   }
 })
-
-function formatDate(d: string) {
-  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-function relativeTime(d: string) {
-  const ms = Date.now() - new Date(d).getTime()
-  const s = Math.floor(ms / 1000)
-  if (s < 60) return `${s}s ago`
-  const m = Math.floor(s / 60)
-  if (m < 60) return `${m}m ago`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h ago`
-  return `${Math.floor(h / 24)}d ago`
-}
 
 function issueStatusDot(status: IssueStatus) {
   const map: Record<IssueStatus, string> = {
