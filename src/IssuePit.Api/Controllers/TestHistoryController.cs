@@ -34,7 +34,8 @@ public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : Co
         if (ctx.CurrentTenant is null) return Unauthorized();
         if (!await ProjectExistsInTenantAsync(projectId)) return NotFound();
 
-        days = Math.Clamp(days, 1, 90);
+        const int MaxDailySummaryDays = 90;
+        days = Math.Clamp(days, 1, MaxDailySummaryDays);
         var since = DateTime.UtcNow.Date.AddDays(-days + 1);
 
         var query = db.CiCdTestSuites

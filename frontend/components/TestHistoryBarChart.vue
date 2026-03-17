@@ -17,24 +17,38 @@
           <g v-for="(day, i) in data" :key="day.date">
             <!-- Pass-fail mode: stacked bars -->
             <template v-if="colorMode === 'pass-fail'">
-              <!-- Failed portion (bottom, red) -->
-              <rect v-if="barValue(day) > 0 && day.failedTests > 0"
-                :x="barX(i)"
-                :y="yScale(failedValue(day))"
-                :width="barW"
-                :height="plotH - yScale(failedValue(day)) + padTop"
-                fill="#ef4444"
-                opacity="0.85"
-                rx="1" />
-              <!-- Passed portion (on top, green) -->
-              <rect v-if="barValue(day) > 0 && day.passedTests > 0"
-                :x="barX(i)"
-                :y="yScale(barValue(day))"
-                :width="barW"
-                :height="yScale(failedValue(day)) - yScale(barValue(day))"
-                fill="#22c55e"
-                opacity="0.85"
-                rx="1" />
+              <!-- Pass-fail stacked mode: only available for count Y axis -->
+              <template v-if="yAxis === 'count'">
+                <!-- Failed portion (bottom, red) -->
+                <rect v-if="barValue(day) > 0 && day.failedTests > 0"
+                  :x="barX(i)"
+                  :y="yScale(failedValue(day))"
+                  :width="barW"
+                  :height="plotH - yScale(failedValue(day)) + padTop"
+                  fill="#ef4444"
+                  opacity="0.85"
+                  rx="1" />
+                <!-- Passed portion (on top, green) -->
+                <rect v-if="barValue(day) > 0 && day.passedTests > 0"
+                  :x="barX(i)"
+                  :y="yScale(barValue(day))"
+                  :width="barW"
+                  :height="yScale(failedValue(day)) - yScale(barValue(day))"
+                  fill="#22c55e"
+                  opacity="0.85"
+                  rx="1" />
+              </template>
+              <!-- Duration mode with pass-fail: show single bar (can't split duration by outcome) -->
+              <template v-else>
+                <rect v-if="barValue(day) > 0"
+                  :x="barX(i)"
+                  :y="yScale(barValue(day))"
+                  :width="barW"
+                  :height="plotH - yScale(barValue(day)) + padTop"
+                  fill="#6366f1"
+                  opacity="0.85"
+                  rx="1" />
+              </template>
             </template>
             <!-- Failure-rate mode: single bar colored by failure % -->
             <template v-else>

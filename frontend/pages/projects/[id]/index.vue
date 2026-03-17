@@ -1155,6 +1155,7 @@ const DEFAULT_CONFIGS = {
   kanban:      { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'md',  tabGroup: null, stackGroup: null },
 }
 const DEFAULT_ORDER: string[] = ['statIssues', 'statCommits', 'statMRs', 'milestones', 'rowbreak-after-milestones', 'issues', 'agentRuns', 'cicdRuns', 'testHistory', 'history', 'kanban']
+// v8: added chart mode and multi-instance support for test history cards
 const DRAFT_LAYOUT_KEY = `project-dashboard-layout-v8-${id}`
 
 const {
