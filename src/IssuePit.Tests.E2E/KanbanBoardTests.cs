@@ -199,7 +199,6 @@ public class KanbanBoardTests : IAsyncLifetime
                 systemPrompt = "You are a test agent.",
                 dockerImage = "test/image",
                 allowedTools = "[]",
-                runnerType = "docker"
             });
             Assert.Equal(System.Net.HttpStatusCode.Created, agentResp.StatusCode);
 
