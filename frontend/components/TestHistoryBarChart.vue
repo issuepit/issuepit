@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="relative" @mouseleave="hideTooltip">
     <div v-if="data.length === 0" class="py-8 text-center text-sm text-gray-500">
       No test results in this period
     </div>
@@ -18,12 +18,19 @@
             :x="8" :y="padTop + plotH / 2" text-anchor="middle" fill="#6b7280" font-size="8"
             :transform="`rotate(-90, 8, ${padTop + plotH / 2})`">{{ yAxisLabel }}</text>
 
-          <!-- Month / week boundary markers on X axis -->
+          <!-- Month / week boundary markers: boundary line + tick + label -->
           <g v-for="marker in xAxisMarkers" :key="`xm-${marker.x}`">
-            <line :x1="marker.x" y1="0" :x2="marker.x" :y2="svgHeight - padBottom"
+            <!-- Vertical guide line (only for true month/week boundaries, not the start label) -->
+            <line v-if="marker.isBoundary"
+              :x1="marker.x" :y1="padTop" :x2="marker.x" :y2="baseline"
               stroke="#1f2937" stroke-width="1" />
+            <!-- Tick mark below baseline -->
+            <line :x1="marker.x" :y1="baseline" :x2="marker.x" :y2="baseline + 4"
+              stroke="#4b5563" stroke-width="1.5" />
+            <!-- Month label below tick -->
             <text v-if="marker.label"
-              :x="marker.x + 2" :y="svgHeight - padBottom + 10"
+              :x="marker.x + 2"
+              :y="baseline + 22"
               text-anchor="start" fill="#9ca3af" font-size="8.5" font-weight="600">{{ marker.label }}</text>
           </g>
 
@@ -32,13 +39,12 @@
             <!-- Groups mode: stacked per artifact, colored by group failure rate -->
             <template v-if="colorMode === 'groups'">
               <template v-if="yAxis === 'count'">
-                <rect v-for="seg in groupSegments(day, i)" :key="seg.name"
+                <rect v-for="seg in groupSegments(day)" :key="seg.name"
                   :x="barX(i)" :y="seg.y" :width="barW" :height="seg.h"
                   :fill="seg.color" opacity="0.88" rx="1" />
               </template>
-              <!-- Duration Y: single bar per group (stacked) colored by failure rate -->
               <template v-else>
-                <rect v-for="seg in groupDurationSegments(day, i)" :key="seg.name"
+                <rect v-for="seg in groupDurationSegments(day)" :key="seg.name"
                   :x="barX(i)" :y="seg.y" :width="barW" :height="seg.h"
                   :fill="seg.color" opacity="0.88" rx="1" />
               </template>
@@ -55,6 +61,7 @@
                   :height="yScale(day.failedTests) - yScale(barValue(day))"
                   fill="#22c55e" opacity="0.85" rx="1" />
               </template>
+              <!-- Duration Y with pass/fail mode: single bar (can't split duration by outcome) -->
               <template v-else>
                 <rect v-if="barValue(day) > 0"
                   :x="barX(i)" :y="yScale(barValue(day))" :width="barW"
@@ -71,12 +78,21 @@
                 opacity="0.85" rx="1" />
             </template>
 
-            <!-- X axis day label (sparse) -->
+            <!-- X axis day label (sparse, above month label row) -->
             <text v-if="showDayLabel(i)"
               :x="barX(i) + barW / 2"
-              :y="svgHeight - padBottom + 9"
+              :y="baseline + 10"
               text-anchor="middle" fill="#6b7280" font-size="7.5">{{ shortDay(day.date) }}</text>
           </g>
+
+          <!-- Invisible hover rects (on top of all bars, full column width) -->
+          <rect v-for="(day, i) in data" :key="`hover-${i}`"
+            :x="padLeft + i * barStep" :y="padTop"
+            :width="barStep" :height="plotH"
+            fill="transparent"
+            style="cursor:crosshair"
+            @mouseenter="e => showTooltip(e, day)"
+            @mousemove="moveTooltip" />
         </svg>
       </div>
 
@@ -87,14 +103,27 @@
             <span class="w-3 h-2 rounded-sm inline-block shrink-0" :style="`background:${g.color}`"></span>
             {{ g.name }}
           </span>
+          <!-- Color-health hint -->
+          <span class="flex items-center gap-1.5 text-xs text-gray-600">
+            <span class="w-8 h-2 rounded-sm inline-block shrink-0" style="background:linear-gradient(90deg,hsl(210,70%,48%),hsl(0,30%,30%))"></span>
+            healthy → failing
+          </span>
         </template>
         <template v-else-if="colorMode === 'pass-fail'">
-          <span class="flex items-center gap-1.5 text-xs text-gray-400">
-            <span class="w-3 h-2 bg-green-500 rounded-sm inline-block"></span> Passed
-          </span>
-          <span class="flex items-center gap-1.5 text-xs text-gray-400">
-            <span class="w-3 h-2 bg-red-500 rounded-sm inline-block"></span> Failed
-          </span>
+          <template v-if="yAxis === 'count'">
+            <span class="flex items-center gap-1.5 text-xs text-gray-400">
+              <span class="w-3 h-2 bg-green-500 rounded-sm inline-block"></span> Passed
+            </span>
+            <span class="flex items-center gap-1.5 text-xs text-gray-400">
+              <span class="w-3 h-2 bg-red-500 rounded-sm inline-block"></span> Failed
+            </span>
+          </template>
+          <template v-else>
+            <span class="flex items-center gap-1.5 text-xs text-gray-400">
+              <span class="w-3 h-2 bg-indigo-500 rounded-sm inline-block"></span> Total duration
+            </span>
+            <span class="text-xs text-gray-600">(per-outcome split unavailable)</span>
+          </template>
         </template>
         <template v-else>
           <span class="flex items-center gap-1.5 text-xs text-gray-400">
@@ -106,12 +135,64 @@
           {{ totalTests.toLocaleString() }} tests · {{ totalRuns }} runs
         </span>
       </div>
+
+      <!-- Tooltip (teleported to body for correct z-ordering) -->
+      <teleport to="body">
+        <div v-if="tooltipDay"
+          class="fixed z-[9999] pointer-events-none bg-gray-900 border border-gray-700 rounded-lg shadow-xl text-xs p-2.5 min-w-[150px]"
+          :style="`left:${tooltipPos.x + 14}px;top:${tooltipPos.y - 8}px;transform:translateY(-100%)`">
+          <div class="font-medium text-gray-200 mb-1.5">{{ formatTooltipDate(tooltipDay.date) }}</div>
+          <div class="space-y-0.5">
+            <div class="flex justify-between gap-3">
+              <span class="text-gray-400">Total</span>
+              <span class="text-gray-200">{{ tooltipDay.totalTests.toLocaleString() }}</span>
+            </div>
+            <div class="flex justify-between gap-3">
+              <span class="text-green-400">Passed</span>
+              <span class="text-gray-200">{{ tooltipDay.passedTests.toLocaleString() }}</span>
+            </div>
+            <div v-if="tooltipDay.failedTests > 0" class="flex justify-between gap-3">
+              <span class="text-red-400">Failed</span>
+              <span class="text-gray-200">{{ tooltipDay.failedTests.toLocaleString() }}</span>
+            </div>
+            <div v-if="tooltipDay.skippedTests > 0" class="flex justify-between gap-3">
+              <span class="text-yellow-400">Skipped</span>
+              <span class="text-gray-200">{{ tooltipDay.skippedTests.toLocaleString() }}</span>
+            </div>
+            <div class="flex justify-between gap-3">
+              <span class="text-gray-400">Duration</span>
+              <span class="text-gray-200">{{ formatDuration(tooltipDay.durationMs) }}</span>
+            </div>
+            <div class="flex justify-between gap-3">
+              <span class="text-gray-400">Runs</span>
+              <span class="text-gray-200">{{ tooltipDay.runCount }}</span>
+            </div>
+            <!-- Per-group breakdown in groups mode -->
+            <template v-if="colorMode === 'groups' && tooltipDay.groups?.length">
+              <div class="border-t border-gray-700 mt-1.5 pt-1.5 space-y-0.5">
+                <div v-for="g in tooltipDay.groups.filter(g => g.totalTests > 0)" :key="g.name"
+                  class="flex items-center justify-between gap-2">
+                  <span class="flex items-center gap-1">
+                    <span class="w-2 h-2 rounded-sm inline-block shrink-0"
+                      :style="`background:${groupColor(g.name, g.totalTests, g.failedTests)}`"></span>
+                    <span class="text-gray-400">{{ g.name }}</span>
+                  </span>
+                  <span class="text-gray-300">
+                    {{ g.totalTests }}
+                    <span v-if="g.failedTests > 0" class="text-red-400 ml-0.5">{{ g.failedTests }} fail</span>
+                  </span>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </teleport>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { TestDailySummary } from '~/types'
 
 const props = defineProps<{
@@ -121,30 +202,41 @@ const props = defineProps<{
 }>()
 
 const svgWidth = 600
-const svgHeight = 170
+// Slightly taller to accommodate tick + month label row below day labels
+const svgHeight = 180
 const padLeft = 36
 const padRight = 8
 const padTop = 8
-// Extra space for X axis labels + month markers
-const padBottom = 22
+// tick (4) + day label (10) + month label (12) + margin (4) = 30
+const padBottom = 30
 const minWidth = 300
 
+/** Minimum horizontal distance (SVG units) between the start-month label and the first
+ *  month-boundary label, below which we suppress the start label to avoid text crowding. */
+const MIN_LABEL_SPACING = 35
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const DAYS_PER_WEEK = 7
 
-const plotW = svgWidth - padLeft - padRight
+/** Safe month name lookup (1-based month index). */
+function monthName(monthStr: string): string {
+  const idx = parseInt(monthStr) - 1
+  return MONTH_NAMES[idx >= 0 && idx < 12 ? idx : 0]
+}
 const plotH = svgHeight - padTop - padBottom
+/** Y coordinate of the X axis baseline. */
+const baseline = padTop + plotH
 
 const barGap = 2
 
-const barW = computed(() => {
-  if (props.data.length === 0) return 10
-  return Math.max(2, (plotW / props.data.length) - barGap)
+const barStep = computed(() => {
+  if (props.data.length === 0) return plotW
+  return plotW / props.data.length
 })
 
+const barW = computed(() => Math.max(2, barStep.value - barGap))
+
 function barX(i: number): number {
-  const step = plotW / props.data.length
-  return padLeft + i * step + barGap / 2
+  return padLeft + i * barStep.value + barGap / 2
 }
 
 function barValue(day: TestDailySummary): number {
@@ -167,10 +259,9 @@ function yScale(val: number): number {
   return padTop + plotH - (val / maxVal.value) * plotH
 }
 
-const yAxisLabel = computed(() => {
-  if (props.yAxis === 'duration') return 'sec'
-  return 'tests'
-})
+const yAxisLabel = computed(() => (props.yAxis === 'duration' ? 'sec' : 'tests'))
+
+// ── Group coloring ─────────────────────────────────────────────────────────
 
 /** Stable ordered list of unique group names across all days. */
 const groupNames = computed(() => {
@@ -181,29 +272,25 @@ const groupNames = computed(() => {
   return [...names].sort()
 })
 
-/** Assign a stable base hue per group index. */
 const GROUP_COLOR_HUES = [210, 160, 280, 35, 0, 60, 300, 120]
 function groupBaseHue(idx: number): number {
   return GROUP_COLOR_HUES[idx % GROUP_COLOR_HUES.length]
 }
 
-/** Color a group segment by its failure rate: hue stays fixed, saturation/lightness shifts red on failure. */
+/** Color a group by its failure rate: base hue at healthy, shifts to dark red at 100% failure. */
 function groupColor(name: string, totalTests: number, failedTests: number): string {
   const idx = groupNames.value.indexOf(name)
   const hue = groupBaseHue(idx)
   if (totalTests === 0) return `hsl(${hue}, 20%, 30%)`
   const failRate = Math.min(1, failedTests / totalTests)
-  // Low failure → full saturation vivid color; high failure → deep red tint
   const sat = Math.round(70 - failRate * 40)
   const lit = Math.round(48 - failRate * 20)
-  // Blend towards red (hue 0) as failure rate climbs
-  const blendedHue = Math.round(hue * (1 - failRate) + 0 * failRate)
+  const blendedHue = Math.round(hue * (1 - failRate))
   return `hsl(${blendedHue}, ${sat}%, ${lit}%)`
 }
 
-/** Legend entries for groups mode. */
+/** Legend entries for groups mode (aggregate failure rate per group). */
 const legendGroups = computed(() => {
-  // Compute aggregate failure rate per group across all days
   const totals = new Map<string, { total: number; failed: number }>()
   for (const day of props.data) {
     for (const g of day.groups ?? []) {
@@ -219,10 +306,11 @@ const legendGroups = computed(() => {
   })
 })
 
+// ── Bar segments ────────────────────────────────────────────────────────────
+
 interface BarSegment { name: string; y: number; h: number; color: string }
 
-/** Build stacked count segments for a day in groups mode. */
-function groupSegments(day: TestDailySummary, _i: number): BarSegment[] {
+function groupSegments(day: TestDailySummary): BarSegment[] {
   const groups = (day.groups ?? []).slice().sort((a, b) => a.name.localeCompare(b.name))
   let cumulative = 0
   return groups
@@ -230,19 +318,16 @@ function groupSegments(day: TestDailySummary, _i: number): BarSegment[] {
     .map(g => {
       const bottom = cumulative
       cumulative += g.totalTests
-      const yTop = yScale(cumulative)
-      const yBot = yScale(bottom)
       return {
         name: g.name,
-        y: yTop,
-        h: Math.max(1, yBot - yTop),
+        y: yScale(cumulative),
+        h: Math.max(1, yScale(bottom) - yScale(cumulative)),
         color: groupColor(g.name, g.totalTests, g.failedTests),
       }
     })
 }
 
-/** Build stacked duration segments for a day in groups mode (duration Y). */
-function groupDurationSegments(day: TestDailySummary, _i: number): BarSegment[] {
+function groupDurationSegments(day: TestDailySummary): BarSegment[] {
   const groups = (day.groups ?? []).slice().sort((a, b) => a.name.localeCompare(b.name))
   let cumulative = 0
   return groups
@@ -250,12 +335,10 @@ function groupDurationSegments(day: TestDailySummary, _i: number): BarSegment[] 
     .map(g => {
       const bottom = cumulative
       cumulative += g.durationMs / 1000
-      const yTop = yScale(cumulative)
-      const yBot = yScale(bottom)
       return {
         name: g.name,
-        y: yTop,
-        h: Math.max(1, yBot - yTop),
+        y: yScale(cumulative),
+        h: Math.max(1, yScale(bottom) - yScale(cumulative)),
         color: groupColor(g.name, g.totalTests, g.failedTests),
       }
     })
@@ -268,26 +351,16 @@ function failureRateColor(totalTests: number, failedTests: number): string {
   if (rate >= 1) return '#ef4444'
   if (rate < 0.5) {
     const t = rate / 0.5
-    const r = Math.round(0x22 + t * (0xf5 - 0x22))
-    const g = Math.round(0xc5 + t * (0x9e - 0xc5))
-    const b = Math.round(0x5e + t * (0x0b - 0x5e))
-    return `rgb(${r},${g},${b})`
+    return `rgb(${Math.round(0x22 + t * (0xf5 - 0x22))},${Math.round(0xc5 + t * (0x9e - 0xc5))},${Math.round(0x5e + t * (0x0b - 0x5e))})`
   } else {
     const t = (rate - 0.5) / 0.5
-    const r = Math.round(0xf5 + t * (0xef - 0xf5))
-    const g = Math.round(0x9e + t * (0x44 - 0x9e))
-    const b = Math.round(0x0b + t * (0x44 - 0x0b))
-    return `rgb(${r},${g},${b})`
+    return `rgb(${Math.round(0xf5 + t * (0xef - 0xf5))},${Math.round(0x9e + t * (0x44 - 0x9e))},${Math.round(0x0b + t * (0x44 - 0x0b))})`
   }
 }
 
-/** Compute which day indices should show a day label.
- *  - ≤ 10 days: every day
- *  - ≤ 21 days: every 2nd day
- *  - ≤ 45 days: every 7th day (weekly)
- *  - > 45 days: every 14th day (biweekly)
- *  Additionally we suppress any label that would collide with a month marker.
- */
+// ── X axis ──────────────────────────────────────────────────────────────────
+
+/** Whether a sparse day label should appear above the baseline for bar index i. */
 function showDayLabel(i: number): boolean {
   const n = props.data.length
   if (n <= 10) return true
@@ -296,44 +369,93 @@ function showDayLabel(i: number): boolean {
   return i % 14 === 0
 }
 
-/** Short day label: "15" (day of month only) to avoid duplication with month marker. */
 function shortDay(d: string): string {
   const parts = d.split('-')
-  if (parts.length < 3) return d
-  return parseInt(parts[2]).toString()
+  return parts.length < 3 ? d : parseInt(parts[2]).toString()
 }
 
-interface XMarker { x: number; label: string | null }
+interface XMarker { x: number; label: string | null; isBoundary: boolean }
 
-/** Build month and week boundary markers for the X axis. */
+/**
+ * Build X-axis markers:
+ * - Always shows the month name of the first data point at the chart left edge.
+ * - Adds a boundary marker (vertical line + tick + label) for every month start (day=1).
+ * - For short ranges (≤14 days) also adds unlabeled week tick marks every 7 days.
+ * The start label is suppressed if a month boundary falls within 35 SVG units of the left edge
+ * (to avoid text crowding).
+ */
 const xAxisMarkers = computed((): XMarker[] => {
   if (props.data.length === 0) return []
   const n = props.data.length
-  const step = plotW / n
+  const step = barStep.value
   const markers: XMarker[] = []
 
+  // Collect all month boundary positions (day === 1 within the data)
+  let firstBoundaryX = Infinity
   for (let i = 0; i < n; i++) {
-    const d = props.data[i].date
-    const parts = d.split('-')
+    const parts = props.data[i].date.split('-')
     if (parts.length < 3) continue
-    const day = parseInt(parts[2])
-    const month = parseInt(parts[1]) - 1
-    const x = padLeft + i * step
-
-    // Month boundary: first day of month
-    if (day === 1) {
-      markers.push({ x, label: MONTH_NAMES[month] })
-    } else if (n <= 14 && i > 0) {
-      // For short ranges: add week boundary marker every 7 days
-      if (i % DAYS_PER_WEEK === 0) markers.push({ x, label: null })
+    if (parseInt(parts[2]) === 1) {
+      const x = padLeft + i * step
+      markers.push({ x, label: monthName(parts[1]), isBoundary: true })
+      if (x < firstBoundaryX) firstBoundaryX = x
     }
   }
+
+  // Always show starting month unless a month boundary is very close to the left edge
+  const startX = padLeft
+  if (firstBoundaryX - startX > MIN_LABEL_SPACING) {
+    const parts = props.data[0].date.split('-')
+    // Insert at the front (no boundary line, just tick + label)
+    markers.unshift({ x: startX, label: monthName(parts[1]), isBoundary: false })
+  }
+
+  // Week tick marks for short ranges (no label)
+  if (n <= 14) {
+    for (let i = DAYS_PER_WEEK; i < n; i += DAYS_PER_WEEK) {
+      markers.push({ x: padLeft + i * step, label: null, isBoundary: true })
+    }
+  }
+
   return markers
 })
 
+// ── Tooltip ─────────────────────────────────────────────────────────────────
+
+const tooltipDay = ref<TestDailySummary | null>(null)
+const tooltipPos = ref({ x: 0, y: 0 })
+
+function showTooltip(e: MouseEvent, day: TestDailySummary) {
+  tooltipDay.value = day
+  tooltipPos.value = { x: e.clientX, y: e.clientY }
+}
+
+function moveTooltip(e: MouseEvent) {
+  tooltipPos.value = { x: e.clientX, y: e.clientY }
+}
+
+function hideTooltip() {
+  tooltipDay.value = null
+}
+
+function formatTooltipDate(d: string): string {
+  const parts = d.split('-')
+  if (parts.length < 3) return d
+  return `${parseInt(parts[2])} ${monthName(parts[1])} ${parts[0]}`
+}
+
+function formatDuration(ms: number): string {
+  const s = ms / 1000
+  if (s >= 3600) return `${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m`
+  if (s >= 60) return `${Math.round(s / 60)}m ${Math.round(s % 60)}s`
+  return `${s.toFixed(1)}s`
+}
+
+// ── Y axis ───────────────────────────────────────────────────────────────────
+
 function formatYLabel(v: number): string {
   if (props.yAxis === 'duration') {
-    if (v >= 3600) return `${(v / 3600).toFixed(1)}h`
+    if (v >= 3600) return `${Math.floor(v / 3600)}h`
     if (v >= 60) return `${Math.round(v / 60)}m`
     return `${v}s`
   }
