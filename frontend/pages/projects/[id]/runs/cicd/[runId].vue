@@ -827,18 +827,26 @@
 
           <div class="mb-3">
             <label class="block text-xs text-gray-500 mb-1">Log scope</label>
-            <div class="flex gap-2">
+            <div class="flex flex-wrap gap-2">
               <button v-for="scope in logScopeOptions" :key="scope.value"
                 :class="['px-3 py-1 text-xs rounded-md border transition-colors', createIssueLogScope === scope.value ? 'border-brand-500 bg-brand-950/30 text-brand-300' : 'border-gray-700 text-gray-500 hover:border-gray-600']"
                 @click="createIssueLogScope = scope.value">
                 {{ scope.label }}
               </button>
             </div>
+            <div v-if="createIssueLogScope === 'filter'" class="mt-2">
+              <input
+                v-model="createIssueFilterPattern"
+                type="text"
+                placeholder="Regex pattern, e.g. error|fault|warn|fail|exception"
+                :class="['w-full bg-gray-800 border rounded-md text-xs text-gray-300 px-3 py-1.5 font-mono focus:outline-none', createIssueFilterPatternInvalid ? 'border-red-500 focus:border-red-400' : 'border-gray-700 focus:border-brand-500']" />
+              <p v-if="createIssueFilterPatternInvalid" class="mt-1 text-xs text-red-400">Invalid regex pattern — showing all lines</p>
+            </div>
           </div>
 
           <div class="mb-4 bg-gray-950 rounded-lg p-3 font-mono text-xs overflow-auto max-h-[200px]">
             <div v-for="(line, i) in createIssuePreviewLines" :key="i" class="text-gray-400 leading-5 whitespace-pre-wrap break-all">{{ line }}</div>
-            <div v-if="!createIssuePreviewLines.length" class="text-gray-600">No log lines for this job</div>
+            <div v-if="!createIssuePreviewLines.length" class="text-gray-600">No log lines for this scope</div>
           </div>
 
           <div v-if="createIssueError" class="mb-3 text-xs text-red-400">{{ createIssueError }}</div>
@@ -1789,23 +1797,59 @@ const showCreateIssueModal = ref(false)
 /** Job ID to filter logs for the create-issue modal. Empty string means all run logs (logs tab). */
 const createIssueJobId = ref<string>('')
 const createIssueTitle = ref('')
-const createIssueLogScope = ref<'full' | 'tail' | 'errors'>('errors')
+const createIssueLogScope = ref<'full' | 'tail' | 'errors' | 'filter'>('errors')
+/** Regex/keyword pattern used when createIssueLogScope === 'filter'. */
+const createIssueFilterPattern = ref('error|fault|warn|fail|exception')
 const creatingIssue = ref(false)
 const createIssueError = ref<string | null>(null)
 
 const logScopeOptions = [
   { label: 'Errors only', value: 'errors' as const },
+  { label: 'Filter by keywords', value: 'filter' as const },
   { label: 'Last 50 lines', value: 'tail' as const },
   { label: 'Full log', value: 'full' as const },
 ]
 
+/**
+ * Compiled regex for the filter scope. Null when the pattern is empty or invalid.
+ * Recompiles only when the pattern changes.
+ */
+const createIssueCompiledRegex = computed<{ re: RegExp; valid: true } | { re: null; valid: false }>(() => {
+  const pattern = createIssueFilterPattern.value.trim()
+  if (!pattern) return { re: null, valid: false }
+  try {
+    return { re: new RegExp(pattern, 'i'), valid: true }
+  } catch {
+    return { re: null, valid: false }
+  }
+})
+
+/** Returns whether the current filter pattern is an invalid (unparseable) regex. */
+const createIssueFilterPatternInvalid = computed(
+  () => createIssueLogScope.value === 'filter' && createIssueFilterPattern.value.trim() !== '' && !createIssueCompiledRegex.value.valid,
+)
+
+/**
+ * Returns the log lines for the job identified by createIssueJobId.
+ * Uses rawJobIds from jobLogMap to match act's workflow-qualified names (e.g. "CI/build").
+ */
+function getLogsForJobId(jobId: string): CiCdRunLog[] {
+  const entry = jobLogMap.value.get(jobId)
+  const rawIds = entry?.rawJobIds
+  if (rawIds && rawIds.size > 0)
+    return store.currentRunLogs.filter(l => !!l.jobId && rawIds.has(l.jobId))
+  return store.currentRunLogs.filter(l => l.jobId === jobId)
+}
+
 const createIssuePreviewLines = computed(() => {
-  // When jobId is empty, use all run logs (launched from the Logs tab).
-  const sourceLogs = createIssueJobId.value
-    ? store.currentRunLogs.filter(l => l.jobId === createIssueJobId.value)
-    : store.currentRunLogs
+  const sourceLogs = createIssueJobId.value ? getLogsForJobId(createIssueJobId.value) : store.currentRunLogs
   if (createIssueLogScope.value === 'errors') return sourceLogs.filter(l => l.stream === 'stderr').map(l => l.line)
   if (createIssueLogScope.value === 'tail') return sourceLogs.slice(-50).map(l => l.line)
+  if (createIssueLogScope.value === 'filter') {
+    const { re } = createIssueCompiledRegex.value
+    if (!re) return sourceLogs.map(l => l.line)
+    return sourceLogs.filter(l => re.test(l.line)).map(l => l.line)
+  }
   return sourceLogs.map(l => l.line)
 })
 
@@ -1816,6 +1860,7 @@ function openCreateIssueModal(jobId: string) {
     ? `CI/CD job "${jobId}" failed${workflow}`
     : `CI/CD run failed${workflow}`
   createIssueLogScope.value = 'errors'
+  createIssueFilterPattern.value = 'error|fault|warn|fail|exception'
   createIssueError.value = null
   showCreateIssueModal.value = true
 }
@@ -1826,19 +1871,25 @@ async function submitCreateIssue() {
   createIssueError.value = null
   try {
     const logLines = createIssuePreviewLines.value
+    const scopeLabel = createIssueLogScope.value === 'filter'
+      ? `filter: ${createIssueFilterPattern.value}`
+      : createIssueLogScope.value
     const logText = logLines.length
-      ? `\n\n**Failed job logs** (scope: ${createIssueLogScope.value}):\n\`\`\`\n${logLines.join('\n')}\n\`\`\``
+      ? `\n\n**Failed job logs** (scope: ${scopeLabel}):\n\`\`\`\n${logLines.join('\n')}\n\`\`\``
       : ''
     const context = createIssueJobId.value
       ? `CI/CD run **${runId.slice(0, 8)}** failed at job **${createIssueJobId.value}**.`
       : `CI/CD run **${runId.slice(0, 8)}** failed.`
     const description = `${context}${logText}`
 
-    await issuesStore.createIssue(projectId, {
+    const newIssue = await issuesStore.createIssue(projectId, {
       title: createIssueTitle.value.trim(),
       description,
     })
     showCreateIssueModal.value = false
+    if (newIssue) {
+      await navigateTo(`/projects/${projectId}/issues/${newIssue.number}`)
+    }
   } catch (e: unknown) {
     createIssueError.value = e instanceof Error ? e.message : 'Failed to create issue'
   } finally {
