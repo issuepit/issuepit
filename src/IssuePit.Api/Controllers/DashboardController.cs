@@ -81,6 +81,18 @@ public class DashboardController(IssuePitDbContext db, TenantContext ctx) : Cont
                 StatusName = s.Status.ToString(),
                 s.StartedAt,
                 s.EndedAt,
+                CiCdRuns = s.CiCdRuns.Select(r => new
+                {
+                    r.Id,
+                    r.ProjectId,
+                    r.Status,
+                    StatusName = r.Status.ToString(),
+                    r.Workflow,
+                    r.Branch,
+                    r.CommitSha,
+                    r.StartedAt,
+                    r.EndedAt,
+                }),
             })
             .ToListAsync();
 

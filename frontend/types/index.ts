@@ -809,6 +809,8 @@ export interface AgentSession {
   serverWebUiUrl?: string | null
   /** S3 URL of the preserved opencode DB snapshot for this session. */
   openCodeDbS3Url?: string | null
+  /** CI/CD runs triggered by this agent session. */
+  cicdRuns?: CiCdRun[]
 }
 
 export interface DashboardAgentSession extends AgentSession {
