@@ -59,7 +59,7 @@
           </div>
           <div>
             <p class="text-xs text-gray-500 mb-1">Duration</p>
-            <p class="text-sm text-gray-400">{{ duration(store.currentSession.startedAt, store.currentSession.endedAt) }}</p>
+            <p class="text-sm text-gray-400">{{ store.currentSession.status === AgentSessionStatus.Pending ? '—' : duration(store.currentSession.startedAt, store.currentSession.endedAt) }}</p>
           </div>
           <!-- opencode Session ID — shown when available -->
           <div v-if="store.currentSession.openCodeSessionId" class="col-span-2 md:col-span-4">
@@ -899,7 +899,7 @@ async function retrySession() {
       useHttpServerOverride = false
     }
 
-    await store.retrySession(sessionId, {
+    const result = await store.retrySession(sessionId, {
       dockerImageOverride: imageOverride,
       keepContainer: retryKeepContainer.value || undefined,
       agentIdOverride: retryAgentId.value !== store.currentSession?.agentId ? retryAgentId.value : undefined,
@@ -908,8 +908,13 @@ async function retrySession() {
       useHttpServerOverride,
       runtimeTypeOverride: retryRuntimeType.value !== '' ? retryRuntimeType.value as number : undefined,
     })
-    await store.fetchAgentSessions(projectId)
-    navigateTo(`/projects/${projectId}/runs?tab=agent`)
+    if (result?.retriedSessionId) {
+      navigateTo(`/projects/${projectId}/runs/agent-sessions/${result.retriedSessionId}`)
+    } else {
+      console.error('Retry response missing retriedSessionId — falling back to runs list', result)
+      await store.fetchAgentSessions(projectId)
+      navigateTo(`/projects/${projectId}/runs?tab=agent`)
+    }
   } finally {
     retrying.value = false
   }
