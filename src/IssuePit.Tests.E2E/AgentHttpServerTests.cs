@@ -510,17 +510,16 @@ public class AgentHttpServerTests(AspireFixture fixture)
     /// Requires:
     /// <list type="bullet">
     ///   <item>Docker available on the host.</item>
-    ///   <item><c>OPENCODE_E2E_DOCKER_IMAGE</c> environment variable set to the full opencode
-    ///         image (e.g. <c>ghcr.io/issuepit/issuepit-helper-opencode-act:main</c>).</item>
+    ///   <item>The <c>OPENCODE_E2E_DOCKER_IMAGE</c> environment variable may be set to override
+    ///         the opencode image; if unset, <c>ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24</c>
+    ///         is used.</item>
     /// </list>
     /// </summary>
     [Fact]
     public async Task AgentSession_HttpServerMode_HealthEndpointRespondsWith200()
     {
-        var opencodeImage = Environment.GetEnvironmentVariable("OPENCODE_E2E_DOCKER_IMAGE");
-        if (string.IsNullOrWhiteSpace(opencodeImage))
-            throw new InvalidOperationException(
-                "OPENCODE_E2E_DOCKER_IMAGE is not set. Set it to the full opencode Docker image to run this test.");
+        var opencodeImage = Environment.GetEnvironmentVariable("OPENCODE_E2E_DOCKER_IMAGE")
+            ?? "ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24";
 
         if (!IsDockerAvailable())
             throw new InvalidOperationException(

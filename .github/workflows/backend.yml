@@ -233,7 +233,6 @@ jobs:
       - name: E2E Tests
         env:
           CICD_E2E_HELPER_ACT_IMAGE: ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24
-          OPENCODE_E2E_DOCKER_IMAGE: ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24
         run: >
           dotnet test src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj
           --no-build
