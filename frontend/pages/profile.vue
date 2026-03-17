@@ -16,7 +16,7 @@
           <div>
             <p class="text-white font-medium">{{ auth.user?.username }}</p>
             <p class="text-gray-400 text-sm">{{ auth.user?.email }}</p>
-            <p class="text-gray-600 text-xs mt-0.5">Member since {{ joinedDate }}</p>
+            <p class="text-gray-600 text-xs mt-0.5">Member since <DateDisplay :date="auth.user.createdAt" mode="absolute" resolution="date" /></p>
           </div>
         </div>
       </div>
@@ -238,11 +238,6 @@ onMounted(async () => {
 
 const displayName = computed(() => auth.user?.username ?? auth.user?.email?.split('@')[0] ?? 'User')
 const initials = computed(() => displayName.value.slice(0, 2).padEnd(2, displayName.value[0] ?? 'U').toUpperCase())
-const joinedDate = computed(() => {
-  if (!auth.user?.createdAt) return ''
-  return new Date(auth.user.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
-})
-
 // Change password
 const passwordForm = reactive({ currentPassword: '', newPassword: '', confirmPassword: '' })
 const savingPassword = ref(false)
