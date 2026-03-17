@@ -224,17 +224,21 @@ jobs:
 
       - name: Install ffmpeg
         # https://github.com/orgs/community/discussions/145882
+        # apt-get update is needed to fix 404s from stale package lists on the runner.
+        # On cache hit we skip it entirely: copy cached .deb files and install with
+        # --no-download so apt never contacts a package server. Fall back to a full
+        # update+install if cached versions have drifted (e.g. after a security patch).
         run: |
           if [ "${{ steps.cache-ffmpeg.outputs.cache-hit }}" = "true" ]; then
             sudo cp /tmp/apt-ffmpeg/*.deb /var/cache/apt/archives/
+            sudo apt-get install -y --no-download ffmpeg && exit 0 || true
+            # Cached packages are stale — fall through to full update+install below
           fi
           sudo apt-get -y update
-          if [ "${{ steps.cache-ffmpeg.outputs.cache-hit }}" != "true" ]; then
-            # Download packages first so we can cache only the ffmpeg-related debs
-            sudo apt-get install -y --download-only ffmpeg
-            mkdir -p /tmp/apt-ffmpeg
-            sudo cp /var/cache/apt/archives/*.deb /tmp/apt-ffmpeg/
-          fi
+          # Download packages first so we can cache only the ffmpeg-related debs
+          sudo apt-get install -y --download-only ffmpeg
+          mkdir -p /tmp/apt-ffmpeg
+          sudo cp /var/cache/apt/archives/*.deb /tmp/apt-ffmpeg/
           sudo apt-get install -y ffmpeg
 
       - name: Disable ffmpeg auto-download (use system ffmpeg)
