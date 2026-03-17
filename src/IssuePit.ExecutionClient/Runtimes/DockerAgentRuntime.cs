@@ -159,10 +159,10 @@ public class DockerAgentRuntime(
 
         // Step 3: Determine the execution mode.
         //
-        // HTTP server mode — container CMD = "opencode" (starts the HTTP server); C# uses the REST
-        //                    API to create sessions, send tasks, and poll for results. Supports
-        //                    parallel tasks on the same server. The server's web UI URL is emitted
-        //                    as a [ISSUEPIT:SERVER_WEB_UI_URL]= marker for IssueWorker.
+        // HTTP server mode — container CMD = "opencode serve --hostname 0.0.0.0 --port 4096";
+        //                    C# uses the REST API to create sessions, send tasks, and poll for
+        //                    results. Supports parallel tasks on the same server. The server's
+        //                    web UI URL is emitted as a [ISSUEPIT:SERVER_WEB_UI_URL]= marker.
         // Exec flow        — container CMD = "sleep infinity"; C# drives all agent commands via
         //                    docker exec. Keeps the same opencode session files across fix runs.
         // Legacy flow      — container CMD from entrypoint default; wait for container to exit.
@@ -244,6 +244,9 @@ public class DockerAgentRuntime(
             : useExecFlow
                 ? ["sleep", "infinity"]
                 : (session.CustomCmd?.Length > 0 ? session.CustomCmd : null);
+
+        if (useHttpServerMode && containerCmd is not null)
+            await onLogLine($"[DEBUG] HTTP server cmd: {string.Join(" ", containerCmd)}", LogStream.Stdout);
 
         var createParams = new CreateContainerParameters
         {

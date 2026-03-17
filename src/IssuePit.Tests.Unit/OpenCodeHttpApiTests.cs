@@ -182,6 +182,191 @@ public class OpenCodeHttpApiTests
     }
 
     // ──────────────────────────────────────────────────────────────────────────
+    // WaitForCompletionAsync — polls /session/status and /session/{id}/message
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Simulates the happy path: session goes busy → idle with an assistant message.
+    /// WaitForCompletionAsync must return Completed.
+    /// </summary>
+    [Fact]
+    public async Task WaitForCompletionAsync_BusyThenIdle_ReturnsCompleted()
+    {
+        OpenCodeHttpApi.PollInterval = TimeSpan.FromMilliseconds(10);
+        // Request sequence:
+        //   1. GET /session/status → busy (seenBusy = true)
+        //   2. GET /session/{id}/message → assistant message (new, emitted to log)
+        //   3. GET /session/status → idle (seenBusy = true → check for completion)
+        //   4. GET /session/{id}/message → same assistant message (final error check)
+        const string sessionId = "ses_test";
+        var statusCallCount = 0;
+        var handler = new LambdaHandler(req =>
+        {
+            var url = req.RequestUri?.AbsolutePath ?? "";
+
+            if (url.Contains("/session/status"))
+            {
+                statusCallCount++;
+                return statusCallCount <= 1
+                    ? JsonResponse("""{"ses_test":{"type":"busy"}}""")
+                    : JsonResponse("""{"ses_test":{"type":"idle"}}""");
+            }
+
+            if (url.Contains($"/{sessionId}/message"))
+            {
+                return JsonResponse("""[{"info":{"role":"assistant"},"parts":[{"type":"text","text":"Done"}]}]""");
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        var api = CreateApi(handler);
+        var logs = new List<string>();
+        var result = await api.WaitForCompletionAsync(BaseUrl, sessionId, l => { logs.Add(l); return Task.CompletedTask; }, CancellationToken.None);
+
+        Assert.Equal(AgentHttpSessionStatus.Completed, result);
+    }
+
+    /// <summary>
+    /// Simulates the error path: session returns idle with an error on the last assistant message.
+    /// WaitForCompletionAsync must return Error.
+    /// </summary>
+    [Fact]
+    public async Task WaitForCompletionAsync_IdleWithAssistantError_ReturnsError()
+    {
+        OpenCodeHttpApi.PollInterval = TimeSpan.FromMilliseconds(10);
+        const string sessionId = "ses_err";
+        var statusCallCount = 0;
+        var handler = new LambdaHandler(req =>
+        {
+            var url = req.RequestUri?.AbsolutePath ?? "";
+
+            if (url.Contains("/session/status"))
+            {
+                statusCallCount++;
+                return statusCallCount <= 1
+                    ? JsonResponse("""{"ses_err":{"type":"busy"}}""")
+                    : JsonResponse("""{"ses_err":{"type":"idle"}}""");
+            }
+
+            if (url.Contains($"/{sessionId}/message"))
+            {
+                // Assistant message has an error property (non-null).
+                return JsonResponse("""[{"info":{"role":"assistant","error":{"name":"ProviderAuthError","data":{"providerID":"anthropic","message":"Invalid API key"}}},"parts":[]}]""");
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        var api = CreateApi(handler);
+        var result = await api.WaitForCompletionAsync(BaseUrl, sessionId, _ => Task.CompletedTask, CancellationToken.None);
+
+        Assert.Equal(AgentHttpSessionStatus.Error, result);
+    }
+
+    /// <summary>
+    /// Verifies that the initial idle state (before the agent picks up the task) does NOT
+    /// prematurely terminate the wait. The seenBusy guard must hold until we observe "busy".
+    /// </summary>
+    [Fact]
+    public async Task WaitForCompletionAsync_InitialIdleThenBusyThenIdle_ReturnsCompleted()
+    {
+        OpenCodeHttpApi.PollInterval = TimeSpan.FromMilliseconds(10);
+        const string sessionId = "ses_race";
+        var statusCallCount = 0;
+        var handler = new LambdaHandler(req =>
+        {
+            var url = req.RequestUri?.AbsolutePath ?? "";
+
+            if (url.Contains("/session/status"))
+            {
+                statusCallCount++;
+                // First poll: idle (before task picked up); second: busy; third+: idle (done)
+                return statusCallCount switch
+                {
+                    1 => JsonResponse("""{"ses_race":{"type":"idle"}}"""),
+                    2 => JsonResponse("""{"ses_race":{"type":"busy"}}"""),
+                    _ => JsonResponse("""{"ses_race":{"type":"idle"}}"""),
+                };
+            }
+
+            if (url.Contains($"/{sessionId}/message"))
+            {
+                return JsonResponse("""[{"info":{"role":"assistant"},"parts":[{"type":"text","text":"Done"}]}]""");
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        var api = CreateApi(handler);
+        var result = await api.WaitForCompletionAsync(BaseUrl, sessionId, _ => Task.CompletedTask, CancellationToken.None);
+
+        Assert.Equal(AgentHttpSessionStatus.Completed, result);
+    }
+
+    /// <summary>
+    /// Verifies that cancellation causes WaitForCompletionAsync to return TimedOut.
+    /// </summary>
+    [Fact]
+    public async Task WaitForCompletionAsync_Cancelled_ReturnsTimedOut()
+    {
+        OpenCodeHttpApi.PollInterval = TimeSpan.FromMilliseconds(10);
+        using var cts = new CancellationTokenSource();
+        var statusCallCount = 0;
+        var handler = new LambdaHandler(req =>
+        {
+            statusCallCount++;
+            if (statusCallCount >= 2)
+                cts.Cancel();
+            return JsonResponse("""{"ses_x":{"type":"busy"}}""");
+        });
+
+        var api = CreateApi(handler);
+        var result = await api.WaitForCompletionAsync(BaseUrl, "ses_x", _ => Task.CompletedTask, cts.Token);
+
+        Assert.Equal(AgentHttpSessionStatus.TimedOut, result);
+    }
+
+    /// <summary>
+    /// Verifies that text parts from messages are emitted to the log callback.
+    /// </summary>
+    [Fact]
+    public async Task WaitForCompletionAsync_AssistantTextParts_AreEmittedToLog()
+    {
+        OpenCodeHttpApi.PollInterval = TimeSpan.FromMilliseconds(10);
+        const string sessionId = "ses_log";
+        var statusCallCount = 0;
+        var handler = new LambdaHandler(req =>
+        {
+            var url = req.RequestUri?.AbsolutePath ?? "";
+
+            if (url.Contains("/session/status"))
+            {
+                statusCallCount++;
+                return statusCallCount <= 1
+                    ? JsonResponse("""{"ses_log":{"type":"busy"}}""")
+                    : JsonResponse("""{"ses_log":{"type":"idle"}}""");
+            }
+
+            if (url.Contains($"/{sessionId}/message"))
+            {
+                return JsonResponse("""[{"info":{"role":"assistant"},"parts":[{"type":"text","text":"Hello world"}]}]""");
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        var api = CreateApi(handler);
+        var logs = new List<string>();
+        await api.WaitForCompletionAsync(BaseUrl, sessionId, l => { logs.Add(l); return Task.CompletedTask; }, CancellationToken.None);
+
+        Assert.Contains(logs, l => l.Contains("Hello world"));
+    }
+
+    private static HttpResponseMessage JsonResponse(string json) =>
+        new(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+
+    // ──────────────────────────────────────────────────────────────────────────
     // Fake handlers
     // ──────────────────────────────────────────────────────────────────────────
 
@@ -219,5 +404,13 @@ public class OpenCodeHttpApiTests
                 Content = new StringContent(responseBody, Encoding.UTF8, "application/json"),
             });
         }
+    }
+
+    private sealed class LambdaHandler(Func<HttpRequestMessage, HttpResponseMessage> handler) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(handler(request));
     }
 }

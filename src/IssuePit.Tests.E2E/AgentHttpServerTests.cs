@@ -168,7 +168,9 @@ public class AgentHttpServerTests(AspireFixture fixture)
     [Fact]
     public async Task AgentSession_IncludesServerWebUiUrlField()
     {
-        if (!IsDockerAvailable()) return;
+        if (!IsDockerAvailable())
+            throw new InvalidOperationException(
+                "Docker is not available on this host. This test requires Docker to create containers.");
 
         var orgSlug = $"hs-org-{Guid.NewGuid():N}"[..16];
         var (client, orgId) = await SetupOrgAsync(orgSlug);
@@ -209,9 +211,9 @@ public class AgentHttpServerTests(AspireFixture fixture)
             new { agentId = Guid.Parse(agentId) });
         Assert.Equal(HttpStatusCode.Created, assignResp.StatusCode);
 
-        // Poll for the session to be created (up to 10 s).
+        // Poll for the session to be created (up to 30 s).
         string? sessionId = null;
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
         while (DateTimeOffset.UtcNow < deadline)
         {
             var sessionsResp2 = await client.GetAsync($"/api/issues/{issueId}/agent-sessions");
@@ -227,7 +229,9 @@ public class AgentHttpServerTests(AspireFixture fixture)
             await Task.Delay(500);
         }
 
-        if (sessionId is null) return; // session not yet created — skip remaining assertions
+        if (sessionId is null)
+            throw new TimeoutException(
+                $"Agent session for issue {issueId} was not created within 30 seconds.");
 
         // Retrieve the session and verify the serverWebUiUrl field is present in the response.
         var sessionResp = await client.GetAsync($"/api/agent-sessions/{sessionId}");
@@ -477,6 +481,13 @@ public class AgentHttpServerTests(AspireFixture fixture)
             logLines.Any(l => l.Contains("[DEBUG] HTTP server") && l.Contains("port 4096")),
             $"Expected a '[DEBUG] HTTP server ... port 4096' log line, proving the Docker port " +
             $"binding was configured.\n" +
+            $"Actual logs:\n{string.Join('\n', logLines.Take(40))}");
+
+        // The container CMD must include "serve" and "--hostname 0.0.0.0" — the key fixes that
+        // make opencode start the HTTP server (not TUI) and bind to all interfaces (not loopback).
+        Assert.True(
+            logLines.Any(l => l.Contains("[DEBUG] HTTP server cmd:") && l.Contains("serve") && l.Contains("0.0.0.0")),
+            $"Expected '[DEBUG] HTTP server cmd: opencode serve --hostname 0.0.0.0 ...' log line.\n" +
             $"Actual logs:\n{string.Join('\n', logLines.Take(40))}");
 
         // The old bug produced "Exposed ports: []". This must never appear.

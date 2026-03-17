@@ -28,7 +28,7 @@ public class OpenCodeHttpApi(HttpClient httpClient, ILogger<OpenCodeHttpApi> log
     public const int DefaultPort = 4096;
 
     /// <summary>Polling interval when waiting for a session to complete.</summary>
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(3);
+    internal static TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(3);
 
     /// <summary>Maximum time to wait for a session to reach a terminal state.</summary>
     private static readonly TimeSpan MaxWaitTime = TimeSpan.FromMinutes(30);
@@ -124,9 +124,18 @@ public class OpenCodeHttpApi(HttpClient httpClient, ILogger<OpenCodeHttpApi> log
         var lastMessageCount = 0;
         var seenBusy = false;
 
+        try
+        {
         while (DateTimeOffset.UtcNow < deadline && !cancellationToken.IsCancellationRequested)
         {
-            await Task.Delay(PollInterval, cancellationToken);
+            try
+            {
+                await Task.Delay(PollInterval, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return AgentHttpSessionStatus.TimedOut;
+            }
 
             string? statusType = null;
             try
@@ -249,6 +258,12 @@ public class OpenCodeHttpApi(HttpClient httpClient, ILogger<OpenCodeHttpApi> log
         logger.LogWarning("Timed out waiting for opencode session {SessionId} after {Minutes} minutes",
             sessionId, MaxWaitTime.TotalMinutes);
         return AgentHttpSessionStatus.TimedOut;
+
+        }
+        catch (OperationCanceledException)
+        {
+            return AgentHttpSessionStatus.TimedOut;
+        }
     }
 
     /// <inheritdoc/>
