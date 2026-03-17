@@ -335,7 +335,7 @@ public class TestHistoryTests : IAsyncLifetime
 
             // Verify Artifacts tab: TRX artifact should be hidden behind the toggle by default.
             await runPage.GotoArtifactsTabAsync(projectId, runId);
-            await runPage.WaitForArtifactsTabContentAsync();
+            await runPage.WaitForNonEmptyArtifactsTabAsync();
 
             Assert.False(await runPage.IsArtifactsTabEmptyAsync(),
                 "Artifacts tab should not be empty — the TRX artifact was uploaded");
