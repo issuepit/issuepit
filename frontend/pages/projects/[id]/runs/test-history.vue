@@ -592,16 +592,13 @@
                   <span v-else-if="entry.outcomeName === 'Failed'" class="text-red-400 text-sm font-bold">✗</span>
                   <span v-else class="text-yellow-500 text-sm font-bold">–</span>
                   <span class="text-xs text-gray-500">{{ formatDate(entry.runAt) }}</span>
-                  <a
-                    v-if="commitUrl(entry.commitSha)"
-                    :href="commitUrl(entry.commitSha)!"
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <NuxtLink
+                    v-if="entry.commitSha"
+                    :to="commitUrl(entry.commitSha)!"
                     class="text-xs text-brand-400 hover:text-brand-300 font-mono transition-colors"
                     @click.stop>
                     {{ formatCommit(entry.commitSha) }}
-                  </a>
-                  <span v-else-if="entry.commitSha" class="text-xs text-gray-400 font-mono">{{ formatCommit(entry.commitSha) }}</span>
+                  </NuxtLink>
                   <span v-if="entry.branch" class="text-xs text-gray-600 font-mono">{{ entry.branch }}</span>
                   <span class="ml-auto text-xs text-gray-500">{{ formatDuration(entry.durationMs) }}</span>
                 </div>
@@ -772,9 +769,10 @@ function formatDuration(ms: number) {
   return `${m}m ${Math.round(s % 60)}s`
 }
 
-/** Returns the external GitHub commit URL when the project has a configured GitHub repo. */
+/** Returns the internal code viewer URL for a specific commit SHA, if one is provided. */
 function commitUrl(sha?: string): string | null {
-  return buildCommitUrl(projectsStore.currentProject?.gitHubRepo, sha)
+  if (!sha) return null
+  return `/projects/${projectId}/code?sha=${sha}`
 }
 
 const maxTotal = computed(() => Math.max(...runSummaries.value.map(r => r.totalTests), 1))
