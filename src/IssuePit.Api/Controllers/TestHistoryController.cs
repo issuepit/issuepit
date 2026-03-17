@@ -17,6 +17,65 @@ namespace IssuePit.Api.Controllers;
 public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : ControllerBase
 {
     // ──────────────────────────────────────────────────────────────────────────
+    // Daily summary (chart data)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns per-day aggregated test counts for the given project, ordered by date ascending.
+    /// Used by the Test History chart card on the project dashboard.
+    /// Optionally filtered by branch and limited to the most recent <paramref name="days"/> calendar days.
+    /// </summary>
+    [HttpGet("daily-summary")]
+    public async Task<IActionResult> GetDailySummary(
+        Guid projectId,
+        [FromQuery] string? branch = null,
+        [FromQuery] int days = 30)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        if (!await ProjectExistsInTenantAsync(projectId)) return NotFound();
+
+        days = Math.Clamp(days, 1, 90);
+        var since = DateTime.UtcNow.Date.AddDays(-days + 1);
+
+        var query = db.CiCdTestSuites
+            .Where(s => s.CiCdRun.ProjectId == projectId
+                     && s.CiCdRun.Project.Organization.TenantId == ctx.CurrentTenant.Id
+                     && s.CiCdRun.StartedAt >= since);
+
+        if (!string.IsNullOrWhiteSpace(branch))
+            query = query.Where(s => s.CiCdRun.Branch == branch);
+
+        var raw = await query
+            .Select(s => new
+            {
+                Date = s.CiCdRun.StartedAt.Date,
+                s.TotalTests,
+                s.PassedTests,
+                s.FailedTests,
+                s.SkippedTests,
+                s.DurationMs,
+            })
+            .ToListAsync();
+
+        var result = raw
+            .GroupBy(s => s.Date)
+            .Select(g => new
+            {
+                Date = g.Key.ToString("yyyy-MM-dd"),
+                TotalTests = g.Sum(s => s.TotalTests),
+                PassedTests = g.Sum(s => s.PassedTests),
+                FailedTests = g.Sum(s => s.FailedTests),
+                SkippedTests = g.Sum(s => s.SkippedTests),
+                DurationMs = g.Sum(s => s.DurationMs),
+                RunCount = g.Count(),
+            })
+            .OrderBy(r => r.Date)
+            .ToList();
+
+        return Ok(result);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
     // Run summaries
     // ──────────────────────────────────────────────────────────────────────────
 

@@ -104,7 +104,7 @@
       </button>
     </div>
 
-    <!-- Settings panel (chart days/height, kanban board) -->
+    <!-- Settings panel (chart days/height, kanban board, test history chart settings) -->
     <div v-if="showSettings && hasSettings" class="mt-1.5 pt-1.5 border-t border-gray-700/50 flex flex-wrap items-center gap-x-4 gap-y-1.5">
       <!-- Chart days (number input) -->
       <div v-if="currentChartDays !== undefined" class="flex items-center gap-1.5">
@@ -136,6 +136,35 @@
           <option v-for="b in kanbanBoards" :key="b.id" :value="b.id">{{ b.name }}</option>
         </select>
       </div>
+      <!-- Test history branch filter -->
+      <div v-if="testHistoryBranches !== undefined" class="flex items-center gap-1.5">
+        <span class="text-xs text-gray-500">Branch</span>
+        <select
+          :value="currentTestHistoryBranch ?? ''"
+          @change.stop="onBranchChange"
+          class="text-xs bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500">
+          <option value="">All</option>
+          <option v-for="b in testHistoryBranches" :key="b" :value="b">{{ b }}</option>
+        </select>
+      </div>
+      <!-- Test history color mode -->
+      <div v-if="testHistoryColorModeOptions?.length" class="flex items-center gap-0.5">
+        <span class="text-xs text-gray-500 mr-1">Color</span>
+        <button
+          v-for="c in testHistoryColorModeOptions" :key="c.value"
+          @click.stop="$emit('test-history-color-mode-change', c.value)"
+          :class="currentTestHistoryColorMode === c.value ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
+          class="text-xs px-1.5 py-0.5 rounded transition-colors">{{ c.label }}</button>
+      </div>
+      <!-- Test history Y axis -->
+      <div v-if="testHistoryYAxisOptions?.length" class="flex items-center gap-0.5">
+        <span class="text-xs text-gray-500 mr-1">Y</span>
+        <button
+          v-for="y in testHistoryYAxisOptions" :key="y.value"
+          @click.stop="$emit('test-history-y-axis-change', y.value)"
+          :class="currentTestHistoryYAxis === y.value ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
+          class="text-xs px-1.5 py-0.5 rounded transition-colors">{{ y.label }}</button>
+      </div>
     </div>
   </div>
 </template>
@@ -157,6 +186,12 @@ const props = defineProps<{
   currentChartHeight?: string
   kanbanBoards?: { id: string; name: string }[]
   selectedKanbanBoardId?: string
+  testHistoryBranches?: string[]
+  currentTestHistoryBranch?: string | null
+  testHistoryColorModeOptions?: { value: string; label: string }[]
+  currentTestHistoryColorMode?: string
+  testHistoryYAxisOptions?: { value: string; label: string }[]
+  currentTestHistoryYAxis?: string
   canTab?: boolean
   isTabbed?: boolean
   canStack?: boolean
@@ -173,6 +208,9 @@ const emit = defineEmits<{
   'chart-days-change': [days: number]
   'chart-height-change': [key: string]
   'kanban-board-change': [boardId: string]
+  'test-history-branch-change': [branch: string | null]
+  'test-history-color-mode-change': [mode: string]
+  'test-history-y-axis-change': [axis: string]
   'tab-toggle': []
   'tab-drop': [droppedSid: string]
   'stack-toggle': []
@@ -200,7 +238,9 @@ const CHART_DAYS_MAX = 60
 const hasSettings = computed(() =>
   props.currentChartDays !== undefined ||
   (props.chartHeightOptions?.length ?? 0) > 0 ||
-  props.kanbanBoards !== undefined,  // show cog even if boards haven't loaded yet
+  props.kanbanBoards !== undefined ||  // show cog even if boards haven't loaded yet
+  props.testHistoryBranches !== undefined ||
+  (props.testHistoryColorModeOptions?.length ?? 0) > 0,
 )
 
 function onChartDaysChange(e: Event) {
@@ -211,6 +251,11 @@ function onChartDaysChange(e: Event) {
 function onBoardChange(e: Event) {
   const v = (e.target as HTMLSelectElement).value
   if (v) emit('kanban-board-change', v)
+}
+
+function onBranchChange(e: Event) {
+  const v = (e.target as HTMLSelectElement).value
+  emit('test-history-branch-change', v || null)
 }
 
 function onTabDrop(e: DragEvent) {

@@ -183,11 +183,22 @@
             Row break
           </button>
           <button @click="addKanbanCard()"
-            class="text-xs text-gray-500 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1">
+            draggable="true"
+            @dragstart.stop="(e: DragEvent) => { captureSnapshot(); const id = addKanbanCard(); onSectionDragStart(e, id) }"
+            class="text-xs text-gray-500 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1 cursor-grab">
             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
             </svg>
             + Kanban Board
+          </button>
+          <button @click="addTestHistoryCard()"
+            draggable="true"
+            @dragstart.stop="(e: DragEvent) => { captureSnapshot(); const id = addTestHistoryCard(); onSectionDragStart(e, id) }"
+            class="text-xs text-gray-500 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1 cursor-grab">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            + Test History
           </button>
           <button @click="showLoadModal = true"
             class="text-xs text-gray-500 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1">
@@ -315,18 +326,24 @@
               <DashboardSectionBar
                 v-if="item.type === 'section'"
                 :label="getSectionLabel(item.sid)"
-                :display-modes="SECTION_DISPLAY_MODES[item.sid as SectionId]"
+                :display-modes="isTestHistorySid(item.sid) ? ['list', 'chart'] : SECTION_DISPLAY_MODES[item.sid as SectionId]"
                 :current-display-mode="sectionCfg(item.sid).displayMode"
                 :has-max-items="sectionHasMaxItems(item.sid)"
                 :max-items-options="MAX_ITEMS_OPTIONS"
                 :current-max-items="sectionCfg(item.sid).maxItems"
                 :widths="PROJECT_WIDTHS"
                 :current-width="sectionCfg(item.sid).width"
-                :current-chart-days="item.sid === 'history' ? (sectionCfg(item.sid).chartDays ?? CHART_DAY_DEFAULT) : undefined"
+                :current-chart-days="(item.sid === 'history' || isTestHistorySid(item.sid)) ? (sectionCfg(item.sid).chartDays ?? (item.sid === 'history' ? CHART_DAY_DEFAULT : 30)) : undefined"
                 :chart-height-options="item.sid === 'history' ? CHART_HEIGHT_OPTIONS : undefined"
                 :current-chart-height="item.sid === 'history' ? (sectionCfg(item.sid).chartHeightKey ?? 'md') : undefined"
                 :kanban-boards="isKanbanSid(item.sid) ? kanbanStore.boards : undefined"
                 :selected-kanban-board-id="isKanbanSid(item.sid) ? sectionCfg(item.sid).selectedBoardId : undefined"
+                :test-history-branches="isTestHistorySid(item.sid) ? testHistoryBranches : undefined"
+                :current-test-history-branch="isTestHistorySid(item.sid) ? sectionCfg(item.sid).testHistoryBranch : undefined"
+                :test-history-color-mode-options="isTestHistorySid(item.sid) ? TEST_HISTORY_COLOR_MODES : undefined"
+                :current-test-history-color-mode="isTestHistorySid(item.sid) ? (sectionCfg(item.sid).testHistoryColorMode ?? 'failure-rate') : undefined"
+                :test-history-y-axis-options="isTestHistorySid(item.sid) ? TEST_HISTORY_Y_AXES : undefined"
+                :current-test-history-y-axis="isTestHistorySid(item.sid) ? (sectionCfg(item.sid).testHistoryYAxis ?? 'count') : undefined"
                 :can-tab="layout.order.indexOf(item.sid) < layout.order.length - 1"
                 :is-tabbed="sectionCfg(item.sid).tabGroup !== null"
                 :can-stack="sectionCanStack(item.sid) && layout.order.indexOf(item.sid) < layout.order.length - 1"
@@ -337,9 +354,12 @@
                 @display-mode-change="m => updateCfg(item.sid, { displayMode: m as SectionDisplayMode })"
                 @max-items-change="n => updateCfg(item.sid, { maxItems: n })"
                 @width-change="w => updateCfg(item.sid, { width: w as SectionWidth })"
-                @chart-days-change="d => updateCfg(item.sid, { chartDays: d })"
+                @chart-days-change="d => { updateCfg(item.sid, { chartDays: d }); if (isTestHistorySid(item.sid)) loadTestHistoryChart(item.sid) }"
                 @chart-height-change="k => updateCfg(item.sid, { chartHeightKey: k })"
                 @kanban-board-change="boardId => updateCfg(item.sid, { selectedBoardId: boardId })"
+                @test-history-branch-change="b => { updateCfg(item.sid, { testHistoryBranch: b }); loadTestHistoryChart(item.sid) }"
+                @test-history-color-mode-change="m => updateCfg(item.sid, { testHistoryColorMode: m as 'failure-rate' | 'pass-fail' })"
+                @test-history-y-axis-change="a => updateCfg(item.sid, { testHistoryYAxis: a as 'count' | 'duration' })"
                 @tab-toggle="toggleTabGroupWithNext(item.sid)"
                 @tab-drop="droppedSid => tabWithSection(item.sid, droppedSid)"
                 @stack-toggle="toggleStackGroupWithNext(item.sid)"
@@ -389,7 +409,7 @@
                       : 'text-gray-500 hover:text-gray-300',
                   ]"
                   class="px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0">
-                  {{ SECTION_LABELS[sec as SectionId] }}
+                  {{ getSectionLabel(sec) }}
                 </button>
               </div>
 
@@ -655,39 +675,63 @@
                     </template>
                   </template>
 
-                  <!-- ── TEST HISTORY section ── -->
-                  <template v-else-if="sid === 'testHistory'">
-                    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
-                      <div class="flex items-center justify-between mb-4">
-                        <h2 class="font-semibold text-white flex items-center gap-2">
-                          <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                          </svg>
-                          Test History
-                        </h2>
-                        <NuxtLink :to="`/projects/${id}/runs/test-history`" class="text-xs text-brand-400 hover:text-brand-300 transition-colors">View all →</NuxtLink>
-                      </div>
-                      <div v-if="dashboardTestRuns.length" class="space-y-2">
-                        <div v-for="run in dashboardTestRuns" :key="run.runId"
-                          class="flex items-center gap-3 py-2 border-b border-gray-800 last:border-0 cursor-pointer"
-                          @click="navigateTo(`/projects/${id}/runs/cicd/${run.runId}?tab=tests`)">
-                          <span v-if="run.failedTests > 0" class="text-red-400 text-xs shrink-0">✗</span>
-                          <span v-else-if="run.passedTests > 0" class="text-green-400 text-xs shrink-0">✓</span>
-                          <span v-else class="text-yellow-500 text-xs shrink-0">–</span>
-                          <div class="flex-1 min-w-0">
-                            <p class="text-sm text-gray-300 font-mono truncate">{{ run.commitSha?.slice(0, 7) || '—' }}<span v-if="run.branch" class="text-gray-500"> · {{ run.branch }}</span></p>
-                            <p class="text-xs text-gray-500">
-                              {{ run.passedTests }} passed
-                              <span v-if="run.failedTests > 0" class="text-red-400">, {{ run.failedTests }} failed</span>
-                              <span v-if="run.skippedTests > 0">, {{ run.skippedTests }} skipped</span>
-                            </p>
-                          </div>
-                          <span class="text-xs text-gray-600 shrink-0">{{ relativeTime(run.startedAt) }}</span>
+                  <!-- ── TEST HISTORY section (static + dynamic) ── -->
+                  <template v-else-if="isTestHistorySid(sid)">
+                    <!-- List mode -->
+                    <template v-if="sectionCfg(sid).displayMode !== 'chart'">
+                      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                        <div class="flex items-center justify-between mb-4">
+                          <h2 class="font-semibold text-white flex items-center gap-2">
+                            <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                            </svg>
+                            Test History
+                          </h2>
+                          <NuxtLink :to="`/projects/${id}/runs/test-history`" class="text-xs text-brand-400 hover:text-brand-300 transition-colors">View all →</NuxtLink>
                         </div>
+                        <div v-if="dashboardTestRuns.length" class="space-y-2">
+                          <div v-for="run in dashboardTestRuns.slice(0, sectionCfg(sid).maxItems)" :key="run.runId"
+                            class="flex items-center gap-3 py-2 border-b border-gray-800 last:border-0 cursor-pointer"
+                            @click="navigateTo(`/projects/${id}/runs/cicd/${run.runId}?tab=tests`)">
+                            <span v-if="run.failedTests > 0" class="text-red-400 text-xs shrink-0">✗</span>
+                            <span v-else-if="run.passedTests > 0" class="text-green-400 text-xs shrink-0">✓</span>
+                            <span v-else class="text-yellow-500 text-xs shrink-0">–</span>
+                            <div class="flex-1 min-w-0">
+                              <p class="text-sm text-gray-300 font-mono truncate">{{ run.commitSha?.slice(0, 7) || '—' }}<span v-if="run.branch" class="text-gray-500"> · {{ run.branch }}</span></p>
+                              <p class="text-xs text-gray-500">
+                                {{ run.passedTests }} passed
+                                <span v-if="run.failedTests > 0" class="text-red-400">, {{ run.failedTests }} failed</span>
+                                <span v-if="run.skippedTests > 0">, {{ run.skippedTests }} skipped</span>
+                              </p>
+                            </div>
+                            <span class="text-xs text-gray-600 shrink-0">{{ relativeTime(run.startedAt) }}</span>
+                          </div>
+                        </div>
+                        <p v-else class="text-sm text-gray-600 py-4 text-center">No test results yet</p>
                       </div>
-                      <p v-else class="text-sm text-gray-600 py-4 text-center">No test results yet</p>
-                    </div>
+                    </template>
+                    <!-- Chart mode -->
+                    <template v-else>
+                      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                        <div class="flex items-center justify-between mb-3">
+                          <h2 class="font-semibold text-white flex items-center gap-2">
+                            <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                            </svg>
+                            Test History
+                            <span class="text-xs font-normal text-gray-500">(last {{ sectionCfg(sid).chartDays ?? 30 }}d<span v-if="sectionCfg(sid).testHistoryBranch"> · {{ sectionCfg(sid).testHistoryBranch }}</span>)</span>
+                          </h2>
+                          <NuxtLink :to="`/projects/${id}/runs/test-history`" class="text-xs text-brand-400 hover:text-brand-300 transition-colors">View all →</NuxtLink>
+                        </div>
+                        <TestHistoryBarChart
+                          :data="testHistoryDailyData.get(sid) ?? []"
+                          :color-mode="sectionCfg(sid).testHistoryColorMode ?? 'failure-rate'"
+                          :y-axis="sectionCfg(sid).testHistoryYAxis ?? 'count'"
+                        />
+                      </div>
+                    </template>
                   </template>
 
                   <!-- ── HISTORY section ── -->
@@ -923,7 +967,7 @@
 </template>
 
 <script setup lang="ts">
-import type { ProjectMetricSnapshot, Milestone, GitCommit, Issue, TestRunSummary } from '~/types'
+import type { ProjectMetricSnapshot, Milestone, GitCommit, Issue, TestRunSummary, TestDailySummary } from '~/types'
 import { AgentSessionStatus, CiCdRunStatus, IssueStatus, IssuePriority, IssueType } from '~/types'
 import { useProjectsStore } from '~/stores/projects'
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
@@ -1063,10 +1107,14 @@ const commitCount = ref<number | null>(null)
 const hasMoreCommits = ref(false)
 const recentProjectIssues = ref<Issue[]>([])
 const dashboardTestRuns = ref<TestRunSummary[]>([])
+// Per-section daily summaries for test history chart cards (keyed by section ID)
+const testHistoryDailyData = ref<Map<string, TestDailySummary[]>>(new Map())
+// Known branches for test history (loaded once)
+const testHistoryBranches = ref<string[]>([])
 
 // ── Dashboard layout customization ─────────────────────────────────────────
 type SectionId = 'statIssues' | 'statCommits' | 'statMRs' | 'milestones' | 'issues' | 'agentRuns' | 'cicdRuns' | 'testHistory' | 'history' | 'kanban'
-type SectionDisplayMode = 'list' | 'count' | 'block'
+type SectionDisplayMode = 'list' | 'count' | 'block' | 'chart'
 type SectionWidth = 'xxs' | 'xs' | 'quarter' | 'sm' | 'md' | 'lg'
 
 const SECTION_LABELS: Record<SectionId, string> = {
@@ -1086,8 +1134,9 @@ const SECTION_DISPLAY_MODES: Partial<Record<SectionId, SectionDisplayMode[]>> = 
   issues: ['list', 'count'],
   agentRuns: ['list', 'count'],
   cicdRuns: ['list', 'count'],
+  testHistory: ['list', 'chart'],
 }
-const SECTION_HAS_MAX_ITEMS: Set<SectionId> = new Set(['milestones', 'issues', 'agentRuns', 'cicdRuns', 'kanban'])
+const SECTION_HAS_MAX_ITEMS: Set<SectionId> = new Set(['milestones', 'issues', 'agentRuns', 'cicdRuns', 'testHistory', 'kanban'])
 const SECTION_CAN_STACK: Set<SectionId> = new Set(['statIssues', 'statCommits', 'statMRs', 'milestones', 'issues', 'agentRuns', 'cicdRuns', 'testHistory', 'history', 'kanban'])
 const MAX_ITEMS_OPTIONS = [3, 5, 8, 10]
 const WIDTH_LABELS: Record<SectionWidth, string> = { xxs: '1/12', xs: '1/6', quarter: '1/4', sm: '1/3', md: '1/2', lg: 'Full' }
@@ -1106,7 +1155,7 @@ const DEFAULT_CONFIGS = {
   kanban:      { hidden: false, displayMode: 'list',  maxItems: 5,  width: 'md',  tabGroup: null, stackGroup: null },
 }
 const DEFAULT_ORDER: string[] = ['statIssues', 'statCommits', 'statMRs', 'milestones', 'rowbreak-after-milestones', 'issues', 'agentRuns', 'cicdRuns', 'testHistory', 'history', 'kanban']
-const DRAFT_LAYOUT_KEY = `project-dashboard-layout-v7-${id}`
+const DRAFT_LAYOUT_KEY = `project-dashboard-layout-v8-${id}`
 
 const {
   layout,
@@ -1167,12 +1216,18 @@ function toggleStackGroupWithNext(sid: string) { toggleStackGroupWithNextRaw(sid
 // ── Dynamic section helpers ───────────────────────────────────────────────
 /** Returns true for any kanban-like section ID (static 'kanban' + dynamic 'kanban-*'). */
 function isKanbanSid(sid: string): boolean {
-  return sid === 'kanban' || isDynamicSectionId(sid)
+  return sid === 'kanban' || /^kanban-\d/.test(sid)
+}
+
+/** Returns true for any test history section ID (static 'testHistory' + dynamic 'testHistory-*'). */
+function isTestHistorySid(sid: string): boolean {
+  return sid === 'testHistory' || /^testHistory-\d/.test(sid)
 }
 
 /** Returns the display label for any section ID (including dynamic ones). */
 function getSectionLabel(sid: string): string {
   if (isKanbanSid(sid)) return 'Kanban Board'
+  if (isTestHistorySid(sid)) return 'Test History'
   return SECTION_LABELS[sid as SectionId] ?? sid
 }
 
@@ -1180,7 +1235,9 @@ function getSectionLabel(sid: string): string {
 const allSectionLabels = computed<Record<string, string>>(() => {
   const extra: Record<string, string> = {}
   for (const sid of layout.value.order) {
-    if (isDynamicSectionId(sid)) extra[sid] = 'Kanban Board'
+    if (isDynamicSectionId(sid)) {
+      extra[sid] = isKanbanSid(sid) ? 'Kanban Board' : 'Test History'
+    }
   }
   return { ...SECTION_LABELS, ...extra }
 })
@@ -1188,21 +1245,34 @@ const allSectionLabels = computed<Record<string, string>>(() => {
 /** Whether a section supports a maxItems limit. */
 function sectionHasMaxItems(sid: string): boolean {
   if (isKanbanSid(sid)) return true
+  if (isTestHistorySid(sid)) return true
   return SECTION_HAS_MAX_ITEMS.has(sid as SectionId)
 }
 
 /** Whether a section can be stacked with another. */
 function sectionCanStack(sid: string): boolean {
   if (isKanbanSid(sid)) return true
+  if (isTestHistorySid(sid)) return true
   return SECTION_CAN_STACK.has(sid as SectionId)
 }
 
 /** Default config for newly added kanban cards. */
 const KANBAN_CARD_DEFAULT_CONFIG: LayoutSectionConfig = { hidden: false, displayMode: 'list', maxItems: 5, width: 'md', tabGroup: null, stackGroup: null }
 
-/** Adds a new kanban board card to the dashboard. */
-function addKanbanCard() {
-  addDynamicSection('kanban', { ...KANBAN_CARD_DEFAULT_CONFIG })
+/** Adds a new kanban board card to the dashboard. Returns the generated section ID. */
+function addKanbanCard(): string {
+  return addDynamicSection('kanban', { ...KANBAN_CARD_DEFAULT_CONFIG })
+}
+
+/** Default config for newly added test history chart cards. */
+const TEST_HISTORY_CARD_DEFAULT_CONFIG: LayoutSectionConfig = {
+  hidden: false, displayMode: 'chart', maxItems: 5, width: 'md', tabGroup: null, stackGroup: null,
+  chartDays: 30, testHistoryBranch: null, testHistoryColorMode: 'failure-rate', testHistoryYAxis: 'count',
+}
+
+/** Adds a new test history card to the dashboard. Returns the generated section ID. */
+function addTestHistoryCard(): string {
+  return addDynamicSection('testHistory', { ...TEST_HISTORY_CARD_DEFAULT_CONFIG })
 }
 
 // ── Template save / load / export / import ────────────────────────────────
@@ -1333,10 +1403,24 @@ onMounted(async () => {
       })
       .catch(() => { commitCount.value = null }),
     kanbanStore.fetchBoards(id).catch((e) => { console.warn('Failed to load kanban boards:', e) }),
-    api.get<TestRunSummary[]>(`/api/projects/${id}/test-history/runs?take=5`)
+    api.get<TestRunSummary[]>(`/api/projects/${id}/test-history/runs?take=10`)
       .then(data => { dashboardTestRuns.value = data })
       .catch((e) => { console.warn(`Failed to load test history for project ${id}`, e) }),
+    // Load known branches for branch selector in test history chart
+    api.get<{ branch?: string }[]>(`/api/projects/${id}/test-history/runs?take=50`)
+      .then(data => {
+        const branches = [...new Set(data.map(r => r.branch).filter((b): b is string => !!b))]
+        testHistoryBranches.value = branches
+      })
+      .catch(() => {}),
   ])
+
+  // Load chart data for any test history sections that start in chart mode
+  for (const sid of layout.value.order) {
+    if (isTestHistorySid(sid) && sectionCfg(sid).displayMode === 'chart') {
+      loadTestHistoryChart(sid).catch(() => {})
+    }
+  }
 
   // Connect to SignalR for live run updates
   await connect()
@@ -1400,8 +1484,47 @@ const CHART_HEIGHT_OPTIONS = [
 ]
 const CHART_HEIGHT_PX: Record<string, number> = { xs: 80, sm: 120, md: 180, lg: 260, xl: 360 }
 
+// Test history chart settings options
+const TEST_HISTORY_COLOR_MODES = [
+  { value: 'failure-rate', label: 'Fail %' },
+  { value: 'pass-fail', label: 'Pass/Fail' },
+]
+const TEST_HISTORY_Y_AXES = [
+  { value: 'count', label: 'Count' },
+  { value: 'duration', label: 'Time' },
+]
+
+/** Loads (or refreshes) the daily chart data for a test history section. */
+async function loadTestHistoryChart(sid: string) {
+  const cfg = sectionCfg(sid)
+  const days = cfg.chartDays ?? 30
+  const branch = cfg.testHistoryBranch
+  let url = `/api/projects/${id}/test-history/daily-summary?days=${days}`
+  if (branch) url += `&branch=${encodeURIComponent(branch)}`
+  try {
+    const data = await api.get<TestDailySummary[]>(url)
+    testHistoryDailyData.value = new Map(testHistoryDailyData.value).set(sid, data)
+  } catch (e) {
+    console.warn(`Failed to load test history chart data for section ${sid}`, e)
+  }
+}
+
 const chartHeightPx = computed(() =>
   CHART_HEIGHT_PX[sectionCfg('history').chartHeightKey ?? 'md'] ?? 160,
+)
+
+// Load chart data when a test history section switches to chart mode
+watch(
+  () => layout.value.configs,
+  (newConfigs, oldConfigs) => {
+    for (const sid of Object.keys(newConfigs)) {
+      if (!isTestHistorySid(sid)) continue
+      if (newConfigs[sid]?.displayMode === 'chart' && oldConfigs?.[sid]?.displayMode !== 'chart') {
+        loadTestHistoryChart(sid).catch(() => {})
+      }
+    }
+  },
+  { deep: true },
 )
 
 const filteredMetricSnapshots = computed(() => {
