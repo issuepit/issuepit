@@ -38,11 +38,11 @@ export const useKanbanStore = defineStore('kanban', () => {
     }
   }
 
-  async function updateBoard(boardId: string, name: string) {
+  async function updateBoard(boardId: string, name: string, laneProperty?: import('~/types').KanbanLaneProperty) {
     loading.value = true
     error.value = null
     try {
-      const board = await api.put<KanbanBoard>(`/api/kanban/boards/${boardId}`, { name })
+      const board = await api.put<KanbanBoard>(`/api/kanban/boards/${boardId}`, { name, laneProperty })
       const idx = boards.value.findIndex(b => b.id === boardId)
       if (idx !== -1) boards.value[idx] = board
       if (currentBoard.value?.id === boardId) currentBoard.value = board
