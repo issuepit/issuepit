@@ -931,7 +931,14 @@ public class DockerAgentRuntime(
         if (!string.IsNullOrWhiteSpace(branch))
         {
             await onLogLine($"[entrypoint] Pushing branch '{branch}' to origin…", LogStream.Stdout);
-            var pushExit = await ExecCommandAsync(containerId, ["git", "push", "origin", branch],
+            // Use the real git binary path written by the entrypoint before it installed the
+            // push-blocking wrapper at /usr/local/bin/git. This allows the execution client to
+            // push branches via docker exec without hitting the wrapper meant to stop agents.
+            var realGit = (await ExecReadOutputAsync(
+                containerId,
+                ["/bin/sh", "-c", "cat /tmp/.issuepit-real-git 2>/dev/null || echo /usr/bin/git"],
+                cancellationToken)).Trim();
+            var pushExit = await ExecCommandAsync(containerId, [realGit, "push", "origin", branch],
                 async (line, stream) => await onLogLine($"[entrypoint] {line}", stream),
                 cancellationToken);
             if (pushExit != 0)
