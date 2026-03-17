@@ -89,6 +89,17 @@ public class CiCdRunPage(IPage page)
             null,
             new PageWaitForFunctionOptions { Timeout = E2ETimeouts.Navigation });
 
+    /// <summary>
+    /// Waits for the Artifacts tab to show at least one artifact (the "produced by this run" text).
+    /// Use this instead of <see cref="WaitForArtifactsTabContentAsync"/> when you know the run
+    /// should have artifacts, to avoid resolving early on the transient empty-state shown during loading.
+    /// </summary>
+    public async Task WaitForNonEmptyArtifactsTabAsync() =>
+        await page.WaitForFunctionAsync(
+            "document.body.innerText.includes('produced by this run')",
+            null,
+            new PageWaitForFunctionOptions { Timeout = E2ETimeouts.Navigation });
+
     /// <summary>Returns true when the artifacts tab shows the empty state message.</summary>
     public async Task<bool> IsArtifactsTabEmptyAsync() =>
         await page.IsVisibleAsync("text=No artifacts found for this run.");
