@@ -96,9 +96,22 @@ public class CiCdRunPage(IPage page)
     /// <summary>
     /// Returns true when the toggle button for test-result artifacts is visible
     /// (i.e. the run produced at least one artifact flagged as a test-result artifact).
+    /// Waits up to <see cref="E2ETimeouts.Default"/> for the button to appear.
     /// </summary>
-    public async Task<bool> HasTestResultArtifactToggleAsync() =>
-        await page.IsVisibleAsync("[data-testid='toggle-test-result-artifacts']");
+    public async Task<bool> HasTestResultArtifactToggleAsync()
+    {
+        try
+        {
+            await page.WaitForSelectorAsync(
+                "[data-testid='toggle-test-result-artifacts']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default, State = WaitForSelectorState.Visible });
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            return false;
+        }
+    }
 
     /// <summary>
     /// Clicks the toggle button that reveals hidden test-result artifacts and waits

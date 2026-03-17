@@ -36,6 +36,34 @@ internal static class CiCdTestPollingHelpers
     }
 
     /// <summary>
+    /// Polls <c>GET /api/cicd-runs/{runId}/artifacts</c> until at least one artifact with
+    /// <c>isTestResultArtifact = true</c> is present, or the timeout elapses.
+    /// Needed because <c>ParseAndStoreTestResultsAsync</c> may persist the run's terminal status
+    /// before <c>ParseAndStoreArtifactsAsync</c> has completed, so the run can appear as
+    /// "Succeeded" in the API while artifact rows are still being written.
+    /// </summary>
+    public static async Task<JsonElement> WaitForTestResultArtifactsAsync(
+        HttpClient client,
+        string runId,
+        TimeSpan timeout)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var last = default(JsonElement);
+        while (sw.Elapsed < timeout)
+        {
+            var resp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts");
+            resp.EnsureSuccessStatusCode();
+            last = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            if (last.EnumerateArray().Any(a =>
+                    a.TryGetProperty("isTestResultArtifact", out var v) && v.GetBoolean()))
+                return last;
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+        }
+
+        return last; // callers will assert on the content
+    }
+
+    /// <summary>
     /// Polls <c>GET /api/cicd-runs/{runId}</c> until the run reaches a terminal state
     /// (Succeeded, Failed, or Cancelled) or the timeout elapses.
     /// </summary>
