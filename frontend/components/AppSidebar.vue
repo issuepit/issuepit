@@ -172,6 +172,7 @@ const initials = computed(() => displayName.value.slice(0, 2).padEnd(2, displayN
 // Returns the sidebar link for a project, preserving the current sub-page when possible.
 // e.g. /projects/OLD/kanban → /projects/NEW/kanban
 // e.g. /projects/OLD/issues/8 → /projects/NEW/issues  (specific item pages fall back to the list)
+// e.g. /projects/OLD/runs/cicd/UUID → /projects/NEW/runs/cicd  (run detail pages fall back to the list)
 // e.g. /projects/OLD/runs/test-history → /projects/NEW/runs/test-history  (stable sub-views are preserved)
 // If the project is already open (same project ID), always navigate to its dashboard.
 
@@ -189,11 +190,12 @@ function getProjectLink(projectId: string): string {
   if (match[1] === projectId) return `/projects/${projectId}`
   const subPath = match[2]
   const parts = subPath.split('/')
-  // Only truncate to the first segment when the second part looks like a specific item ID
-  // (a number like issue/123, or a UUID like runs/cicd/abc-…). Named sub-routes such as
-  // runs/test-history or runs/opencode-sessions are stable views and should be preserved.
-  if (parts.length > 1 && isItemId(parts[1])) {
-    return `/projects/${projectId}/${parts[0]}`
+  // If the last segment looks like a specific item ID (a number or UUID), navigate one level up.
+  // This handles both /issues/8 → /issues and /runs/cicd/UUID → /runs/cicd.
+  // Named sub-routes such as runs/test-history or runs/opencode-sessions are stable views
+  // and should be preserved as-is.
+  if (parts.length > 1 && isItemId(parts[parts.length - 1])) {
+    return `/projects/${projectId}/${parts.slice(0, -1).join('/')}`
   }
   return `/projects/${projectId}/${subPath}`
 }

@@ -708,9 +708,8 @@
                                 <span v-if="run.skippedTests > 0">, {{ run.skippedTests }} skipped</span>
                               </p>
                             </div>
-                            <span class="text-xs text-gray-600 shrink-0">{{ relativeTime(run.startedAt) }}</span>
+                            <DateDisplay :date="run.startedAt" mode="relative" class="text-xs text-gray-600 shrink-0" />
                           </div>
-                          <span class="text-xs text-gray-600 shrink-0"><DateDisplay :date="run.startedAt" mode="relative" /></span>
                         </div>
                         <p v-else class="text-sm text-gray-600 py-4 text-center">No test results yet</p>
                       </div>
