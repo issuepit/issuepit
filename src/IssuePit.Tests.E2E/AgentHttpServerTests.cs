@@ -168,7 +168,9 @@ public class AgentHttpServerTests(AspireFixture fixture)
     [Fact]
     public async Task AgentSession_IncludesServerWebUiUrlField()
     {
-        if (!IsDockerAvailable()) return;
+        if (!IsDockerAvailable())
+            throw new InvalidOperationException(
+                "Docker is not available on this host. This test requires Docker to create containers.");
 
         var orgSlug = $"hs-org-{Guid.NewGuid():N}"[..16];
         var (client, orgId) = await SetupOrgAsync(orgSlug);
@@ -209,16 +211,17 @@ public class AgentHttpServerTests(AspireFixture fixture)
             new { agentId = Guid.Parse(agentId) });
         Assert.Equal(HttpStatusCode.Created, assignResp.StatusCode);
 
-        // Poll for the session to be created (up to 10 s).
+        // Poll for the session to be created (up to 30 s).
+        // /api/issues/{id}/runs returns { agentSessions: [...] }.
         string? sessionId = null;
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
         while (DateTimeOffset.UtcNow < deadline)
         {
-            var sessionsResp2 = await client.GetAsync($"/api/issues/{issueId}/agent-sessions");
-            if (sessionsResp2.IsSuccessStatusCode)
+            var runsResp2 = await client.GetAsync($"/api/issues/{issueId}/runs");
+            if (runsResp2.IsSuccessStatusCode)
             {
-                var sessions2 = await sessionsResp2.Content.ReadFromJsonAsync<JsonElement>();
-                if (sessions2.GetArrayLength() > 0)
+                var runsBody = await runsResp2.Content.ReadFromJsonAsync<JsonElement>();
+                if (runsBody.TryGetProperty("agentSessions", out var sessions2) && sessions2.GetArrayLength() > 0)
                 {
                     sessionId = sessions2[0].GetProperty("id").GetString();
                     break;
@@ -227,7 +230,9 @@ public class AgentHttpServerTests(AspireFixture fixture)
             await Task.Delay(500);
         }
 
-        if (sessionId is null) return; // session not yet created — skip remaining assertions
+        if (sessionId is null)
+            throw new TimeoutException(
+                $"Agent session for issue {issueId} was not created within 30 seconds.");
 
         // Retrieve the session and verify the serverWebUiUrl field is present in the response.
         var sessionResp = await client.GetAsync($"/api/agent-sessions/{sessionId}");
@@ -406,12 +411,18 @@ public class AgentHttpServerTests(AspireFixture fixture)
     /// "Exposed ports: []" — the pre-fix error that occurred because the container exited
     /// before the port binding was visible in the Docker inspection.
     ///
+    /// Note: This test validates Docker infrastructure only (port binding, container CMD),
+    /// not that the opencode HTTP server actually becomes ready. A real readiness test
+    /// would require the full opencode image which is only available in production runs.
+    ///
     /// Skipped automatically when Docker is not available on the host.
     /// </summary>
     [Fact]
     public async Task AgentSession_HttpServerMode_PortBindingLoggedAndNoExposedPortsError()
     {
-        if (!IsDockerAvailable()) return;
+        if (!IsDockerAvailable())
+            throw new InvalidOperationException(
+                "Docker is not available on this host. This test requires Docker to create containers.");
 
         var orgSlug = $"hs-org-{Guid.NewGuid():N}"[..16];
         var (client, orgId) = await SetupOrgAsync(orgSlug);
@@ -429,10 +440,11 @@ public class AgentHttpServerTests(AspireFixture fixture)
         var issue = await issueResp.Content.ReadFromJsonAsync<JsonElement>();
         var issueId = issue.GetProperty("id").GetString()!;
 
-        // HTTP server mode agent — busybox image. The container will fail to run opencode
-        // (not installed in busybox) but must NOT fail with the pre-fix "Exposed ports: []"
-        // error. The [DEBUG] HTTP server port line must be logged, proving the port binding
-        // was configured in the Docker create-params before the container was started.
+        // HTTP server mode agent — busybox image. The container will fail to run
+        // "opencode serve ..." (not installed in busybox) but must NOT fail with the
+        // pre-fix "Exposed ports: []" error. The [DEBUG] HTTP server port line must be
+        // logged, proving the port binding was configured in the Docker create-params
+        // before the container was started.
         var agentResp = await client.PostAsJsonAsync("/api/agents", new
         {
             name = "HTTP Port Regression Agent",
@@ -472,9 +484,175 @@ public class AgentHttpServerTests(AspireFixture fixture)
             $"binding was configured.\n" +
             $"Actual logs:\n{string.Join('\n', logLines.Take(40))}");
 
+        // The container CMD must include "serve" and "--hostname 0.0.0.0" — the key fixes that
+        // make opencode start the HTTP server (not TUI) and bind to all interfaces (not loopback).
+        Assert.True(
+            logLines.Any(l => l.Contains("[DEBUG] HTTP server cmd:") && l.Contains("serve") && l.Contains("0.0.0.0")),
+            $"Expected '[DEBUG] HTTP server cmd: opencode serve --hostname 0.0.0.0 ...' log line.\n" +
+            $"Actual logs:\n{string.Join('\n', logLines.Take(40))}");
+
         // The old bug produced "Exposed ports: []". This must never appear.
         Assert.DoesNotContain(logLines,
             l => l.Contains("Exposed ports: []"));
+    }
+
+    /// <summary>
+    /// Verifies that when an agent with <c>UseHttpServer = true</c> is started with the real
+    /// opencode Docker image, the HTTP server actually becomes ready and responds to
+    /// <c>GET /global/health</c> with a 200 OK.
+    ///
+    /// This test proves the full fix end-to-end: container CMD is correct, hostname binds to
+    /// 0.0.0.0 so the host can reach the mapped port, and the server is actually reachable.
+    ///
+    /// After verifying the health endpoint the session is cancelled so the test does not require
+    /// LLM API keys to be configured.
+    ///
+    /// Requires:
+    /// <list type="bullet">
+    ///   <item>Docker available on the host.</item>
+    ///   <item>The <c>OPENCODE_E2E_DOCKER_IMAGE</c> environment variable may be set to override
+    ///         the opencode image; if unset, <c>ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24</c>
+    ///         is used.</item>
+    /// </list>
+    /// </summary>
+    [Fact]
+    public async Task AgentSession_HttpServerMode_HealthEndpointRespondsWith200()
+    {
+        var opencodeImage = Environment.GetEnvironmentVariable("OPENCODE_E2E_DOCKER_IMAGE")
+            ?? "ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24";
+
+        if (!IsDockerAvailable())
+            throw new InvalidOperationException(
+                "Docker is not available on this host. This test requires Docker to create containers.");
+
+        var orgSlug = $"hs-org-{Guid.NewGuid():N}"[..16];
+        var (client, orgId) = await SetupOrgAsync(orgSlug);
+
+        var projectSlug = $"hs-proj-{Guid.NewGuid():N}"[..16];
+        var projResp = await client.PostAsJsonAsync("/api/projects",
+            new { name = "Health Check Test Project", slug = projectSlug, orgId = Guid.Parse(orgId) });
+        Assert.Equal(HttpStatusCode.Created, projResp.StatusCode);
+        var proj = await projResp.Content.ReadFromJsonAsync<JsonElement>();
+        var projectId = proj.GetProperty("id").GetString()!;
+
+        var issueResp = await client.PostAsJsonAsync("/api/issues",
+            new { title = "Health Check Test Issue", projectId = Guid.Parse(projectId) });
+        Assert.Equal(HttpStatusCode.Created, issueResp.StatusCode);
+        var issue = await issueResp.Content.ReadFromJsonAsync<JsonElement>();
+        var issueId = issue.GetProperty("id").GetString()!;
+
+        // Create an HTTP-server-mode agent using the real opencode image.
+        var agentResp = await client.PostAsJsonAsync("/api/agents", new
+        {
+            name = "Health Check Agent",
+            orgId = Guid.Parse(orgId),
+            systemPrompt = "You are a test agent.",
+            dockerImage = opencodeImage,
+            allowedTools = "[]",
+            isActive = true,
+            runnerType = 0,       // OpenCode = 0
+            useHttpServer = true,
+        });
+        Assert.Equal(HttpStatusCode.Created, agentResp.StatusCode);
+        var agentData = await agentResp.Content.ReadFromJsonAsync<JsonElement>();
+        var agentId = agentData.GetProperty("id").GetString()!;
+
+        // Assign the agent to trigger the session.
+        var assignResp = await client.PostAsJsonAsync($"/api/issues/{issueId}/assignees",
+            new { agentId = Guid.Parse(agentId) });
+        Assert.Equal(HttpStatusCode.Created, assignResp.StatusCode);
+
+        // Wait for the session to be created (up to 30 s).
+        // /api/issues/{id}/runs returns { agentSessions: [...] }.
+        string? sessionId = null;
+        var sessionDeadline = DateTimeOffset.UtcNow.AddSeconds(30);
+        while (DateTimeOffset.UtcNow < sessionDeadline)
+        {
+            var runsResp = await client.GetAsync($"/api/issues/{issueId}/runs");
+            if (runsResp.IsSuccessStatusCode)
+            {
+                var runsBody = await runsResp.Content.ReadFromJsonAsync<JsonElement>();
+                if (runsBody.TryGetProperty("agentSessions", out var sessions) && sessions.GetArrayLength() > 0)
+                {
+                    sessionId = sessions[0].GetProperty("id").GetString();
+                    break;
+                }
+            }
+            await Task.Delay(500);
+        }
+
+        if (sessionId is null)
+            throw new TimeoutException(
+                $"Agent session for issue {issueId} was not created within 30 seconds.");
+
+        // Poll the session logs until "[INFO] opencode HTTP server is ready" appears, meaning
+        // the execution client confirmed readiness both inside the container (docker exec curl)
+        // and via the container bridge IP. Allow up to 60 s (image is pre-pulled; server starts
+        // in ~20 s under normal conditions).
+        string? serverInternalUrl = null;
+        var readyDeadline = DateTimeOffset.UtcNow.AddSeconds(60);
+        while (DateTimeOffset.UtcNow < readyDeadline)
+        {
+            var logsResp = await client.GetAsync($"/api/agent-sessions/{sessionId}/logs");
+            if (logsResp.IsSuccessStatusCode)
+            {
+                var logsJson = await logsResp.Content.ReadFromJsonAsync<JsonElement>();
+                var logLines = logsJson.EnumerateArray()
+                    .Select(l => l.GetProperty("line").GetString() ?? string.Empty)
+                    .ToList();
+
+                // Prefer the container bridge IP URL (accessible from any container on the same
+                // Docker bridge). Fall back to the display URL if the internal marker is absent.
+                var internalLine = logLines.FirstOrDefault(l => l.StartsWith("[DEBUG] HTTP internal URL: "));
+                if (internalLine is not null)
+                    serverInternalUrl = internalLine["[DEBUG] HTTP internal URL: ".Length..].Trim();
+                else
+                {
+                    var displayLine = logLines.FirstOrDefault(l => l.StartsWith("[ISSUEPIT:SERVER_WEB_UI_URL]="));
+                    if (displayLine is not null)
+                        serverInternalUrl = displayLine["[ISSUEPIT:SERVER_WEB_UI_URL]=".Length..].Trim();
+                }
+
+                if (logLines.Any(l => l.Contains("[INFO] opencode HTTP server is ready")))
+                    break;
+
+                // If the session has already reached a terminal state before the server became
+                // ready, fail fast with a diagnostic message.
+                var sessionResp = await client.GetAsync($"/api/agent-sessions/{sessionId}");
+                if (sessionResp.IsSuccessStatusCode)
+                {
+                    var sessionJson = await sessionResp.Content.ReadFromJsonAsync<JsonElement>();
+                    var statusName = sessionJson.GetProperty("statusName").GetString();
+                    if (statusName is "Succeeded" or "Failed" or "Cancelled")
+                        throw new InvalidOperationException(
+                            $"Session reached '{statusName}' before opencode HTTP server became ready.\n" +
+                            $"Logs:\n{string.Join('\n', logLines.Take(60))}");
+                }
+            }
+
+            await Task.Delay(1000);
+        }
+
+        if (serverInternalUrl is null)
+            throw new TimeoutException(
+                $"opencode HTTP server did not become ready within 60 seconds. " +
+                $"Server URL marker was not found in session logs.");
+
+        // Verify directly that the opencode health endpoint is reachable.
+        // Use the container bridge IP URL so this works regardless of whether the test process
+        // itself runs on the Docker host or inside a container (e.g. on a containerised CI runner).
+        using var http = new HttpClient();
+        var healthResp = await http.GetAsync($"{serverInternalUrl}/global/health");
+        Assert.Equal(HttpStatusCode.OK, healthResp.StatusCode);
+
+        // Cancel the session — we do not need LLM completion.
+        var cancelResp = await client.PostAsync($"/api/agent-sessions/{sessionId}/cancel", null);
+        Assert.True(
+            cancelResp.IsSuccessStatusCode,
+            $"Expected cancel to succeed, got {cancelResp.StatusCode}.");
+
+        // Wait for the session to reach a terminal state (Cancelled or Failed).
+        await WaitForHttpServerSessionAsync(client, issueId, TimeSpan.FromMinutes(2));
     }
 
     /// <summary>

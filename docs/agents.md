@@ -113,17 +113,19 @@ Instead of executing CLI commands, the container starts `opencode` as an HTTP se
 
 1. Open the agent's settings.
 2. Tick **Use HTTP Server** (requires `Runner Type = opencode`).
-3. Optionally set an **HTTP Server Password** — the password is forwarded to the container as the `OPENCODE_PASSWORD` environment variable and is never returned in API responses.
+3. Optionally set an **HTTP Server Password** — the password is forwarded to the container as the `OPENCODE_SERVER_PASSWORD` environment variable and is never returned in API responses.
 
 ### How it works
 
-1. The container CMD is set to `opencode` (no `run` subcommand), which starts the HTTP server on port `4096`.
+1. The container CMD is set to `opencode serve --hostname 0.0.0.0 --port 4096`, which starts the headless HTTP server.
+   - `serve` subcommand is required — the bare `opencode` command starts the interactive TUI, not the HTTP server.
+   - `--hostname 0.0.0.0` is required so Docker port-mapping can reach the server from the host (the default is `127.0.0.1` which is loopback-only inside the container).
 2. The host maps a random available port to the container's port `4096`.
-3. The execution client polls `GET /v1/session` until the server is ready (up to 60 s).
+3. The execution client polls `GET /global/health` until the server is ready (up to 60 s).
 4. The web UI URL (`http://localhost:<host-port>`) is stored on the session and visible in the UI.
-5. A new session is created via `POST /v1/session`.
-6. The task is sent via `POST /v1/session/<id>/message`.
-7. The client polls `GET /v1/session/<id>` until the session reaches a terminal state.
+5. A new session is created via `POST /session`.
+6. The task is sent asynchronously via `POST /session/<id>/prompt_async` (returns 204 immediately).
+7. The client polls `GET /session/status` until the session becomes `idle` (meaning the agent has finished).
 8. Git operations (commit, push, markers) are performed via `docker exec` as in the standard exec flow.
 
 ### Other tools

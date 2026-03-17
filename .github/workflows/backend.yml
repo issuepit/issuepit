@@ -182,6 +182,7 @@ jobs:
         if: vars.ISSUEPIT_RUN != 'true'
         run: |
           docker pull ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24
+          docker pull ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24
 
       - name: Build act from issuepit/act fork
         run: |

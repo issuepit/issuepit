@@ -147,8 +147,9 @@ public class DockerAgentRuntime(
             await onLogLine($"[DEBUG] IssuePit MCP   : {issuePitMcpUrl}", LogStream.Stdout);
 
         // Inject the HTTP server password so opencode can use it for authentication when UseHttpServer=true.
+        // opencode serve reads OPENCODE_SERVER_PASSWORD for HTTP basic auth.
         if (agent.UseHttpServer && !string.IsNullOrWhiteSpace(agent.HttpServerPassword))
-            env.Add($"OPENCODE_PASSWORD={agent.HttpServerPassword}");
+            env.Add($"OPENCODE_SERVER_PASSWORD={agent.HttpServerPassword}");
 
         // Explicitly set the opencode server port so the entrypoint writes it to config.json.
         // Without this, opencode uses its built-in default (4096), but setting it explicitly
@@ -158,10 +159,10 @@ public class DockerAgentRuntime(
 
         // Step 3: Determine the execution mode.
         //
-        // HTTP server mode — container CMD = "opencode" (starts the HTTP server); C# uses the REST
-        //                    API to create sessions, send tasks, and poll for results. Supports
-        //                    parallel tasks on the same server. The server's web UI URL is emitted
-        //                    as a [ISSUEPIT:SERVER_WEB_UI_URL]= marker for IssueWorker.
+        // HTTP server mode — container CMD = "opencode serve --hostname 0.0.0.0 --port 4096";
+        //                    C# uses the REST API to create sessions, send tasks, and poll for
+        //                    results. Supports parallel tasks on the same server. The server's
+        //                    web UI URL is emitted as a [ISSUEPIT:SERVER_WEB_UI_URL]= marker.
         // Exec flow        — container CMD = "sleep infinity"; C# drives all agent commands via
         //                    docker exec. Keeps the same opencode session files across fix runs.
         // Legacy flow      — container CMD from entrypoint default; wait for container to exit.
@@ -232,14 +233,20 @@ public class DockerAgentRuntime(
         }
 
         // Container CMD:
-        //   - HTTP server mode: "opencode" (no run subcommand — starts the HTTP server)
+        //   - HTTP server mode: "opencode serve --hostname 0.0.0.0 --port 4096"
+        //     Starts the opencode HTTP server. The bare "opencode" command (no subcommand) starts
+        //     the TUI instead. "--hostname 0.0.0.0" is required because the default is 127.0.0.1
+        //     (loopback only), which is not reachable via Docker port-mapping from the host.
         //   - Exec flow:        "sleep infinity" (entrypoint keeps container alive for docker exec)
         //   - Legacy flow:      null → use image's default CMD (or session.CustomCmd if set)
         IList<string>? containerCmd = useHttpServerMode
-            ? ["opencode"]
+            ? ["opencode", "serve", "--hostname", "0.0.0.0", "--port", $"{OpenCodeHttpApi.DefaultPort}"]
             : useExecFlow
                 ? ["sleep", "infinity"]
                 : (session.CustomCmd?.Length > 0 ? session.CustomCmd : null);
+
+        if (useHttpServerMode && containerCmd is not null)
+            await onLogLine($"[DEBUG] HTTP server cmd: {string.Join(" ", containerCmd)}", LogStream.Stdout);
 
         var createParams = new CreateContainerParameters
         {
@@ -347,7 +354,7 @@ public class DockerAgentRuntime(
             // management via the REST API and git operations via docker exec.
             try
             {
-                // Step 6: Resolve the host-side port that Docker mapped to the opencode server port.
+                // Step 6: Resolve the host-side port AND container bridge IP.
                 var inspect = await dockerClient.Containers.InspectContainerAsync(container.ID, cancellationToken);
                 var containerPortKey = $"{OpenCodeHttpApi.DefaultPort}/tcp";
                 var ports = inspect.NetworkSettings?.Ports;
@@ -365,19 +372,59 @@ public class DockerAgentRuntime(
                         "Ensure the port binding was configured correctly.");
                 }
 
-                var serverBaseUrl = $"http://localhost:{hostPort}";
-                await onLogLine($"[DEBUG] HTTP server URL: {serverBaseUrl}", LogStream.Stdout);
+                // Get the container's internal bridge IP so we can communicate directly with the
+                // opencode server without going through Docker's host port-mapping.
+                //
+                // When the execution client itself runs inside a Docker container (e.g. on a
+                // container-based CI runner such as the IssuePit runner), "localhost:{hostPort}"
+                // refers to the runner container's own loopback — the port mapped on the outer
+                // Docker host is not reachable from there. The container's bridge IP (172.17.x.x)
+                // is directly accessible from any container on the same bridge or from the host.
+                //
+                // NetworkSettings.Networks is a dict of network-name → EndpointSettings, each of
+                // which has an IPAddress field (Docker.DotNet.Enhanced NetworkSettings has only
+                // Ports and Networks at the top level — IPAddress lives on EndpointSettings).
+                var containerIp = inspect.NetworkSettings?.Networks?.Values
+                    .Select(n => n.IPAddress)
+                    .FirstOrDefault(ip => !string.IsNullOrWhiteSpace(ip));
+
+                // serverBaseUrl  — internal URL used for all C# ↔ opencode REST API calls.
+                // serverDisplayUrl — shown to users and persisted as the web UI URL (localhost-based
+                //                    so users can open the opencode web UI from their own browser).
+                var serverBaseUrl = !string.IsNullOrWhiteSpace(containerIp)
+                    ? $"http://{containerIp}:{OpenCodeHttpApi.DefaultPort}"
+                    : $"http://localhost:{hostPort}";
+                var serverDisplayUrl = $"http://localhost:{hostPort}";
+
+                if (string.IsNullOrWhiteSpace(containerIp))
+                    await onLogLine(
+                        "[WARN] Could not resolve container bridge IP; falling back to localhost port mapping " +
+                        "(may fail when execution client runs inside a container)", LogStream.Stderr);
+
+                await onLogLine($"[DEBUG] HTTP server URL: {serverDisplayUrl}", LogStream.Stdout);
 
                 // Emit the server web UI URL as a structured marker so IssueWorker can persist it
                 // on the session record for display in the UI.
-                await onLogLine($"{ServerWebUiUrlMarker}{serverBaseUrl}", LogStream.Stdout);
+                await onLogLine($"{ServerWebUiUrlMarker}{serverDisplayUrl}", LogStream.Stdout);
+
+                // Emit the internal (bridge IP) URL for diagnostic use and E2E test verification.
+                if (serverBaseUrl != serverDisplayUrl)
+                    await onLogLine($"[DEBUG] HTTP internal URL: {serverBaseUrl}", LogStream.Stdout);
 
                 // Step 7: Wait for the opencode server to be ready (up to 60 s).
+                // The check runs in two stages:
+                //   1. Inside the container via docker exec curl — always reliable, independent of
+                //      Docker network topology (works even when execution client is containerised).
+                //   2. External HTTP GET using the container bridge IP — confirms the server is
+                //      reachable via the same URL used for all subsequent REST API calls.
                 await onLogLine("[INFO] Waiting for opencode HTTP server to become ready…", LogStream.Stdout);
-                var serverReady = await WaitForHttpServerReadyAsync(serverBaseUrl, maxWaitSeconds: 60, cancellationToken);
+                var serverReady = await WaitForHttpServerReadyAsync(
+                    container.ID, serverBaseUrl, maxWaitSeconds: 60, cancellationToken);
                 if (!serverReady)
                     throw new InvalidOperationException(
-                        $"opencode HTTP server did not become ready within 60 seconds (url: {serverBaseUrl}).");
+                        $"opencode HTTP server did not become ready within 60 seconds " +
+                        $"(container: {container.ID[..Math.Min(12, container.ID.Length)]}, " +
+                        $"internal url: {serverBaseUrl}).");
 
                 await onLogLine("[INFO] opencode HTTP server is ready", LogStream.Stdout);
 
@@ -740,6 +787,7 @@ public class DockerAgentRuntime(
     /// the server becomes ready, <c>false</c> on timeout.
     /// </summary>
     private async Task<bool> WaitForHttpServerReadyAsync(
+        string containerId,
         string serverBaseUrl,
         int maxWaitSeconds,
         CancellationToken cancellationToken)
@@ -747,8 +795,30 @@ public class DockerAgentRuntime(
         var deadline = DateTimeOffset.UtcNow.AddSeconds(maxWaitSeconds);
         while (DateTimeOffset.UtcNow < deadline && !cancellationToken.IsCancellationRequested)
         {
-            if (await agentHttpApi.IsReadyAsync(serverBaseUrl, cancellationToken))
+            // Step 1 — inside-container check via docker exec.
+            // Verifies the server is listening regardless of external network topology.
+            // Works even when the execution client runs inside a container that cannot reach
+            // the Docker host's port-mapped address.
+            var innerReady = false;
+            try
+            {
+                var exitCode = await ExecCommandAsync(
+                    containerId,
+                    // curl -sf: silent + fail-on-error; --max-time 3: per-attempt cap so one
+                    // slow attempt doesn't exhaust the outer 2-second poll interval.
+                    ["curl", "-sf", "--max-time", "3",
+                     $"http://localhost:{OpenCodeHttpApi.DefaultPort}/global/health"],
+                    (_, _) => Task.CompletedTask,
+                    cancellationToken);
+                innerReady = exitCode == 0;
+            }
+            catch { /* container not yet ready for exec — try again */ }
+
+            // Step 2 — external check via container bridge IP.
+            // Confirms the server is reachable through the same URL used for REST API calls.
+            if (innerReady && await agentHttpApi.IsReadyAsync(serverBaseUrl, cancellationToken))
                 return true;
+
             await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
         }
         return false;
