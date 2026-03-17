@@ -58,7 +58,7 @@ public class KanbanBoardTests : IAsyncLifetime
         throw new InvalidOperationException("Default 'localhost' tenant not found.");
     }
 
-    private async Task<(IBrowserContext context, IPage page, string projectId, string projectSlug)> SetUpAsync()
+    private async Task<(IBrowserContext context, IPage page, string projectId, string projectSlug, string orgId)> SetUpAsync()
     {
         var tenantId = await GetDefaultTenantIdAsync();
 
@@ -90,13 +90,13 @@ public class KanbanBoardTests : IAsyncLifetime
         await new LoginPage(page).LoginAsync(username, password);
         await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
 
-        return (context, page, projectId, projectSlug);
+        return (context, page, projectId, projectSlug, orgId);
     }
 
     [Fact]
     public async Task Kanban_PageLoads_WithNewBoardButton()
     {
-        var (context, page, projectId, _) = await SetUpAsync();
+        var (context, page, projectId, _, _) = await SetUpAsync();
         try
         {
             var kanbanPage = new KanbanPage(page);
@@ -114,7 +114,7 @@ public class KanbanBoardTests : IAsyncLifetime
     [Fact]
     public async Task Kanban_CreateBoard_ShowsLanesButton()
     {
-        var (context, page, projectId, _) = await SetUpAsync();
+        var (context, page, projectId, _, _) = await SetUpAsync();
         try
         {
             var kanbanPage = new KanbanPage(page);
@@ -132,7 +132,7 @@ public class KanbanBoardTests : IAsyncLifetime
     [Fact]
     public async Task Kanban_AddLane_ShowsColumnOnBoard()
     {
-        var (context, page, projectId, _) = await SetUpAsync();
+        var (context, page, projectId, _, _) = await SetUpAsync();
         try
         {
             var kanbanPage = new KanbanPage(page);
@@ -155,7 +155,7 @@ public class KanbanBoardTests : IAsyncLifetime
     [Fact]
     public async Task Kanban_AgentBoard_AddUnassignedLane_ShowsColumnOnBoard()
     {
-        var (context, page, projectId, _) = await SetUpAsync();
+        var (context, page, projectId, _, _) = await SetUpAsync();
         try
         {
             var kanbanPage = new KanbanPage(page);
@@ -178,12 +178,12 @@ public class KanbanBoardTests : IAsyncLifetime
     [Fact]
     public async Task Kanban_AgentBoard_AddAgentLane_ShowsColumnOnBoard()
     {
-        var (context, page, projectId, _) = await SetUpAsync();
+        var (context, page, projectId, _, orgId) = await SetUpAsync();
         try
         {
             var tenantId = await GetDefaultTenantIdAsync();
 
-            // Create an agent via API
+            // Create an agent via API under the same org as the project
             using var apiClient = CreateCookieClient();
             apiClient.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
 
@@ -195,7 +195,7 @@ public class KanbanBoardTests : IAsyncLifetime
             var agentResp = await apiClient.PostAsJsonAsync("/api/agents", new
             {
                 name = "TestAgent-KanbanLane",
-                description = "Agent for kanban lane test",
+                orgId = Guid.Parse(orgId),
                 systemPrompt = "You are a test agent.",
                 dockerImage = "test/image",
                 allowedTools = "[]",
