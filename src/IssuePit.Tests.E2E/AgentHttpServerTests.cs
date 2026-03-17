@@ -212,15 +212,16 @@ public class AgentHttpServerTests(AspireFixture fixture)
         Assert.Equal(HttpStatusCode.Created, assignResp.StatusCode);
 
         // Poll for the session to be created (up to 30 s).
+        // /api/issues/{id}/runs returns { agentSessions: [...] }.
         string? sessionId = null;
         var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
         while (DateTimeOffset.UtcNow < deadline)
         {
-            var sessionsResp2 = await client.GetAsync($"/api/issues/{issueId}/agent-sessions");
-            if (sessionsResp2.IsSuccessStatusCode)
+            var runsResp2 = await client.GetAsync($"/api/issues/{issueId}/runs");
+            if (runsResp2.IsSuccessStatusCode)
             {
-                var sessions2 = await sessionsResp2.Content.ReadFromJsonAsync<JsonElement>();
-                if (sessions2.GetArrayLength() > 0)
+                var runsBody = await runsResp2.Content.ReadFromJsonAsync<JsonElement>();
+                if (runsBody.TryGetProperty("agentSessions", out var sessions2) && sessions2.GetArrayLength() > 0)
                 {
                     sessionId = sessions2[0].GetProperty("id").GetString();
                     break;
@@ -563,15 +564,16 @@ public class AgentHttpServerTests(AspireFixture fixture)
         Assert.Equal(HttpStatusCode.Created, assignResp.StatusCode);
 
         // Wait for the session to be created (up to 30 s).
+        // /api/issues/{id}/runs returns { agentSessions: [...] }.
         string? sessionId = null;
         var sessionDeadline = DateTimeOffset.UtcNow.AddSeconds(30);
         while (DateTimeOffset.UtcNow < sessionDeadline)
         {
-            var sessionsResp = await client.GetAsync($"/api/issues/{issueId}/agent-sessions");
-            if (sessionsResp.IsSuccessStatusCode)
+            var runsResp = await client.GetAsync($"/api/issues/{issueId}/runs");
+            if (runsResp.IsSuccessStatusCode)
             {
-                var sessions = await sessionsResp.Content.ReadFromJsonAsync<JsonElement>();
-                if (sessions.GetArrayLength() > 0)
+                var runsBody = await runsResp.Content.ReadFromJsonAsync<JsonElement>();
+                if (runsBody.TryGetProperty("agentSessions", out var sessions) && sessions.GetArrayLength() > 0)
                 {
                     sessionId = sessions[0].GetProperty("id").GetString();
                     break;
