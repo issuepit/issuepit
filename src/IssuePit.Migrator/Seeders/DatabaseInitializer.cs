@@ -10,7 +10,8 @@ public class DatabaseInitializer(IssuePitDbContext db, ILogger<DatabaseInitializ
     {
         logger.LogInformation("Ensuring database schema is up to date...");
 
-        // Create schema for fresh databases; no-op for existing ones.
-        await db.Database.EnsureCreatedAsync();
+        // Apply any pending migrations (creates the database and schema on first run,
+        // and upgrades the schema on subsequent runs when new migrations are added).
+        await db.Database.MigrateAsync();
     }
 }
