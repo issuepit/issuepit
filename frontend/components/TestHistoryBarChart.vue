@@ -129,6 +129,9 @@ const padTop = 8
 const padBottom = 22
 const minWidth = 300
 
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const DAYS_PER_WEEK = 7
+
 const plotW = svgWidth - padLeft - padRight
 const plotH = svgHeight - padTop - padBottom
 
@@ -179,9 +182,9 @@ const groupNames = computed(() => {
 })
 
 /** Assign a stable base hue per group index. */
-const GROUP_HUES = [210, 160, 280, 35, 0, 60, 300, 120]
+const GROUP_COLOR_HUES = [210, 160, 280, 35, 0, 60, 300, 120]
 function groupBaseHue(idx: number): number {
-  return GROUP_HUES[idx % GROUP_HUES.length]
+  return GROUP_COLOR_HUES[idx % GROUP_COLOR_HUES.length]
 }
 
 /** Color a group segment by its failure rate: hue stays fixed, saturation/lightness shifts red on failure. */
@@ -308,7 +311,6 @@ const xAxisMarkers = computed((): XMarker[] => {
   const n = props.data.length
   const step = plotW / n
   const markers: XMarker[] = []
-  const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
   for (let i = 0; i < n; i++) {
     const d = props.data[i].date
@@ -322,8 +324,8 @@ const xAxisMarkers = computed((): XMarker[] => {
     if (day === 1) {
       markers.push({ x, label: MONTH_NAMES[month] })
     } else if (n <= 14 && i > 0) {
-      // For short ranges: add week boundary (every Monday-ish, i.e., every 7 days)
-      if (i % 7 === 0) markers.push({ x, label: null })
+      // For short ranges: add week boundary marker every 7 days
+      if (i % DAYS_PER_WEEK === 0) markers.push({ x, label: null })
     }
   }
   return markers
