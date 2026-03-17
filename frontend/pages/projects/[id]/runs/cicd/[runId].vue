@@ -45,8 +45,17 @@
           </div>
           <div>
             <p class="text-xs text-gray-500 mb-1">Commit</p>
+            <a
+              v-if="store.currentRun.commitSha && commitUrl(store.currentRun.commitSha)"
+              :href="commitUrl(store.currentRun.commitSha)!"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-sm text-brand-400 hover:text-brand-300 font-mono transition-colors"
+              :title="`Open commit ${store.currentRun.commitSha} on GitHub`">
+              {{ store.currentRun.commitSha.slice(0, 7) }}
+            </a>
             <NuxtLink
-              v-if="store.currentRun.commitSha"
+              v-else-if="store.currentRun.commitSha"
               :to="`/projects/${projectId}/runs?commitSha=${store.currentRun.commitSha}`"
               class="text-sm text-brand-400 hover:text-brand-300 font-mono transition-colors"
               :title="`Show all runs for ${store.currentRun.commitSha}`">
@@ -693,7 +702,7 @@
                     <span v-else-if="tc.outcomeName === 'Failed'" class="text-red-400 shrink-0">✗</span>
                     <span v-else class="text-yellow-500 shrink-0">–</span>
                     <NuxtLink
-                      :to="`/projects/${projectId}/runs/test-history?tab=Tests`"
+                      :to="`/projects/${projectId}/runs/test-history?tab=Tests&test=${encodeURIComponent(tc.fullName)}`"
                       class="text-xs text-gray-300 font-mono truncate flex-1 hover:text-brand-400 transition-colors"
                       :title="tc.fullName">
                       {{ tc.methodName || tc.fullName }}
@@ -2091,6 +2100,11 @@ function formatTestDuration(ms: number) {
   const s = ms / 1000
   if (s < 60) return `${s.toFixed(1)}s`
   return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`
+}
+
+/** Returns the external GitHub commit URL when the project has a configured GitHub repo. */
+function commitUrl(sha?: string): string | null {
+  return buildCommitUrl(projectsStore.currentProject?.gitHubRepo, sha)
 }
 
 function duration(start: string, end?: string) {
