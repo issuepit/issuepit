@@ -172,7 +172,10 @@ const TOOLTIP_HEADER_HEIGHT = 48
 const MAX_TOOLTIP_HEIGHT = 320
 
 function onChipEnter(e: MouseEvent) {
-  if (hideTimer) { clearTimeout(hideTimer); hideTimer = null }
+  if (hideTimer) {
+    clearTimeout(hideTimer)
+    hideTimer = null
+  }
   positionTooltip(e)
   tooltipVisible.value = true
 }
@@ -182,7 +185,10 @@ function onChipLeave() {
 }
 
 function onTooltipEnter() {
-  if (hideTimer) { clearTimeout(hideTimer); hideTimer = null }
+  if (hideTimer) {
+    clearTimeout(hideTimer)
+    hideTimer = null
+  }
 }
 
 function onTooltipLeave() {
@@ -255,7 +261,10 @@ async function loadGraph(runId: string) {
 }
 
 function onRunItemEnter(run: CiCdRun, e: MouseEvent) {
-  if (subHideTimer) { clearTimeout(subHideTimer); subHideTimer = null }
+  if (subHideTimer) {
+    clearTimeout(subHideTimer)
+    subHideTimer = null
+  }
   hoveredRunId.value = run.id
   positionSubTooltip(e)
   subTooltipVisible.value = true
@@ -270,7 +279,10 @@ function onRunItemLeave() {
 }
 
 function onSubTooltipEnter() {
-  if (subHideTimer) { clearTimeout(subHideTimer); subHideTimer = null }
+  if (subHideTimer) {
+    clearTimeout(subHideTimer)
+    subHideTimer = null
+  }
 }
 
 function onSubTooltipLeave() {

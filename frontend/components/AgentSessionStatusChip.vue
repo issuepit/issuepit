@@ -137,7 +137,10 @@ function tooltipHeight() {
 }
 
 function onChipEnter(e: MouseEvent) {
-  if (hideTimer) { clearTimeout(hideTimer); hideTimer = null }
+  if (hideTimer) {
+    clearTimeout(hideTimer)
+    hideTimer = null
+  }
   positionTooltip(e)
   tooltipVisible.value = true
 }
@@ -147,7 +150,10 @@ function onChipLeave() {
 }
 
 function onTooltipEnter() {
-  if (hideTimer) { clearTimeout(hideTimer); hideTimer = null }
+  if (hideTimer) {
+    clearTimeout(hideTimer)
+    hideTimer = null
+  }
 }
 
 function onTooltipLeave() {
