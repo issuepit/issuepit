@@ -19,7 +19,7 @@
           class="text-xs px-1.5 py-0.5 rounded transition-colors capitalize">{{ mode }}</button>
       </div>
       <!-- Max items -->
-      <div v-if="hasMaxItems && currentDisplayMode !== 'count'" class="flex items-center gap-0.5">
+      <div v-if="hasMaxItems && currentDisplayMode !== 'count' && currentDisplayMode !== 'chart'" class="flex items-center gap-0.5">
         <span class="text-xs text-gray-600">#</span>
         <button
           v-for="n in maxItemsOptions" :key="n"
