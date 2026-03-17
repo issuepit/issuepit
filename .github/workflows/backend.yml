@@ -48,7 +48,9 @@ jobs:
         run: dotnet restore src/IssuePit.Api/IssuePit.Api.csproj
 
       - name: Install dotnet-ef tool
-        run: dotnet tool install --global dotnet-ef --version 10.0.3
+        run: |
+          dotnet tool install --global dotnet-ef --version 10.0.3
+          echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
 
       - name: Check pending model changes
         run: |
