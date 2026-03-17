@@ -396,7 +396,7 @@
                               <td class="px-3 py-2"><CiCdStatusChip :runs="[run]" /></td>
                               <td class="px-3 py-2 text-gray-300 text-xs truncate max-w-[8rem]">{{ run.workflow || '—' }}</td>
                               <td class="px-3 py-2 text-gray-300 font-mono text-xs hidden md:table-cell">{{ run.branch || '—' }}</td>
-                              <td class="px-3 py-2 text-gray-400 text-xs">{{ formatDate(run.startedAt) }}</td>
+                              <td class="px-3 py-2 text-gray-400 text-xs"><DateDisplay :date="run.startedAt" mode="auto" /></td>
                             </tr>
                           </tbody>
                         </table>
@@ -434,7 +434,7 @@
                                 </NuxtLink>
                               </td>
                               <td class="px-3 py-2 text-gray-400 text-xs hidden md:table-cell">{{ session.projectName }}</td>
-                              <td class="px-3 py-2 text-gray-400 text-xs">{{ formatDate(session.startedAt) }}</td>
+                              <td class="px-3 py-2 text-gray-400 text-xs"><DateDisplay :date="session.startedAt" mode="auto" /></td>
                             </tr>
                           </tbody>
                         </table>
@@ -712,10 +712,6 @@ function linePoints(key: 'open' | 'inProgress' | 'done') {
 function shortDate(d: string) {
   const dt = new Date(d)
   return `${dt.getMonth() + 1}/${dt.getDate()}`
-}
-
-function formatDate(d: string) {
-  return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 function statusDot(status: IssueStatus) {

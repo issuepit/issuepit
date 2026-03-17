@@ -75,6 +75,7 @@ export interface GitHubIdentity {
   updatedAt: string
   projects: Array<{ projectId: string; name: string }>
   orgs: Array<{ orgId: string; name: string }>
+  syncProjects: Array<{ projectId: string; name: string }>
 }
 
 export interface AuthUser {
@@ -609,6 +610,8 @@ export interface GitRepository {
   statusMessage?: string
   throttledUntil?: string
   mode: GitOriginMode
+  gitHubIdentityId?: string
+  gitHubIdentityName?: string
 }
 
 export interface GitBranch {

@@ -225,6 +225,26 @@ public class CiCdWorker(
             };
         }
 
+        // When the trigger contains a git repo URL, load the repository record so we can
+        // inject auth credentials into the clone step. Auth is never carried in the Kafka
+        // message itself — it is always resolved fresh from the DB by the worker.
+        if (!string.IsNullOrWhiteSpace(trigger.GitRepoUrl) &&
+            string.IsNullOrWhiteSpace(trigger.GitAuthToken) && string.IsNullOrWhiteSpace(trigger.GitAuthUsername))
+        {
+            var gitRepo = await db.GitRepositories
+                .Where(r => r.ProjectId == trigger.ProjectId)
+                .FirstOrDefaultAsync(stoppingToken);
+            if (gitRepo is not null &&
+                (!string.IsNullOrEmpty(gitRepo.AuthToken) || !string.IsNullOrEmpty(gitRepo.AuthUsername)))
+            {
+                trigger = trigger with
+                {
+                    GitAuthUsername = gitRepo.AuthUsername,
+                    GitAuthToken = gitRepo.AuthToken,
+                };
+            }
+        }
+
         // Determine org-level concurrency limit.
         var org = project?.Organization;
         var semaphore = GetOrgSemaphore(org);

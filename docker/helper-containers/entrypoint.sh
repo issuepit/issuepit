@@ -119,6 +119,9 @@ fi
 # tool-generated shell commands and conventional git usage.
 
 REAL_GIT=$(command -v git 2>/dev/null || echo "/usr/bin/git")
+# Save the real git binary path so the execution client can bypass the push-blocking
+# wrapper installed below when it needs to push branches from docker exec.
+echo "${REAL_GIT}" > /tmp/.issuepit-real-git
 cat > /usr/local/bin/git << GITWRAPPER
 #!/usr/bin/env bash
 # IssuePit git wrapper — blocks push; all other subcommands are forwarded unchanged.

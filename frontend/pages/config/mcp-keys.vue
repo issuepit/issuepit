@@ -60,8 +60,8 @@
               <span v-else-if="token.orgId">Org</span>
               <span v-else>Tenant</span>
             </td>
-            <td class="px-4 py-3 text-gray-400">{{ formatDate(token.createdAt) }}</td>
-            <td class="px-4 py-3 text-gray-400">{{ token.expiresAt ? formatDate(token.expiresAt) : '—' }}</td>
+            <td class="px-4 py-3 text-gray-400"><DateDisplay :date="token.createdAt" mode="absolute" resolution="date" /></td>
+            <td class="px-4 py-3 text-gray-400"><span v-if="token.expiresAt"><DateDisplay :date="token.expiresAt" mode="absolute" resolution="date" /></span><span v-else>—</span></td>
             <td class="px-4 py-3 text-right">
               <button
                 class="text-gray-500 hover:text-red-400 transition-colors text-xs"
@@ -151,10 +151,6 @@ const form = reactive({
   isReadOnly: false,
   expiresAt: '',
 })
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
-}
 
 function closeCreate() {
   showCreate.value = false

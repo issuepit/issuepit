@@ -88,7 +88,7 @@
             {{ fetching ? 'Fetching…' : 'Fetch' }}
           </button>
           <span v-if="store.repo.lastFetchedAt" class="text-xs text-gray-500">
-            Last fetched {{ formatDate(store.repo.lastFetchedAt) }}
+            Last fetched <DateDisplay :date="store.repo.lastFetchedAt" mode="auto" />
           </span>
         </div>
       </div>
@@ -289,7 +289,7 @@
               <p class="text-xs text-gray-400 mt-0.5">
                 {{ commit.authorName }}
                 <span class="text-gray-600 mx-1">·</span>
-                {{ formatDate(commit.date) }}
+                <DateDisplay :date="commit.date" mode="auto" resolution="date" />
               </p>
             </div>
             <div class="flex items-center gap-2 shrink-0">
@@ -353,7 +353,7 @@
             </button>
             <code class="text-xs text-gray-500 font-mono">{{ branch.sha.slice(0, 7) }}</code>
             <span v-if="branch.commitDate" class="text-xs text-gray-500">
-              {{ formatDate(branch.commitDate) }}
+              <DateDisplay :date="branch.commitDate" mode="auto" resolution="date" />
             </span>
           </div>
           <div v-if="store.branches.length === 0"
@@ -582,10 +582,6 @@ async function linkRepo() {
   }
 }
 
-function formatDate(d: string) {
-  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
 function formatSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
@@ -748,7 +744,7 @@ async function finishReview() {
   savingReview.value = true
   try {
     const now = new Date()
-    const title = `Code Review – ${selectedBranch.value} – ${now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+    const title = `Code Review – ${selectedBranch.value} – ${now.toLocaleDateString('de-DE', { day: 'numeric', month: 'long', year: 'numeric' })}`
     const newIssue = await issuesStore.createIssue(id, {
       title,
       body: '',

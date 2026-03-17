@@ -97,12 +97,12 @@
               </p>
               <div class="flex items-center gap-4 mt-2 text-xs text-gray-500">
                 <span v-if="milestone.startDate">
-                  Start {{ formatDate(milestone.startDate) }}
+                  Start <DateDisplay :date="milestone.startDate" mode="absolute" resolution="date" />
                 </span>
                 <span v-if="milestone.dueDate">
-                  Due {{ formatDate(milestone.dueDate) }}
+                  Due <DateDisplay :date="milestone.dueDate" mode="absolute" resolution="date" />
                 </span>
-                <span>Created {{ formatDate(milestone.createdAt) }}</span>
+                <span>Created <DateDisplay :date="milestone.createdAt" mode="auto" resolution="date" /></span>
               </div>
             </div>
             <div class="flex items-center gap-2 shrink-0">
@@ -404,7 +404,7 @@ const ganttMonths = computed(() => {
     const left = Math.max(0, (cur.getTime() - min) / total * 100)
     const right = Math.min(100, (nextMonth.getTime() - min) / total * 100)
     months.push({
-      label: cur.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+      label: cur.toLocaleDateString('de-DE', { month: 'short', year: '2-digit' }),
       leftPct: left,
       widthPct: right - left,
     })
@@ -600,6 +600,11 @@ async function confirmDelete(milestoneId: string) {
 }
 
 function formatDate(d: string) {
-  return new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+  const dt = new Date(d)
+  const day = dt.getDate()
+  const month = dt.toLocaleDateString('de-DE', { month: 'short' })
+  const monthStr = month.charAt(0).toUpperCase() + month.slice(1).replace('.', '')
+  const year = dt.getFullYear()
+  return `${day}. ${monthStr} ${year}`
 }
 </script>

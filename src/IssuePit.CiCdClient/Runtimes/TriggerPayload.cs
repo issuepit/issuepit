@@ -47,6 +47,10 @@ public record TriggerPayload(
     /// This allows running CI/CD without a host volume mount.
     /// </summary>
     string? GitRepoUrl = null,
+    /// <summary>Optional username for HTTP basic auth when cloning <see cref="GitRepoUrl"/>. Populated by the worker from the project's git repository record.</summary>
+    string? GitAuthUsername = null,
+    /// <summary>Optional PAT/token for HTTP basic auth when cloning <see cref="GitRepoUrl"/>. Populated by the worker from the project's git repository record. Never logged.</summary>
+    string? GitAuthToken = null,
     /// <summary>
     /// Host path for the act artifact server. When set, act is started with
     /// <c>--artifact-server-path</c> so that <c>actions/upload-artifact</c> and
