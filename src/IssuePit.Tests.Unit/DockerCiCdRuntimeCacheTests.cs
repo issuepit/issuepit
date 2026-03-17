@@ -334,4 +334,25 @@ public class DockerCiCdRuntimeCacheTests
             DindCacheStrategy: DindImageCacheStrategy.RegistryMirror);
         Assert.Equal(DindImageCacheStrategy.RegistryMirror, trigger.DindCacheStrategy);
     }
+
+    // ── StripOriginPrefix ──────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("origin/main", "main")]
+    [InlineData("origin/copilot/fix-cicd-runner-ffmpeg-install", "copilot/fix-cicd-runner-ffmpeg-install")]
+    [InlineData("Origin/main", "main")]
+    [InlineData("ORIGIN/main", "main")]
+    public void StripOriginPrefix_WithOriginPrefix_StripsPrefix(string input, string expected)
+    {
+        Assert.Equal(expected, DockerCiCdRuntime.StripOriginPrefix(input));
+    }
+
+    [Theory]
+    [InlineData("main")]
+    [InlineData("copilot/fix-something")]
+    [InlineData("feature/123-my-branch")]
+    public void StripOriginPrefix_WithoutOriginPrefix_ReturnsUnchanged(string input)
+    {
+        Assert.Equal(input, DockerCiCdRuntime.StripOriginPrefix(input));
+    }
 }

@@ -567,11 +567,14 @@ public partial class DockerCiCdRuntime(
                     // Clone into /workspace so act can find the repo at its expected path.
                     // Pass -b when a branch is specified so the correct branch is checked out
                     // rather than the remote's default branch.
+                    // Strip the "origin/" prefix if present — git clone -b expects a remote branch
+                    // name (e.g. "main"), not a remote-tracking ref (e.g. "origin/main").
                     var cloneArgs = new List<string> { "git", "clone", "--depth=1" };
                     if (!string.IsNullOrWhiteSpace(trigger.Branch))
                     {
+                        var cloneBranch = StripOriginPrefix(trigger.Branch);
                         cloneArgs.Add("-b");
-                        cloneArgs.Add(trigger.Branch);
+                        cloneArgs.Add(cloneBranch);
                     }
                     cloneArgs.Add(trigger.GitRepoUrl!);
                     cloneArgs.Add("/workspace");
@@ -587,12 +590,16 @@ public partial class DockerCiCdRuntime(
                     // out that exact commit. The shallow clone above fetches only the branch tip so
                     // the requested SHA may not be present yet; if checkout fails we deepen the clone
                     // by fetching additional history before retrying.
+                    // Use "git checkout -B issuepit-run <sha>" instead of a bare checkout to avoid
+                    // a detached HEAD — act repeatedly warns about unresolvable refs when HEAD is
+                    // detached, which spams the run log. -B (force-create) is used so the command
+                    // is idempotent even if the branch already exists in the same container.
                     if (IsFullCommitSha(run.CommitSha))
                     {
                         await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: git checkout {run.CommitSha}", LogStream.Stdout);
                         var checkoutExitCode = await ExecCommandAsync(
                             container.ID,
-                            ["git", "-C", "/workspace", "checkout", run.CommitSha],
+                            ["git", "-C", "/workspace", "checkout", "-B", "issuepit-run", run.CommitSha],
                             onLogLine,
                             cancellationToken);
 
@@ -610,7 +617,7 @@ public partial class DockerCiCdRuntime(
 
                             checkoutExitCode = await ExecCommandAsync(
                                 container.ID,
-                                ["git", "-C", "/workspace", "checkout", run.CommitSha],
+                                ["git", "-C", "/workspace", "checkout", "-B", "issuepit-run", run.CommitSha],
                                 onLogLine,
                                 cancellationToken);
 
@@ -1150,6 +1157,17 @@ public partial class DockerCiCdRuntime(
     /// </summary>
     private static bool IsFullCommitSha(string? sha) =>
         sha is { Length: 40 } && sha.All(char.IsAsciiHexDigit);
+
+    /// <summary>
+    /// Strips the leading <c>origin/</c> prefix from a branch name if present.
+    /// <c>git clone -b</c> expects a remote branch name (e.g. <c>main</c>), not a
+    /// remote-tracking ref (e.g. <c>origin/main</c>). The UI and external callers may
+    /// supply either form, so we normalise here before passing the value to git.
+    /// </summary>
+    internal static string StripOriginPrefix(string branch) =>
+        branch.StartsWith("origin/", StringComparison.OrdinalIgnoreCase)
+            ? branch["origin/".Length..]
+            : branch;
 
     /// <summary>
     /// Copies the contents of <c>/artifacts</c> inside the container to <paramref name="artifactDir"/>
