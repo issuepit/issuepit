@@ -98,6 +98,17 @@ public class GitHubSyncService(
 
             int imported = 0, updated = 0, pushed = 0, skipped = 0;
 
+            // Fetch existing issue numbers once to avoid per-issue queries in the conflict check.
+            // numbersTakenByNonGitHub: numbers already used by issues that are NOT from GitHub.
+            var existingNumbers = await db.Issues
+                .Where(i => i.ProjectId == projectId)
+                .Select(i => new { i.Number, i.GitHubIssueNumber })
+                .ToListAsync(ct);
+            var numbersTakenByNonGitHub = existingNumbers
+                .Where(i => i.GitHubIssueNumber == null)
+                .Select(i => i.Number)
+                .ToHashSet();
+
             // ── Issues ────────────────────────────────────────────────────────
             foreach (var ghIssue in ghIssues)
             {
@@ -107,10 +118,7 @@ public class GitHubSyncService(
                 if (existing is null)
                 {
                     // Check whether the GitHub issue number is already taken by a non-GitHub issue.
-                    var numberConflict = await db.Issues
-                        .AnyAsync(i => i.ProjectId == projectId && i.Number == ghIssue.Number && i.GitHubIssueNumber != ghIssue.Number, ct);
-
-                    if (numberConflict)
+                    if (numbersTakenByNonGitHub.Contains(ghIssue.Number))
                     {
                         await AppendLogAsync(run, GitHubSyncLogLevel.Warn,
                             $"Skipped: {repo}#{ghIssue.Number} \"{TruncateTitle(ghIssue.Title)}\" — number {ghIssue.Number} is already taken by another issue.", ct);
