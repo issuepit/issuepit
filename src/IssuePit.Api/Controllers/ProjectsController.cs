@@ -208,6 +208,16 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
                 s.EndedAt,
                 s.OpenCodeSessionId,
                 s.ServerWebUiUrl,
+                CiCdRuns = s.CiCdRuns.Select(r => new AgentSessionCiCdRunDto(
+                    r.Id,
+                    r.ProjectId,
+                    r.Status,
+                    r.Status.ToString(),
+                    r.Workflow,
+                    r.Branch,
+                    r.CommitSha,
+                    r.StartedAt,
+                    r.EndedAt)),
             })
             .ToListAsync();
         return Ok(sessions);

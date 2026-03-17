@@ -81,6 +81,16 @@ public class DashboardController(IssuePitDbContext db, TenantContext ctx) : Cont
                 StatusName = s.Status.ToString(),
                 s.StartedAt,
                 s.EndedAt,
+                CiCdRuns = s.CiCdRuns.Select(r => new AgentSessionCiCdRunDto(
+                    r.Id,
+                    r.ProjectId,
+                    r.Status,
+                    r.Status.ToString(),
+                    r.Workflow,
+                    r.Branch,
+                    r.CommitSha,
+                    r.StartedAt,
+                    r.EndedAt)),
             })
             .ToListAsync();
 
@@ -122,3 +132,15 @@ public class DashboardController(IssuePitDbContext db, TenantContext ctx) : Cont
         return Ok(snapshots);
     }
 }
+
+/// <summary>Summary of a CI/CD run associated with an agent session, returned inline in agent session list endpoints.</summary>
+public record AgentSessionCiCdRunDto(
+    Guid Id,
+    Guid ProjectId,
+    CiCdRunStatus Status,
+    string StatusName,
+    string? Workflow,
+    string? Branch,
+    string? CommitSha,
+    DateTime StartedAt,
+    DateTime? EndedAt);
