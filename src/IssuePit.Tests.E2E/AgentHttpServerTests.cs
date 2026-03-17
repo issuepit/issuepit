@@ -586,10 +586,11 @@ public class AgentHttpServerTests(AspireFixture fixture)
                 $"Agent session for issue {issueId} was not created within 30 seconds.");
 
         // Poll the session logs until "[INFO] opencode HTTP server is ready" appears, meaning
-        // the execution client confirmed the health endpoint responded.
-        // Allow up to 120 s for the opencode image to pull (if needed) and the server to start.
-        string? serverBaseUrl = null;
-        var readyDeadline = DateTimeOffset.UtcNow.AddSeconds(120);
+        // the execution client confirmed readiness both inside the container (docker exec curl)
+        // and via the container bridge IP. Allow up to 60 s (image is pre-pulled; server starts
+        // in ~20 s under normal conditions).
+        string? serverInternalUrl = null;
+        var readyDeadline = DateTimeOffset.UtcNow.AddSeconds(60);
         while (DateTimeOffset.UtcNow < readyDeadline)
         {
             var logsResp = await client.GetAsync($"/api/agent-sessions/{sessionId}/logs");
@@ -600,10 +601,17 @@ public class AgentHttpServerTests(AspireFixture fixture)
                     .Select(l => l.GetProperty("line").GetString() ?? string.Empty)
                     .ToList();
 
-                // Extract the server base URL from the structured marker emitted before readiness polling.
-                var urlLine = logLines.FirstOrDefault(l => l.StartsWith("[ISSUEPIT:SERVER_WEB_UI_URL]="));
-                if (urlLine is not null)
-                    serverBaseUrl = urlLine["[ISSUEPIT:SERVER_WEB_UI_URL]=".Length..].Trim();
+                // Prefer the container bridge IP URL (accessible from any container on the same
+                // Docker bridge). Fall back to the display URL if the internal marker is absent.
+                var internalLine = logLines.FirstOrDefault(l => l.StartsWith("[DEBUG] HTTP internal URL: "));
+                if (internalLine is not null)
+                    serverInternalUrl = internalLine["[DEBUG] HTTP internal URL: ".Length..].Trim();
+                else
+                {
+                    var displayLine = logLines.FirstOrDefault(l => l.StartsWith("[ISSUEPIT:SERVER_WEB_UI_URL]="));
+                    if (displayLine is not null)
+                        serverInternalUrl = displayLine["[ISSUEPIT:SERVER_WEB_UI_URL]=".Length..].Trim();
+                }
 
                 if (logLines.Any(l => l.Contains("[INFO] opencode HTTP server is ready")))
                     break;
@@ -625,15 +633,16 @@ public class AgentHttpServerTests(AspireFixture fixture)
             await Task.Delay(1000);
         }
 
-        if (serverBaseUrl is null)
+        if (serverInternalUrl is null)
             throw new TimeoutException(
-                $"opencode HTTP server did not become ready within 120 seconds. " +
-                $"[ISSUEPIT:SERVER_WEB_UI_URL] marker was not found in session logs.");
+                $"opencode HTTP server did not become ready within 60 seconds. " +
+                $"Server URL marker was not found in session logs.");
 
-        // The execution client already confirmed the health endpoint responded; verify directly
-        // from the test host that the server is reachable on the mapped host port.
+        // Verify directly that the opencode health endpoint is reachable.
+        // Use the container bridge IP URL so this works regardless of whether the test process
+        // itself runs on the Docker host or inside a container (e.g. on a containerised CI runner).
         using var http = new HttpClient();
-        var healthResp = await http.GetAsync($"{serverBaseUrl}/global/health");
+        var healthResp = await http.GetAsync($"{serverInternalUrl}/global/health");
         Assert.Equal(HttpStatusCode.OK, healthResp.StatusCode);
 
         // Cancel the session — we do not need LLM completion.
