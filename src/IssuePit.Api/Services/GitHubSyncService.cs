@@ -63,6 +63,18 @@ public class GitHubSyncService(
             var syncMode = config?.SyncMode ?? GitHubSyncMode.Import;
             await AppendLogAsync(run, GitHubSyncLogLevel.Info, $"SyncMode = {syncMode}. Fetching issues from {repo}...", ct);
 
+            // Import and TwoWay modes require a Project Key (IssueKey) so that GitHub issue numbers
+            // are used directly as the issue number without conflicting with other projects.
+            var project = await db.Projects.FindAsync([projectId], ct);
+            if (string.IsNullOrWhiteSpace(project?.IssueKey))
+            {
+                await FailRunAsync(run,
+                    "GitHub import requires a Project Key to be configured. " +
+                    "Set a Project Key in Project Settings → Issue ID Format, then re-run the sync.",
+                    ct);
+                return run;
+            }
+
             // Fetch issues — throws GitHubApiException when the API returns an error.
             List<GitHubIssueDto> ghIssues;
             List<GitHubPullRequestDto> ghPrs;
@@ -80,16 +92,11 @@ public class GitHubSyncService(
             await AppendLogAsync(run, GitHubSyncLogLevel.Info,
                 $"Fetched {ghIssues.Count} issue(s) and {ghPrs.Count} PR(s) from GitHub.", ct);
 
-            // Import oldest first so the lowest GitHub numbers get the lowest IssuePit numbers.
+            // Process oldest first so lower GitHub numbers are imported first.
             ghIssues = [.. ghIssues.OrderBy(i => i.Number)];
             ghPrs = [.. ghPrs.OrderBy(p => p.Number)];
 
             int imported = 0, updated = 0, pushed = 0, skipped = 0;
-
-            // Compute starting number once (avoids N separate MAX queries inside the loop).
-            var nextNumber = (await db.Issues
-                .Where(i => i.ProjectId == projectId)
-                .MaxAsync(i => (int?)i.Number, ct) ?? 0) + 1;
 
             // ── Issues ────────────────────────────────────────────────────────
             foreach (var ghIssue in ghIssues)
@@ -99,16 +106,30 @@ public class GitHubSyncService(
 
                 if (existing is null)
                 {
+                    // Check whether the GitHub issue number is already taken by a non-GitHub issue.
+                    var numberConflict = await db.Issues
+                        .AnyAsync(i => i.ProjectId == projectId && i.Number == ghIssue.Number && i.GitHubIssueNumber != ghIssue.Number, ct);
+
+                    if (numberConflict)
+                    {
+                        await AppendLogAsync(run, GitHubSyncLogLevel.Warn,
+                            $"Skipped: {repo}#{ghIssue.Number} \"{TruncateTitle(ghIssue.Title)}\" — number {ghIssue.Number} is already taken by another issue.", ct);
+                        skipped++;
+                        continue;
+                    }
+
                     await AppendLogAsync(run, GitHubSyncLogLevel.Info,
                         $"Imported: {repo}#{ghIssue.Number} \"{TruncateTitle(ghIssue.Title)}\"", ct);
 
                     if (!dryRun)
                     {
+                        // Use the GitHub issue number directly as the IssuePit issue number.
+                        // This gives imported issues their native GitHub numbers (e.g. GH#42 → #KEY-42).
                         db.Issues.Add(new Issue
                         {
                             Id = Guid.NewGuid(),
                             ProjectId = projectId,
-                            Number = nextNumber,
+                            Number = ghIssue.Number,
                             Title = ghIssue.Title,
                             Body = ghIssue.Body,
                             Status = MapGitHubState(ghIssue.State),
@@ -119,7 +140,6 @@ public class GitHubSyncService(
                             CreatedAt = DateTime.UtcNow,
                             UpdatedAt = DateTime.UtcNow,
                         });
-                        nextNumber++;
                         await db.SaveChangesAsync(ct);
                     }
 

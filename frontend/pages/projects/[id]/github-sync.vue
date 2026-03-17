@@ -54,6 +54,27 @@
 
       <!-- ── Configuration ───────────────────────────────────────────────── -->
       <div v-if="activeTab === 'Configuration'" class="space-y-6 max-w-2xl">
+        <!-- IssueKey warning — required for Import / TwoWay modes -->
+        <div
+          v-if="!projectsStore.currentProject?.issueKey && form.syncMode !== GitHubSyncMode.CreateOnGitHub"
+          class="bg-yellow-900/30 border border-yellow-700/50 rounded-xl p-4 flex items-start gap-3"
+        >
+          <svg class="w-5 h-5 text-yellow-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          </svg>
+          <div>
+            <p class="text-sm font-medium text-yellow-300">Project Key required for GitHub import</p>
+            <p class="text-xs text-yellow-500 mt-0.5">
+              GitHub issues are imported using their native numbers (e.g. GH#42 becomes <span class="font-mono">#KEY-42</span>).
+              A Project Key is needed to avoid number conflicts with manually created issues.
+              <NuxtLink :to="`/projects/${id}/settings`" class="text-yellow-300 hover:text-yellow-200 underline">
+                Configure a Project Key in Settings →
+              </NuxtLink>
+            </p>
+          </div>
+        </div>
+
         <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
           <h2 class="font-semibold text-white mb-1">GitHub Sync Configuration</h2>
           <p class="text-sm text-gray-500 mb-4">
@@ -137,7 +158,8 @@ type="submit" :disabled="syncStore.loading"
               <button
                 v-if="form.triggerMode !== GitHubSyncTriggerMode.Off && form.syncMode !== GitHubSyncMode.CreateOnGitHub"
                 type="button"
-                :disabled="triggering"
+                :disabled="triggering || !projectsStore.currentProject?.issueKey"
+                :title="!projectsStore.currentProject?.issueKey ? 'Configure a Project Key first' : undefined"
                 class="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-gray-300 text-sm font-medium px-4 py-2 rounded-lg transition-colors"
                 @click="triggerSync(false)"
               >
@@ -146,7 +168,8 @@ type="submit" :disabled="syncStore.loading"
               <button
                 v-if="form.triggerMode !== GitHubSyncTriggerMode.Off && form.syncMode !== GitHubSyncMode.CreateOnGitHub"
                 type="button"
-                :disabled="triggering"
+                :disabled="triggering || !projectsStore.currentProject?.issueKey"
+                :title="!projectsStore.currentProject?.issueKey ? 'Configure a Project Key first' : undefined"
                 class="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-400 text-sm font-medium px-4 py-2 rounded-lg transition-colors border border-gray-700"
                 @click="triggerSync(true)"
               >
