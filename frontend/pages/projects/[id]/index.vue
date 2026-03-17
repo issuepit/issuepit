@@ -358,7 +358,7 @@
                 @chart-height-change="k => updateCfg(item.sid, { chartHeightKey: k })"
                 @kanban-board-change="boardId => updateCfg(item.sid, { selectedBoardId: boardId })"
                 @test-history-branch-change="b => { updateCfg(item.sid, { testHistoryBranch: b }); loadTestHistoryChart(item.sid) }"
-                @test-history-color-mode-change="m => updateCfg(item.sid, { testHistoryColorMode: m as 'failure-rate' | 'pass-fail' })"
+                @test-history-color-mode-change="m => updateCfg(item.sid, { testHistoryColorMode: m as 'failure-rate' | 'pass-fail' | 'groups' })"
                 @test-history-y-axis-change="a => updateCfg(item.sid, { testHistoryYAxis: a as 'count' | 'duration' })"
                 @tab-toggle="toggleTabGroupWithNext(item.sid)"
                 @tab-drop="droppedSid => tabWithSection(item.sid, droppedSid)"
@@ -1489,6 +1489,7 @@ const CHART_HEIGHT_PX: Record<string, number> = { xs: 80, sm: 120, md: 180, lg: 
 const TEST_HISTORY_COLOR_MODES = [
   { value: 'failure-rate', label: 'Fail %' },
   { value: 'pass-fail', label: 'Pass/Fail' },
+  { value: 'groups', label: 'Groups' },
 ]
 const TEST_HISTORY_Y_AXES = [
   { value: 'count', label: 'Count' },

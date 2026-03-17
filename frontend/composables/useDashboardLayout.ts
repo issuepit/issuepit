@@ -11,7 +11,7 @@ export interface LayoutSectionConfig {
   chartHeightKey?: string
   selectedBoardId?: string
   testHistoryBranch?: string | null
-  testHistoryColorMode?: 'failure-rate' | 'pass-fail'
+  testHistoryColorMode?: 'failure-rate' | 'pass-fail' | 'groups'
   testHistoryYAxis?: 'count' | 'duration'
 }
 

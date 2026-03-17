@@ -872,6 +872,15 @@ export interface TestRunSummary {
   suiteCount: number
 }
 
+export interface TestDailyGroup {
+  name: string
+  totalTests: number
+  passedTests: number
+  failedTests: number
+  skippedTests: number
+  durationMs: number
+}
+
 export interface TestDailySummary {
   date: string
   totalTests: number
@@ -880,6 +889,7 @@ export interface TestDailySummary {
   skippedTests: number
   durationMs: number
   runCount: number
+  groups: TestDailyGroup[]
 }
 
 export interface TestStats {

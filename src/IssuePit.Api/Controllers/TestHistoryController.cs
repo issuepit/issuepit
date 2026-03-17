@@ -22,7 +22,8 @@ public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : Co
 
     /// <summary>
     /// Returns per-day aggregated test counts for the given project, ordered by date ascending.
-    /// Used by the Test History chart card on the project dashboard.
+    /// Each day includes a <c>groups</c> array with per-artifact-name breakdowns, enabling
+    /// stacked-bar charts per test group (unit, e2e, integration, …).
     /// Optionally filtered by branch and limited to the most recent <paramref name="days"/> calendar days.
     /// </summary>
     [HttpGet("daily-summary")]
@@ -50,6 +51,7 @@ public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : Co
             .Select(s => new
             {
                 Date = s.CiCdRun.StartedAt.Date,
+                s.ArtifactName,
                 s.TotalTests,
                 s.PassedTests,
                 s.FailedTests,
@@ -69,6 +71,19 @@ public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : Co
                 SkippedTests = g.Sum(s => s.SkippedTests),
                 DurationMs = g.Sum(s => s.DurationMs),
                 RunCount = g.Count(),
+                Groups = g
+                    .GroupBy(s => s.ArtifactName)
+                    .Select(ag => new
+                    {
+                        Name = ag.Key,
+                        TotalTests = ag.Sum(s => s.TotalTests),
+                        PassedTests = ag.Sum(s => s.PassedTests),
+                        FailedTests = ag.Sum(s => s.FailedTests),
+                        SkippedTests = ag.Sum(s => s.SkippedTests),
+                        DurationMs = ag.Sum(s => s.DurationMs),
+                    })
+                    .OrderBy(ag => ag.Name)
+                    .ToList(),
             })
             .OrderBy(r => r.Date)
             .ToList();
