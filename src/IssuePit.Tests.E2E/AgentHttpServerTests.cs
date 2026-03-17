@@ -496,6 +496,156 @@ public class AgentHttpServerTests(AspireFixture fixture)
     }
 
     /// <summary>
+    /// Verifies that when an agent with <c>UseHttpServer = true</c> is started with the real
+    /// opencode Docker image, the HTTP server actually becomes ready and responds to
+    /// <c>GET /global/health</c> with a 200 OK.
+    ///
+    /// This test proves the full fix end-to-end: container CMD is correct, hostname binds to
+    /// 0.0.0.0 so the host can reach the mapped port, and the server is actually reachable.
+    ///
+    /// After verifying the health endpoint the session is cancelled so the test does not require
+    /// LLM API keys to be configured.
+    ///
+    /// Requires:
+    /// <list type="bullet">
+    ///   <item>Docker available on the host.</item>
+    ///   <item><c>OPENCODE_E2E_DOCKER_IMAGE</c> environment variable set to the full opencode
+    ///         image (e.g. <c>ghcr.io/issuepit/issuepit-helper-opencode-act:main</c>).</item>
+    /// </list>
+    /// </summary>
+    [Fact]
+    public async Task AgentSession_HttpServerMode_HealthEndpointRespondsWith200()
+    {
+        var opencodeImage = Environment.GetEnvironmentVariable("OPENCODE_E2E_DOCKER_IMAGE");
+        if (string.IsNullOrWhiteSpace(opencodeImage))
+            throw new InvalidOperationException(
+                "OPENCODE_E2E_DOCKER_IMAGE is not set. Set it to the full opencode Docker image to run this test.");
+
+        if (!IsDockerAvailable())
+            throw new InvalidOperationException(
+                "Docker is not available on this host. This test requires Docker to create containers.");
+
+        var orgSlug = $"hs-org-{Guid.NewGuid():N}"[..16];
+        var (client, orgId) = await SetupOrgAsync(orgSlug);
+
+        var projectSlug = $"hs-proj-{Guid.NewGuid():N}"[..16];
+        var projResp = await client.PostAsJsonAsync("/api/projects",
+            new { name = "Health Check Test Project", slug = projectSlug, orgId = Guid.Parse(orgId) });
+        Assert.Equal(HttpStatusCode.Created, projResp.StatusCode);
+        var proj = await projResp.Content.ReadFromJsonAsync<JsonElement>();
+        var projectId = proj.GetProperty("id").GetString()!;
+
+        var issueResp = await client.PostAsJsonAsync("/api/issues",
+            new { title = "Health Check Test Issue", projectId = Guid.Parse(projectId) });
+        Assert.Equal(HttpStatusCode.Created, issueResp.StatusCode);
+        var issue = await issueResp.Content.ReadFromJsonAsync<JsonElement>();
+        var issueId = issue.GetProperty("id").GetString()!;
+
+        // Create an HTTP-server-mode agent using the real opencode image.
+        var agentResp = await client.PostAsJsonAsync("/api/agents", new
+        {
+            name = "Health Check Agent",
+            orgId = Guid.Parse(orgId),
+            systemPrompt = "You are a test agent.",
+            dockerImage = opencodeImage,
+            allowedTools = "[]",
+            isActive = true,
+            runnerType = 0,       // OpenCode = 0
+            useHttpServer = true,
+        });
+        Assert.Equal(HttpStatusCode.Created, agentResp.StatusCode);
+        var agentData = await agentResp.Content.ReadFromJsonAsync<JsonElement>();
+        var agentId = agentData.GetProperty("id").GetString()!;
+
+        // Assign the agent to trigger the session.
+        var assignResp = await client.PostAsJsonAsync($"/api/issues/{issueId}/assignees",
+            new { agentId = Guid.Parse(agentId) });
+        Assert.Equal(HttpStatusCode.Created, assignResp.StatusCode);
+
+        // Wait for the session to be created (up to 30 s).
+        string? sessionId = null;
+        var sessionDeadline = DateTimeOffset.UtcNow.AddSeconds(30);
+        while (DateTimeOffset.UtcNow < sessionDeadline)
+        {
+            var sessionsResp = await client.GetAsync($"/api/issues/{issueId}/agent-sessions");
+            if (sessionsResp.IsSuccessStatusCode)
+            {
+                var sessions = await sessionsResp.Content.ReadFromJsonAsync<JsonElement>();
+                if (sessions.GetArrayLength() > 0)
+                {
+                    sessionId = sessions[0].GetProperty("id").GetString();
+                    break;
+                }
+            }
+            await Task.Delay(500);
+        }
+
+        if (sessionId is null)
+            throw new TimeoutException(
+                $"Agent session for issue {issueId} was not created within 30 seconds.");
+
+        // Poll the session logs until "[INFO] opencode HTTP server is ready" appears, meaning
+        // the execution client confirmed the health endpoint responded.
+        // Allow up to 120 s for the opencode image to pull (if needed) and the server to start.
+        string? serverBaseUrl = null;
+        var readyDeadline = DateTimeOffset.UtcNow.AddSeconds(120);
+        while (DateTimeOffset.UtcNow < readyDeadline)
+        {
+            var logsResp = await client.GetAsync($"/api/agent-sessions/{sessionId}/logs");
+            if (logsResp.IsSuccessStatusCode)
+            {
+                var logsJson = await logsResp.Content.ReadFromJsonAsync<JsonElement>();
+                var logLines = logsJson.EnumerateArray()
+                    .Select(l => l.GetProperty("line").GetString() ?? string.Empty)
+                    .ToList();
+
+                // Extract the server base URL from the structured marker emitted before readiness polling.
+                var urlLine = logLines.FirstOrDefault(l => l.StartsWith("[ISSUEPIT:SERVER_WEB_UI_URL]="));
+                if (urlLine is not null)
+                    serverBaseUrl = urlLine["[ISSUEPIT:SERVER_WEB_UI_URL]=".Length..].Trim();
+
+                if (logLines.Any(l => l.Contains("[INFO] opencode HTTP server is ready")))
+                    break;
+
+                // If the session has already reached a terminal state before the server became
+                // ready, fail fast with a diagnostic message.
+                var sessionResp = await client.GetAsync($"/api/agent-sessions/{sessionId}");
+                if (sessionResp.IsSuccessStatusCode)
+                {
+                    var sessionJson = await sessionResp.Content.ReadFromJsonAsync<JsonElement>();
+                    var statusName = sessionJson.GetProperty("statusName").GetString();
+                    if (statusName is "Succeeded" or "Failed" or "Cancelled")
+                        throw new InvalidOperationException(
+                            $"Session reached '{statusName}' before opencode HTTP server became ready.\n" +
+                            $"Logs:\n{string.Join('\n', logLines.Take(60))}");
+                }
+            }
+
+            await Task.Delay(1000);
+        }
+
+        if (serverBaseUrl is null)
+            throw new TimeoutException(
+                $"opencode HTTP server did not become ready within 120 seconds. " +
+                $"[ISSUEPIT:SERVER_WEB_UI_URL] marker was not found in session logs.");
+
+        // The execution client already confirmed the health endpoint responded; verify directly
+        // from the test host that the server is reachable on the mapped host port.
+        using var http = new HttpClient();
+        var healthResp = await http.GetAsync($"{serverBaseUrl}/global/health");
+        Assert.Equal(HttpStatusCode.OK, healthResp.StatusCode);
+
+        // Cancel the session — we do not need LLM completion.
+        var cancelResp = await client.PostAsync($"/api/agent-sessions/{sessionId}/cancel", null);
+        Assert.True(
+            cancelResp.IsSuccessStatusCode,
+            $"Expected cancel to succeed, got {cancelResp.StatusCode}.");
+
+        // Wait for the session to reach a terminal state (Cancelled or Failed).
+        await WaitForHttpServerSessionAsync(client, issueId, TimeSpan.FromMinutes(2));
+    }
+
+    /// <summary>
     /// Polls until the most-recent agent session for <paramref name="issueId"/> reaches a terminal
     /// status (<c>Succeeded</c>, <c>Failed</c>, or <c>Cancelled</c>) or the timeout elapses.
     /// </summary>
