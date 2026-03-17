@@ -51,7 +51,7 @@ stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
             </span>
           </td>
           <td class="px-4 py-3 text-gray-300 text-xs">{{ run.summary || '—' }}</td>
-          <td class="px-4 py-3 text-gray-400 text-xs">{{ formatDate(run.startedAt) }}</td>
+          <td class="px-4 py-3 text-gray-400 text-xs"><DateDisplay :date="run.startedAt" mode="auto" /></td>
           <td class="px-4 py-3 text-gray-400 text-xs">{{ duration(run.startedAt, run.completedAt) }}</td>
           <td class="px-4 py-3 text-right">
             <button class="text-xs text-brand-400 hover:text-brand-300" @click.stop="$emit('open-run', run.id)">
@@ -77,7 +77,7 @@ stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
             <span :class="statusClass(selectedRun.status)" class="px-1.5 py-0.5 rounded-full font-medium">
               {{ statusLabel(selectedRun.status) }}
             </span>
-            <span class="ml-2">{{ formatDate(selectedRun.startedAt) }}</span>
+            <span class="ml-2"><DateDisplay :date="selectedRun.startedAt" mode="auto" /></span>
             <span v-if="selectedRun.summary" class="ml-2">— {{ selectedRun.summary }}</span>
           </p>
         </div>
@@ -177,10 +177,6 @@ function logBadgeClass(level: GitHubSyncLogLevel): string {
     case GitHubSyncLogLevel.Error: return 'bg-red-900/40 text-red-300'
     default: return 'bg-gray-800 text-gray-500'
   }
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString()
 }
 
 function formatTime(iso: string): string {

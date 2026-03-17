@@ -181,7 +181,7 @@
                   <p class="text-xs text-gray-500 mt-0.5">Branch: {{ r.defaultBranch }} · {{ r.hasAuth ? 'auth configured' : 'no auth' }}<template v-if="r.gitHubIdentityName"> · identity: {{ r.gitHubIdentityName }}</template></p>
                   <p v-if="r.statusMessage" class="text-xs text-gray-400 break-words mt-0.5">{{ r.statusMessage }}</p>
                   <p v-if="r.status === 'Throttled' && r.throttledUntil" class="text-xs text-gray-400 mt-0.5">
-                    Polling resumes at {{ new Date(r.throttledUntil).toLocaleString() }}
+                    Polling resumes at <DateDisplay :date="r.throttledUntil" mode="absolute" />
                   </p>
                 </div>
                 <div class="flex items-center gap-1 shrink-0">

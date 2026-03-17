@@ -54,7 +54,7 @@
               </span>
               <span v-else class="text-xs text-gray-500">—</span>
             </td>
-            <td class="px-4 py-3 text-gray-400">{{ formatDate(tenant.createdAt) }}</td>
+            <td class="px-4 py-3 text-gray-400"><DateDisplay :date="tenant.createdAt" mode="absolute" resolution="date" /></td>
             <td class="px-4 py-3 text-right">
               <div class="flex items-center justify-end gap-2">
                 <button
@@ -319,10 +319,6 @@ function confirmDelete(id: string, name: string) {
   if (confirm(`Delete tenant "${name}"? This cannot be undone.`)) {
     store.deleteTenant(id)
   }
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 // ── Config Repo ─────────────────────────────────────────────────────────────

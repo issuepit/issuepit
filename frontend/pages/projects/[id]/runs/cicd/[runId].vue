@@ -78,7 +78,7 @@
           </div>
           <div>
             <p class="text-xs text-gray-500 mb-1">Started</p>
-            <p class="text-sm text-gray-400">{{ formatDate(store.currentRun.startedAt) }}</p>
+            <p class="text-sm text-gray-400"><DateDisplay :date="store.currentRun.startedAt" mode="auto" /></p>
           </div>
           <div>
             <p class="text-xs text-gray-500 mb-1">Duration</p>
@@ -303,7 +303,7 @@
                 </template>
                 <span v-else class="font-mono text-xs text-gray-400">{{ link.workflow || link.branch || link.commitSha?.slice(0, 7) || '—' }}</span>
               </td>
-              <td class="px-4 py-2 text-gray-400 text-xs">{{ formatDate(link.startedAt) }}</td>
+              <td class="px-4 py-2 text-gray-400 text-xs"><DateDisplay :date="link.startedAt" mode="auto" /></td>
               <td class="px-4 py-2 text-gray-400 text-xs">{{ link.status === CiCdRunStatus.WaitingForApproval ? '—' : duration(link.startedAt, link.endedAt) }}</td>
             </tr>
           </tbody>
@@ -743,7 +743,7 @@
                     <p class="text-sm font-medium text-gray-200 truncate">{{ artifact.name }}</p>
                     <p class="text-xs text-gray-500">{{ artifact.fileCount }} file{{ artifact.fileCount === 1 ? '' : 's' }} · {{ formatBytes(artifact.sizeBytes) }}</p>
                   </div>
-                  <span class="text-xs text-gray-600 shrink-0">{{ formatDate(artifact.createdAt) }}</span>
+                  <span class="text-xs text-gray-600 shrink-0"><DateDisplay :date="artifact.createdAt" mode="auto" /></span>
                   <button
                     v-if="artifact.storageKey"
                     class="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-medium bg-brand-600 hover:bg-brand-500 disabled:opacity-60 text-white transition-colors shrink-0"
@@ -2025,10 +2025,6 @@ async function copyLogsToClipboard() {
     document.execCommand('copy')
     document.body.removeChild(ta)
   }
-}
-
-function formatDate(d: string) {
-  return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 function formatBytes(bytes: number): string {

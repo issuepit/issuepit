@@ -70,7 +70,7 @@
                   </a>
                 </div>
               </td>
-              <td class="px-4 py-3 text-gray-400 text-xs">{{ formatDate(session.startedAt) }}</td>
+              <td class="px-4 py-3 text-gray-400 text-xs"><DateDisplay :date="session.startedAt" mode="auto" /></td>
               <td class="px-4 py-3 text-gray-400 text-xs">{{ duration(session.startedAt, session.endedAt) }}</td>
               <td class="px-4 py-3 text-right">
                 <!-- Preserved indicator -->
@@ -138,10 +138,6 @@ onMounted(async () => {
     loading.value = false
   }
 })
-
-function formatDate(date: string) {
-  return new Date(date).toLocaleString()
-}
 
 function duration(start: string, end?: string | null) {
   const ms = (end ? new Date(end).getTime() : Date.now()) - new Date(start).getTime()
