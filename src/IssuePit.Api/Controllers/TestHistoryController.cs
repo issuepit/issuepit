@@ -116,35 +116,58 @@ public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : Co
         if (!string.IsNullOrWhiteSpace(branch))
             query = query.Where(s => s.CiCdRun.Branch == branch);
 
-        // Group suites by run and aggregate counts.
-        var rows = await query
-            .GroupBy(s => new
+        // Materialise raw suite rows first so that nested client-side grouping (Groups) works.
+        var raw = await query
+            .Select(s => new
             {
                 s.CiCdRunId,
                 s.CiCdRun.CommitSha,
                 s.CiCdRun.Branch,
                 s.CiCdRun.StartedAt,
                 s.CiCdRun.EndedAt,
-                s.CiCdRun.Status,
+                StatusName = s.CiCdRun.Status.ToString(),
+                s.ArtifactName,
+                s.TotalTests,
+                s.PassedTests,
+                s.FailedTests,
+                s.SkippedTests,
+                s.DurationMs,
             })
+            .ToListAsync();
+
+        var rows = raw
+            .GroupBy(s => s.CiCdRunId)
             .Select(g => new
             {
-                RunId = g.Key.CiCdRunId,
-                g.Key.CommitSha,
-                g.Key.Branch,
-                g.Key.StartedAt,
-                g.Key.EndedAt,
-                StatusName = g.Key.Status.ToString(),
+                RunId = g.Key,
+                CommitSha = g.First().CommitSha,
+                Branch = g.First().Branch,
+                StartedAt = g.First().StartedAt,
+                EndedAt = g.First().EndedAt,
+                StatusName = g.First().StatusName,
                 TotalTests = g.Sum(s => s.TotalTests),
                 PassedTests = g.Sum(s => s.PassedTests),
                 FailedTests = g.Sum(s => s.FailedTests),
                 SkippedTests = g.Sum(s => s.SkippedTests),
                 DurationMs = g.Sum(s => s.DurationMs),
                 SuiteCount = g.Count(),
+                Groups = g
+                    .GroupBy(s => s.ArtifactName)
+                    .Select(ag => new
+                    {
+                        Name = ag.Key,
+                        TotalTests = ag.Sum(s => s.TotalTests),
+                        PassedTests = ag.Sum(s => s.PassedTests),
+                        FailedTests = ag.Sum(s => s.FailedTests),
+                        SkippedTests = ag.Sum(s => s.SkippedTests),
+                        DurationMs = ag.Sum(s => s.DurationMs),
+                    })
+                    .OrderBy(ag => ag.Name)
+                    .ToList(),
             })
             .OrderByDescending(r => r.StartedAt)
             .Take(Math.Min(take, 200))
-            .ToListAsync();
+            .ToList();
 
         return Ok(rows);
     }

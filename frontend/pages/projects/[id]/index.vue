@@ -344,6 +344,8 @@
                 :current-test-history-color-mode="isTestHistorySid(item.sid) ? (sectionCfg(item.sid).testHistoryColorMode ?? 'failure-rate') : undefined"
                 :test-history-y-axis-options="isTestHistorySid(item.sid) ? TEST_HISTORY_Y_AXES : undefined"
                 :current-test-history-y-axis="isTestHistorySid(item.sid) ? (sectionCfg(item.sid).testHistoryYAxis ?? 'count') : undefined"
+                :test-history-x-mode-options="isTestHistorySid(item.sid) ? TEST_HISTORY_X_MODES : undefined"
+                :current-test-history-x-mode="isTestHistorySid(item.sid) ? (sectionCfg(item.sid).testHistoryXMode ?? 'date') : undefined"
                 :can-tab="layout.order.indexOf(item.sid) < layout.order.length - 1"
                 :is-tabbed="sectionCfg(item.sid).tabGroup !== null"
                 :can-stack="sectionCanStack(item.sid) && layout.order.indexOf(item.sid) < layout.order.length - 1"
@@ -357,8 +359,9 @@
                 @chart-days-change="d => { updateCfg(item.sid, { chartDays: d }); if (isTestHistorySid(item.sid)) loadTestHistoryChart(item.sid) }"
                 @chart-height-change="k => updateCfg(item.sid, { chartHeightKey: k })"
                 @kanban-board-change="boardId => updateCfg(item.sid, { selectedBoardId: boardId })"
-                @test-history-branch-change="b => { updateCfg(item.sid, { testHistoryBranch: b }); loadTestHistoryChart(item.sid) }"
+                @test-history-branch-change="b => { updateCfg(item.sid, { testHistoryBranch: b }); (sectionCfg(item.sid).testHistoryXMode ?? 'date') === 'runs' ? loadTestHistoryRuns(item.sid) : loadTestHistoryChart(item.sid) }"
                 @test-history-color-mode-change="m => updateCfg(item.sid, { testHistoryColorMode: m as 'failure-rate' | 'pass-fail' | 'groups' })"
+                @test-history-x-mode-change="m => { updateCfg(item.sid, { testHistoryXMode: m as 'date' | 'runs' }); m === 'runs' ? loadTestHistoryRuns(item.sid) : loadTestHistoryChart(item.sid) }"
                 @test-history-y-axis-change="a => updateCfg(item.sid, { testHistoryYAxis: a as 'count' | 'duration' })"
                 @tab-toggle="toggleTabGroupWithNext(item.sid)"
                 @tab-drop="droppedSid => tabWithSection(item.sid, droppedSid)"
@@ -728,8 +731,10 @@
                         </div>
                         <TestHistoryBarChart
                           :data="testHistoryDailyData.get(sid) ?? []"
+                          :runs-data="testHistoryRunsData.get(sid)"
                           :color-mode="sectionCfg(sid).testHistoryColorMode ?? 'failure-rate'"
                           :y-axis="sectionCfg(sid).testHistoryYAxis ?? 'count'"
+                          :x-mode="sectionCfg(sid).testHistoryXMode ?? 'date'"
                         />
                       </div>
                     </template>
@@ -1110,6 +1115,8 @@ const recentProjectIssues = ref<Issue[]>([])
 const dashboardTestRuns = ref<TestRunSummary[]>([])
 // Per-section daily summaries for test history chart cards (keyed by section ID)
 const testHistoryDailyData = ref<Map<string, TestDailySummary[]>>(new Map())
+// Per-section per-run data for test history chart in 'runs' x-mode (keyed by section ID)
+const testHistoryRunsData = ref<Map<string, TestRunSummary[]>>(new Map())
 // Known branches for test history (loaded once)
 const testHistoryBranches = ref<string[]>([])
 
@@ -1420,7 +1427,11 @@ onMounted(async () => {
   // Load chart data for any test history sections that start in chart mode
   for (const sid of layout.value.order) {
     if (isTestHistorySid(sid) && sectionCfg(sid).displayMode === 'chart') {
-      loadTestHistoryChart(sid).catch(() => {})
+      if ((sectionCfg(sid).testHistoryXMode ?? 'date') === 'runs') {
+        loadTestHistoryRuns(sid).catch(() => {})
+      } else {
+        loadTestHistoryChart(sid).catch(() => {})
+      }
     }
   }
 
@@ -1482,6 +1493,11 @@ const TEST_HISTORY_Y_AXES = [
   { value: 'duration', label: 'Time' },
 ]
 
+const TEST_HISTORY_X_MODES = [
+  { value: 'date', label: 'Date' },
+  { value: 'runs', label: 'Runs' },
+]
+
 /** Loads (or refreshes) the daily chart data for a test history section. */
 async function loadTestHistoryChart(sid: string) {
   const cfg = sectionCfg(sid)
@@ -1497,18 +1513,40 @@ async function loadTestHistoryChart(sid: string) {
   }
 }
 
+/** Loads per-run chart data for a test history section (used in xMode='runs'). */
+async function loadTestHistoryRuns(sid: string) {
+  const cfg = sectionCfg(sid)
+  const branch = cfg.testHistoryBranch
+  let url = `/api/projects/${id}/test-history/runs?take=90`
+  if (branch) url += `&branch=${encodeURIComponent(branch)}`
+  try {
+    const data = await api.get<TestRunSummary[]>(url)
+    testHistoryRunsData.value = new Map(testHistoryRunsData.value).set(sid, data)
+  } catch (e) {
+    console.warn(`Failed to load test history runs data for section ${sid}`, e)
+  }
+}
+
 const chartHeightPx = computed(() =>
   CHART_HEIGHT_PX[sectionCfg('history').chartHeightKey ?? 'md'] ?? 160,
 )
 
-// Load chart data when a test history section switches to chart mode
+// Load chart data when a test history section switches to chart mode or changes xMode
 watch(
   () => layout.value.configs,
   (newConfigs, oldConfigs) => {
     for (const sid of Object.keys(newConfigs)) {
       if (!isTestHistorySid(sid)) continue
-      if (newConfigs[sid]?.displayMode === 'chart' && oldConfigs?.[sid]?.displayMode !== 'chart') {
-        loadTestHistoryChart(sid).catch(() => {})
+      const isChart = newConfigs[sid]?.displayMode === 'chart'
+      const wasChart = oldConfigs?.[sid]?.displayMode === 'chart'
+      const newXMode = newConfigs[sid]?.testHistoryXMode ?? 'date'
+      const oldXMode = oldConfigs?.[sid]?.testHistoryXMode ?? 'date'
+      if (isChart && (!wasChart || newXMode !== oldXMode)) {
+        if (newXMode === 'runs') {
+          loadTestHistoryRuns(sid).catch(() => {})
+        } else {
+          loadTestHistoryChart(sid).catch(() => {})
+        }
       }
     }
   },

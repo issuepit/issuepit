@@ -13,6 +13,7 @@ export interface LayoutSectionConfig {
   testHistoryBranch?: string | null
   testHistoryColorMode?: 'failure-rate' | 'pass-fail' | 'groups'
   testHistoryYAxis?: 'count' | 'duration'
+  testHistoryXMode?: 'date' | 'runs'
 }
 
 interface LayoutData {

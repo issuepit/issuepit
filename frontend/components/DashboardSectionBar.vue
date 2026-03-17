@@ -165,6 +165,15 @@
           :class="currentTestHistoryYAxis === y.value ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
           class="text-xs px-1.5 py-0.5 rounded transition-colors">{{ y.label }}</button>
       </div>
+      <!-- Test history X axis mode -->
+      <div v-if="testHistoryXModeOptions?.length" class="flex items-center gap-0.5">
+        <span class="text-xs text-gray-500 mr-1">X</span>
+        <button
+          v-for="x in testHistoryXModeOptions" :key="x.value"
+          @click.stop="$emit('test-history-x-mode-change', x.value)"
+          :class="currentTestHistoryXMode === x.value ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
+          class="text-xs px-1.5 py-0.5 rounded transition-colors">{{ x.label }}</button>
+      </div>
     </div>
   </div>
 </template>
@@ -192,6 +201,8 @@ const props = defineProps<{
   currentTestHistoryColorMode?: string
   testHistoryYAxisOptions?: { value: string; label: string }[]
   currentTestHistoryYAxis?: string
+  testHistoryXModeOptions?: { value: string; label: string }[]
+  currentTestHistoryXMode?: string
   canTab?: boolean
   isTabbed?: boolean
   canStack?: boolean
@@ -211,6 +222,7 @@ const emit = defineEmits<{
   'test-history-branch-change': [branch: string | null]
   'test-history-color-mode-change': [mode: string]
   'test-history-y-axis-change': [axis: string]
+  'test-history-x-mode-change': [mode: string]
   'tab-toggle': []
   'tab-drop': [droppedSid: string]
   'stack-toggle': []
@@ -240,7 +252,8 @@ const hasSettings = computed(() =>
   (props.chartHeightOptions?.length ?? 0) > 0 ||
   props.kanbanBoards !== undefined ||  // show cog even if boards haven't loaded yet
   props.testHistoryBranches !== undefined ||
-  (props.testHistoryColorModeOptions?.length ?? 0) > 0,
+  (props.testHistoryColorModeOptions?.length ?? 0) > 0 ||
+  (props.testHistoryXModeOptions?.length ?? 0) > 0,
 )
 
 function onChartDaysChange(e: Event) {
