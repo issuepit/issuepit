@@ -860,6 +860,15 @@ export interface CiCdArtifact {
   createdAt: string
 }
 
+export interface TestDailyGroup {
+  name: string
+  totalTests: number
+  passedTests: number
+  failedTests: number
+  skippedTests: number
+  durationMs: number
+}
+
 export interface TestRunSummary {
   runId: string
   commitSha?: string
@@ -873,6 +882,18 @@ export interface TestRunSummary {
   skippedTests: number
   durationMs: number
   suiteCount: number
+  groups?: TestDailyGroup[]
+}
+
+export interface TestDailySummary {
+  date: string
+  totalTests: number
+  passedTests: number
+  failedTests: number
+  skippedTests: number
+  durationMs: number
+  runCount: number
+  groups: TestDailyGroup[]
 }
 
 export interface TestStats {

@@ -303,6 +303,15 @@ public class TestHistoryTests : IAsyncLifetime
         Assert.True(suites.GetArrayLength() > 0,
             $"API should return test suites for run {runId} after a CI/CD run with TRX artifact");
 
+        // Wait for the artifact to be stored with isTestResultArtifact = true.
+        // ParseAndStoreTestResultsAsync may persist run.Status = Succeeded before
+        // ParseAndStoreArtifactsAsync runs, so the run can appear terminal while
+        // artifact rows are still being written.
+        var artifacts = await CiCdTestPollingHelpers.WaitForTestResultArtifactsAsync(apiClient, runId, TimeSpan.FromSeconds(30));
+        Assert.True(artifacts.EnumerateArray().Any(a =>
+                a.TryGetProperty("isTestResultArtifact", out var v) && v.GetBoolean()),
+            $"At least one artifact should have isTestResultArtifact=true for run {runId}");
+
         // Open the browser and navigate to the run's Tests tab.
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
         context.SetDefaultTimeout(E2ETimeouts.Navigation);
@@ -326,7 +335,7 @@ public class TestHistoryTests : IAsyncLifetime
 
             // Verify Artifacts tab: TRX artifact should be hidden behind the toggle by default.
             await runPage.GotoArtifactsTabAsync(projectId, runId);
-            await runPage.WaitForArtifactsTabContentAsync();
+            await runPage.WaitForNonEmptyArtifactsTabAsync();
 
             Assert.False(await runPage.IsArtifactsTabEmptyAsync(),
                 "Artifacts tab should not be empty — the TRX artifact was uploaded");

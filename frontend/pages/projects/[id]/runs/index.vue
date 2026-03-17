@@ -191,7 +191,7 @@
                 <span v-else class="text-gray-600 text-xs">—</span>
               </td>
               <td class="px-4 py-3 text-gray-400 text-xs"><DateDisplay :date="session.startedAt" mode="auto" /></td>
-              <td class="px-4 py-3 text-gray-400 text-xs">{{ duration(session.startedAt, session.endedAt) }}</td>
+              <td class="px-4 py-3 text-gray-400 text-xs">{{ session.status === AgentSessionStatus.Pending ? '—' : duration(session.startedAt, session.endedAt) }}</td>
               <td class="px-4 py-3 text-right">
                 <button v-if="session.status === AgentSessionStatus.Failed || session.status === AgentSessionStatus.Cancelled"
                   class="text-xs text-brand-400 hover:text-brand-300 transition-colors"
@@ -296,8 +296,11 @@ async function approveRun(runId: string) {
 }
 
 async function retrySession(sessionId: string) {
-  await store.retrySession(sessionId)
+  const result = await store.retrySession(sessionId)
   await store.fetchAgentSessions(id)
+  if (result?.retriedSessionId) {
+    navigateTo(`/projects/${id}/runs/agent-sessions/${result.retriedSessionId}`)
+  }
 }
 
 async function retryRun(runId: string) {

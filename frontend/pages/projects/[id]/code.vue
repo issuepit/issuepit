@@ -72,15 +72,27 @@
           <span class="text-sm text-gray-300 truncate max-w-xs">{{ store.repo.remoteUrl }}</span>
         </div>
 
-        <!-- Branch selector -->
-        <select v-model="selectedBranch" @change="onBranchChange"
-          class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+        <!-- Commit SHA badge (when browsing a specific commit) -->
+        <div v-if="pinnedSha" class="flex items-center gap-2 bg-amber-900/30 border border-amber-700/40 rounded-lg px-3 py-1.5">
+          <svg class="w-3.5 h-3.5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+          </svg>
+          <code class="text-xs text-amber-300 font-mono">{{ pinnedSha.slice(0, 7) }}</code>
+          <button class="text-xs text-amber-500 hover:text-amber-300 transition-colors ml-1" @click="exitShaMode">
+            × browse branch
+          </button>
+        </div>
+
+        <!-- Branch selector (hidden when a specific commit SHA is pinned) -->
+        <select v-else v-model="selectedBranch" class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+          @change="onBranchChange">
           <option v-for="b in localBranches" :key="b.name" :value="b.name">{{ b.name }}</option>
         </select>
 
         <div class="flex items-center gap-2 ml-auto">
-          <button @click="doFetch" :disabled="fetching"
-            class="flex items-center gap-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+          <button :disabled="fetching"
+            class="flex items-center gap-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+            @click="doFetch">
             <svg class="w-4 h-4" :class="{ 'animate-spin': fetching }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -401,6 +413,12 @@ const selectedFile = ref('')
 const commitSkip = ref(0)
 const commitTake = 30
 
+/** When non-null, the code browser shows the tree/files at this specific commit SHA. */
+const pinnedSha = ref<string | null>(null)
+
+/** The effective git ref used for tree/blob requests — the pinned SHA or the selected branch. */
+const effectiveRef = computed(() => pinnedSha.value ?? selectedBranch.value)
+
 const triggerModal = reactive({ open: false, commitSha: '', branch: '' })
 
 function openTriggerModal(sha: string) {
@@ -444,6 +462,18 @@ const localBranches = computed(() =>
 // duplicate fetches when navigations are initiated within the component.
 watch(() => route.query, async (query) => {
   if (!store.repo || !repoChecked.value) return
+  // Sync pinned SHA
+  const sha = (query.sha as string) || null
+  if (sha !== pinnedSha.value) {
+    pinnedSha.value = sha
+    if (sha) {
+      currentPath.value = ''
+      selectedFile.value = ''
+      store.blob = null
+      await store.fetchTree(id, sha, '')
+      return
+    }
+  }
   // Sync active tab when navigating via browser back/forward
   const tab = (query.tab as string) || 'code'
   if ((tab === 'commits' || tab === 'branches') && activeTab.value !== tab) {
@@ -457,12 +487,12 @@ watch(() => route.query, async (query) => {
     currentPath.value = path
     selectedFile.value = ''
     store.blob = null
-    await store.fetchTree(id, selectedBranch.value, path)
+    await store.fetchTree(id, effectiveRef.value, path)
   }
   if (file !== selectedFile.value) {
     if (file) {
       selectedFile.value = file
-      await store.fetchBlob(id, file, selectedBranch.value)
+      await store.fetchBlob(id, file, effectiveRef.value)
     } else {
       selectedFile.value = ''
       store.blob = null
@@ -477,6 +507,8 @@ onMounted(async () => {
   if (queryTab === 'commits' || queryTab === 'branches') {
     activeTab.value = queryTab
   }
+  // Restore pinned SHA from URL query param (e.g. ?sha=abc1234)
+  pinnedSha.value = (route.query.sha as string) || null
   await store.fetchRepo(id)
   repoChecked.value = true
   if (store.repo) {
@@ -496,24 +528,25 @@ onUnmounted(() => store.reset())
 async function initRepo() {
   await Promise.all([
     store.fetchBranches(id),
-    store.fetchTree(id, store.repo?.defaultBranch, ''),
+    store.fetchTree(id, pinnedSha.value ?? store.repo?.defaultBranch, ''),
     cicdStore.fetchRuns(id),
   ])
   // Set default branch selection
   const def = store.repo?.defaultBranch ?? 'main'
   const found = localBranches.value.find(b => b.name === def) ?? localBranches.value[0]
   selectedBranch.value = found?.name ?? def
-  await store.fetchCommits(id, selectedBranch.value, 0, commitTake)
+  if (!pinnedSha.value)
+    await store.fetchCommits(id, selectedBranch.value, 0, commitTake)
   // Restore navigation state from URL query params (e.g. on page reload or direct link)
   const queryPath = (route.query.path as string) || ''
   const queryFile = (route.query.file as string) || ''
   if (queryPath) {
     currentPath.value = queryPath
-    await store.fetchTree(id, selectedBranch.value, queryPath)
+    await store.fetchTree(id, effectiveRef.value, queryPath)
   }
   if (queryFile) {
     selectedFile.value = queryFile
-    await store.fetchBlob(id, queryFile, selectedBranch.value)
+    await store.fetchBlob(id, queryFile, effectiveRef.value)
   }
 }
 
@@ -528,18 +561,28 @@ async function onBranchChange() {
   router.push({ query: {} })
 }
 
+/** Exit SHA-pinned mode and return to browsing the default branch. */
+async function exitShaMode() {
+  pinnedSha.value = null
+  currentPath.value = ''
+  selectedFile.value = ''
+  store.blob = null
+  await store.fetchTree(id, selectedBranch.value, '')
+  router.push({ query: {} })
+}
+
 async function onEntryClick(entry: { type: string; path: string }) {
   if (entry.type === 'tree') {
     currentPath.value = entry.path
     selectedFile.value = ''
     store.blob = null
-    await store.fetchTree(id, selectedBranch.value, entry.path)
-    router.push({ query: { path: entry.path } })
+    await store.fetchTree(id, effectiveRef.value, entry.path)
+    router.push({ query: { sha: pinnedSha.value ?? undefined, path: entry.path } })
   } else {
     selectedFile.value = entry.path
-    await store.fetchBlob(id, entry.path, selectedBranch.value)
+    await store.fetchBlob(id, entry.path, effectiveRef.value)
     // Use undefined for empty path so the query param is omitted from the URL
-    router.push({ query: { path: currentPath.value ? currentPath.value : undefined, file: entry.path } })
+    router.push({ query: { sha: pinnedSha.value ?? undefined, path: currentPath.value ? currentPath.value : undefined, file: entry.path } })
   }
 }
 
@@ -547,9 +590,9 @@ async function navigateTo(path: string) {
   currentPath.value = path
   selectedFile.value = ''
   store.blob = null
-  await store.fetchTree(id, selectedBranch.value, path)
+  await store.fetchTree(id, effectiveRef.value, path)
   // Use undefined for empty path so the query param is omitted from the URL
-  router.push({ query: { path: path ? path : undefined } })
+  router.push({ query: { sha: pinnedSha.value ?? undefined, path: path ? path : undefined } })
 }
 
 async function navigateUp() {
