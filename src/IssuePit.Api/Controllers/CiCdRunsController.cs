@@ -620,12 +620,30 @@ public class CiCdRunsController(
         // Re-resolve the remote URL so the container can clone the latest state of the repo.
         var retryRepo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == run.ProjectId);
 
+        // Determine effective branch and commit SHA, honouring caller overrides.
+        var retryBranch = !string.IsNullOrWhiteSpace(options?.Branch) ? options.Branch : run.Branch;
+        string retryCommitSha;
+        if (!string.IsNullOrWhiteSpace(options?.CommitSha))
+        {
+            retryCommitSha = options.CommitSha;
+        }
+        else if (!string.IsNullOrWhiteSpace(options?.Branch))
+        {
+            // Branch overridden without an explicit SHA — resolve the branch tip from the local clone.
+            retryCommitSha = (retryRepo is not null ? gitService.GetBranchTipSha(retryRepo, options.Branch) : null)
+                ?? options.Branch;
+        }
+        else
+        {
+            retryCommitSha = run.CommitSha;
+        }
+
         // Create the new run record immediately (Pending) so it shows as queued in the UI.
         // Retries are user-initiated so they bypass RequiresRunApproval.
         var newRun = await runQueue.EnqueueAsync(
             projectId: run.ProjectId,
-            commitSha: run.CommitSha,
-            branch: run.Branch,
+            commitSha: retryCommitSha,
+            branch: retryBranch,
             workflow: run.Workflow,
             eventName: !string.IsNullOrWhiteSpace(options?.EventName) ? options.EventName : (run.EventName ?? "push"),
             inputs: null,
@@ -785,7 +803,11 @@ public record RetryRunOptions(
     /// <summary>Override the act runner image used by act for platform mapping (e.g. ubuntu-latest). Null or empty = use project/org/global default.</summary>
     string? ActRunnerImage = null,
     /// <summary>Override the event/trigger name (e.g. "push", "pull_request"). Null or empty = use the original run's event name.</summary>
-    string? EventName = null);
+    string? EventName = null,
+    /// <summary>Override the branch to run against. Null or empty = use the original run's branch.</summary>
+    string? Branch = null,
+    /// <summary>Override the commit SHA to run against. Null or empty = use the original run's commit SHA (or the branch tip when Branch is overridden).</summary>
+    string? CommitSha = null);
 
 /// <summary>Request body for the external CI/CD sync endpoint.</summary>
 public record ExternalSyncRequest(

@@ -531,10 +531,16 @@ async function initRepo() {
     store.fetchTree(id, pinnedSha.value ?? store.repo?.defaultBranch, ''),
     cicdStore.fetchRuns(id),
   ])
-  // Set default branch selection
+  // Set default branch selection; honour ?branch= query param if present
+  const queryBranch = (route.query.branch as string) || ''
   const def = store.repo?.defaultBranch ?? 'main'
-  const found = localBranches.value.find(b => b.name === def) ?? localBranches.value[0]
-  selectedBranch.value = found?.name ?? def
+  const targetBranch = queryBranch
+    ? (store.branches.find(b => b.name === queryBranch)?.name ?? queryBranch)
+    : null
+  const found = targetBranch
+    ? (store.branches.find(b => b.name === targetBranch) ?? localBranches.value.find(b => b.name === def) ?? localBranches.value[0])
+    : (localBranches.value.find(b => b.name === def) ?? localBranches.value[0])
+  selectedBranch.value = found?.name ?? targetBranch ?? def
   if (!pinnedSha.value)
     await store.fetchCommits(id, selectedBranch.value, 0, commitTake)
   // Restore navigation state from URL query params (e.g. on page reload or direct link)
