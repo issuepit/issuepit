@@ -71,18 +71,26 @@ if [[ -n "${ISSUEPIT_GIT_REMOTE_URL:-}" ]]; then
     FEATURE_BRANCH="${ISSUEPIT_GIT_BRANCH:-}"
 
     # Clone strategy:
-    #   - If a feature branch is set, try cloning it directly (it may already exist from a prior run).
-    #   - If that fails (branch not yet in remote), clone the base branch instead and create the
-    #     feature branch locally so the agent can push it.
+    #   1. If a feature branch is set, try cloning it directly (it may already exist from a prior run).
+    #   2. If that fails (branch not yet in remote), clone the configured base branch.
+    #   3. If the base branch is not found either (e.g. repo uses "master" but IssuePit is configured
+    #      with "main"), fall back to a bare clone so git picks up the remote's actual default branch.
+    #      This handles both branch-name mismatches and completely empty repositories.
     if [[ -n "${FEATURE_BRANCH}" ]]; then
         echo "[entrypoint] Cloning ${ISSUEPIT_GIT_REMOTE_URL} (feature branch: ${FEATURE_BRANCH}) into ${WORKSPACE}"
         if ! git clone --depth=1 --branch "${FEATURE_BRANCH}" "${CLONE_URL}" "${WORKSPACE}" 2>/dev/null; then
             echo "[entrypoint] Feature branch '${FEATURE_BRANCH}' not found in remote; cloning base branch '${BASE_BRANCH}' and creating it locally"
-            git clone --depth=1 --branch "${BASE_BRANCH}" "${CLONE_URL}" "${WORKSPACE}"
+            if ! git clone --depth=1 --branch "${BASE_BRANCH}" "${CLONE_URL}" "${WORKSPACE}" 2>/dev/null; then
+                echo "[entrypoint] Base branch '${BASE_BRANCH}' not found in remote; falling back to default branch"
+                git clone --depth=1 "${CLONE_URL}" "${WORKSPACE}"
+            fi
         fi
     else
         echo "[entrypoint] Cloning ${ISSUEPIT_GIT_REMOTE_URL} (branch: ${BASE_BRANCH}) into ${WORKSPACE}"
-        git clone --depth=1 --branch "${BASE_BRANCH}" "${CLONE_URL}" "${WORKSPACE}"
+        if ! git clone --depth=1 --branch "${BASE_BRANCH}" "${CLONE_URL}" "${WORKSPACE}" 2>/dev/null; then
+            echo "[entrypoint] Base branch '${BASE_BRANCH}' not found in remote; falling back to default branch"
+            git clone --depth=1 "${CLONE_URL}" "${WORKSPACE}"
+        fi
     fi
     echo "[entrypoint] Clone complete"
 fi

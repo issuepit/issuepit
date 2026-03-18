@@ -148,6 +148,30 @@ public class DockerAgentRuntimeTests
             "Ensure the file uses LF-only line endings (add *.sh text eol=lf to .gitattributes).");
     }
 
+    /// <summary>
+    /// Verifies that entrypoint.sh falls back to a bare <c>git clone</c> (no <c>--branch</c>)
+    /// when the configured base branch does not exist in the remote.
+    /// Without this fallback the script exits via <c>set -e</c> when the base-branch clone fails
+    /// (e.g. the repo uses "master" but IssuePit is configured with "main"), killing the container
+    /// before the agent can run and causing all subsequent <c>docker exec</c> calls to get SIGKILL.
+    /// </summary>
+    [Fact]
+    public void EntrypointSh_CloneFallback_HandlesBaseBranchNotFound()
+    {
+        var content = ReadEntrypoint();
+
+        // The fallback clone must not specify --branch so git resolves the remote's
+        // actual default branch regardless of what DefaultBranch is set to in IssuePit.
+        Assert.Contains("git clone --depth=1 \"${CLONE_URL}\" \"${WORKSPACE}\"", content,
+            StringComparison.Ordinal);
+
+        // The fallback must be guarded by a failed base-branch clone (i.e. inside an
+        // `if ! git clone --depth=1 --branch ...` block) to avoid overriding a
+        // successful branch-specific clone.
+        Assert.Contains("if ! git clone --depth=1 --branch \"${BASE_BRANCH}\"", content,
+            StringComparison.Ordinal);
+    }
+
     private static string ReadEntrypoint()
     {
         var assembly = Assembly.GetAssembly(typeof(DockerAgentRuntime))
