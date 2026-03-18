@@ -590,10 +590,11 @@ public class AgentHttpServerTests(AspireFixture fixture)
         // and via the externally-reachable URL. Allow up to 60 s (image is pre-pulled; server
         // starts in ~20 s under normal conditions).
         //
-        // When "server is ready" is detected we cancel the session immediately and do the health
-        // check in the same polling iteration. Cancelling interrupts the execution client's
-        // WaitForCompletionAsync before it can detect an opencode error (e.g. no LLM keys) and
-        // stop the container, giving the health check the maximum possible window.
+        // When "server is ready" is detected the health check runs BEFORE cancellation so the
+        // container is guaranteed alive. All exceptions are caught (including
+        // OperationCanceledException from the 5s HTTP timeout) to ensure the break is always
+        // reached and the while loop does not continue spinning. After the health check the
+        // session is cancelled so the execution client does not interfere with test teardown.
         string? serverInternalUrl = null;
         var healthCheckPassed = false;
         string? lastHealthError = null;
@@ -625,14 +626,12 @@ public class AgentHttpServerTests(AspireFixture fixture)
 
                 if (logLines.Any(l => l.Contains("[INFO] opencode HTTP server is ready")) && serverInternalUrl is not null)
                 {
-                    // Cancel the session immediately to stop WaitForCompletionAsync from
-                    // detecting the opencode error (no LLM keys) and stopping the container.
-                    // Cancellation interrupts the 3-second poll delay, keeping the container
-                    // alive while IssueWorker processes the cancellation.
-                    await client.PostAsync($"/api/agent-sessions/{sessionId}/cancel", null);
-
-                    // Attempt the health check immediately. Retry briefly in case the container
-                    // is still in the process of being stopped despite the cancel.
+                    // Do the health check BEFORE cancellation: the container is guaranteed to be
+                    // alive at this point (the execution client just confirmed readiness). Retrying
+                    // up to 10 times gives robustness against transient delays.
+                    // We catch all exceptions (including OperationCanceledException from the
+                    // HttpClient timeout) so that every attempt is recorded and the break below
+                    // is always reached regardless of the exception type.
                     for (var attempt = 0; attempt < 10 && !healthCheckPassed; attempt++)
                     {
                         try
@@ -641,12 +640,18 @@ public class AgentHttpServerTests(AspireFixture fixture)
                             var healthResp = await healthHttp.GetAsync($"{serverInternalUrl}/global/health");
                             if (healthResp.IsSuccessStatusCode)
                                 healthCheckPassed = true;
+                            else
+                                lastHealthError = $"HTTP {(int)healthResp.StatusCode}";
                         }
-                        catch (HttpRequestException ex) { lastHealthError = ex.Message; }
+                        catch (Exception ex) { lastHealthError = ex.Message; }
 
                         if (!healthCheckPassed)
                             await Task.Delay(TimeSpan.FromMilliseconds(500));
                     }
+
+                    // Cancel the session after the health check so WaitForCompletionAsync does not
+                    // stop the container before we finish (cancellation is processed asynchronously).
+                    await client.PostAsync($"/api/agent-sessions/{sessionId}/cancel", null);
                     break;
                 }
 
