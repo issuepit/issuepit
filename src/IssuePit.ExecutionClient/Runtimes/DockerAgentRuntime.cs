@@ -278,8 +278,7 @@ public class DockerAgentRuntime(
         // Injecting entrypoint.sh from the embedded resource ensures the container always uses
         // the version that shipped with this execution client binary, keeping them in sync even
         // when the Docker image was built with an older entrypoint.
-        var container = await dockerClient.Containers.CreateContainerAsync(
-            createParams, cancellationToken);
+        var container = await CreateAgentContainerAsync(createParams, containerName, onLogLine, cancellationToken);
 
         try
         {
@@ -1178,6 +1177,52 @@ public class DockerAgentRuntime(
 
         var builder = new UriBuilder(uri) { Host = "host.docker.internal" };
         return builder.Uri.ToString().TrimEnd('/');
+    }
+
+    /// <summary>
+    /// Creates an agent container, handling Docker name-conflict (409) errors gracefully.
+    ///
+    /// A conflict can occur when a previous session attempt with the same session ID created a
+    /// container that was never cleaned up (e.g. because the execution client crashed). Docker
+    /// returns HTTP 409 "Conflict" when a container with the same name already exists.
+    /// In that case the orphaned container is force-removed and the creation is retried once.
+    /// </summary>
+    private async Task<CreateContainerResponse> CreateAgentContainerAsync(
+        CreateContainerParameters createParams,
+        string containerName,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await dockerClient.Containers.CreateContainerAsync(createParams, cancellationToken);
+        }
+        catch (DockerApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
+        {
+            // An orphaned container from a previous (crashed) session attempt has the same name.
+            // Force-remove it and retry once. The Docker API accepts the container name as the ID
+            // parameter, so no extra lookup is needed.
+            await onLogLine(
+                $"[WARN] Container name '{containerName}' already in use (orphaned from a previous session); removing and retrying…",
+                LogStream.Stderr);
+            logger.LogWarning(
+                "Container name conflict for '{ContainerName}': force-removing orphaned container and retrying creation",
+                containerName);
+            try
+            {
+                await dockerClient.Containers.RemoveContainerAsync(
+                    containerName,
+                    new ContainerRemoveParameters { Force = true },
+                    CancellationToken.None);
+            }
+            catch (Exception removeEx)
+            {
+                logger.LogWarning(removeEx,
+                    "Failed to remove orphaned container '{ContainerName}' during conflict handling; retrying create anyway",
+                    containerName);
+            }
+            return await dockerClient.Containers.CreateContainerAsync(createParams, cancellationToken);
+        }
     }
 
     /// <summary>Best-effort stop + remove of a container. Used for cleanup on failure paths.</summary>

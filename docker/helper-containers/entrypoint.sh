@@ -152,13 +152,18 @@ if [[ -d "${WORKSPACE}" ]]; then
 
     if [[ -f "package.json" ]]; then
         echo "[entrypoint] Running npm install"
-        npm install --prefer-offline
+        # Non-fatal: an OOM-killed or otherwise failing npm install (e.g. exit 137) must not
+        # propagate through set -euo pipefail and kill the container. The agent can still start
+        # and install packages itself if needed.
+        npm install --prefer-offline || echo "[entrypoint] WARNING: npm install failed (exit code $?); continuing without pre-installed npm packages" >&2
     fi
 
     # Restore .NET dependencies
     if compgen -G "*.sln" > /dev/null || compgen -G "**/*.csproj" > /dev/null || find . -maxdepth 3 -name "*.csproj" -quit 2>/dev/null | grep -q .; then
         echo "[entrypoint] Running dotnet restore"
-        dotnet restore
+        # Non-fatal: same rationale as npm install above — a failing dotnet restore must not
+        # kill the container via set -euo pipefail.
+        dotnet restore || echo "[entrypoint] WARNING: dotnet restore failed (exit code $?); continuing without pre-restored .NET packages" >&2
     fi
 fi
 

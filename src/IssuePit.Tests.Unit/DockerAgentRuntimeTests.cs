@@ -169,6 +169,51 @@ public class DockerAgentRuntimeTests
         Assert.Contains("Update GitRepository.DefaultBranch", content, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Verifies that <c>npm install</c> in entrypoint.sh is non-fatal.
+    /// An OOM-killed or otherwise failing <c>npm install</c> (exit code 137) must not
+    /// propagate through <c>set -euo pipefail</c> and kill the container.
+    /// </summary>
+    [Fact]
+    public void EntrypointSh_NpmInstall_IsNonFatal()
+    {
+        var content = ReadEntrypoint();
+
+        // Only match lines that actually invoke npm install (not echo lines that mention it).
+        var npmLines = content.Split('\n')
+            .Where(l => System.Text.RegularExpressions.Regex.IsMatch(l.TrimStart(), @"^npm\s+install"))
+            .ToList();
+        Assert.True(npmLines.Count > 0, "entrypoint.sh must contain a 'npm install' invocation line.");
+
+        foreach (var line in npmLines)
+            Assert.True(line.Contains("||"),
+                $"npm install in entrypoint.sh must be non-fatal (use '||' to handle failures). " +
+                $"A failed npm install (e.g. OOM-killed with exit 137) must not kill the container " +
+                $"via set -euo pipefail. Offending line: '{line.Trim()}'");
+    }
+
+    /// <summary>
+    /// Verifies that <c>dotnet restore</c> in entrypoint.sh is non-fatal.
+    /// An OOM-killed or otherwise failing <c>dotnet restore</c> must not kill the container.
+    /// </summary>
+    [Fact]
+    public void EntrypointSh_DotnetRestore_IsNonFatal()
+    {
+        var content = ReadEntrypoint();
+
+        // Only match lines that actually invoke dotnet restore (not echo/comment lines).
+        var restoreLines = content.Split('\n')
+            .Where(l => System.Text.RegularExpressions.Regex.IsMatch(l.TrimStart(), @"^dotnet\s+restore"))
+            .ToList();
+        Assert.True(restoreLines.Count > 0, "entrypoint.sh must contain a 'dotnet restore' invocation line.");
+
+        foreach (var line in restoreLines)
+            Assert.True(line.Contains("||"),
+                $"dotnet restore in entrypoint.sh must be non-fatal (use '||' to handle failures). " +
+                $"A failed dotnet restore (e.g. OOM-killed with exit 137) must not kill the container " +
+                $"via set -euo pipefail. Offending line: '{line.Trim()}'");
+    }
+
     private static string ReadEntrypoint()
     {
         var assembly = Assembly.GetAssembly(typeof(DockerAgentRuntime))
