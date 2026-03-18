@@ -1,0 +1,20 @@
+name: CI Fail
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run build
+        run: |
+          echo "Starting build process..."
+          echo "Compiling sources..."
+      - name: Run tests
+        run: |
+          echo "Running tests..."
+          echo "Error: test assertion failed - expected 42 but got 0"
+          echo "FAIL: TestSuite.RunTests (1 failure)"
+          exit 1

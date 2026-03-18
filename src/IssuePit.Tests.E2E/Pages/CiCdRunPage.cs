@@ -25,8 +25,11 @@ public class CiCdRunPage(IPage page)
     public async Task ClickJobsTabAsync()
     {
         await page.ClickAsync("button:has-text('Jobs')");
-        // Wait for jobs content to be visible
-        await page.WaitForSelectorAsync("[data-testid='jobs-tab-content'], text=No job data available, text=log line", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        // The "Slim" toggle button is only rendered in the Jobs tab controls bar; waiting for it
+        // is a deterministic indicator that the Jobs tab is active and the content has been rendered.
+        await page.WaitForSelectorAsync(
+            "button:has-text('Slim')",
+            new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
     }
 
     /// <summary>
@@ -140,4 +143,69 @@ public class CiCdRunPage(IPage page)
         var rows = await page.QuerySelectorAllAsync(".space-y-2 > div");
         return rows.Count;
     }
+
+    // ── Create Issue from failed job ───────────────────────────────────────────
+
+    /// <summary>
+    /// Waits for at least one "Create Issue" button to appear in the jobs tab
+    /// (shown on jobs that have both <c>hasError = true</c> and <c>isComplete = true</c>).
+    /// </summary>
+    public async Task WaitForCreateIssueButtonAsync() =>
+        await page.WaitForSelectorAsync(
+            "button:has-text('Create Issue')",
+            new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
+
+    /// <summary>
+    /// Clicks the first visible "Create Issue" button in the jobs tab and waits for
+    /// the create-issue modal to open.
+    /// </summary>
+    public async Task ClickCreateIssueOnFailedJobAsync()
+    {
+        await page.ClickAsync("button:has-text('Create Issue')");
+        await WaitForCreateIssueModalAsync();
+    }
+
+    /// <summary>Waits for the "Create Issue" modal to become visible.</summary>
+    public async Task WaitForCreateIssueModalAsync() =>
+        await page.WaitForSelectorAsync(
+            "text=Create Issue from",
+            new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+
+    /// <summary>
+    /// Returns the log preview text currently shown in the create-issue modal.
+    /// Returns an empty string when the preview panel shows "No log lines for this scope".
+    /// </summary>
+    public async Task<string> GetCreateIssueLogPreviewTextAsync()
+    {
+        // The preview panel is inside the modal with max-h-[200px] — use innerText of the panel's container.
+        var previewText = await page.EvaluateAsync<string>(
+            @"(() => {
+                // Look for the fenced preview panel inside the Create Issue modal (bg-gray-900 border border-gray-700).
+                const modal = document.querySelector('.fixed.inset-0.z-50 .bg-gray-900');
+                if (!modal) return '';
+                // The preview area is a bg-gray-950 div with font-mono text
+                const preview = modal.querySelector('.bg-gray-950.rounded-lg');
+                return preview?.innerText ?? '';
+            })()");
+        return previewText.Trim();
+    }
+
+    /// <summary>
+    /// Submits the create-issue form in the modal and waits for the modal to close.
+    /// </summary>
+    public async Task SubmitCreateIssueAsync()
+    {
+        await page.ClickAsync("[data-testid='create-issue-submit']");
+        // Wait for modal to close
+        await page.WaitForSelectorAsync(
+            "text=Create Issue from",
+            new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation, State = WaitForSelectorState.Hidden });
+    }
+
+    /// <summary>
+    /// Returns true when the current URL looks like an issue detail page
+    /// (<c>/projects/{id}/issues/{number}</c>).
+    /// </summary>
+    public bool IsOnIssuePage() =>
+        page.Url.Contains("/issues/");
 }

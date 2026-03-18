@@ -868,8 +868,12 @@
       <div v-if="showCreateIssueModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @mousedown.self="showCreateIssueModal = false">
         <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-xl p-6 w-full max-w-lg">
           <h3 class="text-base font-semibold text-white mb-1">Create Issue from {{ createIssueJobId ? 'Failed Job' : 'Run Logs' }}</h3>
-          <p v-if="createIssueJobId" class="text-xs text-gray-500 mb-4">Job: <span class="font-mono text-gray-300">{{ createIssueJobId }}</span></p>
-          <p v-else class="text-xs text-gray-500 mb-4">Run: <span class="font-mono text-gray-300">{{ runId.slice(0, 8) }}</span></p>
+          <div class="flex flex-wrap gap-x-4 text-xs text-gray-500 mb-4">
+            <span v-if="createIssueJobId">Job: <span class="font-mono text-gray-300">{{ createIssueJobId }}</span></span>
+            <span v-else>Run: <span class="font-mono text-gray-300">{{ runId.slice(0, 8) }}</span></span>
+            <span v-if="store.currentRun?.branch">Branch: <span class="font-mono text-gray-300">{{ store.currentRun.branch }}</span></span>
+            <span v-if="store.currentRun?.commitSha">Commit: <span class="font-mono text-gray-300">{{ store.currentRun.commitSha.slice(0, 7) }}</span></span>
+          </div>
 
           <div class="mb-3">
             <label class="block text-xs text-gray-500 mb-1">Title</label>
@@ -903,11 +907,19 @@
             <div v-if="!createIssuePreviewLines.length" class="text-gray-600">No log lines for this scope</div>
           </div>
 
+          <div class="mb-3">
+            <label for="create-issue-verbose" class="flex items-center gap-2 cursor-pointer select-none">
+              <input id="create-issue-verbose" v-model="createIssueVerbose" type="checkbox" class="rounded border-gray-600 bg-gray-800 text-brand-500 focus:ring-brand-500">
+              <span class="text-xs text-gray-400">Include verbose info (act / IssuePit versions from debug log)</span>
+            </label>
+          </div>
+
           <div v-if="createIssueError" class="mb-3 text-xs text-red-400">{{ createIssueError }}</div>
 
           <div class="flex justify-end gap-2">
             <button class="px-4 py-1.5 text-sm text-gray-400 hover:text-gray-200 transition-colors" @click="showCreateIssueModal = false">Cancel</button>
             <button
+              data-testid="create-issue-submit"
               :disabled="creatingIssue || !createIssueTitle.trim()"
               class="px-4 py-1.5 text-sm bg-red-700 hover:bg-red-600 disabled:opacity-50 text-white rounded-md transition-colors"
               @click="submitCreateIssue">
@@ -1857,6 +1869,8 @@ const createIssueTitle = ref('')
 const createIssueLogScope = ref<'full' | 'tail' | 'errors' | 'filter'>('errors')
 /** Regex/keyword pattern used when createIssueLogScope === 'filter'. */
 const createIssueFilterPattern = ref('error|fault|warn|fail|exception')
+/** When true, verbose info (act/IssuePit versions from debug metadata) is appended to the issue body. */
+const createIssueVerbose = ref(false)
 const creatingIssue = ref(false)
 const createIssueError = ref<string | null>(null)
 
@@ -1899,7 +1913,11 @@ function getLogsForJobId(jobId: string): CiCdRunLog[] {
 }
 
 const createIssuePreviewLines = computed(() => {
-  const sourceLogs = createIssueJobId.value ? getLogsForJobId(createIssueJobId.value) : store.currentRunLogs
+  // When a specific job is selected, try to get its logs. If none are found (e.g. the job
+  // never produced log output), fall back to all run logs so the modal is never empty.
+  let sourceLogs = createIssueJobId.value ? getLogsForJobId(createIssueJobId.value) : store.currentRunLogs
+  if (sourceLogs.length === 0 && createIssueJobId.value && store.currentRunLogs.length > 0)
+    sourceLogs = store.currentRunLogs
   if (createIssueLogScope.value === 'errors') return sourceLogs.filter(l => l.stream === 'stderr').map(l => l.line)
   if (createIssueLogScope.value === 'tail') return sourceLogs.slice(-50).map(l => l.line)
   if (createIssueLogScope.value === 'filter') {
@@ -1916,8 +1934,11 @@ function openCreateIssueModal(jobId: string) {
   createIssueTitle.value = jobId
     ? `CI/CD job "${jobId}" failed${workflow}`
     : `CI/CD run failed${workflow}`
-  createIssueLogScope.value = 'errors'
+  // Default to keyword filter (matches error/fail lines in stdout) rather than 'errors' (stderr-only),
+  // because most CI runtimes (e.g. act) write all output including failures to stdout.
+  createIssueLogScope.value = 'filter'
   createIssueFilterPattern.value = 'error|fault|warn|fail|exception'
+  createIssueVerbose.value = false
   createIssueError.value = null
   showCreateIssueModal.value = true
 }
@@ -1934,14 +1955,22 @@ async function submitCreateIssue() {
     const logText = logLines.length
       ? `\n\n**Failed job logs** (scope: ${scopeLabel}):\n\`\`\`\n${logLines.join('\n')}\n\`\`\``
       : ''
+    const branch = store.currentRun?.branch
+    const commit = store.currentRun?.commitSha
     const context = createIssueJobId.value
       ? `CI/CD run **${runId.slice(0, 8)}** failed at job **${createIssueJobId.value}**.`
       : `CI/CD run **${runId.slice(0, 8)}** failed.`
-    const description = `${context}${logText}`
+    const branchLine = branch ? `\n- **Branch:** \`${branch}\`` : ''
+    const commitLine = commit ? `\n- **Commit:** \`${commit.slice(0, 7)}\`` : ''
+    const verboseSection = createIssueVerbose.value && debugMetadata.value.length
+      ? `\n\n**Debug info:**\n${debugMetadata.value.map(entry => `- ${entry.key}: \`${entry.value}\``).join('\n')}`
+      : ''
+    const body = `${context}${branchLine}${commitLine}${logText}${verboseSection}`
 
     const newIssue = await issuesStore.createIssue(projectId, {
       title: createIssueTitle.value.trim(),
-      description,
+      body,
+      gitBranch: branch,
     })
     showCreateIssueModal.value = false
     if (newIssue) {
