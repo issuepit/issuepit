@@ -97,7 +97,7 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            {{ fetching ? 'Fetching…' : 'Fetch' }}
+            {{ fetching ? 'Fetching…' : 'Fetch & Pull' }}
           </button>
           <span v-if="store.repo.lastFetchedAt" class="text-xs text-gray-500">
             Last fetched <DateDisplay :date="store.repo.lastFetchedAt" mode="auto" />
@@ -604,6 +604,13 @@ async function navigateUp() {
 async function doFetch() {
   fetching.value = true
   await store.triggerFetch(id)
+  // Refresh branches, commits and tree so the UI reflects the fetched changes immediately.
+  commitSkip.value = 0
+  await Promise.all([
+    store.fetchBranches(id),
+    store.fetchCommits(id, selectedBranch.value, 0, commitTake),
+    store.fetchTree(id, effectiveRef.value, currentPath.value || undefined),
+  ])
   fetching.value = false
 }
 
