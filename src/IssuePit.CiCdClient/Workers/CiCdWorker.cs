@@ -445,6 +445,9 @@ public class CiCdWorker(
             // Collect and store test results from any .trx files produced during the run.
             await ParseAndStoreTestResultsAsync(run.Id, artifactDir, db, stoppingToken);
 
+            // Collect and store coverage reports from any Cobertura XML files produced during the run.
+            await ParseAndStoreCoverageReportsAsync(run.Id, artifactDir, db, stoppingToken);
+
             // Record artifact metadata before cleanup so the UI can display what was produced.
             await ParseAndStoreArtifactsAsync(run.Id, artifactDir, db, stoppingToken);
 
@@ -669,6 +672,132 @@ public class CiCdWorker(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to collect test results for run {RunId}", runId);
+        }
+    }
+
+    /// <summary>
+    /// Scans <paramref name="artifactDir"/> for Cobertura XML coverage reports, parses each one,
+    /// and persists the results as <see cref="CiCdCoverageReport"/> rows linked to the given run.
+    /// Mirrors the logic of <see cref="ParseAndStoreTestResultsAsync"/> but for coverage files.
+    /// Best-effort: errors are logged but never propagated.
+    /// </summary>
+    private async Task ParseAndStoreCoverageReportsAsync(
+        Guid runId,
+        string artifactDir,
+        IssuePitDbContext db,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (!Directory.Exists(artifactDir)) return;
+
+            var reportCount = 0;
+
+            // 1. Bare Cobertura XML files on disk.
+            var bareCoverageFiles = CoberturaParser.FindCoberturaFiles(artifactDir).ToList();
+            foreach (var file in bareCoverageFiles)
+            {
+                var report = CoberturaParser.Parse(file);
+                if (report is null)
+                {
+                    logger.LogWarning("Failed to parse Cobertura file {File} for run {RunId}", file, runId);
+                    continue;
+                }
+
+                report.CiCdRunId = runId;
+                db.CiCdCoverageReports.Add(report);
+                reportCount++;
+            }
+
+            // 2. Cobertura XML files packed inside .zip archives or extensionless act artifact files.
+            foreach (var runDir in Directory.GetDirectories(artifactDir))
+            {
+                var runDirName = Path.GetFileName(runDir);
+                if (string.IsNullOrEmpty(runDirName) || runDirName.StartsWith('.') || runDirName == "_workflows")
+                    continue;
+
+                foreach (var artifactSubDir in Directory.GetDirectories(runDir))
+                {
+                    var artifactName = Path.GetFileName(artifactSubDir);
+                    if (string.IsNullOrEmpty(artifactName) || artifactName.StartsWith('.'))
+                        continue;
+
+                    foreach (var artifactFile in Directory.EnumerateFiles(artifactSubDir, "*", SearchOption.AllDirectories))
+                    {
+                        var ext = Path.GetExtension(artifactFile);
+
+                        // Already handled by case 1.
+                        if (string.Equals(ext, ".xml", StringComparison.OrdinalIgnoreCase)
+                            && CoberturaParser.LooksLikeCoberturaFile(artifactFile))
+                            continue;
+
+                        // Try to open as a zip archive and look for Cobertura entries inside.
+                        var foundInZip = false;
+                        try
+                        {
+                            using var zip = ZipFile.OpenRead(artifactFile);
+                            foreach (var entry in zip.Entries)
+                            {
+                                if (!CoberturaParser.LooksLikeCoberturaFile(entry.FullName))
+                                    continue;
+
+                                using var stream = entry.Open();
+                                var report = CoberturaParser.Parse(stream, artifactName);
+                                if (report is null)
+                                {
+                                    logger.LogWarning("Failed to parse Cobertura entry {Entry} in {ArtifactFile} for run {RunId}",
+                                        entry.FullName, artifactFile, runId);
+                                    continue;
+                                }
+
+                                report.CiCdRunId = runId;
+                                db.CiCdCoverageReports.Add(report);
+                                reportCount++;
+                                foundInZip = true;
+                            }
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
+                        {
+                            logger.LogDebug("File {ArtifactFile} is not a valid zip for run {RunId} ({Message}); skipping coverage check", artifactFile, runId, ex.Message);
+                        }
+
+                        if (foundInZip) continue;
+
+                        // Only try extensionless files as raw Cobertura XML (act v7 direct upload).
+                        if (!string.IsNullOrEmpty(ext)) continue;
+
+                        try
+                        {
+                            using var stream = File.OpenRead(artifactFile);
+                            var report = CoberturaParser.Parse(stream, artifactName);
+                            if (report is not null)
+                            {
+                                report.CiCdRunId = runId;
+                                db.CiCdCoverageReports.Add(report);
+                                reportCount++;
+                            }
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
+                        {
+                            logger.LogDebug("File {ArtifactFile} is not a valid Cobertura XML for run {RunId} ({Message})", artifactFile, runId, ex.Message);
+                        }
+                    }
+                }
+            }
+
+            if (reportCount == 0)
+            {
+                logger.LogInformation("No Cobertura coverage report(s) found for run {RunId}", runId);
+                return;
+            }
+
+            logger.LogInformation("Parsed {Count} Cobertura coverage report(s) for run {RunId}; storing", reportCount, runId);
+            await db.SaveChangesAsync(cancellationToken);
+            logger.LogInformation("Stored coverage reports for run {RunId}", runId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to collect coverage reports for run {RunId}", runId);
         }
     }
 

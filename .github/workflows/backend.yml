@@ -96,6 +96,8 @@ jobs:
           --filter "Category!=Integration&Category!=E2E"
           --verbosity normal
           --logger "trx;LogFileName=unit-results.trx"
+          --collect "XPlat Code Coverage"
+          --results-directory TestResults/unit
 
       - name: Upload test results
         if: always()
@@ -103,6 +105,13 @@ jobs:
         with:
           name: unit-test-results
           path: '**/*.trx'
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-coverage-report
+          path: TestResults/unit/**/coverage.cobertura.xml
 
   integration-tests:
     name: Integration Tests

@@ -951,6 +951,45 @@ export interface TestRunCompareResult {
   summary: { addedCount: number; removedCount: number; fixedCount: number; regressedCount: number; slowedDownCount: number }
 }
 
+export interface CoverageRunSummary {
+  runId: string
+  commitSha?: string
+  branch?: string
+  startedAt: string
+  endedAt?: string
+  statusName: string
+  lineRate: number
+  branchRate: number
+  linesCovered: number
+  linesValid: number
+  branchesCovered: number
+  branchesValid: number
+  reportCount: number
+  reports?: CoverageReportGroup[]
+}
+
+export interface CoverageReportGroup {
+  name: string
+  lineRate: number
+  branchRate: number
+  linesCovered: number
+  linesValid: number
+  branchesCovered: number
+  branchesValid: number
+}
+
+export interface CoverageDailySummary {
+  date: string
+  lineRate: number
+  branchRate: number
+  linesCovered: number
+  linesValid: number
+  branchesCovered: number
+  branchesValid: number
+  runCount: number
+  reports: CoverageReportGroup[]
+}
+
 export interface WorkflowJobNode {
   id: string
   name: string

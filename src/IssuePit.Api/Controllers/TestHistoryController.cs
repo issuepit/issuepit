@@ -431,16 +431,202 @@ public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : Co
         db.CiCdTestSuites.Add(suite);
         await db.SaveChangesAsync();
 
-        return Ok(new
-        {
-            runId = syntheticRun.Id,
-            suiteId = suite.Id,
+        return Ok(new ImportTrxResponse(
+            syntheticRun.Id,
+            suite.Id,
             suite.TotalTests,
             suite.PassedTests,
             suite.FailedTests,
             suite.SkippedTests,
-            suite.DurationMs,
-        });
+            suite.DurationMs));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Coverage reports
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns per-run coverage summary rows for the given project, newest first.
+    /// Each row aggregates all coverage reports in that run.
+    /// Optionally filtered by branch.
+    /// </summary>
+    [HttpGet("coverage/runs")]
+    public async Task<IActionResult> GetCoverageRunSummaries(
+        Guid projectId,
+        [FromQuery] string? branch = null,
+        [FromQuery] int take = 50)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        if (!await ProjectExistsInTenantAsync(projectId)) return NotFound();
+
+        var query = db.CiCdCoverageReports
+            .Where(r => r.CiCdRun.ProjectId == projectId
+                     && r.CiCdRun.Project.Organization.TenantId == ctx.CurrentTenant.Id);
+
+        if (!string.IsNullOrWhiteSpace(branch))
+            query = query.Where(r => r.CiCdRun.Branch == branch);
+
+        var raw = await query
+            .Select(r => new
+            {
+                r.CiCdRunId,
+                r.CiCdRun.CommitSha,
+                r.CiCdRun.Branch,
+                r.CiCdRun.StartedAt,
+                r.CiCdRun.EndedAt,
+                StatusName = r.CiCdRun.Status.ToString(),
+                r.ArtifactName,
+                r.LineRate,
+                r.BranchRate,
+                r.LinesCovered,
+                r.LinesValid,
+                r.BranchesCovered,
+                r.BranchesValid,
+            })
+            .ToListAsync();
+
+        var rows = raw
+            .GroupBy(r => r.CiCdRunId)
+            .Select(g =>
+            {
+                // Aggregate line coverage: weighted average by LinesValid.
+                var totalLinesValid = g.Sum(r => r.LinesValid);
+                var totalLinesCovered = g.Sum(r => r.LinesCovered);
+                var totalBranchesValid = g.Sum(r => r.BranchesValid);
+                var totalBranchesCovered = g.Sum(r => r.BranchesCovered);
+
+                // Prefer computed rates from absolute counts; fall back to average of rates.
+                var lineRate = totalLinesValid > 0
+                    ? (double)totalLinesCovered / totalLinesValid
+                    : g.Average(r => r.LineRate);
+                var branchRate = totalBranchesValid > 0
+                    ? (double)totalBranchesCovered / totalBranchesValid
+                    : g.Average(r => r.BranchRate);
+
+                return new
+                {
+                    RunId = g.Key,
+                    g.First().CommitSha,
+                    g.First().Branch,
+                    g.First().StartedAt,
+                    g.First().EndedAt,
+                    g.First().StatusName,
+                    LineRate = lineRate,
+                    BranchRate = branchRate,
+                    LinesCovered = totalLinesCovered,
+                    LinesValid = totalLinesValid,
+                    BranchesCovered = totalBranchesCovered,
+                    BranchesValid = totalBranchesValid,
+                    ReportCount = g.Count(),
+                    Reports = g
+                        .GroupBy(r => r.ArtifactName)
+                        .Select(ag => new
+                        {
+                            Name = ag.Key,
+                            LineRate = ag.Sum(r => r.LinesValid) > 0
+                                ? (double)ag.Sum(r => r.LinesCovered) / ag.Sum(r => r.LinesValid)
+                                : ag.Average(r => r.LineRate),
+                            BranchRate = ag.Sum(r => r.BranchesValid) > 0
+                                ? (double)ag.Sum(r => r.BranchesCovered) / ag.Sum(r => r.BranchesValid)
+                                : ag.Average(r => r.BranchRate),
+                            LinesCovered = ag.Sum(r => r.LinesCovered),
+                            LinesValid = ag.Sum(r => r.LinesValid),
+                            BranchesCovered = ag.Sum(r => r.BranchesCovered),
+                            BranchesValid = ag.Sum(r => r.BranchesValid),
+                        })
+                        .OrderBy(ag => ag.Name)
+                        .ToList(),
+                };
+            })
+            .OrderByDescending(r => r.StartedAt)
+            .Take(Math.Min(take, 200))
+            .ToList();
+
+        return Ok(rows);
+    }
+
+    /// <summary>
+    /// Returns per-day aggregated coverage data for the given project, ordered by date ascending.
+    /// Optionally filtered by branch and limited to the most recent <paramref name="days"/> calendar days.
+    /// </summary>
+    [HttpGet("coverage/daily-summary")]
+    public async Task<IActionResult> GetCoverageDailySummary(
+        Guid projectId,
+        [FromQuery] string? branch = null,
+        [FromQuery] int days = 30)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        if (!await ProjectExistsInTenantAsync(projectId)) return NotFound();
+
+        const int MaxDailySummaryDays = 90;
+        days = Math.Clamp(days, 1, MaxDailySummaryDays);
+        var since = DateTime.UtcNow.Date.AddDays(-days + 1);
+
+        var query = db.CiCdCoverageReports
+            .Where(r => r.CiCdRun.ProjectId == projectId
+                     && r.CiCdRun.Project.Organization.TenantId == ctx.CurrentTenant.Id
+                     && r.CiCdRun.StartedAt >= since);
+
+        if (!string.IsNullOrWhiteSpace(branch))
+            query = query.Where(r => r.CiCdRun.Branch == branch);
+
+        var raw = await query
+            .Select(r => new
+            {
+                Date = r.CiCdRun.StartedAt.Date,
+                r.ArtifactName,
+                r.LineRate,
+                r.BranchRate,
+                r.LinesCovered,
+                r.LinesValid,
+                r.BranchesCovered,
+                r.BranchesValid,
+            })
+            .ToListAsync();
+
+        var result = raw
+            .GroupBy(r => r.Date)
+            .Select(g =>
+            {
+                var totalLinesValid = g.Sum(r => r.LinesValid);
+                var totalLinesCovered = g.Sum(r => r.LinesCovered);
+                var totalBranchesValid = g.Sum(r => r.BranchesValid);
+                var totalBranchesCovered = g.Sum(r => r.BranchesCovered);
+
+                return new
+                {
+                    Date = g.Key.ToString("yyyy-MM-dd"),
+                    LineRate = totalLinesValid > 0
+                        ? (double)totalLinesCovered / totalLinesValid
+                        : g.Average(r => r.LineRate),
+                    BranchRate = totalBranchesValid > 0
+                        ? (double)totalBranchesCovered / totalBranchesValid
+                        : g.Average(r => r.BranchRate),
+                    LinesCovered = totalLinesCovered,
+                    LinesValid = totalLinesValid,
+                    BranchesCovered = totalBranchesCovered,
+                    BranchesValid = totalBranchesValid,
+                    RunCount = g.Select(r => r.Date).Distinct().Count(),
+                    Reports = g
+                        .GroupBy(r => r.ArtifactName)
+                        .Select(ag => new
+                        {
+                            Name = ag.Key,
+                            LineRate = ag.Sum(r => r.LinesValid) > 0
+                                ? (double)ag.Sum(r => r.LinesCovered) / ag.Sum(r => r.LinesValid)
+                                : ag.Average(r => r.LineRate),
+                            BranchRate = ag.Sum(r => r.BranchesValid) > 0
+                                ? (double)ag.Sum(r => r.BranchesCovered) / ag.Sum(r => r.BranchesValid)
+                                : ag.Average(r => r.BranchRate),
+                        })
+                        .OrderBy(ag => ag.Name)
+                        .ToList(),
+                };
+            })
+            .OrderBy(r => r.Date)
+            .ToList();
+
+        return Ok(result);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -451,3 +637,16 @@ public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : Co
         await db.Projects.AnyAsync(p => p.Id == projectId
                                      && p.Organization.TenantId == ctx.CurrentTenant!.Id);
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Response records
+// ──────────────────────────────────────────────────────────────────────────
+
+public record ImportTrxResponse(
+    Guid RunId,
+    Guid SuiteId,
+    int TotalTests,
+    int PassedTests,
+    int FailedTests,
+    int SkippedTests,
+    double DurationMs);
