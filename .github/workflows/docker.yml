@@ -23,6 +23,7 @@ jobs:
   build:
     name: Build & Push
     runs-on: ubuntu-latest
+    if: vars.ISSUEPIT_RUN != 'true'
     permissions:
       contents: read
       packages: write
