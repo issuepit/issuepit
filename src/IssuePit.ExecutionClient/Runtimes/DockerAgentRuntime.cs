@@ -841,8 +841,10 @@ public class DockerAgentRuntime(
     }
 
     /// <summary>
-    /// Executes <paramref name="cmd"/> inside a running container and returns the combined output
-    /// as a trimmed string. Output is not forwarded to any log sink.
+    /// Executes <paramref name="cmd"/> inside a running container and returns the stdout output
+    /// as a trimmed string. Stderr is intentionally excluded — git and other tools emit error
+    /// messages on stderr that would otherwise pollute captured values (e.g. SHA, branch name).
+    /// Output is not forwarded to any log sink.
     /// </summary>
     private async Task<string> ExecReadOutputAsync(
         string containerId,
@@ -851,7 +853,11 @@ public class DockerAgentRuntime(
     {
         var sb = new StringBuilder();
         await ExecCommandAsync(containerId, cmd,
-            (line, _) => { sb.AppendLine(line); return Task.CompletedTask; },
+            (line, stream) =>
+            {
+                if (stream == LogStream.Stdout) sb.AppendLine(line);
+                return Task.CompletedTask;
+            },
             cancellationToken);
         return sb.ToString().Trim();
     }
