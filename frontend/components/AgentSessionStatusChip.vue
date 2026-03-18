@@ -12,11 +12,16 @@
         v-if="tooltipVisible"
         ref="tooltipEl"
         :style="tooltipStyle"
-        class="fixed z-50 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl shadow-black/60 p-3 min-w-[220px] max-w-xs"
+        class="fixed z-50 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl shadow-black/60 p-3 min-w-[240px] max-w-xs"
         @mouseenter="onTooltipEnter"
         @mouseleave="onTooltipLeave">
         <p class="text-xs text-gray-500 mb-2 font-medium uppercase tracking-wide">Agent Session</p>
-        <div class="flex items-start gap-2">
+        <!-- Session info - clickable if projectId available -->
+        <component
+          :is="session.projectId ? 'button' : 'div'"
+          class="flex items-start gap-2 w-full text-left rounded-lg px-2 py-1.5 transition-colors"
+          :class="session.projectId ? 'hover:bg-gray-800 cursor-pointer' : ''"
+          @click.stop="session.projectId && navigateTo(`/projects/${session.projectId}/runs/agent-sessions/${session.id}`)">
           <span :class="dotClass" class="w-2 h-2 rounded-full shrink-0 mt-1" />
           <div class="flex-1 min-w-0">
             <p v-if="session.issueTitle" class="text-xs text-gray-200 font-medium truncate">{{ session.issueTitle }}</p>
@@ -28,16 +33,34 @@
             <span :class="chipClass" class="text-xs px-1.5 py-0.5 rounded-full font-medium">{{ session.statusName }}</span>
             <span class="text-xs text-gray-600">{{ relativeTime(session.startedAt) }}</span>
           </div>
-        </div>
+        </component>
+        <!-- Linked CI/CD runs -->
+        <template v-if="session.cicdRuns && session.cicdRuns.length">
+          <p class="text-xs text-gray-600 mt-2 mb-1 font-medium uppercase tracking-wide">CI/CD Runs</p>
+          <div class="space-y-1">
+            <button
+              v-for="run in session.cicdRuns"
+              :key="run.id"
+              class="flex items-center gap-2 w-full text-left rounded-lg px-2 py-1 transition-colors hover:bg-gray-800 cursor-pointer"
+              @click.stop="navigateTo(`/projects/${run.projectId}/runs/cicd/${run.id}`)">
+              <span :class="runDotClass(run.status)" class="w-1.5 h-1.5 rounded-full shrink-0" />
+              <div class="flex-1 min-w-0">
+                <p class="text-xs text-gray-300 truncate">{{ run.workflow || run.branch || 'Run' }}</p>
+              </div>
+              <span :class="runChipClass(run.status)" class="text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0">{{ run.statusName }}</span>
+            </button>
+          </div>
+        </template>
       </div>
     </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { AgentSessionStatus } from '~/types'
+import { AgentSessionStatus, CiCdRunStatus, type CiCdRun } from '~/types'
 
 interface SessionProp {
+  id: string
   status: AgentSessionStatus
   statusName: string
   agentName: string
@@ -46,6 +69,8 @@ interface SessionProp {
   gitBranch?: string
   commitSha?: string
   issueTitle?: string
+  projectId?: string
+  cicdRuns?: CiCdRun[]
 }
 
 const props = defineProps<{
@@ -72,6 +97,30 @@ const dotClass = computed(() => {
   }
 })
 
+function runDotClass(status: CiCdRunStatus) {
+  switch (status) {
+    case CiCdRunStatus.Succeeded: return 'bg-green-400'
+    case CiCdRunStatus.Running: return 'bg-blue-400 animate-pulse'
+    case CiCdRunStatus.Failed: return 'bg-red-400'
+    case CiCdRunStatus.Cancelled: return 'bg-gray-500'
+    case CiCdRunStatus.WaitingForApproval: return 'bg-purple-400'
+    case CiCdRunStatus.SucceededWithWarnings: return 'bg-yellow-400'
+    default: return 'bg-gray-500'
+  }
+}
+
+function runChipClass(status: CiCdRunStatus) {
+  switch (status) {
+    case CiCdRunStatus.Succeeded: return 'bg-green-900/30 text-green-400'
+    case CiCdRunStatus.Running: return 'bg-blue-900/30 text-blue-400'
+    case CiCdRunStatus.Failed: return 'bg-red-900/30 text-red-400'
+    case CiCdRunStatus.Cancelled: return 'bg-gray-800 text-gray-400'
+    case CiCdRunStatus.WaitingForApproval: return 'bg-purple-900/30 text-purple-400'
+    case CiCdRunStatus.SucceededWithWarnings: return 'bg-yellow-900/30 text-yellow-400'
+    default: return 'bg-gray-800 text-gray-400'
+  }
+}
+
 // ── Tooltip positioning & visibility ─────────────────────────────────────────
 
 const tooltipVisible = ref(false)
@@ -79,10 +128,19 @@ const tooltipEl = ref<HTMLElement | null>(null)
 const tooltipStyle = ref<Record<string, string>>({})
 let hideTimer: ReturnType<typeof setTimeout> | null = null
 
-const TOOLTIP_HEIGHT = 110
+const TOOLTIP_BASE_HEIGHT = 110
+const CICD_RUN_ITEM_HEIGHT = 32
+
+function tooltipHeight() {
+  const runsH = (props.session.cicdRuns?.length ?? 0) * CICD_RUN_ITEM_HEIGHT
+  return TOOLTIP_BASE_HEIGHT + (runsH > 0 ? runsH + 24 : 0)
+}
 
 function onChipEnter(e: MouseEvent) {
-  if (hideTimer) { clearTimeout(hideTimer); hideTimer = null }
+  if (hideTimer) {
+    clearTimeout(hideTimer)
+    hideTimer = null
+  }
   positionTooltip(e)
   tooltipVisible.value = true
 }
@@ -92,7 +150,10 @@ function onChipLeave() {
 }
 
 function onTooltipEnter() {
-  if (hideTimer) { clearTimeout(hideTimer); hideTimer = null }
+  if (hideTimer) {
+    clearTimeout(hideTimer)
+    hideTimer = null
+  }
 }
 
 function onTooltipLeave() {
@@ -109,6 +170,7 @@ function positionTooltip(e: MouseEvent) {
   const vpW = window.innerWidth
   const vpH = window.innerHeight
   const tooltipW = 260
+  const ttH = tooltipHeight()
 
   let left = rect.left
   let top = rect.bottom + 6
@@ -118,7 +180,7 @@ function positionTooltip(e: MouseEvent) {
   if (left < 8) left = 8
 
   // Flip above if it would overflow bottom
-  if (top + TOOLTIP_HEIGHT > vpH - 8) top = rect.top - TOOLTIP_HEIGHT - 6
+  if (top + ttH > vpH - 8) top = rect.top - ttH - 6
 
   tooltipStyle.value = {
     left: `${left}px`,
