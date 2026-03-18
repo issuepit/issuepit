@@ -39,6 +39,10 @@ internal static class AgentEnvironmentBuilder
         if (issue.GitBranch is not null)
             env.Add($"ISSUEPIT_GIT_BRANCH={issue.GitBranch}");
 
+        // Pass the push policy so the in-container git wrapper and opencode plugin can
+        // allow or block agent-initiated git push commands accordingly.
+        env.Add($"ISSUEPIT_PUSH_POLICY={(int)session.PushPolicy}");
+
         // Inform the entrypoint whether internet access is disabled (used for DNS logging display).
         env.Add($"ISSUEPIT_DISABLE_INTERNET={agent.DisableInternet.ToString().ToLowerInvariant()}");
 
