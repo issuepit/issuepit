@@ -52,4 +52,45 @@ public class ProjectDashboardPage(IPage page)
 
     /// <summary>Saves the draft layout by clicking the Save button in the toolbar.</summary>
     public ILocator SaveButton => page.Locator("button:has-text('Save')").First;
+
+    // ── Add-card buttons ──────────────────────────────────────────────────────
+
+    /// <summary>The "+ Test History" add-card button in the draft-mode toolbar.</summary>
+    public ILocator AddTestHistoryCardButton => page.Locator("button:has-text('+ Test History')").First;
+
+    /// <summary>The "+ Kanban Board" add-card button in the draft-mode toolbar.</summary>
+    public ILocator AddKanbanCardButton => page.Locator("button:has-text('+ Kanban Board')").First;
+
+    /// <summary>The "Row break" add-card button in the draft-mode toolbar.</summary>
+    public ILocator AddRowBreakButton => page.Locator("button:has-text('Row break')").First;
+
+    // ── Section bar helpers ───────────────────────────────────────────────────
+
+    /// <summary>Returns the section bar (DashboardSectionBar) for the given section label text.</summary>
+    public ILocator SectionBar(string label) =>
+        page.Locator($"[data-no-reorder] span.font-semibold:has-text('{label}')").Locator("../..");
+
+    /// <summary>The "Export" button in the draft-mode toolbar.</summary>
+    public ILocator ExportJsonButton => page.Locator("button:has-text('Export')").First;
+
+    // ── Tab group helpers ─────────────────────────────────────────────────────
+
+    /// <summary>Returns the "Tab with ↓" button for a given section label (in draft mode).</summary>
+    public ILocator TabWithNextButton(string label) =>
+        SectionBar(label).Locator("button:has-text('Tab with')");
+
+    /// <summary>Returns the tab nav button for a given section label inside a tab group.</summary>
+    public ILocator TabNavButton(string label) =>
+        page.Locator($"div[class*='rounded-t-xl'] button:has-text('{label}')");
+
+    /// <summary>Returns the "Split tabs" button in the tab group bar.</summary>
+    public ILocator SplitTabsButton => page.Locator("button:has-text('Split tabs')");
+
+    // ── Drag helpers ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns the draggable card container for the given section label text.
+    /// </summary>
+    public ILocator DragCard(string label) =>
+        page.Locator($"[data-drag-card] span.font-semibold:has-text('{label}')").Locator("ancestor::*[data-drag-card]");
 }

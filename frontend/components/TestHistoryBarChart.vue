@@ -102,10 +102,10 @@
         <template v-if="colorMode === 'groups'">
           <span v-for="(g, gi) in legendGroups" :key="g.name" class="flex items-center gap-1.5 text-xs text-gray-400">
             <span class="w-8 h-2 rounded-sm inline-block shrink-0"
-              :style="`background:linear-gradient(90deg,${groupHealthyColor(gi)},hsl(0,30%,28%))`"></span>
+              :style="`background:linear-gradient(90deg,${groupFailingColor(gi)},${groupHealthyColor(gi)})`"></span>
             {{ g.name }}
           </span>
-          <span class="text-xs text-gray-600">(vivid = healthy, dark red = failing)</span>
+          <span class="text-xs text-gray-600">(light = healthy, dark = failing)</span>
         </template>
         <template v-else-if="colorMode === 'pass-fail'">
           <span class="flex items-center gap-1.5 text-xs text-gray-400">
@@ -302,14 +302,19 @@ const groupNames = computed(() => {
 
 const GROUP_COLOR_HUES = [210, 160, 280, 35, 0, 60, 300, 120]
 function groupBaseHue(idx: number): number { return GROUP_COLOR_HUES[idx % GROUP_COLOR_HUES.length] }
-function groupHealthyColor(idx: number): string { return `hsl(${groupBaseHue(idx)},70%,48%)` }
+// Healthy = bright/light, failing = dark — same hue throughout so the group color stays recognisable.
+function groupHealthyColor(idx: number): string { return `hsl(${groupBaseHue(idx)},65%,55%)` }
+function groupFailingColor(idx: number): string { return `hsl(${groupBaseHue(idx)},40%,22%)` }
 
 function groupColor(name: string, totalTests: number, failedTests: number): string {
   const idx = groupNames.value.indexOf(name)
   const hue = groupBaseHue(idx)
   if (totalTests === 0) return `hsl(${hue}, 20%, 30%)`
   const failRate = Math.min(1, failedTests / totalTests)
-  return `hsl(${Math.round(hue * (1 - failRate))}, ${Math.round(70 - failRate * 40)}%, ${Math.round(48 - failRate * 20)}%)`
+  // Interpolate lightness/saturation only — keep hue constant
+  const sat = Math.round(65 - failRate * 25)
+  const lit = Math.round(55 - failRate * 33)
+  return `hsl(${hue}, ${sat}%, ${lit}%)`
 }
 
 const legendGroups = computed(() => {

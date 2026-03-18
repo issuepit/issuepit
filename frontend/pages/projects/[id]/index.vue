@@ -380,6 +380,7 @@
                 :current-width="sectionCfg(item.sections[0]).width"
                 @split="toggleTabGroupWithNext(item.sections[0])"
                 @width-change="w => updateCfg(item.sections[0], { width: w as SectionWidth })"
+                @reorder-tab="({ sid, direction }) => reorderTabInGroup(sid, direction)"
               />
               <!-- For stack group: label + width + unstack -->
               <DashboardStackGroupBar
@@ -415,6 +416,57 @@
                   {{ getSectionLabel(sec) }}
                 </button>
               </div>
+
+              <!-- Per-tab section bars (draft mode only): show settings for the active tab -->
+              <template v-if="isDraftMode && item.type === 'tabgroup'">
+                <template v-for="sec in item.sections" :key="`bar-${sec}`">
+                  <DashboardSectionBar
+                    v-show="getActiveTab(item.key, item.sections) === sec"
+                    :label="getSectionLabel(sec)"
+                    :display-modes="isTestHistorySid(sec) ? ['list', 'chart'] : SECTION_DISPLAY_MODES[sec as SectionId]"
+                    :current-display-mode="sectionCfg(sec).displayMode"
+                    :has-max-items="sectionHasMaxItems(sec)"
+                    :max-items-options="MAX_ITEMS_OPTIONS"
+                    :current-max-items="sectionCfg(sec).maxItems"
+                    :widths="PROJECT_WIDTHS"
+                    :current-width="sectionCfg(item.sections[0]).width"
+                    :current-chart-days="(sec === 'history' || isTestHistorySid(sec)) ? (sectionCfg(sec).chartDays ?? (sec === 'history' ? CHART_DAY_DEFAULT : 30)) : undefined"
+                    :chart-height-options="sec === 'history' ? CHART_HEIGHT_OPTIONS : undefined"
+                    :current-chart-height="sec === 'history' ? (sectionCfg(sec).chartHeightKey ?? 'md') : undefined"
+                    :kanban-boards="isKanbanSid(sec) ? kanbanStore.boards : undefined"
+                    :selected-kanban-board-id="isKanbanSid(sec) ? sectionCfg(sec).selectedBoardId : undefined"
+                    :test-history-branches="isTestHistorySid(sec) ? testHistoryBranches : undefined"
+                    :current-test-history-branch="isTestHistorySid(sec) ? sectionCfg(sec).testHistoryBranch : undefined"
+                    :test-history-color-mode-options="isTestHistorySid(sec) ? TEST_HISTORY_COLOR_MODES : undefined"
+                    :current-test-history-color-mode="isTestHistorySid(sec) ? (sectionCfg(sec).testHistoryColorMode ?? 'failure-rate') : undefined"
+                    :test-history-y-axis-options="isTestHistorySid(sec) ? TEST_HISTORY_Y_AXES : undefined"
+                    :current-test-history-y-axis="isTestHistorySid(sec) ? (sectionCfg(sec).testHistoryYAxis ?? 'count') : undefined"
+                    :test-history-x-mode-options="isTestHistorySid(sec) ? TEST_HISTORY_X_MODES : undefined"
+                    :current-test-history-x-mode="isTestHistorySid(sec) ? (sectionCfg(sec).testHistoryXMode ?? 'date') : undefined"
+                    :can-tab="false"
+                    :is-tabbed="true"
+                    :can-stack="false"
+                    :is-stacked="false"
+                    :hidden="sectionCfg(sec).hidden"
+                    :drag-hover="false"
+                    :can-remove="isDynamicSectionId(sec)"
+                    @display-mode-change="m => updateCfg(sec, { displayMode: m as SectionDisplayMode })"
+                    @max-items-change="n => updateCfg(sec, { maxItems: n })"
+                    @width-change="w => updateCfg(item.sections[0], { width: w as SectionWidth })"
+                    @chart-days-change="d => { updateCfg(sec, { chartDays: d }); if (isTestHistorySid(sec)) loadTestHistoryChart(sec) }"
+                    @chart-height-change="k => updateCfg(sec, { chartHeightKey: k })"
+                    @kanban-board-change="boardId => updateCfg(sec, { selectedBoardId: boardId })"
+                    @test-history-branch-change="b => { updateCfg(sec, { testHistoryBranch: b }); (sectionCfg(sec).testHistoryXMode ?? 'date') === 'runs' ? loadTestHistoryRuns(sec) : loadTestHistoryChart(sec) }"
+                    @test-history-color-mode-change="m => updateCfg(sec, { testHistoryColorMode: m as 'failure-rate' | 'pass-fail' | 'groups' })"
+                    @test-history-x-mode-change="m => { updateCfg(sec, { testHistoryXMode: m as 'date' | 'runs' }); m === 'runs' ? loadTestHistoryRuns(sec) : loadTestHistoryChart(sec) }"
+                    @test-history-y-axis-change="a => updateCfg(sec, { testHistoryYAxis: a as 'count' | 'duration' })"
+                    @tab-toggle="toggleTabGroupWithNext(sec)"
+                    @hide="hideSection(sec)"
+                    @show="showSection(sec)"
+                    @remove="removeDynamicSection(sec)"
+                  />
+                </template>
+              </template>
 
               <!-- Render each section in the item (for tabgroup: use v-show; for single/stackgroup: always shown) -->
               <template v-for="sid in (item.type === 'tabgroup' || item.type === 'stackgroup' ? item.sections : [item.sid])" :key="sid">
@@ -797,6 +849,18 @@
             </div>
           </div>
         </template>
+
+        <!-- End-of-grid drop zone: allows dropping cards into the free space after the last card in a row.
+             Only rendered during drag in draft mode. -->
+        <template v-if="isDraftMode && dragSectionId !== null">
+          <div class="col-span-12 h-12 flex items-center justify-center rounded-xl border-2 border-dashed transition-colors"
+            :class="dragHoverGap?.id === '__end__' ? 'border-brand-500/70 bg-brand-900/20' : 'border-gray-700/40'"
+            @dragover.prevent
+            @dragenter.stop="onEndZoneDragEnter($event)"
+            @dragleave="onGapDragLeave()">
+            <span class="text-xs text-gray-600 select-none">Drop here to move to end</span>
+          </div>
+        </template>
       </div>
 
       <!-- Customize button (when not in draft mode) -->
@@ -1170,6 +1234,7 @@ const {
   isDraftMode,
   dragSectionId,
   dragHoverSid,
+  dragHoverGap,
   renderedItems,
   sectionCfg: sectionCfgRaw,
   updateCfg: updateCfgRaw,
@@ -1220,6 +1285,44 @@ function onSectionDragEnd(e: DragEvent) { onDragEndRaw(e) }
 function onSectionGapDragEnter(e: DragEvent, id: string, after: boolean) { onGapDragEnterRaw(e, id, after) }
 function toggleTabGroupWithNext(sid: string) { toggleTabGroupWithNextRaw(sid) }
 function toggleStackGroupWithNext(sid: string) { toggleStackGroupWithNextRaw(sid) }
+
+/** Moves a tab one position left or right within its tab group without changing group membership. */
+function reorderTabInGroup(sid: string, direction: 'left' | 'right') {
+  const grp = sectionCfg(sid).tabGroup
+  if (!grp) return
+  const order = layout.value.order
+  const idx = order.indexOf(sid)
+  if (idx === -1) return
+  if (direction === 'left') {
+    // Find the previous member of the same group
+    let prevIdx = idx - 1
+    while (prevIdx >= 0 && sectionCfg(order[prevIdx]).tabGroup !== grp) prevIdx--
+    if (prevIdx < 0) return
+    const newOrder = [...order]
+    ;[newOrder[prevIdx], newOrder[idx]] = [newOrder[idx], newOrder[prevIdx]]
+    layout.value.order = newOrder
+  } else {
+    // Find the next member of the same group
+    let nextIdx = idx + 1
+    while (nextIdx < order.length && sectionCfg(order[nextIdx]).tabGroup !== grp) nextIdx++
+    if (nextIdx >= order.length) return
+    const newOrder = [...order]
+    ;[newOrder[idx], newOrder[nextIdx]] = [newOrder[nextIdx], newOrder[idx]]
+    layout.value.order = newOrder
+  }
+}
+
+/** Drag enter for the end-of-grid drop zone: moves the dragged section to the very end of the order. */
+function onEndZoneDragEnter(e: DragEvent) {
+  e.preventDefault()
+  if (!dragSectionId.value) return
+  const order = layout.value.order
+  const sid = dragSectionId.value
+  if (order.length === 0 || order[order.length - 1] === sid) return
+  const withoutDrag = order.filter(s => s !== sid)
+  layout.value.order = [...withoutDrag, sid]
+  dragHoverGap.value = { id: '__end__', after: true }
+}
 
 // ── Dynamic section helpers ───────────────────────────────────────────────
 /** Returns true for any kanban-like section ID (static 'kanban' + dynamic 'kanban-*'). */
@@ -1280,7 +1383,10 @@ const TEST_HISTORY_CARD_DEFAULT_CONFIG: LayoutSectionConfig = {
 
 /** Adds a new test history card to the dashboard. Returns the generated section ID. */
 function addTestHistoryCard(): string {
-  return addDynamicSection('testHistory', { ...TEST_HISTORY_CARD_DEFAULT_CONFIG })
+  const sid = addDynamicSection('testHistory', { ...TEST_HISTORY_CARD_DEFAULT_CONFIG })
+  // New card starts in chart/date mode — load data immediately so it doesn't stay greyed out.
+  loadTestHistoryChart(sid).catch(() => {})
+  return sid
 }
 
 // ── Template save / load / export / import ────────────────────────────────
@@ -1530,27 +1636,30 @@ const chartHeightPx = computed(() =>
   CHART_HEIGHT_PX[sectionCfg('history').chartHeightKey ?? 'md'] ?? 160,
 )
 
-// Load chart data when a test history section switches to chart mode or changes xMode
-watch(
-  () => layout.value.configs,
-  (newConfigs, oldConfigs) => {
-    for (const sid of Object.keys(newConfigs)) {
-      if (!isTestHistorySid(sid)) continue
-      const isChart = newConfigs[sid]?.displayMode === 'chart'
-      const wasChart = oldConfigs?.[sid]?.displayMode === 'chart'
-      const newXMode = newConfigs[sid]?.testHistoryXMode ?? 'date'
-      const oldXMode = oldConfigs?.[sid]?.testHistoryXMode ?? 'date'
-      if (isChart && (!wasChart || newXMode !== oldXMode)) {
-        if (newXMode === 'runs') {
-          loadTestHistoryRuns(sid).catch(() => {})
-        } else {
-          loadTestHistoryChart(sid).catch(() => {})
-        }
+// Load chart data when a test history section switches to chart mode or changes xMode.
+// NOTE: In Vue 3, deep-watching a reactive object gives the same reference for old and new values,
+// so we watch a computed snapshot of the relevant config fields instead.
+const _testHistoryConfigSnapshot = computed(() =>
+  layout.value.order
+    .filter(isTestHistorySid)
+    .map(sid => ({
+      sid,
+      isChart: sectionCfg(sid).displayMode === 'chart',
+      xMode: sectionCfg(sid).testHistoryXMode ?? 'date',
+    }))
+)
+watch(_testHistoryConfigSnapshot, (newStates, oldStates) => {
+  for (const { sid, isChart, xMode } of newStates) {
+    const old = oldStates?.find(s => s.sid === sid)
+    if (isChart && (!old || !old.isChart || old.xMode !== xMode)) {
+      if (xMode === 'runs') {
+        loadTestHistoryRuns(sid).catch(() => {})
+      } else {
+        loadTestHistoryChart(sid).catch(() => {})
       }
     }
-  },
-  { deep: true },
-)
+  }
+})
 
 const filteredMetricSnapshots = computed(() => {
   const days = sectionCfg('history').chartDays ?? CHART_DAY_DEFAULT

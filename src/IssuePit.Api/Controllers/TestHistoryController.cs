@@ -21,16 +21,19 @@ public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : Co
     // ──────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Returns per-day aggregated test counts for the given project, ordered by date ascending.
+    /// Returns per-day test counts for the given project, ordered by date ascending.
     /// Each day includes a <c>groups</c> array with per-artifact-name breakdowns, enabling
     /// stacked-bar charts per test group (unit, e2e, integration, …).
     /// Optionally filtered by branch and limited to the most recent <paramref name="days"/> calendar days.
+    /// When <paramref name="lastRunOnly"/> is <c>true</c> (the default), each day shows only the data
+    /// from the most recent run on that day instead of aggregating all runs.
     /// </summary>
     [HttpGet("daily-summary")]
     public async Task<IActionResult> GetDailySummary(
         Guid projectId,
         [FromQuery] string? branch = null,
-        [FromQuery] int days = 30)
+        [FromQuery] int days = 30,
+        [FromQuery] bool lastRunOnly = true)
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
         if (!await ProjectExistsInTenantAsync(projectId)) return NotFound();
@@ -51,6 +54,8 @@ public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : Co
             .Select(s => new
             {
                 Date = s.CiCdRun.StartedAt.Date,
+                s.CiCdRunId,
+                RunStartedAt = s.CiCdRun.StartedAt,
                 s.ArtifactName,
                 s.TotalTests,
                 s.PassedTests,
@@ -60,7 +65,17 @@ public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : Co
             })
             .ToListAsync();
 
-        var result = raw
+        // When lastRunOnly is true, keep only suites belonging to the latest run per day.
+        var suites = raw;
+        if (lastRunOnly)
+        {
+            var lastRunIdPerDay = raw
+                .GroupBy(s => s.Date)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(s => s.RunStartedAt).ThenByDescending(s => s.CiCdRunId).First().CiCdRunId);
+            suites = raw.Where(s => lastRunIdPerDay.TryGetValue(s.Date, out var lastRunId) && s.CiCdRunId == lastRunId).ToList();
+        }
+
+        var result = suites
             .GroupBy(s => s.Date)
             .Select(g => new
             {
@@ -70,7 +85,7 @@ public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : Co
                 FailedTests = g.Sum(s => s.FailedTests),
                 SkippedTests = g.Sum(s => s.SkippedTests),
                 DurationMs = g.Sum(s => s.DurationMs),
-                RunCount = g.Count(),
+                RunCount = g.Select(s => s.CiCdRunId).Distinct().Count(),
                 Groups = g
                     .GroupBy(s => s.ArtifactName)
                     .Select(ag => new

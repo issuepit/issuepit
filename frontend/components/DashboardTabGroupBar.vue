@@ -7,7 +7,25 @@
         <circle cx="15" cy="6" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="15" cy="18" r="1.5"/>
       </svg>
       <span class="font-semibold text-amber-300">Tab group:</span>
-      <span class="text-amber-400/80">{{ sections.map(s => sectionLabels[s] ?? s).join(' + ') }}</span>
+    </div>
+    <!-- Per-tab labels with reorder arrows -->
+    <div class="flex items-center gap-1 flex-wrap">
+      <template v-for="(sec, i) in sections" :key="sec">
+        <span class="flex items-center gap-0.5 bg-gray-800 rounded px-1.5 py-0.5">
+          <span class="text-xs text-amber-400/80">{{ sectionLabels[sec] ?? sec }}</span>
+          <button
+            v-if="i > 0"
+            @click.stop="$emit('reorder-tab', { sid: sec, direction: 'left' })"
+            class="text-gray-500 hover:text-gray-300 transition-colors ml-0.5 leading-none"
+            title="Move tab left">←</button>
+          <button
+            v-if="i < sections.length - 1"
+            @click.stop="$emit('reorder-tab', { sid: sec, direction: 'right' })"
+            class="text-gray-500 hover:text-gray-300 transition-colors leading-none"
+            title="Move tab right">→</button>
+        </span>
+        <span v-if="i < sections.length - 1" class="text-gray-600 text-xs">+</span>
+      </template>
     </div>
     <!-- Width selector -->
     <div v-if="widths.length" class="flex items-center gap-0.5">
@@ -37,5 +55,6 @@ defineProps<{
 defineEmits<{
   split: []
   'width-change': [value: string]
+  'reorder-tab': [payload: { sid: string; direction: 'left' | 'right' }]
 }>()
 </script>
