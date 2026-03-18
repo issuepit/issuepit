@@ -23,9 +23,9 @@ Many jobs and workflows include this condition. **Do not remove it.**
 
 ### Why it exists
 
-When IssuePit runs a workflow internally (e.g. as a CI/CD run triggered from its own UI), the GitHub Actions `GITHUB_TOKEN` issued to the runner only has `contents: read` — it does **not** have `packages: write` or other elevated permissions. This means:
+When IssuePit runs a workflow internally (e.g. as a CI/CD run triggered from its own UI), the GitHub Actions `GITHUB_TOKEN` issued to the runner only has `contents: read` equivalent — it does **not** have `packages: write` or other elevated permissions. Basicly it has not access to github.com itself and uses `act` to mimick some functionallity. This means:
 
-- Pushing images to GHCR (`ghcr.io`) will fail.
+- Pushing images to GHCR (`ghcr.io`) will fail. Same with reading metadata
 - Creating GitHub releases or writing to the repository may also fail.
 
 Setting `vars.ISSUEPIT_RUN = true` in the repository variables signals that the current run is being executed inside the IssuePit platform. Jobs that require these permissions must be skipped.
@@ -78,13 +78,6 @@ helper-base          ← mcr.microsoft.com/playwright/dotnet (external)
 - DNS proxy and git-push-blocking wrappers from `entrypoint.sh` would interfere with normal workflow steps
 
 `Dockerfile.helper-act-runner` explicitly resets `ENTRYPOINT []` and `CMD ["/bin/bash"]` to neutralise the `entrypoint.sh` inherited from `helper-base`.
-
-### Why `issuepit-act-runner` must not run inside IssuePit
-
-The `issuepit-act-runner` build step is part of the `helper-containers.yml` job, which is already guarded by `if: vars.ISSUEPIT_RUN != 'true'`. This prevents it from running when IssuePit triggers a build internally, because:
-
-1. IssuePit's GitHub token does not have `packages: write` — the push step would fail.
-2. Building large images (helper-base is ~3 GB) inside a self-hosted runner wastes resources and has no benefit.
 
 ### Adding a new helper image
 
