@@ -187,18 +187,18 @@ public class CiCdRunDetailTests : IAsyncLifetime
             var issueResp = await apiClient.GetAsync($"/api/issues/by-project/{projectId}/{issueNumber}");
             Assert.Equal(HttpStatusCode.OK, issueResp.StatusCode);
             var issue = await issueResp.Content.ReadFromJsonAsync<JsonElement>();
-            var description = issue.GetProperty("description").GetString() ?? string.Empty;
+            var body = issue.GetProperty("body").GetString() ?? string.Empty;
 
-            Assert.False(string.IsNullOrWhiteSpace(description),
-                "Created issue should have a non-empty description");
-            Assert.True(description.Contains("```"),
-                $"Issue description should contain a fenced code block with captured logs, but was:\n{description}");
-            // At least one of the expected keywords or log markers should be in the description.
-            var hasLogContent = description.Contains("fail", StringComparison.OrdinalIgnoreCase)
-                || description.Contains("error", StringComparison.OrdinalIgnoreCase)
-                || description.Contains("CI/CD");
+            Assert.False(string.IsNullOrWhiteSpace(body),
+                "Created issue should have a non-empty body");
+            Assert.True(body.Contains("```"),
+                $"Issue body should contain a fenced code block with captured logs, but was:\n{body}");
+            // At least one of the expected keywords or log markers should be in the body.
+            var hasLogContent = body.Contains("fail", StringComparison.OrdinalIgnoreCase)
+                || body.Contains("error", StringComparison.OrdinalIgnoreCase)
+                || body.Contains("CI/CD");
             Assert.True(hasLogContent,
-                $"Issue description should contain captured log content but was:\n{description}");
+                $"Issue body should contain captured log content but was:\n{body}");
         }
         finally
         {
