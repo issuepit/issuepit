@@ -172,12 +172,19 @@ const initials = computed(() => displayName.value.slice(0, 2).padEnd(2, displayN
 // Returns the sidebar link for a project, preserving the current sub-page when possible.
 // e.g. /projects/OLD/kanban → /projects/NEW/kanban
 // e.g. /projects/OLD/issues/8 → /projects/NEW/issues  (specific item pages fall back to the list)
-// e.g. /projects/OLD/runs/cicd/UUID → /projects/NEW/runs/cicd  (run detail pages fall back to the list)
+// e.g. /projects/OLD/runs/cicd/UUID → /projects/NEW/runs?tab=cicd  (run detail pages fall back to the tabbed list)
+// e.g. /projects/OLD/runs/agent-sessions/UUID → /projects/NEW/runs?tab=agent  (agent detail pages fall back to the tabbed list)
 // e.g. /projects/OLD/runs/test-history → /projects/NEW/runs/test-history  (stable sub-views are preserved)
 // If the project is already open (same project ID), always navigate to its dashboard.
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const NUMERIC_RE = /^\d+$/
+
+// Sub-paths that have no index page of their own; map them to the correct tabbed URL.
+const VIRTUAL_PATH_REDIRECTS: Record<string, string> = {
+  'runs/cicd': 'runs?tab=cicd',
+  'runs/agent-sessions': 'runs?tab=agent',
+}
 
 function isItemId(segment: string): boolean {
   return NUMERIC_RE.test(segment) || UUID_RE.test(segment)
@@ -191,11 +198,12 @@ function getProjectLink(projectId: string): string {
   const subPath = match[2]
   const parts = subPath.split('/')
   // If the last segment looks like a specific item ID (a number or UUID), navigate one level up.
-  // This handles both /issues/8 → /issues and /runs/cicd/UUID → /runs/cicd.
-  // Named sub-routes such as runs/test-history or runs/opencode-sessions are stable views
-  // and should be preserved as-is.
+  // Some parent paths have no index route and must be redirected to their tabbed equivalent.
   if (parts.length > 1 && isItemId(parts[parts.length - 1])) {
-    return `/projects/${projectId}/${parts.slice(0, -1).join('/')}`
+    const parentPath = parts.slice(0, -1).join('/')
+    const redirect = VIRTUAL_PATH_REDIRECTS[parentPath]
+    if (redirect) return `/projects/${projectId}/${redirect}`
+    return `/projects/${projectId}/${parentPath}`
   }
   return `/projects/${projectId}/${subPath}`
 }
