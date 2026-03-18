@@ -934,20 +934,12 @@ function testBarHeight(ms: number) {
 async function reload() {
   loading.value = true
   try {
-<<<<<<< copilot/add-coverage-reports-again
-    const branch = branchFilter.value || undefined
-    const branchParam = branch ? `&branch=${encodeURIComponent(branch)}` : ''
-    const [runs, tests, coverage] = await Promise.all([
-      api.get<TestRunSummary[]>(`/api/projects/${projectId}/test-history/runs?take=50${branchParam}`),
-      api.get<TestStats[]>(`/api/projects/${projectId}/test-history/tests?take=500${branchParam}`),
-      api.get<CoverageRunSummary[]>(`/api/projects/${projectId}/test-history/coverage/runs?take=50${branchParam}`).catch(() => [] as CoverageRunSummary[]),
-=======
     const branchParams = branchFilters.value.map(b => `branch=${encodeURIComponent(b)}`).join('&')
     const branchSep = branchParams ? `&${branchParams}` : ''
-    const [runs, tests] = await Promise.all([
+    const [runs, tests, coverage] = await Promise.all([
       api.get<TestRunSummary[]>(`/api/projects/${projectId}/test-history/runs?take=50${branchSep}`),
       api.get<TestStats[]>(`/api/projects/${projectId}/test-history/tests?take=500${branchSep}`),
->>>>>>> main
+      api.get<CoverageRunSummary[]>(`/api/projects/${projectId}/test-history/coverage/runs?take=50${branchSep}`).catch(() => [] as CoverageRunSummary[]),
     ])
     runSummaries.value = runs
     allTests.value = tests
