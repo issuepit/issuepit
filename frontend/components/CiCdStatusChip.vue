@@ -26,7 +26,11 @@
             @mouseleave="onRunItemLeave">
             <span :class="runDotClass(run.status)" class="w-2 h-2 rounded-full shrink-0" />
             <div class="flex-1 min-w-0">
-              <p class="text-xs text-gray-200 truncate font-medium">{{ run.workflow || run.branch || 'Run' }}</p>
+              <p class="text-xs text-gray-200 truncate font-medium"
+                :aria-label="`${run.workflow || run.branch || 'Run'}${run.externalSource ? ` from ${run.externalSource}` : ''}`">
+                {{ run.workflow || run.branch || 'Run' }}
+                <span v-if="run.externalSource" class="ml-1 text-gray-600 font-normal">({{ run.externalSource }})</span>
+              </p>
               <p class="text-xs text-gray-500 truncate font-mono">
                 {{ run.commitSha?.slice(0, 7) || '—' }}
                 <span v-if="run.branch"> · {{ run.branch }}</span>

@@ -42,6 +42,7 @@ public class GitHubSyncController(
                 gitHubRepo = (string?)null,
                 triggerMode = GitHubSyncTriggerMode.Off,
                 syncMode = GitHubSyncMode.Import,
+                syncContent = GitHubSyncContent.Issues,
             });
         }
 
@@ -54,6 +55,7 @@ public class GitHubSyncController(
             config.GitHubRepo,
             config.TriggerMode,
             config.SyncMode,
+            config.SyncContent,
             config.CreatedAt,
             config.UpdatedAt,
         });
@@ -101,6 +103,7 @@ public class GitHubSyncController(
         config.GitHubRepo = req.GitHubRepo;  // already normalised above
         config.TriggerMode = req.TriggerMode;
         config.SyncMode = req.SyncMode;
+        config.SyncContent = req.SyncContent;
         config.UpdatedAt = DateTime.UtcNow;
 
         await db.SaveChangesAsync();
@@ -112,6 +115,7 @@ public class GitHubSyncController(
             config.GitHubRepo,
             config.TriggerMode,
             config.SyncMode,
+            config.SyncContent,
             config.UpdatedAt,
         });
     }
@@ -227,4 +231,5 @@ public record UpsertSyncConfigRequest(
     Guid? GitHubIdentityId,
     string? GitHubRepo,
     GitHubSyncTriggerMode TriggerMode,
-    GitHubSyncMode SyncMode);
+    GitHubSyncMode SyncMode,
+    GitHubSyncContent SyncContent = GitHubSyncContent.Issues);

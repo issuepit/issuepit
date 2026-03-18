@@ -113,6 +113,36 @@ v-model="form.gitHubRepo" type="text" placeholder="owner/repo or https://github.
               </div>
             </div>
 
+            <!-- Sync Content -->
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">Sync Content</label>
+              <div class="space-y-2">
+                <label
+                  v-for="(desc, content) in syncContentOptions"
+                  :key="content"
+                  :class="['flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors',
+                    form.syncContent === Number(content)
+                      ? 'border-brand-500 bg-brand-500/10'
+                      : 'border-gray-700 hover:border-gray-600'
+                  ]"
+                >
+                  <input
+                    v-model.number="form.syncContent"
+                    type="radio"
+                    :value="Number(content)"
+                    class="mt-0.5 accent-brand-500"
+                  >
+                  <div>
+                    <p class="text-sm font-medium text-gray-200">{{ GitHubSyncContentLabels[Number(content)] }}</p>
+                    <p class="text-xs text-gray-500 mt-0.5">{{ desc }}</p>
+                  </div>
+                </label>
+              </div>
+              <p v-if="form.syncContent === GitHubSyncContent.CiCdBuilds || form.syncContent === GitHubSyncContent.All" class="text-xs text-blue-400 mt-2">
+                ℹ GitHub Actions runs will be imported as external CI/CD runs linked by commit SHA. Requires the token to have <span class="font-mono">actions:read</span> permission.
+              </p>
+            </div>
+
             <!-- Trigger Mode -->
             <div>
               <label class="block text-sm font-medium text-gray-300 mb-1.5">Trigger Mode</label>
@@ -260,7 +290,7 @@ v-for="conflict in syncStore.conflicts" :key="conflict.issueId"
 </template>
 
 <script setup lang="ts">
-import { GitHubSyncTriggerMode, GitHubSyncMode, GitHubSyncModeLabels, GitHubSyncModeDescriptions } from '~/types'
+import { GitHubSyncTriggerMode, GitHubSyncMode, GitHubSyncModeLabels, GitHubSyncModeDescriptions, GitHubSyncContent, GitHubSyncContentLabels, GitHubSyncContentDescriptions } from '~/types'
 import { useProjectsStore } from '~/stores/projects'
 import { useGitHubSyncStore } from '~/stores/github-sync'
 import { useGitHubIdentitiesStore } from '~/stores/github-identities'
@@ -284,6 +314,7 @@ const form = reactive({
   gitHubRepo: '',
   triggerMode: GitHubSyncTriggerMode.Off as number,
   syncMode: GitHubSyncMode.Import as number,
+  syncContent: GitHubSyncContent.Issues as number,
 })
 
 // Map mode enum value to description text for the radio cards
@@ -291,6 +322,13 @@ const syncModeOptions: Record<number, string> = {
   [GitHubSyncMode.Import]: GitHubSyncModeDescriptions[GitHubSyncMode.Import],
   [GitHubSyncMode.TwoWay]: GitHubSyncModeDescriptions[GitHubSyncMode.TwoWay],
   [GitHubSyncMode.CreateOnGitHub]: GitHubSyncModeDescriptions[GitHubSyncMode.CreateOnGitHub],
+}
+
+// Map content enum value to description text for the radio cards
+const syncContentOptions: Record<number, string> = {
+  [GitHubSyncContent.Issues]: GitHubSyncContentDescriptions[GitHubSyncContent.Issues],
+  [GitHubSyncContent.CiCdBuilds]: GitHubSyncContentDescriptions[GitHubSyncContent.CiCdBuilds],
+  [GitHubSyncContent.All]: GitHubSyncContentDescriptions[GitHubSyncContent.All],
 }
 
 const saveError = ref<string | null>(null)
@@ -305,6 +343,7 @@ watch(() => syncStore.config, (cfg) => {
     form.gitHubRepo = cfg.gitHubRepo ?? ''
     form.triggerMode = cfg.triggerMode
     form.syncMode = cfg.syncMode
+    form.syncContent = cfg.syncContent ?? GitHubSyncContent.Issues
   }
 }, { immediate: true })
 
@@ -323,6 +362,7 @@ async function saveConfig() {
       gitHubRepo: form.gitHubRepo || null,
       triggerMode: form.triggerMode,
       syncMode: form.syncMode,
+      syncContent: form.syncContent,
     })
     saveSuccess.value = true
     setTimeout(() => { saveSuccess.value = false }, 3000)
