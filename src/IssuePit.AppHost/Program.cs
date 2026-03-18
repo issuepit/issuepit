@@ -296,7 +296,7 @@ builder.AddContainer("redis-insight", "redis/redisinsight")
 
 var migrator = builder.AddProject<Projects.IssuePit_Migrator>("migrator")
     .WithReference(postgresDb)
-    .WaitFor(postgresServer);
+    .WaitFor(postgresDb);
 
 // Pass the config-repo path to the migrator so it can seed the default tenant's ConfigRepoUrl.
 if (configRepoPath is not null)
