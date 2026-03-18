@@ -1842,7 +1842,11 @@ function getLogsForJobId(jobId: string): CiCdRunLog[] {
 }
 
 const createIssuePreviewLines = computed(() => {
-  const sourceLogs = createIssueJobId.value ? getLogsForJobId(createIssueJobId.value) : store.currentRunLogs
+  // When a specific job is selected, try to get its logs. If none are found (e.g. the job
+  // never produced log output), fall back to all run logs so the modal is never empty.
+  let sourceLogs = createIssueJobId.value ? getLogsForJobId(createIssueJobId.value) : store.currentRunLogs
+  if (sourceLogs.length === 0 && createIssueJobId.value && store.currentRunLogs.length > 0)
+    sourceLogs = store.currentRunLogs
   if (createIssueLogScope.value === 'errors') return sourceLogs.filter(l => l.stream === 'stderr').map(l => l.line)
   if (createIssueLogScope.value === 'tail') return sourceLogs.slice(-50).map(l => l.line)
   if (createIssueLogScope.value === 'filter') {
@@ -1859,7 +1863,9 @@ function openCreateIssueModal(jobId: string) {
   createIssueTitle.value = jobId
     ? `CI/CD job "${jobId}" failed${workflow}`
     : `CI/CD run failed${workflow}`
-  createIssueLogScope.value = 'errors'
+  // Default to keyword filter (matches error/fail lines in stdout) rather than 'errors' (stderr-only),
+  // because most CI runtimes (e.g. act) write all output including failures to stdout.
+  createIssueLogScope.value = 'filter'
   createIssueFilterPattern.value = 'error|fault|warn|fail|exception'
   createIssueError.value = null
   showCreateIssueModal.value = true
