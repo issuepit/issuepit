@@ -398,6 +398,17 @@ export const useIssuesStore = defineStore('issues', () => {
     }
   }
 
+  async function updateAttachment(issueId: string, attachmentId: string, patch: { isPublic?: boolean }) {
+    try {
+      const data = await api.patch<IssueAttachment>(`/api/issues/${issueId}/attachments/${attachmentId}`, patch)
+      const idx = currentAttachments.value.findIndex(a => a.id === attachmentId)
+      if (idx >= 0) currentAttachments.value[idx] = data
+      return data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to update attachment visibility'
+    }
+  }
+
   async function retranscribeAttachment(issueId: string, attachmentId: string) {
     try {
       const data = await api.post<IssueComment>(`/api/issues/${issueId}/attachments/${attachmentId}/retranscribe`, {})
@@ -479,6 +490,7 @@ export const useIssuesStore = defineStore('issues', () => {
     fetchAttachments,
     addAttachment,
     deleteAttachment,
+    updateAttachment,
     retranscribeAttachment,
     fetchTasks,
     createTask,

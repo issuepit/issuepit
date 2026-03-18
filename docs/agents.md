@@ -224,6 +224,22 @@ When an agent mode is assigned to an issue, `IssuePit.ExecutionClient` handles t
 
 ---
 
+## UI Conventions for Coding Agents
+
+### Delete Operations Must Show a Confirm Modal
+
+**All destructive delete operations in the UI must show a confirmation modal** before executing.  
+Never call a delete API directly from a button click without first showing a modal that requires the user to confirm.
+
+This applies to deleting: issues, attachments, agents, runtimes, MCP servers, API keys, labels, milestones, and any other entity.
+
+The confirmation modal must:
+- Clearly state what is being deleted (include the item name where possible).
+- Warn that the action cannot be undone.
+- Provide a prominent red **Delete** button and a neutral **Cancel** button.
+
+---
+
 ## Next Steps
 
 - [API Keys and MCP Servers →](configuration)

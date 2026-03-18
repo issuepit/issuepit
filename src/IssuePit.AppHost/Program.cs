@@ -260,10 +260,13 @@ var httpCache = builder.AddContainer("http-cache", "nginx", "1.27-alpine")
 
 // LocalStack provides local AWS services (S3 for image uploads).
 // Open source (Apache 2.0). S3 endpoint: http://localstack:4566
+// The volume persists uploaded files across container restarts (like kafka, postgresql, redis volumes).
 var storage = builder.AddContainer("localstack", "localstack/localstack", "4.3")
     .WithEnvironment("SERVICES", "s3")
     .WithHttpEndpoint(targetPort: 4566, name: "http")
     .WithHttpHealthCheck("/_localstack/health");
+if (gitBranch is not null)
+    storage = storage.WithVolume($"issuepit-localstack-{SanitizeForVolumeName(gitBranch)}", "/var/lib/localstack");
 
 // Pull-through Docker registry mirror for DinD CI/CD containers.
 // Acts as a local cache for Docker Hub pulls, shared across all CI/CD runs.

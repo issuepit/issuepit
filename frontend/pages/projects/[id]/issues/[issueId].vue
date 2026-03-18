@@ -396,36 +396,47 @@
             </div>
             <div v-else class="space-y-2">
               <div v-for="att in store.currentAttachments" :key="att.id"
-                class="flex items-center gap-3 p-3 bg-gray-800/50 rounded-lg group">
-                <!-- File icon / voice icon -->
-                <div class="shrink-0">
-                  <svg v-if="att.isVoiceFile" class="w-5 h-5 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 016 0v6a3 3 0 01-3 3z" />
-                  </svg>
-                  <svg v-else class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                  </svg>
+                class="p-3 bg-gray-800/50 rounded-lg group">
+                <div class="flex items-center gap-3">
+                  <!-- File icon / voice icon -->
+                  <div class="shrink-0">
+                    <svg v-if="att.isVoiceFile || att.contentType?.startsWith('audio/')" class="w-5 h-5 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 016 0v6a3 3 0 01-3 3z" />
+                    </svg>
+                    <svg v-else class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                    </svg>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <a :href="att.fileUrl" target="_blank" rel="noopener"
+                      class="text-sm text-brand-400 hover:text-brand-300 truncate block">{{ att.fileName }}</a>
+                    <p class="text-xs text-gray-500">
+                      {{ formatFileSize(att.fileSize) }} · {{ att.contentType }}
+                      <span v-if="!att.isPublic" class="ml-1 text-yellow-600" title="Private — only visible to you">🔒 Private</span>
+                      · <DateDisplay :date="att.createdAt" mode="auto" resolution="date" />
+                    </p>
+                  </div>
+                  <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button v-if="att.isVoiceFile || att.contentType?.startsWith('audio/')" @click="retranscribeVoice(att.id)"
+                      :disabled="retranscribingId === att.id"
+                      class="text-xs text-brand-400 hover:text-brand-300 disabled:opacity-40 transition-colors"
+                      title="Retry transcription">
+                      {{ retranscribingId === att.id ? 'Transcribing…' : '🔄 Retranscribe' }}
+                    </button>
+                    <button @click="store.updateAttachment(resolvedIssueId, att.id, { isPublic: !att.isPublic })"
+                      class="text-xs text-gray-400 hover:text-gray-200 transition-colors"
+                      :title="att.isPublic ? 'Make private' : 'Make public'">
+                      {{ att.isPublic ? '🌐 Public' : '🔒 Private' }}
+                    </button>
+                    <button @click="requestDeleteAttachment(att.id, att.fileName)"
+                      class="text-xs text-gray-600 hover:text-red-400 transition-colors">Delete</button>
+                  </div>
                 </div>
-                <div class="flex-1 min-w-0">
-                  <a :href="att.fileUrl" target="_blank" rel="noopener"
-                    class="text-sm text-brand-400 hover:text-brand-300 truncate block">{{ att.fileName }}</a>
-                  <p class="text-xs text-gray-500">
-                    {{ formatFileSize(att.fileSize) }} · {{ att.contentType }}
-                    <span v-if="!att.isPublic" class="ml-1 text-yellow-600" title="Private — only visible to you">🔒 Private</span>
-                    · <DateDisplay :date="att.createdAt" mode="auto" resolution="date" />
-                  </p>
-                </div>
-                <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button v-if="att.isVoiceFile || att.contentType?.startsWith('audio/')" @click="retranscribeVoice(att.id)"
-                    :disabled="retranscribingId === att.id"
-                    class="text-xs text-brand-400 hover:text-brand-300 disabled:opacity-40 transition-colors"
-                    title="Retry transcription">
-                    {{ retranscribingId === att.id ? 'Transcribing…' : '🔄 Retranscribe' }}
-                  </button>
-                  <button @click="store.deleteAttachment(resolvedIssueId, att.id)"
-                    class="text-xs text-gray-600 hover:text-red-400 transition-colors">Delete</button>
+                <!-- Inline audio player for audio/voice files -->
+                <div v-if="att.isVoiceFile || att.contentType?.startsWith('audio/')" class="mt-2 pl-8">
+                  <audio :src="att.fileUrl" controls class="w-full h-8 accent-brand-400" preload="none" :aria-label="'Play ' + att.fileName" />
                 </div>
               </div>
             </div>
@@ -752,6 +763,24 @@
             Delete
           </button>
           <button @click="showDeleteConfirm = false"
+            class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 rounded-lg transition-colors">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Delete Attachment Confirmation Dialog -->
+    <div v-if="deleteAttachmentTarget" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-sm p-6 shadow-xl">
+        <h2 class="text-lg font-bold text-white mb-2">Delete Attachment</h2>
+        <p class="text-sm text-gray-400 mb-6">Are you sure you want to delete <span class="text-white font-medium">{{ deleteAttachmentTarget.fileName }}</span>? This action cannot be undone.</p>
+        <div class="flex gap-3">
+          <button @click="confirmDeleteAttachment"
+            class="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
+            Delete
+          </button>
+          <button @click="deleteAttachmentTarget = null"
             class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 rounded-lg transition-colors">
             Cancel
           </button>
@@ -1317,6 +1346,18 @@ function formatFileSize(bytes: number): string {
 const uploadingAttachment = ref(false)
 const attachmentError = ref<string | null>(null)
 const retranscribingId = ref<string | null>(null)
+const deleteAttachmentTarget = ref<{ id: string; fileName: string } | null>(null)
+
+function requestDeleteAttachment(id: string, fileName: string) {
+  deleteAttachmentTarget.value = { id, fileName }
+}
+
+async function confirmDeleteAttachment() {
+  if (!deleteAttachmentTarget.value) return
+  const { id } = deleteAttachmentTarget.value
+  deleteAttachmentTarget.value = null
+  await store.deleteAttachment(resolvedIssueId.value, id)
+}
 
 async function handleFileUpload(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
