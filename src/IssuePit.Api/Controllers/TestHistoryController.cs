@@ -20,16 +20,45 @@ public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : Co
     // Daily summary (chart data)
     // ──────────────────────────────────────────────────────────────────────────
 
+    // ──────────────────────────────────────────────────────────────────────────
+    // Branches
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns the distinct branch names that have test runs in this project.
+    /// </summary>
+    [HttpGet("branches")]
+    public async Task<IActionResult> GetBranches(Guid projectId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        if (!await ProjectExistsInTenantAsync(projectId)) return NotFound();
+
+        var branches = await db.CiCdTestSuites
+            .Where(s => s.CiCdRun.ProjectId == projectId
+                     && s.CiCdRun.Project.Organization.TenantId == ctx.CurrentTenant.Id
+                     && s.CiCdRun.Branch != null)
+            .Select(s => s.CiCdRun.Branch!)
+            .Distinct()
+            .OrderBy(b => b)
+            .ToListAsync();
+
+        return Ok(branches);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Daily summary (chart data)
+    // ──────────────────────────────────────────────────────────────────────────
+
     /// <summary>
     /// Returns per-day aggregated test counts for the given project, ordered by date ascending.
     /// Each day includes a <c>groups</c> array with per-artifact-name breakdowns, enabling
     /// stacked-bar charts per test group (unit, e2e, integration, …).
-    /// Optionally filtered by branch and limited to the most recent <paramref name="days"/> calendar days.
+    /// Optionally filtered by one or more branches and limited to the most recent <paramref name="days"/> calendar days.
     /// </summary>
     [HttpGet("daily-summary")]
     public async Task<IActionResult> GetDailySummary(
         Guid projectId,
-        [FromQuery] string? branch = null,
+        [FromQuery] string[]? branch = null,
         [FromQuery] int days = 30)
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
@@ -44,8 +73,8 @@ public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : Co
                      && s.CiCdRun.Project.Organization.TenantId == ctx.CurrentTenant.Id
                      && s.CiCdRun.StartedAt >= since);
 
-        if (!string.IsNullOrWhiteSpace(branch))
-            query = query.Where(s => s.CiCdRun.Branch == branch);
+        if (branch is { Length: > 0 })
+            query = query.Where(s => branch.Contains(s.CiCdRun.Branch));
 
         var raw = await query
             .Select(s => new
@@ -98,12 +127,12 @@ public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : Co
     /// <summary>
     /// Returns per-run test summary rows for the given project, newest first.
     /// Each row aggregates all test suites in that run.
-    /// Optionally filtered by branch.
+    /// Optionally filtered by one or more branches.
     /// </summary>
     [HttpGet("runs")]
     public async Task<IActionResult> GetRunSummaries(
         Guid projectId,
-        [FromQuery] string? branch = null,
+        [FromQuery] string[]? branch = null,
         [FromQuery] int take = 50)
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
@@ -113,8 +142,8 @@ public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : Co
             .Where(s => s.CiCdRun.ProjectId == projectId
                      && s.CiCdRun.Project.Organization.TenantId == ctx.CurrentTenant.Id);
 
-        if (!string.IsNullOrWhiteSpace(branch))
-            query = query.Where(s => s.CiCdRun.Branch == branch);
+        if (branch is { Length: > 0 })
+            query = query.Where(s => branch.Contains(s.CiCdRun.Branch));
 
         // Materialise raw suite rows first so that nested client-side grouping (Groups) works.
         var raw = await query
@@ -178,13 +207,13 @@ public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : Co
 
     /// <summary>
     /// Returns aggregated stats for every unique test in the project, optionally
-    /// filtered by branch and/or a search string (matched against the full test name).
+    /// filtered by one or more branches and/or a search string (matched against the full test name).
     /// Tests are sorted by failure count descending (most flaky first).
     /// </summary>
     [HttpGet("tests")]
     public async Task<IActionResult> GetTests(
         Guid projectId,
-        [FromQuery] string? branch = null,
+        [FromQuery] string[]? branch = null,
         [FromQuery] string? search = null,
         [FromQuery] int take = 200)
     {
@@ -195,8 +224,8 @@ public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : Co
             .Where(tc => tc.CiCdTestSuite.CiCdRun.ProjectId == projectId
                       && tc.CiCdTestSuite.CiCdRun.Project.Organization.TenantId == ctx.CurrentTenant.Id);
 
-        if (!string.IsNullOrWhiteSpace(branch))
-            query = query.Where(tc => tc.CiCdTestSuite.CiCdRun.Branch == branch);
+        if (branch is { Length: > 0 })
+            query = query.Where(tc => branch.Contains(tc.CiCdTestSuite.CiCdRun.Branch));
 
         if (!string.IsNullOrWhiteSpace(search))
             query = query.Where(tc => tc.FullName.Contains(search));
@@ -231,13 +260,13 @@ public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : Co
 
     /// <summary>
     /// Returns the run-by-run history for a single test identified by its full name.
-    /// Optionally filtered by branch.
+    /// Optionally filtered by one or more branches.
     /// </summary>
     [HttpGet("tests/{fullName}")]
     public async Task<IActionResult> GetTestHistory(
         Guid projectId,
         string fullName,
-        [FromQuery] string? branch = null,
+        [FromQuery] string[]? branch = null,
         [FromQuery] int take = 50)
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
@@ -250,8 +279,8 @@ public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : Co
                       && tc.CiCdTestSuite.CiCdRun.ProjectId == projectId
                       && tc.CiCdTestSuite.CiCdRun.Project.Organization.TenantId == ctx.CurrentTenant.Id);
 
-        if (!string.IsNullOrWhiteSpace(branch))
-            query = query.Where(tc => tc.CiCdTestSuite.CiCdRun.Branch == branch);
+        if (branch is { Length: > 0 })
+            query = query.Where(tc => branch.Contains(tc.CiCdTestSuite.CiCdRun.Branch));
 
         var history = await query
             .OrderByDescending(tc => tc.CiCdTestSuite.CreatedAt)

@@ -195,3 +195,27 @@ The confirmation modal must:
 - Warn that the action cannot be undone.
 - Provide a prominent red **Delete** button and a neutral **Cancel** button.
 
+### Searchable Multi-Select Inputs
+
+**Use the `<MultiSelect>` component** (`frontend/components/MultiSelect.vue`) for any filter or selection field where:
+- the user may want to select **multiple values**, or
+- the list of options is long enough to benefit from a **search/filter input** (e.g. branches, agents, usernames, labels, statuses).
+
+Never use a plain `<input type="text">` for a filter that maps to a discrete set of options. Examples that must use `<MultiSelect>`:
+- Branch filters (test history, run lists, CI/CD views)
+- Agent assignment filters
+- Username / member filters
+- Label and status filters
+
+```vue
+<MultiSelect
+  v-model="selectedBranches"
+  :options="branchOptions"
+  placeholder="All Branches"
+/>
+```
+
+Where `options` is `MultiSelectOption[]` (`{ value: string, label: string, dotClass?: string }`).
+Populate `options` from the appropriate API endpoint so the user sees real values.
+The component handles search, keyboard navigation, checkbox selection, and outside-click dismissal.
+
