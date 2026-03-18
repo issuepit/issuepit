@@ -6,6 +6,8 @@ using Docker.DotNet.Models;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
 using IssuePit.Core.Runners;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 
 namespace IssuePit.ExecutionClient.Runtimes;
 
@@ -25,7 +27,9 @@ public class DockerAgentRuntime(
     ILogger<DockerAgentRuntime> logger,
     DockerClient dockerClient,
     IConfiguration configuration,
-    IAgentHttpApi agentHttpApi)
+    IAgentHttpApi agentHttpApi,
+    IOpenCodeProxyRegistry proxyRegistry,
+    IServer server)
     : IExecCapableRuntime
 {
     // Docker image used to run agents. Uses the IssuePit helper-opencode-act image which includes
@@ -402,12 +406,8 @@ public class DockerAgentRuntime(
 
                 await onLogLine($"[DEBUG] HTTP server URL: {serverDisplayUrl}", LogStream.Stdout);
 
-                // Emit the server web UI URL as a structured marker so IssueWorker can persist it
-                // on the session record for display in the UI.
-                await onLogLine($"{ServerWebUiUrlMarker}{serverDisplayUrl}", LogStream.Stdout);
-
-                // Emit the internal (gateway-routed) URL for diagnostic use and E2E test
-                // verification. Only logged when it differs from the display URL, i.e. when the
+                // Emit the internal (gateway-routed) URL for diagnostic use.
+                // Only logged when it differs from the display URL, i.e. when the
                 // execution client is running inside a container and has resolved a host gateway.
                 if (serverBaseUrl != serverDisplayUrl)
                     await onLogLine($"[DEBUG] HTTP internal URL: {serverBaseUrl}", LogStream.Stdout);
@@ -427,6 +427,34 @@ public class DockerAgentRuntime(
                         $"opencode HTTP server did not become ready within 60 seconds " +
                         $"(container: {container.ID[..Math.Min(12, container.ID.Length)]}, " +
                         $"internal url: {serverBaseUrl}).");
+
+                // Server is confirmed reachable. Register this session with the reverse-proxy
+                // registry so external clients (E2E tests, UI) can access the opencode server
+                // via the execution client's own HTTP endpoint instead of the Docker-mapped port
+                // directly. This eliminates race conditions where the container is torn down
+                // between the "server ready" notification and the client's request.
+                proxyRegistry.Register(session.Id, serverBaseUrl, confirmedHealthy: true);
+
+                // Compute the proxy URL that external clients should use to reach this server.
+                // When the execution client is not containerised (the common Aspire/CI case),
+                // the proxy is reachable at http://localhost:{executionClientPort}.
+                // When running inside a container, fall back to the direct display URL so
+                // existing behaviour is preserved for that deployment model.
+                var serverWebUiUrl = serverDisplayUrl;
+                if (!IsRunningInContainer())
+                {
+                    var proxyPort = GetExecutionClientHttpPort();
+                    if (proxyPort.HasValue)
+                        serverWebUiUrl = $"http://localhost:{proxyPort.Value}/api/opencode-proxy/{session.Id}";
+                }
+
+                // Emit the server web UI URL as a structured marker so IssueWorker can persist it
+                // on the session record for display in the UI.  External clients (E2E tests, users)
+                // use this URL to access the opencode server via the execution client's reverse proxy.
+                await onLogLine($"{ServerWebUiUrlMarker}{serverWebUiUrl}", LogStream.Stdout);
+
+                if (serverWebUiUrl != serverDisplayUrl)
+                    await onLogLine($"[DEBUG] HTTP proxy URL: {serverWebUiUrl}", LogStream.Stdout);
 
                 await onLogLine("[INFO] opencode HTTP server is ready", LogStream.Stdout);
 
@@ -1212,6 +1240,23 @@ public class DockerAgentRuntime(
 
         var builder = new UriBuilder(uri) { Host = "host.docker.internal" };
         return builder.Uri.ToString().TrimEnd('/');
+    }
+
+    /// <summary>
+    /// Returns the HTTP port the execution client itself is listening on by inspecting
+    /// <see cref="IServerAddressesFeature"/>. Returns <c>null</c> when the feature is
+    /// unavailable or no HTTP address has been bound yet.
+    /// </summary>
+    private int? GetExecutionClientHttpPort()
+    {
+        var addresses = server.Features.Get<IServerAddressesFeature>()?.Addresses
+            ?? (ICollection<string>)[];
+        foreach (var address in addresses)
+        {
+            if (!Uri.TryCreate(address, UriKind.Absolute, out var uri)) continue;
+            if (uri.Scheme == "http") return uri.Port;
+        }
+        return null;
     }
 
     /// <summary>Best-effort stop + remove of a container. Used for cleanup on failure paths.</summary>
