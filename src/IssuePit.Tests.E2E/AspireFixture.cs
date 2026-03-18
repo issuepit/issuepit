@@ -20,6 +20,9 @@ public sealed class AspireFixture : IAsyncLifetime
     public DistributedApplication? App { get; private set; }
     public HttpClient? ApiClient { get; private set; }
 
+    /// <summary>HTTP client pre-pointed at the <c>execution-client</c> Aspire resource.</summary>
+    public HttpClient? ExecutionClientClient { get; private set; }
+
     /// <summary>HTTP client pre-pointed at the <c>mcp-server</c> Aspire resource.</summary>
     public HttpClient? McpClient { get; private set; }
 
@@ -149,6 +152,7 @@ public sealed class AspireFixture : IAsyncLifetime
         Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Aspire AppHost started.");
 
         ApiClient = App.CreateHttpClient("api");
+        ExecutionClientClient = App.CreateHttpClient("execution-client");
         McpClient = App.CreateHttpClient("mcp-server");
         KafkaBootstrapServers = await App.GetConnectionStringAsync("kafka");
 
@@ -176,6 +180,7 @@ public sealed class AspireFixture : IAsyncLifetime
     public async Task DisposeAsync()
     {
         ApiClient?.Dispose();
+        ExecutionClientClient?.Dispose();
         McpClient?.Dispose();
         if (App is not null)
             await App.DisposeAsync();

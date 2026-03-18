@@ -56,6 +56,34 @@ public class DockerAgentRuntimeTests
     }
 
     // ──────────────────────────────────────────────────────────────────────────
+    // ParseProcNetRouteGatewayHex
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("010011AC", "172.17.0.1")]    // Docker default bridge gateway
+    [InlineData("0101A8C0", "192.168.1.1")]   // typical home router
+    [InlineData("FE01A8C0", "192.168.1.254")] // another common gateway
+    [InlineData("01001012", "18.16.0.1")]     // another valid address
+    [InlineData("00000000", "0.0.0.0")]       // zero (default route destination)
+    public void ParseProcNetRouteGatewayHex_ValidHex_ReturnsCorrectIp(string hex, string expected)
+    {
+        var result = DockerAgentRuntime.ParseProcNetRouteGatewayHex(hex);
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("010011A")]   // too short (7 chars)
+    [InlineData("010011ACF")] // too long (9 chars)
+    [InlineData("ZZZZZZZZ")]  // invalid hex characters
+    public void ParseProcNetRouteGatewayHex_InvalidInput_ReturnsNull(string? hex)
+    {
+        var result = DockerAgentRuntime.ParseProcNetRouteGatewayHex(hex);
+        Assert.Null(result);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
     // Embedded entrypoint.sh content validation
     // ──────────────────────────────────────────────────────────────────────────
 
