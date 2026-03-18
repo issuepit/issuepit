@@ -40,6 +40,7 @@ public class AgentSessionsController(IssuePitDbContext db, TenantContext tenant,
                 s.ServerWebUiUrl,
                 s.OpenCodeSessionId,
                 s.OpenCodeDbS3Url,
+                s.GitRemoteCheckResultsJson,
                 CiCdRuns = s.CiCdRuns.Select(r => new
                 {
                     r.Id,

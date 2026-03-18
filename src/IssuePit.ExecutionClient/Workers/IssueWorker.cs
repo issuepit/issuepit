@@ -471,10 +471,17 @@ public class IssueWorker(
             bool useExecForFixes = false;
 
             // Pre-flight: verify the base branch exists on all configured git remotes.
-            // Logs which remotes have the branch and which do not (including the remote type),
-            // and fails the session immediately if the Working remote is missing the branch.
+            // Selects the best available remote (Working preferred; most-recently-fetched as tie-break).
+            // Results are stored on the session for display in the UI.
             if (allGitRepositories.Count > 0)
-                await CheckBranchOnRemotesAsync(allGitRepositories, onLogLine, sessionCts.Token);
+            {
+                var (selectedRepo, checkResults) = await CheckBranchOnRemotesAsync(allGitRepositories, sessionCts.Token);
+                // Override the initially selected repo with the one chosen by the availability check.
+                if (selectedRepo is not null)
+                    gitRepository = selectedRepo;
+                session.GitRemoteCheckResultsJson = JsonSerializer.Serialize(checkResults);
+                await db.SaveChangesAsync(sessionCts.Token);
+            }
 
             try
             {
@@ -1359,47 +1366,71 @@ public class IssueWorker(
 
     /// <summary>
     /// Checks whether the base branch of each configured git remote exists by running
-    /// <c>git ls-remote --heads</c> against each remote URL. Results (including the remote
-    /// type) are written to the session log via <paramref name="onLogLine"/> so they are
-    /// visible in the UI. Throws an <see cref="InvalidOperationException"/> if the Working
-    /// remote's base branch is not found — the container would fail to clone anyway, so
-    /// we surface the misconfiguration before pulling the Docker image.
-    /// If <c>git</c> is not available on the host (return value <c>null</c>), the check is
-    /// silently skipped rather than failing the run.
+    /// <c>git ls-remote --heads</c> against each remote URL. Returns the best available
+    /// clone target (the remote that has the branch, preferring Working mode first and then the
+    /// most recently fetched) together with a per-remote result list suitable for display in the UI.
+    /// Throws an <see cref="InvalidOperationException"/> only when <em>no</em> remote has the
+    /// branch — in that case the container would fail to clone regardless of which remote is used.
+    /// When <c>git</c> is not available on the host every check returns <c>null</c> (skipped) and
+    /// the original priority-ordered first repository is returned unchanged.
     /// </summary>
-    private static async Task CheckBranchOnRemotesAsync(
+    private static async Task<(GitRepository? Selected, List<GitRemoteCheckResult> Results)> CheckBranchOnRemotesAsync(
         IList<GitRepository> repositories,
-        Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {
-        await onLogLine("[INFO] Pre-flight: checking base branch availability on configured remotes…", LogStream.Stdout);
-
-        var workingRepo = repositories.FirstOrDefault(r => r.Mode == GitOriginMode.Working)
-            ?? repositories.FirstOrDefault();
+        var results = new List<GitRemoteCheckResult>();
 
         foreach (var repo in repositories)
         {
-            if (string.IsNullOrWhiteSpace(repo.DefaultBranch))
-            {
-                await onLogLine($"[WARN]   ? {repo.Mode}: {repo.RemoteUrl} — no DefaultBranch configured", LogStream.Stdout);
-                continue;
-            }
+            bool? available = null;
+            if (!string.IsNullOrWhiteSpace(repo.DefaultBranch))
+                available = await IsBranchOnRemoteAsync(repo.RemoteUrl, repo.AuthUsername, repo.AuthToken, repo.DefaultBranch, cancellationToken);
 
-            var found = await IsBranchOnRemoteAsync(repo.RemoteUrl, repo.AuthUsername, repo.AuthToken, repo.DefaultBranch, cancellationToken);
-            var (symbol, logLevel, statusText) = found switch
-            {
-                true  => ("✓", "[INFO]", $"base branch '{repo.DefaultBranch}' found"),
-                false => ("✗", "[WARN]", $"base branch '{repo.DefaultBranch}' not found"),
-                null  => ("?", "[INFO]", $"base branch '{repo.DefaultBranch}' check skipped (git not available on host)"),
-            };
-
-            await onLogLine($"{logLevel}   {symbol} {repo.Mode}: {repo.RemoteUrl} — {statusText}", LogStream.Stdout);
-
-            if (found == false && repo == workingRepo)
-                throw new InvalidOperationException(
-                    $"Base branch '{repo.DefaultBranch}' was not found on the Working remote ({repo.RemoteUrl}). " +
-                    "Update GitRepository.DefaultBranch in IssuePit to match the actual default branch of the remote.");
+            results.Add(new GitRemoteCheckResult(
+                RepoId: repo.Id,
+                RemoteUrl: repo.RemoteUrl,
+                Mode: repo.Mode.ToString(),
+                DefaultBranch: repo.DefaultBranch,
+                Available: available));
         }
+
+        // Among repos that confirmed branch availability, pick the best one:
+        // 1. Working mode first (agents need to push back to Working)
+        // 2. Among ties, the most recently fetched remote
+        var confirmed = repositories
+            .Zip(results, (repo, res) => (repo, res))
+            .Where(x => x.res.Available == true)
+            .OrderByDescending(x => x.repo.Mode == GitOriginMode.Working)
+            .ThenByDescending(x => x.repo.LastFetchedAt)
+            .Select(x => x.repo)
+            .FirstOrDefault();
+
+        // When no check returned a definitive "not found" (all skipped), fall back to priority order.
+        bool anyCheckRan = results.Any(r => r.Available.HasValue);
+        bool anyFound    = confirmed is not null;
+        bool anyNotFound = results.Any(r => r.Available == false);
+
+        if (anyCheckRan && !anyFound && anyNotFound)
+        {
+            // At least one check ran and none found the branch — this is a real misconfiguration.
+            var branchName = results.FirstOrDefault(r => r.DefaultBranch != null)?.DefaultBranch
+                ?? repositories.FirstOrDefault()?.DefaultBranch
+                ?? "(not configured)";
+            throw new InvalidOperationException(
+                $"Base branch '{branchName}' was not found on any configured remote. " +
+                "Update GitRepository.DefaultBranch in IssuePit to match the actual default branch of the remote.");
+        }
+
+        // Mark the selected repo in the results list.
+        var selected = confirmed ?? repositories.FirstOrDefault();
+        if (selected is not null)
+        {
+            var idx = results.FindIndex(r => r.RepoId == selected.Id);
+            if (idx >= 0)
+                results[idx] = results[idx] with { Selected = true };
+        }
+
+        return (selected, results);
     }
 
     /// <summary>

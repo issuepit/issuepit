@@ -598,6 +598,18 @@ export interface PoolStatus {
 
 export type GitOriginMode = 'ReadOnly' | 'Working' | 'Release'
 
+/** Per-remote result of the pre-flight branch availability check run before each agent session. */
+export interface GitRemoteCheckResult {
+  repoId: string
+  remoteUrl: string
+  mode: GitOriginMode
+  defaultBranch: string | null
+  /** true = branch found, false = branch not found, null = check skipped (git unavailable/timeout) */
+  available: boolean | null
+  /** Whether this remote was selected as the clone target for the session. */
+  selected: boolean
+}
+
 export interface GitRepository {
   id: string
   projectId: string
@@ -989,6 +1001,8 @@ export interface AgentSessionDetail extends AgentSession {
   ciCdRuns: CiCdRun[]
   /** JSON-serialised string array of warnings (e.g. truncated comments). Null when no warnings. */
   warnings?: string | null
+  /** JSON-serialised array of {@link GitRemoteCheckResult} from the pre-flight branch check. */
+  gitRemoteCheckResultsJson?: string | null
 }
 
 export interface IssueAgentSession {
