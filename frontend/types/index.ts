@@ -312,6 +312,7 @@ export interface Issue {
   kanbanRank: number
   gitHubIssueNumber?: number
   gitHubIssueUrl?: string
+  gitBranch?: string
   createdAt: string
   updatedAt: string
   subIssues?: Issue[]
