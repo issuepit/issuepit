@@ -179,7 +179,7 @@
                 type="text"
                 placeholder="Leave blank to use the branch tip"
                 class="w-full bg-gray-800 border border-gray-700 rounded-md text-sm text-gray-300 font-mono px-2.5 py-1.5 placeholder-gray-600 focus:outline-none focus:border-brand-500" />
-              <p class="text-xs text-gray-600 mt-1">Override the commit SHA. Leave blank to use the latest commit of the specified branch, or the original commit SHA if no branch override is set.</p>
+              <p class="text-xs text-gray-600 mt-1">Defaults to the original commit. Clear to use the latest commit of the specified branch.</p>
             </div>
 
             <label class="flex items-start gap-3 cursor-pointer mb-3">
@@ -2055,7 +2055,7 @@ async function approveRunAction() {
 function openRetryModal() {
   retryOptions.eventName = store.currentRun?.eventName ?? 'push'
   retryOptions.branch = store.currentRun?.branch ?? ''
-  retryOptions.commitSha = ''
+  retryOptions.commitSha = store.currentRun?.commitSha ?? ''
   showRetryModal.value = true
 }
 
