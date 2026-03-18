@@ -1,0 +1,40 @@
+# IssuePit act runner image: catthehacker/ubuntu:act-latest + ffmpeg + Google Chrome
+#
+# This is the INNER runner image used by act for workflow job containers
+# (the -P ubuntu-latest=<image> mapping). Select this in the IssuePit CI/CD
+# settings as the "Runner Image" for workflows that require Playwright tests,
+# screen capture, or media processing.
+#
+# Includes over catthehacker/ubuntu:act-latest:
+#   - ffmpeg          — audio/video processing
+#   - google-chrome-stable (amd64 only) — Playwright browser tests using the 'chrome' channel
+#
+# Build args:
+#   BASE_IMAGE  — fully-qualified catthehacker act image reference
+#   BASE_TAG    — tag suffix appended to ghcr.io/issuepit/issuepit-act-runner labels
+
+ARG BASE_IMAGE=ghcr.io/catthehacker/ubuntu:act-latest
+
+FROM ${BASE_IMAGE}
+
+# Install ffmpeg and Google Chrome.
+# curl and gnupg are present in catthehacker/ubuntu:act-latest; install them
+# explicitly to be safe on any compatible base.
+# Google Chrome is amd64-only — on other architectures only ffmpeg is installed.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl gnupg ffmpeg && \
+    ARCH=$(dpkg --print-architecture) && \
+    if [ "${ARCH}" = "amd64" ]; then \
+        install -m 0755 -d /etc/apt/keyrings && \
+        curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | \
+            gpg --dearmor -o /etc/apt/keyrings/google-chrome.gpg && \
+        chmod a+r /etc/apt/keyrings/google-chrome.gpg && \
+        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
+            > /etc/apt/sources.list.d/google-chrome.list && \
+        apt-get update && \
+        apt-get install -y --no-install-recommends google-chrome-stable; \
+    fi && \
+    rm -rf /var/lib/apt/lists/*
+
+LABEL org.opencontainers.image.title="issuepit-act-runner" \
+      org.opencontainers.image.description="IssuePit act runner: catthehacker/ubuntu:act-latest + ffmpeg + Google Chrome (Playwright)"

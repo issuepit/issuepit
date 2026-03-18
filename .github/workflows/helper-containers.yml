@@ -34,6 +34,8 @@ env:
   ACT_COMMIT: "7f8e2fe297293c4f1d818692433f885967648101"
   ACTIONLINT_VERSION: "1.7.11"
   OPENCODE_VERSION: "latest"
+  # Base image for issuepit-act-runner (the inner act runner image for workflow job containers)
+  ACT_RUNNER_BASE: "ghcr.io/catthehacker/ubuntu:act-latest"
 
 jobs:
   # Single sequential job: build all images locally, then push conditionally.
@@ -134,6 +136,18 @@ jobs:
             type=raw,value=latest,enable=${{ inputs.version != '' || startsWith(github.ref, 'refs/tags/helper-containers-v') }}
             type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
 
+      - name: Extract metadata — issuepit-act-runner
+        id: meta-act-runner
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-act-runner
+          tags: |
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
+            type=raw,value=${{ steps.semver.outputs.major_minor }},enable=${{ inputs.version != '' }}
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable=${{ inputs.version != '' || startsWith(github.ref, 'refs/tags/helper-containers-v') }}
+            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+
       - name: Build helper-base
         uses: docker/build-push-action@v6
         with:
@@ -184,6 +198,17 @@ jobs:
             BASE_IMAGE=helper-act:local
             OPENCODE_VERSION=${{ env.OPENCODE_VERSION }}
 
+      - name: Build issuepit-act-runner
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/helper-containers
+          file: docker/helper-containers/Dockerfile.helper-act-runner
+          push: false
+          tags: act-runner:local
+          labels: ${{ steps.meta-act-runner.outputs.labels }}
+          build-args: |
+            BASE_IMAGE=${{ env.ACT_RUNNER_BASE }}
+
       - name: Push images to registry
         if: (startsWith(github.ref, 'refs/tags/helper-containers-v') || github.event_name == 'workflow_call' || inputs.tag != '' || inputs.version != '') && github.event_name != 'pull_request' && github.event_name != 'merge_group' && env.ISSUEPIT_RUN != 'true'
         env:
@@ -191,6 +216,7 @@ jobs:
           ACT_TAGS: ${{ steps.meta-act.outputs.tags }}
           OPENCODE_TAGS: ${{ steps.meta-opencode.outputs.tags }}
           OPENCODE_ACT_TAGS: ${{ steps.meta-opencode-act.outputs.tags }}
+          ACT_RUNNER_TAGS: ${{ steps.meta-act-runner.outputs.tags }}
         run: |
           set -euo pipefail
           push_image() {
@@ -206,3 +232,4 @@ jobs:
           push_image "helper-act:local"          "$ACT_TAGS"
           push_image "helper-opencode:local"     "$OPENCODE_TAGS"
           push_image "helper-opencode-act:local" "$OPENCODE_ACT_TAGS"
+          push_image "act-runner:local"          "$ACT_RUNNER_TAGS"

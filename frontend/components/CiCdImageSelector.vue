@@ -7,9 +7,11 @@
       :class="[
         selectedGroupId === group.id
           ? 'border-brand-500 bg-brand-950/40 ring-1 ring-brand-500/50'
-          : group.isDefault && !selectedGroupId && !customImageSelected
-            ? 'border-brand-700 bg-brand-950/30'
-            : 'border-gray-800 bg-gray-900/20 hover:border-gray-700'
+          : !selectedGroupId && !customImageSelected && inheritedGroupId === group.id
+            ? 'border-brand-700/60 bg-brand-950/20'
+            : group.isDefault && !selectedGroupId && !customImageSelected && !inheritedGroupId
+              ? 'border-brand-700 bg-brand-950/30'
+              : 'border-gray-800 bg-gray-900/20 hover:border-gray-700'
       ]"
       @click="selectGroup(group.id)"
     >
@@ -19,10 +21,16 @@
           <div class="flex items-center gap-2 flex-wrap mb-1">
             <span class="font-medium text-white">{{ group.label }}</span>
             <span
-              v-if="group.isDefault && !selectedGroupId && !customImageSelected"
+              v-if="group.isDefault && !selectedGroupId && !customImageSelected && !inheritedGroupId"
               class="px-1.5 py-0.5 rounded text-xs font-medium bg-brand-900/60 text-brand-300 border border-brand-800"
             >
               Default
+            </span>
+            <span
+              v-if="!selectedGroupId && !customImageSelected && inheritedGroupId === group.id"
+              class="px-1.5 py-0.5 rounded text-xs font-medium bg-gray-700/80 text-gray-200 border border-gray-600"
+            >
+              Inherited
             </span>
             <span
               v-if="selectedGroupId === group.id"
@@ -40,9 +48,11 @@
               class="text-xs font-mono px-2 py-0.5 rounded border cursor-pointer transition-colors"
               :class="props.modelValue === tag
                 ? 'bg-brand-950/60 border-brand-800 text-brand-300'
-                : group.isDefault && !selectedGroupId && !customImageSelected && tag === group.tags[0]
-                  ? 'bg-brand-950/60 border-brand-800 text-brand-300 hover:border-brand-600'
-                  : 'bg-gray-950/60 border-gray-700 text-gray-400 hover:border-gray-500 hover:text-gray-200'"
+                : !props.modelValue && !customImageSelected && props.inheritedValue === tag
+                  ? 'bg-gray-800/60 border-gray-600 text-gray-200 hover:border-gray-500'
+                  : group.isDefault && !selectedGroupId && !customImageSelected && !inheritedGroupId && tag === group.tags[0]
+                    ? 'bg-brand-950/60 border-brand-800 text-brand-300 hover:border-brand-600'
+                    : 'bg-gray-950/60 border-gray-700 text-gray-400 hover:border-gray-500 hover:text-gray-200'"
               @click.stop="emit('update:modelValue', tag)"
             >{{ tag }}</code>
           </div>
@@ -52,6 +62,14 @@
           <div
             v-if="selectedGroupId === group.id"
             class="w-5 h-5 rounded-full bg-brand-600 flex items-center justify-center"
+          >
+            <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <div
+            v-else-if="!selectedGroupId && !customImageSelected && inheritedGroupId === group.id"
+            class="w-5 h-5 rounded-full bg-gray-600 flex items-center justify-center"
           >
             <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
@@ -115,7 +133,19 @@
 
 <script setup lang="ts">
 // Image groups sourced from https://github.com/catthehacker/docker_images/blob/master/README.md
+// IssuePit-provided runner images are listed first.
 const imageGroups = [
+  {
+    id: 'issuepit',
+    emoji: '🚀',
+    label: 'IssuePit Act Runner',
+    size: null,
+    description: 'catthehacker/ubuntu:act-latest + ffmpeg + Google Chrome. Recommended for workflows using Playwright tests or media processing.',
+    isDefault: false,
+    tags: [
+      'ghcr.io/issuepit/issuepit-act-runner:latest',
+    ],
+  },
   {
     id: 'full',
     emoji: '🏋️',
@@ -263,6 +293,8 @@ const imageGroups = [
 
 const props = defineProps<{
   modelValue?: string | null
+  /** Effective image inherited from org or global config when no project-level override is set. */
+  inheritedValue?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -290,6 +322,14 @@ const selectedGroupId = computed(() => {
 const isCustomImage = computed(() => {
   if (!props.modelValue) return false
   return !findGroupForTag(props.modelValue)
+})
+
+// The group id that the inherited value (from org/global config) belongs to.
+// Only relevant when there is no project-level override (modelValue is null/empty).
+const inheritedGroupId = computed(() => {
+  if (props.modelValue) return null
+  if (!props.inheritedValue) return null
+  return findGroupForTag(props.inheritedValue)?.id ?? null
 })
 
 // Tracks whether the user has manually activated the custom image card,
