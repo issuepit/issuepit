@@ -396,6 +396,10 @@ public class DockerAgentRuntime(
                     await onLogLine($"[DEBUG] Server info    : {serverInfo[..Math.Min(200, serverInfo.Length)]}", LogStream.Stdout);
 
                 // Log the actual commit SHA checked out by the entrypoint.
+                // Also emit the git markers early so IssueWorker captures branch/SHA immediately.
+                // EmitGitMarkersAsync runs after the agent completes and will overwrite these with
+                // the final committed state, but emitting here ensures the session header is populated
+                // even when the agent fails and EmitGitMarkersAsync never runs.
                 if (gitRepository is not null)
                 {
                     try
@@ -410,6 +414,9 @@ public class DockerAgentRuntime(
                                 ? $", branch: {clonedBranch}"
                                 : string.Empty;
                             await onLogLine($"[INFO] Workspace cloned: SHA={clonedSha}{branchPart}", LogStream.Stdout);
+                            await onLogLine($"{GitCommitShaMarker}{clonedSha}", LogStream.Stdout);
+                            if (!string.IsNullOrWhiteSpace(clonedBranch))
+                                await onLogLine($"{GitBranchMarker}{clonedBranch}", LogStream.Stdout);
                         }
                     }
                     catch (Exception ex)
@@ -473,6 +480,10 @@ public class DockerAgentRuntime(
         {
             // Step 6: Log the actual commit SHA that was checked out by the entrypoint clone.
             // This runs inside the container so we get the real HEAD, not the trigger value.
+            // Also emit the git markers early so IssueWorker captures branch/SHA immediately.
+            // EmitGitMarkersAsync runs after the agent completes and will overwrite these with
+            // the final committed state, but emitting here ensures the session header is populated
+            // even when the agent fails and EmitGitMarkersAsync never runs.
             if (gitRepository is not null)
             {
                 try
@@ -487,6 +498,9 @@ public class DockerAgentRuntime(
                             ? $", branch: {clonedBranch}"
                             : string.Empty;
                         await onLogLine($"[INFO] Workspace cloned: SHA={clonedSha}{branchPart}", LogStream.Stdout);
+                        await onLogLine($"{GitCommitShaMarker}{clonedSha}", LogStream.Stdout);
+                        if (!string.IsNullOrWhiteSpace(clonedBranch))
+                            await onLogLine($"{GitBranchMarker}{clonedBranch}", LogStream.Stdout);
                     }
                 }
                 catch (Exception ex)

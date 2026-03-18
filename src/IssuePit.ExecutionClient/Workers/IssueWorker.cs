@@ -224,6 +224,11 @@ public class IssueWorker(
                 cancellationToken)));
     }
 
+    // NOTE: LaunchAgentAsync and the CI/CD RunCiCdFixAgentAsync share the same DockerAgentRuntime
+    // pipeline. Any change to git handling, branch logic, pre-flight checks, or log marker
+    // processing in one path MUST be reflected in the other. See also:
+    //   DockerAgentRuntime — exec flow, HTTP server flow, CheckBranchOnRemotesAsync
+    //   RunCiCdFixAgentAsync — CI/CD fix loop container launch
     private async Task LaunchAgentAsync(
         Guid agentId,
         Guid issueId,
@@ -413,6 +418,12 @@ public class IssueWorker(
             await db.SaveChangesAsync(sessionCts.Token);
         }
 
+        // Declare captured values outside the try block so they are accessible in the catch handler.
+        // DockerAgentRuntime emits git markers early (at workspace-clone time) so these are populated
+        // even when the agent fails before EmitGitMarkersAsync runs.
+        string? capturedCommitSha = null;
+        string? capturedBranchName = null;
+
         try
         {
             var credentials = await LoadCredentialsAsync(agent.OrgId, db, sessionCts.Token);
@@ -431,8 +442,6 @@ public class IssueWorker(
                 credentials = credentialsWithToken;
             }
 
-            string? capturedCommitSha = null;
-            string? capturedBranchName = null;
             string? capturedOpenCodeSessionId = null;
             var capturedHasUncommittedChanges = false;
             var capturedGitPushFailed = false;
@@ -668,6 +677,11 @@ public class IssueWorker(
             logger.LogError(ex, "Failed to launch agent {AgentId} for session {SessionId}", agent.Id, session.Id);
             session.Status = AgentSessionStatus.Failed;
             session.EndedAt = DateTime.UtcNow;
+            // Persist branch/SHA that were captured before the failure (emitted early by the runtime
+            // at workspace-clone time). This ensures the session header shows Branch/Commit even when
+            // the agent fails before EmitGitMarkersAsync has a chance to run.
+            if (!string.IsNullOrEmpty(capturedCommitSha)) session.CommitSha = capturedCommitSha;
+            if (!string.IsNullOrEmpty(capturedBranchName)) session.GitBranch = capturedBranchName;
             // Store the error as a log line so it's visible in the session detail UI.
             await AppendLogAsync(session.Id, $"[ERROR] {ex.Message}", LogStream.Stderr, section: null, sectionIndex: 0, db, cancellationToken);
             if (ex.InnerException is not null)
