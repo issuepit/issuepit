@@ -604,6 +604,13 @@ async function navigateUp() {
 async function doFetch() {
   fetching.value = true
   await store.triggerFetch(id)
+  // Refresh branches, commits and tree so the UI reflects the fetched changes immediately.
+  commitSkip.value = 0
+  await Promise.all([
+    store.fetchBranches(id),
+    store.fetchCommits(id, selectedBranch.value, 0, commitTake),
+    store.fetchTree(id, effectiveRef.value, currentPath.value || undefined),
+  ])
   fetching.value = false
 }
 
