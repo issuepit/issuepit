@@ -62,9 +62,14 @@
           <p class="text-sm text-gray-500 mb-4">
             Override the Docker runner image for this project. Leave unset to inherit from the organization or global default.
           </p>
-          <CiCdImageSelector v-model="ciCdForm.actRunnerImage" />
+          <CiCdImageSelector v-model="ciCdForm.actRunnerImage" :inherited-value="inheritedRunnerImage" />
           <p v-if="!ciCdForm.actRunnerImage" class="text-xs text-gray-500 mt-3">
-            No override set — inheriting from org or global default.
+            <template v-if="inheritedRunnerImage">
+              No override set — inheriting: <code class="font-mono text-gray-300 bg-gray-800 px-1 rounded">{{ inheritedRunnerImage }}</code>
+            </template>
+            <template v-else>
+              No override set — inheriting from org or global default.
+            </template>
           </p>
           <p v-else class="text-xs text-gray-500 mt-3 font-mono">{{ ciCdForm.actRunnerImage }}</p>
         </div>
@@ -259,10 +264,12 @@
 
 <script setup lang="ts">
 import { useProjectsStore } from '~/stores/projects'
+import { useOrgsStore } from '~/stores/orgs'
 
 const route = useRoute()
 const id = route.params.id as string
 const projectsStore = useProjectsStore()
+const orgsStore = useOrgsStore()
 
 const ciCdForm = reactive({
   actRunnerImage: null as string | null,
@@ -282,8 +289,20 @@ const saving = ref(false)
 const saveError = ref<string | null>(null)
 const savedOk = ref(false)
 
+// The runner image inherited from the org (shown when no project-level override is set).
+const inheritedRunnerImage = computed<string | null>(() => {
+  const p = projectsStore.currentProject
+  if (!p) return null
+  const org = orgsStore.orgs.find(o => o.id === p.orgId)
+  return org?.actRunnerImage ?? null
+})
+
 onMounted(async () => {
-  await projectsStore.fetchProject(id)
+  const fetchOrgIfNeeded = orgsStore.orgs.length === 0 ? orgsStore.fetchOrgs() : Promise.resolve()
+  await Promise.all([
+    projectsStore.fetchProject(id),
+    fetchOrgIfNeeded,
+  ])
   const p = projectsStore.currentProject
   if (p) {
     ciCdForm.actRunnerImage = p.actRunnerImage ?? null

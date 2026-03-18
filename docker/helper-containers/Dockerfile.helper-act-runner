@@ -1,0 +1,39 @@
+# IssuePit act runner image: helper-base + ffmpeg + jq
+#
+# This is the INNER runner image used by act for workflow job containers
+# (the -P ubuntu-latest=<image> mapping). Select this in the IssuePit CI/CD
+# settings as the "Runner Image" for workflows that require Playwright tests,
+# media processing, or typical CI/CD tooling.
+#
+# Bases on issuepit-helper-base, which already provides:
+#   - Google Chrome / Chromium   — via mcr.microsoft.com/playwright/dotnet base
+#   - .NET SDK                   — for dotnet-based workflow steps
+#   - Node.js + npm              — for JS-based workflow steps
+#   - git, curl, gnupg           — standard VCS and download tooling
+#   - s5cmd                      — S3-compatible artifact upload
+#
+# Additionally installs:
+#   - ffmpeg     — audio/video processing (required by media workflow steps)
+#   - jq         — JSON processor (commonly used in CI scripts)
+#
+# Build args (override at build time):
+#   BASE_IMAGE  — fully-qualified helper-base image reference
+
+ARG BASE_IMAGE=ghcr.io/issuepit/issuepit-helper-base:latest
+
+FROM ${BASE_IMAGE}
+
+# Install ffmpeg for audio/video processing and jq for JSON processing in CI scripts.
+# Both are lightweight additions that cover the most common tool gaps in workflow steps.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ffmpeg jq && \
+    rm -rf /var/lib/apt/lists/*
+
+# Reset the entrypoint from helper-base: this image is used as an act inner runner
+# (workflow job container), not as an IssuePit agent container. The agent setup
+# entrypoint (git clone, DNS proxy, opencode config) is not needed here.
+ENTRYPOINT []
+CMD ["/bin/bash"]
+
+LABEL org.opencontainers.image.title="issuepit-act-runner" \
+      org.opencontainers.image.description="IssuePit act runner: helper-base + ffmpeg + jq (Chrome and .NET already included via helper-base)"
