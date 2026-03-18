@@ -22,6 +22,9 @@ public class TestHistoryPage(IPage page)
     /// <summary>Returns the Tests tab button.</summary>
     public ILocator TestsTab => page.Locator("button:has-text('Tests')");
 
+    /// <summary>Returns the Coverage tab button.</summary>
+    public ILocator CoverageTab => page.Locator("button:has-text('Coverage')");
+
     /// <summary>Clicks the Tests tab and waits for its content to appear.</summary>
     public async Task ClickTestsTabAsync()
     {
@@ -29,6 +32,29 @@ public class TestHistoryPage(IPage page)
         // Wait for the tab content to be visible (either tests table or empty state).
         await page.Locator("table").Or(page.Locator("text=No test history yet"))
             .WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Navigation });
+    }
+
+    /// <summary>Clicks the Coverage tab and waits for its content to appear.</summary>
+    public async Task ClickCoverageTabAsync()
+    {
+        await CoverageTab.ClickAsync();
+        // Wait for either coverage data cards or the empty state message.
+        await page.Locator("text=Line Coverage").Or(page.Locator("text=No coverage data yet"))
+            .WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Navigation });
+    }
+
+    /// <summary>Returns true when the Coverage tab shows coverage data (not the empty state).</summary>
+    public async Task<bool> HasCoverageDataAsync()
+    {
+        var lineCoverageLabel = page.Locator("text=Line Coverage").First;
+        return await lineCoverageLabel.CountAsync() > 0;
+    }
+
+    /// <summary>Returns true when the Coverage tab shows the empty state message.</summary>
+    public async Task<bool> IsCoverageTabEmptyAsync()
+    {
+        var emptyState = page.Locator("text=No coverage data yet");
+        return await emptyState.CountAsync() > 0;
     }
 
     /// <summary>Returns all test rows in the Tests tab.</summary>

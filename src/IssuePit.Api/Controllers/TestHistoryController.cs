@@ -442,6 +442,70 @@ public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : Co
     }
 
     // ──────────────────────────────────────────────────────────────────────────
+    // Import Cobertura coverage directly
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Imports a Cobertura XML coverage file directly into the coverage history for the given project.
+    /// A synthetic <see cref="CiCdRun"/> row is created to anchor the imported coverage report.
+    /// </summary>
+    [HttpPost("coverage/import")]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> ImportCoverage(
+        Guid projectId,
+        IFormFile file,
+        [FromForm] string? commitSha = null,
+        [FromForm] string? branch = null,
+        [FromForm] string? artifactName = null)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        if (!await ProjectExistsInTenantAsync(projectId)) return NotFound();
+
+        if (file is null || file.Length == 0)
+            return BadRequest("A Cobertura XML file is required.");
+
+        CiCdCoverageReport? report;
+        await using (var stream = file.OpenReadStream())
+        {
+            var name = artifactName ?? Path.GetFileNameWithoutExtension(file.FileName);
+            report = CoberturaParser.Parse(stream, name);
+        }
+
+        if (report is null)
+            return BadRequest("Failed to parse the uploaded file. Make sure it is a valid Cobertura XML coverage report.");
+
+        // Create a synthetic run to anchor the imported report.
+        var now = DateTime.UtcNow;
+        var syntheticRun = new CiCdRun
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = projectId,
+            CommitSha = commitSha?.Trim() ?? string.Empty,
+            Branch = string.IsNullOrWhiteSpace(branch) ? null : branch,
+            Status = CiCdRunStatus.Succeeded,
+            StartedAt = now,
+            EndedAt = now,
+            ExternalSource = "import",
+        };
+
+        report.CiCdRunId = syntheticRun.Id;
+
+        db.CiCdRuns.Add(syntheticRun);
+        db.CiCdCoverageReports.Add(report);
+        await db.SaveChangesAsync();
+
+        return Ok(new ImportCoverageResponse(
+            syntheticRun.Id,
+            report.Id,
+            report.LineRate,
+            report.BranchRate,
+            report.LinesCovered,
+            report.LinesValid,
+            report.BranchesCovered,
+            report.BranchesValid));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
     // Coverage reports
     // ──────────────────────────────────────────────────────────────────────────
 
@@ -650,3 +714,13 @@ public record ImportTrxResponse(
     int FailedTests,
     int SkippedTests,
     double DurationMs);
+
+public record ImportCoverageResponse(
+    Guid RunId,
+    Guid ReportId,
+    double LineRate,
+    double BranchRate,
+    int LinesCovered,
+    int LinesValid,
+    int BranchesCovered,
+    int BranchesValid);
