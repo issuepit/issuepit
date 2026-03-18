@@ -25,8 +25,11 @@ public class CiCdRunPage(IPage page)
     public async Task ClickJobsTabAsync()
     {
         await page.ClickAsync("button:has-text('Jobs')");
-        // Wait briefly for the tab to render — any visible content (job boxes, empty state, or log lines)
-        await page.WaitForTimeoutAsync(500);
+        // The "Slim" toggle button is only rendered in the Jobs tab controls bar; waiting for it
+        // is a deterministic indicator that the Jobs tab is active and the content has been rendered.
+        await page.WaitForSelectorAsync(
+            "button:has-text('Slim')",
+            new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
     }
 
     /// <summary>
@@ -192,8 +195,7 @@ public class CiCdRunPage(IPage page)
     /// </summary>
     public async Task SubmitCreateIssueAsync()
     {
-        // The submit button inside the modal has a red background (bg-red-700) and shows "Create Issue"
-        await page.ClickAsync(".bg-red-700:has-text('Create Issue')");
+        await page.ClickAsync("[data-testid='create-issue-submit']");
         // Wait for modal to close
         await page.WaitForSelectorAsync(
             "text=Create Issue from",

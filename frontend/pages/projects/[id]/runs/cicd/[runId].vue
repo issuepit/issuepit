@@ -865,6 +865,7 @@
           <div class="flex justify-end gap-2">
             <button class="px-4 py-1.5 text-sm text-gray-400 hover:text-gray-200 transition-colors" @click="showCreateIssueModal = false">Cancel</button>
             <button
+              data-testid="create-issue-submit"
               :disabled="creatingIssue || !createIssueTitle.trim()"
               class="px-4 py-1.5 text-sm bg-red-700 hover:bg-red-600 disabled:opacity-50 text-white rounded-md transition-colors"
               @click="submitCreateIssue">
