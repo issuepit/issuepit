@@ -36,4 +36,19 @@ builder.Services.AddHostedService<IssueWorker>();
 
 var app = builder.Build();
 app.MapDefaultEndpoints();
+
+// Health proxy for E2E tests: forwards GET /global/health to the opencode server whose
+// serverBaseUrl was registered by DockerAgentRuntime once WaitForHttpServerReadyAsync
+// succeeded. This lets the test process reach the opencode server without needing direct
+// network access to the Docker-mapped port (which may be unreachable depending on whether
+// the execution client runs inside a container vs. natively).
+app.MapGet("/api/opencode/{sessionId}/health", async (Guid sessionId, IAgentHttpApi api, CancellationToken ct) =>
+{
+    var url = DockerAgentRuntime.GetSessionServerUrl(sessionId);
+    if (url is null)
+        return Results.NotFound($"opencode server URL not registered for session {sessionId}.");
+    var ok = await api.IsReadyAsync(url, ct);
+    return ok ? Results.Ok() : Results.StatusCode(503);
+});
+
 app.Run();

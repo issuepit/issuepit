@@ -587,18 +587,24 @@ public class AgentHttpServerTests(AspireFixture fixture)
 
         // Poll the session logs until "[INFO] opencode HTTP server is ready" appears, meaning
         // the execution client confirmed readiness both inside the container (docker exec curl)
-        // and via the externally-reachable URL. Allow up to 60 s (image is pre-pulled; server
-        // starts in ~20 s under normal conditions).
+        // and via the internally-validated serverBaseUrl. Allow up to 60 s (image is pre-pulled;
+        // server starts in ~20 s under normal conditions).
         //
-        // When "server is ready" is detected the health check runs BEFORE cancellation so the
-        // container is guaranteed alive. All exceptions are caught (including
-        // OperationCanceledException from the 5s HTTP timeout) to ensure the break is always
-        // reached and the while loop does not continue spinning. After the health check the
-        // session is cancelled so the execution client does not interfere with test teardown.
-        string? serverInternalUrl = null;
+        // When "server is ready" is detected the health check is performed through the execution
+        // client's proxy endpoint (/api/opencode/{sessionId}/health). The execution client routes
+        // the request using its own validated serverBaseUrl — this avoids the need for the test
+        // process to have direct network access to the Docker-mapped port, which may be
+        // unreachable depending on container network topology (e.g. execution client running
+        // inside a container where gateway detection failed and localhost doesn't reach the host).
+        //
+        // Health check runs BEFORE cancellation so the container is guaranteed alive.
+        // All exceptions are caught so the break is always reached regardless of exception type.
+        // Cancel is sent after the health check to release resources.
+        string? serverDisplayUrl = null;
         var healthCheckPassed = false;
         string? lastHealthError = null;
         var readyDeadline = DateTimeOffset.UtcNow.AddSeconds(60);
+        var executionClient = fixture.ExecutionClientClient!;
         while (DateTimeOffset.UtcNow < readyDeadline)
         {
             var logsResp = await client.GetAsync($"/api/agent-sessions/{sessionId}/logs");
@@ -609,39 +615,31 @@ public class AgentHttpServerTests(AspireFixture fixture)
                     .Select(l => l.GetProperty("line").GetString() ?? string.Empty)
                     .ToList();
 
-                // Prefer the "[DEBUG] HTTP internal URL:" marker, which is logged when the
-                // execution client is running inside a container and uses the Docker host
-                // gateway IP to route through port-mapping (e.g. http://172.17.0.1:{port}).
-                // Fall back to "[ISSUEPIT:SERVER_WEB_UI_URL]=" (http://localhost:{port}), which
-                // is always logged and works when running directly on the Docker host.
-                var internalLine = logLines.FirstOrDefault(l => l.StartsWith("[DEBUG] HTTP internal URL: "));
-                if (internalLine is not null)
-                    serverInternalUrl = internalLine["[DEBUG] HTTP internal URL: ".Length..].Trim();
-                else
-                {
-                    var displayLine = logLines.FirstOrDefault(l => l.StartsWith("[ISSUEPIT:SERVER_WEB_UI_URL]="));
-                    if (displayLine is not null)
-                        serverInternalUrl = displayLine["[ISSUEPIT:SERVER_WEB_UI_URL]=".Length..].Trim();
-                }
+                // Capture the display URL (always localhost:{hostPort}) for diagnostic messages.
+                var displayLine = logLines.FirstOrDefault(l => l.StartsWith("[ISSUEPIT:SERVER_WEB_UI_URL]="));
+                if (displayLine is not null)
+                    serverDisplayUrl = displayLine["[ISSUEPIT:SERVER_WEB_UI_URL]=".Length..].Trim();
 
-                if (logLines.Any(l => l.Contains("[INFO] opencode HTTP server is ready")) && serverInternalUrl is not null)
+                if (logLines.Any(l => l.Contains("[INFO] opencode HTTP server is ready")))
                 {
-                    // Do the health check BEFORE cancellation: the container is guaranteed to be
-                    // alive at this point (the execution client just confirmed readiness). Retrying
-                    // up to 10 times gives robustness against transient delays.
-                    // We catch all exceptions (including OperationCanceledException from the
-                    // HttpClient timeout) so that every attempt is recorded and the break below
-                    // is always reached regardless of the exception type.
+                    // Do the health check through the execution client's proxy endpoint.
+                    // The execution client registered the validated serverBaseUrl in its in-memory
+                    // registry immediately before emitting the "server is ready" log line, so it
+                    // is guaranteed to be present when we reach this point.
+                    // Retry up to 10 times (500 ms apart) for robustness against transient delays.
+                    // Each attempt has a 10 s timeout so a slow execution client does not cause
+                    // the loop to hang for the full 100 s HttpClient default.
                     for (var attempt = 0; attempt < 10 && !healthCheckPassed; attempt++)
                     {
                         try
                         {
-                            using var healthHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-                            var healthResp = await healthHttp.GetAsync($"{serverInternalUrl}/global/health");
+                            using var attemptCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                            var healthResp = await executionClient.GetAsync(
+                                $"/api/opencode/{sessionId}/health", attemptCts.Token);
                             if (healthResp.IsSuccessStatusCode)
                                 healthCheckPassed = true;
                             else
-                                lastHealthError = $"HTTP {(int)healthResp.StatusCode}";
+                                lastHealthError = $"EC-proxy HTTP {(int)healthResp.StatusCode}";
                         }
                         catch (Exception ex) { lastHealthError = ex.Message; }
 
@@ -672,7 +670,7 @@ public class AgentHttpServerTests(AspireFixture fixture)
             await Task.Delay(1000);
         }
 
-        if (serverInternalUrl is null)
+        if (serverDisplayUrl is null)
             throw new TimeoutException(
                 $"opencode HTTP server did not become ready within 60 seconds. " +
                 $"Server URL marker was not found in session logs.");
@@ -680,8 +678,8 @@ public class AgentHttpServerTests(AspireFixture fixture)
         Assert.True(
             healthCheckPassed,
             $"opencode HTTP server reported ready (via execution client) but the health endpoint " +
-            $"was not accessible from the test process at {serverInternalUrl}. " +
-            $"The container may have stopped before the health check could complete. " +
+            $"proxy at /api/opencode/{sessionId}/health was not accessible. " +
+            $"Display URL: {serverDisplayUrl}. " +
             $"Last error: {lastHealthError ?? "(none)"}.");
 
         // Wait for the session to reach a terminal state (Cancelled or Failed).

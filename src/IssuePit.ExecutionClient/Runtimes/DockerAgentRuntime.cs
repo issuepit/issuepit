@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Formats.Tar;
 using System.Reflection;
 using System.Text;
@@ -48,6 +49,20 @@ public class DockerAgentRuntime(
     /// IssueWorker captures this and persists it on <see cref="AgentSession.ServerWebUiUrl"/>.
     /// </summary>
     internal const string ServerWebUiUrlMarker = "[ISSUEPIT:SERVER_WEB_UI_URL]=";
+
+    // Static registry: maps agentSessionId → the internally-validated serverBaseUrl so that
+    // the execution-client health-proxy endpoint (/api/opencode/{sessionId}/health) can forward
+    // health-check requests without the test process needing direct network access to the
+    // Docker-mapped port (which may be unreachable depending on container network topology).
+    private static readonly ConcurrentDictionary<Guid, string> s_sessionServerUrls = new();
+
+    /// <summary>
+    /// Returns the internally-validated <c>serverBaseUrl</c> for the given agent session,
+    /// or <c>null</c> if the session has not registered a URL yet (or has already been
+    /// deregistered after completion).
+    /// </summary>
+    internal static string? GetSessionServerUrl(Guid agentSessionId)
+        => s_sessionServerUrls.TryGetValue(agentSessionId, out var url) ? url : null;
 
     private static string AppVersion =>
         Assembly.GetEntryAssembly()
@@ -428,6 +443,11 @@ public class DockerAgentRuntime(
                         $"(container: {container.ID[..Math.Min(12, container.ID.Length)]}, " +
                         $"internal url: {serverBaseUrl}).");
 
+                // Register the validated serverBaseUrl in the static registry so the
+                // execution-client health-proxy endpoint can forward health checks from
+                // the E2E test process (which may not have direct access to serverBaseUrl).
+                s_sessionServerUrls[session.Id] = serverBaseUrl;
+
                 await onLogLine("[INFO] opencode HTTP server is ready", LogStream.Stdout);
 
                 // Log server info for diagnostics.
@@ -496,11 +516,15 @@ public class DockerAgentRuntime(
                     throw new Exception(
                         $"opencode HTTP session ended with error (session: {httpSessionId}, container: {container.ID[..Math.Min(12, container.ID.Length)]})");
 
+                // Deregister the server URL now that the session has completed normally.
+                s_sessionServerUrls.TryRemove(session.Id, out _);
+
                 // Return the container ID — the server is still running for potential parallel sessions.
                 return container.ID;
             }
             catch
             {
+                s_sessionServerUrls.TryRemove(session.Id, out _);
                 if (!session.KeepContainer)
                     await TryStopAndRemoveContainerAsync(container.ID);
                 throw;
