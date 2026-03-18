@@ -103,6 +103,15 @@ public class DockerAgentRuntime(
                 : gitRepository.DefaultBranch;
             if (!string.IsNullOrWhiteSpace(effectiveBranch))
                 await onLogLine($"[DEBUG] Git branch     : {effectiveBranch}", LogStream.Stdout);
+
+            // Validate that we have a branch to clone. When no feature branch is set on the issue
+            // the entrypoint uses DefaultBranch as the base — if that is also empty there is
+            // nothing to clone. Fail here with a clear message rather than letting the container
+            // start and exit with a cryptic git error.
+            if (string.IsNullOrWhiteSpace(issue.GitBranch) && string.IsNullOrWhiteSpace(gitRepository.DefaultBranch))
+                throw new InvalidOperationException(
+                    $"GitRepository '{gitRepository.RemoteUrl}' has no DefaultBranch configured and the issue has no GitBranch set. " +
+                    "Set the default branch in the project's git repository settings before running an agent.");
         }
         if (agent.ChildAgents.Count > 0)
         {

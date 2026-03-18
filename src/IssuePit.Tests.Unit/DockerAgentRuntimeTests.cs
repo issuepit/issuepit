@@ -149,27 +149,24 @@ public class DockerAgentRuntimeTests
     }
 
     /// <summary>
-    /// Verifies that entrypoint.sh falls back to a bare <c>git clone</c> (no <c>--branch</c>)
-    /// when the configured base branch does not exist in the remote.
-    /// Without this fallback the script exits via <c>set -e</c> when the base-branch clone fails
-    /// (e.g. the repo uses "master" but IssuePit is configured with "main"), killing the container
-    /// before the agent can run and causing all subsequent <c>docker exec</c> calls to get SIGKILL.
+    /// Verifies that entrypoint.sh does NOT fall back to a bare <c>git clone</c> (no <c>--branch</c>)
+    /// when the configured base branch does not exist in the remote. A silent bare-clone fallback
+    /// hides the misconfiguration (e.g. repo uses "master" but IssuePit is configured with "main")
+    /// and makes the failure hard to diagnose.
+    /// Instead the script must emit a clear error and exit so the container exits non-zero and
+    /// EnsureContainerRunningAsync surfaces a useful message in the session logs.
     /// </summary>
     [Fact]
-    public void EntrypointSh_CloneFallback_HandlesBaseBranchNotFound()
+    public void EntrypointSh_BaseBranchNotFound_EmitsErrorAndDoesNotFallBack()
     {
         var content = ReadEntrypoint();
 
-        // The fallback clone must not specify --branch so git resolves the remote's
-        // actual default branch regardless of what DefaultBranch is set to in IssuePit.
-        Assert.Contains("git clone --depth=1 \"${CLONE_URL}\" \"${WORKSPACE}\"", content,
+        // Must NOT contain a bare clone (no --branch) — that would silently hide a misconfigured DefaultBranch.
+        Assert.DoesNotContain("git clone --depth=1 \"${CLONE_URL}\" \"${WORKSPACE}\"", content,
             StringComparison.Ordinal);
 
-        // The fallback must be guarded by a failed base-branch clone (i.e. inside an
-        // `if ! git clone --depth=1 --branch ...` block) to avoid overriding a
-        // successful branch-specific clone.
-        Assert.Contains("if ! git clone --depth=1 --branch \"${BASE_BRANCH}\"", content,
-            StringComparison.Ordinal);
+        // Must contain a clear error message before failing.
+        Assert.Contains("Update GitRepository.DefaultBranch", content, StringComparison.Ordinal);
     }
 
     private static string ReadEntrypoint()

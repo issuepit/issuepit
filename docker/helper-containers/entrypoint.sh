@@ -73,23 +73,25 @@ if [[ -n "${ISSUEPIT_GIT_REMOTE_URL:-}" ]]; then
     # Clone strategy:
     #   1. If a feature branch is set, try cloning it directly (it may already exist from a prior run).
     #   2. If that fails (branch not yet in remote), clone the configured base branch.
-    #   3. If the base branch is not found either (e.g. repo uses "master" but IssuePit is configured
-    #      with "main"), fall back to a bare clone so git picks up the remote's actual default branch.
-    #      This handles both branch-name mismatches and completely empty repositories.
+    #   The base branch MUST exist in the remote — if it does not, the configured
+    #   GitRepository.DefaultBranch is wrong and the run fails with an explicit error rather
+    #   than silently falling back to a bare clone (which would hide the misconfiguration).
     if [[ -n "${FEATURE_BRANCH}" ]]; then
         echo "[entrypoint] Cloning ${ISSUEPIT_GIT_REMOTE_URL} (feature branch: ${FEATURE_BRANCH}) into ${WORKSPACE}"
         if ! git clone --depth=1 --branch "${FEATURE_BRANCH}" "${CLONE_URL}" "${WORKSPACE}" 2>/dev/null; then
-            echo "[entrypoint] Feature branch '${FEATURE_BRANCH}' not found in remote; cloning base branch '${BASE_BRANCH}' and creating it locally"
-            if ! git clone --depth=1 --branch "${BASE_BRANCH}" "${CLONE_URL}" "${WORKSPACE}" 2>/dev/null; then
-                echo "[entrypoint] Base branch '${BASE_BRANCH}' not found in remote; falling back to default branch"
-                git clone --depth=1 "${CLONE_URL}" "${WORKSPACE}"
+            echo "[entrypoint] Feature branch '${FEATURE_BRANCH}' not found in remote; cloning base branch '${BASE_BRANCH}'."
+            if ! git clone --depth=1 --branch "${BASE_BRANCH}" "${CLONE_URL}" "${WORKSPACE}"; then
+                echo "[entrypoint] ERROR: Base branch '${BASE_BRANCH}' not found in remote." >&2
+                echo "[entrypoint] Update GitRepository.DefaultBranch in IssuePit to match the actual default branch of the remote." >&2
+                exit 1
             fi
         fi
     else
         echo "[entrypoint] Cloning ${ISSUEPIT_GIT_REMOTE_URL} (branch: ${BASE_BRANCH}) into ${WORKSPACE}"
-        if ! git clone --depth=1 --branch "${BASE_BRANCH}" "${CLONE_URL}" "${WORKSPACE}" 2>/dev/null; then
-            echo "[entrypoint] Base branch '${BASE_BRANCH}' not found in remote; falling back to default branch"
-            git clone --depth=1 "${CLONE_URL}" "${WORKSPACE}"
+        if ! git clone --depth=1 --branch "${BASE_BRANCH}" "${CLONE_URL}" "${WORKSPACE}"; then
+            echo "[entrypoint] ERROR: Base branch '${BASE_BRANCH}' not found in remote." >&2
+            echo "[entrypoint] Update GitRepository.DefaultBranch in IssuePit to match the actual default branch of the remote." >&2
+            exit 1
         fi
     fi
     echo "[entrypoint] Clone complete"
