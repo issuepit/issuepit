@@ -18,7 +18,12 @@
           stroke-width="1.2"
           opacity="0.75" />
         <!-- Job boxes -->
-        <g v-for="job in layout.jobs" :key="job.id">
+        <g
+          v-for="job in layout.jobs"
+          :key="job.id"
+          style="cursor: default"
+          @mouseenter="onJobEnter(job, $event)"
+          @mouseleave="onJobLeave">
           <rect
             :x="job.x"
             :y="job.y"
@@ -26,8 +31,9 @@
             :height="JOB_BOX_H"
             rx="3"
             :fill="jobFill(job.status)"
-            :stroke="jobStroke(job.status)"
-            stroke-width="1" />
+            :stroke="hoveredJobId === job.id ? jobHoverStroke(job.status) : jobStroke(job.status)"
+            :stroke-width="hoveredJobId === job.id ? 2 : 1"
+            :opacity="hoveredJobId !== null && hoveredJobId !== job.id ? 0.65 : 1" />
           <!-- Status dot -->
           <circle
             :cx="job.x + 7"
@@ -46,6 +52,18 @@
         </g>
       </svg>
     </div>
+
+    <!-- Job hover tooltip -->
+    <Teleport to="body">
+      <div
+        v-if="hoveredJobId && jobTooltipData"
+        :style="jobTooltipStyle"
+        class="fixed z-[80] bg-gray-800 border border-gray-600 rounded-lg shadow-xl px-2.5 py-1.5 pointer-events-none min-w-[120px]">
+        <p class="text-xs text-gray-200 font-medium leading-tight">{{ jobTooltipData.name }}</p>
+        <p class="text-xs mt-0.5" :class="jobTooltipStatusClass(jobTooltipData.status)">{{ jobTooltipData.statusLabel }}</p>
+        <p v-if="jobTooltipData.duration" class="text-xs text-gray-500 mt-0.5">{{ jobTooltipData.duration }}</p>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -67,6 +85,7 @@ const ROW_GAP = 6
 const COL_GAP = 28
 const PADDING = 6
 const MAX_JOB_NAME_CHARS = 13
+const JOB_TOOLTIP_W = 150
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -92,31 +111,37 @@ interface MiniGraphLayout {
   edges: MiniGraphEdge[]
 }
 
+interface JobTimingEntry {
+  status: JobStatus
+  startedAt?: string
+  endedAt?: string
+}
+
 // ── Data fetching ─────────────────────────────────────────────────────────────
 
 /** Cache keyed by runId to avoid refetching on repeated hovers. */
 const graphCache = new Map<string, WorkflowGraph | null>()
-const statusCache = new Map<string, Map<string, JobStatus>>()
+const statusCache = new Map<string, Map<string, JobTimingEntry>>()
 
 const graph = ref<WorkflowGraph | null>(null)
-const jobStatuses = ref<Map<string, JobStatus>>(new Map())
+const jobTimings = ref<Map<string, JobTimingEntry>>(new Map())
 const loading = ref(false)
 
 async function loadData() {
   if (graphCache.has(props.runId)) {
     graph.value = graphCache.get(props.runId) ?? null
-    jobStatuses.value = statusCache.get(props.runId) ?? new Map()
+    jobTimings.value = statusCache.get(props.runId) ?? new Map()
     return
   }
 
   loading.value = true
   graph.value = null
-  jobStatuses.value = new Map()
+  jobTimings.value = new Map()
 
   try {
     const [fetchedGraph, rawStatuses] = await Promise.all([
       api.get<WorkflowGraph>(`/api/cicd-runs/${props.runId}/graph`),
-      api.get<{ logJobId: string; status: string }[]>(`/api/cicd-runs/${props.runId}/job-statuses`),
+      api.get<{ logJobId: string; status: string; startedAt?: string; endedAt?: string }[]>(`/api/cicd-runs/${props.runId}/job-statuses`),
     ])
 
     graphCache.set(props.runId, fetchedGraph)
@@ -124,18 +149,18 @@ async function loadData() {
 
     // Map log job IDs → graph node IDs using the cicdLogMapper utility.
     const indexes = buildGraphJobIndexes(fetchedGraph.jobs)
-    const statusMap = new Map<string, JobStatus>()
-    for (const { logJobId, status } of rawStatuses) {
+    const timingMap = new Map<string, JobTimingEntry>()
+    for (const { logJobId, status, startedAt, endedAt } of rawStatuses) {
       const graphNodeId = resolveLogJobId(logJobId, indexes)
       const s = status as JobStatus
       // Keep the most severe status if the same node appears under multiple log IDs.
-      const prev = statusMap.get(graphNodeId)
-      if (!prev || SEVERITY[s] > SEVERITY[prev]) {
-        statusMap.set(graphNodeId, s)
+      const prev = timingMap.get(graphNodeId)
+      if (!prev || SEVERITY[s] > SEVERITY[prev.status]) {
+        timingMap.set(graphNodeId, { status: s, startedAt, endedAt })
       }
     }
-    statusCache.set(props.runId, statusMap)
-    jobStatuses.value = statusMap
+    statusCache.set(props.runId, timingMap)
+    jobTimings.value = timingMap
   }
   catch {
     graphCache.set(props.runId, null)
@@ -209,7 +234,7 @@ const layout = computed((): MiniGraphLayout | null => {
       name: job.name,
       x,
       y,
-      status: jobStatuses.value.get(job.id) ?? 'pending',
+      status: jobTimings.value.get(job.id)?.status ?? 'pending',
     }
   })
 
@@ -226,7 +251,7 @@ const layout = computed((): MiniGraphLayout | null => {
     const y2 = to.y + JOB_BOX_H / 2
     const cx = (x2 - x1) * 0.45
     const path = `M ${x1} ${y1} C ${x1 + cx} ${y1} ${x2 - cx} ${y2} ${x2} ${y2}`
-    layoutEdges.push({ path, targetStatus: jobStatuses.value.get(edge.to) ?? 'pending' })
+    layoutEdges.push({ path, targetStatus: jobTimings.value.get(edge.to)?.status ?? 'pending' })
   }
 
   return { svgWidth, svgHeight, jobs: layoutJobs, edges: layoutEdges }
@@ -248,6 +273,13 @@ function jobStroke(s: JobStatus) {
   return '#374151'
 }
 
+function jobHoverStroke(s: JobStatus) {
+  if (s === 'succeeded') return '#4ade80'
+  if (s === 'failed') return '#f87171'
+  if (s === 'running') return '#60a5fa'
+  return '#6b7280'
+}
+
 function jobTextFill(s: JobStatus) {
   if (s === 'succeeded') return '#bbf7d0'
   if (s === 'failed') return '#fecaca'
@@ -267,5 +299,75 @@ function edgeStroke(s: JobStatus) {
   if (s === 'failed') return '#ef4444'
   if (s === 'running') return '#3b82f6'
   return '#4b5563'
+}
+
+// ── Job hover tooltip ─────────────────────────────────────────────────────────
+
+const hoveredJobId = ref<string | null>(null)
+const jobTooltipStyle = ref<Record<string, string>>({})
+
+interface JobTooltipData {
+  name: string
+  status: JobStatus
+  statusLabel: string
+  duration?: string
+}
+
+const jobTooltipData = computed((): JobTooltipData | null => {
+  if (!hoveredJobId.value || !layout.value) return null
+  const job = layout.value.jobs.find(j => j.id === hoveredJobId.value)
+  if (!job) return null
+  const timing = jobTimings.value.get(job.id)
+  return {
+    name: job.name,
+    status: job.status,
+    statusLabel: jobStatusLabel(job.status),
+    duration: timing ? formatJobDuration(timing) : undefined,
+  }
+})
+
+function jobStatusLabel(s: JobStatus) {
+  if (s === 'succeeded') return 'Succeeded'
+  if (s === 'failed') return 'Failed'
+  if (s === 'running') return 'Running'
+  return 'Pending'
+}
+
+function jobTooltipStatusClass(s: JobStatus) {
+  if (s === 'succeeded') return 'text-green-400'
+  if (s === 'failed') return 'text-red-400'
+  if (s === 'running') return 'text-blue-400'
+  return 'text-gray-500'
+}
+
+function formatJobDuration(timing: JobTimingEntry): string | undefined {
+  if (!timing.startedAt) return undefined
+  const start = new Date(timing.startedAt).getTime()
+  const end = timing.endedAt ? new Date(timing.endedAt).getTime() : Date.now()
+  const ms = end - start
+  if (ms < 0) return undefined
+  const s = Math.floor(ms / 1000)
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ${s % 60}s`
+  return `${Math.floor(m / 60)}h ${m % 60}m`
+}
+
+function onJobEnter(job: MiniGraphJob, e: MouseEvent) {
+  hoveredJobId.value = job.id
+  const target = e.currentTarget as SVGGElement
+  const rect = target.getBoundingClientRect()
+  const vpW = window.innerWidth
+  const tooltipW = JOB_TOOLTIP_W
+  let left = rect.right + 6
+  if (left + tooltipW > vpW - 8) left = rect.left - tooltipW - 6
+  jobTooltipStyle.value = {
+    left: `${left}px`,
+    top: `${rect.top}px`,
+  }
+}
+
+function onJobLeave() {
+  hoveredJobId.value = null
 }
 </script>

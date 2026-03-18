@@ -169,15 +169,17 @@ function positionTooltip(e: MouseEvent) {
   const tooltipW = 280
   const tooltipH = Math.min(props.runs.length * RUN_ITEM_HEIGHT + TOOLTIP_HEADER_HEIGHT, MAX_TOOLTIP_HEIGHT)
 
-  let left = rect.left
-  let top = rect.bottom + 6
+  // Prefer right side of chip so moving cursor up/down won't land in the tooltip
+  let left = rect.right + 12
+  let top = rect.top
 
-  // Flip left if it would overflow right
-  if (left + tooltipW > vpW - 8) left = vpW - tooltipW - 8
+  // Flip to left if it would overflow right
+  if (left + tooltipW > vpW - 8) left = rect.left - tooltipW - 12
   if (left < 8) left = 8
 
-  // Flip above if it would overflow bottom
-  if (top + tooltipH > vpH - 8) top = rect.top - tooltipH - 6
+  // Ensure doesn't overflow bottom
+  if (top + tooltipH > vpH - 8) top = vpH - tooltipH - 8
+  if (top < 8) top = 8
 
   tooltipStyle.value = {
     left: `${left}px`,
@@ -206,13 +208,13 @@ function positionSubTooltip(e: MouseEvent) {
   const subW = 380
   const subH = 200
 
-  // Prefer right of the main tooltip
+  // Prefer right of the main tooltip – use actual rendered width to avoid a gap
   const mainLeft = parseFloat(tooltipStyle.value.left ?? '0')
-  const mainW = 280
-  let left = mainLeft + mainW + 6
+  const mainW = tooltipEl.value?.offsetWidth ?? 280
+  let left = mainLeft + mainW
 
   // If it would overflow right, try left of main tooltip
-  if (left + subW > vpW - 8) left = mainLeft - subW - 6
+  if (left + subW > vpW - 8) left = mainLeft - subW
   if (left < 8) left = 8
 
   let top = rect.top

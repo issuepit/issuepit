@@ -426,10 +426,17 @@ public class CiCdRunsController(
     [HttpGet("{id:guid}/job-statuses")]
     public async Task<IActionResult> GetJobStatuses(Guid id)
     {
-        var runExists = await db.CiCdRuns
-            .AnyAsync(r => r.Id == id && r.Project.Organization.TenantId == tenant.CurrentTenant!.Id);
+        var run = await db.CiCdRuns
+            .Where(r => r.Id == id && r.Project.Organization.TenantId == tenant.CurrentTenant!.Id)
+            .Select(r => new { r.Status })
+            .FirstOrDefaultAsync();
 
-        if (!runExists) return NotFound();
+        if (run == null) return NotFound();
+
+        // A terminal run is one that has finished (success/failure/cancelled).
+        // Jobs that have no success/failure log lines in a terminal run must have timed out or been
+        // cancelled, so we surface them as "failed" rather than the misleading "running" status.
+        var isTerminal = run.Status is not (CiCdRunStatus.Running or CiCdRunStatus.Pending or CiCdRunStatus.WaitingForApproval);
 
         var jobGroups = await db.CiCdRunLogs
             .Where(l => l.CiCdRunId == id && l.JobId != null)
@@ -439,13 +446,20 @@ public class CiCdRunsController(
                 LogJobId = g.Key,
                 HasJobSucceeded = g.Any(l => l.Line.EndsWith("Job succeeded")),
                 HasJobFailed = g.Any(l => l.Line.EndsWith("Job failed")),
+                StartedAt = g.Min(l => l.Timestamp),
+                EndedAt = g.Max(l => l.Timestamp),
             })
             .ToListAsync();
 
-        var result = jobGroups.Select(g => new CiCdJobStatusDto(
-            g.LogJobId,
-            g.HasJobFailed ? "failed" : g.HasJobSucceeded ? "succeeded" : "running"
-        ));
+        var result = jobGroups.Select(g =>
+        {
+            string status;
+            if (g.HasJobFailed) status = "failed";
+            else if (g.HasJobSucceeded) status = "succeeded";
+            else if (isTerminal) status = "failed";
+            else status = "running";
+            return new CiCdJobStatusDto(g.LogJobId, status, g.StartedAt, g.EndedAt);
+        });
 
         return Ok(result);
     }
@@ -879,4 +893,8 @@ public record CiCdJobStatusDto(
     /// <summary>The act log job ID (display name, e.g. "Build" or "Backend/Build").</summary>
     string LogJobId,
     /// <summary>One of: succeeded | failed | running.</summary>
-    string Status);
+    string Status,
+    /// <summary>Timestamp of the first log entry for this job (job start time).</summary>
+    DateTime? StartedAt = null,
+    /// <summary>Timestamp of the last log entry for this job (job end time).</summary>
+    DateTime? EndedAt = null);
