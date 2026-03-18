@@ -82,6 +82,10 @@ At the end, scan similar files and evaluate if there is similar/duplicated code:
 
 When working as a coding agent on this repository, follow these conventions:
 
+## Error Handling
+
+- **Do not hide errors with silent fallbacks.** A fallback that masks a misconfiguration (e.g. cloning a git repo without `--branch` when the configured branch does not exist in the remote) prevents the user from understanding what went wrong. Instead, fail fast with a clear, actionable error message that identifies the misconfiguration and how to fix it.
+
 ## Date Formats
 
 Always use **ISO 8601 format** (`YYYY-MM-DD`) for dates in custom issue properties, API responses, and any user-visible date fields. Do not rely on browser locale formatting (e.g. `mm/dd/yyyy`) for date values stored or displayed in the application. Date inputs in forms should accept and display dates in `YYYY-MM-DD` format.

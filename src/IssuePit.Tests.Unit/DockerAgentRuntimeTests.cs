@@ -148,6 +148,27 @@ public class DockerAgentRuntimeTests
             "Ensure the file uses LF-only line endings (add *.sh text eol=lf to .gitattributes).");
     }
 
+    /// <summary>
+    /// Verifies that entrypoint.sh does NOT fall back to a bare <c>git clone</c> (no <c>--branch</c>)
+    /// when the configured base branch does not exist in the remote. A silent bare-clone fallback
+    /// hides the misconfiguration (e.g. repo uses "master" but IssuePit is configured with "main")
+    /// and makes the failure hard to diagnose.
+    /// Instead the script must emit a clear error and exit so the container exits non-zero and
+    /// EnsureContainerRunningAsync surfaces a useful message in the session logs.
+    /// </summary>
+    [Fact]
+    public void EntrypointSh_BaseBranchNotFound_EmitsErrorAndDoesNotFallBack()
+    {
+        var content = ReadEntrypoint();
+
+        // Must NOT contain a bare clone (no --branch) — that would silently hide a misconfigured DefaultBranch.
+        Assert.DoesNotContain("git clone --depth=1 \"${CLONE_URL}\" \"${WORKSPACE}\"", content,
+            StringComparison.Ordinal);
+
+        // Must contain a clear error message before failing.
+        Assert.Contains("Update GitRepository.DefaultBranch", content, StringComparison.Ordinal);
+    }
+
     private static string ReadEntrypoint()
     {
         var assembly = Assembly.GetAssembly(typeof(DockerAgentRuntime))

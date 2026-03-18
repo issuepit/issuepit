@@ -36,6 +36,9 @@ public class DockerAgentRuntime(
     /// <summary>Read buffer size for streaming container log output. 80 KiB matches the Docker SDK convention.</summary>
     private const int LogBufferSize = 81920;
 
+    /// <summary>Length of the hex suffix appended to agent container names for uniqueness.</summary>
+    private const int ContainerNameSuffixLength = 10;
+
     // Special log-line prefixes emitted by this class so IssueWorker can parse them.
     internal const string GitCommitShaMarker = "[ISSUEPIT:GIT_COMMIT_SHA]=";
     internal const string GitBranchMarker = "[ISSUEPIT:GIT_BRANCH]=";
@@ -95,7 +98,7 @@ public class DockerAgentRuntime(
             await onLogLine($"[DEBUG] Keep container : true (container will not be removed on exit)", LogStream.Stdout);
         if (gitRepository is not null)
         {
-            await onLogLine($"[DEBUG] Git remote     : {gitRepository.RemoteUrl}", LogStream.Stdout);
+            await onLogLine($"[DEBUG] Git remote     : {gitRepository.RemoteUrl} ({gitRepository.Mode})", LogStream.Stdout);
             // Determine the branch the container will check out: issue.GitBranch takes precedence
             // (feature branch for this issue), otherwise falls back to the repo's default branch.
             var effectiveBranch = !string.IsNullOrWhiteSpace(issue.GitBranch)
@@ -103,6 +106,15 @@ public class DockerAgentRuntime(
                 : gitRepository.DefaultBranch;
             if (!string.IsNullOrWhiteSpace(effectiveBranch))
                 await onLogLine($"[DEBUG] Git branch     : {effectiveBranch}", LogStream.Stdout);
+
+            // Validate that we have a branch to clone. When no feature branch is set on the issue
+            // the entrypoint uses DefaultBranch as the base — if that is also empty there is
+            // nothing to clone. Fail here with a clear message rather than letting the container
+            // start and exit with a cryptic git error.
+            if (string.IsNullOrWhiteSpace(issue.GitBranch) && string.IsNullOrWhiteSpace(gitRepository.DefaultBranch))
+                throw new InvalidOperationException(
+                    $"GitRepository '{gitRepository.RemoteUrl}' has no DefaultBranch configured and the issue has no GitBranch set. " +
+                    "Set the default branch in the project's git repository settings before running an agent.");
         }
         if (agent.ChildAgents.Count > 0)
         {
@@ -241,8 +253,14 @@ public class DockerAgentRuntime(
                 ? ["sleep", "infinity"]
                 : (session.CustomCmd?.Length > 0 ? session.CustomCmd : null);
 
+        // Generate a unique container name from the session ID, similar to how CI/CD runner
+        // uses --container-name-suffix. This makes agent containers identifiable by session
+        // and prevents name collisions across parallel runs.
+        var containerName = $"issuepit-agent-{session.Id:N}"[..(32 + ContainerNameSuffixLength)];
+
         var createParams = new CreateContainerParameters
         {
+            Name = containerName,
             Image = image,
             Env = env,
             Cmd = containerCmd,
@@ -280,9 +298,10 @@ public class DockerAgentRuntime(
 
         var shortContainerId = container.ID[..Math.Min(12, container.ID.Length)];
         await onLogLine($"[DEBUG] Container ID   : {shortContainerId}", LogStream.Stdout);
+        await onLogLine($"[DEBUG] Container name : {containerName}", LogStream.Stdout);
 
-        logger.LogInformation("Started Docker container {ContainerId} for agent session {SessionId} (ExecFlow={UseExecFlow})",
-            container.ID, session.Id, useExecFlow);
+        logger.LogInformation("Started Docker container {ContainerId} (name: {ContainerName}) for agent session {SessionId} (ExecFlow={UseExecFlow})",
+            container.ID, containerName, session.Id, useExecFlow);
 
         // Inject the preserved opencode DB snapshot from the previous session so the agent can
         // continue the previous conversation. The DB is injected after the container starts (so
@@ -841,8 +860,10 @@ public class DockerAgentRuntime(
     }
 
     /// <summary>
-    /// Executes <paramref name="cmd"/> inside a running container and returns the combined output
-    /// as a trimmed string. Output is not forwarded to any log sink.
+    /// Executes <paramref name="cmd"/> inside a running container and returns the stdout output
+    /// as a trimmed string. Stderr is intentionally excluded — git and other tools emit error
+    /// messages on stderr that would otherwise pollute captured values (e.g. SHA, branch name).
+    /// Output is not forwarded to any log sink.
     /// </summary>
     private async Task<string> ExecReadOutputAsync(
         string containerId,
@@ -851,7 +872,11 @@ public class DockerAgentRuntime(
     {
         var sb = new StringBuilder();
         await ExecCommandAsync(containerId, cmd,
-            (line, _) => { sb.AppendLine(line); return Task.CompletedTask; },
+            (line, stream) =>
+            {
+                if (stream == LogStream.Stdout) sb.AppendLine(line);
+                return Task.CompletedTask;
+            },
             cancellationToken);
         return sb.ToString().Trim();
     }

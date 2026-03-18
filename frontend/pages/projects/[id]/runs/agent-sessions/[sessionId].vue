@@ -440,6 +440,40 @@
 
         <!-- Details tab -->
         <template v-else>
+          <!-- Git remote availability -->
+          <div v-if="gitRemoteChecks.length" class="p-4 border-b border-gray-800">
+            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">Git Remotes</h3>
+            <div class="space-y-2">
+              <div v-for="r in gitRemoteChecks" :key="r.repoId"
+                class="flex items-center gap-3 text-xs">
+                <!-- Availability icon -->
+                <span class="shrink-0 w-4 text-center">
+                  <span v-if="r.available === true" class="text-green-400">✓</span>
+                  <span v-else-if="r.available === false" class="text-red-400">✗</span>
+                  <span v-else class="text-gray-500">?</span>
+                </span>
+                <!-- Mode badge -->
+                <span class="shrink-0 text-xs px-1.5 py-0.5 rounded-full font-medium"
+                  :class="remoteModeBadgeClass(r.mode)">
+                  {{ r.mode }}
+                </span>
+                <!-- URL + branch — links to git settings -->
+                <NuxtLink
+                  :to="`/projects/${projectId}/settings#git-origins`"
+                  class="min-w-0 flex-1 font-mono text-gray-300 hover:text-white truncate transition-colors"
+                  :title="r.remoteUrl">
+                  {{ r.remoteUrl }}
+                </NuxtLink>
+                <span class="shrink-0 text-gray-500 font-mono">{{ r.defaultBranch ?? '—' }}</span>
+                <!-- Selected indicator -->
+                <span v-if="r.selected" class="shrink-0 text-xs text-brand-400 font-medium">selected</span>
+                <!-- Unavailable note -->
+                <span v-else-if="r.available === false" class="shrink-0 text-xs text-red-400">branch missing</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Debug metadata (from [DEBUG] log lines) -->
           <div v-if="debugMetadata.length" class="p-4 font-mono text-xs">
             <table class="w-full">
               <tbody>
@@ -450,7 +484,7 @@
               </tbody>
             </table>
           </div>
-          <div v-else class="py-10 text-center text-sm text-gray-500">No details available</div>
+          <div v-if="!gitRemoteChecks.length && !debugMetadata.length" class="py-10 text-center text-sm text-gray-500">No details available</div>
         </template>
       </div>
 
@@ -513,7 +547,7 @@
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useProjectsStore } from '~/stores/projects'
 import { useAgentsStore } from '~/stores/agents'
-import { CiCdRunStatus, AgentSessionStatus, RunnerType, RuntimeTypeLabels, type AgentSessionLog } from '~/types'
+import { CiCdRunStatus, AgentSessionStatus, RunnerType, RuntimeTypeLabels, type AgentSessionLog, type GitRemoteCheckResult } from '~/types'
 import { formatIssueId } from '~/composables/useIssueFormat'
 import { parseAnsiToHtml, stripAnsiCodes } from '~/composables/useAnsiParser'
 
@@ -732,6 +766,24 @@ const debugMetadata = computed(() => {
   }
   return entries
 })
+
+/** Parsed git remote availability check results from the session JSON field. */
+const gitRemoteChecks = computed<GitRemoteCheckResult[]>(() => {
+  const raw = store.currentSession?.gitRemoteCheckResultsJson
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed as GitRemoteCheckResult[] : []
+  } catch {
+    return []
+  }
+})
+
+function remoteModeBadgeClass(mode: GitRemoteCheckResult['mode']): string {
+  if (mode === 'Working') return 'bg-brand-900/40 text-brand-400'
+  if (mode === 'Release') return 'bg-purple-900/40 text-purple-400'
+  return 'bg-gray-700/60 text-gray-400'
+}
 
 /** Parsed warnings array from the session's JSON warnings field. */
 const sessionWarnings = computed<string[]>(() => {
