@@ -12,20 +12,11 @@
 
     <!-- Toolbar -->
     <div class="flex flex-wrap items-center gap-3 mb-6">
-      <div class="flex items-center gap-2 bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5">
-        <svg class="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-            d="M3 7h18M3 12h18M3 17h18" />
-        </svg>
-        <span class="text-xs text-gray-500">Branch</span>
-        <input
-          v-model="branchFilter"
-          type="text"
-          placeholder="all branches"
-          class="bg-transparent text-xs text-gray-300 placeholder-gray-600 focus:outline-none w-28"
-          @keydown.enter="reload" />
-        <button v-if="branchFilter" class="text-gray-600 hover:text-gray-400 transition-colors" @click="branchFilter = ''; reload()">✕</button>
-      </div>
+      <MultiSelect
+        v-model="branchFilters"
+        :options="branchOptions"
+        placeholder="All Branches"
+      />
 
       <div class="flex items-center gap-2 bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5 flex-1 min-w-48">
         <svg class="w-3.5 h-3.5 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -679,6 +670,7 @@
 <script setup lang="ts">
 import type { TestRunSummary, TestStats, TestCaseHistoryEntry, TestRunCompareResult } from '~/types'
 import { useProjectsStore } from '~/stores/projects'
+import type { MultiSelectOption } from '~/components/MultiSelect.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -701,7 +693,23 @@ watch(activeTab, (tab) => {
   router.replace({ query: { ...route.query, tab } })
 })
 
-const branchFilter = ref((route.query.branch as string) || '')
+const branchFilters = ref<string[]>(
+  Array.isArray(route.query.branch)
+    ? (route.query.branch as string[]).filter(Boolean)
+    : route.query.branch
+      ? [route.query.branch as string]
+      : [],
+)
+const availableBranches = ref<string[]>([])
+
+const branchOptions = computed<MultiSelectOption[]>(() =>
+  availableBranches.value.map(b => ({ value: b, label: b })),
+)
+
+watch(branchFilters, (branches) => {
+  router.replace({ query: { ...route.query, branch: branches.length ? branches : undefined } })
+  reload()
+}, { deep: true })
 const searchQuery = ref('')
 
 const loading = ref(false)
@@ -801,11 +809,11 @@ function testBarHeight(ms: number) {
 async function reload() {
   loading.value = true
   try {
-    const branch = branchFilter.value || undefined
-    const branchParam = branch ? `&branch=${encodeURIComponent(branch)}` : ''
+    const branchParams = branchFilters.value.map(b => `branch=${encodeURIComponent(b)}`).join('&')
+    const branchSep = branchParams ? `&${branchParams}` : ''
     const [runs, tests] = await Promise.all([
-      api.get<TestRunSummary[]>(`/api/projects/${projectId}/test-history/runs?take=50${branchParam}`),
-      api.get<TestStats[]>(`/api/projects/${projectId}/test-history/tests?take=500${branchParam}`),
+      api.get<TestRunSummary[]>(`/api/projects/${projectId}/test-history/runs?take=50${branchSep}`),
+      api.get<TestStats[]>(`/api/projects/${projectId}/test-history/tests?take=500${branchSep}`),
     ])
     runSummaries.value = runs
     allTests.value = tests
@@ -828,10 +836,10 @@ async function openTestDetail(test: TestStats) {
   testHistory.value = []
   testHistoryLoading.value = true
   try {
-    const branch = branchFilter.value || undefined
-    const branchParam = branch ? `&branch=${encodeURIComponent(branch)}` : ''
+    const branchParams = branchFilters.value.map(b => `branch=${encodeURIComponent(b)}`).join('&')
+    const branchSep = branchParams ? `&${branchParams}` : ''
     testHistory.value = await api.get<TestCaseHistoryEntry[]>(
-      `/api/projects/${projectId}/test-history/tests/${encodeURIComponent(test.fullName)}?take=50${branchParam}`,
+      `/api/projects/${projectId}/test-history/tests/${encodeURIComponent(test.fullName)}?take=50${branchSep}`,
     )
   }
   finally {
@@ -896,9 +904,19 @@ async function runCompare() {
   }
 }
 
+async function fetchAvailableBranches() {
+  try {
+    availableBranches.value = await api.get<string[]>(`/api/projects/${projectId}/test-history/branches`)
+  }
+  catch (e) {
+    // fail silently — the filter still works even without the branch list
+    console.warn('Failed to fetch branch list for test history filter:', e)
+  }
+}
+
 onMounted(async () => {
   projectsStore.fetchProject(projectId)
-  await reload()
+  await Promise.all([fetchAvailableBranches(), reload()])
   // If a specific test name is in the URL (e.g. navigated from cicd run tests tab), open its detail
   const testParam = route.query.test as string | undefined
   if (testParam && activeTab.value === 'Tests') {
