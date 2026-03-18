@@ -612,6 +612,19 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         return NoContent();
     }
 
+    [HttpPatch("{id:guid}/attachments/{attachmentId:guid}")]
+    public async Task<IActionResult> UpdateAttachment(Guid id, Guid attachmentId, [FromBody] UpdateAttachmentRequest request)
+    {
+        if (ctx.CurrentTenant is null || ctx.CurrentUser is null) return Unauthorized();
+        var attachment = await db.IssueAttachments.FirstOrDefaultAsync(a => a.Id == attachmentId && a.IssueId == id);
+        if (attachment is null) return NotFound();
+        if (attachment.UserId != ctx.CurrentUser.Id) return Forbid();
+        if (request.IsPublic.HasValue)
+            attachment.IsPublic = request.IsPublic.Value;
+        await db.SaveChangesAsync();
+        return Ok(attachment);
+    }
+
     /// <summary>
     /// Retranscribes a voice attachment and posts the result as a comment on the issue.
     /// </summary>
@@ -759,3 +772,5 @@ public record UpdateIssueRequest(
     bool ClearMilestoneId = false,
     Guid? ParentIssueId = null,
     bool ClearParentIssueId = false);
+public record UpdateAttachmentRequest(bool? IsPublic);
+
