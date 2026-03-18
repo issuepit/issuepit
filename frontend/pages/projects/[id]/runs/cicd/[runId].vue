@@ -41,7 +41,14 @@
           </div>
           <div>
             <p class="text-xs text-gray-500 mb-1">Branch</p>
-            <p class="text-sm text-gray-300 font-mono">{{ store.currentRun.branch || '—' }}</p>
+            <NuxtLink
+              v-if="store.currentRun.branch"
+              :to="branchUrl(store.currentRun.branch)!"
+              class="text-sm text-brand-400 hover:text-brand-300 font-mono transition-colors"
+              :title="`View branch ${store.currentRun.branch} in code viewer`">
+              {{ store.currentRun.branch }}
+            </NuxtLink>
+            <span v-else class="text-sm text-gray-300 font-mono">—</span>
           </div>
           <div>
             <p class="text-xs text-gray-500 mb-1">Commit</p>
@@ -176,6 +183,28 @@
                 <option value="release">release</option>
               </select>
               <p class="text-xs text-gray-600 mt-1">Override the event/trigger for this run. The original trigger was <code class="text-gray-400">{{ store.currentRun?.eventName ?? 'push' }}</code>.</p>
+            </div>
+
+            <!-- Branch override -->
+            <div class="mb-3">
+              <label class="block text-xs text-gray-500 mb-1">Branch</label>
+              <input
+                v-model="retryOptions.branch"
+                type="text"
+                placeholder="e.g. main"
+                class="w-full bg-gray-800 border border-gray-700 rounded-md text-sm text-gray-300 px-2.5 py-1.5 placeholder-gray-600 focus:outline-none focus:border-brand-500" />
+              <p class="text-xs text-gray-600 mt-1">Override the branch to run against. Leave blank to use the original branch <code class="text-gray-400">{{ store.currentRun?.branch ?? '—' }}</code>.</p>
+            </div>
+
+            <!-- Commit SHA override -->
+            <div class="mb-3">
+              <label class="block text-xs text-gray-500 mb-1">Commit SHA</label>
+              <input
+                v-model="retryOptions.commitSha"
+                type="text"
+                placeholder="Leave blank to use the branch tip"
+                class="w-full bg-gray-800 border border-gray-700 rounded-md text-sm text-gray-300 font-mono px-2.5 py-1.5 placeholder-gray-600 focus:outline-none focus:border-brand-500" />
+              <p class="text-xs text-gray-600 mt-1">Defaults to the original commit. Clear to use the latest commit of the specified branch.</p>
             </div>
 
             <label class="flex items-start gap-3 cursor-pointer mb-3">
@@ -938,6 +967,7 @@ import { useProjectsStore } from '~/stores/projects'
 import { CiCdRunStatus, type CiCdRunLog, type LinkedCiCdRun, type LinkedRunType } from '~/types'
 import { parseAnsiToHtml, stripAnsiCodes } from '~/composables/useAnsiParser'
 import { buildGraphJobIndexes, resolveLogJobId as resolveLogJobIdFn, matrixLabel as matrixLabelFn } from '~/utils/cicdLogMapper'
+import { buildBranchUrl } from '~/utils/gitHub'
 
 const route = useRoute()
 const router = useRouter()
@@ -1008,6 +1038,8 @@ const retryOptions = reactive({
   customArgs: '',
   actRunnerImage: '',
   eventName: '',
+  branch: '',
+  commitSha: '',
 })
 const retryConflict = ref<{ message: string; activeRunId: string } | null>(null)
 
@@ -2047,6 +2079,8 @@ async function approveRunAction() {
 
 function openRetryModal() {
   retryOptions.eventName = store.currentRun?.eventName ?? 'push'
+  retryOptions.branch = store.currentRun?.branch ?? ''
+  retryOptions.commitSha = store.currentRun?.commitSha ?? ''
   showRetryModal.value = true
 }
 
@@ -2065,6 +2099,8 @@ async function retryRunWithOptions() {
       customArgs: retryOptions.customArgs.trim() || undefined,
       actRunnerImage: retryOptions.actRunnerImage.trim() || undefined,
       eventName: retryOptions.eventName.trim() || undefined,
+      branch: retryOptions.branch.trim() || undefined,
+      commitSha: retryOptions.commitSha.trim() || undefined,
     })
     retryOptions.forceRetry = false
     navigateTo(`/projects/${projectId}/runs`)
@@ -2169,6 +2205,11 @@ function formatTestDuration(ms: number) {
 function commitUrl(sha?: string): string | null {
   if (!sha) return null
   return `/projects/${projectId}/code?sha=${sha}`
+}
+
+/** Returns the internal code viewer URL for a specific branch, opening the Branches tab. */
+function branchUrl(branch?: string): string | null {
+  return buildBranchUrl(projectId, branch)
 }
 
 function duration(start: string, end?: string) {
