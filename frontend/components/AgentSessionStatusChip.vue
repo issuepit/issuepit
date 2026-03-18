@@ -1,5 +1,5 @@
 <template>
-  <div class="relative inline-flex" @mouseenter="onChipEnter" @mouseleave="onChipLeave">
+  <div class="relative inline-flex" @mouseenter="onChipEnter" @mouseleave="scheduleClose">
     <!-- Status chip -->
     <span :class="chipClass" class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium cursor-default select-none">
       <span :class="dotClass" class="w-1.5 h-1.5 rounded-full" />
@@ -13,8 +13,8 @@
         ref="tooltipEl"
         :style="tooltipStyle"
         class="fixed z-50 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl shadow-black/60 p-3 min-w-[240px] max-w-xs"
-        @mouseenter="onTooltipEnter"
-        @mouseleave="onTooltipLeave">
+        @mouseenter="keepOpen"
+        @mouseleave="scheduleClose">
         <p class="text-xs text-gray-500 mb-2 font-medium uppercase tracking-wide">Agent Session</p>
         <!-- Session info - clickable if projectId available -->
         <component
@@ -42,7 +42,9 @@
               v-for="run in session.cicdRuns"
               :key="run.id"
               class="flex items-center gap-2 w-full text-left rounded-lg px-2 py-1 transition-colors hover:bg-gray-800 cursor-pointer"
-              @click.stop="navigateTo(`/projects/${run.projectId}/runs/cicd/${run.id}`)">
+              @click.stop="navigateTo(`/projects/${run.projectId}/runs/cicd/${run.id}`)"
+              @mouseenter="onRunItemEnter(run, $event)"
+              @mouseleave="scheduleClose">
               <span :class="runDotClass(run.status)" class="w-1.5 h-1.5 rounded-full shrink-0" />
               <div class="flex-1 min-w-0">
                 <p class="text-xs text-gray-300 truncate">{{ run.workflow || run.branch || 'Run' }}</p>
@@ -51,6 +53,19 @@
             </button>
           </div>
         </template>
+      </div>
+
+      <!-- Sub-tooltip: mini job graph shown when hovering a CI/CD run item -->
+      <div
+        v-if="subTooltipVisible && hoveredCiCdRunId"
+        :style="subTooltipStyle"
+        class="fixed z-[60] bg-gray-900 border border-gray-700 rounded-xl shadow-2xl shadow-black/60"
+        @mouseenter="keepOpen"
+        @mouseleave="scheduleClose">
+        <p class="text-xs text-gray-500 px-3 pt-3 pb-1 font-medium uppercase tracking-wide">Job Graph</p>
+        <div class="px-3 pb-3">
+          <MiniJobGraph :run-id="hoveredCiCdRunId" />
+        </div>
       </div>
     </Teleport>
   </div>
@@ -126,7 +141,6 @@ function runChipClass(status: CiCdRunStatus) {
 const tooltipVisible = ref(false)
 const tooltipEl = ref<HTMLElement | null>(null)
 const tooltipStyle = ref<Record<string, string>>({})
-let hideTimer: ReturnType<typeof setTimeout> | null = null
 
 const TOOLTIP_BASE_HEIGHT = 110
 const CICD_RUN_ITEM_HEIGHT = 32
@@ -137,32 +151,10 @@ function tooltipHeight() {
 }
 
 function onChipEnter(e: MouseEvent) {
-  if (hideTimer) {
-    clearTimeout(hideTimer)
-    hideTimer = null
-  }
+  keepOpen()
   positionTooltip(e)
   tooltipVisible.value = true
 }
-
-function onChipLeave() {
-  hideTimer = setTimeout(() => { tooltipVisible.value = false }, 150)
-}
-
-function onTooltipEnter() {
-  if (hideTimer) {
-    clearTimeout(hideTimer)
-    hideTimer = null
-  }
-}
-
-function onTooltipLeave() {
-  hideTimer = setTimeout(() => { tooltipVisible.value = false }, 150)
-}
-
-onUnmounted(() => {
-  if (hideTimer) clearTimeout(hideTimer)
-})
 
 function positionTooltip(e: MouseEvent) {
   const target = e.currentTarget as HTMLElement
@@ -187,6 +179,72 @@ function positionTooltip(e: MouseEvent) {
     top: `${top}px`,
   }
 }
+
+// ── Sub-tooltip: mini cicd job graph ──────────────────────────────────────────
+
+const hoveredCiCdRunId = ref<string | null>(null)
+const subTooltipVisible = ref(false)
+const subTooltipStyle = ref<Record<string, string>>({})
+
+function onRunItemEnter(run: CiCdRun, e: MouseEvent) {
+  keepOpen()
+  hoveredCiCdRunId.value = run.id
+  positionSubTooltip(e)
+  subTooltipVisible.value = true
+}
+
+function positionSubTooltip(e: MouseEvent) {
+  const item = e.currentTarget as HTMLElement
+  const rect = item.getBoundingClientRect()
+  const vpW = window.innerWidth
+  const vpH = window.innerHeight
+  const subW = 380
+  const subH = 200
+
+  // Prefer right of the main tooltip
+  const mainLeft = parseFloat(tooltipStyle.value.left ?? '0')
+  const mainW = 260
+  let left = mainLeft + mainW + 6
+
+  // If it would overflow right, try left of main tooltip
+  if (left + subW > vpW - 8) left = mainLeft - subW - 6
+  if (left < 8) left = 8
+
+  let top = rect.top
+  if (top + subH > vpH - 8) top = vpH - subH - 8
+  if (top < 8) top = 8
+
+  subTooltipStyle.value = {
+    left: `${left}px`,
+    top: `${top}px`,
+  }
+}
+
+// ── Shared hover management ───────────────────────────────────────────────────
+// A single shared timer closes both tooltips. Any tooltip element entering resets the timer,
+// ensuring tooltips stay open as the cursor moves between chip → main tooltip → sub-tooltip.
+
+let hideTimer: ReturnType<typeof setTimeout> | null = null
+
+function keepOpen() {
+  if (hideTimer) {
+    clearTimeout(hideTimer)
+    hideTimer = null
+  }
+}
+
+function scheduleClose() {
+  if (hideTimer) clearTimeout(hideTimer)
+  hideTimer = setTimeout(() => {
+    tooltipVisible.value = false
+    subTooltipVisible.value = false
+    hoveredCiCdRunId.value = null
+  }, 200)
+}
+
+onUnmounted(() => {
+  if (hideTimer) clearTimeout(hideTimer)
+})
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

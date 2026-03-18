@@ -418,6 +418,39 @@ public class CiCdRunsController(
     }
 
     /// <summary>
+    /// Returns a compact job-status summary for every job that produced log output in this run.
+    /// Status is derived purely from log analysis: a job is "succeeded" when it emits
+    /// "Job succeeded", "failed" when it emits "Job failed", and "running" otherwise.
+    /// Used by the frontend mini-graph tooltip to colour job nodes.
+    /// </summary>
+    [HttpGet("{id:guid}/job-statuses")]
+    public async Task<IActionResult> GetJobStatuses(Guid id)
+    {
+        var runExists = await db.CiCdRuns
+            .AnyAsync(r => r.Id == id && r.Project.Organization.TenantId == tenant.CurrentTenant!.Id);
+
+        if (!runExists) return NotFound();
+
+        var jobGroups = await db.CiCdRunLogs
+            .Where(l => l.CiCdRunId == id && l.JobId != null)
+            .GroupBy(l => l.JobId!)
+            .Select(g => new
+            {
+                LogJobId = g.Key,
+                HasJobSucceeded = g.Any(l => l.Line.EndsWith("Job succeeded")),
+                HasJobFailed = g.Any(l => l.Line.EndsWith("Job failed")),
+            })
+            .ToListAsync();
+
+        var result = jobGroups.Select(g => new CiCdJobStatusDto(
+            g.LogJobId,
+            g.HasJobFailed ? "failed" : g.HasJobSucceeded ? "succeeded" : "running"
+        ));
+
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Returns logs for a specific job within a run, identified by job name/id.
     /// Optionally filtered by stream and/or step name.
     /// </summary>
@@ -817,3 +850,11 @@ public record TriggerRunRequest(
     Dictionary<string, string>? Inputs = null,
     /// <summary>Override the Docker image used for the CI/CD container (the container that runs act). Null or empty = use configured default.</summary>
     string? CustomImage = null);
+
+
+/// <summary>Per-job status derived from log analysis for the mini-graph tooltip.</summary>
+public record CiCdJobStatusDto(
+    /// <summary>The act log job ID (display name, e.g. "Build" or "Backend/Build").</summary>
+    string LogJobId,
+    /// <summary>One of: succeeded | failed | running.</summary>
+    string Status);
