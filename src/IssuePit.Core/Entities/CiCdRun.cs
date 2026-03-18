@@ -51,6 +51,10 @@ public class CiCdRun
     [MaxLength(200)]
     public string? ExternalRunId { get; set; }
 
+    /// <summary>Direct URL to the run in the external CI/CD system (e.g. the GitHub Actions run page). Null for locally triggered runs.</summary>
+    [MaxLength(1000)]
+    public string? ExternalRunUrl { get; set; }
+
     /// <summary>Local filesystem path to the repository workspace used for this run. Persisted so retries can reuse the same path.</summary>
     [MaxLength(500)]
     public string? WorkspacePath { get; set; }

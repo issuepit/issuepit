@@ -749,6 +749,7 @@ export interface CiCdRun {
   endedAt?: string
   externalSource?: string
   externalRunId?: string
+  externalRunUrl?: string
   workspacePath?: string
   eventName?: string
   inputsJson?: string

@@ -307,6 +307,7 @@ public class GitHubSyncService(
                                 Status = status,
                                 ExternalSource = "github",
                                 ExternalRunId = externalRunId,
+                                ExternalRunUrl = ghRun.HtmlUrl,
                                 EventName = ghRun.Event,
                                 StartedAt = ghRun.RunStartedAt ?? ghRun.CreatedAt,
                                 EndedAt = ghRun.UpdatedAt,
@@ -912,6 +913,9 @@ public class GitHubSyncService(
 
         [System.Text.Json.Serialization.JsonPropertyName("run_started_at")]
         public DateTime? RunStartedAt { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("html_url")]
+        public string? HtmlUrl { get; set; }
     }
 }
 

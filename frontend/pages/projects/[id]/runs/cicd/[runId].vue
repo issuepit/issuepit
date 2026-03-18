@@ -70,7 +70,14 @@
           </div>
           <div v-if="store.currentRun.externalRunId">
             <p class="text-xs text-gray-500 mb-1">External Run ID</p>
-            <p class="text-sm text-gray-300 font-mono text-xs">{{ store.currentRun.externalRunId }}</p>
+            <a v-if="store.currentRun.externalRunUrl"
+              :href="store.currentRun.externalRunUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-sm text-brand-400 hover:text-brand-300 font-mono text-xs transition-colors">
+              {{ store.currentRun.externalRunId }} ↗
+            </a>
+            <p v-else class="text-sm text-gray-300 font-mono text-xs">{{ store.currentRun.externalRunId }}</p>
           </div>
           <div v-if="store.currentRun.workspacePath">
             <p class="text-xs text-gray-500 mb-1">Workspace</p>
@@ -96,33 +103,51 @@
             </span>
           </div>
         </div>
-        <div v-if="store.currentRun.status === CiCdRunStatus.WaitingForApproval"
-          class="mt-4 pt-4 border-t border-gray-800 flex justify-end">
-          <button
-            :disabled="approving"
-            class="flex items-center gap-1.5 text-sm text-purple-400 hover:text-purple-300 disabled:opacity-50 transition-colors"
-            @click="approveRunAction()">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M5 13l4 4L19 7" />
-            </svg>
-            {{ approving ? 'Approving…' : 'Approve Run' }}
-          </button>
+        <!-- Actions: hidden for external runs (can't retry/approve from IssuePit) -->
+        <div v-if="!store.currentRun.externalSource">
+          <div v-if="store.currentRun.status === CiCdRunStatus.WaitingForApproval"
+            class="mt-4 pt-4 border-t border-gray-800 flex justify-end">
+            <button
+              :disabled="approving"
+              class="flex items-center gap-1.5 text-sm text-purple-400 hover:text-purple-300 disabled:opacity-50 transition-colors"
+              @click="approveRunAction()">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M5 13l4 4L19 7" />
+              </svg>
+              {{ approving ? 'Approving…' : 'Approve Run' }}
+            </button>
+          </div>
+          <div v-else-if="store.currentRun.status === CiCdRunStatus.Failed || store.currentRun.status === CiCdRunStatus.Cancelled || store.currentRun.status === CiCdRunStatus.SucceededWithWarnings"
+            class="mt-4 pt-4 border-t border-gray-800 flex justify-end">
+            <button
+              :disabled="retrying"
+              class="flex items-center gap-1.5 text-sm text-brand-400 hover:text-brand-300 disabled:opacity-50 transition-colors"
+              :title="'Click to retry · Shift+click for options'"
+              @click.exact="retryRun()"
+              @click.shift="openRetryModal()">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {{ retrying ? 'Retrying…' : 'Retry Run' }}
+            </button>
+          </div>
         </div>
-        <div v-else-if="store.currentRun.status === CiCdRunStatus.Failed || store.currentRun.status === CiCdRunStatus.Cancelled || store.currentRun.status === CiCdRunStatus.SucceededWithWarnings"
+        <!-- For external runs: show a link to the source if available -->
+        <div v-else-if="store.currentRun.externalRunUrl"
           class="mt-4 pt-4 border-t border-gray-800 flex justify-end">
-          <button
-            :disabled="retrying"
-            class="flex items-center gap-1.5 text-sm text-brand-400 hover:text-brand-300 disabled:opacity-50 transition-colors"
-            :title="'Click to retry · Shift+click for options'"
-            @click.exact="retryRun()"
-            @click.shift="openRetryModal()">
+          <a
+            :href="store.currentRun.externalRunUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="flex items-center gap-1.5 text-sm text-brand-400 hover:text-brand-300 transition-colors">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
             </svg>
-            {{ retrying ? 'Retrying…' : 'Retry Run' }}
-          </button>
+            View on {{ store.currentRun.externalSource === 'github' ? 'GitHub' : store.currentRun.externalSource }}
+          </a>
         </div>
       </div>
 
