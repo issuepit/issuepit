@@ -116,21 +116,31 @@
               <td class="px-4 py-3 text-gray-400 text-xs"><DateDisplay :date="run.startedAt" mode="auto" /></td>
               <td class="px-4 py-3 text-gray-400 text-xs">{{ run.status === CiCdRunStatus.WaitingForApproval ? '—' : duration(run.startedAt, run.endedAt) }}</td>
               <td class="px-4 py-3 text-right">
-                <button v-if="run.status === CiCdRunStatus.WaitingForApproval"
-                  class="text-xs text-purple-400 hover:text-purple-300 transition-colors"
-                  @click.stop="approveRun(run.id)">
-                  Approve
-                </button>
-                <button v-else-if="run.status === CiCdRunStatus.Pending || run.status === CiCdRunStatus.Running"
-                  class="text-xs text-red-400 hover:text-red-300 transition-colors"
-                  @click.stop="cancelRun(run.id)">
-                  Cancel
-                </button>
-                <button v-else-if="run.status === CiCdRunStatus.Failed || run.status === CiCdRunStatus.Cancelled"
+                <template v-if="!run.externalSource">
+                  <button v-if="run.status === CiCdRunStatus.WaitingForApproval"
+                    class="text-xs text-purple-400 hover:text-purple-300 transition-colors"
+                    @click.stop="approveRun(run.id)">
+                    Approve
+                  </button>
+                  <button v-else-if="run.status === CiCdRunStatus.Pending || run.status === CiCdRunStatus.Running"
+                    class="text-xs text-red-400 hover:text-red-300 transition-colors"
+                    @click.stop="cancelRun(run.id)">
+                    Cancel
+                  </button>
+                  <button v-else-if="run.status === CiCdRunStatus.Failed || run.status === CiCdRunStatus.Cancelled"
+                    class="text-xs text-brand-400 hover:text-brand-300 transition-colors"
+                    @click.stop="retryRun(run.id)">
+                    Retry
+                  </button>
+                </template>
+                <a v-else-if="run.externalRunUrl"
+                  :href="run.externalRunUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   class="text-xs text-brand-400 hover:text-brand-300 transition-colors"
-                  @click.stop="retryRun(run.id)">
-                  Retry
-                </button>
+                  @click.stop>
+                  View ↗
+                </a>
               </td>
             </tr>
           </tbody>

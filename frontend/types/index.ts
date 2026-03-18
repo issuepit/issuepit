@@ -749,6 +749,7 @@ export interface CiCdRun {
   endedAt?: string
   externalSource?: string
   externalRunId?: string
+  externalRunUrl?: string
   workspacePath?: string
   eventName?: string
   inputsJson?: string
@@ -1229,6 +1230,25 @@ export const GitHubSyncModeDescriptions: Record<GitHubSyncMode, string> = {
   [GitHubSyncMode.CreateOnGitHub]: 'When a new issue is created in IssuePit it is automatically pushed to GitHub.',
 }
 
+/** Flags enum — values can be combined (e.g. Issues | CiCdBuilds = 3). */
+export enum GitHubSyncContent {
+  Issues = 1,
+  CiCdBuilds = 2,
+  All = 3,
+}
+
+export const GitHubSyncContentLabels: Record<number, string> = {
+  [GitHubSyncContent.Issues]: 'Issues & PRs only',
+  [GitHubSyncContent.CiCdBuilds]: 'CI/CD Builds only',
+  [GitHubSyncContent.All]: 'Issues, PRs & CI/CD Builds',
+}
+
+export const GitHubSyncContentDescriptions: Record<number, string> = {
+  [GitHubSyncContent.Issues]: 'Imports GitHub issues and pull requests. Does not import workflow runs.',
+  [GitHubSyncContent.CiCdBuilds]: 'Imports GitHub Actions workflow runs as external CI/CD runs. Does not import issues.',
+  [GitHubSyncContent.All]: 'Imports GitHub issues, pull requests, and GitHub Actions workflow runs.',
+}
+
 export enum GitHubSyncRunStatus {
   Pending = 0,
   Running = 1,
@@ -1250,6 +1270,7 @@ export interface GitHubSyncConfig {
   gitHubRepo?: string
   triggerMode: GitHubSyncTriggerMode
   syncMode: GitHubSyncMode
+  syncContent: GitHubSyncContent
   createdAt?: string
   updatedAt?: string
 }

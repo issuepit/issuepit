@@ -42,6 +42,13 @@ public class GitHubSyncConfig
     /// </summary>
     public GitHubSyncMode SyncMode { get; set; } = GitHubSyncMode.Import;
 
+    /// <summary>
+    /// Controls which content categories are included in a sync.
+    /// Defaults to <see cref="GitHubSyncContent.Issues"/> for backward compatibility.
+    /// Set to <see cref="GitHubSyncContent.All"/> to also import GitHub Actions runs.
+    /// </summary>
+    public GitHubSyncContent SyncContent { get; set; } = GitHubSyncContent.Issues;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
