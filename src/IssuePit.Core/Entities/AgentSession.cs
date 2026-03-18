@@ -116,4 +116,13 @@ public class AgentSession
     /// </summary>
     [NotMapped]
     public byte[]? PreviousOpenCodeDbTar { get; set; }
+
+    /// <summary>
+    /// JSON-serialised array of <see cref="GitRemoteCheckResult"/> captured by the pre-flight
+    /// remote branch availability check. Each entry records whether the configured default branch
+    /// was found on a particular remote, and which remote was ultimately selected as the clone
+    /// target. <c>null</c> when no check was performed (no remotes configured, or the check ran
+    /// before this field was added).
+    /// </summary>
+    public string? GitRemoteCheckResultsJson { get; set; }
 }
