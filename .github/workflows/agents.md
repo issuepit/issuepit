@@ -54,7 +54,7 @@ helper-base          ← mcr.microsoft.com/playwright/dotnet (external)
 ├── helper-act       ← helper-base:local + Docker Engine + act + actionlint
 │   └── helper-opencode-act  ← helper-act:local + opencode
 ├── helper-opencode  ← helper-base:local + opencode
-└── issuepit-act-runner  ← helper-base:local + ffmpeg + jq
+└── issuepit-act-runner  ← helper-base:local + Docker Engine + ffmpeg + jq
 ```
 
 **Do not reorder the build steps** — later images depend on earlier ones being present in the local daemon.
@@ -67,7 +67,7 @@ helper-base          ← mcr.microsoft.com/playwright/dotnet (external)
 | `helper-act:local` | `ghcr.io/issuepit/issuepit-helper-act` | Outer container that runs `act` (the CI/CD job runner) |
 | `helper-opencode:local` | `ghcr.io/issuepit/issuepit-helper-opencode` | Outer container that runs `opencode` (the AI agent) |
 | `helper-opencode-act:local` | `ghcr.io/issuepit/issuepit-helper-opencode-act` | Outer container for opencode + act combined |
-| `act-runner:local` | `ghcr.io/issuepit/issuepit-act-runner` | **Inner** runner image for `act`'s `-P ubuntu-latest=<image>` mapping |
+| `act-runner:local` | `ghcr.io/issuepit/issuepit-act-runner` | **Inner** runner image for `act`'s `-P ubuntu-latest=<image>` mapping: Docker Engine (DinD) + ffmpeg + jq |
 
 ### Outer vs inner images
 

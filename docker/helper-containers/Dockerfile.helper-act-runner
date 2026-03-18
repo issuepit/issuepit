@@ -1,4 +1,4 @@
-# IssuePit act runner image: helper-base + ffmpeg + jq
+# IssuePit act runner image: helper-base + Docker Engine (DinD) + ffmpeg + jq
 #
 # This is the INNER runner image used by act for workflow job containers
 # (the -P ubuntu-latest=<image> mapping). Select this in the IssuePit CI/CD
@@ -13,6 +13,7 @@
 #   - s5cmd                      — S3-compatible artifact upload
 #
 # Additionally installs:
+#   - Docker Engine (docker-ce, docker-ce-cli, containerd.io) — enables DinD
 #   - ffmpeg     — audio/video processing (required by media workflow steps)
 #   - jq         — JSON processor (commonly used in CI scripts)
 #
@@ -23,10 +24,19 @@ ARG BASE_IMAGE=ghcr.io/issuepit/issuepit-helper-base:latest
 
 FROM ${BASE_IMAGE}
 
-# Install ffmpeg for audio/video processing and jq for JSON processing in CI scripts.
-# Both are lightweight additions that cover the most common tool gaps in workflow steps.
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg jq && \
+# Install Docker Engine (dockerd + CLI + containerd) so that workflow steps can
+# use Docker commands inside this container (DinD). The outer helper-act container
+# starts dockerd; this image just needs the full Docker stack present so that
+# workflows using `docker build`, `docker run`, or service containers work correctly.
+# curl and gnupg are already present in the base image.
+RUN install -m 0755 -d /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc && \
+    chmod a+r /etc/apt/keyrings/docker.asc && \
+    . /etc/os-release && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" \
+        > /etc/apt/sources.list.d/docker.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends docker-ce docker-ce-cli containerd.io ffmpeg jq && \
     rm -rf /var/lib/apt/lists/*
 
 # Reset the entrypoint from helper-base: this image is used as an act inner runner
@@ -36,4 +46,4 @@ ENTRYPOINT []
 CMD ["/bin/bash"]
 
 LABEL org.opencontainers.image.title="issuepit-act-runner" \
-      org.opencontainers.image.description="IssuePit act runner: helper-base + ffmpeg + jq (Chrome and .NET already included via helper-base)"
+      org.opencontainers.image.description="IssuePit act runner: helper-base + Docker Engine (DinD) + ffmpeg + jq (Chrome and .NET already included via helper-base)"

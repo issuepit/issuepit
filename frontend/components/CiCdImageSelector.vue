@@ -140,7 +140,7 @@ const imageGroups = [
     emoji: '🚀',
     label: 'IssuePit Act Runner',
     size: null,
-    description: 'catthehacker/ubuntu:act-latest + ffmpeg + Google Chrome. Recommended for workflows using Playwright tests or media processing.',
+    description: 'Playwright base + Docker Engine (DinD) + ffmpeg + jq + Google Chrome. Recommended for workflows using Playwright tests, media processing, or Docker builds.',
     isDefault: false,
     tags: [
       'ghcr.io/issuepit/issuepit-act-runner:latest',
