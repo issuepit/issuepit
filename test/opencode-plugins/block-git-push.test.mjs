@@ -12,7 +12,7 @@
  * Run:  node --test "test/opencode-plugins/*.test.mjs"
  */
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test, beforeEach, afterEach } from "node:test";
 import { BlockGitPushPlugin } from "../../docker/helper-containers/opencode-plugins/block-git-push.js";
 
 // Helper: initialise the plugin (mirroring opencode's Plugin.trigger path)
@@ -35,9 +35,10 @@ test("plugin returns a hooks object with tool.execute.before", async () => {
   assert.equal(typeof hooks["tool.execute.before"], "function");
 });
 
-// ── Blocked commands ──────────────────────────────────────────────────────────
+// ── Forbidden mode (default) ──────────────────────────────────────────────────
 
-test("blocks bare `git push`", async () => {
+test("Forbidden: blocks bare `git push`", async () => {
+  delete process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION;
   const hook = await getHook();
   await assert.rejects(
     () =>
@@ -49,7 +50,8 @@ test("blocks bare `git push`", async () => {
   );
 });
 
-test("blocks `git push origin main`", async () => {
+test("Forbidden: blocks `git push origin main`", async () => {
+  delete process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION;
   const hook = await getHook();
   await assert.rejects(
     () =>
@@ -61,7 +63,8 @@ test("blocks `git push origin main`", async () => {
   );
 });
 
-test("blocks `git push --force-with-lease`", async () => {
+test("Forbidden: blocks `git push --force-with-lease`", async () => {
+  delete process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION;
   const hook = await getHook();
   await assert.rejects(
     () =>
@@ -73,7 +76,8 @@ test("blocks `git push --force-with-lease`", async () => {
   );
 });
 
-test("blocks `git push -u origin HEAD`", async () => {
+test("Forbidden: blocks `git push -u origin HEAD`", async () => {
+  delete process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION;
   const hook = await getHook();
   await assert.rejects(
     () =>
@@ -85,7 +89,8 @@ test("blocks `git push -u origin HEAD`", async () => {
   );
 });
 
-test("blocks multi-command string containing `git push`", async () => {
+test("Forbidden: blocks multi-command string containing `git push`", async () => {
+  delete process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION;
   const hook = await getHook();
   await assert.rejects(
     () =>
@@ -97,9 +102,237 @@ test("blocks multi-command string containing `git push`", async () => {
   );
 });
 
-// ── Allowed commands ──────────────────────────────────────────────────────────
+test("Forbidden: numeric value '0' also blocks push", async () => {
+  process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION = "0";
+  const hook = await getHook();
+  await assert.rejects(
+    () =>
+      hook(
+        { tool: "bash", sessionID: "s", callID: "c" },
+        { args: { command: "git push" } },
+      ),
+    /git push is not allowed/,
+  );
+  delete process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION;
+});
+
+// ── Force-push always denied ──────────────────────────────────────────────────
+
+test("Allowed: denies --force push", async () => {
+  process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION = "Allowed";
+  process.env.ISSUEPIT_GIT_DEFAULT_BRANCH = "main";
+  process.env.ISSUEPIT_GIT_BRANCH = "feat/123-fix";
+  const hook = await getHook();
+  await assert.rejects(
+    () =>
+      hook(
+        { tool: "bash", sessionID: "s", callID: "c" },
+        { args: { command: "git push --force origin feat/123-fix" } },
+      ),
+    /Force push is not permitted/,
+  );
+  delete process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION;
+  delete process.env.ISSUEPIT_GIT_DEFAULT_BRANCH;
+  delete process.env.ISSUEPIT_GIT_BRANCH;
+});
+
+test("Allowed: denies -f push", async () => {
+  process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION = "Allowed";
+  process.env.ISSUEPIT_GIT_DEFAULT_BRANCH = "main";
+  process.env.ISSUEPIT_GIT_BRANCH = "feat/123-fix";
+  const hook = await getHook();
+  await assert.rejects(
+    () =>
+      hook(
+        { tool: "bash", sessionID: "s", callID: "c" },
+        { args: { command: "git push -f origin feat/123-fix" } },
+      ),
+    /Force push is not permitted/,
+  );
+  delete process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION;
+  delete process.env.ISSUEPIT_GIT_DEFAULT_BRANCH;
+  delete process.env.ISSUEPIT_GIT_BRANCH;
+});
+
+test("YoloMode: denies force push even in yolo mode", async () => {
+  process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION = "YoloMode";
+  const hook = await getHook();
+  await assert.rejects(
+    () =>
+      hook(
+        { tool: "bash", sessionID: "s", callID: "c" },
+        { args: { command: "git push --force origin main" } },
+      ),
+    /Force push is not permitted/,
+  );
+  delete process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION;
+});
+
+// ── WorkingOriginOnly mode ────────────────────────────────────────────────────
+
+test("WorkingOriginOnly: allows push to feature branch", async () => {
+  process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION = "WorkingOriginOnly";
+  process.env.ISSUEPIT_GIT_DEFAULT_BRANCH = "main";
+  process.env.ISSUEPIT_GIT_BRANCH = "feat/123-fix";
+  const hook = await getHook();
+  await assert.doesNotReject(() =>
+    hook(
+      { tool: "bash", sessionID: "s", callID: "c" },
+      { args: { command: "git push origin feat/123-fix" } },
+    ),
+  );
+  delete process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION;
+  delete process.env.ISSUEPIT_GIT_DEFAULT_BRANCH;
+  delete process.env.ISSUEPIT_GIT_BRANCH;
+});
+
+test("WorkingOriginOnly: denies push to default branch", async () => {
+  process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION = "WorkingOriginOnly";
+  process.env.ISSUEPIT_GIT_DEFAULT_BRANCH = "main";
+  process.env.ISSUEPIT_GIT_BRANCH = "feat/123-fix";
+  const hook = await getHook();
+  await assert.rejects(
+    () =>
+      hook(
+        { tool: "bash", sessionID: "s", callID: "c" },
+        { args: { command: "git push origin main" } },
+      ),
+    /default branch/,
+  );
+  delete process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION;
+  delete process.env.ISSUEPIT_GIT_DEFAULT_BRANCH;
+  delete process.env.ISSUEPIT_GIT_BRANCH;
+});
+
+test("WorkingOriginOnly: denies push to a branch other than the feature branch", async () => {
+  process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION = "WorkingOriginOnly";
+  process.env.ISSUEPIT_GIT_DEFAULT_BRANCH = "main";
+  process.env.ISSUEPIT_GIT_BRANCH = "feat/123-fix";
+  const hook = await getHook();
+  await assert.rejects(
+    () =>
+      hook(
+        { tool: "bash", sessionID: "s", callID: "c" },
+        { args: { command: "git push origin refs/heads/other-branch" } },
+      ),
+    /WorkingOriginOnly mode/,
+  );
+  delete process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION;
+  delete process.env.ISSUEPIT_GIT_DEFAULT_BRANCH;
+  delete process.env.ISSUEPIT_GIT_BRANCH;
+});
+
+test("WorkingOriginOnly: denies push when no feature branch configured", async () => {
+  process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION = "WorkingOriginOnly";
+  delete process.env.ISSUEPIT_GIT_BRANCH;
+  const hook = await getHook();
+  await assert.rejects(
+    () =>
+      hook(
+        { tool: "bash", sessionID: "s", callID: "c" },
+        { args: { command: "git push" } },
+      ),
+    /no feature branch/,
+  );
+  delete process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION;
+});
+
+// ── Allowed mode ──────────────────────────────────────────────────────────────
+
+test("Allowed: allows push to feature branch", async () => {
+  process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION = "Allowed";
+  process.env.ISSUEPIT_GIT_DEFAULT_BRANCH = "main";
+  process.env.ISSUEPIT_GIT_BRANCH = "feat/123-fix";
+  const hook = await getHook();
+  await assert.doesNotReject(() =>
+    hook(
+      { tool: "bash", sessionID: "s", callID: "c" },
+      { args: { command: "git push origin feat/123-fix" } },
+    ),
+  );
+  delete process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION;
+  delete process.env.ISSUEPIT_GIT_DEFAULT_BRANCH;
+  delete process.env.ISSUEPIT_GIT_BRANCH;
+});
+
+test("Allowed: allows push to any non-protected branch", async () => {
+  process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION = "Allowed";
+  process.env.ISSUEPIT_GIT_DEFAULT_BRANCH = "main";
+  process.env.ISSUEPIT_GIT_BRANCH = "feat/123-fix";
+  const hook = await getHook();
+  await assert.doesNotReject(() =>
+    hook(
+      { tool: "bash", sessionID: "s", callID: "c" },
+      { args: { command: "git push origin other-feature" } },
+    ),
+  );
+  delete process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION;
+  delete process.env.ISSUEPIT_GIT_DEFAULT_BRANCH;
+  delete process.env.ISSUEPIT_GIT_BRANCH;
+});
+
+test("Allowed: denies push to main", async () => {
+  process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION = "Allowed";
+  process.env.ISSUEPIT_GIT_DEFAULT_BRANCH = "main";
+  const hook = await getHook();
+  await assert.rejects(
+    () =>
+      hook(
+        { tool: "bash", sessionID: "s", callID: "c" },
+        { args: { command: "git push origin main" } },
+      ),
+    /default branch/,
+  );
+  delete process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION;
+  delete process.env.ISSUEPIT_GIT_DEFAULT_BRANCH;
+});
+
+test("Allowed: denies push to master", async () => {
+  process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION = "Allowed";
+  process.env.ISSUEPIT_GIT_DEFAULT_BRANCH = "master";
+  const hook = await getHook();
+  await assert.rejects(
+    () =>
+      hook(
+        { tool: "bash", sessionID: "s", callID: "c" },
+        { args: { command: "git push origin master" } },
+      ),
+    /default branch/,
+  );
+  delete process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION;
+  delete process.env.ISSUEPIT_GIT_DEFAULT_BRANCH;
+});
+
+// ── YoloMode ──────────────────────────────────────────────────────────────────
+
+test("YoloMode: allows push to any branch", async () => {
+  process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION = "YoloMode";
+  const hook = await getHook();
+  await assert.doesNotReject(() =>
+    hook(
+      { tool: "bash", sessionID: "s", callID: "c" },
+      { args: { command: "git push origin some-branch" } },
+    ),
+  );
+  delete process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION;
+});
+
+test("YoloMode: numeric value '3' also allows push", async () => {
+  process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION = "3";
+  const hook = await getHook();
+  await assert.doesNotReject(() =>
+    hook(
+      { tool: "bash", sessionID: "s", callID: "c" },
+      { args: { command: "git push origin main" } },
+    ),
+  );
+  delete process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION;
+});
+
+// ── Allowed commands (always) ─────────────────────────────────────────────────
 
 test("allows `git commit`", async () => {
+  delete process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION;
   const hook = await getHook();
   await assert.doesNotReject(() =>
     hook(
@@ -110,6 +343,7 @@ test("allows `git commit`", async () => {
 });
 
 test("allows `git status`", async () => {
+  delete process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION;
   const hook = await getHook();
   await assert.doesNotReject(() =>
     hook(
@@ -120,6 +354,7 @@ test("allows `git status`", async () => {
 });
 
 test("allows `git add`", async () => {
+  delete process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION;
   const hook = await getHook();
   await assert.doesNotReject(() =>
     hook(
@@ -130,6 +365,7 @@ test("allows `git add`", async () => {
 });
 
 test("ignores non-bash tools even when args contain git push", async () => {
+  delete process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION;
   const hook = await getHook();
   await assert.doesNotReject(() =>
     hook(
@@ -140,6 +376,7 @@ test("ignores non-bash tools even when args contain git push", async () => {
 });
 
 test("handles missing args gracefully (no args.command)", async () => {
+  delete process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION;
   const hook = await getHook();
   await assert.doesNotReject(() =>
     hook(
@@ -150,6 +387,7 @@ test("handles missing args gracefully (no args.command)", async () => {
 });
 
 test("handles null/undefined args gracefully", async () => {
+  delete process.env.ISSUEPIT_AGENT_PUSH_RESTRICTION;
   const hook = await getHook();
   await assert.doesNotReject(() =>
     hook(

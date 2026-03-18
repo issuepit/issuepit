@@ -273,6 +273,17 @@
                   <option value="Release">Release – only main branch is pushed after merge</option>
                 </select>
               </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1">Agent Push Restriction</label>
+                <select v-model="repoForm.agentPushRestriction"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+                  <option value="Forbidden">Forbidden (default) – agents cannot push; execution client pushes after session</option>
+                  <option value="WorkingOriginOnly">Working origin only – agents may push to the feature branch only</option>
+                  <option value="Allowed">Allowed – agents may push to any non-protected branch (no force push, no main/master)</option>
+                  <option value="YoloMode">Yolo mode – agents may push to any branch (force push still denied)</option>
+                </select>
+                <p class="text-xs text-gray-500 mt-1">Force pushes and pushes to the default branch are always denied except in Yolo mode.</p>
+              </div>
               <!-- GitHub identity selector -->
               <div>
                 <label class="block text-sm font-medium text-gray-300 mb-1">GitHub Identity <span class="text-gray-500">(optional)</span></label>
@@ -679,7 +690,7 @@ import { useMcpServersStore } from '~/stores/mcp-servers'
 import { useProjectPropertiesStore } from '~/stores/projectProperties'
 import { useGitHubIdentitiesStore } from '~/stores/github-identities'
 import { ProjectPropertyType } from '~/types'
-import type { AgentProject, ProjectMcpServer, GitRepository, GitOriginMode, ProjectProperty } from '~/types'
+import type { AgentProject, ProjectMcpServer, GitRepository, GitOriginMode, AgentPushRestriction, ProjectProperty } from '~/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -876,13 +887,14 @@ const suggestingIssueKey = ref(false)
 // ── Repo form (multi-origin) ──────────────────────────────────
 const showRepoModal = ref(false)
 const editingRepoId = ref<string | null>(null)
-const repoForm = reactive<{ remoteUrl: string; defaultBranch: string; authUsername: string; authToken: string; mode: GitOriginMode; gitHubIdentityId: string }>({
+const repoForm = reactive<{ remoteUrl: string; defaultBranch: string; authUsername: string; authToken: string; mode: GitOriginMode; gitHubIdentityId: string; agentPushRestriction: AgentPushRestriction }>({
   remoteUrl: '',
   defaultBranch: 'main',
   authUsername: '',
   authToken: '',
   mode: 'Working',
   gitHubIdentityId: '',
+  agentPushRestriction: 'Forbidden',
 })
 
 function modeClasses(mode: GitOriginMode) {
@@ -893,7 +905,7 @@ function modeClasses(mode: GitOriginMode) {
 
 function openAddRepo() {
   editingRepoId.value = null
-  Object.assign(repoForm, { remoteUrl: '', defaultBranch: 'main', authUsername: '', authToken: '', mode: 'Working', gitHubIdentityId: '' })
+  Object.assign(repoForm, { remoteUrl: '', defaultBranch: 'main', authUsername: '', authToken: '', mode: 'Working', gitHubIdentityId: '', agentPushRestriction: 'Forbidden' })
   gitStore.error = null
   showRepoModal.value = true
 }
@@ -907,6 +919,7 @@ function openEditRepo(r: GitRepository) {
     authToken: '',
     mode: r.mode,
     gitHubIdentityId: r.gitHubIdentityId ?? '',
+    agentPushRestriction: r.agentPushRestriction ?? 'Forbidden',
   })
   gitStore.error = null
   showRepoModal.value = true
@@ -921,6 +934,7 @@ async function saveRepo() {
     authToken: repoForm.gitHubIdentityId ? undefined : (repoForm.authToken || undefined),
     mode: repoForm.mode,
     gitHubIdentityId: repoForm.gitHubIdentityId || undefined,
+    agentPushRestriction: repoForm.agentPushRestriction,
   }
   if (editingRepoId.value) {
     await gitStore.updateRepo(id, editingRepoId.value, payload)

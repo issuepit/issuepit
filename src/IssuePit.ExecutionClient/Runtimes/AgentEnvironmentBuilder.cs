@@ -51,6 +51,8 @@ internal static class AgentEnvironmentBuilder
                 env.Add($"ISSUEPIT_GIT_AUTH_USERNAME={gitRepository.AuthUsername}");
             if (!string.IsNullOrEmpty(gitRepository.AuthToken))
                 env.Add($"ISSUEPIT_GIT_AUTH_TOKEN={gitRepository.AuthToken}");
+            // Inform the git push wrapper and OpenCode plugin about the push restriction level.
+            env.Add($"ISSUEPIT_AGENT_PUSH_RESTRICTION={gitRepository.AgentPushRestriction}");
         }
 
         // Inject agent logins / API key credentials as environment variables.

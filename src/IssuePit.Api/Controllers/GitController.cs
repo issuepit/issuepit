@@ -62,6 +62,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
             AuthToken = authToken,
             GitHubIdentityId = req.GitHubIdentityId,
             Mode = req.Mode ?? GitOriginMode.Working,
+            AgentPushRestriction = req.AgentPushRestriction ?? AgentPushRestriction.Forbidden,
             CreatedAt = DateTime.UtcNow
         };
         db.GitRepositories.Add(repo);
@@ -86,6 +87,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         repo.RemoteUrl = req.RemoteUrl;
         repo.DefaultBranch = req.DefaultBranch ?? repo.DefaultBranch;
         if (req.Mode.HasValue) repo.Mode = req.Mode.Value;
+        if (req.AgentPushRestriction.HasValue) repo.AgentPushRestriction = req.AgentPushRestriction.Value;
 
         if (req.GitHubIdentityId.HasValue)
         {
@@ -272,6 +274,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
             AuthUsername = req.AuthUsername,
             AuthToken = req.AuthToken,
             Mode = req.Mode ?? GitOriginMode.Working,
+            AgentPushRestriction = req.AgentPushRestriction ?? AgentPushRestriction.Forbidden,
             CreatedAt = DateTime.UtcNow
         };
         db.GitRepositories.Add(repo);
@@ -298,6 +301,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         if (req.AuthUsername is not null) repo.AuthUsername = req.AuthUsername;
         if (req.AuthToken is not null) repo.AuthToken = req.AuthToken;
         if (req.Mode.HasValue) repo.Mode = req.Mode.Value;
+        if (req.AgentPushRestriction.HasValue) repo.AgentPushRestriction = req.AgentPushRestriction.Value;
         await db.SaveChangesAsync();
         return Ok(ToDto(repo));
     }
@@ -495,6 +499,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         gitHubIdentityName = repo.GitHubIdentity != null
             ? (repo.GitHubIdentity.Name ?? $"@{repo.GitHubIdentity.GitHubUsername}")
             : null,
+        agentPushRestriction = repo.AgentPushRestriction.ToString(),
     };
 
     /// <summary>Background task: clones/fetches the newly linked repo and triggers an initial CI/CD run.</summary>
@@ -541,4 +546,4 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
     }
 }
 
-public record GitRepoRequest(string RemoteUrl, string? DefaultBranch, string? AuthUsername, string? AuthToken, GitOriginMode? Mode, Guid? GitHubIdentityId = null);
+public record GitRepoRequest(string RemoteUrl, string? DefaultBranch, string? AuthUsername, string? AuthToken, GitOriginMode? Mode, Guid? GitHubIdentityId = null, AgentPushRestriction? AgentPushRestriction = null);

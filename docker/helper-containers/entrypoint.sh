@@ -120,9 +120,16 @@ fi
 # ─── Step 2c: Install git push wrapper ─────────────────────────────────────────
 #
 # A lightweight wrapper is placed at /usr/local/bin/git (ahead of the real git on PATH).
-# It intercepts `git push` invocations and exits with an error so that agent tools
-# (opencode, codex, etc.) cannot push to the remote during their run.
-# Pushing is performed explicitly by the C# execution client after the agent finishes.
+# It intercepts `git push` invocations and enforces the push restriction configured for
+# this repository (ISSUEPIT_AGENT_PUSH_RESTRICTION env var):
+#
+#   Forbidden        (default, 0): all agent pushes are denied.
+#   WorkingOriginOnly       (1): push allowed only to the feature branch for this run;
+#                                   force pushes and pushes to the default branch are denied.
+#   Allowed                 (2): push allowed to any non-protected branch;
+#                                   force pushes and pushes to the default branch are denied.
+#   YoloMode                (3): no restrictions; force pushes to the default branch are
+#                                   still denied as a minimal safety net.
 #
 # This is not a full security boundary — a sufficiently determined agent could locate
 # and invoke the real git binary directly — but it prevents accidental pushes from
@@ -134,16 +141,63 @@ REAL_GIT=$(command -v git 2>/dev/null || echo "/usr/bin/git")
 echo "${REAL_GIT}" > /tmp/.issuepit-real-git
 cat > /usr/local/bin/git << GITWRAPPER
 #!/usr/bin/env bash
-# IssuePit git wrapper — blocks push; all other subcommands are forwarded unchanged.
+# IssuePit git wrapper — enforces push restrictions; all other subcommands are forwarded unchanged.
 if [[ "\${1:-}" == "push" ]]; then
-    echo "[issuepit] git push is not permitted inside the agent container." >&2
-    echo "[issuepit] The execution client will push the branch after your run completes." >&2
-    exit 1
+    RESTRICTION="\${ISSUEPIT_AGENT_PUSH_RESTRICTION:-Forbidden}"
+    DEFAULT_BRANCH="\${ISSUEPIT_GIT_DEFAULT_BRANCH:-main}"
+    FEATURE_BRANCH="\${ISSUEPIT_GIT_BRANCH:-}"
+
+    # Forbidden (default): deny all agent pushes.
+    if [[ "\${RESTRICTION}" == "Forbidden" || "\${RESTRICTION}" == "0" ]]; then
+        echo "[issuepit] git push is not permitted inside the agent container." >&2
+        echo "[issuepit] The execution client will push the branch after your run completes." >&2
+        exit 1
+    fi
+
+    # Always deny force pushes regardless of restriction level.
+    for arg in "\$@"; do
+        if [[ "\${arg}" == "--force" || "\${arg}" == "-f" || "\${arg}" == "--force-with-lease" || "\${arg}" == "--force-if-includes" ]]; then
+            echo "[issuepit] Force push is not permitted." >&2
+            exit 1
+        fi
+    done
+
+    # YoloMode: allow all non-force pushes (force pushes are already denied above).
+    if [[ "\${RESTRICTION}" == "YoloMode" || "\${RESTRICTION}" == "3" ]]; then
+        exec "${REAL_GIT}" "\$@"
+    fi
+
+    # WorkingOriginOnly and Allowed: deny pushes to the default branch (main/master).
+    for arg in "\$@"; do
+        if [[ "\${arg}" == "\${DEFAULT_BRANCH}" || "\${arg}" == "refs/heads/\${DEFAULT_BRANCH}" || "\${arg}" == "main" || "\${arg}" == "master" || "\${arg}" == "refs/heads/main" || "\${arg}" == "refs/heads/master" ]]; then
+            echo "[issuepit] Pushing to the default branch '\${arg}' is not permitted." >&2
+            exit 1
+        fi
+    done
+
+    # WorkingOriginOnly: also deny pushes to any branch other than the feature branch.
+    if [[ "\${RESTRICTION}" == "WorkingOriginOnly" || "\${RESTRICTION}" == "1" ]]; then
+        if [[ -z "\${FEATURE_BRANCH}" ]]; then
+            echo "[issuepit] git push is not allowed: no feature branch is configured for this session." >&2
+            exit 1
+        fi
+        for arg in "\$@"; do
+            if [[ "\${arg}" =~ ^refs/heads/ ]]; then
+                BRANCH="\${arg#refs/heads/}"
+                if [[ "\${BRANCH}" != "\${FEATURE_BRANCH}" ]]; then
+                    echo "[issuepit] Pushing to '\${BRANCH}' is not allowed; only '\${FEATURE_BRANCH}' is permitted in WorkingOriginOnly mode." >&2
+                    exit 1
+                fi
+            fi
+        done
+    fi
+
+    exec "${REAL_GIT}" "\$@"
 fi
 exec "${REAL_GIT}" "\$@"
 GITWRAPPER
 chmod +x /usr/local/bin/git
-echo "[entrypoint] git push wrapper installed (real git: ${REAL_GIT})"
+echo "[entrypoint] git push wrapper installed (real git: ${REAL_GIT}, restriction: ${ISSUEPIT_AGENT_PUSH_RESTRICTION:-Forbidden})"
 
 # ─── Step 3: Set up tools ──────────────────────────────────────────────────────
 

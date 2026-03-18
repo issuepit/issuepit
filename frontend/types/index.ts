@@ -599,6 +599,8 @@ export interface PoolStatus {
 
 export type GitOriginMode = 'ReadOnly' | 'Working' | 'Release'
 
+export type AgentPushRestriction = 'Forbidden' | 'WorkingOriginOnly' | 'Allowed' | 'YoloMode'
+
 /** Per-remote result of the pre-flight branch availability check run before each agent session. */
 export interface GitRemoteCheckResult {
   repoId: string
@@ -625,6 +627,7 @@ export interface GitRepository {
   mode: GitOriginMode
   gitHubIdentityId?: string
   gitHubIdentityName?: string
+  agentPushRestriction: AgentPushRestriction
 }
 
 export interface GitBranch {

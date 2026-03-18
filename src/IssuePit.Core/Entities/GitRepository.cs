@@ -63,4 +63,12 @@ public class GitRepository
 
     /// <summary>How this remote is used by agents and the release pipeline.</summary>
     public GitOriginMode Mode { get; set; } = GitOriginMode.Working;
+
+    /// <summary>
+    /// Controls whether agents are permitted to run <c>git push</c> directly inside the
+    /// container during their working session (before the execution client's managed push).
+    /// Defaults to <see cref="AgentPushRestriction.Forbidden"/> — agents cannot push at all;
+    /// the execution client performs the only push after the session ends.
+    /// </summary>
+    public AgentPushRestriction AgentPushRestriction { get; set; } = AgentPushRestriction.Forbidden;
 }
