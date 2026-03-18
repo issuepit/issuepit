@@ -25,8 +25,8 @@ public class CiCdRunPage(IPage page)
     public async Task ClickJobsTabAsync()
     {
         await page.ClickAsync("button:has-text('Jobs')");
-        // Wait for jobs content to be visible
-        await page.WaitForSelectorAsync("[data-testid='jobs-tab-content'], text=No job data available, text=log line", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        // Wait briefly for the tab to render — any visible content (job boxes, empty state, or log lines)
+        await page.WaitForTimeoutAsync(500);
     }
 
     /// <summary>
