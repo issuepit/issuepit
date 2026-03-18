@@ -47,9 +47,9 @@
             <p class="text-xs text-gray-500 mb-1">Commit</p>
             <NuxtLink
               v-if="store.currentRun.commitSha"
-              :to="`/projects/${projectId}/runs?commitSha=${store.currentRun.commitSha}`"
+              :to="commitUrl(store.currentRun.commitSha)!"
               class="text-sm text-brand-400 hover:text-brand-300 font-mono transition-colors"
-              :title="`Show all runs for ${store.currentRun.commitSha}`">
+              :title="`View commit ${store.currentRun.commitSha} in code viewer`">
               {{ store.currentRun.commitSha.slice(0, 7) }}
             </NuxtLink>
             <span v-else class="text-sm text-gray-300 font-mono">—</span>
@@ -78,7 +78,7 @@
           </div>
           <div>
             <p class="text-xs text-gray-500 mb-1">Started</p>
-            <p class="text-sm text-gray-400">{{ formatDate(store.currentRun.startedAt) }}</p>
+            <p class="text-sm text-gray-400"><DateDisplay :date="store.currentRun.startedAt" mode="auto" /></p>
           </div>
           <div>
             <p class="text-xs text-gray-500 mb-1">Duration</p>
@@ -303,7 +303,7 @@
                 </template>
                 <span v-else class="font-mono text-xs text-gray-400">{{ link.workflow || link.branch || link.commitSha?.slice(0, 7) || '—' }}</span>
               </td>
-              <td class="px-4 py-2 text-gray-400 text-xs">{{ formatDate(link.startedAt) }}</td>
+              <td class="px-4 py-2 text-gray-400 text-xs"><DateDisplay :date="link.startedAt" mode="auto" /></td>
               <td class="px-4 py-2 text-gray-400 text-xs">{{ link.status === CiCdRunStatus.WaitingForApproval ? '—' : duration(link.startedAt, link.endedAt) }}</td>
             </tr>
           </tbody>
@@ -693,7 +693,7 @@
                     <span v-else-if="tc.outcomeName === 'Failed'" class="text-red-400 shrink-0">✗</span>
                     <span v-else class="text-yellow-500 shrink-0">–</span>
                     <NuxtLink
-                      :to="`/projects/${projectId}/runs/test-history?tab=Tests`"
+                      :to="`/projects/${projectId}/runs/test-history?tab=Tests&test=${encodeURIComponent(tc.fullName)}`"
                       class="text-xs text-gray-300 font-mono truncate flex-1 hover:text-brand-400 transition-colors"
                       :title="tc.fullName">
                       {{ tc.methodName || tc.fullName }}
@@ -743,7 +743,7 @@
                     <p class="text-sm font-medium text-gray-200 truncate">{{ artifact.name }}</p>
                     <p class="text-xs text-gray-500">{{ artifact.fileCount }} file{{ artifact.fileCount === 1 ? '' : 's' }} · {{ formatBytes(artifact.sizeBytes) }}</p>
                   </div>
-                  <span class="text-xs text-gray-600 shrink-0">{{ formatDate(artifact.createdAt) }}</span>
+                  <span class="text-xs text-gray-600 shrink-0"><DateDisplay :date="artifact.createdAt" mode="auto" /></span>
                   <button
                     v-if="artifact.storageKey"
                     class="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-medium bg-brand-600 hover:bg-brand-500 disabled:opacity-60 text-white transition-colors shrink-0"
@@ -827,18 +827,26 @@
 
           <div class="mb-3">
             <label class="block text-xs text-gray-500 mb-1">Log scope</label>
-            <div class="flex gap-2">
+            <div class="flex flex-wrap gap-2">
               <button v-for="scope in logScopeOptions" :key="scope.value"
                 :class="['px-3 py-1 text-xs rounded-md border transition-colors', createIssueLogScope === scope.value ? 'border-brand-500 bg-brand-950/30 text-brand-300' : 'border-gray-700 text-gray-500 hover:border-gray-600']"
                 @click="createIssueLogScope = scope.value">
                 {{ scope.label }}
               </button>
             </div>
+            <div v-if="createIssueLogScope === 'filter'" class="mt-2">
+              <input
+                v-model="createIssueFilterPattern"
+                type="text"
+                placeholder="Regex pattern, e.g. error|fault|warn|fail|exception"
+                :class="['w-full bg-gray-800 border rounded-md text-xs text-gray-300 px-3 py-1.5 font-mono focus:outline-none', createIssueFilterPatternInvalid ? 'border-red-500 focus:border-red-400' : 'border-gray-700 focus:border-brand-500']" />
+              <p v-if="createIssueFilterPatternInvalid" class="mt-1 text-xs text-red-400">Invalid regex pattern — showing all lines</p>
+            </div>
           </div>
 
           <div class="mb-4 bg-gray-950 rounded-lg p-3 font-mono text-xs overflow-auto max-h-[200px]">
             <div v-for="(line, i) in createIssuePreviewLines" :key="i" class="text-gray-400 leading-5 whitespace-pre-wrap break-all">{{ line }}</div>
-            <div v-if="!createIssuePreviewLines.length" class="text-gray-600">No log lines for this job</div>
+            <div v-if="!createIssuePreviewLines.length" class="text-gray-600">No log lines for this scope</div>
           </div>
 
           <div v-if="createIssueError" class="mb-3 text-xs text-red-400">{{ createIssueError }}</div>
@@ -1789,23 +1797,59 @@ const showCreateIssueModal = ref(false)
 /** Job ID to filter logs for the create-issue modal. Empty string means all run logs (logs tab). */
 const createIssueJobId = ref<string>('')
 const createIssueTitle = ref('')
-const createIssueLogScope = ref<'full' | 'tail' | 'errors'>('errors')
+const createIssueLogScope = ref<'full' | 'tail' | 'errors' | 'filter'>('errors')
+/** Regex/keyword pattern used when createIssueLogScope === 'filter'. */
+const createIssueFilterPattern = ref('error|fault|warn|fail|exception')
 const creatingIssue = ref(false)
 const createIssueError = ref<string | null>(null)
 
 const logScopeOptions = [
   { label: 'Errors only', value: 'errors' as const },
+  { label: 'Filter by keywords', value: 'filter' as const },
   { label: 'Last 50 lines', value: 'tail' as const },
   { label: 'Full log', value: 'full' as const },
 ]
 
+/**
+ * Compiled regex for the filter scope. Null when the pattern is empty or invalid.
+ * Recompiles only when the pattern changes.
+ */
+const createIssueCompiledRegex = computed<{ re: RegExp; valid: true } | { re: null; valid: false }>(() => {
+  const pattern = createIssueFilterPattern.value.trim()
+  if (!pattern) return { re: null, valid: false }
+  try {
+    return { re: new RegExp(pattern, 'i'), valid: true }
+  } catch {
+    return { re: null, valid: false }
+  }
+})
+
+/** Returns whether the current filter pattern is an invalid (unparseable) regex. */
+const createIssueFilterPatternInvalid = computed(
+  () => createIssueLogScope.value === 'filter' && createIssueFilterPattern.value.trim() !== '' && !createIssueCompiledRegex.value.valid,
+)
+
+/**
+ * Returns the log lines for the job identified by createIssueJobId.
+ * Uses rawJobIds from jobLogMap to match act's workflow-qualified names (e.g. "CI/build").
+ */
+function getLogsForJobId(jobId: string): CiCdRunLog[] {
+  const entry = jobLogMap.value.get(jobId)
+  const rawIds = entry?.rawJobIds
+  if (rawIds && rawIds.size > 0)
+    return store.currentRunLogs.filter(l => !!l.jobId && rawIds.has(l.jobId))
+  return store.currentRunLogs.filter(l => l.jobId === jobId)
+}
+
 const createIssuePreviewLines = computed(() => {
-  // When jobId is empty, use all run logs (launched from the Logs tab).
-  const sourceLogs = createIssueJobId.value
-    ? store.currentRunLogs.filter(l => l.jobId === createIssueJobId.value)
-    : store.currentRunLogs
+  const sourceLogs = createIssueJobId.value ? getLogsForJobId(createIssueJobId.value) : store.currentRunLogs
   if (createIssueLogScope.value === 'errors') return sourceLogs.filter(l => l.stream === 'stderr').map(l => l.line)
   if (createIssueLogScope.value === 'tail') return sourceLogs.slice(-50).map(l => l.line)
+  if (createIssueLogScope.value === 'filter') {
+    const { re } = createIssueCompiledRegex.value
+    if (!re) return sourceLogs.map(l => l.line)
+    return sourceLogs.filter(l => re.test(l.line)).map(l => l.line)
+  }
   return sourceLogs.map(l => l.line)
 })
 
@@ -1816,6 +1860,7 @@ function openCreateIssueModal(jobId: string) {
     ? `CI/CD job "${jobId}" failed${workflow}`
     : `CI/CD run failed${workflow}`
   createIssueLogScope.value = 'errors'
+  createIssueFilterPattern.value = 'error|fault|warn|fail|exception'
   createIssueError.value = null
   showCreateIssueModal.value = true
 }
@@ -1826,19 +1871,25 @@ async function submitCreateIssue() {
   createIssueError.value = null
   try {
     const logLines = createIssuePreviewLines.value
+    const scopeLabel = createIssueLogScope.value === 'filter'
+      ? `filter: ${createIssueFilterPattern.value}`
+      : createIssueLogScope.value
     const logText = logLines.length
-      ? `\n\n**Failed job logs** (scope: ${createIssueLogScope.value}):\n\`\`\`\n${logLines.join('\n')}\n\`\`\``
+      ? `\n\n**Failed job logs** (scope: ${scopeLabel}):\n\`\`\`\n${logLines.join('\n')}\n\`\`\``
       : ''
     const context = createIssueJobId.value
       ? `CI/CD run **${runId.slice(0, 8)}** failed at job **${createIssueJobId.value}**.`
       : `CI/CD run **${runId.slice(0, 8)}** failed.`
     const description = `${context}${logText}`
 
-    await issuesStore.createIssue(projectId, {
+    const newIssue = await issuesStore.createIssue(projectId, {
       title: createIssueTitle.value.trim(),
       description,
     })
     showCreateIssueModal.value = false
+    if (newIssue) {
+      await navigateTo(`/projects/${projectId}/issues/${newIssue.number}`)
+    }
   } catch (e: unknown) {
     createIssueError.value = e instanceof Error ? e.message : 'Failed to create issue'
   } finally {
@@ -2027,10 +2078,6 @@ async function copyLogsToClipboard() {
   }
 }
 
-function formatDate(d: string) {
-  return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
-
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B'
   const k = 1024
@@ -2091,6 +2138,12 @@ function formatTestDuration(ms: number) {
   const s = ms / 1000
   if (s < 60) return `${s.toFixed(1)}s`
   return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`
+}
+
+/** Returns the internal code viewer URL for a specific commit SHA, if one is provided. */
+function commitUrl(sha?: string): string | null {
+  if (!sha) return null
+  return `/projects/${projectId}/code?sha=${sha}`
 }
 
 function duration(start: string, end?: string) {

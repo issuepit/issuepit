@@ -105,7 +105,7 @@
               :key="run.runId"
               class="flex-1 min-w-[12px] max-w-[32px] flex flex-col-reverse gap-px cursor-pointer group"
               :title="`${formatCommit(run.commitSha)} · ${run.passedTests} passed, ${run.failedTests} failed`"
-              @click="navigateTo(`/projects/${projectId}/runs/cicd/${run.runId}`)">
+              @click="navigateTo(`/projects/${projectId}/runs/cicd/${run.runId}?tab=tests`)">
               <div
                 class="w-full rounded-sm transition-opacity group-hover:opacity-80"
                 :style="{ height: barHeight(run.passedTests, run.totalTests) + 'px', background: '#22c55e' }" />
@@ -148,7 +148,7 @@
             <tbody class="divide-y divide-gray-800">
               <tr v-for="run in runSummaries" :key="run.runId"
                 class="hover:bg-gray-900/50 transition-colors cursor-pointer"
-                @click="navigateTo(`/projects/${projectId}/runs/cicd/${run.runId}`)">
+                @click="navigateTo(`/projects/${projectId}/runs/cicd/${run.runId}?tab=tests`)">
                 <td class="px-4 py-3 text-gray-300 font-mono text-xs">
                   {{ formatCommit(run.commitSha) }}
                 </td>
@@ -158,7 +158,7 @@
                 <td class="px-4 py-3 text-right text-yellow-500/70">{{ run.skippedTests || '—' }}</td>
                 <td class="px-4 py-3 text-right text-gray-400">{{ run.totalTests }}</td>
                 <td class="px-4 py-3 text-right text-gray-400 text-xs">{{ formatDuration(run.durationMs) }}</td>
-                <td class="px-4 py-3 text-gray-500 text-xs">{{ formatDate(run.startedAt) }}</td>
+                <td class="px-4 py-3 text-gray-500 text-xs"><DateDisplay :date="run.startedAt" mode="auto" /></td>
               </tr>
             </tbody>
           </table>
@@ -214,7 +214,7 @@
                 <td class="px-4 py-3">
                   <span :class="outcomeClass(test.lastOutcomeName)" class="text-xs">{{ test.lastOutcomeName }}</span>
                 </td>
-                <td class="px-4 py-3 text-gray-500 text-xs">{{ formatDate(test.lastRunAt) }}</td>
+                <td class="px-4 py-3 text-gray-500 text-xs"><DateDisplay :date="test.lastRunAt" mode="auto" /></td>
               </tr>
             </tbody>
           </table>
@@ -259,7 +259,7 @@
                     </span>
                   </td>
                   <td class="px-4 py-3 text-right text-gray-400 text-xs">{{ formatDuration(test.avgDurationMs) }}</td>
-                  <td class="px-4 py-3 text-gray-500 text-xs">{{ formatDate(test.lastRunAt) }}</td>
+                  <td class="px-4 py-3 text-gray-500 text-xs"><DateDisplay :date="test.lastRunAt" mode="auto" /></td>
                   <td class="px-4 py-3 text-right">
                     <button
                       class="text-xs text-brand-400 hover:text-brand-300 transition-colors"
@@ -558,6 +558,30 @@
               <div class="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
             </div>
             <template v-else-if="testHistory.length">
+              <!-- Mini chart: outcome + duration per run -->
+              <div class="bg-gray-900 border border-gray-800 rounded-lg p-3 mb-2">
+                <p class="text-xs text-gray-500 mb-2">Run history (oldest → newest)</p>
+                <div class="flex items-end gap-1 h-16 overflow-x-auto">
+                  <div
+                    v-for="entry in [...testHistory].reverse()"
+                    :key="entry.id"
+                    class="flex flex-col items-center gap-0.5 min-w-[10px] flex-1 group cursor-default"
+                    :title="`${formatDate(entry.runAt)} · ${formatDuration(entry.durationMs)} · ${entry.outcomeName}`">
+                    <div
+                      class="w-full rounded-sm transition-opacity group-hover:opacity-75"
+                      :style="{ height: testBarHeight(entry.durationMs) + 'px' }"
+                      :class="entry.outcomeName === 'Passed' ? 'bg-green-500' : entry.outcomeName === 'Failed' ? 'bg-red-500' : 'bg-yellow-500'" />
+                  </div>
+                </div>
+                <div class="flex justify-between mt-1 text-xs text-gray-600">
+                  <span>oldest</span>
+                  <span class="flex items-center gap-3">
+                    <span class="flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-sm bg-green-500" />passed</span>
+                    <span class="flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-sm bg-red-500" />failed</span>
+                  </span>
+                  <span>latest</span>
+                </div>
+              </div>
               <div
                 v-for="entry in testHistory"
                 :key="entry.id"
@@ -567,9 +591,10 @@
                   <span v-if="entry.outcomeName === 'Passed'" class="text-green-400 text-sm font-bold">✓</span>
                   <span v-else-if="entry.outcomeName === 'Failed'" class="text-red-400 text-sm font-bold">✗</span>
                   <span v-else class="text-yellow-500 text-sm font-bold">–</span>
-                  <span class="text-xs text-gray-500">{{ formatDate(entry.runAt) }}</span>
+                  <span class="text-xs text-gray-500"><DateDisplay :date="entry.runAt" mode="auto" /></span>
                   <NuxtLink
-                    :to="`/projects/${projectId}/runs/cicd/${entry.runId}`"
+                    v-if="entry.commitSha"
+                    :to="commitUrl(entry.commitSha)!"
                     class="text-xs text-brand-400 hover:text-brand-300 font-mono transition-colors"
                     @click.stop>
                     {{ formatCommit(entry.commitSha) }}
@@ -656,13 +681,25 @@ import type { TestRunSummary, TestStats, TestCaseHistoryEntry, TestRunCompareRes
 import { useProjectsStore } from '~/stores/projects'
 
 const route = useRoute()
+const router = useRouter()
 const projectId = route.params.id as string
 const projectsStore = useProjectsStore()
 
 const api = useApi()
 
 const tabs = ['Overview', 'Tests', 'Flaky', 'Compare'] as const
-const activeTab = ref<typeof tabs[number]>('Overview')
+type Tab = typeof tabs[number]
+
+function tabFromQuery(q: unknown): Tab {
+  const candidate = String(q ?? '')
+  return (tabs as readonly string[]).includes(candidate) ? (candidate as Tab) : 'Overview'
+}
+
+const activeTab = ref<Tab>(tabFromQuery(route.query.tab))
+
+watch(activeTab, (tab) => {
+  router.replace({ query: { ...route.query, tab } })
+})
 
 const branchFilter = ref((route.query.branch as string) || '')
 const searchQuery = ref('')
@@ -720,7 +757,14 @@ function formatCommit(sha?: string) {
 }
 
 function formatDate(d: string) {
-  return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  const dt = new Date(d)
+  const day = dt.getDate()
+  const month = dt.toLocaleDateString('de-DE', { month: 'short' })
+  const monthStr = month.charAt(0).toUpperCase() + month.slice(1).replace('.', '')
+  const year = dt.getFullYear()
+  const h = String(dt.getHours()).padStart(2, '0')
+  const m = String(dt.getMinutes()).padStart(2, '0')
+  return `${day}. ${monthStr} ${year}, ${h}:${m}`
 }
 
 function formatDuration(ms: number) {
@@ -732,12 +776,26 @@ function formatDuration(ms: number) {
   return `${m}m ${Math.round(s % 60)}s`
 }
 
+/** Returns the internal code viewer URL for a specific commit SHA, if one is provided. */
+function commitUrl(sha?: string): string | null {
+  if (!sha) return null
+  return `/projects/${projectId}/code?sha=${sha}`
+}
+
 const maxTotal = computed(() => Math.max(...runSummaries.value.map(r => r.totalTests), 1))
 const CHART_HEIGHT = 160
 
 function barHeight(count: number, total: number) {
   if (!total || !maxTotal.value) return 0
   return Math.max(2, Math.round((count / maxTotal.value) * CHART_HEIGHT))
+}
+
+const TEST_BAR_HEIGHT = 56
+const maxTestDuration = computed(() => Math.max(...testHistory.value.map(e => e.durationMs ?? 0), 1))
+
+function testBarHeight(ms: number) {
+  if (!ms || !maxTestDuration.value) return 2
+  return Math.max(2, Math.round((ms / maxTestDuration.value) * TEST_BAR_HEIGHT))
 }
 
 async function reload() {
@@ -841,5 +899,11 @@ async function runCompare() {
 onMounted(async () => {
   projectsStore.fetchProject(projectId)
   await reload()
+  // If a specific test name is in the URL (e.g. navigated from cicd run tests tab), open its detail
+  const testParam = route.query.test as string | undefined
+  if (testParam && activeTab.value === 'Tests') {
+    const match = allTests.value.find(t => t.fullName === testParam)
+    if (match) openTestDetail(match)
+  }
 })
 </script>

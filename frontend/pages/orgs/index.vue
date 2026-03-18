@@ -48,7 +48,7 @@
             </td>
             <td class="px-4 py-3 text-gray-400 font-mono text-xs">{{ org.slug }}</td>
             <td class="px-4 py-3 text-gray-400 text-sm">{{ org.description || '—' }}</td>
-            <td class="px-4 py-3 text-gray-400">{{ formatDate(org.createdAt) }}</td>
+            <td class="px-4 py-3 text-gray-400"><DateDisplay :date="org.createdAt" mode="absolute" resolution="date" /></td>
             <td class="px-4 py-3 text-right">
               <div class="flex items-center justify-end gap-2">
                 <button
@@ -202,7 +202,4 @@ function confirmDelete(id: string, name: string) {
   }
 }
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
-}
 </script>

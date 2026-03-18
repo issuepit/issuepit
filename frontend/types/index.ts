@@ -75,6 +75,7 @@ export interface GitHubIdentity {
   updatedAt: string
   projects: Array<{ projectId: string; name: string }>
   orgs: Array<{ orgId: string; name: string }>
+  syncProjects: Array<{ projectId: string; name: string }>
 }
 
 export interface AuthUser {
@@ -609,6 +610,8 @@ export interface GitRepository {
   statusMessage?: string
   throttledUntil?: string
   mode: GitOriginMode
+  gitHubIdentityId?: string
+  gitHubIdentityName?: string
 }
 
 export interface GitBranch {
@@ -806,6 +809,8 @@ export interface AgentSession {
   serverWebUiUrl?: string | null
   /** S3 URL of the preserved opencode DB snapshot for this session. */
   openCodeDbS3Url?: string | null
+  /** CI/CD runs triggered by this agent session. */
+  cicdRuns?: CiCdRun[]
 }
 
 export interface DashboardAgentSession extends AgentSession {
@@ -857,6 +862,15 @@ export interface CiCdArtifact {
   createdAt: string
 }
 
+export interface TestDailyGroup {
+  name: string
+  totalTests: number
+  passedTests: number
+  failedTests: number
+  skippedTests: number
+  durationMs: number
+}
+
 export interface TestRunSummary {
   runId: string
   commitSha?: string
@@ -870,6 +884,18 @@ export interface TestRunSummary {
   skippedTests: number
   durationMs: number
   suiteCount: number
+  groups?: TestDailyGroup[]
+}
+
+export interface TestDailySummary {
+  date: string
+  totalTests: number
+  passedTests: number
+  failedTests: number
+  skippedTests: number
+  durationMs: number
+  runCount: number
+  groups: TestDailyGroup[]
 }
 
 export interface TestStats {

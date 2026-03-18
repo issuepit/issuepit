@@ -1,6 +1,7 @@
 using Confluent.Kafka;
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
+using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -120,14 +121,29 @@ public class AgentSessionsController(IssuePitDbContext db, TenantContext tenant,
         if (session.Status is not (AgentSessionStatus.Failed or AgentSessionStatus.Cancelled))
             return Conflict(new { error = "Only failed or cancelled sessions can be retried.", session.Status, StatusName = session.Status.ToString() });
 
-        // Re-publish issue-assigned so the ExecutionClient creates a new session for the same agent and issue.
+        var retryAgentId = body?.AgentIdOverride ?? session.AgentId;
+
+        // Create a queued session record immediately so the UI can reflect the pending run right away,
+        // before the ExecutionClient has a chance to pick up the Kafka message.
+        var queuedSession = new AgentSession
+        {
+            Id = Guid.NewGuid(),
+            AgentId = retryAgentId,
+            IssueId = session.IssueId,
+            Status = AgentSessionStatus.Pending,
+        };
+        db.AgentSessions.Add(queuedSession);
+        await db.SaveChangesAsync();
+
+        // Re-publish issue-assigned so the ExecutionClient starts the actual agent run.
         // AgentIdOverride allows using a different agent for the retry.
         var payload = System.Text.Json.JsonSerializer.Serialize(new
         {
             id = session.IssueId,
             projectId = session.Issue.ProjectId,
             title = session.Issue.Title,
-            agentId = body?.AgentIdOverride ?? session.AgentId,
+            agentId = retryAgentId,
+            sessionId = queuedSession.Id,
             dockerImageOverride = body?.DockerImageOverride,
             keepContainer = body?.KeepContainer ?? false,
             dockerCmdOverride = body?.DockerCmdOverride,
@@ -135,17 +151,32 @@ public class AgentSessionsController(IssuePitDbContext db, TenantContext tenant,
             runnerTypeOverride = body?.RunnerTypeOverride != null ? (int?)body.RunnerTypeOverride.Value : null,
             useHttpServerOverride = body?.UseHttpServerOverride,
             runtimeTypeOverride = body?.RuntimeTypeOverride != null ? (int?)body.RuntimeTypeOverride.Value : null,
+            // When retrying with a different agent, bypass the assignee check so the run is queued.
+            forceAgentId = body?.AgentIdOverride.HasValue ?? false,
         });
 
-        await producer.ProduceAsync("issue-assigned", new Message<string, string>
+        try
         {
-            Key = session.IssueId.ToString(),
-            Value = payload,
-        });
+            await producer.ProduceAsync("issue-assigned", new Message<string, string>
+            {
+                Key = session.IssueId.ToString(),
+                Value = payload,
+            });
+        }
+        catch (Exception ex)
+        {
+            // Kafka publish failed — mark the pre-created session as failed and store the error.
+            queuedSession.Status = AgentSessionStatus.Failed;
+            queuedSession.EndedAt = DateTime.UtcNow;
+            queuedSession.Warnings = System.Text.Json.JsonSerializer.Serialize(new[] { $"Failed to queue agent run: {ex.Message}" });
+            await db.SaveChangesAsync();
+        }
 
-        return Accepted(new { retriedSessionId = session.Id });
+        return Accepted(new RetrySessionResponse(queuedSession.Id));
     }
 }
+
+public record RetrySessionResponse(Guid RetriedSessionId);
 
 public record RetrySessionRequest(
     string? DockerImageOverride = null,

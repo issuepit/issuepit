@@ -70,7 +70,7 @@
               >
                 <td class="px-4 py-3 text-white font-medium">{{ team.name }}</td>
                 <td class="px-4 py-3 text-gray-400 font-mono text-xs">{{ team.slug }}</td>
-                <td class="px-4 py-3 text-gray-400">{{ formatDate(team.createdAt) }}</td>
+                <td class="px-4 py-3 text-gray-400"><DateDisplay :date="team.createdAt" mode="absolute" resolution="date" /></td>
                 <td class="px-4 py-3 text-right" @click.stop>
                   <div class="flex items-center justify-end gap-2">
                     <button
@@ -193,7 +193,7 @@
               >
                 <td class="px-4 py-3 text-white font-medium">{{ project.name }}</td>
                 <td class="px-4 py-3 text-gray-400 font-mono text-xs">{{ project.slug }}</td>
-                <td class="px-4 py-3 text-gray-400">{{ formatDate(project.createdAt) }}</td>
+                <td class="px-4 py-3 text-gray-400"><DateDisplay :date="project.createdAt" mode="absolute" resolution="date" /></td>
                 <td class="px-4 py-3 text-right">
                   <NuxtLink
                     :to="`/projects/${project.id}`"
@@ -985,7 +985,4 @@ function confirmRemoveMember(userId: string, name: string) {
   }
 }
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
-}
 </script>

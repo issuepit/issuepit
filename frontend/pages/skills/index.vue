@@ -69,7 +69,7 @@
           </div>
           <div class="bg-gray-800/40 rounded-lg p-3">
             <p class="text-xs text-gray-500 uppercase tracking-wide mb-1.5">Last Synced</p>
-            <span class="text-xs text-gray-400">{{ skill.lastSyncedAt ? new Date(skill.lastSyncedAt).toLocaleString() : '—' }}</span>
+            <span class="text-xs text-gray-400"><DateDisplay v-if="skill.lastSyncedAt" :date="skill.lastSyncedAt" mode="auto" /><span v-else>—</span></span>
           </div>
         </div>
       </div>

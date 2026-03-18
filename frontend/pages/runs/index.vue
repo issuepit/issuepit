@@ -95,7 +95,7 @@
               </td>
               <td class="px-4 py-3 text-gray-300 max-w-xs truncate">{{ item.description }}</td>
               <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ item.branch || '—' }}</td>
-              <td class="px-4 py-3 text-gray-400 text-xs">{{ formatDate(item.startedAt) }}</td>
+              <td class="px-4 py-3 text-gray-400 text-xs"><DateDisplay :date="item.startedAt" mode="auto" /></td>
               <td class="px-4 py-3 text-gray-400 text-xs">{{ item.status === CiCdRunStatus.WaitingForApproval ? '—' : duration(item.startedAt, item.endedAt) }}</td>
             </tr>
           </tbody>
@@ -160,7 +160,7 @@
                 </span>
                 <span v-else class="text-gray-600 text-xs">local</span>
               </td>
-              <td class="px-4 py-3 text-gray-400 text-xs">{{ formatDate(run.startedAt) }}</td>
+              <td class="px-4 py-3 text-gray-400 text-xs"><DateDisplay :date="run.startedAt" mode="auto" /></td>
               <td class="px-4 py-3 text-gray-400 text-xs">{{ run.status === CiCdRunStatus.WaitingForApproval ? '—' : duration(run.startedAt, run.endedAt) }}</td>
               <td class="px-4 py-3 text-right">
                 <button v-if="run.status === CiCdRunStatus.WaitingForApproval"
@@ -234,7 +234,7 @@
               </td>
               <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ session.gitBranch || '—' }}</td>
               <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ session.commitSha?.slice(0, 7) || '—' }}</td>
-              <td class="px-4 py-3 text-gray-400 text-xs">{{ formatDate(session.startedAt) }}</td>
+              <td class="px-4 py-3 text-gray-400 text-xs"><DateDisplay :date="session.startedAt" mode="auto" /></td>
               <td class="px-4 py-3 text-gray-400 text-xs">{{ duration(session.startedAt, session.endedAt) }}</td>
             </tr>
           </tbody>
@@ -454,10 +454,6 @@ async function approveRun(runId: string) {
 async function retryRun(runId: string) {
   await store.retryRun(runId)
   await store.fetchRuns()
-}
-
-function formatDate(d: string) {
-  return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 function duration(start: string, end?: string) {

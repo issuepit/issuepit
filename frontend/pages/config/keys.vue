@@ -43,8 +43,8 @@
                 {{ key.providerName }}
               </span>
             </td>
-            <td class="px-4 py-3 text-gray-400">{{ formatDate(key.createdAt) }}</td>
-            <td class="px-4 py-3 text-gray-400">{{ key.expiresAt ? formatDate(key.expiresAt) : '—' }}</td>
+            <td class="px-4 py-3 text-gray-400"><DateDisplay :date="key.createdAt" mode="absolute" resolution="date" /></td>
+            <td class="px-4 py-3 text-gray-400"><span v-if="key.expiresAt"><DateDisplay :date="key.expiresAt" mode="absolute" resolution="date" /></span><span v-else>—</span></td>
             <td class="px-4 py-3 text-right">
               <button
                 class="text-gray-500 hover:text-red-400 transition-colors text-xs"
@@ -134,10 +134,6 @@ function providerBadgeClass(provider: ApiKeyProvider) {
     [ApiKeyProvider.Google]: 'bg-yellow-900/50 text-yellow-300',
   }
   return map[provider] ?? 'bg-gray-700 text-gray-300'
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 async function handleCreate() {

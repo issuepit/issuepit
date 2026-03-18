@@ -64,7 +64,7 @@
         </div>
 
         <!-- Mappings summary -->
-        <div class="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div class="mt-4 grid grid-cols-1 sm:grid-cols-4 gap-3">
           <div class="bg-gray-800/40 rounded-lg p-3">
             <p class="text-xs text-gray-500 uppercase tracking-wide mb-1.5">Agent</p>
             <p class="text-xs text-white">{{ identity.agentName || '—' }}</p>
@@ -83,6 +83,14 @@
               <span v-for="o in identity.orgs" :key="o.orgId"
                 class="text-xs bg-purple-900/30 text-purple-300 px-1.5 py-0.5 rounded">{{ o.name }}</span>
               <span v-if="!identity.orgs.length" class="text-xs text-gray-600">None</span>
+            </div>
+          </div>
+          <div class="bg-gray-800/40 rounded-lg p-3">
+            <p class="text-xs text-gray-500 uppercase tracking-wide mb-1.5">Issue Sync</p>
+            <div class="flex flex-wrap gap-1">
+              <span v-for="p in identity.syncProjects" :key="p.projectId"
+                class="text-xs bg-green-900/30 text-green-300 px-1.5 py-0.5 rounded">{{ p.name }}</span>
+              <span v-if="!identity.syncProjects.length" class="text-xs text-gray-600">None</span>
             </div>
           </div>
         </div>

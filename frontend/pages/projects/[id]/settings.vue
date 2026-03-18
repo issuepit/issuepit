@@ -178,10 +178,10 @@
                       {{ r.status }}
                     </span>
                   </div>
-                  <p class="text-xs text-gray-500 mt-0.5">Branch: {{ r.defaultBranch }} · {{ r.hasAuth ? 'auth configured' : 'no auth' }}</p>
+                  <p class="text-xs text-gray-500 mt-0.5">Branch: {{ r.defaultBranch }} · {{ r.hasAuth ? 'auth configured' : 'no auth' }}<template v-if="r.gitHubIdentityName"> · identity: {{ r.gitHubIdentityName }}</template></p>
                   <p v-if="r.statusMessage" class="text-xs text-gray-400 break-words mt-0.5">{{ r.statusMessage }}</p>
                   <p v-if="r.status === 'Throttled' && r.throttledUntil" class="text-xs text-gray-400 mt-0.5">
-                    Polling resumes at {{ new Date(r.throttledUntil).toLocaleString() }}
+                    Polling resumes at <DateDisplay :date="r.throttledUntil" mode="absolute" />
                   </p>
                 </div>
                 <div class="flex items-center gap-1 shrink-0">
@@ -190,6 +190,12 @@
                     class="text-xs px-2 py-1 rounded border border-gray-700 text-green-400 hover:text-green-300 hover:bg-gray-700 transition-colors"
                     @click="enableRepoById(r)">
                     Re-enable
+                  </button>
+                  <button v-if="r.status === 'Active'"
+                    :disabled="gitStore.loading"
+                    class="text-xs px-2 py-1 rounded border border-gray-700 text-yellow-400 hover:text-yellow-300 hover:bg-gray-700 transition-colors"
+                    @click="disableRepoById(r)">
+                    Disable
                   </button>
                   <button
                     class="text-xs px-2 py-1 rounded border border-gray-700 text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-colors"
@@ -267,16 +273,30 @@
                   <option value="Release">Release – only main branch is pushed after merge</option>
                 </select>
               </div>
+              <!-- GitHub identity selector -->
               <div>
-                <label class="block text-sm font-medium text-gray-300 mb-1">Username <span class="text-gray-500">(optional)</span></label>
-                <input v-model="repoForm.authUsername" type="text" placeholder="git username"
-                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                <label class="block text-sm font-medium text-gray-300 mb-1">GitHub Identity <span class="text-gray-500">(optional)</span></label>
+                <select v-model="repoForm.gitHubIdentityId"
+                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                  <option value="">— None (use manual credentials below) —</option>
+                  <option v-for="identity in identitiesStore.identities" :key="identity.id" :value="identity.id">
+                    {{ identity.name || identity.gitHubUsername }} (@{{ identity.gitHubUsername }})
+                  </option>
+                </select>
+                <p class="text-xs text-gray-500 mt-1">Select a GitHub identity to use its PAT for authentication.</p>
               </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-300 mb-1">Token / Password <span class="text-gray-500">(optional)</span></label>
-                <input v-model="repoForm.authToken" type="password" placeholder="PAT or password (leave blank to keep existing)"
-                  class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
-              </div>
+              <template v-if="!repoForm.gitHubIdentityId">
+                <div>
+                  <label class="block text-sm font-medium text-gray-300 mb-1">Username <span class="text-gray-500">(optional)</span></label>
+                  <input v-model="repoForm.authUsername" type="text" placeholder="git username"
+                    class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-300 mb-1">Token / Password <span class="text-gray-500">(optional)</span></label>
+                  <input v-model="repoForm.authToken" type="password" placeholder="PAT or password (leave blank to keep existing)"
+                    class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                </div>
+              </template>
               <p v-if="gitStore.error" class="text-red-400 text-sm">{{ gitStore.error }}</p>
               <div class="flex justify-end gap-2 pt-1">
                 <button type="button" @click="showRepoModal = false"
@@ -657,6 +677,7 @@ import { useGitStore } from '~/stores/git'
 import { useAgentsStore } from '~/stores/agents'
 import { useMcpServersStore } from '~/stores/mcp-servers'
 import { useProjectPropertiesStore } from '~/stores/projectProperties'
+import { useGitHubIdentitiesStore } from '~/stores/github-identities'
 import { ProjectPropertyType } from '~/types'
 import type { AgentProject, ProjectMcpServer, GitRepository, GitOriginMode, ProjectProperty } from '~/types'
 
@@ -670,6 +691,7 @@ const gitStore = useGitStore()
 const agentsStore = useAgentsStore()
 const mcpServersStore = useMcpServersStore()
 const propsStore = useProjectPropertiesStore()
+const identitiesStore = useGitHubIdentitiesStore()
 
 // ── Custom Properties ─────────────────────────────────────────
 const showPropertyModal = ref(false)
@@ -854,12 +876,13 @@ const suggestingIssueKey = ref(false)
 // ── Repo form (multi-origin) ──────────────────────────────────
 const showRepoModal = ref(false)
 const editingRepoId = ref<string | null>(null)
-const repoForm = reactive<{ remoteUrl: string; defaultBranch: string; authUsername: string; authToken: string; mode: GitOriginMode }>({
+const repoForm = reactive<{ remoteUrl: string; defaultBranch: string; authUsername: string; authToken: string; mode: GitOriginMode; gitHubIdentityId: string }>({
   remoteUrl: '',
   defaultBranch: 'main',
   authUsername: '',
   authToken: '',
   mode: 'Working',
+  gitHubIdentityId: '',
 })
 
 function modeClasses(mode: GitOriginMode) {
@@ -870,7 +893,7 @@ function modeClasses(mode: GitOriginMode) {
 
 function openAddRepo() {
   editingRepoId.value = null
-  Object.assign(repoForm, { remoteUrl: '', defaultBranch: 'main', authUsername: '', authToken: '', mode: 'Working' })
+  Object.assign(repoForm, { remoteUrl: '', defaultBranch: 'main', authUsername: '', authToken: '', mode: 'Working', gitHubIdentityId: '' })
   gitStore.error = null
   showRepoModal.value = true
 }
@@ -883,6 +906,7 @@ function openEditRepo(r: GitRepository) {
     authUsername: '',
     authToken: '',
     mode: r.mode,
+    gitHubIdentityId: r.gitHubIdentityId ?? '',
   })
   gitStore.error = null
   showRepoModal.value = true
@@ -893,9 +917,10 @@ async function saveRepo() {
   const payload = {
     remoteUrl: repoForm.remoteUrl,
     defaultBranch: repoForm.defaultBranch || 'main',
-    authUsername: repoForm.authUsername || undefined,
-    authToken: repoForm.authToken || undefined,
+    authUsername: repoForm.gitHubIdentityId ? undefined : (repoForm.authUsername || undefined),
+    authToken: repoForm.gitHubIdentityId ? undefined : (repoForm.authToken || undefined),
     mode: repoForm.mode,
+    gitHubIdentityId: repoForm.gitHubIdentityId || undefined,
   }
   if (editingRepoId.value) {
     await gitStore.updateRepo(id, editingRepoId.value, payload)
@@ -912,6 +937,10 @@ async function removeRepo(repoId: string) {
 
 async function enableRepoById(r: GitRepository) {
   await gitStore.enableRepo(id, r.id)
+}
+
+async function disableRepoById(r: GitRepository) {
+  await gitStore.disableRepo(id, r.id)
 }
 
 // ── Per-repo git operations ───────────────────────────────────
@@ -1055,6 +1084,7 @@ onMounted(async () => {
     fetchProjectAgents(),
     fetchProjectMcpServers(),
     propsStore.fetchProperties(id),
+    identitiesStore.fetchIdentities(),
   ])
 
   if (projectsStore.currentProject) {

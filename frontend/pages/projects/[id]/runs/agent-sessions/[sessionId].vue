@@ -55,11 +55,11 @@
           </div>
           <div>
             <p class="text-xs text-gray-500 mb-1">Started</p>
-            <p class="text-sm text-gray-400">{{ formatDate(store.currentSession.startedAt) }}</p>
+            <p class="text-sm text-gray-400"><DateDisplay :date="store.currentSession.startedAt" mode="auto" /></p>
           </div>
           <div>
             <p class="text-xs text-gray-500 mb-1">Duration</p>
-            <p class="text-sm text-gray-400">{{ duration(store.currentSession.startedAt, store.currentSession.endedAt) }}</p>
+            <p class="text-sm text-gray-400">{{ store.currentSession.status === AgentSessionStatus.Pending ? '—' : duration(store.currentSession.startedAt, store.currentSession.endedAt) }}</p>
           </div>
           <!-- opencode Session ID — shown when available -->
           <div v-if="store.currentSession.openCodeSessionId" class="col-span-2 md:col-span-4">
@@ -491,7 +491,7 @@
                   </span>
                   <span v-else class="text-gray-600 text-xs">local</span>
                 </td>
-                <td class="px-4 py-3 text-gray-400 text-xs">{{ formatDate(run.startedAt) }}</td>
+                <td class="px-4 py-3 text-gray-400 text-xs"><DateDisplay :date="run.startedAt" mode="auto" /></td>
                 <td class="px-4 py-3 text-gray-400 text-xs">{{ duration(run.startedAt, run.endedAt) }}</td>
               </tr>
             </tbody>
@@ -899,7 +899,7 @@ async function retrySession() {
       useHttpServerOverride = false
     }
 
-    await store.retrySession(sessionId, {
+    const result = await store.retrySession(sessionId, {
       dockerImageOverride: imageOverride,
       keepContainer: retryKeepContainer.value || undefined,
       agentIdOverride: retryAgentId.value !== store.currentSession?.agentId ? retryAgentId.value : undefined,
@@ -908,8 +908,13 @@ async function retrySession() {
       useHttpServerOverride,
       runtimeTypeOverride: retryRuntimeType.value !== '' ? retryRuntimeType.value as number : undefined,
     })
-    await store.fetchAgentSessions(projectId)
-    navigateTo(`/projects/${projectId}/runs?tab=agent`)
+    if (result?.retriedSessionId) {
+      navigateTo(`/projects/${projectId}/runs/agent-sessions/${result.retriedSessionId}`)
+    } else {
+      console.error('Retry response missing retriedSessionId — falling back to runs list', result)
+      await store.fetchAgentSessions(projectId)
+      navigateTo(`/projects/${projectId}/runs?tab=agent`)
+    }
   } finally {
     retrying.value = false
   }
@@ -930,10 +935,6 @@ async function copyLogsToClipboard() {
     document.execCommand('copy')
     document.body.removeChild(ta)
   }
-}
-
-function formatDate(d: string) {
-  return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 function formatLogTime(d: string) {

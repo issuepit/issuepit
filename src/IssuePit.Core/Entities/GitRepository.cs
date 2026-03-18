@@ -36,6 +36,13 @@ public class GitRepository
     [MaxLength(500)]
     public string? AuthToken { get; set; }
 
+    /// <summary>Optional GitHub identity linked to this origin for authentication.
+    /// When set, the identity's encrypted token is resolved at runtime; explicit <see cref="AuthToken"/> takes precedence.</summary>
+    public Guid? GitHubIdentityId { get; set; }
+
+    [ForeignKey(nameof(GitHubIdentityId))]
+    public GitHubIdentity? GitHubIdentity { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime? LastFetchedAt { get; set; }

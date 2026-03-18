@@ -134,7 +134,8 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
         }
     }
 
-    /// <summary>Fetches latest changes from all remotes, serialising concurrent requests per repository.</summary>
+    /// <summary>Fetches latest changes from all remotes and fast-forwards local tracking branches,
+    /// serialising concurrent requests per repository.</summary>
     public async Task FetchAsync(GitRepository repo)
     {
         var sem = GetRepoLock(repo.Id);
@@ -150,6 +151,25 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
                     var refSpecs = remote.FetchRefSpecs.Select(r => r.Specification).ToArray();
                     Commands.Fetch(gitRepo, remote.Name, refSpecs, BuildFetchOptions(repo), null);
                     logger.LogInformation("Fetched from remote '{Remote}' for repo {Id}", remote.Name, repo.Id);
+                }
+
+                // Fast-forward local tracking branches that have not diverged from their remote counterpart.
+                foreach (var localBranch in gitRepo.Branches.Where(b => !b.IsRemote && b.TrackedBranch != null).ToList())
+                {
+                    var tracked = localBranch.TrackedBranch;
+                    if (tracked?.Tip == null || localBranch.Tip == null) continue;
+                    if (localBranch.Tip.Sha == tracked.Tip.Sha) continue;
+
+                    var divergence = gitRepo.ObjectDatabase.CalculateHistoryDivergence(localBranch.Tip, tracked.Tip);
+                    if (divergence.AheadBy == 0)
+                    {
+                        gitRepo.Refs.UpdateTarget(localBranch.Reference, tracked.Tip.Id);
+                        logger.LogInformation("Fast-forwarded '{Branch}' to '{Sha}' for repo {Id}", localBranch.FriendlyName, tracked.Tip.Sha, repo.Id);
+                    }
+                    else
+                    {
+                        logger.LogDebug("Skipping fast-forward of '{Branch}': {AheadBy} local commit(s) ahead of remote", localBranch.FriendlyName, divergence.AheadBy);
+                    }
                 }
             });
         }

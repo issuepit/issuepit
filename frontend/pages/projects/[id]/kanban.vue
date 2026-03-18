@@ -14,10 +14,16 @@
           <option v-for="b in kanban.boards" :key="b.id" :value="b.id">{{ b.name }}</option>
         </select>
 
-        <!-- Lane property badge -->
-        <span v-if="activeBoard" class="text-xs bg-gray-800 border border-gray-700 text-gray-400 px-2 py-1 rounded-md">
+        <!-- Lane property badge + edit board settings -->
+        <button v-if="activeBoard" @click="openEditBoard"
+          class="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 px-2 py-1 rounded-md flex items-center gap-1 transition-colors"
+          title="Edit board settings">
           {{ lanePropertyLabel(activeBoard.laneProperty) }}
-        </span>
+          <svg class="w-3 h-3 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </button>
 
         <!-- Create board -->
         <button @click="showNewBoard = true"
@@ -337,6 +343,40 @@
       </div>
     </div>
 
+    <!-- Edit Board Modal -->
+    <div v-if="showEditBoard && activeBoard" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md p-6 shadow-xl">
+        <h2 class="text-lg font-bold text-white mb-5">Edit Board Settings</h2>
+        <div class="space-y-4">
+          <input v-model="editBoardName" type="text" placeholder="Board name..."
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            @keyup.enter="submitEditBoard" />
+          <div>
+            <label class="block text-xs text-gray-400 mb-1.5">Lane Property</label>
+            <select v-model="editBoardLaneProperty"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500">
+              <option :value="KanbanLaneProperty.Status">Status</option>
+              <option :value="KanbanLaneProperty.Priority">Priority</option>
+              <option :value="KanbanLaneProperty.Label">Label</option>
+              <option :value="KanbanLaneProperty.Type">Issue Type</option>
+              <option :value="KanbanLaneProperty.Agent">Assigned Agent</option>
+              <option :value="KanbanLaneProperty.Milestone">Milestone</option>
+            </select>
+          </div>
+        </div>
+        <div class="flex gap-3 mt-6">
+          <button @click="submitEditBoard"
+            class="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
+            Save
+          </button>
+          <button @click="showEditBoard = false"
+            class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 rounded-lg transition-colors">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Lane Management Modal -->
     <div v-if="showLanes && activeBoard" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
       <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-lg p-6 shadow-xl">
@@ -378,19 +418,71 @@
         <!-- Add new column -->
         <div class="border-t border-gray-800 pt-4">
           <p class="text-xs text-gray-500 mb-3">Add lane</p>
-          <div class="flex gap-2">
+          <div class="space-y-2">
             <input v-model="newColName" type="text" placeholder="Lane name"
-              class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
-            <select v-model="newColStatus"
-              class="bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500">
-              <option v-for="s in statusOptions" :key="s.value" :value="s.value">{{ s.label }}</option>
-            </select>
-          </div>
-          <!-- Lane value field for non-status boards -->
-          <div v-if="activeBoard && activeBoard.laneProperty !== KanbanLaneProperty.Status" class="mt-2">
-            <input v-model="newColLaneValue" type="text" :placeholder="lanePlaceholder(activeBoard.laneProperty)"
               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
-            <p class="text-xs text-gray-600 mt-1">{{ laneValueHint(activeBoard.laneProperty) }}</p>
+
+            <!-- Status board: show status selector -->
+            <template v-if="activeBoard && activeBoard.laneProperty === KanbanLaneProperty.Status">
+              <select v-model="newColStatus"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option v-for="s in statusOptions" :key="s.value" :value="s.value">{{ s.label }}</option>
+              </select>
+            </template>
+
+            <!-- Agent board: searchable agent dropdown -->
+            <template v-else-if="activeBoard && activeBoard.laneProperty === KanbanLaneProperty.Agent">
+              <AgentSearchDropdown
+                v-model="newColLaneValue"
+                :agents="agentsStore.agents"
+                placeholder="Select agent (or leave unassigned)..."
+              />
+            </template>
+
+            <!-- Priority board: select from known priorities -->
+            <template v-else-if="activeBoard && activeBoard.laneProperty === KanbanLaneProperty.Priority">
+              <select v-model="newColLaneValue"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option value="">— No Priority (Unassigned) —</option>
+                <option value="urgent">Urgent</option>
+                <option value="very_high">Very High</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+                <option value="no_priority">No Priority</option>
+              </select>
+            </template>
+
+            <!-- Type board: select from known types -->
+            <template v-else-if="activeBoard && activeBoard.laneProperty === KanbanLaneProperty.Type">
+              <select v-model="newColLaneValue"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option value="">— No Type (Unassigned) —</option>
+                <option value="bug">Bug</option>
+                <option value="feature">Feature</option>
+                <option value="epic">Epic</option>
+                <option value="task">Task</option>
+                <option value="issue">Issue</option>
+              </select>
+            </template>
+
+            <!-- Label board: select from project labels -->
+            <template v-else-if="activeBoard && activeBoard.laneProperty === KanbanLaneProperty.Label">
+              <select v-model="newColLaneValue"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option value="">— No Label (Unassigned) —</option>
+                <option v-for="label in labelsStore.labels" :key="label.id" :value="label.id">{{ label.name }}</option>
+              </select>
+            </template>
+
+            <!-- Milestone board: select from project milestones -->
+            <template v-else-if="activeBoard && activeBoard.laneProperty === KanbanLaneProperty.Milestone">
+              <select v-model="newColLaneValue"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option value="">— No Milestone (Unassigned) —</option>
+                <option v-for="m in milestonesStore.milestones" :key="m.id" :value="m.id">{{ m.title }}</option>
+              </select>
+            </template>
           </div>
           <button @click="submitAddColumn"
             class="mt-3 w-full bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
@@ -476,6 +568,7 @@ import { useMilestonesStore } from '~/stores/milestones'
 import { useProjectsStore } from '~/stores/projects'
 import { useAgentsStore } from '~/stores/agents'
 import { useProjectPropertiesStore } from '~/stores/projectProperties'
+import { useLabelsStore } from '~/stores/labels'
 import { formatIssueId } from '~/composables/useIssueFormat'
 
 const route = useRoute()
@@ -486,6 +579,7 @@ const milestonesStore = useMilestonesStore()
 const projectsStore = useProjectsStore()
 const agentsStore = useAgentsStore()
 const propsStore = useProjectPropertiesStore()
+const labelsStore = useLabelsStore()
 const { priorityIcon, priorityColor } = usePriority()
 
 // ── Issue preview sidebar ─────────────────────────────────────────────────
@@ -539,6 +633,11 @@ const showNewBoard = ref(false)
 const newBoardName = ref('')
 const newBoardLaneProperty = ref<KanbanLaneProperty>(KanbanLaneProperty.Status)
 const activeBoardId = ref<string>('')
+
+// ── Edit Board state ──────────────────────────────────────────────────────
+const showEditBoard = ref(false)
+const editBoardName = ref('')
+const editBoardLaneProperty = ref<KanbanLaneProperty>(KanbanLaneProperty.Status)
 
 const activeBoard = computed(() => kanban.boards.find(b => b.id === activeBoardId.value) ?? null)
 const boardColumns = computed(() => {
@@ -662,6 +761,7 @@ onMounted(async () => {
     milestonesStore.fetchMilestones(id),
     agentsStore.fetchAgents(),
     propsStore.fetchProperties(id),
+    labelsStore.fetchLabels(id),
   ])
   if (kanban.boards.length) activeBoardId.value = kanban.boards[0].id
 })
@@ -879,11 +979,28 @@ async function submitNewBoard() {
   showNewBoard.value = false
 }
 
+function openEditBoard() {
+  if (!activeBoard.value) return
+  editBoardName.value = activeBoard.value.name
+  editBoardLaneProperty.value = activeBoard.value.laneProperty
+  showEditBoard.value = true
+}
+
+async function submitEditBoard() {
+  if (!editBoardName.value.trim() || !activeBoardId.value) return
+  await kanban.updateBoard(activeBoardId.value, editBoardName.value.trim(), editBoardLaneProperty.value)
+  showEditBoard.value = false
+}
+
 // ── Lane actions ──────────────────────────────────────────────────────────
 async function submitAddColumn() {
   if (!newColName.value.trim() || !activeBoardId.value) return
   const pos = boardColumns.value.length
-  await kanban.addColumn(activeBoardId.value, newColName.value.trim(), pos, newColStatus.value, newColLaneValue.value || undefined)
+  const lp = activeBoard.value?.laneProperty ?? KanbanLaneProperty.Status
+  // For non-status boards, pass the laneValue (can be empty string for "unassigned")
+  // For status boards, laneValue is not needed
+  const laneValue = lp !== KanbanLaneProperty.Status ? newColLaneValue.value : undefined
+  await kanban.addColumn(activeBoardId.value, newColName.value.trim(), pos, newColStatus.value, laneValue)
   newColName.value = ''
   newColLaneValue.value = ''
 }
@@ -978,28 +1095,6 @@ function lanePropertyLabel(lp: KanbanLaneProperty): string {
     [KanbanLaneProperty.Milestone]: 'By Milestone',
   }
   return map[lp] ?? 'By Status'
-}
-
-function lanePlaceholder(lp: KanbanLaneProperty): string {
-  const map: Partial<Record<KanbanLaneProperty, string>> = {
-    [KanbanLaneProperty.Priority]: 'e.g. urgent, high, medium, low, no_priority',
-    [KanbanLaneProperty.Label]: 'Label ID (guid) or leave empty for No Label',
-    [KanbanLaneProperty.Type]: 'e.g. bug, feature, task, epic, issue',
-    [KanbanLaneProperty.Agent]: 'Agent ID (guid) or leave empty for Unassigned',
-    [KanbanLaneProperty.Milestone]: 'Milestone ID (guid) or leave empty for No Milestone',
-  }
-  return map[lp] ?? 'Lane value'
-}
-
-function laneValueHint(lp: KanbanLaneProperty): string {
-  const map: Partial<Record<KanbanLaneProperty, string>> = {
-    [KanbanLaneProperty.Priority]: 'Issues with this priority will appear in this lane.',
-    [KanbanLaneProperty.Label]: 'Issues with this label will appear here. Leave blank for unlabelled issues.',
-    [KanbanLaneProperty.Type]: 'Issues of this type will appear in this lane.',
-    [KanbanLaneProperty.Agent]: 'Issues assigned to this agent appear here. Leave blank for unassigned.',
-    [KanbanLaneProperty.Milestone]: 'Issues in this milestone appear here. Leave blank for no milestone.',
-  }
-  return map[lp] ?? ''
 }
 </script>
 
