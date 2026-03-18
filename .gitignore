@@ -494,3 +494,10 @@ frontend/node_modules/
 
 # IssuePit config-repo (runtime import target — rename from config-repo.example/ to use)
 config-repo/
+
+# docs/agents.md is a FORBIDDEN filename in this repository.
+# The bare name "agents.md" is reserved for the root-level LLM agent guidelines file (agents.md).
+# Any coding agent that creates docs/agents.md will cause naming collisions with LLM tooling
+# (e.g. GitHub Copilot, opencode) that look for agents.md as instruction files.
+# The user-facing Agents documentation lives in docs/issupitAgents.md instead.
+docs/agents.md

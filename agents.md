@@ -177,3 +177,17 @@ node scripts/take-screenshots.js /tmp/screenshots
 
 Always verify that uploaded screenshots show the intended UI (not a blank page, wrong page, or the login screen).
 
+## UI Conventions
+
+### Delete Operations Must Show a Confirm Modal
+
+**All destructive delete operations in the UI must show a confirmation modal** before executing.
+Never call a delete API directly from a button click without first showing a modal that requires the user to confirm.
+
+This applies to deleting: issues, attachments, agents, runtimes, MCP servers, API keys, labels, milestones, and any other entity.
+
+The confirmation modal must:
+- Clearly state what is being deleted (include the item name where possible).
+- Warn that the action cannot be undone.
+- Provide a prominent red **Delete** button and a neutral **Cancel** button.
+

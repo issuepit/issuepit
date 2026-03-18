@@ -27,7 +27,7 @@ The `docs/` folder serves as the IssuePit user-facing documentation site (Jekyll
 
 ### What Belongs in Each Section
 
-- `docs/agents.md` — user-facing guide: how to create agent modes, queues, MCP servers, container runtimes
+- `docs/issupitAgents.md` — user-facing guide: how to create agent modes, queues, MCP servers, container runtimes
 - `agents.md` (root) — coding agent guidelines: date formats, DateDisplay component, API response objects, testing conventions, E2E timeouts, PR screenshot rules
 - `docs/issuepitAgents.md` (this file) — meta-documentation about how to design the docs
 
@@ -92,7 +92,7 @@ If you find developer-only content (coding conventions, internal architecture no
 **Example pattern to avoid:**
 
 ```md
-<!-- docs/agents.md — BAD: mixing user and dev content -->
+<!-- docs/issupitAgents.md — BAD: mixing user and dev content -->
 ## Tips for Writing System Prompts   ← user content ✅
 ## Coding Agent Guidelines           ← dev content ❌ (belongs in agents.md)
 ```
