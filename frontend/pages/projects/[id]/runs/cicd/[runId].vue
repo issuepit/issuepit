@@ -179,7 +179,7 @@
                 type="text"
                 placeholder="Leave blank to use the branch tip"
                 class="w-full bg-gray-800 border border-gray-700 rounded-md text-sm text-gray-300 font-mono px-2.5 py-1.5 placeholder-gray-600 focus:outline-none focus:border-brand-500" />
-              <p class="text-xs text-gray-600 mt-1">Override the commit SHA. Leave blank to use the latest commit of the specified branch.</p>
+              <p class="text-xs text-gray-600 mt-1">Override the commit SHA. Leave blank to use the latest commit of the specified branch, or the original commit SHA if no branch override is set.</p>
             </div>
 
             <label class="flex items-start gap-3 cursor-pointer mb-3">
@@ -942,6 +942,7 @@ import { useProjectsStore } from '~/stores/projects'
 import { CiCdRunStatus, type CiCdRunLog, type LinkedCiCdRun, type LinkedRunType } from '~/types'
 import { parseAnsiToHtml, stripAnsiCodes } from '~/composables/useAnsiParser'
 import { buildGraphJobIndexes, resolveLogJobId as resolveLogJobIdFn, matrixLabel as matrixLabelFn } from '~/utils/cicdLogMapper'
+import { buildBranchUrl } from '~/utils/gitHub'
 
 const route = useRoute()
 const router = useRouter()
@@ -2183,8 +2184,7 @@ function commitUrl(sha?: string): string | null {
 
 /** Returns the internal code viewer URL for a specific branch, opening the Branches tab. */
 function branchUrl(branch?: string): string | null {
-  if (!branch) return null
-  return `/projects/${projectId}/code?tab=branches&branch=${encodeURIComponent(branch)}`
+  return buildBranchUrl(projectId, branch)
 }
 
 function duration(start: string, end?: string) {

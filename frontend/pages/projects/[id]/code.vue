@@ -531,16 +531,21 @@ async function initRepo() {
     store.fetchTree(id, pinnedSha.value ?? store.repo?.defaultBranch, ''),
     cicdStore.fetchRuns(id),
   ])
-  // Set default branch selection; honour ?branch= query param if present
+  // Set default branch selection; honour ?branch= query param when present.
   const queryBranch = (route.query.branch as string) || ''
   const def = store.repo?.defaultBranch ?? 'main'
-  const targetBranch = queryBranch
-    ? (store.branches.find(b => b.name === queryBranch)?.name ?? queryBranch)
-    : null
-  const found = targetBranch
-    ? (store.branches.find(b => b.name === targetBranch) ?? localBranches.value.find(b => b.name === def) ?? localBranches.value[0])
-    : (localBranches.value.find(b => b.name === def) ?? localBranches.value[0])
-  selectedBranch.value = found?.name ?? targetBranch ?? def
+  let targetBranch: string
+  if (queryBranch && store.branches.find(b => b.name === queryBranch)) {
+    targetBranch = queryBranch
+  } else if (queryBranch) {
+    // Branch from URL not found locally — use it anyway (may be a remote ref)
+    targetBranch = queryBranch
+  } else {
+    targetBranch = localBranches.value.find(b => b.name === def)?.name
+      ?? localBranches.value[0]?.name
+      ?? def
+  }
+  selectedBranch.value = targetBranch
   if (!pinnedSha.value)
     await store.fetchCommits(id, selectedBranch.value, 0, commitTake)
   // Restore navigation state from URL query params (e.g. on page reload or direct link)
