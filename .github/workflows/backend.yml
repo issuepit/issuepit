@@ -60,6 +60,24 @@ jobs:
             exit 0
           fi
           dotnet build src/IssuePit.Api/IssuePit.Api.csproj --no-restore
+
+          # Check for migrations missing their .Designer.cs file.
+          # EF Core requires the [Migration] attribute (in the designer file) to discover a
+          # migration at runtime — a migration without a designer file is silently skipped by
+          # MigrateAsync(), causing schema drift that is invisible to has-pending-model-changes.
+          MISSING_DESIGNER=0
+          while IFS= read -r migration_file; do
+            base="${migration_file%.cs}"
+            if [ ! -f "${base}.Designer.cs" ]; then
+              echo "::error::Migration is missing its .Designer.cs file: ${migration_file}"
+              echo "  Run 'dotnet ef migrations add' to regenerate it, or create it manually."
+              MISSING_DESIGNER=1
+            fi
+          done < <(find src -path "*/Migrations/*" -name "*_*.cs" ! -name "*.Designer.cs" ! -name "*ModelSnapshot.cs")
+          if [ "$MISSING_DESIGNER" -ne "0" ]; then
+            exit 1
+          fi
+
           if ! dotnet ef migrations has-pending-model-changes \
             --project src/IssuePit.Core/IssuePit.Core.csproj \
             --startup-project src/IssuePit.Api/IssuePit.Api.csproj; then
