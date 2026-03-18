@@ -129,6 +129,11 @@ public class SshDockerAgentRuntime(ILogger<SshDockerAgentRuntime> logger) : IAge
             $"--label issuepit.issue-id={issue.Id} " +
             $"--label issuepit.agent-id={agent.Id}";
 
+        // Generate a unique container name from the session ID, similar to how CI/CD runner
+        // uses --container-name-suffix. This makes agent containers identifiable by session
+        // and prevents name collisions across parallel runs.
+        var containerName = $"issuepit-agent-{session.Id:N}"[..22];
+
         // Append runner-specific CMD args (model, task) after the image name
         var runnerArgs = RunnerCommandBuilder.BuildArgs(agent, issue);
         var imageAndArgs = string.IsNullOrEmpty(runnerArgs)
@@ -136,7 +141,7 @@ public class SshDockerAgentRuntime(ILogger<SshDockerAgentRuntime> logger) : IAge
             : $"{EscapeShell(agent.DockerImage)} {runnerArgs}";
 
         // -d = detached; --rm = auto-remove on exit; --privileged = true DinD (in-container dockerd)
-        return $"docker run -d --rm --privileged {labels}{envArgs} {imageAndArgs}";
+        return $"docker run -d --rm --privileged --name {EscapeShell(containerName)} {labels}{envArgs} {imageAndArgs}";
     }
 
     /// <summary>Removes control characters (null bytes, newlines, etc.) that could break shell argument parsing.</summary>

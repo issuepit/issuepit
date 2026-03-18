@@ -36,6 +36,9 @@ public class DockerAgentRuntime(
     /// <summary>Read buffer size for streaming container log output. 80 KiB matches the Docker SDK convention.</summary>
     private const int LogBufferSize = 81920;
 
+    /// <summary>Length of the hex suffix appended to agent container names for uniqueness.</summary>
+    private const int ContainerNameSuffixLength = 10;
+
     // Special log-line prefixes emitted by this class so IssueWorker can parse them.
     internal const string GitCommitShaMarker = "[ISSUEPIT:GIT_COMMIT_SHA]=";
     internal const string GitBranchMarker = "[ISSUEPIT:GIT_BRANCH]=";
@@ -250,8 +253,14 @@ public class DockerAgentRuntime(
                 ? ["sleep", "infinity"]
                 : (session.CustomCmd?.Length > 0 ? session.CustomCmd : null);
 
+        // Generate a unique container name from the session ID, similar to how CI/CD runner
+        // uses --container-name-suffix. This makes agent containers identifiable by session
+        // and prevents name collisions across parallel runs.
+        var containerName = $"issuepit-agent-{session.Id:N}"[..(32 + ContainerNameSuffixLength)];
+
         var createParams = new CreateContainerParameters
         {
+            Name = containerName,
             Image = image,
             Env = env,
             Cmd = containerCmd,
@@ -289,9 +298,10 @@ public class DockerAgentRuntime(
 
         var shortContainerId = container.ID[..Math.Min(12, container.ID.Length)];
         await onLogLine($"[DEBUG] Container ID   : {shortContainerId}", LogStream.Stdout);
+        await onLogLine($"[DEBUG] Container name : {containerName}", LogStream.Stdout);
 
-        logger.LogInformation("Started Docker container {ContainerId} for agent session {SessionId} (ExecFlow={UseExecFlow})",
-            container.ID, session.Id, useExecFlow);
+        logger.LogInformation("Started Docker container {ContainerId} (name: {ContainerName}) for agent session {SessionId} (ExecFlow={UseExecFlow})",
+            container.ID, containerName, session.Id, useExecFlow);
 
         // Inject the preserved opencode DB snapshot from the previous session so the agent can
         // continue the previous conversation. The DB is injected after the container starts (so
