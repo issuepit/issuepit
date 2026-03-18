@@ -461,7 +461,7 @@ public class DockerAgentRuntime(
                     try
                     {
                         await CheckAndEmitUncommittedChangesAsync(container.ID, onLogLine, cancellationToken);
-                        await EmitGitMarkersAsync(container.ID, onLogLine, cancellationToken);
+                        await EmitGitMarkersAsync(container.ID, session, gitRepository, onLogLine, cancellationToken);
                     }
                     catch (Exception ex)
                     {
@@ -542,7 +542,7 @@ public class DockerAgentRuntime(
                 try
                 {
                     await CheckAndEmitUncommittedChangesAsync(container.ID, onLogLine, cancellationToken);
-                    await EmitGitMarkersAsync(container.ID, onLogLine, cancellationToken);
+                    await EmitGitMarkersAsync(container.ID, session, gitRepository, onLogLine, cancellationToken);
                 }
                 catch (Exception ex)
                 {
@@ -573,6 +573,7 @@ public class DockerAgentRuntime(
         AgentSession parentSession,
         Agent agent,
         Issue fixIssue,
+        GitRepository? gitRepository,
         Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {
@@ -649,7 +650,7 @@ public class DockerAgentRuntime(
         }
 
         // Emit git markers so the caller can capture the updated commit SHA and branch.
-        try { await EmitGitMarkersAsync(containerId, onFixLogLine, cancellationToken); }
+        try { await EmitGitMarkersAsync(containerId, parentSession, gitRepository, onFixLogLine, cancellationToken); }
         catch (Exception ex) { await onFixLogLine($"[WARN] Git marker emission failed: {ex.Message}", LogStream.Stderr); }
 
         return (fixCommitSha, fixBranchName);
@@ -953,9 +954,26 @@ public class DockerAgentRuntime(
     /// Pushes the current branch to origin (allowed to fail), then emits
     /// <c>[ISSUEPIT:GIT_COMMIT_SHA]</c> and <c>[ISSUEPIT:GIT_BRANCH]</c> markers.
     /// Returns <c>true</c> when the push succeeded, <c>false</c> otherwise.
+    /// 
+    /// Whether the push is attempted depends on <see cref="AgentSession.PushPolicy"/>:
+    /// <list type="bullet">
+    ///   <item><see cref="AgentPushPolicy.Forbidden"/> — push is skipped entirely (default).</item>
+    ///   <item><see cref="AgentPushPolicy.WorkingOriginOnly"/> — push only when <paramref name="gitRepository"/>
+    ///     has mode <see cref="GitOriginMode.Working"/>.</item>
+    ///   <item><see cref="AgentPushPolicy.Allowed"/> — push unless the repo mode is
+    ///     <see cref="GitOriginMode.ReadOnly"/>.</item>
+    ///   <item><see cref="AgentPushPolicy.Yolo"/> — push regardless of repo mode.</item>
+    /// </list>
+    /// In all non-Forbidden modes the following safety guards are always enforced:
+    /// <list type="bullet">
+    ///   <item>Force pushes are never issued.</item>
+    ///   <item>The branch must not be the repository's default branch (main/master).</item>
+    /// </list>
     /// </summary>
     private async Task<bool> EmitGitMarkersAsync(
         string containerId,
+        AgentSession session,
+        GitRepository? gitRepository,
         Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {
@@ -966,30 +984,81 @@ public class DockerAgentRuntime(
 
         var pushSucceeded = false;
 
-        // Push is allowed to fail — credentials may not be configured yet.
         if (!string.IsNullOrWhiteSpace(branch))
         {
-            await onLogLine($"[entrypoint] Pushing branch '{branch}' to origin…", LogStream.Stdout);
-            // Use the real git binary path written by the entrypoint before it installed the
-            // push-blocking wrapper at /usr/local/bin/git. This allows the execution client to
-            // push branches via docker exec without hitting the wrapper meant to stop agents.
-            var realGit = (await ExecReadOutputAsync(
-                containerId,
-                ["/bin/sh", "-c", "cat /tmp/.issuepit-real-git 2>/dev/null || echo /usr/bin/git"],
-                cancellationToken)).Trim();
-            var pushExit = await ExecCommandAsync(containerId, [realGit, "push", "origin", branch],
-                async (line, stream) => await onLogLine($"[entrypoint] {line}", stream),
-                cancellationToken);
-            if (pushExit != 0)
+            var policy = session.PushPolicy;
+
+            // Determine whether the push should be attempted based on the configured policy.
+            bool shouldPush;
+            string? skipReason = null;
+
+            if (policy == AgentPushPolicy.Forbidden)
             {
-                await onLogLine(
-                    "[entrypoint] Push failed (allowed — credentials may not be configured or push was rejected)",
-                    LogStream.Stdout);
-                // Emit a structured marker so IssueWorker can trigger a .git archive upload for recovery.
-                await onLogLine(GitPushFailedMarker, LogStream.Stdout);
+                shouldPush = false;
+                skipReason = "Push policy is Forbidden — push skipped";
+            }
+            else if (policy == AgentPushPolicy.WorkingOriginOnly)
+            {
+                shouldPush = gitRepository?.Mode == GitOriginMode.Working;
+                if (!shouldPush)
+                    skipReason = $"Push policy is WorkingOriginOnly but repo mode is '{gitRepository?.Mode}' — push skipped";
+            }
+            else if (policy == AgentPushPolicy.Allowed)
+            {
+                shouldPush = gitRepository?.Mode != GitOriginMode.ReadOnly;
+                if (!shouldPush)
+                    skipReason = "Push policy is Allowed but repo is ReadOnly — push skipped";
+            }
+            else // Yolo
+            {
+                shouldPush = true;
+            }
+
+            // Safety guard: never push to the repository's default branch.
+            if (shouldPush)
+            {
+                var defaultBranch = gitRepository?.DefaultBranch?.Trim();
+                var branchTrimmed = branch.Trim();
+                var isDefaultBranch = branchTrimmed.Equals(defaultBranch, StringComparison.OrdinalIgnoreCase)
+                    || branchTrimmed.Equals("main", StringComparison.OrdinalIgnoreCase)
+                    || branchTrimmed.Equals("master", StringComparison.OrdinalIgnoreCase);
+
+                if (isDefaultBranch)
+                {
+                    shouldPush = false;
+                    skipReason = $"Push to default branch '{branchTrimmed}' is not allowed — push skipped";
+                }
+            }
+
+            if (!shouldPush)
+            {
+                if (skipReason is not null)
+                    await onLogLine($"[entrypoint] {skipReason}", LogStream.Stdout);
             }
             else
-                pushSucceeded = true;
+            {
+                await onLogLine($"[entrypoint] Pushing branch '{branch}' to origin…", LogStream.Stdout);
+                // Use the real git binary path written by the entrypoint before it installed the
+                // push-blocking wrapper at /usr/local/bin/git. This allows the execution client to
+                // push branches via docker exec without hitting the wrapper meant to stop agents.
+                var realGit = (await ExecReadOutputAsync(
+                    containerId,
+                    ["/bin/sh", "-c", "cat /tmp/.issuepit-real-git 2>/dev/null || echo /usr/bin/git"],
+                    cancellationToken)).Trim();
+                var pushExit = await ExecCommandAsync(containerId, [realGit, "push", "origin", branch],
+                    async (line, stream) => await onLogLine($"[entrypoint] {line}", stream),
+                    cancellationToken);
+                if (pushExit != 0)
+                {
+                    await onLogLine(
+                        "[entrypoint] Push failed (allowed — credentials may not be configured or push was rejected)",
+                        LogStream.Stdout);
+                    // Emit a structured marker so IssueWorker can trigger a .git archive upload for recovery.
+                    await onLogLine(GitPushFailedMarker, LogStream.Stdout);
+                }
+                else
+                    pushSucceeded = true;
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(commitSha))

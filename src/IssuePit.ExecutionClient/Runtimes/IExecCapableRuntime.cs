@@ -34,6 +34,7 @@ public interface IExecCapableRuntime : IAgentRuntime
         AgentSession parentSession,
         Agent agent,
         Issue fixIssue,
+        GitRepository? gitRepository,
         Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken);
 

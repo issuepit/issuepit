@@ -125,4 +125,15 @@ public class AgentSession
     /// before this field was added).
     /// </summary>
     public string? GitRemoteCheckResultsJson { get; set; }
+
+    /// <summary>
+    /// Not persisted. Set by <c>IssueWorker</c> before calling <see cref="IAgentRuntime.LaunchAsync"/>
+    /// from the linked <see cref="AgentProject.PushPolicy"/> for this agent+project combination.
+    /// <see cref="DockerAgentRuntime"/> uses this to decide whether and how to push the agent's
+    /// working branch to the remote after the session completes.
+    /// Defaults to <see cref="AgentPushPolicy.Forbidden"/> so that no push is attempted when the
+    /// policy has not been explicitly configured.
+    /// </summary>
+    [NotMapped]
+    public AgentPushPolicy PushPolicy { get; set; } = AgentPushPolicy.Forbidden;
 }
