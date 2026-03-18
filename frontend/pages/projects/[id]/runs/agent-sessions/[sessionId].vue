@@ -46,7 +46,7 @@
             </NuxtLink>
           </div>
           <div>
-            <p class="text-xs text-gray-500 mb-1">Branch</p>
+            <p class="text-xs text-gray-500 mb-1">Branch / Commit</p>
             <p class="text-sm text-gray-300 font-mono">{{ store.currentSession.gitBranch || '—' }}</p>
             <p v-if="store.currentSession.commitSha" class="text-xs text-gray-500 font-mono mt-0.5">{{ store.currentSession.commitSha.slice(0, 7) }}</p>
           </div>
