@@ -95,7 +95,7 @@ public class DockerAgentRuntime(
             await onLogLine($"[DEBUG] Keep container : true (container will not be removed on exit)", LogStream.Stdout);
         if (gitRepository is not null)
         {
-            await onLogLine($"[DEBUG] Git remote     : {gitRepository.RemoteUrl}", LogStream.Stdout);
+            await onLogLine($"[DEBUG] Git remote     : {gitRepository.RemoteUrl} ({gitRepository.Mode})", LogStream.Stdout);
             // Determine the branch the container will check out: issue.GitBranch takes precedence
             // (feature branch for this issue), otherwise falls back to the repo's default branch.
             var effectiveBranch = !string.IsNullOrWhiteSpace(issue.GitBranch)

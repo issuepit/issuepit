@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -39,6 +40,9 @@ public class IssueWorker(
 
     /// <summary>Timeout in minutes to wait for a CI/CD run to complete before giving up.</summary>
     private const int CiCdWaitTimeoutMinutes = 30;
+
+    /// <summary>Timeout in seconds for the pre-flight <c>git ls-remote</c> branch check per remote.</summary>
+    private const int GitRemoteCheckTimeoutSeconds = 30;
 
     // Special log-line prefixes emitted by DockerAgentRuntime (exec flow) to communicate
     // git state and opencode session info back to IssueWorker.
@@ -292,12 +296,14 @@ public class IssueWorker(
         if (runtimeTypeOverride.HasValue)
             runtimeType = (RuntimeType)runtimeTypeOverride.Value;
 
-        // Load the git repository for the project so the container can clone it on startup.
-        // Prefer Working-mode remote so agents use the correct push target; fall back to first.
-        var gitRepository = await db.GitRepositories
+        // Load all git repositories for the project so the pre-flight check can verify branch
+        // availability across every configured remote. The Working-mode repo is selected as the
+        // primary target (agents clone and push there); if none is Working the first one is used.
+        var allGitRepositories = await db.GitRepositories
             .Where(r => r.ProjectId == issue.ProjectId)
             .OrderByDescending(r => r.Mode == GitOriginMode.Working)
-            .FirstOrDefaultAsync(cancellationToken);
+            .ToListAsync(cancellationToken);
+        var gitRepository = allGitRepositories.FirstOrDefault();
 
         AgentSession session;
         if (existingSessionId.HasValue)
@@ -463,6 +469,12 @@ public class IssueWorker(
             // so that fix runs execute in the same container and share the same opencode session state.
             IExecCapableRuntime? execRuntime = runtime as IExecCapableRuntime;
             bool useExecForFixes = false;
+
+            // Pre-flight: verify the base branch exists on all configured git remotes.
+            // Logs which remotes have the branch and which do not (including the remote type),
+            // and fails the session immediately if the Working remote is missing the branch.
+            if (allGitRepositories.Count > 0)
+                await CheckBranchOnRemotesAsync(allGitRepositories, onLogLine, sessionCts.Token);
 
             try
             {
@@ -1344,6 +1356,123 @@ public class IssueWorker(
     };
 
     private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, Guid? SessionId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? DockerCmdOverride = null, string? ModelOverride = null, int? RunnerTypeOverride = null, bool? UseHttpServerOverride = null, int? RuntimeTypeOverride = null, bool ForceAgentId = false);
+
+    /// <summary>
+    /// Checks whether the base branch of each configured git remote exists by running
+    /// <c>git ls-remote --heads</c> against each remote URL. Results (including the remote
+    /// type) are written to the session log via <paramref name="onLogLine"/> so they are
+    /// visible in the UI. Throws an <see cref="InvalidOperationException"/> if the Working
+    /// remote's base branch is not found — the container would fail to clone anyway, so
+    /// we surface the misconfiguration before pulling the Docker image.
+    /// If <c>git</c> is not available on the host (return value <c>null</c>), the check is
+    /// silently skipped rather than failing the run.
+    /// </summary>
+    private static async Task CheckBranchOnRemotesAsync(
+        IList<GitRepository> repositories,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        await onLogLine("[INFO] Pre-flight: checking base branch availability on configured remotes…", LogStream.Stdout);
+
+        var workingRepo = repositories.FirstOrDefault(r => r.Mode == GitOriginMode.Working)
+            ?? repositories.FirstOrDefault();
+
+        foreach (var repo in repositories)
+        {
+            if (string.IsNullOrWhiteSpace(repo.DefaultBranch))
+            {
+                await onLogLine($"[WARN]   ? {repo.Mode}: {repo.RemoteUrl} — no DefaultBranch configured", LogStream.Stdout);
+                continue;
+            }
+
+            var found = await IsBranchOnRemoteAsync(repo.RemoteUrl, repo.AuthUsername, repo.AuthToken, repo.DefaultBranch, cancellationToken);
+            var (symbol, logLevel, statusText) = found switch
+            {
+                true  => ("✓", "[INFO]", $"base branch '{repo.DefaultBranch}' found"),
+                false => ("✗", "[WARN]", $"base branch '{repo.DefaultBranch}' not found"),
+                null  => ("?", "[INFO]", $"base branch '{repo.DefaultBranch}' check skipped (git not available on host)"),
+            };
+
+            await onLogLine($"{logLevel}   {symbol} {repo.Mode}: {repo.RemoteUrl} — {statusText}", LogStream.Stdout);
+
+            if (found == false && repo == workingRepo)
+                throw new InvalidOperationException(
+                    $"Base branch '{repo.DefaultBranch}' was not found on the Working remote ({repo.RemoteUrl}). " +
+                    "Update GitRepository.DefaultBranch in IssuePit to match the actual default branch of the remote.");
+        }
+    }
+
+    /// <summary>
+    /// Runs <c>git ls-remote --heads &lt;url&gt; &lt;branch&gt;</c> as a subprocess to check
+    /// whether a branch exists on a remote. Returns <c>true</c> if found, <c>false</c> if the
+    /// command succeeded but the branch was absent, <c>null</c> if the check could not be
+    /// performed (git not installed on the host, network error, or timeout).
+    /// </summary>
+    private static async Task<bool?> IsBranchOnRemoteAsync(
+        string remoteUrl, string? authUsername, string? authToken, string branch,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var url = BuildAuthenticatedCloneUrl(remoteUrl, authUsername, authToken);
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(GitRemoteCheckTimeoutSeconds));
+
+            using var process = new Process();
+            process.StartInfo = new ProcessStartInfo
+            {
+                FileName = "git",
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            process.StartInfo.ArgumentList.Add("ls-remote");
+            process.StartInfo.ArgumentList.Add("--heads");
+            process.StartInfo.ArgumentList.Add(url);
+            process.StartInfo.ArgumentList.Add(branch);
+
+            process.Start();
+            var output = await process.StandardOutput.ReadToEndAsync(timeoutCts.Token);
+            await process.WaitForExitAsync(timeoutCts.Token);
+
+            // Exit code 0 = command succeeded; non-zero = git error (e.g. unreachable URL).
+            if (process.ExitCode != 0) return null;
+            return !string.IsNullOrWhiteSpace(output);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw; // Propagate outer cancellation; let the session be cancelled normally.
+        }
+        catch (OperationCanceledException)
+        {
+            // The per-check timeout fired (GitRemoteCheckTimeoutSeconds). Treat as indeterminate
+            // and skip rather than blocking the run on a slow network.
+            return null;
+        }
+        catch
+        {
+            // git is not installed on the host, or another error occurred — skip the check.
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Injects HTTP Basic credentials into a clone URL so <c>git ls-remote</c> can
+    /// authenticate without a credential helper. SSH URLs are returned unchanged.
+    /// </summary>
+    private static string BuildAuthenticatedCloneUrl(string remoteUrl, string? authUsername, string? authToken)
+    {
+        if (string.IsNullOrEmpty(authUsername) || string.IsNullOrEmpty(authToken))
+            return remoteUrl;
+        if (!remoteUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            return remoteUrl; // SSH URLs use key-based auth; credentials are not injected into the URL.
+        var builder = new UriBuilder(remoteUrl)
+        {
+            UserName = Uri.EscapeDataString(authUsername),
+            Password = Uri.EscapeDataString(authToken),
+        };
+        return builder.Uri.AbsoluteUri;
+    }
 
     /// <summary>
     /// Trims the comment list so that the combined character count of all comment bodies stays
