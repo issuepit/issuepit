@@ -51,7 +51,7 @@ public class ProjectDashboardPage(IPage page)
     }
 
     /// <summary>Cancels draft mode by clicking the Cancel button in the toolbar.</summary>
-    public ILocator CancelButton => page.Locator("button:has-text('Cancel')");
+    public ILocator CancelButton => page.Locator("div.bg-amber-950\\/40 button:has-text('Cancel')");
 
     /// <summary>Saves the draft layout by clicking the Save button in the toolbar.</summary>
     public ILocator SaveButton => page.Locator("button:has-text('Save')").First;
