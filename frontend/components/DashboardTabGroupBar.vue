@@ -46,7 +46,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 
-const props = defineProps<{
+defineProps<{
   sections: string[]
   sectionLabels: Record<string, string>
   widths: { value: string; label: string }[]

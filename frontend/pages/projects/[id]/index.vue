@@ -1597,21 +1597,6 @@ const TEST_HISTORY_X_MODES = [
   { value: 'runs', label: 'Runs' },
 ]
 
-/** Loads (or refreshes) the daily chart data for a test history section. */
-async function loadTestHistoryChart(sid: string) {
-  const cfg = sectionCfg(sid)
-  const days = cfg.chartDays ?? 30
-  const branch = cfg.testHistoryBranch
-  let url = `/api/projects/${id}/test-history/daily-summary?days=${days}`
-  if (branch) url += `&branch=${encodeURIComponent(branch)}`
-  try {
-    const data = await api.get<TestDailySummary[]>(url)
-    testHistoryDailyData.value = new Map(testHistoryDailyData.value).set(sid, data)
-  } catch (e) {
-    console.warn(`Failed to load test history chart data for section ${sid}`, e)
-  }
-}
-
 /** Loads per-run chart data for a test history section (used for both date and runs x-modes). */
 async function loadTestHistoryRuns(sid: string) {
   const cfg = sectionCfg(sid)
