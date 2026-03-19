@@ -19,8 +19,8 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
 
   const api = useApi()
 
-  async function fetchRuns(projectId?: string) {
-    loading.value = true
+  async function fetchRuns(projectId?: string, silent = false) {
+    if (!silent) loading.value = true
     error.value = null
     try {
       const url = projectId ? `/api/cicd-runs?projectId=${projectId}` : '/api/cicd-runs'
@@ -28,7 +28,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Failed to fetch CI/CD runs'
     } finally {
-      loading.value = false
+      if (!silent) loading.value = false
     }
   }
 
@@ -97,15 +97,15 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     }
   }
 
-  async function fetchAgentSessions(projectId: string) {
-    loading.value = true
+  async function fetchAgentSessions(projectId: string, silent = false) {
+    if (!silent) loading.value = true
     error.value = null
     try {
       agentSessions.value = await api.get<AgentSession[]>(`/api/projects/${projectId}/agent-sessions`)
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Failed to fetch agent sessions'
     } finally {
-      loading.value = false
+      if (!silent) loading.value = false
     }
   }
 
@@ -193,15 +193,15 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     }
   }
   
-  async function fetchDashboardSessions() {
-    loading.value = true
+  async function fetchDashboardSessions(silent = false) {
+    if (!silent) loading.value = true
     error.value = null
     try {
       dashboardSessions.value = await api.get<DashboardAgentSession[]>('/api/dashboard/agent-sessions?limit=100')
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Failed to fetch agent sessions'
     } finally {
-      loading.value = false
+      if (!silent) loading.value = false
     }
   }
 

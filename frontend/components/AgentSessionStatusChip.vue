@@ -64,7 +64,7 @@
         @mouseleave="scheduleClose">
         <p class="text-xs text-gray-500 px-3 pt-3 pb-1 font-medium uppercase tracking-wide">Job Graph</p>
         <div class="px-3 pb-3">
-          <MiniJobGraph :run-id="hoveredCiCdRunId" />
+          <MiniJobGraph :run-id="hoveredCiCdRunId" @job-click="onMiniGraphJobClick(hoveredCiCdRunId!, $event)" />
         </div>
       </div>
     </Teleport>
@@ -193,6 +193,15 @@ function onRunItemEnter(run: CiCdRun, e: MouseEvent) {
   hoveredCiCdRunId.value = run.id
   positionSubTooltip(e)
   subTooltipVisible.value = true
+}
+
+function onMiniGraphJobClick(runId: string, jobId: string) {
+  const run = props.session.cicdRuns?.find(r => r.id === runId)
+  if (!run) return
+  tooltipVisible.value = false
+  subTooltipVisible.value = false
+  hoveredCiCdRunId.value = null
+  navigateTo(`/projects/${run.projectId}/runs/cicd/${run.id}?tab=logs&job=${encodeURIComponent(jobId)}`)
 }
 
 function positionSubTooltip(e: MouseEvent) {
