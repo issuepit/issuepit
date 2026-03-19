@@ -35,8 +35,17 @@
             </svg>
             New Issue
           </button>
+          <button @click="triggerSimilarIssues"
+            :disabled="similarIssuesTriggeringRun"
+            class="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-300 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
+            title="Find similar issues">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            {{ similarIssuesTriggeringRun ? 'Searching…' : 'Find Similar' }}
+          </button>
         </div>
-      </div>
 
       <!-- Inline title edit -->
       <div v-if="editingTitle" class="mb-5">
@@ -513,6 +522,36 @@
             <div v-else class="text-sm text-gray-600">No runs yet.</div>
           </div>
 
+          <!-- Similar Issues -->
+          <div v-show="isTabActive('similar')" class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <div class="flex items-center justify-between mb-4">
+              <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide">Similar Issues</h2>
+              <button @click="triggerSimilarIssues" :disabled="similarIssuesTriggeringRun"
+                class="text-xs text-brand-400 hover:text-brand-300 disabled:opacity-50 transition-colors">
+                {{ similarIssuesTriggeringRun ? 'Searching…' : 'Refresh' }}
+              </button>
+            </div>
+            <div v-if="similarIssuesLoading" class="text-sm text-gray-600">Loading…</div>
+            <div v-else-if="similarIssues.length" class="space-y-3">
+              <div v-for="item in similarIssues" :key="item.similarIssueId"
+                class="flex items-start gap-3 p-3 bg-gray-800/50 rounded-lg hover:bg-gray-800 transition-colors">
+                <div class="flex-1 min-w-0">
+                  <NuxtLink :to="`/projects/${route.params.id}/issues/${item.similarIssueId}`"
+                    class="text-sm text-white hover:text-brand-300 transition-colors font-medium truncate block">
+                    #{{ item.number }} {{ item.title }}
+                  </NuxtLink>
+                  <p v-if="item.reason" class="text-xs text-gray-400 mt-1">{{ item.reason }}</p>
+                </div>
+                <span class="shrink-0 text-xs font-medium px-2 py-0.5 rounded-full bg-brand-900/50 text-brand-300">
+                  {{ Math.round(item.score * 100) }}%
+                </span>
+              </div>
+            </div>
+            <div v-else class="text-sm text-gray-600">
+              No similar issues found. Click "Find Similar" to run detection.
+            </div>
+          </div>
+
         </div>
 
         <!-- Sidebar -->
@@ -970,7 +1009,7 @@ const editingCommentId = ref<string | null>(null)
 const commentEdit = ref('')
 
 // Issue view tabs
-type IssueTab = 'tasks' | 'subissues' | 'linked' | 'history' | 'comments' | 'attachments' | 'runs'
+type IssueTab = 'tasks' | 'subissues' | 'linked' | 'history' | 'comments' | 'attachments' | 'runs' | 'similar'
 const TABS_STORAGE_KEY = 'issue-view-tabs'
 const DEFAULT_TABS: IssueTab[] = ['tasks', 'comments']
 
@@ -1033,6 +1072,7 @@ const allTabs = computed(() => [
   { id: 'comments' as IssueTab, label: 'Comments', count: totalCommentsCount.value },
   { id: 'attachments' as IssueTab, label: 'Attachments', count: store.currentAttachments.length },
   { id: 'runs' as IssueTab, label: 'Runs', count: runsCount.value },
+  { id: 'similar' as IssueTab, label: 'Similar Issues', count: similarIssues.value.length },
 ])
 
 // Total comments includes regular and code review comments
@@ -1047,6 +1087,37 @@ const allCiCdRuns = computed(() =>
 const runsCount = computed(() =>
   (store.currentRuns?.agentSessions.length ?? 0) + allCiCdRuns.value.length
 )
+
+// Similar Issues
+const similarIssues = ref<Array<{ similarIssueId: string; number: number; title: string; score: number; reason?: string; detectedAt: string }>>([])
+const similarIssuesLoading = ref(false)
+const similarIssuesTriggeringRun = ref(false)
+
+async function fetchSimilarIssues() {
+  if (!resolvedIssueId.value) return
+  similarIssuesLoading.value = true
+  try {
+    const { get } = useApi()
+    similarIssues.value = await get(`/api/issues/${resolvedIssueId.value}/similar-issues`)
+  } catch {
+    // ignore
+  } finally {
+    similarIssuesLoading.value = false
+  }
+}
+
+async function triggerSimilarIssues() {
+  similarIssuesTriggeringRun.value = true
+  try {
+    const { post } = useApi()
+    await post(`/api/issues/${resolvedIssueId.value}/similar-issues/trigger`, {})
+    // Poll for results after a short delay
+    await new Promise(resolve => setTimeout(resolve, 2000))
+    await fetchSimilarIssues()
+  } finally {
+    similarIssuesTriggeringRun.value = false
+  }
+}
 
 // Links
 const addingLink = ref(false)
@@ -1113,6 +1184,7 @@ onMounted(async () => {
     projectsStore.fetchProject(id),
     propsStore.fetchProperties(actualProjectId.value),
     propsStore.fetchIssuePropertyValues(actualProjectId.value, resolvedIssueId.value).then(loadPropertyValues),
+    fetchSimilarIssues(),
   ])
   // Fetch all issues in this org for link target selection (excluding current), with project name for cross-project display
   try {

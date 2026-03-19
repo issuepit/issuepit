@@ -44,6 +44,7 @@ builder.Services.AddHostedService<BotNotificationDispatchService>();
 builder.Services.AddHostedService<ConfigRepoSyncService>();
 builder.Services.AddHostedService<GitHubAutoSyncBackgroundService>();
 builder.Services.AddHostedService<BranchDetectionBackgroundService>();
+builder.Services.AddHostedService<SimilarIssueBackgroundService>();
 
 builder.Services.AddScoped<TenantContext>();
 builder.Services.AddScoped<TenantDatabaseService>();
@@ -54,6 +55,7 @@ builder.Services.AddScoped<CiCdRunQueueService>();
 builder.Services.AddScoped<ConfigRepoApplier>();
 builder.Services.AddScoped<GitHubSyncService>();
 builder.Services.AddScoped<BranchDetectionService>();
+builder.Services.AddScoped<SimilarIssueService>();
 builder.Services.Configure<IssuePit.Api.Services.ImageStorageOptions>(
     builder.Configuration.GetSection(IssuePit.Api.Services.ImageStorageOptions.SectionName));
 builder.Services.AddSingleton<IssuePit.Api.Services.ImageStorageService>();

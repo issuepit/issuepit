@@ -39,10 +39,15 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
     [HttpPost("keys")]
     public async Task<IActionResult> CreateKey([FromBody] ApiKeyRequest req)
     {
+        var orgId = req.OrgId ?? await db.Organizations
+            .Where(o => o.TenantId == tenant.CurrentTenant!.Id)
+            .Select(o => o.Id)
+            .FirstOrDefaultAsync();
+
         var key = new ApiKey
         {
             Id = Guid.NewGuid(),
-            OrgId = req.OrgId,
+            OrgId = orgId,
             ProjectId = req.ProjectId,
             TeamId = req.TeamId,
             UserId = req.UserId,
@@ -93,11 +98,16 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
     [HttpPost("runtimes")]
     public async Task<IActionResult> CreateRuntime([FromBody] RuntimeConfigRequest req)
     {
+        var orgId = req.OrgId ?? await db.Organizations
+            .Where(o => o.TenantId == tenant.CurrentTenant!.Id)
+            .Select(o => o.Id)
+            .FirstOrDefaultAsync();
+
         if (req.IsDefault)
         {
             // Clear existing default for this org
             var existing = await db.RuntimeConfigurations
-                .Where(r => r.OrgId == req.OrgId && r.IsDefault)
+                .Where(r => r.OrgId == orgId && r.IsDefault)
                 .ToListAsync();
             existing.ForEach(r => r.IsDefault = false);
         }
@@ -105,7 +115,7 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
         var runtime = new RuntimeConfiguration
         {
             Id = Guid.NewGuid(),
-            OrgId = req.OrgId,
+            OrgId = orgId,
             Name = req.Name,
             Type = req.Type,
             Configuration = req.Configuration,
@@ -323,6 +333,6 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
     }
 }
 
-public record ApiKeyRequest(Guid OrgId, string Name, ApiKeyProvider Provider, string Value, DateTime? ExpiresAt, Guid? ProjectId = null, Guid? TeamId = null, Guid? UserId = null);
-public record RuntimeConfigRequest(Guid OrgId, string Name, RuntimeType Type, string Configuration, bool IsDefault, int MaxConcurrentAgents = 0);
+public record ApiKeyRequest(Guid? OrgId, string Name, ApiKeyProvider Provider, string Value, DateTime? ExpiresAt, Guid? ProjectId = null, Guid? TeamId = null, Guid? UserId = null);
+public record RuntimeConfigRequest(Guid? OrgId, string Name, RuntimeType Type, string Configuration, bool IsDefault, int MaxConcurrentAgents = 0);
 public record TelegramBotRequest(string Name, string BotToken, string ChatId, int Events, bool IsSilent, DigestInterval DigestInterval, Guid? OrgId, Guid? ProjectId);
