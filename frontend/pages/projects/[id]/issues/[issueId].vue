@@ -1111,9 +1111,12 @@ async function triggerSimilarIssues() {
   try {
     const { post } = useApi()
     await post(`/api/issues/${resolvedIssueId.value}/similar-issues/trigger`, {})
-    // Poll for results after a short delay
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    await fetchSimilarIssues()
+    // Poll for results with retries (up to 12 attempts, 2.5s apart = ~30s max)
+    for (let attempt = 0; attempt < 12; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 2500))
+      await fetchSimilarIssues()
+      if (similarIssues.value.length > 0) break
+    }
   } finally {
     similarIssuesTriggeringRun.value = false
   }

@@ -44,6 +44,9 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
             .Select(o => o.Id)
             .FirstOrDefaultAsync();
 
+        if (orgId == Guid.Empty)
+            return BadRequest("No organization found for current tenant.");
+
         var key = new ApiKey
         {
             Id = Guid.NewGuid(),
@@ -102,6 +105,9 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
             .Where(o => o.TenantId == tenant.CurrentTenant!.Id)
             .Select(o => o.Id)
             .FirstOrDefaultAsync();
+
+        if (orgId == Guid.Empty)
+            return BadRequest("No organization found for current tenant.");
 
         if (req.IsDefault)
         {
