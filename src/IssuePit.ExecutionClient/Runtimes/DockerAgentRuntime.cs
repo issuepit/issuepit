@@ -6,35 +6,43 @@ using Docker.DotNet.Models;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
 using IssuePit.Core.Runners;
+using IssuePit.DockerRuntime;
 
 namespace IssuePit.ExecutionClient.Runtimes;
 
 /// <summary>
 /// Runs the agent inside a local Docker container with Docker-in-Docker (DinD) support.
 ///
-/// When <see cref="Agent.RunnerType"/> is set, the container is kept alive with
-/// <c>sleep infinity</c> after entrypoint setup, and all agent commands are driven via
-/// <c>docker exec</c> from C#. This keeps the same container — and therefore the same
-/// opencode session files on disk — across the initial run and any subsequent fix runs
-/// (uncommitted-changes or CI/CD failure fixes).
+/// For exec flow and HTTP server mode the container is started with
+/// <c>Entrypoint=["/bin/sh","-c"]</c> and <c>Cmd=["tail -f /dev/null"]</c>, bypassing any
+/// <c>ENTRYPOINT</c> or <c>CMD</c> baked into the Docker image. All workspace setup —
+/// git clone, git identity, push wrapper, tool restore, DinD, DNS proxy, opencode config —
+/// is then driven from C# via <c>docker exec</c> so every log line flows through
+/// <c>onLogLine</c> → UI and failures produce clear, actionable error messages.
+///
+/// Previously this setup ran inside <c>entrypoint.sh</c> as PID 1 before exec was possible,
+/// causing silent failures (git clone errors visible only in <c>docker logs</c>, not the UI)
+/// and "container is not running" conflicts when the entrypoint exited early.
 ///
 /// When <see cref="Agent.RunnerType"/> is null (legacy mode), the container runs its
-/// default CMD and is waited on as before.
+/// default CMD and is waited on as before (entrypoint.sh is still injected).
 /// </summary>
+// CS9107: dockerClient is used directly in this class for DI convenience and also passed to
+// DockerRuntimeBase which stores it as the protected DockerClient property.
+// Both references point to the same object — there is no semantic duplication.
+#pragma warning disable CS9107
 public class DockerAgentRuntime(
     ILogger<DockerAgentRuntime> logger,
     DockerClient dockerClient,
     IConfiguration configuration,
     IAgentHttpApi agentHttpApi)
-    : IExecCapableRuntime
+    : DockerRuntimeBase(logger, dockerClient), IExecCapableRuntime
+#pragma warning restore CS9107
 {
     // Docker image used to run agents. Uses the IssuePit helper-opencode-act image which includes
     // the opencode CLI, Docker Engine (DinD), act, .NET SDK, Node.js, and Playwright.
     // Overridden by agent.DockerImage when set.
     private const string DefaultDockerImage = "ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24";
-
-    /// <summary>Read buffer size for streaming container log output. 80 KiB matches the Docker SDK convention.</summary>
-    private const int LogBufferSize = 81920;
 
     /// <summary>Length of the hex suffix appended to agent container names for uniqueness.</summary>
     private const int ContainerNameSuffixLength = 10;
@@ -243,15 +251,17 @@ public class DockerAgentRuntime(
             await onLogLine($"[DEBUG] HTTP server    : port {OpenCodeHttpApi.DefaultPort} (random host port)", LogStream.Stdout);
         }
 
-        // Container CMD:
-        //   - HTTP server mode: "opencode" (no run subcommand — starts the HTTP server)
-        //   - Exec flow:        "sleep infinity" (entrypoint keeps container alive for docker exec)
-        //   - Legacy flow:      null → use image's default CMD (or session.CustomCmd if set)
-        IList<string>? containerCmd = useHttpServerMode
-            ? ["opencode"]
-            : useExecFlow
-                ? ["sleep", "infinity"]
-                : (session.CustomCmd?.Length > 0 ? session.CustomCmd : null);
+        // Container CMD and Entrypoint:
+        //   - Exec flow / HTTP server mode: bypass the image's ENTRYPOINT entirely by overriding
+        //     Entrypoint=["/bin/sh","-c"] and Cmd=["tail -f /dev/null"]. This keeps the container
+        //     alive immediately without running entrypoint.sh. All workspace setup (git clone,
+        //     DinD, DNS, opencode config) is then driven via docker exec from C# so every log line
+        //     flows through onLogLine → UI and git clone failures surface as clear errors in the UI.
+        //   - Legacy flow: null → use image's default CMD (or session.CustomCmd if set); the baked
+        //     entrypoint.sh is injected and runs as PID 1, then execs the CMD.
+        IList<string>? containerCmd = (useExecFlow || useHttpServerMode)
+            ? ["tail -f /dev/null"]
+            : (session.CustomCmd?.Length > 0 ? session.CustomCmd : null);
 
         // Generate a unique container name from the session ID, similar to how CI/CD runner
         // uses --container-name-suffix. This makes agent containers identifiable by session
@@ -266,6 +276,11 @@ public class DockerAgentRuntime(
             Cmd = containerCmd,
             ExposedPorts = containerExposedPorts,
             HostConfig = hostConfig,
+            // For exec flow and HTTP server mode: override the image's Entrypoint so that
+            // entrypoint.sh does NOT run as PID 1. The container starts immediately with
+            // "tail -f /dev/null" and is kept alive for docker exec. All setup is done in C#.
+            // For legacy flow: leave Entrypoint null so the image's baked Entrypoint is used.
+            Entrypoint = (useExecFlow || useHttpServerMode) ? ["/bin/sh", "-c"] : null,
             Labels = new Dictionary<string, string>
             {
                 ["issuepit.session-id"] = session.Id.ToString(),
@@ -274,17 +289,24 @@ public class DockerAgentRuntime(
             },
         };
 
-        // Step 5: Create the container, inject the latest entrypoint script, then start it.
-        // Injecting entrypoint.sh from the embedded resource ensures the container always uses
-        // the version that shipped with this execution client binary, keeping them in sync even
-        // when the Docker image was built with an older entrypoint.
+        // Step 5: Create the container.
+        // For exec/HTTP flows: Entrypoint is overridden above so entrypoint.sh is NOT injected.
+        // For legacy flow: inject the latest entrypoint.sh so the container uses the execution
+        // client's version even when the Docker image was built with an older entrypoint.
         var container = await dockerClient.Containers.CreateContainerAsync(
             createParams, cancellationToken);
 
         try
         {
-            await InjectEntrypointAsync(container.ID, cancellationToken);
-            await onLogLine("[DEBUG] Entrypoint     : injected from execution client binary", LogStream.Stdout);
+            if (!useExecFlow && !useHttpServerMode)
+            {
+                await InjectEntrypointAsync(container.ID, cancellationToken);
+                await onLogLine("[DEBUG] Entrypoint     : injected from execution client binary", LogStream.Stdout);
+            }
+            else
+            {
+                await onLogLine("[DEBUG] Entrypoint     : bypassed — workspace setup via docker exec", LogStream.Stdout);
+            }
         }
         catch (Exception ex)
         {
@@ -353,20 +375,85 @@ public class DockerAgentRuntime(
             return container.ID;
         }
 
-        // For exec flow and HTTP server mode the container must stay alive.
-        // Give the entrypoint a moment to complete initial setup (git clone, dockerd, etc.)
-        // and then verify the container is still running. If it exited early, capture its
-        // logs and throw a meaningful error so the root cause is visible in the session logs.
+        // For exec flow and HTTP server mode the container stays alive (tail -f /dev/null).
+        // Verify the container is running, then drive all workspace setup via docker exec
+        // so every log line flows through onLogLine → UI.
         await EnsureContainerRunningAsync(container.ID, onLogLine, cancellationToken);
+
+        if (useExecFlow || useHttpServerMode)
+        {
+            // ── Workspace setup (formerly entrypoint.sh) ──────────────────────────
+            // All steps are executed via docker exec so that:
+            //   1. Every log line (including git clone progress/errors) is visible in the UI.
+            //   2. Failures (wrong credentials, missing branch) throw with clear error messages.
+            //   3. The container stays alive throughout setup — no more "container is not running" conflicts.
+            await onLogLine("[INFO] Starting workspace setup via docker exec…", LogStream.Stdout);
+
+            // Step A: Clone the workspace (if a git repository is configured).
+            if (gitRepository is not null)
+            {
+                var featureBranch = !string.IsNullOrWhiteSpace(issue.GitBranch)
+                    ? issue.GitBranch
+                    : GenerateFeatureBranchName(issue.Number, issue.Title ?? string.Empty);
+                await CloneWorkspaceAsync(
+                    container.ID,
+                    gitRepository.RemoteUrl,
+                    gitRepository.DefaultBranch,
+                    featureBranch,
+                    gitRepository.AuthUsername,
+                    gitRepository.AuthToken,
+                    onLogLine,
+                    cancellationToken);
+
+                await SetupGitIdentityAndBranchAsync(container.ID, featureBranch, onLogLine, cancellationToken);
+                await InstallGitPushWrapperAsync(container.ID, onLogLine, cancellationToken);
+                await SetupWorkspaceToolsAsync(container.ID, onLogLine, cancellationToken);
+            }
+
+            // Step B: Start Docker-in-Docker (needed for act and any docker commands by the agent).
+            await StartDindAsync(container.ID, onLogLine, cancellationToken);
+
+            // Step C: Start DNS logging/firewall proxy.
+            await SetupDnsProxyAsync(container.ID, agent.DisableInternet, onLogLine, cancellationToken);
+
+            // Step D: Write opencode config (replaces the Python script that ran inside entrypoint.sh).
+            if (agent.RunnerType == RunnerType.OpenCode)
+            {
+                var agentsJson = AgentEnvironmentBuilder.BuildAgentsJson(agent);
+                var extraMcpJson = AgentEnvironmentBuilder.BuildExtraMcpJson(agent);
+                await WriteOpencodeConfigAsync(
+                    container.ID,
+                    mcpUrl: issuePitMcpUrl,
+                    agentsJson: string.IsNullOrEmpty(agentsJson) ? null : agentsJson,
+                    extraMcpJson: string.IsNullOrEmpty(extraMcpJson) ? null : extraMcpJson,
+                    port: useHttpServerMode ? OpenCodeHttpApi.DefaultPort : null,
+                    password: useHttpServerMode ? agent.HttpServerPassword : null,
+                    pluginsJson: null,
+                    onLogLine: onLogLine,
+                    cancellationToken: cancellationToken);
+            }
+
+            // Step E (HTTP server mode only): Start opencode as a background process via exec.
+            // With the entrypoint bypassed, opencode is no longer the container CMD — we must
+            // start it explicitly. Running it as a background process (nohup … &) returns
+            // immediately so we can wait for HTTP readiness in the next step.
+            if (useHttpServerMode)
+            {
+                await onLogLine("[INFO] Starting opencode HTTP server via exec…", LogStream.Stdout);
+                var startScript = "cd /workspace && nohup opencode > /tmp/opencode-server.log 2>&1 &";
+                await ExecCommandAsync(container.ID, ["/bin/sh", "-c", startScript],
+                    (_, _) => Task.CompletedTask, cancellationToken, workingDir: "/");
+            }
+
+            await onLogLine("[INFO] Workspace setup complete", LogStream.Stdout);
+        }
 
         if (useHttpServerMode)
         {
             // ── HTTP server flow ─────────────────────────────────────────────────
-            // The container is running the opencode HTTP server. Drive all session
-            // management via the REST API and git operations via docker exec.
+            // Drive all session management via the REST API; git operations via docker exec.
             try
             {
-                // Step 6: Resolve the host-side port that Docker mapped to the opencode server port.
                 var inspect = await dockerClient.Containers.InspectContainerAsync(container.ID, cancellationToken);
                 var containerPortKey = $"{OpenCodeHttpApi.DefaultPort}/tcp";
                 var ports = inspect.NetworkSettings?.Ports;
@@ -405,7 +492,7 @@ public class DockerAgentRuntime(
                 if (serverInfo is not null)
                     await onLogLine($"[DEBUG] Server info    : {serverInfo[..Math.Min(200, serverInfo.Length)]}", LogStream.Stdout);
 
-                // Log the actual commit SHA checked out by the entrypoint.
+                // Log the actual commit SHA after workspace setup (git clone via docker exec).
                 // Also emit the git markers early so IssueWorker captures branch/SHA immediately.
                 // EmitGitMarkersAsync runs after the agent completes and will overwrite these with
                 // the final committed state, but emitting here ensures the session header is populated
@@ -485,11 +572,10 @@ public class DockerAgentRuntime(
         }
 
         // ── Exec flow ────────────────────────────────────────────────────────
-        // The container is alive (running `sleep infinity`). Drive all agent work via exec.
+        // The container is alive (running `tail -f /dev/null`). Drive all agent work via exec.
         try
         {
-            // Step 6: Log the actual commit SHA that was checked out by the entrypoint clone.
-            // This runs inside the container so we get the real HEAD, not the trigger value.
+            // Step 6: Log the actual commit SHA after workspace setup (git clone via docker exec).
             // Also emit the git markers early so IssueWorker captures branch/SHA immediately.
             // EmitGitMarkersAsync runs after the agent completes and will overwrite these with
             // the final committed state, but emitting here ensures the session header is populated
@@ -699,8 +785,8 @@ public class DockerAgentRuntime(
         CancellationToken cancellationToken)
     {
         // Poll until the container is confirmed running or the deadline is reached.
-        // The entrypoint can take several seconds (git clone, dockerd startup) before
-        // it reaches `exec "$@"` and the container settles into its long-running state.
+        // For exec/HTTP flows the container starts immediately (tail -f /dev/null) so
+        // this should return on the first poll. For legacy flow the entrypoint runs first.
         const int pollIntervalMs = 500;
         const int maxPollSeconds = 5;
         var deadline = DateTimeOffset.UtcNow.AddSeconds(maxPollSeconds);
@@ -736,12 +822,12 @@ public class DockerAgentRuntime(
 
         await onLogLine(
             $"[ERROR] Container {containerId[..Math.Min(12, containerId.Length)]} exited with code {exitCode} during startup. " +
-            $"Check the entrypoint logs for errors (git clone failure, dockerd timeout, etc.).{logSection}",
+            $"Check the session logs for errors (git clone failure, dockerd timeout, etc.).{logSection}",
             LogStream.Stderr);
 
         throw new InvalidOperationException(
             $"Container {containerId[..Math.Min(12, containerId.Length)]} exited with code {exitCode} during startup. " +
-            $"Check the session logs for entrypoint output.");
+            $"Check the session logs for details.");
     }
 
     /// <summary>
@@ -842,58 +928,11 @@ public class DockerAgentRuntime(
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // Docker exec helpers
+    // Docker exec helpers — provided by DockerRuntimeBase
     // ──────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Executes <paramref name="cmd"/> inside a running container via docker exec.
-    /// Streams output to <paramref name="onLogLine"/> and returns the process exit code.
-    /// </summary>
-    private async Task<long> ExecCommandAsync(
-        string containerId,
-        IReadOnlyList<string> cmd,
-        Func<string, LogStream, Task> onLogLine,
-        CancellationToken cancellationToken)
-    {
-        var execCreate = await dockerClient.Exec.CreateContainerExecAsync(containerId,
-            new ContainerExecCreateParameters
-            {
-                Cmd = cmd.ToList(),
-                AttachStdout = true,
-                AttachStderr = true,
-                WorkingDir = "/workspace",
-            }, cancellationToken);
-
-        using var stream = await dockerClient.Exec.StartContainerExecAsync(
-            execCreate.ID, new ContainerExecStartParameters { Detach = false }, cancellationToken);
-
-        await ReadMultiplexedStreamAsync(stream, onLogLine, cancellationToken);
-
-        var inspect = await dockerClient.Exec.InspectContainerExecAsync(execCreate.ID, cancellationToken);
-        return inspect.ExitCode ?? 0;
-    }
-
-    /// <summary>
-    /// Executes <paramref name="cmd"/> inside a running container and returns the stdout output
-    /// as a trimmed string. Stderr is intentionally excluded — git and other tools emit error
-    /// messages on stderr that would otherwise pollute captured values (e.g. SHA, branch name).
-    /// Output is not forwarded to any log sink.
-    /// </summary>
-    private async Task<string> ExecReadOutputAsync(
-        string containerId,
-        IReadOnlyList<string> cmd,
-        CancellationToken cancellationToken)
-    {
-        var sb = new StringBuilder();
-        await ExecCommandAsync(containerId, cmd,
-            (line, stream) =>
-            {
-                if (stream == LogStream.Stdout) sb.AppendLine(line);
-                return Task.CompletedTask;
-            },
-            cancellationToken);
-        return sb.ToString().Trim();
-    }
+    // ExecCommandAsync, ExecReadOutputAsync, ReadMultiplexedStreamAsync,
+    // StreamContainerLogsAsync, BuildAuthenticatedCloneUrl, StripOriginPrefix
+    // are inherited from DockerRuntimeBase and available to all methods below.
 
     /// <summary>
     /// Runs <c>opencode session list</c> and emits a <c>[ISSUEPIT:OPENCODE_SESSION_ID]</c> marker
@@ -1054,73 +1093,11 @@ public class DockerAgentRuntime(
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // Container log streaming
+    // Container log streaming — provided by DockerRuntimeBase
     // ──────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Streams the container's stdout/stderr to <paramref name="onLogLine"/> and blocks until the container exits.
-    /// Used by the legacy (non-exec) flow only.
-    /// </summary>
-    private async Task StreamContainerLogsAsync(
-        string containerId,
-        Func<string, LogStream, Task> onLogLine,
-        CancellationToken cancellationToken)
-    {
-        var logsParams = new ContainerLogsParameters
-        {
-            Follow = true,
-            ShowStdout = true,
-            ShowStderr = true,
-        };
-
-        using var stream = await dockerClient.Containers.GetContainerLogsAsync(
-            containerId, logsParams, cancellationToken);
-
-        await ReadMultiplexedStreamAsync(stream, onLogLine, cancellationToken);
-    }
-
-    /// <summary>
-    /// Reads a <see cref="MultiplexedStream"/> line by line and forwards each line to
-    /// <paramref name="onLogLine"/>. Shared between container log streaming and docker exec output.
-    /// </summary>
-    private static async Task ReadMultiplexedStreamAsync(
-        MultiplexedStream stream,
-        Func<string, LogStream, Task> onLogLine,
-        CancellationToken cancellationToken)
-    {
-        var buffer = new byte[LogBufferSize];
-        var remainder = string.Empty;
-        var lastTarget = LogStream.Stdout;
-
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            var result = await stream.ReadOutputAsync(buffer, 0, buffer.Length, cancellationToken);
-            if (result.EOF) break;
-
-            lastTarget = result.Target == MultiplexedStream.TargetStream.StandardError
-                ? LogStream.Stderr
-                : LogStream.Stdout;
-
-            var text = remainder + Encoding.UTF8.GetString(buffer, 0, result.Count);
-            var lines = text.Split('\n');
-
-            // All but the last element are complete lines.
-            for (var i = 0; i < lines.Length - 1; i++)
-            {
-                var line = lines[i].TrimEnd('\r');
-                if (!string.IsNullOrEmpty(line))
-                    await onLogLine(line, lastTarget);
-            }
-
-            // Keep the trailing (possibly incomplete) fragment for the next iteration.
-            remainder = lines[^1];
-        }
-
-        // Flush any remaining content after EOF.
-        var flushed = remainder.TrimEnd('\r');
-        if (!string.IsNullOrEmpty(flushed))
-            await onLogLine(flushed, lastTarget);
-    }
+    // StreamContainerLogsAsync and ReadMultiplexedStreamAsync are inherited from
+    // DockerRuntimeBase. The private LogBufferSize and local Encoding.UTF8 usages
+    // in this file are now served by the base class constant.
 
     // ──────────────────────────────────────────────────────────────────────────
     // Docker image and DNS helpers

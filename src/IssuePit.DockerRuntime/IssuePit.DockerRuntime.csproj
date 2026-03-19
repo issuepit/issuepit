@@ -6,7 +6,6 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Docker.DotNet.Enhanced" Version="3.132.0" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0-preview.3.25171.5" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\IssuePit.Core\IssuePit.Core.csproj" />

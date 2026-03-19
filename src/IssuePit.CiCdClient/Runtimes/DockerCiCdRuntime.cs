@@ -1,11 +1,11 @@
 using System.Reflection;
-using System.Text;
 using System.Text.Json;
 using Docker.DotNet;
 using Docker.DotNet.Models;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
 using IssuePit.Core.Services;
+using IssuePit.DockerRuntime;
 
 namespace IssuePit.CiCdClient.Runtimes;
 
@@ -41,10 +41,17 @@ namespace IssuePit.CiCdClient.Runtimes;
 ///     where the cicd-client process runs directly on the host.</item>
 /// </list>
 /// </summary>
+// CS9107: The primary constructor parameter 'dockerClient' is captured both by the derived class
+// (where it is still used directly for DI-injected convenience) and passed to the base constructor
+// which also stores it. This is intentional — a future refactor can replace all dockerClient.X
+// usages with DockerClient.X to eliminate the duplicate capture, but that is deferred to keep
+// the diff minimal.
+#pragma warning disable CS9107
 public partial class DockerCiCdRuntime(
     ILogger<DockerCiCdRuntime> logger,
     DockerClient dockerClient,
-    IConfiguration configuration) : ICiCdRuntime
+    IConfiguration configuration) : DockerRuntimeBase(logger, dockerClient), ICiCdRuntime
+#pragma warning restore CS9107
 {
     // Docker image used to run act. Uses the IssuePit helper-act image which includes
     // .NET SDK, Node.js, Playwright, Docker CLI, and act pre-installed.
@@ -987,55 +994,7 @@ public partial class DockerCiCdRuntime(
         catch { /* diagnostics must never throw */ }
     }
 
-    private async Task StreamContainerLogsAsync(
-        string containerId,
-        Func<string, LogStream, Task> onLogLine,
-        CancellationToken cancellationToken)
-    {
-        var logsParams = new ContainerLogsParameters
-        {
-            Follow = true,
-            ShowStdout = true,
-            ShowStderr = true,
-        };
-
-        using var stream = await dockerClient.Containers.GetContainerLogsAsync(
-            containerId, logsParams, cancellationToken);
-
-        await DrainMultiplexedStreamAsync(stream, onLogLine, cancellationToken);
-    }
-
-    /// <summary>
-    /// Executes a command inside a running container via Docker exec, streams its output through
-    /// <paramref name="onLogLine"/>, and returns the process exit code.
-    /// </summary>
-    private async Task<long> ExecCommandAsync(
-        string containerId,
-        IList<string> cmd,
-        Func<string, LogStream, Task> onLogLine,
-        CancellationToken cancellationToken,
-        IList<string>? env = null)
-    {
-        var execCreate = await dockerClient.Exec.CreateContainerExecAsync(
-            containerId,
-            new ContainerExecCreateParameters
-            {
-                AttachStdout = true,
-                AttachStderr = true,
-                Cmd = cmd,
-                WorkingDir = "/workspace",
-                Env = env,
-            },
-            cancellationToken);
-
-        using var stream = await dockerClient.Exec.StartContainerExecAsync(
-            execCreate.ID, new ContainerExecStartParameters { Detach = false }, cancellationToken);
-
-        await DrainMultiplexedStreamAsync(stream, onLogLine, cancellationToken);
-
-        var inspect = await dockerClient.Exec.InspectContainerExecAsync(execCreate.ID, CancellationToken.None);
-        return inspect.ExitCode ?? 0;
-    }
+    // StreamContainerLogsAsync is provided by DockerRuntimeBase — no override needed here.
 
     /// <summary>
     /// Executes a shell command (<c>/bin/sh -c <paramref name="script"/></c>) inside the container.
@@ -1062,36 +1021,15 @@ public partial class DockerCiCdRuntime(
     }
 
     /// <summary>
-    /// Executes a command inside the container and returns the stdout output as a string.
+    /// Executes a command inside the container and returns the stdout output as a trimmed string.
     /// Stderr is discarded. Never throws on non-zero exit codes.
+    /// Delegates to <see cref="DockerRuntimeBase.ExecReadOutputAsync"/>.
     /// </summary>
-    private async Task<string> ExecCommandCaptureAsync(
+    private Task<string> ExecCommandCaptureAsync(
         string containerId,
-        IList<string> cmd,
+        IReadOnlyList<string> cmd,
         CancellationToken cancellationToken)
-    {
-        var execCreate = await dockerClient.Exec.CreateContainerExecAsync(
-            containerId,
-            new ContainerExecCreateParameters
-            {
-                AttachStdout = true,
-                AttachStderr = false,
-                Cmd = cmd,
-                WorkingDir = "/workspace",
-            },
-            cancellationToken);
-
-        using var stream = await dockerClient.Exec.StartContainerExecAsync(
-            execCreate.ID, new ContainerExecStartParameters { Detach = false }, cancellationToken);
-
-        var sb = new StringBuilder();
-        await DrainMultiplexedStreamAsync(
-            stream,
-            (line, _) => { sb.AppendLine(line); return Task.CompletedTask; },
-            cancellationToken);
-
-        return sb.ToString();
-    }
+        => ExecReadOutputAsync(containerId, cmd, cancellationToken);
 
     /// <summary>
     /// Runs <c>git rev-parse HEAD</c> inside the container to obtain the commit SHA that was
@@ -1166,34 +1104,10 @@ public partial class DockerCiCdRuntime(
 
     /// <summary>
     /// Strips the leading <c>origin/</c> prefix from a branch name if present.
-    /// <c>git clone -b</c> expects a remote branch name (e.g. <c>main</c>), not a
-    /// remote-tracking ref (e.g. <c>origin/main</c>). The UI and external callers may
-    /// supply either form, so we normalise here before passing the value to git.
+    /// Thin wrapper so tests (via <c>InternalsVisibleTo</c>) can access the base-class implementation.
     /// </summary>
-    internal static string StripOriginPrefix(string branch) =>
-        branch.StartsWith("origin/", StringComparison.OrdinalIgnoreCase)
-            ? branch["origin/".Length..]
-            : branch;
-            
-    /// <summary>
-    /// Builds an authenticated clone URL by injecting <paramref name="username"/> and
-    /// <paramref name="token"/> into an HTTPS URL using <see cref="UriBuilder"/>.
-    /// Returns the original <paramref name="url"/> unchanged when no token is provided or the
-    /// URL is not HTTPS (e.g. SSH URLs do not support embedded credentials).
-    /// </summary>
-    private static string BuildAuthenticatedCloneUrl(string url, string? username, string? token)
-    {
-        if (string.IsNullOrEmpty(token) ||
-            !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            return url;
-
-        var builder = new UriBuilder(url)
-        {
-            UserName = Uri.EscapeDataString(string.IsNullOrEmpty(username) ? "git" : username),
-            Password = Uri.EscapeDataString(token),
-        };
-        return builder.Uri.AbsoluteUri;
-    }
+    internal static new string StripOriginPrefix(string branch) =>
+        DockerRuntimeBase.StripOriginPrefix(branch);
 
     /// <summary>
     /// Copies the contents of <c>/artifacts</c> inside the container to <paramref name="artifactDir"/>
@@ -1373,49 +1287,6 @@ public partial class DockerCiCdRuntime(
         {
             await onLogLine($"[DEBUG] Could not parse workflow graph from container: {ex.Message}", LogStream.Stdout);
         }
-    }
-
-    /// <summary>
-    /// Drains a <see cref="MultiplexedStream"/> (from container logs or exec attach), emitting each
-    /// complete line through <paramref name="onLogLine"/>. Handles interleaved stdout/stderr correctly.
-    /// </summary>
-    private static async Task DrainMultiplexedStreamAsync(
-        MultiplexedStream stream,
-        Func<string, LogStream, Task> onLogLine,
-        CancellationToken cancellationToken)
-    {
-        var buffer = new byte[81920];
-        var remainder = string.Empty;
-        var lastTarget = LogStream.Stdout;
-
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            var result = await stream.ReadOutputAsync(buffer, 0, buffer.Length, cancellationToken);
-            if (result.EOF) break;
-
-            lastTarget = result.Target == MultiplexedStream.TargetStream.StandardError
-                ? LogStream.Stderr
-                : LogStream.Stdout;
-
-            var text = remainder + Encoding.UTF8.GetString(buffer, 0, result.Count);
-            var lines = text.Split('\n');
-
-            // All but the last element are complete lines.
-            for (var i = 0; i < lines.Length - 1; i++)
-            {
-                var line = lines[i].TrimEnd('\r');
-                if (!string.IsNullOrEmpty(line))
-                    await onLogLine(line, lastTarget);
-            }
-
-            // Keep the trailing (possibly incomplete) fragment for the next iteration.
-            remainder = lines[^1];
-        }
-
-        // Flush any remaining content after EOF.
-        var flushed = remainder.TrimEnd('\r');
-        if (!string.IsNullOrEmpty(flushed))
-            await onLogLine(flushed, lastTarget);
     }
 
     /// <summary>
