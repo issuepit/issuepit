@@ -98,7 +98,7 @@
               <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ item.branch || '—' }}</td>
               <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ item.commitSha?.slice(0, 7) || '—' }}</td>
               <td class="px-4 py-3 text-gray-400 text-xs"><DateDisplay :date="item.startedAt" mode="auto" /></td>
-              <td class="px-4 py-3 text-gray-400 text-xs">{{ (item.status === CiCdRunStatus.WaitingForApproval || item.status === CiCdRunStatus.Pending || item.status === AgentSessionStatus.Pending) ? '—' : duration(item.startedAt, item.endedAt) }}</td>
+              <td class="px-4 py-3 text-gray-400 text-xs">{{ isNotStarted(item.status) ? '—' : duration(item.startedAt, item.endedAt) }}</td>
             </tr>
           </tbody>
         </table>
@@ -163,7 +163,7 @@
                 <span v-else class="text-gray-600 text-xs">local</span>
               </td>
               <td class="px-4 py-3 text-gray-400 text-xs"><DateDisplay :date="run.startedAt" mode="auto" /></td>
-              <td class="px-4 py-3 text-gray-400 text-xs">{{ (run.status === CiCdRunStatus.WaitingForApproval || run.status === CiCdRunStatus.Pending) ? '—' : duration(run.startedAt, run.endedAt) }}</td>
+              <td class="px-4 py-3 text-gray-400 text-xs">{{ isNotStarted(run.status) ? '—' : duration(run.startedAt, run.endedAt) }}</td>
               <td class="px-4 py-3 text-right">
                 <button v-if="run.status === CiCdRunStatus.WaitingForApproval"
                   class="text-xs text-purple-400 hover:text-purple-300 transition-colors"
@@ -237,7 +237,7 @@
               <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ session.gitBranch || '—' }}</td>
               <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ session.commitSha?.slice(0, 7) || '—' }}</td>
               <td class="px-4 py-3 text-gray-400 text-xs"><DateDisplay :date="session.startedAt" mode="auto" /></td>
-              <td class="px-4 py-3 text-gray-400 text-xs">{{ session.status === AgentSessionStatus.Pending ? '—' : duration(session.startedAt, session.endedAt) }}</td>
+              <td class="px-4 py-3 text-gray-400 text-xs">{{ isNotStarted(session.status) ? '—' : duration(session.startedAt, session.endedAt) }}</td>
             </tr>
           </tbody>
         </table>
@@ -490,6 +490,13 @@ function duration(start: string, end?: string) {
   const m = Math.floor(s / 60)
   if (m < 60) return `${m}m ${s % 60}s`
   return `${Math.floor(m / 60)}h ${m % 60}m`
+}
+
+/** Returns true when the run/session is in a not-yet-started state and should show '—' for duration. */
+function isNotStarted(status: CiCdRunStatus | AgentSessionStatus): boolean {
+  return status === CiCdRunStatus.Pending ||
+    status === CiCdRunStatus.WaitingForApproval ||
+    status === AgentSessionStatus.Pending
 }
 
 function statusClass(status: CiCdRunStatus | AgentSessionStatus) {
