@@ -155,21 +155,27 @@ public class ProjectDashboardTests : IAsyncLifetime
         var (context, dashboard) = await CreateLoggedInDashboardAsync(projectId, username, password);
         try
         {
+            // Count cards before entering draft mode (non-draft view) so the
+            // persistence check after reload uses the same visibility mode.
+            var cardsBefore = await dashboard.DragCards.CountAsync();
+
             await dashboard.ClickCustomizeAsync();
 
-            var cardsBefore = await dashboard.DragCards.CountAsync();
+            // Draft mode may reveal extra sections (e.g. milestones even when empty),
+            // so track the draft-mode baseline separately for the in-session assertions.
+            var cardsBeforeDraft = await dashboard.DragCards.CountAsync();
 
             // Add a Kanban card
             await dashboard.AddKanbanButton.ClickAsync();
-            await dashboard.DragCards.Nth(cardsBefore).WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Default });
+            await dashboard.DragCards.Nth(cardsBeforeDraft).WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Default });
             var cardsAfterKanban = await dashboard.DragCards.CountAsync();
-            Assert.Equal(cardsBefore + 1, cardsAfterKanban);
+            Assert.Equal(cardsBeforeDraft + 1, cardsAfterKanban);
 
             // Add a Test History card
             await dashboard.AddTestHistoryButton.ClickAsync();
             await dashboard.DragCards.Nth(cardsAfterKanban).WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Default });
             var cardsAfterTestHistory = await dashboard.DragCards.CountAsync();
-            Assert.Equal(cardsBefore + 2, cardsAfterTestHistory);
+            Assert.Equal(cardsBeforeDraft + 2, cardsAfterTestHistory);
 
             // Save layout — saveDraftMode() exits draft mode automatically, so we just
             // wait for the toolbar to disappear to confirm the transition completed.
