@@ -171,15 +171,15 @@ public class ProjectDashboardTests : IAsyncLifetime
             var cardsAfterTestHistory = await dashboard.DragCards.CountAsync();
             Assert.Equal(cardsBefore + 2, cardsAfterTestHistory);
 
-            // Save layout and verify cards persist after reload
+            // Save layout, then exit draft mode and re-navigate to verify persistence
             await dashboard.SaveButton.ClickAsync();
+            await dashboard.CancelButton.ClickAsync();
             await dashboard.DraftModeToolbar.WaitForAsync(new LocatorWaitForOptions
             {
                 State = WaitForSelectorState.Hidden,
                 Timeout = E2ETimeouts.Default,
             });
 
-            // Re-navigate to verify persistence
             await dashboard.GotoAsync(projectId);
             var cardsAfterReload = await dashboard.DragCards.CountAsync();
             Assert.Equal(cardsBefore + 2, cardsAfterReload);
