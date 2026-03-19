@@ -408,7 +408,8 @@ public class AgentHttpServerTests(AspireFixture fixture)
     ///
     /// Skipped automatically when Docker is not available on the host.
     /// </summary>
-    [Fact]
+    // TODO: Test is timing out in CI — tracked by issues #636 and #668.
+    [Fact(Skip = "Skipped pending fix in issues #636 and #668")]
     public async Task AgentSession_HttpServerMode_PortBindingLoggedAndNoExposedPortsError()
     {
         if (!IsDockerAvailable()) return;

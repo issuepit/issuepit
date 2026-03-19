@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Docker.DotNet.Enhanced" Version="3.132.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\IssuePit.Core\IssuePit.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="IssuePit.Tests.Unit" />
+  </ItemGroup>
+</Project>

@@ -17,6 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="..\IssuePit.Core\IssuePit.Core.csproj" />
     <ProjectReference Include="..\IssuePit.CiCdClient\IssuePit.CiCdClient.csproj" />
+    <ProjectReference Include="..\IssuePit.DockerRuntime\IssuePit.DockerRuntime.csproj" />
     <ProjectReference Include="..\IssuePit.McpServer\IssuePit.McpServer.csproj" />
     <ProjectReference Include="..\IssuePit.Api\IssuePit.Api.csproj" />
     <ProjectReference Include="..\IssuePit.ExecutionClient\IssuePit.ExecutionClient.csproj" />

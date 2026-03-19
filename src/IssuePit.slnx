@@ -6,6 +6,7 @@
   <Project Path="IssuePit.McpServer/IssuePit.McpServer.csproj" />
   <Project Path="IssuePit.CiCdClient/IssuePit.CiCdClient.csproj" />
   <Project Path="IssuePit.Core/IssuePit.Core.csproj" />
+  <Project Path="IssuePit.DockerRuntime/IssuePit.DockerRuntime.csproj" />
   <Project Path="IssuePit.ExecutionClient/IssuePit.ExecutionClient.csproj" />
   <Project Path="IssuePit.ServiceDefaults/IssuePit.ServiceDefaults.csproj" />
   <Project Path="IssuePit.VoskModelDownloader/IssuePit.VoskModelDownloader.csproj" />

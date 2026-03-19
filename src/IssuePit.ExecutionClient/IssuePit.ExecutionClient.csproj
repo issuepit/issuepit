@@ -14,6 +14,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\IssuePit.Core\IssuePit.Core.csproj" />
+    <ProjectReference Include="..\IssuePit.DockerRuntime\IssuePit.DockerRuntime.csproj" />
     <ProjectReference Include="..\IssuePit.ServiceDefaults\IssuePit.ServiceDefaults.csproj" />
   </ItemGroup>
   <!-- Embed entrypoint.sh so the execution client can inject the latest version into containers -->
