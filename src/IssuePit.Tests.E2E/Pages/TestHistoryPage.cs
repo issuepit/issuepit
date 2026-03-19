@@ -13,8 +13,8 @@ public class TestHistoryPage(IPage page)
     public async Task WaitForLoadAsync()
     {
         await page.WaitForSelectorAsync("text=Test History", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
-        // Wait for the data-loading spinner to disappear so reload() has completed and the tab
-        // content (inside v-else) is rendered before we interact with any tab.
+        // Wait for the data-loading spinner to disappear so the initial data fetch has completed
+        // and the tab content (inside v-else) is rendered before we interact with any tab.
         await page.Locator(".animate-spin").WaitForAsync(new LocatorWaitForOptions
         {
             State = WaitForSelectorState.Hidden,

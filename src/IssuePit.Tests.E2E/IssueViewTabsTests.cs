@@ -137,7 +137,7 @@ public class IssueViewTabsTests : IAsyncLifetime
         {
             await page.GotoAsync(issueDetailUrl);
             await page.EvaluateAsync("sessionStorage.removeItem('issue-view-tabs'); localStorage.removeItem('issue-view-tabs')");
-            await page.ReloadAsync();
+            await page.GotoAsync(issueDetailUrl);
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
 
             var detail = new IssueDetailPage(page);
@@ -163,7 +163,7 @@ public class IssueViewTabsTests : IAsyncLifetime
         {
             await page.GotoAsync(issueDetailUrl);
             await page.EvaluateAsync("sessionStorage.removeItem('issue-view-tabs'); localStorage.removeItem('issue-view-tabs')");
-            await page.ReloadAsync();
+            await page.GotoAsync(issueDetailUrl);
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
 
             var detail = new IssueDetailPage(page);
@@ -190,7 +190,7 @@ public class IssueViewTabsTests : IAsyncLifetime
         {
             await page.GotoAsync(issueDetailUrl);
             await page.EvaluateAsync("sessionStorage.removeItem('issue-view-tabs'); localStorage.removeItem('issue-view-tabs')");
-            await page.ReloadAsync();
+            await page.GotoAsync(issueDetailUrl);
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
 
             var detail = new IssueDetailPage(page);
