@@ -83,7 +83,7 @@ async function seedData(apiClient, tenantId) {
   const project = await projectRes.json();
 
   // Create some issues
-  const issueStatuses = ['open', 'in_progress', 'done'];
+  const issueStatuses = ['todo', 'in_progress', 'done'];
   const issueTitles = [
     'Implement user authentication',
     'Add dark mode support',
@@ -224,6 +224,7 @@ async function main() {
 
     // Project dashboard — draft/customize mode
     try {
+      await page.evaluate(() => window.scrollTo(0, 0));
       await page.getByText('Customize dashboard').click({ timeout: 3000 });
       await screenshotState(page, 'project-dashboard-draft');
       await page.getByRole('button', { name: 'Cancel' }).click();
