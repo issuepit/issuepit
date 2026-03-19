@@ -21,13 +21,25 @@ jobs:
       - name: Build
         run: dotnet build src/IssuePit.slnx --no-restore --configuration Release
 
+      - name: Publish to combined output
+        # Publish all deployable services into a single flat directory so that shared
+        # native libraries (libvosk.so, Kafka JARs, …) are written only once instead
+        # of once per project.  obj/ directories are never included in publish output.
+        run: |
+          DIST=dist
+          dotnet publish src/IssuePit.Api/IssuePit.Api.csproj               -c Release -o $DIST --no-build
+          dotnet publish src/IssuePit.ExecutionClient/IssuePit.ExecutionClient.csproj -c Release -o $DIST --no-build
+          dotnet publish src/IssuePit.CiCdClient/IssuePit.CiCdClient.csproj -c Release -o $DIST --no-build
+          dotnet publish src/IssuePit.Migrator/IssuePit.Migrator.csproj     -c Release -o $DIST --no-build
+          dotnet publish src/IssuePit.McpServer/IssuePit.McpServer.csproj   -c Release -o $DIST --no-build
+          dotnet publish src/IssuePit.KafkaInitializer/IssuePit.KafkaInitializer.csproj -c Release -o $DIST --no-build
+          dotnet publish src/IssuePit.VoskModelDownloader/IssuePit.VoskModelDownloader.csproj -c Release -o $DIST --no-build
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: backend-build
-          path: |
-            src/*/bin/Release/
-            src/*/obj/
+          path: dist/
           retention-days: 1
 
   check-migrations:

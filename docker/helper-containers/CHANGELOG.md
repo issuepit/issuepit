@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.5.0](https://github.com/issuepit/issuepit/compare/helper-containers-v1.4.0...helper-containers-v1.5.0) (2026-03-19)
+
+
+### Features
+
+* add Docker Engine to issuepit-act-runner image for dind support ([#708](https://github.com/issuepit/issuepit/issues/708)) ([b5e2332](https://github.com/issuepit/issuepit/commit/b5e23326cbfe727b520651fccb8ad4c035fafcfd))
+
+## [1.4.0](https://github.com/issuepit/issuepit/compare/helper-containers-v1.3.0...helper-containers-v1.4.0) (2026-03-18)
+
+
+### Features
+
+* add opencode agent types (primary/subagent/all) to nested agents ([#578](https://github.com/issuepit/issuepit/issues/578)) ([bffd42a](https://github.com/issuepit/issuepit/commit/bffd42ae06082e8fdfa29a75499b207126e96e23))
+* issuepit-act-runner image (ffmpeg + jq + Chrome) and inherited image UI ([#691](https://github.com/issuepit/issuepit/issues/691)) ([6e4b4db](https://github.com/issuepit/issuepit/commit/6e4b4db86e0da18cfce87eddf9a25a0cfb2954ea))
+* opencode HTTP server execution mode ([#561](https://github.com/issuepit/issuepit/issues/561)) ([5c8ff2c](https://github.com/issuepit/issuepit/commit/5c8ff2c63843614cd225fd77ecb657ea3e65a191))
+* opencode login for OpenRouter/DeepSeek + MCP config passthrough (GitHub MCP, Context7) ([#596](https://github.com/issuepit/issuepit/issues/596)) ([0371d06](https://github.com/issuepit/issuepit/commit/0371d0682ac3ea752850a14823bab6bae1d4298c))
+* opencode plugin to block `git push` ([#559](https://github.com/issuepit/issuepit/issues/559)) ([6928c6d](https://github.com/issuepit/issuepit/commit/6928c6d3386c6c9eccd14ac075bdff6fc5153cb5))
+
+
+### Bug Fixes
+
+* add apt-get update before ffmpeg install in E2E CI job ([#649](https://github.com/issuepit/issuepit/issues/649)) ([de40dd9](https://github.com/issuepit/issuepit/commit/de40dd9be6502657dca1d016d985ba50c3754321))
+* agent container names ([#696](https://github.com/issuepit/issuepit/issues/696)) ([af6c836](https://github.com/issuepit/issuepit/commit/af6c836faed2ad30b9c39335079070aa63d2538b))
+* agent startup — non-fatal dockerd, container health check, OPENCODE_PORT, CRLF injection fix ([#618](https://github.com/issuepit/issuepit/issues/618)) ([756d5f8](https://github.com/issuepit/issuepit/commit/756d5f84927e80b6f05b1303c72e775e9fad27f3))
+* fail fast with clear error for misconfigured DefaultBranch + pre-flight remote branch check + stop stderr leaking into captured git output ([#679](https://github.com/issuepit/issuepit/issues/679)) ([4b651cd](https://github.com/issuepit/issuepit/commit/4b651cdf4321f0b6752820c7bc6de841c4b32d9a))
+* pass git auth credentials to CICD clone and bypass push-blocking wrapper for agent push ([#642](https://github.com/issuepit/issuepit/issues/642)) ([08d8cea](https://github.com/issuepit/issuepit/commit/08d8ceaa3e1feaae5cdfe4d99dcc4cbebaceb9d6))
+* restore exec "$@" in entrypoint.sh, add UseHttpServer toggle to agent form, and extend retry modal ([#599](https://github.com/issuepit/issuepit/issues/599)) ([ef69896](https://github.com/issuepit/issuepit/commit/ef6989655d0511de8e531e749fb39e0ce3942ab0))
+* use "remote" MCP type instead of invalid "sse"/"http" for opencode config ([#638](https://github.com/issuepit/issuepit/issues/638)) ([4bdf59b](https://github.com/issuepit/issuepit/commit/4bdf59be71c70a5647e93a7ad90af4eb4010531b))
+
 ## [1.3.0](https://github.com/issuepit/issuepit/compare/helper-containers-v1.2.4...helper-containers-v1.3.0) (2026-03-15)
 
 

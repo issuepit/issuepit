@@ -18,6 +18,7 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
         if (ctx.CurrentTenant is null) return Unauthorized();
         var projects = await ProjectsQuery()
             .Where(p => p.Organization.TenantId == ctx.CurrentTenant.Id)
+            .OrderBy(p => p.CreatedAt)
             .Select(ProjectDto.Selector(db))
             .ToListAsync();
         return Ok(projects);

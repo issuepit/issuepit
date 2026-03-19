@@ -143,6 +143,7 @@ async function main() {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
     viewport: { width: 1440, height: 900 },
+    deviceScaleFactor: 2,
   });
 
   // --- Auth ---
@@ -237,7 +238,7 @@ async function main() {
 
     // Kanban — issue preview sidebar (click first card)
     try {
-      await page.locator('div[draggable="true"]').first().click({ timeout: 3000 });
+      await page.locator('div.cursor-pointer[draggable="true"]').first().click({ timeout: 3000 });
       await screenshotState(page, 'kanban-card-preview');
       await page.keyboard.press('Escape');
       await page.waitForTimeout(200);

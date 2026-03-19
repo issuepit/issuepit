@@ -556,12 +556,12 @@
           <div v-if="propForm.type === ProjectPropertyType.Date" class="grid grid-cols-2 gap-3">
             <div>
               <label class="block text-xs text-gray-400 mb-1.5">Min date <span class="text-gray-600">(optional)</span></label>
-              <input v-model="propForm.minValue" type="date"
+              <input v-model="propForm.minValue" type="text" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}"
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
             </div>
             <div>
               <label class="block text-xs text-gray-400 mb-1.5">Max date <span class="text-gray-600">(optional)</span></label>
-              <input v-model="propForm.maxValue" type="date"
+              <input v-model="propForm.maxValue" type="text" placeholder="YYYY-MM-DD" pattern="\d{4}-\d{2}-\d{2}"
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
             </div>
           </div>
