@@ -15,12 +15,14 @@ public class TestHistoryPage(IPage page)
     /// Prefer this over <see cref="GotoAsync"/> + <see cref="WaitForLoadAsync"/> +
     /// <see cref="ClickCoverageTabAsync"/> because tab-click navigation triggers
     /// <c>router.replace</c> which can restart the loading cycle and cause flakiness.
+    /// The page initialises <c>loading=true</c>, so "No coverage data yet" is only rendered
+    /// after the initial data fetch completes — making the wait below race-free.
     /// </summary>
     public async Task GotoCoverageAsync(string projectId)
     {
         await page.GotoAsync($"/projects/{projectId}/runs/test-history?tab=Coverage");
         // Wait for either coverage data cards or the empty-state placeholder.
-        // Both are only rendered once the initial data fetch (loading = false) completes.
+        // Because loading starts as true, neither text appears until the API fetch completes.
         await page.Locator("text=Line Coverage").Or(page.Locator("text=No coverage data yet"))
             .WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.NavigationLong });
     }
@@ -29,9 +31,9 @@ public class TestHistoryPage(IPage page)
     {
         await page.WaitForSelectorAsync("text=Test History", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
         // Wait for the Overview tab's "Total Tests" stat card to appear. This card only renders
-        // when loading===false and activeTab==='Overview' (the default). Waiting for the spinner
-        // to disappear is not reliable because the heading (in the breadcrumb) renders before
-        // Vue's onMounted fires, so the spinner may not yet exist when WaitForLoadAsync is called.
+        // when loading===false and activeTab==='Overview' (the default). The page initialises
+        // loading=true so the spinner is always present on first render and the stat cards only
+        // appear after the initial data fetch completes.
         await page.WaitForSelectorAsync("text=Total Tests", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
     }
 

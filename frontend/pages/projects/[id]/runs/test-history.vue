@@ -820,7 +820,10 @@ watch(branchFilters, (branches) => {
 }, { deep: true })
 const searchQuery = ref('')
 
-const loading = ref(false)
+// Start as true so the loading spinner is present on initial render.
+// This allows E2E tests (and users) to reliably wait for the spinner to
+// disappear before interacting with tab content.
+const loading = ref(true)
 const runSummaries = ref<TestRunSummary[]>([])
 const allTests = ref<TestStats[]>([])
 const coverageRuns = ref<CoverageRunSummary[]>([])
