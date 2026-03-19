@@ -78,6 +78,10 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
     {
         logger.LogInformation("Seeding demo organization and sample data...");
 
+        // Fixed base date for all seeded projects so the sort order (by CreatedAt) is always
+        // deterministic across fresh and incremental seeding runs.
+        var seedBase = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
         // Resolve seeded users for assignees and comments
         var adminUser = await db.Users.FirstOrDefaultAsync(u => u.Username == "admin" && u.TenantId == tenantId);
         var aliceUser = await db.Users.FirstOrDefaultAsync(u => u.Username == "alice" && u.TenantId == tenantId);
@@ -110,7 +114,7 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
                 Description = "Vue 3 / Nuxt 3 web application",
                 IssueKey = "FE",
                 //GitHubRepo = "https://github.com/acme/frontend", // disabled
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = seedBase,
             });
         var (backendProject, _) = await db.Projects.AddIfNotExistsAsync(
             p => p.OrgId == org.Id && p.Slug == "backend-api",
@@ -123,7 +127,7 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
                 Description = "ASP.NET Core REST API",
                 IssueKey = "BA",
                 //GitHubRepo = "https://github.com/acme/backend", // disabled
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = seedBase.AddDays(1),
             });
         await db.SaveChangesAsync();
 
@@ -237,7 +241,7 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
                 // Require explicit approval before dispatching CI/CD runs so that the git-polling
                 // service does not auto-start runners for this seeded project in E2E tests.
                 RequiresRunApproval = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = seedBase.AddDays(2),
             });
         // Ensure the accent color is set even for pre-existing seeded records
         if (issuePitProject.Color is null)
@@ -265,7 +269,7 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
                 // Require explicit approval before dispatching CI/CD runs so that the git-polling
                 // service does not auto-start runners for this seeded project in E2E tests.
                 RequiresRunApproval = true,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = seedBase.AddDays(3),
             });
         await db.SaveChangesAsync();
 
