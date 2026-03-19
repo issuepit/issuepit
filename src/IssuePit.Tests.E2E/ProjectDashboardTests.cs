@@ -171,9 +171,9 @@ public class ProjectDashboardTests : IAsyncLifetime
             var cardsAfterTestHistory = await dashboard.DragCards.CountAsync();
             Assert.Equal(cardsBefore + 2, cardsAfterTestHistory);
 
-            // Save layout, then exit draft mode and re-navigate to verify persistence
+            // Save layout — saveDraftMode() exits draft mode automatically, so we just
+            // wait for the toolbar to disappear to confirm the transition completed.
             await dashboard.SaveButton.ClickAsync();
-            await dashboard.CancelButton.ClickAsync();
             await dashboard.DraftModeToolbar.WaitForAsync(new LocatorWaitForOptions
             {
                 State = WaitForSelectorState.Hidden,
