@@ -164,11 +164,9 @@ public class TestHistoryTests : IAsyncLifetime
             await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
 
             var historyPage = new TestHistoryPage(page);
-            await historyPage.GotoAsync(projectId);
-            await historyPage.WaitForLoadAsync();
-
-            // Switch to the Coverage tab.
-            await historyPage.ClickCoverageTabAsync();
+            // Navigate directly to the Coverage tab URL to avoid the router.replace() race that
+            // occurs when clicking a tab after Overview has already loaded.
+            await historyPage.GotoCoverageAsync(projectId);
 
             // The Coverage tab should show coverage data, not the empty state.
             Assert.True(await historyPage.HasCoverageDataAsync(),

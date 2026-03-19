@@ -10,6 +10,21 @@ public class TestHistoryPage(IPage page)
     public async Task<IResponse?> GotoAsync(string projectId) =>
         await page.GotoAsync($"/projects/{projectId}/runs/test-history");
 
+    /// <summary>
+    /// Navigates directly to the Coverage tab URL and waits for coverage content to appear.
+    /// Prefer this over <see cref="GotoAsync"/> + <see cref="WaitForLoadAsync"/> +
+    /// <see cref="ClickCoverageTabAsync"/> because tab-click navigation triggers
+    /// <c>router.replace</c> which can restart the loading cycle and cause flakiness.
+    /// </summary>
+    public async Task GotoCoverageAsync(string projectId)
+    {
+        await page.GotoAsync($"/projects/{projectId}/runs/test-history?tab=Coverage");
+        // Wait for either coverage data cards or the empty-state placeholder.
+        // Both are only rendered once the initial data fetch (loading = false) completes.
+        await page.Locator("text=Line Coverage").Or(page.Locator("text=No coverage data yet"))
+            .WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.NavigationLong });
+    }
+
     public async Task WaitForLoadAsync()
     {
         await page.WaitForSelectorAsync("text=Test History", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
