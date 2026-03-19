@@ -11,6 +11,18 @@ namespace IssuePit.Api.Controllers;
 [Route("api/config")]
 public class ConfigurationController(IssuePitDbContext db, TenantContext tenant) : ControllerBase
 {
+    // --- Helpers ---
+
+    /// <summary>
+    /// Returns the requested orgId when provided, or resolves to the first organization
+    /// found for the current tenant. Returns <see cref="Guid.Empty"/> when no org exists.
+    /// </summary>
+    private async Task<Guid> ResolveOrgIdAsync(Guid? requestedOrgId) =>
+        requestedOrgId ?? await db.Organizations
+            .Where(o => o.TenantId == tenant.CurrentTenant!.Id)
+            .Select(o => o.Id)
+            .FirstOrDefaultAsync();
+
     // --- API Keys ---
 
     [HttpGet("keys")]
@@ -39,10 +51,7 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
     [HttpPost("keys")]
     public async Task<IActionResult> CreateKey([FromBody] ApiKeyRequest req)
     {
-        var orgId = req.OrgId ?? await db.Organizations
-            .Where(o => o.TenantId == tenant.CurrentTenant!.Id)
-            .Select(o => o.Id)
-            .FirstOrDefaultAsync();
+        var orgId = await ResolveOrgIdAsync(req.OrgId);
 
         if (orgId == Guid.Empty)
             return BadRequest("No organization found for current tenant.");
@@ -101,10 +110,7 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
     [HttpPost("runtimes")]
     public async Task<IActionResult> CreateRuntime([FromBody] RuntimeConfigRequest req)
     {
-        var orgId = req.OrgId ?? await db.Organizations
-            .Where(o => o.TenantId == tenant.CurrentTenant!.Id)
-            .Select(o => o.Id)
-            .FirstOrDefaultAsync();
+        var orgId = await ResolveOrgIdAsync(req.OrgId);
 
         if (orgId == Guid.Empty)
             return BadRequest("No organization found for current tenant.");

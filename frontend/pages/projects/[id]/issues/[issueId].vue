@@ -1089,6 +1089,8 @@ const runsCount = computed(() =>
 )
 
 // Similar Issues
+const SIMILAR_ISSUES_POLL_ATTEMPTS = 12
+const SIMILAR_ISSUES_POLL_INTERVAL_MS = 2500
 const similarIssues = ref<Array<{ similarIssueId: string; number: number; title: string; score: number; reason?: string; detectedAt: string }>>([])
 const similarIssuesLoading = ref(false)
 const similarIssuesTriggeringRun = ref(false)
@@ -1111,9 +1113,9 @@ async function triggerSimilarIssues() {
   try {
     const { post } = useApi()
     await post(`/api/issues/${resolvedIssueId.value}/similar-issues/trigger`, {})
-    // Poll for results with retries (up to 12 attempts, 2.5s apart = ~30s max)
-    for (let attempt = 0; attempt < 12; attempt++) {
-      await new Promise(resolve => setTimeout(resolve, 2500))
+    // Poll for results with retries
+    for (let attempt = 0; attempt < SIMILAR_ISSUES_POLL_ATTEMPTS; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, SIMILAR_ISSUES_POLL_INTERVAL_MS))
       await fetchSimilarIssues()
       if (similarIssues.value.length > 0) break
     }

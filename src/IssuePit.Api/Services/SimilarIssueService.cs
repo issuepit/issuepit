@@ -321,7 +321,7 @@ public class SimilarIssueService(
 
     private async Task AppendLogAsync(SimilarIssueRun run, GitHubSyncLogLevel level, string message, CancellationToken ct)
     {
-        logger.LogInformation("[SimilarIssue] [{Level}] {Message}", level, message);
+        logger.LogInformation("[SimilarIssue] {Message}", message);
         db.SimilarIssueRunLogs.Add(new SimilarIssueRunLog
         {
             Id = Guid.NewGuid(),
