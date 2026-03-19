@@ -13,13 +13,11 @@ public class TestHistoryPage(IPage page)
     public async Task WaitForLoadAsync()
     {
         await page.WaitForSelectorAsync("text=Test History", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
-        // Wait for the data-loading spinner to disappear so the initial data fetch has completed
-        // and the tab content (inside v-else) is rendered before we interact with any tab.
-        await page.Locator(".animate-spin").WaitForAsync(new LocatorWaitForOptions
-        {
-            State = WaitForSelectorState.Hidden,
-            Timeout = E2ETimeouts.Navigation,
-        });
+        // Wait for the Overview tab's "Total Tests" stat card to appear. This card only renders
+        // when loading===false and activeTab==='Overview' (the default). Waiting for the spinner
+        // to disappear is not reliable because the heading (in the breadcrumb) renders before
+        // Vue's onMounted fires, so the spinner may not yet exist when WaitForLoadAsync is called.
+        await page.WaitForSelectorAsync("text=Total Tests", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
     }
 
     /// <summary>Returns the heading element containing "Test History".</summary>
