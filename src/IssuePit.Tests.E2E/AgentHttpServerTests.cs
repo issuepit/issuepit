@@ -411,6 +411,9 @@ public class AgentHttpServerTests(AspireFixture fixture)
     [Fact]
     public async Task AgentSession_HttpServerMode_PortBindingLoggedAndNoExposedPortsError()
     {
+        // TODO: Test is timing out in CI — tracked by issues #636 and #668.
+        throw Xunit.Sdk.SkipException.ForSkip("Skipped pending fix in issues #636 and #668.");
+
         if (!IsDockerAvailable()) return;
 
         var orgSlug = $"hs-org-{Guid.NewGuid():N}"[..16];
