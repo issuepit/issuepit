@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/issuepit/issuepit/compare/helper-containers-v1.4.0...helper-containers-v1.5.0) (2026-03-19)
+
+
+### Features
+
+* add Docker Engine to issuepit-act-runner image for dind support ([#708](https://github.com/issuepit/issuepit/issues/708)) ([b5e2332](https://github.com/issuepit/issuepit/commit/b5e23326cbfe727b520651fccb8ad4c035fafcfd))
+
 ## [1.4.0](https://github.com/issuepit/issuepit/compare/helper-containers-v1.3.0...helper-containers-v1.4.0) (2026-03-18)
 
 
