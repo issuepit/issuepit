@@ -3,6 +3,7 @@ using System;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace IssuePit.Core.Migrations
 {
     [DbContext(typeof(IssuePitDbContext))]
-    partial class IssuePitDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260320151440_AddIssueLastActivityAt")]
+    partial class AddIssueLastActivityAt
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -312,32 +315,6 @@ namespace IssuePit.Core.Migrations
                     b.HasIndex("ProjectId");
 
                     b.ToTable("branch_detection_runs");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.BranchDetectionRunLog", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Level")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Message")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("RunId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("Timestamp")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("RunId");
-
-                    b.ToTable("branch_detection_run_logs");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.CiCdArtifact", b =>
@@ -687,32 +664,6 @@ namespace IssuePit.Core.Migrations
                     b.HasIndex("TenantId");
 
                     b.ToTable("config_repo_sync_runs");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.ConfigRepoSyncRunLog", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Level")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Message")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("RunId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("Timestamp")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("RunId");
-
-                    b.ToTable("config_repo_sync_run_logs");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.DashboardLayout", b =>
@@ -2676,17 +2627,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("Project");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.BranchDetectionRunLog", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.BranchDetectionRun", "Run")
-                        .WithMany("Logs")
-                        .HasForeignKey("RunId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Run");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.CiCdArtifact", b =>
                 {
                     b.HasOne("IssuePit.Core.Entities.CiCdRun", "CiCdRun")
@@ -2785,17 +2725,6 @@ namespace IssuePit.Core.Migrations
                         .IsRequired();
 
                     b.Navigation("Tenant");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.ConfigRepoSyncRunLog", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.ConfigRepoSyncRun", "Run")
-                        .WithMany("Logs")
-                        .HasForeignKey("RunId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Run");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.DashboardLayout", b =>
@@ -3596,11 +3525,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("Logs");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.BranchDetectionRun", b =>
-                {
-                    b.Navigation("Logs");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.CiCdRun", b =>
                 {
                     b.Navigation("Logs");
@@ -3609,11 +3533,6 @@ namespace IssuePit.Core.Migrations
             modelBuilder.Entity("IssuePit.Core.Entities.CiCdTestSuite", b =>
                 {
                     b.Navigation("TestCases");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.ConfigRepoSyncRun", b =>
-                {
-                    b.Navigation("Logs");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.GitHubIdentity", b =>

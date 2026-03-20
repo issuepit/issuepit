@@ -59,6 +59,12 @@ public class Issue
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     /// <summary>
+    /// Timestamp of the last activity on this issue, including comments.
+    /// Updated whenever a comment is added, updated, or removed, as well as when the issue itself changes.
+    /// </summary>
+    public DateTime LastActivityAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
     /// Comments loaded for agent prompts. Not persisted — populated on demand before agent launch.
     /// </summary>
     [NotMapped]

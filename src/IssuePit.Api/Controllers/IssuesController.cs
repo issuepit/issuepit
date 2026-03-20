@@ -13,7 +13,13 @@ namespace IssuePit.Api.Controllers;
 public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer<string, string> producer, IssueEnhancementService enhancementService, ImageStorageService imageStorage, VoiceTranscriptionService voiceTranscription, GitHubSyncService githubSyncService, ILogger<IssuesController> logger) : ControllerBase
 {
     [HttpGet]
-    public async Task<IActionResult> GetIssues([FromQuery] Guid? projectId, [FromQuery] Guid? orgId)
+    public async Task<IActionResult> GetIssues(
+        [FromQuery] Guid? projectId,
+        [FromQuery] Guid? orgId,
+        [FromQuery] string? status,
+        [FromQuery] string? priority,
+        [FromQuery] string sortBy = "lastActivity",
+        [FromQuery] string sortDir = "desc")
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
         var tenantId = ctx.CurrentTenant.Id;
@@ -24,7 +30,54 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
             query = query.Where(i => i.ProjectId == projectId.Value);
         else if (orgId.HasValue)
             query = query.Where(i => i.Project!.OrgId == orgId.Value);
-        var issues = await query.OrderByDescending(i => i.Number).ToListAsync();
+
+        if (!string.IsNullOrEmpty(status))
+        {
+            IssueStatus? statusFilter = status switch
+            {
+                "backlog" => IssueStatus.Backlog,
+                "todo" => IssueStatus.Todo,
+                "in_progress" => IssueStatus.InProgress,
+                "in_review" => IssueStatus.InReview,
+                "done" => IssueStatus.Done,
+                "cancelled" => IssueStatus.Cancelled,
+                _ => null
+            };
+            if (statusFilter.HasValue)
+                query = query.Where(i => i.Status == statusFilter.Value);
+        }
+
+        if (!string.IsNullOrEmpty(priority))
+        {
+            IssuePriority? priorityFilter = priority switch
+            {
+                "no_priority" => IssuePriority.NoPriority,
+                "urgent" => IssuePriority.Urgent,
+                "very_high" => IssuePriority.VeryHigh,
+                "high" => IssuePriority.High,
+                "medium" => IssuePriority.Medium,
+                "low" => IssuePriority.Low,
+                _ => null
+            };
+            if (priorityFilter.HasValue)
+                query = query.Where(i => i.Priority == priorityFilter.Value);
+        }
+
+        var orderedQuery = (sortBy.ToLowerInvariant(), sortDir.ToLowerInvariant()) switch
+        {
+            ("createdat", "asc") => query.OrderBy(i => i.CreatedAt),
+            ("createdat", _) => query.OrderByDescending(i => i.CreatedAt),
+            ("number", "asc") => query.OrderBy(i => i.Number),
+            ("number", _) => query.OrderByDescending(i => i.Number),
+            ("priority", "asc") => query.OrderBy(i => i.Priority),
+            ("priority", _) => query.OrderByDescending(i => i.Priority),
+            ("updatedat", "asc") => query.OrderBy(i => i.UpdatedAt),
+            ("updatedat", _) => query.OrderByDescending(i => i.UpdatedAt),
+            ("lastactivity", "asc") => query.OrderBy(i => i.LastActivityAt),
+            _ => query.OrderByDescending(i => i.LastActivityAt),
+        };
+
+        var issues = await orderedQuery.ToListAsync();
         return Ok(issues);
     }
 
@@ -120,6 +173,7 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         issue.Id = Guid.NewGuid();
         issue.CreatedAt = DateTime.UtcNow;
         issue.UpdatedAt = DateTime.UtcNow;
+        issue.LastActivityAt = DateTime.UtcNow;
 
         var maxNumber = await db.Issues
             .Where(i => i.ProjectId == issue.ProjectId)
@@ -199,6 +253,7 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
             issue.ParentIssueId = req.ParentIssueId.Value;
         }
         issue.UpdatedAt = DateTime.UtcNow;
+        issue.LastActivityAt = DateTime.UtcNow;
         if (events.Count > 0) db.IssueEvents.AddRange(events);
         await db.SaveChangesAsync();
         return Ok(issue);
@@ -279,15 +334,17 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         if (ctx.CurrentTenant is null) return Unauthorized();
         var issue = await db.Issues.FindAsync(id);
         if (issue is null) return NotFound();
+        var now = DateTime.UtcNow;
         var comment = new IssueComment
         {
             Id = Guid.NewGuid(),
             IssueId = id,
             UserId = req.UserId,
             Body = req.Body,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
+            CreatedAt = now,
+            UpdatedAt = now,
         };
+        issue.LastActivityAt = now;
         db.IssueComments.Add(comment);
         await db.SaveChangesAsync();
         await db.Entry(comment).Reference(c => c.User).LoadAsync();
@@ -301,8 +358,11 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
             .Include(c => c.User)
             .FirstOrDefaultAsync(c => c.Id == commentId && c.IssueId == id);
         if (comment is null) return NotFound();
+        var issue = await db.Issues.FindAsync(id);
+        var now = DateTime.UtcNow;
         comment.Body = req.Body;
-        comment.UpdatedAt = DateTime.UtcNow;
+        comment.UpdatedAt = now;
+        if (issue is not null) issue.LastActivityAt = now;
         await db.SaveChangesAsync();
         return Ok(comment);
     }
@@ -313,6 +373,17 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         var comment = await db.IssueComments.FirstOrDefaultAsync(c => c.Id == commentId && c.IssueId == id);
         if (comment is null) return NotFound();
         db.IssueComments.Remove(comment);
+        var issue = await db.Issues.FindAsync(id);
+        if (issue is not null)
+        {
+            // Recompute LastActivityAt as the max of UpdatedAt and remaining comments
+            var latestComment = await db.IssueComments
+                .Where(c => c.IssueId == id && c.Id != commentId)
+                .MaxAsync(c => (DateTime?)c.CreatedAt);
+            issue.LastActivityAt = latestComment.HasValue && latestComment.Value > issue.UpdatedAt
+                ? latestComment.Value
+                : issue.UpdatedAt;
+        }
         await db.SaveChangesAsync();
         return NoContent();
     }
@@ -668,6 +739,8 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
             UpdatedAt = DateTime.UtcNow,
         };
         db.IssueComments.Add(comment);
+        var retranscribeIssue = await db.Issues.FindAsync(id);
+        if (retranscribeIssue is not null) retranscribeIssue.LastActivityAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
         await db.Entry(comment).Reference(c => c.User).LoadAsync();
         return Ok(comment);
