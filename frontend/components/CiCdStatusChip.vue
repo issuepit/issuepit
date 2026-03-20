@@ -150,6 +150,8 @@ function runDotClass(status: CiCdRunStatus) {
 const tooltipVisible = ref(false)
 const tooltipEl = ref<HTMLElement | null>(null)
 const tooltipStyle = ref<Record<string, string>>({})
+/** True when the main tooltip was flipped to the LEFT side of the chip (near right edge of viewport). */
+const tooltipPlacedLeft = ref(false)
 
 const RUN_ITEM_HEIGHT = 60
 const TOOLTIP_HEADER_HEIGHT = 48
@@ -172,9 +174,13 @@ function positionTooltip(e: MouseEvent) {
   // Prefer right side of chip so moving cursor up/down won't land in the tooltip
   let left = rect.right + 12
   let top = rect.top
+  tooltipPlacedLeft.value = false
 
   // Flip to left if it would overflow right
-  if (left + tooltipW > vpW - 8) left = rect.left - tooltipW - 12
+  if (left + tooltipW > vpW - 8) {
+    left = rect.left - tooltipW - 12
+    tooltipPlacedLeft.value = true
+  }
   if (left < 8) left = 8
 
   // Ensure doesn't overflow bottom
@@ -217,13 +223,22 @@ function positionSubTooltip(e: MouseEvent) {
   const subW = 380
   const subH = 200
 
-  // Prefer right of the main tooltip – use actual rendered width to avoid a gap
   const mainLeft = parseFloat(tooltipStyle.value.left ?? '0')
   const mainW = tooltipEl.value?.offsetWidth ?? 280
-  let left = mainLeft + mainW
+  let left: number
 
-  // If it would overflow right, try left of main tooltip
-  if (left + subW > vpW - 8) left = mainLeft - subW
+  if (tooltipPlacedLeft.value) {
+    // Left mode: main tooltip is to the LEFT of the chip — prefer sub-tooltip to the LEFT of main tooltip
+    left = mainLeft - subW
+    if (left < 8) left = mainLeft + mainW  // fallback: right of main if no room on left
+  }
+  else {
+    // Right mode: main tooltip is to the RIGHT of the chip — prefer sub-tooltip to the RIGHT of main tooltip
+    left = mainLeft + mainW
+    if (left + subW > vpW - 8) left = mainLeft - subW  // fallback: left of main if no room on right
+  }
+  // Final viewport clamp
+  if (left + subW > vpW - 8) left = vpW - subW - 8
   if (left < 8) left = 8
 
   let top = rect.top
