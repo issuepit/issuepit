@@ -64,6 +64,7 @@
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Project</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Description</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Branch</th>
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Commit</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Started</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Duration</th>
             </tr>
@@ -95,8 +96,9 @@
               </td>
               <td class="px-4 py-3 text-gray-300 max-w-xs truncate">{{ item.description }}</td>
               <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ item.branch || '—' }}</td>
+              <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ item.commitSha?.slice(0, 7) || '—' }}</td>
               <td class="px-4 py-3 text-gray-400 text-xs"><DateDisplay :date="item.startedAt" mode="auto" /></td>
-              <td class="px-4 py-3 text-gray-400 text-xs">{{ item.status === CiCdRunStatus.WaitingForApproval ? '—' : duration(item.startedAt, item.endedAt) }}</td>
+              <td class="px-4 py-3 text-gray-400 text-xs">{{ isNotStarted(item.status) ? '—' : duration(item.startedAt, item.endedAt) }}</td>
             </tr>
           </tbody>
         </table>
@@ -161,7 +163,7 @@
                 <span v-else class="text-gray-600 text-xs">local</span>
               </td>
               <td class="px-4 py-3 text-gray-400 text-xs"><DateDisplay :date="run.startedAt" mode="auto" /></td>
-              <td class="px-4 py-3 text-gray-400 text-xs">{{ run.status === CiCdRunStatus.WaitingForApproval ? '—' : duration(run.startedAt, run.endedAt) }}</td>
+              <td class="px-4 py-3 text-gray-400 text-xs">{{ isNotStarted(run.status) ? '—' : duration(run.startedAt, run.endedAt) }}</td>
               <td class="px-4 py-3 text-right">
                 <button v-if="run.status === CiCdRunStatus.WaitingForApproval"
                   class="text-xs text-purple-400 hover:text-purple-300 transition-colors"
@@ -235,7 +237,7 @@
               <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ session.gitBranch || '—' }}</td>
               <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ session.commitSha?.slice(0, 7) || '—' }}</td>
               <td class="px-4 py-3 text-gray-400 text-xs"><DateDisplay :date="session.startedAt" mode="auto" /></td>
-              <td class="px-4 py-3 text-gray-400 text-xs">{{ duration(session.startedAt, session.endedAt) }}</td>
+              <td class="px-4 py-3 text-gray-400 text-xs">{{ isNotStarted(session.status) ? '—' : duration(session.startedAt, session.endedAt) }}</td>
             </tr>
           </tbody>
         </table>
@@ -260,7 +262,7 @@
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useProjectsStore } from '~/stores/projects'
 import { useOrgsStore } from '~/stores/orgs'
-import { CiCdRunStatus, type AgentSessionStatus, type CiCdRun, type DashboardAgentSession } from '~/types'
+import { AgentSessionStatus, CiCdRunStatus, type CiCdRun, type DashboardAgentSession } from '~/types'
 import type { MultiSelectOption } from '~/components/MultiSelect.vue'
 
 const store = useCiCdRunsStore()
@@ -269,6 +271,11 @@ const orgsStore = useOrgsStore()
 
 const router = useRouter()
 const route = useRoute()
+
+// `now` is updated on each server-push so duration display stays live for running items
+const now = ref(Date.now())
+
+const { connection, connect } = useSignalR('/hubs/project')
 
 const tabs = ['All Runs', 'CI/CD Runs', 'Agent Runs'] as const
 
@@ -389,6 +396,7 @@ interface MixedRunItem {
   projectName?: string
   description: string
   branch?: string
+  commitSha?: string
   startedAt: string
   endedAt?: string
   href: string
@@ -406,6 +414,7 @@ const allRunsMixed = computed((): MixedRunItem[] => {
     projectName: run.projectName,
     description: run.workflow || run.branch || '—',
     branch: run.branch,
+    commitSha: run.commitSha,
     startedAt: run.startedAt,
     endedAt: run.endedAt,
     href: `/projects/${run.projectId}/runs/cicd/${run.id}`,
@@ -421,6 +430,7 @@ const allRunsMixed = computed((): MixedRunItem[] => {
     projectName: session.projectName,
     description: `#${session.issueNumber} ${session.issueTitle}`,
     branch: session.gitBranch,
+    commitSha: session.commitSha,
     startedAt: session.startedAt,
     endedAt: session.endedAt,
     href: `/projects/${session.projectId}/runs/agent-sessions/${session.id}`,
@@ -439,6 +449,22 @@ onMounted(async () => {
     projectsStore.fetchProjects(),
     orgsStore.fetchOrgs(),
   ])
+  now.value = Date.now()
+
+  // Connect to SignalR for live updates — join all loaded project groups
+  await connect()
+  if (connection.value) {
+    for (const p of projectsStore.projects) {
+      connection.value.invoke('JoinProject', p.id).catch((e: unknown) => { console.warn('Failed to join project group', e) })
+    }
+    connection.value.on('RunsUpdated', async () => {
+      now.value = Date.now()
+      await Promise.all([
+        store.fetchRuns(undefined, true),
+        store.fetchDashboardSessions(true),
+      ])
+    })
+  }
 })
 
 async function cancelRun(runId: string) {
@@ -457,13 +483,20 @@ async function retryRun(runId: string) {
 }
 
 function duration(start: string, end?: string) {
-  const ms = (end ? new Date(end).getTime() : Date.now()) - new Date(start).getTime()
+  const ms = (end ? new Date(end).getTime() : now.value) - new Date(start).getTime()
   if (ms < 0) return '—'
   const s = Math.floor(ms / 1000)
   if (s < 60) return `${s}s`
   const m = Math.floor(s / 60)
   if (m < 60) return `${m}m ${s % 60}s`
   return `${Math.floor(m / 60)}h ${m % 60}m`
+}
+
+/** Returns true when the run/session is in a not-yet-started state and should show '—' for duration. */
+function isNotStarted(status: CiCdRunStatus | AgentSessionStatus): boolean {
+  return status === CiCdRunStatus.Pending ||
+    status === CiCdRunStatus.WaitingForApproval ||
+    status === AgentSessionStatus.Pending
 }
 
 function statusClass(status: CiCdRunStatus | AgentSessionStatus) {

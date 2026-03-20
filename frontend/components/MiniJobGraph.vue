@@ -21,9 +21,10 @@
         <g
           v-for="job in layout.jobs"
           :key="job.id"
-          style="cursor: default"
+          style="cursor: pointer"
           @mouseenter="onJobEnter(job, $event)"
-          @mouseleave="onJobLeave">
+          @mouseleave="onJobLeave"
+          @click="emit('job-click', job.id)">
           <rect
             :x="job.x"
             :y="job.y"
@@ -73,6 +74,10 @@ import type { WorkflowGraph, WorkflowJobNode } from '~/types'
 
 const props = defineProps<{
   runId: string
+}>()
+
+const emit = defineEmits<{
+  'job-click': [jobId: string]
 }>()
 
 const api = useApi()

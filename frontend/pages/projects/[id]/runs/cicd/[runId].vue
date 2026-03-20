@@ -1411,7 +1411,8 @@ const jobLogMap = computed(() => {
     // Track first and last log timestamps as job start/end
     if (!entry.startedAt) entry.startedAt = log.timestamp
     entry.endedAt = log.timestamp
-    if (log.line === 'Job succeeded' || log.line === 'Job failed') entry.isComplete = true
+    // act v0.2.84+ emits "🏁  Job succeeded" / "🏁  Job failed" (emoji prefix); use endsWith.
+    if (log.line.endsWith('Job succeeded') || log.line.endsWith('Job failed')) entry.isComplete = true
     // Per-instance tracking
     if (!entry.instances.has(log.jobId)) entry.instances.set(log.jobId, makeEntry())
     const inst = entry.instances.get(log.jobId)!
@@ -1419,7 +1420,7 @@ const jobLogMap = computed(() => {
     if (log.stream === 'stderr') inst.hasError = true
     if (!inst.startedAt) inst.startedAt = log.timestamp
     inst.endedAt = log.timestamp
-    if (log.line === 'Job succeeded' || log.line === 'Job failed') inst.isComplete = true
+    if (log.line.endsWith('Job succeeded') || log.line.endsWith('Job failed')) inst.isComplete = true
   }
   return map
 })
@@ -2032,6 +2033,13 @@ onMounted(async () => {
   await store.fetchArtifacts(runId)
   store.fetchLinkedRuns(runId)
   projectsStore.fetchProject(projectId)
+
+  // Pre-select a job if the URL contains a `job` query param (e.g. from mini-graph tooltip click).
+  const jobFromQuery = route.query.job as string | undefined
+  if (jobFromQuery) {
+    selectedJob.value = jobFromQuery
+    activeSection.value = 'logs'
+  }
 
   // Connect to the CiCd output hub to receive live log lines and run-completed events
   await connectCicd()

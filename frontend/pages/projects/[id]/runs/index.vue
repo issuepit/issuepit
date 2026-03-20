@@ -284,6 +284,14 @@ async function refreshRunsData() {
   now.value = Date.now()
 }
 
+async function refreshRunsDataSilent() {
+  await Promise.all([
+    store.fetchRuns(id, true),
+    store.fetchAgentSessions(id, true),
+  ])
+  now.value = Date.now()
+}
+
 onMounted(async () => {
   projectsStore.fetchProject(id)
   await refreshRunsData()
@@ -292,7 +300,7 @@ onMounted(async () => {
   await connect()
   if (connection.value) {
     await connection.value.invoke('JoinProject', id).catch((e) => { console.warn('Failed to join project group', e) })
-    connection.value.on('RunsUpdated', refreshRunsData)
+    connection.value.on('RunsUpdated', refreshRunsDataSilent)
   }
 })
 
