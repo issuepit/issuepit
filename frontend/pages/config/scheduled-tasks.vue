@@ -28,6 +28,7 @@
         <option value="GitHubSync">GitHub Sync</option>
         <option value="BranchDetection">Branch Detection</option>
         <option value="ConfigRepoSync">Config Repo Sync</option>
+        <option value="SimilarIssues">Similar Issues</option>
       </select>
 
       <!-- Status filter -->
@@ -164,6 +165,13 @@
               >
                 Details →
               </NuxtLink>
+              <button
+                v-else-if="run.type === 'SimilarIssues'"
+                class="text-xs text-brand-400 hover:text-brand-300"
+                @click="openSimilarIssuesRunLogs(run.id)"
+              >
+                View logs →
+              </button>
             </td>
           </tr>
         </tbody>
@@ -177,13 +185,52 @@
     >
       Showing {{ filteredRuns.length }} run(s)
     </p>
+
+    <!-- Similar Issues run logs modal -->
+    <div
+      v-if="logsModal"
+      class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      @click.self="logsModal = null"
+    >
+      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-2xl shadow-xl flex flex-col max-h-[80vh]">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-gray-800">
+          <div>
+            <h2 class="text-base font-bold text-white">Similar Issues Run Logs</h2>
+            <p class="text-xs text-gray-500 mt-0.5">
+              <span :class="statusClass(logsModal.status)" class="px-1.5 py-0.5 rounded-full font-medium">
+                {{ statusLabel(logsModal.status) }}
+              </span>
+              <span class="ml-2"><DateDisplay :date="logsModal.startedAt" mode="auto" /></span>
+              <span v-if="logsModal.summary" class="ml-2">— {{ logsModal.summary }}</span>
+            </p>
+          </div>
+          <button class="text-gray-500 hover:text-gray-300 text-xl leading-none" @click="logsModal = null">&times;</button>
+        </div>
+        <div class="overflow-y-auto p-4 font-mono text-xs space-y-0.5">
+          <div v-if="logsModalLoading" class="text-gray-600 text-center py-6">Loading…</div>
+          <div v-else-if="!logsModal.logs?.length" class="text-gray-600 text-center py-6">No log entries.</div>
+          <div
+            v-for="log in logsModal.logs"
+            :key="log.id"
+            :class="logLineClass(log.level)"
+          >
+            <span class="text-gray-600 mr-2">{{ formatTime(log.timestamp) }}</span>
+            <span :class="logBadgeClass(log.level)" class="mr-2 text-xs px-1 rounded">
+              [{{ logLevelLabel(log.level) }}]
+            </span>
+            {{ log.message }}
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { ScheduledTaskType } from '~/types'
-import { GitHubSyncRunStatus } from '~/types'
+import { GitHubSyncRunStatus, GitHubSyncLogLevel } from '~/types'
 import { useScheduledTasksStore } from '~/stores/scheduled-tasks'
+import { useApi } from '~/composables/useApi'
 
 const store = useScheduledTasksStore()
 
@@ -239,8 +286,61 @@ function typeLabel(type: ScheduledTaskType): string {
     case 'GitHubSync': return 'GitHub Sync'
     case 'BranchDetection': return 'Branch Detection'
     case 'ConfigRepoSync': return 'Config Repo Sync'
+    case 'SimilarIssues': return 'Similar Issues'
     default: return type
   }
+}
+
+interface RunLog { id: string; level: GitHubSyncLogLevel; message: string; timestamp: string }
+interface RunDetail {
+  id: string
+  status: GitHubSyncRunStatus
+  summary?: string
+  startedAt: string
+  completedAt?: string | null
+  logs?: RunLog[]
+}
+
+const logsModal = ref<RunDetail | null>(null)
+const logsModalLoading = ref(false)
+
+async function openSimilarIssuesRunLogs(runId: string) {
+  logsModalLoading.value = true
+  logsModal.value = { id: runId, status: GitHubSyncRunStatus.Pending, startedAt: '' }
+  try {
+    const { get } = useApi()
+    logsModal.value = await get<RunDetail>(`/api/similar-issue-runs/${runId}`)
+  } finally {
+    logsModalLoading.value = false
+  }
+}
+
+function logLevelLabel(level: GitHubSyncLogLevel): string {
+  switch (level) {
+    case GitHubSyncLogLevel.Warn: return 'WARN'
+    case GitHubSyncLogLevel.Error: return 'ERR'
+    default: return 'INFO'
+  }
+}
+
+function logLineClass(level: GitHubSyncLogLevel): string {
+  switch (level) {
+    case GitHubSyncLogLevel.Warn: return 'text-yellow-300'
+    case GitHubSyncLogLevel.Error: return 'text-red-400'
+    default: return 'text-gray-300'
+  }
+}
+
+function logBadgeClass(level: GitHubSyncLogLevel): string {
+  switch (level) {
+    case GitHubSyncLogLevel.Warn: return 'bg-yellow-900/40 text-yellow-300'
+    case GitHubSyncLogLevel.Error: return 'bg-red-900/40 text-red-300'
+    default: return 'bg-gray-800 text-gray-500'
+  }
+}
+
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('en-GB', { hour12: false })
 }
 
 function duration(start: string, end?: string | null): string {

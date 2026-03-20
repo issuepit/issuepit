@@ -30,7 +30,7 @@ public class SimilarIssueBackgroundService(
 
             try
             {
-                await service.DetectAsync(projectId, stoppingToken);
+                await service.DetectAsync(projectId, ct: stoppingToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

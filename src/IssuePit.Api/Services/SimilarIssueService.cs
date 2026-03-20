@@ -28,11 +28,23 @@ public class SimilarIssueService(
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     /// <summary>Runs the full similar-issues detection for all issues in the given project.</summary>
-    public async Task<SimilarIssueRun> DetectAsync(Guid projectId, CancellationToken ct = default)
+    /// <param name="projectId">Target project.</param>
+    /// <param name="existingRunId">If supplied the controller pre-created the run; otherwise a new one is created.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public async Task<SimilarIssueRun> DetectAsync(Guid projectId, Guid? existingRunId = null, CancellationToken ct = default)
     {
-        var run = new SimilarIssueRun { Id = Guid.NewGuid(), ProjectId = projectId };
-        db.SimilarIssueRuns.Add(run);
-        await db.SaveChangesAsync(ct);
+        SimilarIssueRun run;
+        if (existingRunId.HasValue)
+        {
+            run = await db.SimilarIssueRuns.FindAsync([existingRunId.Value], ct)
+                ?? throw new InvalidOperationException($"Run {existingRunId} not found.");
+        }
+        else
+        {
+            run = new SimilarIssueRun { Id = Guid.NewGuid(), ProjectId = projectId };
+            db.SimilarIssueRuns.Add(run);
+            await db.SaveChangesAsync(ct);
+        }
 
         try
         {

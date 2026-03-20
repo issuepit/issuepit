@@ -1,8 +1,10 @@
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
+using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace IssuePit.Api.Controllers;
 
@@ -10,7 +12,7 @@ namespace IssuePit.Api.Controllers;
 public class SimilarIssuesController(
     IssuePitDbContext db,
     TenantContext ctx,
-    SimilarIssueService similarIssueService) : ControllerBase
+    IServiceScopeFactory scopeFactory) : ControllerBase
 {
     /// <summary>Trigger similar-issue detection for a project.</summary>
     [HttpPost("api/projects/{projectId:guid}/similar-issues/trigger")]
@@ -24,10 +26,19 @@ public class SimilarIssuesController(
 
         if (project is null) return NotFound();
 
-        // Run in background — do not await
-        _ = Task.Run(() => similarIssueService.DetectAsync(projectId), default);
+        var run = new SimilarIssueRun { Id = Guid.NewGuid(), ProjectId = projectId };
+        db.SimilarIssueRuns.Add(run);
+        await db.SaveChangesAsync(ct);
+        var runId = run.Id;
 
-        return Accepted(new { projectId });
+        _ = Task.Run(async () =>
+        {
+            using var scope = scopeFactory.CreateScope();
+            var svc = scope.ServiceProvider.GetRequiredService<SimilarIssueService>();
+            await svc.DetectAsync(projectId, existingRunId: runId);
+        });
+
+        return Accepted(new SimilarIssueTriggerResponse(runId, projectId));
     }
 
     /// <summary>Trigger similar-issue detection for a single issue's project.</summary>
@@ -43,9 +54,20 @@ public class SimilarIssuesController(
 
         if (issue is null) return NotFound();
 
-        _ = Task.Run(() => similarIssueService.DetectAsync(issue.ProjectId), default);
+        var run = new SimilarIssueRun { Id = Guid.NewGuid(), ProjectId = issue.ProjectId };
+        db.SimilarIssueRuns.Add(run);
+        await db.SaveChangesAsync(ct);
+        var runId = run.Id;
+        var projectId = issue.ProjectId;
 
-        return Accepted(new { issue.ProjectId });
+        _ = Task.Run(async () =>
+        {
+            using var scope = scopeFactory.CreateScope();
+            var svc = scope.ServiceProvider.GetRequiredService<SimilarIssueService>();
+            await svc.DetectAsync(projectId, existingRunId: runId);
+        });
+
+        return Accepted(new SimilarIssueTriggerResponse(runId, projectId));
     }
 
     /// <summary>Returns the persisted similar-issue pairs for an issue, sorted by score descending.</summary>
@@ -127,3 +149,4 @@ public class SimilarIssuesController(
 }
 
 public record SimilarIssueDto(Guid SimilarIssueId, int Number, string Title, float Score, string? Reason, DateTime DetectedAt);
+public record SimilarIssueTriggerResponse(Guid RunId, Guid ProjectId);
