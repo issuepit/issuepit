@@ -1149,7 +1149,7 @@ const passRateByDayOfWeek = computed(() => {
   }
   return days.map(d => ({
     ...d,
-    passRate: d.total > 0 ? d.passed / d.total : null as number | null,
+    passRate: d.total > 0 ? d.passed / d.total : null,
   }))
 })
 
