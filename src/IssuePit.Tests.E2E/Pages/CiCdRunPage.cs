@@ -71,8 +71,7 @@ public class CiCdRunPage(IPage page)
     /// </summary>
     public async Task<int> GetJobBoxCountAsync()
     {
-        var boxes = await page.QuerySelectorAllAsync(".job-box");
-        return boxes.Count;
+        return await page.Locator(".job-box").CountAsync();
     }
 
     /// <summary>
@@ -140,8 +139,7 @@ public class CiCdRunPage(IPage page)
     public async Task<int> GetVisibleArtifactCountAsync()
     {
         // Each artifact row contains the artifact name in a p.text-sm.font-medium element.
-        var rows = await page.QuerySelectorAllAsync(".space-y-2 > div");
-        return rows.Count;
+        return await page.Locator(".space-y-2 > div").CountAsync();
     }
 
     // ── Create Issue from failed job ───────────────────────────────────────────

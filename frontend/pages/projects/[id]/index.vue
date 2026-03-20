@@ -245,6 +245,26 @@
         <button @click="importError = null" class="text-red-500 hover:text-red-300 text-xs">✕</button>
       </div>
 
+      <!-- Git setup warnings -->
+      <div v-if="gitSetupWarnings.length > 0" class="mb-4 rounded-lg bg-yellow-900/30 border border-yellow-700/40 p-3">
+        <div class="flex items-start gap-2">
+          <svg class="w-4 h-4 text-yellow-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <div class="flex-1 min-w-0">
+            <p class="text-xs font-medium text-yellow-300 mb-1">Git setup issue{{ gitSetupWarnings.length > 1 ? 's' : '' }} detected</p>
+            <ul class="space-y-0.5">
+              <li v-for="(w, i) in gitSetupWarnings" :key="i" class="text-xs text-yellow-400/80">{{ w }}</li>
+            </ul>
+          </div>
+          <NuxtLink :to="`/projects/${id}/settings`"
+            class="text-xs text-yellow-400 hover:text-yellow-300 underline shrink-0 mt-0.5">
+            Fix in Settings
+          </NuxtLink>
+        </div>
+      </div>
+
       <!-- Hidden sections restore row (draft mode) -->
       <div v-if="isDraftMode && layout.configs" class="mb-3 flex flex-wrap items-center gap-2 min-h-0">
         <template v-for="sid in layout.order" :key="sid">
@@ -1042,6 +1062,7 @@ import { useProjectsStore } from '~/stores/projects'
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useIssuesStore } from '~/stores/issues'
 import { useKanbanStore } from '~/stores/kanban'
+import { useGitStore } from '~/stores/git'
 import { formatIssueId } from '~/composables/useIssueFormat'
 import { useDashboardLayout, isDynamicSectionId, type LayoutSectionConfig } from '~/composables/useDashboardLayout'
 
@@ -1051,6 +1072,7 @@ const store = useProjectsStore()
 const runsStore = useCiCdRunsStore()
 const issuesStore = useIssuesStore()
 const kanbanStore = useKanbanStore()
+const gitStore = useGitStore()
 const api = useApi()
 
 // --- Issue creation ---
@@ -1486,6 +1508,28 @@ const visibleCiCdRuns = computed(() => {
   return runs.slice(0, max)
 })
 
+/** Warnings about git setup issues that prevent agents from pushing commits. */
+const gitSetupWarnings = computed<string[]>(() => {
+  const warnings: string[] = []
+  const repos = gitStore.repos
+  if (repos.length === 0) {
+    warnings.push('No git repository configured — agents cannot commit or push changes.')
+    return warnings
+  }
+  const activeWorkingRepos = repos.filter(r => r.mode === 'Working' && r.status === 'Active')
+  if (activeWorkingRepos.length === 0) {
+    warnings.push('No active Working-mode repository — agents cannot push commits.')
+  } else {
+    const httpsWorkingNoAuth = activeWorkingRepos.filter(
+      r => !r.hasAuth && (r.remoteUrl.startsWith('https://') || r.remoteUrl.startsWith('http://')),
+    )
+    if (httpsWorkingNoAuth.length > 0) {
+      warnings.push('Working-mode repository has no credentials — git push will fail with authentication errors.')
+    }
+  }
+  return warnings
+})
+
 onMounted(async () => {
   // Restore layout preference
   if (import.meta.client) {
@@ -1515,6 +1559,7 @@ onMounted(async () => {
       })
       .catch(() => { commitCount.value = null }),
     kanbanStore.fetchBoards(id).catch((e) => { console.warn('Failed to load kanban boards:', e) }),
+    gitStore.fetchRepos(id).catch((e) => { console.warn(`Failed to load git repos for project ${id}`, e) }),
     api.get<TestRunSummary[]>(`/api/projects/${id}/test-history/runs?take=10`)
       .then(data => { dashboardTestRuns.value = data })
       .catch((e) => { console.warn(`Failed to load test history for project ${id}`, e) }),
