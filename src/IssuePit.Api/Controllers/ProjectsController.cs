@@ -313,7 +313,7 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
         var directLinks = await db.AgentProjects
             .Include(ap => ap.Agent)
             .Where(ap => ap.ProjectId == id)
-            .Select(ap => new { ap.AgentId, ap.Agent.Name, ap.IsDisabled })
+            .Select(ap => new { ap.AgentId, ap.Agent.Name, ap.IsDisabled, ap.PushPolicy })
             .ToListAsync();
         var directDict = directLinks.ToDictionary(d => d.AgentId);
 
@@ -325,19 +325,20 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
             .ToListAsync();
         var orgIds = orgLinks.ToDictionary(o => o.AgentId);
 
-        var result = new List<object>();
+        var result = new List<AgentProjectResponse>();
 
-        // Add org-level agents (with project-level IsDisabled override if present)
+        // Add org-level agents (with project-level IsDisabled/PushPolicy override if present)
         foreach (var org in orgLinks)
         {
             var isDisabled = directDict.TryGetValue(org.AgentId, out var projectOverride) && projectOverride.IsDisabled;
-            result.Add(new { org.AgentId, org.Name, IsDisabled = isDisabled, Source = "org" });
+            var pushPolicy = projectOverride?.PushPolicy ?? AgentPushPolicy.Forbidden;
+            result.Add(new AgentProjectResponse(org.AgentId, org.Name, isDisabled, pushPolicy, "org"));
         }
 
         // Add direct project-only links (agents linked directly but not via org)
         foreach (var d in directLinks.Where(d => !orgIds.ContainsKey(d.AgentId)))
         {
-            result.Add(new { d.AgentId, d.Name, d.IsDisabled, Source = "project" });
+            result.Add(new AgentProjectResponse(d.AgentId, d.Name, d.IsDisabled, d.PushPolicy, "project"));
         }
 
         return Ok(result);
@@ -402,6 +403,36 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
         return Ok(new { agentId, isDisabled = newLink.IsDisabled });
     }
 
+    [HttpPatch("{id:guid}/agents/{agentId:guid}/push-policy")]
+    public async Task<IActionResult> SetProjectAgentPushPolicy(Guid id, Guid agentId, [FromBody] SetProjectAgentPushPolicyRequest request)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var project = await db.Projects
+            .Include(p => p.Organization)
+            .FirstOrDefaultAsync(p => p.Id == id && p.Organization.TenantId == ctx.CurrentTenant.Id);
+        if (project is null) return NotFound();
+
+        var link = await db.AgentProjects.FindAsync(agentId, id);
+        if (link is not null)
+        {
+            link.PushPolicy = request.PushPolicy;
+            await db.SaveChangesAsync();
+            return Ok(new { agentId, pushPolicy = link.PushPolicy });
+        }
+
+        // For org-level agents without an explicit project entry, create an override
+        var agentBelongsToTenant = await db.Agents
+            .AnyAsync(a => a.Id == agentId && db.Organizations.Any(o => o.Id == a.OrgId && o.TenantId == ctx.CurrentTenant.Id));
+        if (!agentBelongsToTenant) return NotFound();
+        var isOrgLinked = await db.AgentOrgs.AnyAsync(ao => ao.AgentId == agentId && ao.OrgId == project.OrgId);
+        if (!isOrgLinked) return NotFound();
+
+        var newLink = new AgentProject { AgentId = agentId, ProjectId = id, PushPolicy = request.PushPolicy };
+        db.AgentProjects.Add(newLink);
+        await db.SaveChangesAsync();
+        return Ok(new { agentId, pushPolicy = newLink.PushPolicy });
+    }
+
     // --- Project MCP Servers ---
 
     [HttpGet("{id:guid}/mcp-servers")]
@@ -460,6 +491,8 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
 public record ProjectMemberRequest(Guid? UserId, Guid? TeamId, ProjectPermission Permissions);
 public record MoveProjectRequest(Guid OrgId);
 public record SetProjectAgentActiveRequest(bool IsActive);
+public record SetProjectAgentPushPolicyRequest(AgentPushPolicy PushPolicy);
+public record AgentProjectResponse(Guid AgentId, string Name, bool IsDisabled, AgentPushPolicy PushPolicy, string Source);
 
 public record ProjectDto(
     Guid Id, Guid OrgId, string Name, string Slug,

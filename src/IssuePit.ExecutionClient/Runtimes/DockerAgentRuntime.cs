@@ -548,7 +548,7 @@ public class DockerAgentRuntime(
                     try
                     {
                         await CheckAndEmitUncommittedChangesAsync(container.ID, onLogLine, cancellationToken);
-                        await EmitGitMarkersAsync(container.ID, onLogLine, cancellationToken);
+                        await EmitGitMarkersAsync(container.ID, gitRepository, onLogLine, cancellationToken);
                     }
                     catch (Exception ex)
                     {
@@ -628,7 +628,7 @@ public class DockerAgentRuntime(
                 try
                 {
                     await CheckAndEmitUncommittedChangesAsync(container.ID, onLogLine, cancellationToken);
-                    await EmitGitMarkersAsync(container.ID, onLogLine, cancellationToken);
+                    await EmitGitMarkersAsync(container.ID, gitRepository, onLogLine, cancellationToken);
                 }
                 catch (Exception ex)
                 {
@@ -659,6 +659,7 @@ public class DockerAgentRuntime(
         AgentSession parentSession,
         Agent agent,
         Issue fixIssue,
+        GitRepository? gitRepository,
         Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {
@@ -735,7 +736,7 @@ public class DockerAgentRuntime(
         }
 
         // Emit git markers so the caller can capture the updated commit SHA and branch.
-        try { await EmitGitMarkersAsync(containerId, onFixLogLine, cancellationToken); }
+        try { await EmitGitMarkersAsync(containerId, gitRepository, onFixLogLine, cancellationToken); }
         catch (Exception ex) { await onFixLogLine($"[WARN] Git marker emission failed: {ex.Message}", LogStream.Stderr); }
 
         return (fixCommitSha, fixBranchName);
@@ -992,9 +993,18 @@ public class DockerAgentRuntime(
     /// Pushes the current branch to origin (allowed to fail), then emits
     /// <c>[ISSUEPIT:GIT_COMMIT_SHA]</c> and <c>[ISSUEPIT:GIT_BRANCH]</c> markers.
     /// Returns <c>true</c> when the push succeeded, <c>false</c> otherwise.
+    ///
+    /// The IssuePit execution client always pushes Working-mode repos so that CI/CD can
+    /// load the branch. Push restrictions for agent tools (opencode, CLI commands) are
+    /// enforced separately via the in-container git wrapper and the opencode plugin,
+    /// controlled by the <c>ISSUEPIT_PUSH_POLICY</c> environment variable.
+    ///
+    /// Safety guard: the execution client never pushes to the repository's configured
+    /// default branch (main/master) to prevent accidental overwriting of the main line.
     /// </summary>
     private async Task<bool> EmitGitMarkersAsync(
         string containerId,
+        GitRepository? gitRepository,
         Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {
@@ -1008,27 +1018,43 @@ public class DockerAgentRuntime(
         // Push is allowed to fail — credentials may not be configured yet.
         if (!string.IsNullOrWhiteSpace(branch))
         {
-            await onLogLine($"[entrypoint] Pushing branch '{branch}' to origin…", LogStream.Stdout);
-            // Use the real git binary path written by the entrypoint before it installed the
-            // push-blocking wrapper at /usr/local/bin/git. This allows the execution client to
-            // push branches via docker exec without hitting the wrapper meant to stop agents.
-            var realGit = (await ExecReadOutputAsync(
-                containerId,
-                ["/bin/sh", "-c", "cat /tmp/.issuepit-real-git 2>/dev/null || echo /usr/bin/git"],
-                cancellationToken)).Trim();
-            var pushExit = await ExecCommandAsync(containerId, [realGit, "push", "origin", branch],
-                async (line, stream) => await onLogLine($"[entrypoint] {line}", stream),
-                cancellationToken);
-            if (pushExit != 0)
+            // Safety guard: never let the execution client push to the repository's default branch.
+            var defaultBranch = gitRepository?.DefaultBranch?.Trim();
+            var branchTrimmed = branch.Trim();
+            var isDefaultBranch = branchTrimmed.Equals(defaultBranch, StringComparison.OrdinalIgnoreCase)
+                || branchTrimmed.Equals("main", StringComparison.OrdinalIgnoreCase)
+                || branchTrimmed.Equals("master", StringComparison.OrdinalIgnoreCase);
+
+            if (isDefaultBranch)
             {
                 await onLogLine(
-                    "[entrypoint] Push failed (allowed — credentials may not be configured or push was rejected)",
+                    $"[entrypoint] Push to default branch '{branchTrimmed}' is not allowed — push skipped",
                     LogStream.Stdout);
-                // Emit a structured marker so IssueWorker can trigger a .git archive upload for recovery.
-                await onLogLine(GitPushFailedMarker, LogStream.Stdout);
             }
             else
-                pushSucceeded = true;
+            {
+                await onLogLine($"[entrypoint] Pushing branch '{branch}' to origin…", LogStream.Stdout);
+                // Use the real git binary path written by the entrypoint before it installed the
+                // push-blocking wrapper at /usr/local/bin/git. This allows the execution client to
+                // push branches via docker exec without hitting the wrapper meant to stop agents.
+                var realGit = (await ExecReadOutputAsync(
+                    containerId,
+                    ["/bin/sh", "-c", "cat /tmp/.issuepit-real-git 2>/dev/null || echo /usr/bin/git"],
+                    cancellationToken)).Trim();
+                var pushExit = await ExecCommandAsync(containerId, [realGit, "push", "origin", branch],
+                    async (line, stream) => await onLogLine($"[entrypoint] {line}", stream),
+                    cancellationToken);
+                if (pushExit != 0)
+                {
+                    await onLogLine(
+                        "[entrypoint] Push failed (allowed — credentials may not be configured or push was rejected)",
+                        LogStream.Stdout);
+                    // Emit a structured marker so IssueWorker can trigger a .git archive upload for recovery.
+                    await onLogLine(GitPushFailedMarker, LogStream.Stdout);
+                }
+                else
+                    pushSucceeded = true;
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(commitSha))

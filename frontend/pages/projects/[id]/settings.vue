@@ -329,29 +329,42 @@
           </div>
           <div v-else-if="projectAgents.length" class="space-y-2">
             <div v-for="agent in projectAgents" :key="agent.agentId"
-              class="flex items-center justify-between bg-gray-800 rounded-lg px-3 py-2">
-              <div>
-                <span class="text-sm text-white font-medium">{{ agent.name }}</span>
-                <span class="text-xs px-1.5 py-0.5 rounded-full ml-2"
-                  :class="agent.source === 'org' ? 'bg-purple-900/40 text-purple-400' : 'bg-indigo-900/40 text-indigo-400'">
-                  {{ agent.source === 'org' ? 'Via org' : 'Direct' }}
-                </span>
-                <span v-if="agent.isDisabled" class="text-xs text-red-400 ml-1">(disabled)</span>
+              class="bg-gray-800 rounded-lg px-3 py-2">
+              <div class="flex items-center justify-between">
+                <div>
+                  <span class="text-sm text-white font-medium">{{ agent.name }}</span>
+                  <span class="text-xs px-1.5 py-0.5 rounded-full ml-2"
+                    :class="agent.source === 'org' ? 'bg-purple-900/40 text-purple-400' : 'bg-indigo-900/40 text-indigo-400'">
+                    {{ agent.source === 'org' ? 'Via org' : 'Direct' }}
+                  </span>
+                  <span v-if="agent.isDisabled" class="text-xs text-red-400 ml-1">(disabled)</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button
+                    @click="toggleProjectAgent(agent.agentId, agent.isDisabled)"
+                    :class="agent.isDisabled ? 'text-green-400 hover:text-green-300' : 'text-yellow-400 hover:text-yellow-300'"
+                    class="text-xs px-2 py-1 rounded border border-gray-700 hover:bg-gray-700 transition-colors"
+                  >
+                    {{ agent.isDisabled ? 'Enable' : 'Disable' }}
+                  </button>
+                  <button v-if="agent.source === 'project'"
+                    @click="unlinkProjectAgent(agent.agentId)"
+                    class="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded border border-red-900/30 hover:bg-red-900/20 transition-colors"
+                  >
+                    Unlink
+                  </button>
+                </div>
               </div>
-              <div class="flex items-center gap-2">
-                <button
-                  @click="toggleProjectAgent(agent.agentId, agent.isDisabled)"
-                  :class="agent.isDisabled ? 'text-green-400 hover:text-green-300' : 'text-yellow-400 hover:text-yellow-300'"
-                  class="text-xs px-2 py-1 rounded border border-gray-700 hover:bg-gray-700 transition-colors"
+              <!-- Push policy selector -->
+              <div class="mt-2 flex items-center gap-2">
+                <label class="text-xs text-gray-400 shrink-0">Push policy:</label>
+                <select
+                  :value="agent.pushPolicy"
+                  @change="updateAgentPushPolicy(agent.agentId, Number(($event.target as HTMLSelectElement).value) as AgentPushPolicy)"
+                  class="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-gray-200 focus:outline-none focus:ring-1 focus:ring-brand-500"
                 >
-                  {{ agent.isDisabled ? 'Enable' : 'Disable' }}
-                </button>
-                <button v-if="agent.source === 'project'"
-                  @click="unlinkProjectAgent(agent.agentId)"
-                  class="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded border border-red-900/30 hover:bg-red-900/20 transition-colors"
-                >
-                  Unlink
-                </button>
+                  <option v-for="(label, val) in AgentPushPolicyLabels" :key="val" :value="val">{{ label }}</option>
+                </select>
               </div>
             </div>
           </div>
@@ -678,8 +691,8 @@ import { useAgentsStore } from '~/stores/agents'
 import { useMcpServersStore } from '~/stores/mcp-servers'
 import { useProjectPropertiesStore } from '~/stores/projectProperties'
 import { useGitHubIdentitiesStore } from '~/stores/github-identities'
-import { ProjectPropertyType } from '~/types'
-import type { AgentProject, ProjectMcpServer, GitRepository, GitOriginMode, ProjectProperty } from '~/types'
+import { ProjectPropertyType, AgentPushPolicyLabels } from '~/types'
+import type { AgentProject, AgentPushPolicy, ProjectMcpServer, GitRepository, GitOriginMode, ProjectProperty } from '~/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -996,6 +1009,15 @@ async function fetchProjectAgents() {
 async function toggleProjectAgent(agentId: string, isCurrentlyDisabled: boolean) {
   try {
     await agentsStore.setProjectAgentActive(id, agentId, isCurrentlyDisabled)
+    await fetchProjectAgents()
+  } catch {
+    // silently ignore
+  }
+}
+
+async function updateAgentPushPolicy(agentId: string, policy: AgentPushPolicy) {
+  try {
+    await agentsStore.setProjectAgentPushPolicy(id, agentId, policy)
     await fetchProjectAgents()
   } catch {
     // silently ignore

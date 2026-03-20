@@ -392,7 +392,29 @@ export interface AgentProject {
   agentId: string
   name: string
   isDisabled: boolean
+  pushPolicy: AgentPushPolicy
   source: 'project' | 'org'
+}
+
+export enum AgentPushPolicy {
+  Forbidden = 0,
+  WorkingOriginOnly = 1,
+  Allowed = 2,
+  Yolo = 3,
+}
+
+export const AgentPushPolicyLabels: Record<AgentPushPolicy, string> = {
+  [AgentPushPolicy.Forbidden]: 'Forbidden (default)',
+  [AgentPushPolicy.WorkingOriginOnly]: 'Working origin only',
+  [AgentPushPolicy.Allowed]: 'Allowed',
+  [AgentPushPolicy.Yolo]: 'Yolo (unrestricted)',
+}
+
+export const AgentPushPolicyDescriptions: Record<AgentPushPolicy, string> = {
+  [AgentPushPolicy.Forbidden]: 'No push is performed after the agent session ends. The agent\'s work stays local.',
+  [AgentPushPolicy.WorkingOriginOnly]: 'Push only when the target repository has Working mode. Force-push and push to default branch are always denied.',
+  [AgentPushPolicy.Allowed]: 'Push to any non-ReadOnly repository. Force-push and push to default branch are always denied.',
+  [AgentPushPolicy.Yolo]: 'Push unconditionally regardless of repository mode. Force-push and push to default branch are still denied.',
 }
 
 export interface AgentOrg {

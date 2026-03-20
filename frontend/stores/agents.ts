@@ -157,6 +157,16 @@ export const useAgentsStore = defineStore('agents', () => {
     }
   }
 
+  async function setProjectAgentPushPolicy(projectId: string, agentId: string, pushPolicy: import('~/types').AgentPushPolicy) {
+    error.value = null
+    try {
+      await api.patch(`/api/projects/${projectId}/agents/${agentId}/push-policy`, { pushPolicy })
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to update agent push policy'
+      throw e
+    }
+  }
+
   // --- Org agents ---
 
   async function fetchOrgAgents(orgId: string) {
@@ -206,6 +216,7 @@ export const useAgentsStore = defineStore('agents', () => {
     linkAgentToProject,
     unlinkAgentFromProject,
     setProjectAgentActive,
+    setProjectAgentPushPolicy,
     fetchOrgAgents,
     linkAgentToOrg,
     unlinkAgentFromOrg,

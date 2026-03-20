@@ -12,7 +12,7 @@
  * Run:  node --test "test/opencode-plugins/*.test.mjs"
  */
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test, beforeEach, afterEach } from "node:test";
 import { BlockGitPushPlugin } from "../../docker/helper-containers/opencode-plugins/block-git-push.js";
 
 // Helper: initialise the plugin (mirroring opencode's Plugin.trigger path)
@@ -21,6 +21,14 @@ async function getHook() {
   const hooks = await BlockGitPushPlugin({});
   return hooks["tool.execute.before"];
 }
+
+// Helpers to set/restore ISSUEPIT_PUSH_POLICY for policy-specific tests.
+let savedPolicy;
+beforeEach(() => { savedPolicy = process.env.ISSUEPIT_PUSH_POLICY; });
+afterEach(() => {
+  if (savedPolicy === undefined) delete process.env.ISSUEPIT_PUSH_POLICY;
+  else process.env.ISSUEPIT_PUSH_POLICY = savedPolicy;
+});
 
 // ── Plugin contract ───────────────────────────────────────────────────────────
 
@@ -35,9 +43,10 @@ test("plugin returns a hooks object with tool.execute.before", async () => {
   assert.equal(typeof hooks["tool.execute.before"], "function");
 });
 
-// ── Blocked commands ──────────────────────────────────────────────────────────
+// ── Forbidden policy (default, ISSUEPIT_PUSH_POLICY=0 or unset) ─────────────
 
-test("blocks bare `git push`", async () => {
+test("Forbidden: blocks bare `git push`", async () => {
+  delete process.env.ISSUEPIT_PUSH_POLICY;
   const hook = await getHook();
   await assert.rejects(
     () =>
@@ -49,7 +58,8 @@ test("blocks bare `git push`", async () => {
   );
 });
 
-test("blocks `git push origin main`", async () => {
+test("Forbidden: blocks `git push origin main`", async () => {
+  process.env.ISSUEPIT_PUSH_POLICY = "0";
   const hook = await getHook();
   await assert.rejects(
     () =>
@@ -61,7 +71,8 @@ test("blocks `git push origin main`", async () => {
   );
 });
 
-test("blocks `git push --force-with-lease`", async () => {
+test("Forbidden: blocks `git push --force-with-lease`", async () => {
+  process.env.ISSUEPIT_PUSH_POLICY = "0";
   const hook = await getHook();
   await assert.rejects(
     () =>
@@ -73,7 +84,8 @@ test("blocks `git push --force-with-lease`", async () => {
   );
 });
 
-test("blocks `git push -u origin HEAD`", async () => {
+test("Forbidden: blocks `git push -u origin HEAD`", async () => {
+  process.env.ISSUEPIT_PUSH_POLICY = "0";
   const hook = await getHook();
   await assert.rejects(
     () =>
@@ -85,7 +97,8 @@ test("blocks `git push -u origin HEAD`", async () => {
   );
 });
 
-test("blocks multi-command string containing `git push`", async () => {
+test("Forbidden: blocks multi-command string containing `git push`", async () => {
+  process.env.ISSUEPIT_PUSH_POLICY = "0";
   const hook = await getHook();
   await assert.rejects(
     () =>
@@ -97,7 +110,81 @@ test("blocks multi-command string containing `git push`", async () => {
   );
 });
 
-// ── Allowed commands ──────────────────────────────────────────────────────────
+// ── Non-Forbidden policies allow push but still block force pushes ────────────
+
+test("WorkingOriginOnly (1): allows plain `git push`", async () => {
+  process.env.ISSUEPIT_PUSH_POLICY = "1";
+  const hook = await getHook();
+  await assert.doesNotReject(() =>
+    hook(
+      { tool: "bash", sessionID: "s", callID: "c" },
+      { args: { command: "git push origin my-feature-branch" } },
+    ),
+  );
+});
+
+test("Allowed (2): allows plain `git push`", async () => {
+  process.env.ISSUEPIT_PUSH_POLICY = "2";
+  const hook = await getHook();
+  await assert.doesNotReject(() =>
+    hook(
+      { tool: "bash", sessionID: "s", callID: "c" },
+      { args: { command: "git push" } },
+    ),
+  );
+});
+
+test("Yolo (3): allows plain `git push`", async () => {
+  process.env.ISSUEPIT_PUSH_POLICY = "3";
+  const hook = await getHook();
+  await assert.doesNotReject(() =>
+    hook(
+      { tool: "bash", sessionID: "s", callID: "c" },
+      { args: { command: "git push origin my-feature-branch" } },
+    ),
+  );
+});
+
+test("Allowed (2): blocks `git push --force`", async () => {
+  process.env.ISSUEPIT_PUSH_POLICY = "2";
+  const hook = await getHook();
+  await assert.rejects(
+    () =>
+      hook(
+        { tool: "bash", sessionID: "s", callID: "c" },
+        { args: { command: "git push --force origin my-feature-branch" } },
+      ),
+    /Force push is not allowed/,
+  );
+});
+
+test("Yolo (3): blocks `git push -f`", async () => {
+  process.env.ISSUEPIT_PUSH_POLICY = "3";
+  const hook = await getHook();
+  await assert.rejects(
+    () =>
+      hook(
+        { tool: "bash", sessionID: "s", callID: "c" },
+        { args: { command: "git push -f origin my-feature-branch" } },
+      ),
+    /Force push is not allowed/,
+  );
+});
+
+test("Allowed (2): blocks `git push --force-with-lease`", async () => {
+  process.env.ISSUEPIT_PUSH_POLICY = "2";
+  const hook = await getHook();
+  await assert.rejects(
+    () =>
+      hook(
+        { tool: "bash", sessionID: "s", callID: "c" },
+        { args: { command: "git push --force-with-lease origin my-feature-branch" } },
+      ),
+    /Force push is not allowed/,
+  );
+});
+
+// ── Allowed commands (non-push, any policy) ───────────────────────────────────
 
 test("allows `git commit`", async () => {
   const hook = await getHook();

@@ -310,6 +310,12 @@ public class IssueWorker(
             .ToListAsync(cancellationToken);
         var gitRepository = allGitRepositories.FirstOrDefault();
 
+        // Load the per-project push policy for this agent. Falls back to Forbidden when no
+        // explicit AgentProject row exists (e.g. org-level links without a project override).
+        var agentProjectLink = await db.AgentProjects
+            .FirstOrDefaultAsync(ap => ap.AgentId == agentId && ap.ProjectId == issue.ProjectId, cancellationToken);
+        var pushPolicy = agentProjectLink?.PushPolicy ?? AgentPushPolicy.Forbidden;
+
         AgentSession session;
         if (existingSessionId.HasValue)
         {
@@ -328,6 +334,7 @@ public class IssueWorker(
             preCreated.RuntimeConfigId = runtimeConfig?.Id;
             preCreated.KeepContainer = keepContainer;
             preCreated.CustomCmd = dockerCmdOverride;
+            preCreated.PushPolicy = pushPolicy;
             preCreated.StartedAt = DateTime.UtcNow;
             preCreated.Status = AgentSessionStatus.Running;
             if (runtimeConfig is { MaxConcurrentAgents: > 0 })
@@ -349,6 +356,7 @@ public class IssueWorker(
                 StartedAt = DateTime.UtcNow,
                 KeepContainer = keepContainer,
                 CustomCmd = dockerCmdOverride,
+                PushPolicy = pushPolicy,
                 Warnings = commentsWarning is not null
                     ? System.Text.Json.JsonSerializer.Serialize(new[] { commentsWarning })
                     : null,
@@ -570,7 +578,7 @@ public class IssueWorker(
                         // Same container — opencode can see the workspace and use --fork when supported.
                         (fixCommitSha, fixBranchName) = await execRuntime!.ExecFixInContainerAsync(
                             runtimeId!, capturedOpenCodeSessionId,
-                            session, agent, fixUncommittedIssue,
+                            session, agent, fixUncommittedIssue, gitRepository,
                             (line, stream) => AppendLogAsync(session.Id, line, stream, currentSection, currentSectionIndex, db, sessionCts.Token),
                             sessionCts.Token);
                     }
@@ -1020,7 +1028,7 @@ public class IssueWorker(
                 // When opencode supports --fork, openCodeSessionId will be passed for full session continuity.
                 (fixCommitSha, fixBranchName) = await execRuntime.ExecFixInContainerAsync(
                     execContainerId, openCodeSessionId,
-                    session, agent, fixIssue,
+                    session, agent, fixIssue, gitRepository,
                     (line, stream) =>
                         (onLogLine ?? ((l, s, sec, idx) => AppendLogAsync(session.Id, l, s, sec, idx, db, cancellationToken)))(
                             line, stream, AgentLogSection.CiCdFixRun, fixSectionIndex),

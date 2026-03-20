@@ -120,9 +120,17 @@ fi
 # ─── Step 2c: Install git push wrapper ─────────────────────────────────────────
 #
 # A lightweight wrapper is placed at /usr/local/bin/git (ahead of the real git on PATH).
-# It intercepts `git push` invocations and exits with an error so that agent tools
-# (opencode, codex, etc.) cannot push to the remote during their run.
-# Pushing is performed explicitly by the C# execution client after the agent finishes.
+# It enforces the ISSUEPIT_PUSH_POLICY for agent tools (opencode, codex, CLI commands):
+#
+#   0 = Forbidden (default) — git push is always blocked; IssuePit pushes the branch itself.
+#   1 = WorkingOriginOnly   — agents may push only to Working-mode origins.
+#   2 = Allowed             — agents may push to any non-ReadOnly origin.
+#   3 = Yolo                — agents may push unconditionally.
+#
+# In all non-Forbidden modes the following safety guards are always enforced regardless of policy:
+#   • Force pushes (--force / -f / --force-with-lease / --force-if-includes) are always blocked.
+#   • Pushes to the repository's default branch (ISSUEPIT_GIT_DEFAULT_BRANCH, main, master)
+#     are always blocked.
 #
 # This is not a full security boundary — a sufficiently determined agent could locate
 # and invoke the real git binary directly — but it prevents accidental pushes from
@@ -132,18 +140,53 @@ REAL_GIT=$(command -v git 2>/dev/null || echo "/usr/bin/git")
 # Save the real git binary path so the execution client can bypass the push-blocking
 # wrapper installed below when it needs to push branches from docker exec.
 echo "${REAL_GIT}" > /tmp/.issuepit-real-git
-cat > /usr/local/bin/git << GITWRAPPER
+cat > /usr/local/bin/git << 'GITWRAPPER'
 #!/usr/bin/env bash
-# IssuePit git wrapper — blocks push; all other subcommands are forwarded unchanged.
-if [[ "\${1:-}" == "push" ]]; then
-    echo "[issuepit] git push is not permitted inside the agent container." >&2
-    echo "[issuepit] The execution client will push the branch after your run completes." >&2
-    exit 1
+# IssuePit git wrapper — enforces ISSUEPIT_PUSH_POLICY for agent push commands.
+if [[ "${1:-}" == "push" ]]; then
+    PUSH_POLICY="${ISSUEPIT_PUSH_POLICY:-0}"
+
+    if [[ "${PUSH_POLICY}" == "0" ]]; then
+        echo "[issuepit] git push is not permitted inside the agent container (push policy: Forbidden)." >&2
+        echo "[issuepit] IssuePit manages the git push step after the agent session ends." >&2
+        exit 1
+    fi
+
+    # In all non-Forbidden modes: block force pushes unconditionally.
+    for arg in "$@"; do
+        if [[ "${arg}" == "--force" || "${arg}" == "-f" || "${arg}" == "--force-with-lease" || "${arg}" == "--force-if-includes" ]]; then
+            echo "[issuepit] Force push is not permitted (push policy: ${PUSH_POLICY})." >&2
+            exit 1
+        fi
+    done
+
+    # In all non-Forbidden modes: block pushes to the default/main/master branch.
+    # Detect the target branch from the refspec arguments (last non-flag arg or HEAD).
+    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+    DEFAULT_BRANCH="${ISSUEPIT_GIT_DEFAULT_BRANCH:-main}"
+    TARGET_BRANCH="${CURRENT_BRANCH}"
+    for arg in "$@"; do
+        if [[ "${arg}" != -* ]]; then
+            # Could be remote or refspec; take the last positional arg as potential branch name.
+            TARGET_BRANCH="${arg}"
+        fi
+    done
+    # Strip remote prefix (e.g. "origin/main" -> "main") and refspec colon (e.g. "HEAD:main" -> "main").
+    TARGET_BRANCH="${TARGET_BRANCH##*/}"
+    TARGET_BRANCH="${TARGET_BRANCH##*:}"
+
+    if [[ "${TARGET_BRANCH}" == "${DEFAULT_BRANCH}" || "${TARGET_BRANCH}" == "main" || "${TARGET_BRANCH}" == "master" ]]; then
+        echo "[issuepit] Pushing to default branch '${TARGET_BRANCH}' is not permitted." >&2
+        exit 1
+    fi
+
+    # Policy allows the push — forward to real git.
 fi
-exec "${REAL_GIT}" "\$@"
+REAL_GIT_BIN=$(cat /tmp/.issuepit-real-git 2>/dev/null || echo "/usr/bin/git")
+exec "${REAL_GIT_BIN}" "$@"
 GITWRAPPER
 chmod +x /usr/local/bin/git
-echo "[entrypoint] git push wrapper installed (real git: ${REAL_GIT})"
+echo "[entrypoint] git push wrapper installed (real git: ${REAL_GIT}, policy: ${ISSUEPIT_PUSH_POLICY:-0})"
 
 # ─── Step 3: Set up tools ──────────────────────────────────────────────────────
 
