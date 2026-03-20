@@ -201,7 +201,6 @@ async function main() {
   await screenshot(page, 'projects');
 
   await page.goto(`${FRONTEND_URL}/issues`);
-  await page.evaluate(() => window.scrollTo(0, 0));
   await screenshot(page, 'issues');
 
   // Get the first available project for project-specific screenshots
