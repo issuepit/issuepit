@@ -2,6 +2,10 @@ import { defineStore } from 'pinia'
 import type { Issue, IssuePriority, IssueType, IssueComment, IssueAttachment, IssueTask, IssueAssignee, Label, CodeReviewComment, IssueLink, IssueLinkType, IssueEvent, IssueRuns, IssueGitMapping } from '~/types'
 import { IssueStatus } from '~/types'
 
+const PRIORITY_ORDER: Record<string, number> = {
+  urgent: 0, very_high: 1, high: 2, medium: 3, low: 4, no_priority: 5, unknown: 6
+}
+
 interface IssueFilters {
   status?: IssueStatus
   priority?: IssuePriority
@@ -10,6 +14,8 @@ interface IssueFilters {
   labelId?: string
   milestoneId?: string
   search?: string
+  sortBy?: 'updatedAt' | 'createdAt' | 'number' | 'priority'
+  sortDir?: 'asc' | 'desc'
 }
 
 export const useIssuesStore = defineStore('issues', () => {
@@ -39,7 +45,22 @@ export const useIssuesStore = defineStore('issues', () => {
       const q = filters.value.search.toLowerCase()
       result = result.filter(i => i.title.toLowerCase().includes(q))
     }
-    return [...result].sort((a, b) => b.number - a.number)
+    const sortBy = filters.value.sortBy ?? 'updatedAt'
+    const sortDir = filters.value.sortDir ?? 'desc'
+    return [...result].sort((a, b) => {
+      let cmp = 0
+      if (sortBy === 'number') {
+        cmp = a.number - b.number
+      } else if (sortBy === 'createdAt') {
+        cmp = a.createdAt.localeCompare(b.createdAt)
+      } else if (sortBy === 'priority') {
+        cmp = (PRIORITY_ORDER[a.priority] ?? 5) - (PRIORITY_ORDER[b.priority] ?? 5)
+      } else {
+        // updatedAt (default)
+        cmp = a.updatedAt.localeCompare(b.updatedAt)
+      }
+      return sortDir === 'asc' ? cmp : -cmp
+    })
   })
 
   const issuesByStatus = computed(() => {

@@ -13,7 +13,13 @@ namespace IssuePit.Api.Controllers;
 public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer<string, string> producer, IssueEnhancementService enhancementService, ImageStorageService imageStorage, VoiceTranscriptionService voiceTranscription, GitHubSyncService githubSyncService, ILogger<IssuesController> logger) : ControllerBase
 {
     [HttpGet]
-    public async Task<IActionResult> GetIssues([FromQuery] Guid? projectId, [FromQuery] Guid? orgId)
+    public async Task<IActionResult> GetIssues(
+        [FromQuery] Guid? projectId,
+        [FromQuery] Guid? orgId,
+        [FromQuery] string? status,
+        [FromQuery] string? priority,
+        [FromQuery] string sortBy = "updatedAt",
+        [FromQuery] string sortDir = "desc")
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
         var tenantId = ctx.CurrentTenant.Id;
@@ -24,7 +30,52 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
             query = query.Where(i => i.ProjectId == projectId.Value);
         else if (orgId.HasValue)
             query = query.Where(i => i.Project!.OrgId == orgId.Value);
-        var issues = await query.OrderByDescending(i => i.Number).ToListAsync();
+
+        if (!string.IsNullOrEmpty(status))
+        {
+            IssueStatus? statusFilter = status switch
+            {
+                "backlog" => IssueStatus.Backlog,
+                "todo" => IssueStatus.Todo,
+                "in_progress" => IssueStatus.InProgress,
+                "in_review" => IssueStatus.InReview,
+                "done" => IssueStatus.Done,
+                "cancelled" => IssueStatus.Cancelled,
+                _ => null
+            };
+            if (statusFilter.HasValue)
+                query = query.Where(i => i.Status == statusFilter.Value);
+        }
+
+        if (!string.IsNullOrEmpty(priority))
+        {
+            IssuePriority? priorityFilter = priority switch
+            {
+                "no_priority" => IssuePriority.NoPriority,
+                "urgent" => IssuePriority.Urgent,
+                "very_high" => IssuePriority.VeryHigh,
+                "high" => IssuePriority.High,
+                "medium" => IssuePriority.Medium,
+                "low" => IssuePriority.Low,
+                _ => null
+            };
+            if (priorityFilter.HasValue)
+                query = query.Where(i => i.Priority == priorityFilter.Value);
+        }
+
+        var orderedQuery = (sortBy.ToLowerInvariant(), sortDir.ToLowerInvariant()) switch
+        {
+            ("createdat", "asc") => query.OrderBy(i => i.CreatedAt),
+            ("createdat", _) => query.OrderByDescending(i => i.CreatedAt),
+            ("number", "asc") => query.OrderBy(i => i.Number),
+            ("number", _) => query.OrderByDescending(i => i.Number),
+            ("priority", "asc") => query.OrderBy(i => i.Priority),
+            ("priority", _) => query.OrderByDescending(i => i.Priority),
+            ("updatedat", "asc") => query.OrderBy(i => i.UpdatedAt),
+            _ => query.OrderByDescending(i => i.UpdatedAt),
+        };
+
+        var issues = await orderedQuery.ToListAsync();
         return Ok(issues);
     }
 

@@ -26,6 +26,31 @@
         <option v-for="s in statuses" :key="s.value" :value="s.value">{{ s.label }}</option>
       </select>
 
+      <select v-model="filterPriority"
+        class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500">
+        <option value="">All Priority</option>
+        <option v-for="p in priorities" :key="p.value" :value="p.value">{{ p.label }}</option>
+      </select>
+
+      <select v-model="sortBy"
+        class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500">
+        <option value="updatedAt">Sort: Last Updated</option>
+        <option value="createdAt">Sort: Date Created</option>
+        <option value="number">Sort: Number</option>
+        <option value="priority">Sort: Priority</option>
+      </select>
+
+      <button @click="toggleSortDir"
+        class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700 transition-colors flex items-center gap-1"
+        :title="sortDir === 'desc' ? 'Descending' : 'Ascending'">
+        <svg v-if="sortDir === 'desc'" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
+        </svg>
+        <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9m-9 4h9m5-4v12m0 0l-4-4m4 4l4-4" />
+        </svg>
+      </button>
+
       <button v-if="hasFilters" @click="clearFilters"
         class="text-xs text-gray-400 hover:text-gray-200 px-2 py-1.5">Clear</button>
     </div>
@@ -55,6 +80,7 @@
             <th class="text-left text-xs font-medium text-gray-500 px-4 py-3 hidden md:table-cell">Project</th>
             <th class="text-left text-xs font-medium text-gray-500 px-4 py-3 hidden md:table-cell">Status</th>
             <th class="text-left text-xs font-medium text-gray-500 px-4 py-3 hidden lg:table-cell">Priority</th>
+            <th class="text-left text-xs font-medium text-gray-500 px-4 py-3 hidden xl:table-cell">Updated</th>
           </tr>
         </thead>
         <tbody>
@@ -82,6 +108,9 @@
             </td>
             <td class="px-4 py-3 hidden lg:table-cell">
               <span class="text-xs text-gray-400">{{ priorityLabel(issue.priority) }}</span>
+            </td>
+            <td class="px-4 py-3 hidden xl:table-cell">
+              <span class="text-xs text-gray-500"><DateDisplay :date="issue.updatedAt" mode="auto" resolution="date" /></span>
             </td>
           </tr>
         </tbody>
@@ -135,6 +164,11 @@ const filterDescription = computed(() => {
 const OPEN_FILTER = 'open'
 const search = ref('')
 const filterStatus = ref<IssueStatus | 'open' | ''>('')
+const filterPriority = ref<IssuePriority | ''>('')
+const sortBy = ref<'updatedAt' | 'createdAt' | 'number' | 'priority'>('updatedAt')
+const sortDir = ref<'asc' | 'desc'>('desc')
+
+const { priorityIcon, priorityLabel: priorityText, priorities } = usePriority()
 
 const statuses = [
   { value: IssueStatus.Backlog, label: 'Backlog' },
@@ -145,14 +179,24 @@ const statuses = [
   { value: IssueStatus.Cancelled, label: 'Cancelled' }
 ]
 
-const hasFilters = computed(() => search.value || filterStatus.value)
+const hasFilters = computed(() => search.value || filterStatus.value || filterPriority.value)
 
-watch([search, filterStatus], () => {
+function toggleSortDir() {
+  sortDir.value = sortDir.value === 'desc' ? 'asc' : 'desc'
+}
+
+watch([search, filterStatus, filterPriority, sortBy, sortDir], () => {
+  const baseFilters = {
+    search: search.value || undefined,
+    priority: (filterPriority.value as IssuePriority) || undefined,
+    sortBy: sortBy.value,
+    sortDir: sortDir.value
+  }
   if (filterStatus.value === OPEN_FILTER) {
-    store.setFilters({ search: search.value || undefined })
+    store.setFilters(baseFilters)
   } else {
     store.setFilters({
-      search: search.value || undefined,
+      ...baseFilters,
       status: (filterStatus.value as IssueStatus) || undefined
     })
   }
@@ -160,7 +204,7 @@ watch([search, filterStatus], () => {
 
 // Issues to display — feed issues (server-side) or filtered store issues (client-side)
 const displayedIssues = computed(() => {
-  if (feedFilter.value) return [...store.issues].sort((a, b) => b.number - a.number)
+  if (feedFilter.value) return [...store.issues].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   if (filterStatus.value === OPEN_FILTER) {
     return store.filteredIssues.filter(
       i => i.status !== IssueStatus.Done && i.status !== IssueStatus.Cancelled
@@ -194,6 +238,9 @@ onMounted(async () => {
 function clearFilters() {
   search.value = ''
   filterStatus.value = ''
+  filterPriority.value = ''
+  sortBy.value = 'updatedAt'
+  sortDir.value = 'desc'
   store.clearFilters()
   router.replace({ query: {} })
 }
@@ -238,7 +285,6 @@ function statusLabel(status: IssueStatus) {
   return map[status] ?? status
 }
 
-const { priorityIcon, priorityLabel: priorityText } = usePriority()
 function priorityLabel(priority: IssuePriority) {
   return `${priorityIcon(priority)} ${priorityText(priority)}`
 }
