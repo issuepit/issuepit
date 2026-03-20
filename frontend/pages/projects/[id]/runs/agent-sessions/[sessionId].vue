@@ -616,6 +616,7 @@ const filteredLogs = computed(() => {
 function sectionLabel(section: string, index: number): string {
   switch (section) {
     case 'InitialAgentRun': return 'Initial Agent Run'
+    case 'PostRun': return 'Post Run'
     case 'UncommittedChangesFix': return 'Uncommitted Changes Fix'
     case 'CiCdRun': return `CI/CD Run ${index}`
     case 'CiCdFixRun': return `CI/CD Fix Run ${index}`

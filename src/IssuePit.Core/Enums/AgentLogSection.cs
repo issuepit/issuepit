@@ -33,4 +33,11 @@ public enum AgentLogSection
     /// in the same container; today all fix phases share one container.
     /// </summary>
     CiCdFixRun = 4,
+
+    /// <summary>
+    /// Post-agent operations that occur after the agent run completes but before any
+    /// fix phases: capturing the opencode session ID, checking for uncommitted changes,
+    /// and pushing the branch to the remote.
+    /// </summary>
+    PostRun = 5,
 }

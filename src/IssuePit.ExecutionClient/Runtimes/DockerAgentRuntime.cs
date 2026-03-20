@@ -55,6 +55,11 @@ public class DockerAgentRuntime(
     /// <summary>Emitted when <c>git push</c> fails; IssueWorker uses this to trigger a .git archive upload.</summary>
     internal const string GitPushFailedMarker = "[ISSUEPIT:GIT_PUSH_FAILED]=true";
     /// <summary>
+    /// Emitted just before post-agent operations (session capture, uncommitted-changes check, git push)
+    /// so IssueWorker can tag subsequent log lines with the <c>PostRun</c> section.
+    /// </summary>
+    internal const string PostRunStartMarker = "[ISSUEPIT:POST_RUN_START]";
+    /// <summary>
     /// Emitted when the agent is running in HTTP server mode; carries the URL of the agent's web UI.
     /// IssueWorker captures this and persists it on <see cref="AgentSession.ServerWebUiUrl"/>.
     /// </summary>
@@ -613,8 +618,12 @@ public class DockerAgentRuntime(
             // full conversation context. The same container already gives the agent access to the
             // git workspace as modified by the first run. --fork will be wired up once opencode
             // supports the flag in non-interactive (opencode run) mode.
+            var postRunMarkerEmitted = false;
             if (agent.RunnerType == RunnerType.OpenCode)
             {
+                // Signal the start of post-run operations so IssueWorker can tag logs with PostRun.
+                await onLogLine(PostRunStartMarker, LogStream.Stdout);
+                postRunMarkerEmitted = true;
                 try { await CaptureOpenCodeSessionIdAsync(container.ID, onLogLine, cancellationToken); }
                 catch (Exception ex)
                 {
@@ -625,6 +634,11 @@ public class DockerAgentRuntime(
             // Step 9: Check git state and emit markers so IssueWorker can trigger CI/CD.
             if (gitRepository is not null)
             {
+                if (!postRunMarkerEmitted)
+                {
+                    // Signal the start of post-run operations for non-OpenCode agents.
+                    await onLogLine(PostRunStartMarker, LogStream.Stdout);
+                }
                 try
                 {
                     await CheckAndEmitUncommittedChangesAsync(container.ID, onLogLine, cancellationToken);

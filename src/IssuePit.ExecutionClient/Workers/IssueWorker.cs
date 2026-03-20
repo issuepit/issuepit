@@ -53,6 +53,9 @@ public class IssueWorker(
     private const string OpenCodeSessionIdMarker = "[ISSUEPIT:OPENCODE_SESSION_ID]=";
     private const string GitPushFailedMarker = "[ISSUEPIT:GIT_PUSH_FAILED]=true";
     private const string ServerWebUiUrlMarker = "[ISSUEPIT:SERVER_WEB_UI_URL]=";
+    // Emitted by DockerAgentRuntime just before post-agent ops (session capture, git push).
+    // Must stay in sync with DockerAgentRuntime.PostRunStartMarker.
+    private const string PostRunStartMarker = "[ISSUEPIT:POST_RUN_START]";
 
     /// <summary>
     /// Maximum total character count for comments included in the task prompt.
@@ -466,6 +469,14 @@ public class IssueWorker(
                     capturedGitPushFailed = true;
                 else if (line.StartsWith(ServerWebUiUrlMarker, StringComparison.Ordinal))
                     capturedServerWebUiUrl = line[ServerWebUiUrlMarker.Length..].Trim();
+                else if (line == PostRunStartMarker)
+                {
+                    // Transition to the PostRun section for git push and related post-agent operations.
+                    currentSection = AgentLogSection.PostRun;
+                    currentSectionIndex = 0;
+                    // The marker itself is a control line — don't persist it to the database.
+                    return Task.CompletedTask;
+                }
                 return AppendLogAsync(session.Id, line, stream, currentSection, currentSectionIndex, db, sessionCts.Token);
             }
 
