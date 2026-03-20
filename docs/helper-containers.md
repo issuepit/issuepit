@@ -55,6 +55,8 @@ Combines `helper-act` with the opencode CLI — the **default image for agent ru
 
 **Registry:** `ghcr.io/issuepit/issuepit-helper-opencode-act`
 
+> **act runner image:** When the execution client starts an agent container it also writes `/root/.config/act/actrc` pointing to `ghcr.io/issuepit/issuepit-act-runner:latest`. This ensures that when the agent invokes `act` to run CI workflows the inner workflow job containers use an image that has .NET 10, Node.js, and Playwright — matching the toolchain installed in the outer helper image. Without this, `act` defaults to `catthehacker/ubuntu:act-latest` which only ships .NET 8, causing projects that target `net10.0` to fail `dotnet restore`. The runner image can be overridden via the `Agent__ActRunnerImage` configuration key on the `execution-client` service.
+
 ---
 
 ## Image Tags

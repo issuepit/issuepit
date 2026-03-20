@@ -1503,19 +1503,6 @@ public partial class DockerCiCdRuntime(
         await dockerClient.Containers.StartContainerAsync(RegistryMirrorContainerName, new ContainerStartParameters(), cancellationToken);
         await onLogLine($"[DEBUG] Registry mirror: started on 0.0.0.0:{port}", LogStream.Stdout);
     }
-    /// first-run image-selection prompt. Uses <c>printf '%b'</c> so the leading <c>-P</c> in the actrc
-    /// content is not misinterpreted as a printf option by <c>/bin/sh</c> (dash).
-    /// </summary>
-    private static string BuildActrcSetupScript(string actRunnerImage)
-    {
-        var platformLabels = new[] { "ubuntu-latest", "ubuntu-24.04", "ubuntu-22.04", "ubuntu-20.04" };
-        // actrcBody: each line is "-P ubuntu-latest=<image>" joined with \n escape sequences.
-        var actrcBody = string.Join("\\n", platformLabels.Select(label => $"-P {label}={actRunnerImage}"));
-
-        // Use printf '%b' so the actrc content ('-P ubuntu-latest=...\n...') is passed as an argument,
-        // not as the format string — preventing '/bin/sh: printf: Illegal option -P'.
-        return $"mkdir -p /root/.config/act && printf '%b' '{actrcBody}\\n' > /root/.config/act/actrc";
-    }
 
     /// <summary>
     /// Builds a shell script that runs <c>actionlint</c> on the workflow file when available.

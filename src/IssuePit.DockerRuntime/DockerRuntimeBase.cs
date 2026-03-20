@@ -542,6 +542,59 @@ public abstract class DockerRuntimeBase
     }
 
     /// <summary>
+    /// Writes <c>/root/.config/act/actrc</c> inside the container, mapping all common
+    /// Ubuntu platform labels (<c>ubuntu-latest</c>, <c>ubuntu-24.04</c>, <c>ubuntu-22.04</c>,
+    /// <c>ubuntu-20.04</c>) to <paramref name="actRunnerImage"/>.
+    ///
+    /// This prevents <c>act</c> from prompting interactively for an image and ensures that
+    /// CI workflow jobs run against an image that has the correct .NET SDK, Node.js, and
+    /// other tooling installed. Best-effort — a failure is logged as a warning and does not
+    /// abort the agent setup.
+    /// </summary>
+    /// <param name="containerId">Target container ID.</param>
+    /// <param name="actRunnerImage">
+    ///   Fully-qualified image reference to use as the act runner image, e.g.
+    ///   <c>ghcr.io/issuepit/issuepit-act-runner:latest</c>.
+    /// </param>
+    /// <param name="onLogLine">Log callback.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    protected async Task SetupActrcAsync(
+        string containerId,
+        string actRunnerImage,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var script = BuildActrcSetupScript(actRunnerImage);
+            await ExecCommandAsync(containerId, ["/bin/sh", "-c", script], onLogLine, cancellationToken);
+            await onLogLine($"[INFO] actrc written (runner: {actRunnerImage})", LogStream.Stdout);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            await onLogLine($"[WARN] actrc setup failed (non-fatal): {ex.Message}", LogStream.Stderr);
+        }
+    }
+
+    /// <summary>
+    /// Builds the shell script that writes <c>/root/.config/act/actrc</c> mapping each Ubuntu
+    /// platform label to <paramref name="actRunnerImage"/>. Uses <c>printf '%b'</c> so the
+    /// leading <c>-P</c> in the actrc content is not misinterpreted as a <c>printf</c> option
+    /// by <c>/bin/sh</c> (dash).
+    /// </summary>
+    protected static string BuildActrcSetupScript(string actRunnerImage)
+    {
+        var platformLabels = new[] { "ubuntu-latest", "ubuntu-24.04", "ubuntu-22.04", "ubuntu-20.04" };
+        // actrcBody: each line is "-P ubuntu-latest=<image>" joined with \n escape sequences.
+        var actrcBody = string.Join("\\n", platformLabels.Select(label => $"-P {label}={actRunnerImage}"));
+        return $"mkdir -p /root/.config/act && printf '%b' '{actrcBody}\\n' > /root/.config/act/actrc";
+    }
+
+    /// <summary>
     /// Builds the shell script that starts <c>dockerd</c> in the background and waits until
     /// the socket is ready. This is the simple version (no registry mirror, no apt-cache port)
     /// used by the agent runtime. The CI/CD runtime has its own extended version with registry
