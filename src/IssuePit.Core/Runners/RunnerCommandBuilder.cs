@@ -182,11 +182,11 @@ public static class RunnerCommandBuilder
     /// </summary>
     public const int MaxCommentsLength = 8000;
 
-    /// <summary>Formats the issue title, body, and optional comments into a single task prompt string.</summary>
+    /// <summary>Formats the issue number, title, body, and optional comments into a single task prompt string.</summary>
     public static string BuildTaskPrompt(Issue issue, IReadOnlyList<IssueComment>? comments = null)
     {
         var sb = new StringBuilder();
-        sb.Append($"## Task: {issue.Title}");
+        sb.Append($"## Issue #{issue.Number}: {issue.Title}");
         if (!string.IsNullOrWhiteSpace(issue.Body))
         {
             sb.AppendLine();
@@ -206,6 +206,10 @@ public static class RunnerCommandBuilder
                 sb.AppendLine(comment.Body);
             }
         }
+
+        sb.AppendLine();
+        sb.AppendLine();
+        sb.Append("**Important:** Commit your changes after each meaningful step and make a final commit when the task is complete.");
 
         return sb.ToString().TrimEnd();
     }

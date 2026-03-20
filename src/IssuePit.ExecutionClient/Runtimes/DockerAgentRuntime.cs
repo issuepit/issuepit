@@ -403,7 +403,12 @@ public class DockerAgentRuntime(
             // Step A: Clone the workspace (if a git repository is configured).
             if (gitRepository is not null)
             {
+                // Use issue.GitBranch only when it is set AND differs from the base branch —
+                // meaning a dedicated feature branch was already created for this issue in a
+                // prior run. When issue.GitBranch equals the default branch (or is empty) we
+                // generate a fresh feature branch name so we never work directly on main/master.
                 var featureBranch = !string.IsNullOrWhiteSpace(issue.GitBranch)
+                    && !string.Equals(issue.GitBranch, gitRepository.DefaultBranch, StringComparison.OrdinalIgnoreCase)
                     ? issue.GitBranch
                     : GenerateFeatureBranchName(issue.Number, issue.Title ?? string.Empty);
                 await CloneWorkspaceAsync(
