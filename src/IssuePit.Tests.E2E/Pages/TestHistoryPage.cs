@@ -23,7 +23,8 @@ public class TestHistoryPage(IPage page)
         await page.GotoAsync($"/projects/{projectId}/runs/test-history?tab=Coverage");
         // Wait for either coverage data cards or the empty-state placeholder.
         // Because loading starts as true, neither text appears until the API fetch completes.
-        await page.Locator("text=Line Coverage").Or(page.Locator("text=No coverage data yet"))
+        // Use p:has-text to match only the summary-card <p> label, not the table column <th>.
+        await page.Locator("p:has-text('Line Coverage')").Or(page.Locator("text=No coverage data yet"))
             .WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.NavigationLong });
     }
 
@@ -63,14 +64,15 @@ public class TestHistoryPage(IPage page)
     {
         await CoverageTab.ClickAsync();
         // Wait for either coverage data cards or the empty state message.
-        await page.Locator("text=Line Coverage").Or(page.Locator("text=No coverage data yet"))
+        await page.Locator("p:has-text('Line Coverage')").Or(page.Locator("text=No coverage data yet"))
             .WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Navigation });
     }
 
     /// <summary>Returns true when the Coverage tab shows coverage data (not the empty state).</summary>
     public async Task<bool> HasCoverageDataAsync()
     {
-        var lineCoverageLabel = page.Locator("text=Line Coverage").First;
+        // Target the summary-card <p> label specifically to avoid matching the table column <th>.
+        var lineCoverageLabel = page.Locator("p:has-text('Line Coverage')").First;
         return await lineCoverageLabel.CountAsync() > 0;
     }
 
