@@ -292,7 +292,12 @@ export function useDashboardLayout(options: {
 
   // Scroll the page with mouse wheel while dragging (browser suppresses native scroll during DnD)
   function _onWheelDuringDrag(e: WheelEvent) {
-    if (dragSectionId.value) window.scrollBy(0, e.deltaY)
+    if (!dragSectionId.value) return
+    // Normalize delta across deltaMode values (0=pixel, 1=line, 2=page)
+    let dy = e.deltaY
+    if (e.deltaMode === 1) dy *= 20
+    else if (e.deltaMode === 2) dy *= window.innerHeight
+    window.scrollBy({ top: dy, behavior: 'instant' as ScrollBehavior })
   }
 
   onMounted(() => {

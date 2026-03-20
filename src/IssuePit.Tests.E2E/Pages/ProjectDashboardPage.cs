@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Playwright;
 
 namespace IssuePit.Tests.E2E.Pages;
@@ -8,6 +9,8 @@ namespace IssuePit.Tests.E2E.Pages;
 /// </summary>
 public class ProjectDashboardPage(IPage page)
 {
+    /// <summary>The underlying Playwright page (for ad-hoc locators in tests).</summary>
+    public IPage Page => page;
     public async Task GotoAsync(string projectId)
     {
         try
@@ -48,8 +51,62 @@ public class ProjectDashboardPage(IPage page)
     }
 
     /// <summary>Cancels draft mode by clicking the Cancel button in the toolbar.</summary>
-    public ILocator CancelButton => page.Locator("button:has-text('Cancel')");
+    public ILocator CancelButton => page.Locator("div.bg-amber-950\\/40 button:has-text('Cancel')");
 
-    /// <summary>Saves the draft layout by clicking the Save button in the toolbar.</summary>
-    public ILocator SaveButton => page.Locator("button:has-text('Save')").First;
+    /// <summary>Saves the draft layout by clicking the Save button in the toolbar (amber button, not "Save as…").</summary>
+    public ILocator SaveButton => page.Locator("div.bg-amber-950\\/40 button.bg-amber-600:has-text('Save')");
+
+    // ── Draft-mode toolbar buttons ──────────────────────────────────────────
+
+    /// <summary>The "+ Kanban Board" button in the draft toolbar.</summary>
+    public ILocator AddKanbanButton => page.Locator("button:has-text('+ Kanban Board')");
+
+    /// <summary>The "+ Test History" button in the draft toolbar.</summary>
+    public ILocator AddTestHistoryButton => page.Locator("button:has-text('+ Test History')");
+
+    /// <summary>The "Row break" button in the draft toolbar.</summary>
+    public ILocator AddRowBreakButton => page.Locator("button[aria-label='Add row break to dashboard layout']");
+
+    /// <summary>The "Export" button in the draft toolbar (triggers JSON download).</summary>
+    public ILocator ExportButton => page.Locator("button:has-text('Export')");
+
+    // ── Dashboard grid ──────────────────────────────────────────────────────
+
+    /// <summary>All data-drag-card elements visible in the dashboard grid.</summary>
+    public ILocator DragCards => page.Locator("[data-drag-card]");
+
+    /// <summary>The row-break separator handles visible in draft mode.</summary>
+    public ILocator RowBreakHandles => page.Locator("span:has-text('row break')");
+
+    /// <summary>The trailing drop zone that appears at the bottom of the grid during drag.</summary>
+    public ILocator TrailingDropZone => page.Locator("text=Drop here to move to end");
+
+    // ── Section bar controls ────────────────────────────────────────────────
+
+    /// <summary>Returns the section bar containing <paramref name="sectionLabel"/>.</summary>
+    public ILocator SectionBarFor(string sectionLabel) =>
+        page.Locator($"[data-drag-card]:has-text('{sectionLabel}')").First;
+
+    /// <summary>The "Tab" button on a section bar (for a specific card).</summary>
+    public ILocator TabButtonFor(ILocator card) => card.Locator("button:has-text('Tab')");
+
+    /// <summary>Returns the tab group bar containing the listed section labels.</summary>
+    public ILocator TabGroupBar(string sectionLabel) =>
+        page.Locator($".text-amber-300:has-text('Tab group')").Locator("..").Locator("..").Filter(new LocatorFilterOptions { HasText = sectionLabel });
+
+    /// <summary>The "⊖ Split tabs" button inside a tab group bar.</summary>
+    public ILocator SplitTabsButton => page.Locator("button:has-text('Split tabs')");
+
+    // ── Export / JSON helpers ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Clicks Export and captures the downloaded JSON file content.
+    /// Returns the parsed <see cref="JsonDocument"/> of the layout.
+    /// </summary>
+    public async Task<JsonDocument> ClickExportAndCaptureJsonAsync()
+    {
+        var download = await page.RunAndWaitForDownloadAsync(() => ExportButton.ClickAsync());
+        await using var stream = await download.CreateReadStreamAsync();
+        return await JsonDocument.ParseAsync(stream);
+    }
 }

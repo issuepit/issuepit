@@ -39,17 +39,17 @@
                   :x="barX(i)" :y="seg.y" :width="barW" :height="seg.h"
                   :fill="seg.color" opacity="0.88" rx="1" />
               </template>
-              <!-- Pass-fail stacked -->
+              <!-- Pass-fail stacked: healthy = vivid, failed = dark of same hue -->
               <template v-else-if="colorMode === 'pass-fail'">
                 <template v-if="yAxis === 'count'">
                   <rect v-if="barTotalVal(bar) > 0 && bar.failedTests > 0"
                     :x="barX(i)" :y="yScale(bar.failedTests)" :width="barW"
                     :height="plotH - yScale(bar.failedTests) + padTop"
-                    fill="#ef4444" opacity="0.85" rx="1" />
+                    fill="hsl(145,45%,18%)" opacity="0.9" rx="1" />
                   <rect v-if="barTotalVal(bar) > 0 && bar.passedTests > 0"
                     :x="barX(i)" :y="yScale(barTotalVal(bar))" :width="barW"
                     :height="yScale(bar.failedTests) - yScale(barTotalVal(bar))"
-                    fill="#22c55e" opacity="0.85" rx="1" />
+                    fill="hsl(145,60%,50%)" opacity="0.85" rx="1" />
                 </template>
                 <!-- Duration Y: split proportionally by pass/fail count ratio -->
                 <template v-else>
@@ -57,11 +57,11 @@
                     <rect v-if="bar.failedTests > 0 && bar.totalTests > 0"
                       :x="barX(i)" :y="yScale(failedDurVal(bar))" :width="barW"
                       :height="plotH - yScale(failedDurVal(bar)) + padTop"
-                      fill="#ef4444" opacity="0.85" rx="1" />
+                      fill="hsl(145,45%,18%)" opacity="0.9" rx="1" />
                     <rect v-if="bar.passedTests > 0 && bar.totalTests > 0"
                       :x="barX(i)" :y="yScale(barTotalVal(bar))" :width="barW"
                       :height="yScale(failedDurVal(bar)) - yScale(barTotalVal(bar))"
-                      fill="#22c55e" opacity="0.85" rx="1" />
+                      fill="hsl(145,60%,50%)" opacity="0.85" rx="1" />
                     <rect v-if="bar.totalTests === 0"
                       :x="barX(i)" :y="yScale(barTotalVal(bar))" :width="barW"
                       :height="plotH - yScale(barTotalVal(bar)) + padTop"
@@ -102,23 +102,23 @@
         <template v-if="colorMode === 'groups'">
           <span v-for="(g, gi) in legendGroups" :key="g.name" class="flex items-center gap-1.5 text-xs text-gray-400">
             <span class="w-8 h-2 rounded-sm inline-block shrink-0"
-              :style="`background:linear-gradient(90deg,${groupHealthyColor(gi)},hsl(0,30%,28%))`"></span>
+              :style="`background:linear-gradient(90deg,${groupHealthyColor(gi)},hsl(${gi * 40},25%,18%))`"></span>
             {{ g.name }}
           </span>
-          <span class="text-xs text-gray-600">(vivid = healthy, dark red = failing)</span>
+          <span class="text-xs text-gray-600">(vivid = healthy, dark = failing)</span>
         </template>
         <template v-else-if="colorMode === 'pass-fail'">
           <span class="flex items-center gap-1.5 text-xs text-gray-400">
-            <span class="w-3 h-2 bg-green-500 rounded-sm inline-block"></span> Passed
+            <span class="w-3 h-2 rounded-sm inline-block" style="background:hsl(145,60%,50%)"></span> Passed
           </span>
           <span class="flex items-center gap-1.5 text-xs text-gray-400">
-            <span class="w-3 h-2 bg-red-500 rounded-sm inline-block"></span> Failed
+            <span class="w-3 h-2 rounded-sm inline-block" style="background:hsl(145,45%,18%)"></span> Failed
           </span>
           <span v-if="yAxis === 'duration'" class="text-xs text-gray-600">(split by pass/fail ratio)</span>
         </template>
         <template v-else>
           <span class="flex items-center gap-1.5 text-xs text-gray-400">
-            <span class="w-3 h-2 rounded-sm inline-block" style="background:linear-gradient(90deg,#22c55e,#ef4444)"></span>
+            <span class="w-3 h-2 rounded-sm inline-block" style="background:linear-gradient(90deg,hsl(145,65%,56%),hsl(145,28%,18%))"></span>
             Low → High failure %
           </span>
         </template>
@@ -237,13 +237,35 @@ function isDaily(bar: BarEntry): boolean {
 }
 
 /**
- * In date mode: fill every calendar day in range, inserting null for days with no runs (gap columns).
- * In runs mode: reverse runsData so oldest run is on the left.
+ * In date mode: show the last run per calendar day (gaps for idle days).
+ * Falls back to daily summaries only when no runsData is provided.
+ * In runs mode: show every run (oldest first, newest on right).
  */
 const displayBars = computed((): (BarEntry | null)[] => {
   if (effectiveXMode.value === 'runs') {
     return (props.runsData ?? []).slice().reverse()
   }
+  // Date mode: prefer per-run data — pick last run per date for a cleaner view
+  if (props.runsData && props.runsData.length > 0) {
+    // runsData is newest-first; first entry per date = the last run of that day
+    const byDate = new Map<string, TestRunSummary>()
+    for (const run of props.runsData) {
+      const dateKey = new Date(run.startedAt).toISOString().slice(0, 10)
+      if (!byDate.has(dateKey)) byDate.set(dateKey, run)
+    }
+    const dates = [...byDate.keys()].sort()
+    if (dates.length === 0) return []
+    const firstMs = new Date(dates[0]).getTime()
+    const lastMs = new Date(dates[dates.length - 1]).getTime()
+    const MS_PER_DAY = 86_400_000
+    const result: (BarEntry | null)[] = []
+    for (let ms = firstMs; ms <= lastMs; ms += MS_PER_DAY) {
+      const key = new Date(ms).toISOString().slice(0, 10)
+      result.push(byDate.get(key) ?? null)
+    }
+    return result
+  }
+  // Fallback to daily summaries
   if (props.data.length === 0) return []
   const byDate = new Map(props.data.map(d => [d.date, d]))
   const firstMs = new Date(props.data[0].date).getTime()
@@ -307,9 +329,12 @@ function groupHealthyColor(idx: number): string { return `hsl(${groupBaseHue(idx
 function groupColor(name: string, totalTests: number, failedTests: number): string {
   const idx = groupNames.value.indexOf(name)
   const hue = groupBaseHue(idx)
-  if (totalTests === 0) return `hsl(${hue}, 20%, 30%)`
+  if (totalTests === 0) return `hsl(${hue}, 20%, 25%)`
   const failRate = Math.min(1, failedTests / totalTests)
-  return `hsl(${Math.round(hue * (1 - failRate))}, ${Math.round(70 - failRate * 40)}%, ${Math.round(48 - failRate * 20)}%)`
+  // Fail = dark of same hue; healthy = vivid. No red shift.
+  const sat = Math.round(70 - failRate * 45)
+  const lig = Math.round(52 - failRate * 34)
+  return `hsl(${hue},${sat}%,${lig}%)`
 }
 
 const legendGroups = computed(() => {
@@ -346,17 +371,20 @@ function groupSegments(bar: BarEntry): BarSegment[] {
 function failureRateColor(totalTests: number, failedTests: number): string {
   if (totalTests === 0) return '#4b5563'
   const rate = failedTests / totalTests
-  if (rate <= 0) return '#22c55e'
-  if (rate >= 1) return '#ef4444'
-  if (rate < 0.5) {
-    const t = rate / 0.5
-    return `rgb(${Math.round(0x22 + t * (0xf5 - 0x22))},${Math.round(0xc5 + t * (0x9e - 0xc5))},${Math.round(0x5e + t * (0x0b - 0x5e))})`
-  }
-  const t = (rate - 0.5) / 0.5
-  return `rgb(${Math.round(0xf5 + t * (0xef - 0xf5))},${Math.round(0x9e + t * (0x44 - 0x9e))},${Math.round(0x0b + t * (0x44 - 0x0b))})`
+  // Healthy = light vivid green (hsl 145), high failure = dark muted same hue
+  const sat = Math.round(65 - rate * 38)
+  const lig = Math.round(56 - rate * 38)
+  return `hsl(145,${sat}%,${lig}%)`
 }
 
 // ── X axis ────────────────────────────────────────────────────────────────────
+
+/** Returns the ISO date string (YYYY-MM-DD) for any bar, regardless of type. */
+function barDateStr(bar: BarEntry): string {
+  return isDaily(bar)
+    ? (bar as TestDailySummary).date
+    : new Date((bar as TestRunSummary).startedAt).toISOString().slice(0, 10)
+}
 
 function showBarLabel(i: number): boolean {
   const n = displayBars.value.length
@@ -369,11 +397,7 @@ function showBarLabel(i: number): boolean {
 function barLabel(i: number): string {
   const bar = displayBars.value[i]
   if (!bar) return ''
-  if (!isDaily(bar)) {
-    const d = new Date((bar as TestRunSummary).startedAt)
-    return `${MONTH_NAMES[d.getMonth()]} ${d.getDate()}`
-  }
-  const parts = (bar as TestDailySummary).date.split('-')
+  const parts = barDateStr(bar).split('-')
   return parts.length < 3 ? '' : parseInt(parts[2]).toString()
 }
 
@@ -392,7 +416,7 @@ const xAxisMarkers = computed((): XMarker[] => {
     for (let i = 0; i < n; i++) {
       const bar = bars[i]
       if (!bar) continue
-      const dateStr = new Date((bar as TestRunSummary).startedAt).toISOString().slice(0, 10)
+      const dateStr = barDateStr(bar)
       if (dateStr !== lastDate) {
         lastDate = dateStr
         const x = padLeft + i * step
@@ -410,7 +434,7 @@ const xAxisMarkers = computed((): XMarker[] => {
   for (let i = 0; i < n; i++) {
     const bar = bars[i]
     if (!bar) continue
-    const parts = (bar as TestDailySummary).date.split('-')
+    const parts = barDateStr(bar).split('-')
     if (parts.length < 3) continue
     if (parseInt(parts[2]) === 1) {
       const x = padLeft + i * step
@@ -421,17 +445,16 @@ const xAxisMarkers = computed((): XMarker[] => {
   // Always show start month unless crowded
   const startX = padLeft
   if (firstBoundaryX - startX > MIN_LABEL_SPACING && bars[0]) {
-    const parts = (bars[0] as TestDailySummary).date.split('-')
+    const parts = barDateStr(bars[0]!).split('-')
     markers.unshift({ x: startX, label: monthName(parts[1]), isBoundary: false })
   }
   // Monday week ticks (only for ranges ≤45 days)
-  // Build a dayOfWeek lookup once to avoid allocating a Date per bar
   if (n <= 45) {
     const dayOfWeekCache = new Map<string, number>()
     for (let i = 0; i < n; i++) {
       const bar = bars[i]
       if (!bar) continue
-      const date = (bar as TestDailySummary).date
+      const date = barDateStr(bar)
       const parts = date.split('-')
       if (parseInt(parts[2]) === 1) continue // already a month boundary
       let dow = dayOfWeekCache.get(date)
