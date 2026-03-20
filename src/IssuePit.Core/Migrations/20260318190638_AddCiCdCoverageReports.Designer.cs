@@ -3,6 +3,7 @@ using System;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace IssuePit.Core.Migrations
 {
     [DbContext(typeof(IssuePitDbContext))]
-    partial class IssuePitDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260318190638_AddCiCdCoverageReports")]
+    partial class AddCiCdCoverageReports
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -127,9 +130,6 @@ namespace IssuePit.Core.Migrations
 
                     b.Property<bool>("IsDisabled")
                         .HasColumnType("boolean");
-
-                    b.Property<int>("PushPolicy")
-                        .HasColumnType("integer");
 
                     b.HasKey("AgentId", "ProjectId");
 
@@ -1996,91 +1996,6 @@ namespace IssuePit.Core.Migrations
                     b.ToTable("runtime_configurations");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.SimilarIssuePair", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("DetectedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("IssueId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Reason")
-                        .HasColumnType("text");
-
-                    b.Property<float>("Score")
-                        .HasColumnType("real");
-
-                    b.Property<Guid>("SimilarIssueId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IssueId");
-
-                    b.HasIndex("SimilarIssueId");
-
-                    b.ToTable("similar_issue_pairs");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.SimilarIssueRun", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("StartedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Summary")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProjectId");
-
-                    b.ToTable("similar_issue_runs");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.SimilarIssueRunLog", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Level")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Message")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("RunId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("Timestamp")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("RunId");
-
-                    b.ToTable("similar_issue_run_logs");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.Skill", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3307,47 +3222,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("Organization");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.SimilarIssuePair", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Issue", "Issue")
-                        .WithMany()
-                        .HasForeignKey("IssueId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("IssuePit.Core.Entities.Issue", "SimilarIssue")
-                        .WithMany()
-                        .HasForeignKey("SimilarIssueId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Issue");
-
-                    b.Navigation("SimilarIssue");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.SimilarIssueRun", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Project");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.SimilarIssueRunLog", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.SimilarIssueRun", "Run")
-                        .WithMany("Logs")
-                        .HasForeignKey("RunId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Run");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.Skill", b =>
                 {
                     b.HasOne("IssuePit.Core.Entities.Organization", "Organization")
@@ -3567,11 +3441,6 @@ namespace IssuePit.Core.Migrations
             modelBuilder.Entity("IssuePit.Core.Entities.ProjectProperty", b =>
                 {
                     b.Navigation("Values");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.SimilarIssueRun", b =>
-                {
-                    b.Navigation("Logs");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.Team", b =>

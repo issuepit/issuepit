@@ -274,6 +274,114 @@
         </div>
       </template>
 
+      <!-- Coverage Tab -->
+      <template v-else-if="activeTab === 'Coverage'">
+        <!-- Summary cards for latest coverage -->
+        <template v-if="coverageRuns.length">
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <p class="text-xs text-gray-500 mb-1">Line Coverage</p>
+              <p class="text-2xl font-semibold" :class="coverageRateClass(coverageRuns[0].lineRate)">
+                {{ formatCoverageRate(coverageRuns[0].lineRate) }}
+              </p>
+              <p class="text-xs text-gray-600 mt-0.5">{{ coverageRuns[0].linesCovered }} / {{ coverageRuns[0].linesValid }} lines</p>
+            </div>
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <p class="text-xs text-gray-500 mb-1">Branch Coverage</p>
+              <p class="text-2xl font-semibold" :class="coverageRateClass(coverageRuns[0].branchRate)">
+                {{ formatCoverageRate(coverageRuns[0].branchRate) }}
+              </p>
+              <p class="text-xs text-gray-600 mt-0.5">{{ coverageRuns[0].branchesCovered }} / {{ coverageRuns[0].branchesValid }} branches</p>
+            </div>
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <p class="text-xs text-gray-500 mb-1">Latest Commit</p>
+              <p class="text-lg font-semibold text-gray-300 font-mono">{{ formatCommit(coverageRuns[0].commitSha) }}</p>
+              <p class="text-xs text-gray-600 mt-0.5">{{ coverageRuns[0].branch || 'no branch' }}</p>
+            </div>
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <p class="text-xs text-gray-500 mb-1">Reports</p>
+              <p class="text-2xl font-semibold text-white">{{ coverageRuns[0].reportCount }}</p>
+              <p class="text-xs text-gray-600 mt-0.5">artifact(s)</p>
+            </div>
+          </div>
+
+          <!-- Coverage trend chart -->
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
+            <h3 class="text-sm font-medium text-gray-300 mb-4">Coverage Trend (last {{ coverageRuns.length }} runs)</h3>
+            <div class="relative h-32 flex items-end gap-1 overflow-x-auto">
+              <div
+                v-for="run in [...coverageRuns].reverse()"
+                :key="run.runId"
+                class="flex-1 min-w-[12px] max-w-[32px] flex flex-col-reverse gap-0.5 cursor-pointer group"
+                :title="`${formatCommit(run.commitSha)} · Line: ${formatCoverageRate(run.lineRate)}, Branch: ${formatCoverageRate(run.branchRate)}`"
+                @click="navigateTo(`/projects/${projectId}/runs/cicd/${run.runId}`)">
+                <!-- Line coverage bar -->
+                <div
+                  class="w-full rounded-sm transition-opacity group-hover:opacity-80"
+                  :style="{ height: Math.max(2, Math.round(run.lineRate * 128)) + 'px', background: coverageBgColor(run.lineRate) }" />
+              </div>
+            </div>
+            <div class="flex justify-between mt-2 text-xs text-gray-600">
+              <span>oldest</span>
+              <span class="flex items-center gap-4">
+                <span class="flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-sm bg-green-500" />≥80%</span>
+                <span class="flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-sm bg-yellow-500" />60–79%</span>
+                <span class="flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-sm bg-red-500" />&lt;60%</span>
+              </span>
+              <span>latest</span>
+            </div>
+          </div>
+
+          <!-- Coverage run history table -->
+          <div class="rounded-xl border border-gray-800 overflow-hidden">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-900">
+                <tr>
+                  <th class="text-left px-4 py-3 text-gray-400 font-medium">Run</th>
+                  <th class="text-left px-4 py-3 text-gray-400 font-medium">Branch</th>
+                  <th class="text-right px-4 py-3 text-gray-400 font-medium">Line Coverage</th>
+                  <th class="text-right px-4 py-3 text-gray-400 font-medium">Branch Coverage</th>
+                  <th class="text-right px-4 py-3 text-gray-400 font-medium">Lines</th>
+                  <th class="text-right px-4 py-3 text-gray-400 font-medium">Branches</th>
+                  <th class="text-left px-4 py-3 text-gray-400 font-medium">Started</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-800">
+                <tr v-for="run in coverageRuns" :key="run.runId"
+                  class="hover:bg-gray-900/50 transition-colors cursor-pointer"
+                  @click="navigateTo(`/projects/${projectId}/runs/cicd/${run.runId}`)">
+                  <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ formatCommit(run.commitSha) }}</td>
+                  <td class="px-4 py-3 text-gray-400 font-mono text-xs">{{ run.branch || '—' }}</td>
+                  <td class="px-4 py-3 text-right font-medium" :class="coverageRateClass(run.lineRate)">
+                    {{ formatCoverageRate(run.lineRate) }}
+                  </td>
+                  <td class="px-4 py-3 text-right font-medium" :class="coverageRateClass(run.branchRate)">
+                    {{ formatCoverageRate(run.branchRate) }}
+                  </td>
+                  <td class="px-4 py-3 text-right text-gray-400 text-xs">
+                    {{ run.linesValid > 0 ? `${run.linesCovered} / ${run.linesValid}` : '—' }}
+                  </td>
+                  <td class="px-4 py-3 text-right text-gray-400 text-xs">
+                    {{ run.branchesValid > 0 ? `${run.branchesCovered} / ${run.branchesValid}` : '—' }}
+                  </td>
+                  <td class="px-4 py-3 text-gray-500 text-xs"><DateDisplay :date="run.startedAt" mode="auto" /></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
+
+        <!-- Empty state -->
+        <div v-else class="flex flex-col items-center justify-center py-16 text-center">
+          <svg class="w-12 h-12 text-gray-700 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+              d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+          </svg>
+          <p class="text-gray-400 font-medium">No coverage data yet</p>
+          <p class="text-gray-600 text-sm mt-1">Coverage reports are collected automatically from Cobertura XML artifacts (<code>coverage.cobertura.xml</code>, <code>coverage.xml</code>) after CI/CD runs complete.</p>
+        </div>
+      </template>
+
       <!-- Compare Tab -->
       <template v-else-if="activeTab === 'Compare'">
         <!-- Run pickers -->
@@ -668,7 +776,7 @@
 </template>
 
 <script setup lang="ts">
-import type { TestRunSummary, TestStats, TestCaseHistoryEntry, TestRunCompareResult } from '~/types'
+import type { TestRunSummary, TestStats, TestCaseHistoryEntry, TestRunCompareResult, CoverageRunSummary } from '~/types'
 import { useProjectsStore } from '~/stores/projects'
 import type { MultiSelectOption } from '~/components/MultiSelect.vue'
 
@@ -679,7 +787,7 @@ const projectsStore = useProjectsStore()
 
 const api = useApi()
 
-const tabs = ['Overview', 'Tests', 'Flaky', 'Compare'] as const
+const tabs = ['Overview', 'Tests', 'Flaky', 'Coverage', 'Compare'] as const
 type Tab = typeof tabs[number]
 
 function tabFromQuery(q: unknown): Tab {
@@ -712,9 +820,13 @@ watch(branchFilters, (branches) => {
 }, { deep: true })
 const searchQuery = ref('')
 
-const loading = ref(false)
+// Start as true so the loading spinner is present on initial render.
+// This allows E2E tests (and users) to reliably wait for the spinner to
+// disappear before interacting with tab content.
+const loading = ref(true)
 const runSummaries = ref<TestRunSummary[]>([])
 const allTests = ref<TestStats[]>([])
+const coverageRuns = ref<CoverageRunSummary[]>([])
 
 const selectedTest = ref<TestStats | null>(null)
 const testHistoryLoading = ref(false)
@@ -752,6 +864,22 @@ function failRateClass(rate: number) {
   if (rate >= 0.5) return 'text-red-400'
   if (rate > 0) return 'text-yellow-400'
   return 'text-green-400'
+}
+
+function formatCoverageRate(rate: number): string {
+  return `${Math.round(rate * 100)}%`
+}
+
+function coverageRateClass(rate: number): string {
+  if (rate >= 0.8) return 'text-green-400'
+  if (rate >= 0.6) return 'text-yellow-400'
+  return 'text-red-400'
+}
+
+function coverageBgColor(rate: number): string {
+  if (rate >= 0.8) return '#22c55e'
+  if (rate >= 0.6) return '#eab308'
+  return '#ef4444'
 }
 
 function outcomeClass(name: string) {
@@ -811,12 +939,14 @@ async function reload() {
   try {
     const branchParams = branchFilters.value.map(b => `branch=${encodeURIComponent(b)}`).join('&')
     const branchSep = branchParams ? `&${branchParams}` : ''
-    const [runs, tests] = await Promise.all([
+    const [runs, tests, coverage] = await Promise.all([
       api.get<TestRunSummary[]>(`/api/projects/${projectId}/test-history/runs?take=50${branchSep}`),
       api.get<TestStats[]>(`/api/projects/${projectId}/test-history/tests?take=500${branchSep}`),
+      api.get<CoverageRunSummary[]>(`/api/projects/${projectId}/test-history/coverage/runs?take=50${branchSep}`).catch(() => [] as CoverageRunSummary[]),
     ])
     runSummaries.value = runs
     allTests.value = tests
+    coverageRuns.value = coverage
   }
   finally {
     loading.value = false

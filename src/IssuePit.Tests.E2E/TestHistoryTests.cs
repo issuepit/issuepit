@@ -60,6 +60,184 @@ public class TestHistoryTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// Minimal Cobertura XML file content used for seeding coverage data in tests.
+    /// Represents 85% line coverage and 72% branch coverage across 200 lines and 50 branches.
+    /// </summary>
+    private const string MinimalCobertura = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <coverage line-rate="0.85" branch-rate="0.72" version="1.9" timestamp="1700000000"
+                  lines-covered="170" lines-valid="200" branches-covered="36" branches-valid="50">
+          <sources><source>.</source></sources>
+          <packages>
+            <package name="DummyProject" line-rate="0.85" branch-rate="0.72" complexity="10">
+              <classes>
+                <class name="DummyProject.DummyClass" filename="DummyClass.cs" line-rate="0.85" branch-rate="0.72">
+                  <methods>
+                    <method name="DummyMethod" signature="()" line-rate="1" branch-rate="1">
+                      <lines>
+                        <line number="10" hits="1" branch="false" />
+                        <line number="11" hits="1" branch="false" />
+                      </lines>
+                    </method>
+                  </methods>
+                </class>
+              </classes>
+            </package>
+          </packages>
+        </coverage>
+        """;
+
+    /// <summary>
+    /// Imports a Cobertura XML coverage file for the given project and returns the synthetic run ID.
+    /// </summary>
+    private async Task<string> ImportCoverageAsync(HttpClient client, string projectId)
+    {
+        using var form = new MultipartFormDataContent();
+        var fileBytes = Encoding.UTF8.GetBytes(MinimalCobertura);
+        var fileContent = new ByteArrayContent(fileBytes);
+        fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/xml");
+        form.Add(fileContent, "file", "coverage.cobertura.xml");
+
+        var resp = await client.PostAsync($"/api/projects/{projectId}/test-history/coverage/import", form);
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        var body = await resp.Content.ReadFromJsonAsync<JsonElement>();
+        return body.GetProperty("runId").GetString()!;
+    }
+
+    /// <summary>
+    /// Verifies that the coverage import API endpoint stores the coverage data and that it
+    /// is then returned by the coverage runs summary endpoint.
+    /// </summary>
+    [Fact]
+    public async Task Api_CoverageImport_StoresCoverageData()
+    {
+        var (apiClient, projectId, _, _) = await SetupProjectAsync();
+        using var _ = apiClient;
+
+        // Import a Cobertura XML file.
+        var runId = await ImportCoverageAsync(apiClient, projectId);
+        Assert.False(string.IsNullOrEmpty(runId), "Coverage import should return a run ID");
+
+        // Verify coverage data is returned by the coverage runs endpoint.
+        var coverageResp = await apiClient.GetAsync($"/api/projects/{projectId}/test-history/coverage/runs");
+        Assert.Equal(HttpStatusCode.OK, coverageResp.StatusCode);
+        var coverageRuns = await coverageResp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(JsonValueKind.Array, coverageRuns.ValueKind);
+        Assert.True(coverageRuns.GetArrayLength() > 0,
+            "Coverage runs endpoint should return at least one row after import");
+
+        var first = coverageRuns.EnumerateArray().First();
+        Assert.Equal(runId, first.GetProperty("runId").GetString());
+        Assert.True(first.GetProperty("lineRate").GetDouble() > 0.8,
+            "Line rate should be approximately 0.85 from the imported Cobertura file");
+        Assert.True(first.GetProperty("branchRate").GetDouble() > 0.6,
+            "Branch rate should be approximately 0.72 from the imported Cobertura file");
+        Assert.Equal(170, first.GetProperty("linesCovered").GetInt32());
+        Assert.Equal(200, first.GetProperty("linesValid").GetInt32());
+        Assert.Equal(36, first.GetProperty("branchesCovered").GetInt32());
+        Assert.Equal(50, first.GetProperty("branchesValid").GetInt32());
+    }
+
+    /// <summary>
+    /// Verifies that the Test History page Coverage tab displays imported coverage data.
+    /// </summary>
+    [Fact]
+    public async Task Ui_TestHistoryPage_ShowsCoverageInCoverageTab()
+    {
+        if (FrontendUrl is null)
+            throw new InvalidOperationException("FRONTEND_URL is not set. This test requires a running frontend.");
+
+        var (apiClient, projectId, username, password) = await SetupProjectAsync();
+        using var _ = apiClient;
+
+        // Import coverage data so the Coverage tab has something to display.
+        await ImportCoverageAsync(apiClient, projectId);
+
+        var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
+        context.SetDefaultTimeout(E2ETimeouts.Navigation);
+        var page = await context.NewPageAsync();
+
+        try
+        {
+            await new LoginPage(page).LoginAsync(username, password);
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
+
+            var historyPage = new TestHistoryPage(page);
+            // Navigate directly to the Coverage tab URL to avoid the router.replace() race that
+            // occurs when clicking a tab after Overview has already loaded.
+            await historyPage.GotoCoverageAsync(projectId);
+
+            // The Coverage tab should show coverage data, not the empty state.
+            Assert.True(await historyPage.HasCoverageDataAsync(),
+                "Coverage tab should display coverage data after a Cobertura XML has been imported");
+            Assert.False(await historyPage.IsCoverageTabEmptyAsync(),
+                "Coverage tab should not show empty state when coverage data has been imported");
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
+
+    /// <summary>
+    /// Verifies that coverage reports are automatically collected from Cobertura XML artifacts
+    /// produced by a CI/CD run that uses the dummy <c>ci.yml</c> workflow.
+    /// This exercises the end-to-end pipeline: act runs the workflow, uploads a
+    /// <c>coverage-report</c> artifact containing a Cobertura XML file, and the CiCdWorker
+    /// parses and stores the coverage data. The test then calls the coverage API to confirm
+    /// the data is accessible.
+    /// </summary>
+    [Fact]
+    public async Task Api_CiCdRun_WithCoberturaArtifact_StoresCoverageData()
+    {
+        // Requires the dummy CI/CD repo to be available (set by AspireFixture when Docker is present).
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CICD_E2E_REPO_PATH")))
+            throw new InvalidOperationException("CICD_E2E_REPO_PATH is not set. This test requires the Docker runtime with the dummy CI/CD repo.");
+
+        var (apiClient, projectId, _, _) = await SetupProjectAsync();
+        using var _ = apiClient;
+
+        // Trigger a CI/CD run using ci.yml which generates both TRX and coverage artifacts.
+        var triggerResp = await apiClient.PostAsJsonAsync("/api/cicd-runs/trigger", new
+        {
+            projectId = Guid.Parse(projectId),
+            commitSha = "e2e-coverage-test",
+            eventName = "push",
+            branch = "main",
+            workflow = "ci.yml",
+            runtimeOverride = "Docker",
+        });
+        Assert.Equal(HttpStatusCode.Accepted, triggerResp.StatusCode);
+        var triggerBody = await triggerResp.Content.ReadFromJsonAsync<JsonElement>();
+        var runId = triggerBody.GetProperty("runId").GetString()!;
+
+        // Wait for the run to reach a terminal state.
+        await CiCdTestPollingHelpers.WaitForRunCompletionAsync(apiClient, runId, TimeSpan.FromMinutes(5));
+
+        // Poll for coverage data — the worker processes coverage after run completion.
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        JsonElement coverageRuns = default;
+        while (DateTime.UtcNow < deadline)
+        {
+            var resp = await apiClient.GetAsync($"/api/projects/{projectId}/test-history/coverage/runs");
+            if (resp.IsSuccessStatusCode)
+            {
+                coverageRuns = await resp.Content.ReadFromJsonAsync<JsonElement>();
+                if (coverageRuns.GetArrayLength() > 0) break;
+            }
+            await Task.Delay(2000);
+        }
+
+        Assert.True(coverageRuns.ValueKind == JsonValueKind.Array && coverageRuns.GetArrayLength() > 0,
+            $"Coverage runs endpoint should return at least one row after CI/CD run {runId} with coverage artifact");
+
+        var first = coverageRuns.EnumerateArray().First();
+        Assert.True(first.GetProperty("lineRate").GetDouble() > 0,
+            "Line coverage rate should be greater than 0 after processing the Cobertura artifact");
+    }
+
+    /// <summary>
     /// Minimal TRX file content used for seeding test data in UI tests.
     /// Contains a single passing test (DummyTest_Passes) from DummyProject.DummyTests.
     /// </summary>

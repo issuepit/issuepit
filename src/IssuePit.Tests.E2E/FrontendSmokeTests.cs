@@ -163,10 +163,10 @@ public class FrontendSmokeTests : IAsyncLifetime
         // Save the selection
         await ciCd.SaveAsync();
 
-        // Reload and verify the selection persists via localStorage
-        await page.ReloadAsync();
+        // Navigate back to the page to verify the selection persists via localStorage
+        await ciCd.GotoAsync();
         await ciCd.WaitForLoadAsync();
-        Assert.True(await ciCd.IsImageSelectedAsync("Runner"), "Runner image selection should persist after page reload");
+        Assert.True(await ciCd.IsImageSelectedAsync("Runner"), "Runner image selection should persist after page navigation");
     }
 
     [Fact]
@@ -213,7 +213,7 @@ public class FrontendSmokeTests : IAsyncLifetime
 
         // Save and verify persistence via localStorage
         await ciCd.SaveActContainerAsync();
-        await page.ReloadAsync();
+        await ciCd.GotoAsync();
         await ciCd.WaitForLoadAsync();
 
         var selected = await ciCd.GetSelectedActContainerImageAsync();
