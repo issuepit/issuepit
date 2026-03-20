@@ -18,8 +18,8 @@ public class RunnerCommandBuilderTests
             Model = model,
         };
 
-    private static Issue MakeIssue(string title = "Fix the bug", string? body = null) =>
-        new() { Id = Guid.NewGuid(), Title = title, Body = body };
+    private static Issue MakeIssue(string title = "Fix the bug", string? body = null, int number = 0) =>
+        new() { Id = Guid.NewGuid(), Title = title, Body = body, Number = number };
 
     [Fact]
     public void BuildArgs_NoRunnerType_ReturnsEmpty()
@@ -33,10 +33,11 @@ public class RunnerCommandBuilderTests
     public void BuildArgs_OpenCode_ContainsTask()
     {
         var agent = MakeAgent(RunnerType.OpenCode);
-        var issue = MakeIssue("Fix the bug");
+        var issue = MakeIssue("Fix the bug", number: 7);
         var args = RunnerCommandBuilder.BuildArgs(agent, issue);
         Assert.StartsWith("run", args);
         Assert.Contains("Fix the bug", args);
+        Assert.Contains("#7", args);
     }
 
     [Fact]
@@ -169,11 +170,21 @@ public class RunnerCommandBuilderTests
     [Fact]
     public void BuildTaskPrompt_NoComments_DoesNotIncludeCommentsSection()
     {
-        var issue = MakeIssue("Fix the bug", "Body text.");
+        var issue = MakeIssue("Fix the bug", "Body text.", number: 5);
         var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue);
+        Assert.Contains("Issue #5", prompt);
         Assert.Contains("Fix the bug", prompt);
         Assert.Contains("Body text.", prompt);
         Assert.DoesNotContain("## Comments", prompt);
+    }
+
+    [Fact]
+    public void BuildTaskPrompt_AlwaysContainsCommitInstructions()
+    {
+        var issue = MakeIssue("Fix the bug", number: 1);
+        var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue);
+        Assert.Contains("Commit your changes after each meaningful step", prompt);
+        Assert.Contains("final commit", prompt);
     }
 
     [Fact]
