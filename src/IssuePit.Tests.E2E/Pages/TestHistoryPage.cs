@@ -59,6 +59,28 @@ public class TestHistoryPage(IPage page)
             .WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Navigation });
     }
 
+    /// <summary>Returns the Analytics tab button.</summary>
+    public ILocator AnalyticsTab => page.Locator("button:has-text('Analytics')");
+
+    /// <summary>
+    /// Navigates directly to the Analytics tab URL and waits for its content to appear.
+    /// </summary>
+    public async Task GotoAnalyticsAsync(string projectId)
+    {
+        await page.GotoAsync($"/projects/{projectId}/runs/test-history?tab=Analytics");
+        // Wait for either the slowest-tests heading or the empty state message.
+        await page.Locator("text=Duration Analytics").Or(page.Locator("text=No analytics data yet"))
+            .WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.NavigationLong });
+    }
+
+    /// <summary>Clicks the Analytics tab and waits for its content to appear.</summary>
+    public async Task ClickAnalyticsTabAsync()
+    {
+        await AnalyticsTab.ClickAsync();
+        await page.Locator("text=Duration Analytics").Or(page.Locator("text=No analytics data yet"))
+            .WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Navigation });
+    }
+
     /// <summary>Clicks the Coverage tab and waits for its content to appear.</summary>
     public async Task ClickCoverageTabAsync()
     {

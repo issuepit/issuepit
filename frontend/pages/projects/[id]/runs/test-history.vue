@@ -607,6 +607,221 @@
           <p class="text-sm">Select two runs above and click <strong class="text-gray-400">Compare Runs</strong></p>
         </div>
       </template>
+
+      <!-- Analytics Tab -->
+      <template v-else-if="activeTab === 'Analytics'">
+        <template v-if="runSummaries.length || allTests.length">
+
+          <!-- Duration Analytics ──────────────────────────────────────── -->
+          <div class="mb-8">
+            <h3 class="text-sm font-semibold text-gray-200 mb-1">Duration Analytics</h3>
+            <p class="text-xs text-gray-500 mb-4">Slowest tests by average duration — potential CI bottlenecks. Tests that have become significantly faster than their historic baseline may indicate broken or bypassed test conditions.</p>
+
+            <!-- Slowest tests table -->
+            <div v-if="slowestTests.length" class="rounded-xl border border-gray-800 overflow-hidden mb-6">
+              <table class="w-full text-sm">
+                <thead class="bg-gray-900">
+                  <tr>
+                    <th class="text-left px-4 py-3 text-gray-400 font-medium">#</th>
+                    <th class="text-left px-4 py-3 text-gray-400 font-medium">Test</th>
+                    <th class="text-right px-4 py-3 text-gray-400 font-medium">Avg Duration</th>
+                    <th class="text-right px-4 py-3 text-gray-400 font-medium">Runs</th>
+                    <th class="text-right px-4 py-3 text-gray-400 font-medium">Fail Rate</th>
+                    <th class="text-left px-4 py-3 text-gray-400 font-medium">Last Result</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-800">
+                  <tr v-for="(test, idx) in slowestTests" :key="test.fullName"
+                    class="hover:bg-gray-900/50 transition-colors cursor-pointer"
+                    @click="openTestDetail(test)">
+                    <td class="px-4 py-3 text-gray-600 text-xs">{{ idx + 1 }}</td>
+                    <td class="px-4 py-3 max-w-xs">
+                      <p class="text-xs text-gray-300 font-mono truncate" :title="test.fullName">{{ test.methodName || test.fullName }}</p>
+                      <p v-if="test.className" class="text-xs text-gray-600 font-mono truncate">{{ test.className }}</p>
+                    </td>
+                    <td class="px-4 py-3 text-right">
+                      <span class="text-yellow-400 font-medium text-xs">{{ formatDuration(test.avgDurationMs) }}</span>
+                    </td>
+                    <td class="px-4 py-3 text-right text-gray-400 text-xs">{{ test.totalRuns }}</td>
+                    <td class="px-4 py-3 text-right text-xs">
+                      <span v-if="test.totalRuns" :class="failRateClass(test.failedRuns / test.totalRuns)">
+                        {{ Math.round((test.failedRuns / test.totalRuns) * 100) }}%
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-xs">
+                      <span :class="outcomeClass(test.lastOutcomeName)">{{ test.lastOutcomeName }}</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Suite duration trend chart -->
+            <div v-if="runSummaries.length > 1" class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <h4 class="text-xs font-medium text-gray-400 mb-3">Total Suite Duration per Run (oldest → latest)</h4>
+              <div class="relative flex items-end gap-px overflow-x-auto" :style="{ height: SUITE_CHART_HEIGHT + 16 + 'px' }">
+                <div
+                  v-for="run in [...runSummaries].reverse()"
+                  :key="run.runId"
+                  class="flex-1 min-w-[10px] max-w-[28px] flex flex-col-reverse cursor-pointer group"
+                  :title="`${formatCommit(run.commitSha)} · ${formatDuration(run.durationMs)}`"
+                  @click="navigateTo(`/projects/${projectId}/runs/cicd/${run.runId}?tab=tests`)">
+                  <div
+                    class="w-full rounded-sm bg-brand-500/70 transition-opacity group-hover:opacity-90"
+                    :style="{ height: suiteDurationBarHeight(run.durationMs) + 'px' }" />
+                </div>
+              </div>
+              <div class="flex justify-between mt-1 text-xs text-gray-600">
+                <span>oldest</span>
+                <span>latest</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Test Delta & Volatility ──────────────────────────────────── -->
+          <div class="mb-8">
+            <h3 class="text-sm font-semibold text-gray-200 mb-1">Test Delta & Volatility</h3>
+            <p class="text-xs text-gray-500 mb-4">Track total test count and skipped tests across runs. A sudden drop in total tests may indicate tests were silently removed. Use the <button class="text-brand-400 hover:text-brand-300 underline underline-offset-2" @click="activeTab = 'Compare'">Compare tab</button> to see exact added/removed test names between any two runs.</p>
+
+            <!-- Test count drops warning banner -->
+            <div
+              v-if="testCountTrend.some(r => r.hasDropWarning)"
+              class="flex items-start gap-3 bg-amber-900/20 border border-amber-700/40 rounded-xl px-4 py-3 mb-4 text-xs text-amber-300">
+              <svg class="w-4 h-4 shrink-0 mt-0.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              </svg>
+              <span>
+                <strong class="text-amber-200">Test count dropped</strong> between some consecutive runs.
+                This may indicate tests were silently removed. Use the Compare tab to identify which test names are missing.
+              </span>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              <!-- Test count trend chart -->
+              <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                <h4 class="text-xs font-medium text-gray-400 mb-3">Total Test Count per Run</h4>
+                <div class="flex items-end gap-px h-24 overflow-x-auto">
+                  <div
+                    v-for="run in [...testCountTrend].reverse()"
+                    :key="run.runId"
+                    class="flex-1 min-w-[10px] max-w-[28px] flex flex-col-reverse cursor-pointer group"
+                    :title="`${formatCommit(run.commitSha)} · ${run.totalTests} tests${run.delta !== null ? (run.delta >= 0 ? ` (+${run.delta})` : ` (${run.delta})`) : ''}`"
+                    @click="navigateTo(`/projects/${projectId}/runs/cicd/${run.runId}?tab=tests`)">
+                    <div
+                      class="w-full rounded-sm transition-opacity group-hover:opacity-90"
+                      :class="run.hasDropWarning ? 'bg-amber-500' : 'bg-blue-500/70'"
+                      :style="{ height: Math.max(2, Math.round((run.totalTests / Math.max(...testCountTrend.map(r => r.totalTests), 1)) * 96)) + 'px' }" />
+                  </div>
+                </div>
+                <div class="flex justify-between mt-1 text-xs text-gray-600">
+                  <span>oldest</span>
+                  <span class="flex items-center gap-3">
+                    <span class="flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-sm bg-blue-500/70" />normal</span>
+                    <span class="flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-sm bg-amber-500" />drop (&gt;5)</span>
+                  </span>
+                  <span>latest</span>
+                </div>
+              </div>
+
+              <!-- Skipped tests trend chart -->
+              <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                <h4 class="text-xs font-medium text-gray-400 mb-3">Skipped Tests per Run</h4>
+                <div class="flex items-end gap-px h-24 overflow-x-auto">
+                  <div
+                    v-for="run in [...runSummaries].reverse()"
+                    :key="run.runId"
+                    class="flex-1 min-w-[10px] max-w-[28px] flex flex-col-reverse cursor-pointer group"
+                    :title="`${formatCommit(run.commitSha)} · ${run.skippedTests} skipped`"
+                    @click="navigateTo(`/projects/${projectId}/runs/cicd/${run.runId}?tab=tests`)">
+                    <div
+                      class="w-full rounded-sm transition-opacity group-hover:opacity-90"
+                      :class="run.skippedTests > 0 ? 'bg-yellow-500/70' : 'bg-gray-700'"
+                      :style="{ height: Math.max(2, skipBarHeight(run.skippedTests)) + 'px' }" />
+                  </div>
+                </div>
+                <div class="flex justify-between mt-1 text-xs text-gray-600">
+                  <span>oldest</span>
+                  <span class="flex items-center gap-1"><span class="inline-block w-2 h-2 rounded-sm bg-yellow-500/70" />skipped</span>
+                  <span>latest</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Reliability & Pass Rate ──────────────────────────────────── -->
+          <div class="mb-8">
+            <h3 class="text-sm font-semibold text-gray-200 mb-1">Reliability & Pass Rate</h3>
+            <p class="text-xs text-gray-500 mb-4">Pass rates broken down by branch and day of week. Low pass rates on specific branches or days can reveal scheduling issues or branch-specific fragility.</p>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              <!-- Pass rate by branch -->
+              <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                <div class="px-4 py-3 border-b border-gray-800">
+                  <h4 class="text-xs font-medium text-gray-400">Pass Rate by Branch</h4>
+                </div>
+                <table class="w-full text-xs">
+                  <thead>
+                    <tr class="border-b border-gray-800">
+                      <th class="text-left px-4 py-2 text-gray-500 font-medium">Branch</th>
+                      <th class="text-right px-4 py-2 text-gray-500 font-medium">Runs</th>
+                      <th class="text-right px-4 py-2 text-gray-500 font-medium">Pass Rate</th>
+                      <th class="text-right px-4 py-2 text-gray-500 font-medium">Failed</th>
+                      <th class="text-right px-4 py-2 text-gray-500 font-medium">Skipped</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-800">
+                    <tr v-for="row in passRateByBranch" :key="row.branch" class="hover:bg-gray-800/40">
+                      <td class="px-4 py-2.5 text-gray-300 font-mono truncate max-w-[140px]" :title="row.branch">{{ row.branch }}</td>
+                      <td class="px-4 py-2.5 text-right text-gray-500">{{ row.runs }}</td>
+                      <td class="px-4 py-2.5 text-right font-medium" :class="failRateClass(1 - row.passRate)">
+                        {{ Math.round(row.passRate * 100) }}%
+                      </td>
+                      <td class="px-4 py-2.5 text-right" :class="row.failed ? 'text-red-400' : 'text-gray-600'">{{ row.failed }}</td>
+                      <td class="px-4 py-2.5 text-right text-yellow-500/70">{{ row.skipped || '—' }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div v-if="!passRateByBranch.length" class="py-6 text-center text-xs text-gray-600">No branch data</div>
+              </div>
+
+              <!-- Pass rate heatmap by day of week -->
+              <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                <h4 class="text-xs font-medium text-gray-400 mb-3">Pass Rate Heatmap — Day of Week</h4>
+                <div class="grid grid-cols-7 gap-1.5">
+                  <div
+                    v-for="day in passRateByDayOfWeek"
+                    :key="day.dayIndex"
+                    :title="day.passRate !== null ? `${day.dayName}: ${Math.round(day.passRate * 100)}% pass rate over ${day.runs} run(s)` : `${day.dayName}: no data`"
+                    :class="['rounded-lg p-2 text-center transition-opacity', heatmapBg(day.passRate)]">
+                    <p class="text-xs font-medium" :class="day.passRate !== null ? 'text-white/90' : 'text-gray-600'">{{ day.dayName }}</p>
+                    <p class="text-xs mt-0.5" :class="day.passRate !== null ? 'text-white/70' : 'text-gray-700'">
+                      {{ day.passRate !== null ? Math.round(day.passRate * 100) + '%' : '—' }}
+                    </p>
+                    <p v-if="day.runs > 0" class="text-xs mt-0.5 text-white/50">{{ day.runs }}r</p>
+                  </div>
+                </div>
+                <div class="mt-3 flex items-center gap-3 text-xs text-gray-600 justify-center">
+                  <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded bg-green-600" />≥95%</span>
+                  <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded bg-green-700/70" />≥80%</span>
+                  <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded bg-yellow-600/70" />≥60%</span>
+                  <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded bg-orange-600/70" />≥40%</span>
+                  <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded bg-red-600/70" />&lt;40%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </template>
+        <!-- Empty state -->
+        <div v-else class="flex flex-col items-center justify-center py-16 text-center">
+          <svg class="w-12 h-12 text-gray-700 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+              d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+          </svg>
+          <p class="text-gray-400 font-medium">No analytics data yet</p>
+          <p class="text-gray-600 text-sm mt-1">Analytics are computed from test runs. Import a TRX file or run CI/CD pipelines to start seeing insights.</p>
+        </div>
+      </template>
     </template>
 
     <!-- Test detail side panel -->
@@ -787,7 +1002,7 @@ const projectsStore = useProjectsStore()
 
 const api = useApi()
 
-const tabs = ['Overview', 'Tests', 'Flaky', 'Coverage', 'Compare'] as const
+const tabs = ['Overview', 'Tests', 'Flaky', 'Coverage', 'Compare', 'Analytics'] as const
 type Tab = typeof tabs[number]
 
 function tabFromQuery(q: unknown): Tab {
@@ -849,6 +1064,105 @@ const latestRunSummary = computed(() => runSummaries.value[0] ?? null)
 const flakyTests = computed(() =>
   allTests.value.filter(t => t.failedRuns > 0 && t.passedRuns > 0),
 )
+
+// ── Analytics tab computed ──────────────────────────────────────────────────
+
+const slowestTests = computed(() =>
+  [...allTests.value]
+    .sort((a, b) => b.avgDurationMs - a.avgDurationMs)
+    .slice(0, 20),
+)
+
+const maxSuiteDurationMs = computed(() =>
+  Math.max(...runSummaries.value.map(r => r.durationMs), 1),
+)
+
+const SUITE_CHART_HEIGHT = 96
+
+function suiteDurationBarHeight(ms: number): number {
+  if (!ms || !maxSuiteDurationMs.value) return 2
+  return Math.max(2, Math.round((ms / maxSuiteDurationMs.value) * SUITE_CHART_HEIGHT))
+}
+
+const testCountTrend = computed(() => {
+  const runs = [...runSummaries.value].reverse() // oldest → newest
+  return runs.map((run, i) => {
+    const prev = i > 0 ? runs[i - 1] : null
+    const delta = prev !== null ? run.totalTests - prev.totalTests : null
+    return {
+      ...run,
+      delta,
+      hasDropWarning: delta !== null && delta < -5,
+    }
+  }).reverse() // back to newest first
+})
+
+const maxSkippedTests = computed(() =>
+  Math.max(...runSummaries.value.map(r => r.skippedTests), 1),
+)
+
+const SKIP_CHART_HEIGHT = 64
+
+function skipBarHeight(count: number): number {
+  if (!count || !maxSkippedTests.value) return 2
+  return Math.max(2, Math.round((count / maxSkippedTests.value) * SKIP_CHART_HEIGHT))
+}
+
+const passRateByBranch = computed(() => {
+  const map = new Map<string, { total: number; passed: number; failed: number; skipped: number; runs: number }>()
+  for (const run of runSummaries.value) {
+    const branch = run.branch || '(no branch)'
+    const entry = map.get(branch) ?? { total: 0, passed: 0, failed: 0, skipped: 0, runs: 0 }
+    entry.total += run.totalTests
+    entry.passed += run.passedTests
+    entry.failed += run.failedTests
+    entry.skipped += run.skippedTests
+    entry.runs++
+    map.set(branch, entry)
+  }
+  return [...map.entries()]
+    .map(([branch, data]) => ({
+      branch,
+      ...data,
+      passRate: data.total > 0 ? data.passed / data.total : 0,
+    }))
+    .sort((a, b) => b.total - a.total)
+})
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
+
+const passRateByDayOfWeek = computed(() => {
+  const days = Array.from({ length: 7 }, (_, i) => ({
+    dayIndex: i,
+    dayName: DAY_NAMES[i],
+    total: 0,
+    passed: 0,
+    failed: 0,
+    runs: 0,
+  }))
+  for (const run of runSummaries.value) {
+    const day = new Date(run.startedAt).getDay()
+    days[day].total += run.totalTests
+    days[day].passed += run.passedTests
+    days[day].failed += run.failedTests
+    days[day].runs++
+  }
+  return days.map(d => ({
+    ...d,
+    passRate: d.total > 0 ? d.passed / d.total : null as number | null,
+  }))
+})
+
+function heatmapBg(rate: number | null): string {
+  if (rate === null) return 'bg-gray-800'
+  if (rate >= 0.95) return 'bg-green-600'
+  if (rate >= 0.8) return 'bg-green-700/70'
+  if (rate >= 0.6) return 'bg-yellow-600/70'
+  if (rate >= 0.4) return 'bg-orange-600/70'
+  return 'bg-red-600/70'
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 
 const filteredTests = computed(() => {
   if (!searchQuery.value) return allTests.value

@@ -535,4 +535,48 @@ public class TestHistoryTests : IAsyncLifetime
             await context.CloseAsync();
         }
     }
+
+    /// <summary>
+    /// Verifies that the Analytics tab on the Test History page renders after importing a TRX file.
+    /// Checks for the presence of the Analytics tab button and key section headings.
+    /// </summary>
+    [Fact]
+    public async Task Ui_TestHistoryPage_AnalyticsTab_Renders()
+    {
+        if (FrontendUrl is null)
+            throw new InvalidOperationException("FRONTEND_URL is not set. This test requires a running frontend.");
+
+        var (apiClient, projectId, username, password) = await SetupProjectAsync();
+        using var _ = apiClient;
+
+        // Import a TRX file so the analytics tab has data to display.
+        await ImportTrxAsync(apiClient, projectId);
+
+        var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
+        context.SetDefaultTimeout(E2ETimeouts.Navigation);
+        var page = await context.NewPageAsync();
+
+        try
+        {
+            await new LoginPage(page).LoginAsync(username, password);
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
+
+            var historyPage = new TestHistoryPage(page);
+            await historyPage.GotoAnalyticsAsync(projectId);
+
+            // The Analytics tab button should be present.
+            Assert.True(await historyPage.AnalyticsTab.CountAsync() > 0,
+                "Analytics tab button should be present on the Test History page");
+
+            // After navigation, either data sections or the empty state should be visible.
+            var hasDurationAnalytics = await page.Locator("text=Duration Analytics").CountAsync() > 0;
+            var hasEmptyState = await page.Locator("text=No analytics data yet").CountAsync() > 0;
+            Assert.True(hasDurationAnalytics || hasEmptyState,
+                "Analytics tab should show either data sections or the empty state after loading");
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
 }
