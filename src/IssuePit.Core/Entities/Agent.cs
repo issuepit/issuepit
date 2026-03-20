@@ -80,4 +80,5 @@ public class Agent
     public ICollection<AgentMcpServer> AgentMcpServers { get; set; } = [];
     public ICollection<AgentProject> AgentProjects { get; set; } = [];
     public ICollection<AgentOrg> AgentOrgs { get; set; } = [];
+    public ICollection<AgentSkill> AgentSkills { get; set; } = [];
 }

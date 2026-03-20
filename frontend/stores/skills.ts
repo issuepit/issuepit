@@ -79,6 +79,50 @@ export const useSkillsStore = defineStore('skills', () => {
     }
   }
 
+  // --- Agent links ---
+
+  async function linkAgent(skillId: string, agentId: string) {
+    error.value = null
+    try {
+      await api.post(`/api/skills/${skillId}/agents/${agentId}`, {})
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to link skill to agent'
+      throw e
+    }
+  }
+
+  async function unlinkAgent(skillId: string, agentId: string) {
+    error.value = null
+    try {
+      await api.del(`/api/skills/${skillId}/agents/${agentId}`)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to unlink skill from agent'
+      throw e
+    }
+  }
+
+  // --- Project links ---
+
+  async function linkProject(skillId: string, projectId: string) {
+    error.value = null
+    try {
+      await api.post(`/api/skills/${skillId}/projects/${projectId}`, {})
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to link skill to project'
+      throw e
+    }
+  }
+
+  async function unlinkProject(skillId: string, projectId: string) {
+    error.value = null
+    try {
+      await api.del(`/api/skills/${skillId}/projects/${projectId}`)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to unlink skill from project'
+      throw e
+    }
+  }
+
   return {
     skills,
     currentSkill,
@@ -89,5 +133,9 @@ export const useSkillsStore = defineStore('skills', () => {
     createSkill,
     updateSkill,
     deleteSkill,
+    linkAgent,
+    unlinkAgent,
+    linkProject,
+    unlinkProject,
   }
 })

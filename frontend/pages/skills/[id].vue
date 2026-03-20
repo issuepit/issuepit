@@ -67,6 +67,18 @@
             <input v-model="form.gitSubDir" type="text" placeholder="skills/python"
               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500" />
           </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">Branch <span class="text-gray-600 font-normal">(optional pin)</span></label>
+              <input v-model="form.gitBranch" type="text" placeholder="main"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">Commit SHA <span class="text-gray-600 font-normal">(optional pin)</span></label>
+              <input v-model="form.gitSha" type="text" placeholder="abc1234"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+          </div>
 
           <!-- Auth Section -->
           <div class="pt-2 border-t border-gray-800">
@@ -162,6 +174,8 @@ const form = ref({
   content: '',
   gitRepoUrl: '',
   gitSubDir: '',
+  gitBranch: '',
+  gitSha: '',
   gitAuthUsername: '',
   gitAuthToken: '',
 })
@@ -175,6 +189,8 @@ onMounted(async () => {
       content: store.currentSkill.content ?? '',
       gitRepoUrl: store.currentSkill.gitRepoUrl ?? '',
       gitSubDir: store.currentSkill.gitSubDir ?? '',
+      gitBranch: store.currentSkill.gitBranch ?? '',
+      gitSha: store.currentSkill.gitSha ?? '',
       gitAuthUsername: store.currentSkill.gitAuthUsername ?? '',
       gitAuthToken: '',
     }
@@ -191,6 +207,8 @@ async function saveSettings() {
       content: form.value.content,
       gitRepoUrl: form.value.gitRepoUrl || undefined,
       gitSubDir: form.value.gitSubDir || undefined,
+      gitBranch: form.value.gitBranch || undefined,
+      gitSha: form.value.gitSha || undefined,
       gitAuthUsername: form.value.gitAuthUsername || undefined,
     })
   } finally {
@@ -208,6 +226,8 @@ async function saveGitSettings() {
       content: form.value.content,
       gitRepoUrl: form.value.gitRepoUrl || undefined,
       gitSubDir: form.value.gitSubDir || undefined,
+      gitBranch: form.value.gitBranch || undefined,
+      gitSha: form.value.gitSha || undefined,
       gitAuthUsername: form.value.gitAuthUsername || undefined,
       gitAuthToken: form.value.gitAuthToken || undefined,
     })

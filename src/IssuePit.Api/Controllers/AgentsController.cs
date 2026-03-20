@@ -29,6 +29,8 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
             .Include(a => a.AgentMcpServers)
             .ThenInclude(am => am.McpServer)
             .Include(a => a.ChildAgents)
+            .Include(a => a.AgentSkills)
+            .ThenInclude(ask => ask.Skill)
             .FirstOrDefaultAsync(a => a.Id == id);
         if (agent is null) return NotFound();
         return Ok(new AgentDetailResponse(
@@ -53,7 +55,11 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
                 am.McpServer.Description,
                 am.McpServer.AllowedTools)).ToList(),
             agent.ChildAgents.Select(c => new ChildAgentDto(
-                c.Id, c.Name, c.Model, c.SystemPrompt, c.AgentType, c.IsActive)).ToList()));
+                c.Id, c.Name, c.Model, c.SystemPrompt, c.AgentType, c.IsActive)).ToList(),
+            agent.AgentSkills.Select(ask => new LinkedSkillDto(
+                ask.Skill.Id,
+                ask.Skill.Name,
+                ask.Skill.Description)).ToList()));
     }
 
     [HttpPost]
@@ -134,6 +140,26 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
         return NoContent();
     }
 
+    [HttpPost("{agentId:guid}/skills/{skillId:guid}")]
+    public async Task<IActionResult> LinkSkill(Guid agentId, Guid skillId)
+    {
+        if (await db.AgentSkills.AnyAsync(x => x.AgentId == agentId && x.SkillId == skillId))
+            return Conflict();
+        db.AgentSkills.Add(new AgentSkill { AgentId = agentId, SkillId = skillId });
+        await db.SaveChangesAsync();
+        return Created($"/api/agents/{agentId}/skills/{skillId}", null);
+    }
+
+    [HttpDelete("{agentId:guid}/skills/{skillId:guid}")]
+    public async Task<IActionResult> UnlinkSkill(Guid agentId, Guid skillId)
+    {
+        var link = await db.AgentSkills.FindAsync(agentId, skillId);
+        if (link is null) return NotFound();
+        db.AgentSkills.Remove(link);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
     private static AgentResponse ToAgentResponse(Agent agent) => new(
         agent.Id,
         agent.OrgId,
@@ -185,7 +211,8 @@ public sealed record AgentDetailResponse(
     bool HasHttpServerPassword,
     DateTime CreatedAt,
     IReadOnlyList<LinkedMcpServerDto> LinkedMcpServers,
-    IReadOnlyList<ChildAgentDto> ChildAgents);
+    IReadOnlyList<ChildAgentDto> ChildAgents,
+    IReadOnlyList<LinkedSkillDto> LinkedSkills);
 
 /// <summary>MCP server link summary included in agent detail responses.</summary>
 public sealed record LinkedMcpServerDto(
@@ -203,3 +230,9 @@ public sealed record ChildAgentDto(
     string SystemPrompt,
     OpenCodeAgentType? AgentType,
     bool IsActive);
+
+/// <summary>Skill link summary included in agent detail responses.</summary>
+public sealed record LinkedSkillDto(
+    Guid Id,
+    string Name,
+    string? Description);

@@ -51,6 +51,8 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<ProjectMetricSnapshot> ProjectMetricSnapshots => Set<ProjectMetricSnapshot>();
     public DbSet<IssueEvent> IssueEvents => Set<IssueEvent>();
     public DbSet<Skill> Skills => Set<Skill>();
+    public DbSet<AgentSkill> AgentSkills => Set<AgentSkill>();
+    public DbSet<ProjectSkill> ProjectSkills => Set<ProjectSkill>();
     public DbSet<MergeRequest> MergeRequests => Set<MergeRequest>();
     public DbSet<TodoBoard> TodoBoards => Set<TodoBoard>();
     public DbSet<TodoCategory> TodoCategories => Set<TodoCategory>();
@@ -119,6 +121,32 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
             .HasOne(x => x.Organization)
             .WithMany()
             .HasForeignKey(x => x.OrgId);
+
+        modelBuilder.Entity<AgentSkill>()
+            .HasKey(x => new { x.AgentId, x.SkillId });
+
+        modelBuilder.Entity<AgentSkill>()
+            .HasOne(x => x.Agent)
+            .WithMany(a => a.AgentSkills)
+            .HasForeignKey(x => x.AgentId);
+
+        modelBuilder.Entity<AgentSkill>()
+            .HasOne(x => x.Skill)
+            .WithMany(s => s.AgentSkills)
+            .HasForeignKey(x => x.SkillId);
+
+        modelBuilder.Entity<ProjectSkill>()
+            .HasKey(x => new { x.ProjectId, x.SkillId });
+
+        modelBuilder.Entity<ProjectSkill>()
+            .HasOne(x => x.Project)
+            .WithMany(p => p.ProjectSkills)
+            .HasForeignKey(x => x.ProjectId);
+
+        modelBuilder.Entity<ProjectSkill>()
+            .HasOne(x => x.Skill)
+            .WithMany(s => s.ProjectSkills)
+            .HasForeignKey(x => x.SkillId);
 
         modelBuilder.Entity<McpServerProjectAgent>()
             .HasKey(x => new { x.McpServerId, x.ProjectId, x.AgentId });

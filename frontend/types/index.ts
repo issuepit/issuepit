@@ -367,6 +367,7 @@ export interface Agent {
   allowedTools: string | string[]
   mcpServers: string[]
   linkedMcpServers?: AgentLinkedMcpServer[]
+  linkedSkills?: LinkedSkillDto[]
   isActive: boolean
   runnerType?: RunnerType
   model?: string
@@ -1186,6 +1187,8 @@ export interface Skill {
   content?: string
   gitRepoUrl?: string
   gitSubDir?: string
+  gitBranch?: string
+  gitSha?: string
   gitAuthUsername?: string
   syncStatus: SkillSyncStatus
   syncStatusName: string
@@ -1193,6 +1196,12 @@ export interface Skill {
   lastSyncedAt?: string
   createdAt: string
   updatedAt: string
+}
+
+export interface LinkedSkillDto {
+  id: string
+  name: string
+  description?: string
 }
 
 export enum TodoPriority {

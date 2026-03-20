@@ -415,6 +415,45 @@
           </div>
         </div>
 
+        <!-- Skills -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <div class="flex items-center justify-between mb-1">
+            <h2 class="font-semibold text-white">Skills</h2>
+            <NuxtLink to="/skills" class="text-xs text-gray-500 hover:text-gray-300 transition-colors">
+              Manage Skills →
+            </NuxtLink>
+          </div>
+          <p class="text-sm text-gray-500 mb-4">Skills linked to this project are injected into all agent sessions.</p>
+          <div v-if="loadingProjectSkills" class="flex items-center justify-center py-4">
+            <div class="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+          <div v-else class="space-y-2">
+            <div v-for="skill in allSkills" :key="skill.id"
+              class="flex items-center gap-3 bg-gray-800/60 rounded-lg px-4 py-2.5 border transition-colors"
+              :class="isProjectSkillLinked(skill.id) ? 'border-purple-700/50' : 'border-gray-700/50'">
+              <div class="flex-1 min-w-0">
+                <span class="text-sm font-medium text-white">{{ skill.name }}</span>
+                <span v-if="isProjectSkillLinked(skill.id)" class="ml-2 text-xs bg-purple-900/40 text-purple-400 px-1.5 py-0.5 rounded-full">Linked</span>
+                <p v-if="skill.description" class="text-xs text-gray-500 mt-0.5 truncate">{{ skill.description }}</p>
+              </div>
+              <button v-if="isProjectSkillLinked(skill.id)"
+                @click="unlinkProjectSkill(skill.id)"
+                class="text-xs text-red-400 hover:text-red-300 px-3 py-1.5 rounded-md border border-red-900/30 hover:bg-red-900/20 transition-colors shrink-0">
+                Unlink
+              </button>
+              <button v-else
+                @click="linkProjectSkill(skill.id)"
+                class="text-xs text-brand-400 hover:text-brand-300 px-3 py-1.5 rounded-md border border-brand-900/30 hover:bg-brand-900/20 transition-colors shrink-0">
+                Link
+              </button>
+            </div>
+            <div v-if="!allSkills.length" class="text-sm text-gray-600 py-2">
+              No skills configured yet. Create one in
+              <NuxtLink to="/skills" class="text-brand-400 hover:text-brand-300">Skills</NuxtLink>.
+            </div>
+          </div>
+        </div>
+
         <!-- Move to Organization -->
         <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
           <h2 class="font-semibold text-white mb-1">Move to Organization</h2>
@@ -691,8 +730,9 @@ import { useAgentsStore } from '~/stores/agents'
 import { useMcpServersStore } from '~/stores/mcp-servers'
 import { useProjectPropertiesStore } from '~/stores/projectProperties'
 import { useGitHubIdentitiesStore } from '~/stores/github-identities'
+import { useSkillsStore } from '~/stores/skills'
 import { ProjectPropertyType, AgentPushPolicyLabels } from '~/types'
-import type { AgentProject, AgentPushPolicy, ProjectMcpServer, GitRepository, GitOriginMode, ProjectProperty } from '~/types'
+import type { AgentProject, AgentPushPolicy, ProjectMcpServer, GitRepository, GitOriginMode, ProjectProperty, LinkedSkillDto } from '~/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -705,6 +745,7 @@ const agentsStore = useAgentsStore()
 const mcpServersStore = useMcpServersStore()
 const propsStore = useProjectPropertiesStore()
 const identitiesStore = useGitHubIdentitiesStore()
+const skillsStore = useSkillsStore()
 
 // ── Custom Properties ─────────────────────────────────────────
 const showPropertyModal = ref(false)
@@ -1097,6 +1138,38 @@ const otherOrgs = computed(() =>
   orgsStore.orgs.filter(o => o.id !== projectsStore.currentProject?.organizationId)
 )
 
+// ── Project Skills ────────────────────────────────────────────
+const loadingProjectSkills = ref(false)
+const projectLinkedSkills = ref<LinkedSkillDto[]>([])
+
+const allSkills = computed(() => skillsStore.skills)
+
+function isProjectSkillLinked(skillId: string) {
+  return projectLinkedSkills.value.some(s => s.id === skillId)
+}
+
+async function fetchProjectSkills() {
+  loadingProjectSkills.value = true
+  try {
+    const { get } = useApi()
+    projectLinkedSkills.value = await get<LinkedSkillDto[]>(`/api/projects/${id}/skills`)
+  } finally {
+    loadingProjectSkills.value = false
+  }
+}
+
+async function linkProjectSkill(skillId: string) {
+  const { post } = useApi()
+  await post(`/api/projects/${id}/skills/${skillId}`, {})
+  await fetchProjectSkills()
+}
+
+async function unlinkProjectSkill(skillId: string) {
+  const { del } = useApi()
+  await del(`/api/projects/${id}/skills/${skillId}`)
+  await fetchProjectSkills()
+}
+
 onMounted(async () => {
   await Promise.all([
     projectsStore.fetchProject(id),
@@ -1105,6 +1178,8 @@ onMounted(async () => {
     agentsStore.fetchAgents(),
     fetchProjectAgents(),
     fetchProjectMcpServers(),
+    fetchProjectSkills(),
+    skillsStore.fetchSkills(),
     propsStore.fetchProperties(id),
     identitiesStore.fetchIdentities(),
   ])

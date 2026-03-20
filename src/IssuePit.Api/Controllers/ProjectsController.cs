@@ -486,6 +486,52 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
         await db.SaveChangesAsync();
         return Created($"/api/projects/{id}/mcp-servers/{server.Id}", new { server.Id, server.Name });
     }
+
+    // ── Project skills endpoints ────────────────────────────────────────────
+
+    [HttpGet("{id:guid}/skills")]
+    public async Task<IActionResult> GetProjectSkills(Guid id)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var projectBelongsToTenant = await db.Projects
+            .AnyAsync(p => p.Id == id && db.Organizations.Any(o => o.Id == p.OrgId && o.TenantId == ctx.CurrentTenant.Id));
+        if (!projectBelongsToTenant) return NotFound();
+
+        var skills = await db.ProjectSkills
+            .Where(ps => ps.ProjectId == id)
+            .Select(ps => new LinkedSkillDto(ps.Skill.Id, ps.Skill.Name, ps.Skill.Description))
+            .ToListAsync();
+
+        return Ok(skills);
+    }
+
+    [HttpPost("{id:guid}/skills/{skillId:guid}")]
+    public async Task<IActionResult> LinkSkill(Guid id, Guid skillId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var projectBelongsToTenant = await db.Projects
+            .AnyAsync(p => p.Id == id && db.Organizations.Any(o => o.Id == p.OrgId && o.TenantId == ctx.CurrentTenant.Id));
+        if (!projectBelongsToTenant) return NotFound();
+        var skillBelongsToTenant = await db.Skills
+            .AnyAsync(s => s.Id == skillId && db.Organizations.Any(o => o.Id == s.OrgId && o.TenantId == ctx.CurrentTenant.Id));
+        if (!skillBelongsToTenant) return NotFound();
+        if (await db.ProjectSkills.AnyAsync(ps => ps.ProjectId == id && ps.SkillId == skillId))
+            return Conflict();
+        db.ProjectSkills.Add(new ProjectSkill { ProjectId = id, SkillId = skillId });
+        await db.SaveChangesAsync();
+        return Created($"/api/projects/{id}/skills/{skillId}", null);
+    }
+
+    [HttpDelete("{id:guid}/skills/{skillId:guid}")]
+    public async Task<IActionResult> UnlinkSkill(Guid id, Guid skillId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var link = await db.ProjectSkills.FirstOrDefaultAsync(ps => ps.ProjectId == id && ps.SkillId == skillId);
+        if (link is null) return NotFound();
+        db.ProjectSkills.Remove(link);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
 }
 
 public record ProjectMemberRequest(Guid? UserId, Guid? TeamId, ProjectPermission Permissions);

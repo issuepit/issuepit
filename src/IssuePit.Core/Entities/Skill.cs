@@ -36,6 +36,14 @@ public class Skill
     [MaxLength(500)]
     public string? GitSubDir { get; set; }
 
+    /// <summary>Optional branch name to pin the skill to a specific branch.</summary>
+    [MaxLength(200)]
+    public string? GitBranch { get; set; }
+
+    /// <summary>Optional commit SHA to pin the skill to a specific commit.</summary>
+    [MaxLength(200)]
+    public string? GitSha { get; set; }
+
     /// <summary>Optional username for HTTP basic auth on the git repository.</summary>
     [MaxLength(200)]
     public string? GitAuthUsername { get; set; }
@@ -60,4 +68,7 @@ public class Skill
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+    public ICollection<AgentSkill> AgentSkills { get; set; } = [];
+    public ICollection<ProjectSkill> ProjectSkills { get; set; } = [];
 }

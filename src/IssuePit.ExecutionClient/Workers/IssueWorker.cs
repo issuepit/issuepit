@@ -253,6 +253,8 @@ public class IssueWorker(
             .Include(a => a.AgentMcpServers)
                 .ThenInclude(ams => ams.McpServer)
                 .ThenInclude(s => s.Secrets)
+            .Include(a => a.AgentSkills)
+                .ThenInclude(ask => ask.Skill)
             .FirstOrDefaultAsync(a => a.Id == agentId, cancellationToken);
         var issue = await db.Issues.FindAsync([issueId], cancellationToken);
 
@@ -437,6 +439,35 @@ public class IssueWorker(
 
         try
         {
+            // Load project-level skills and inject all active skills into the agent system prompt.
+            // Agent-linked skills take precedence; project-linked skills are appended additionally.
+            var projectSkillContents = await db.ProjectSkills
+                .Include(ps => ps.Skill)
+                .Where(ps => ps.ProjectId == issue.ProjectId && ps.Skill.Content != null && ps.Skill.Content != string.Empty)
+                .Select(ps => ps.Skill.Content)
+                .ToListAsync(cancellationToken);
+
+            // Collect skill contents: agent-linked first, then project-linked (deduplicated by content).
+            var agentSkillContents = agent.AgentSkills
+                .Where(ask => !string.IsNullOrWhiteSpace(ask.Skill?.Content))
+                .Select(ask => ask.Skill.Content)
+                .ToList();
+
+            var allSkillContents = agentSkillContents
+                .Concat(projectSkillContents)
+                .Distinct()
+                .Where(c => !string.IsNullOrWhiteSpace(c))
+                .ToList();
+
+            if (allSkillContents.Count > 0)
+            {
+                var skillsBlock = string.Join("\n\n", allSkillContents);
+                agent.SystemPrompt = $"{skillsBlock}\n\n{agent.SystemPrompt}";
+                logger.LogInformation(
+                    "Injected {Count} skill(s) into system prompt for agent {AgentId}",
+                    allSkillContents.Count, agent.Id);
+            }
+
             var credentials = await LoadCredentialsAsync(agent.OrgId, db, sessionCts.Token);
             var runtime = runtimeFactory.Create(runtimeType);
 
