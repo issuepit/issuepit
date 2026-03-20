@@ -44,6 +44,12 @@ public class DockerAgentRuntime(
     // Overridden by agent.DockerImage when set.
     private const string DefaultDockerImage = "ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24";
 
+    // Default act runner image injected into /root/.config/act/actrc so that when the agent
+    // invokes `act` to run CI workflows inside the container, the inner workflow job containers
+    // use an image that includes .NET 10, Node.js, and Playwright — matching the outer helper image.
+    // Can be overridden via the "Agent__ActRunnerImage" configuration key.
+    private const string DefaultActRunnerImage = "ghcr.io/issuepit/issuepit-act-runner:latest";
+
     /// <summary>Length of the hex suffix appended to agent container names for uniqueness.</summary>
     private const int ContainerNameSuffixLength = 10;
 
@@ -417,6 +423,15 @@ public class DockerAgentRuntime(
 
             // Step B: Start Docker-in-Docker (needed for act and any docker commands by the agent).
             await StartDindAsync(container.ID, onLogLine, cancellationToken);
+
+            // Step B2: Write actrc so that when the agent invokes `act` to run CI workflows,
+            // the inner workflow job containers use the issuepit-act-runner image (which has
+            // .NET 10, Node.js, Playwright, and the same toolchain as the outer helper image)
+            // instead of the default catthehacker/ubuntu image (which only ships .NET 8).
+            // Best-effort: failure is non-fatal and only logs a warning — the agent will still
+            // start, but CI workflow steps that rely on .NET 10 may fail if act is invoked.
+            var actRunnerImage = configuration["Agent__ActRunnerImage"] ?? DefaultActRunnerImage;
+            await SetupActrcAsync(container.ID, actRunnerImage, onLogLine, cancellationToken);
 
             // Step C: Start DNS logging/firewall proxy.
             await SetupDnsProxyAsync(container.ID, agent.DisableInternet, onLogLine, cancellationToken);
