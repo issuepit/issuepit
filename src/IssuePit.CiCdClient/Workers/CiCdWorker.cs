@@ -1026,6 +1026,22 @@ public class CiCdWorker(
                     // Extract step name from the 'stage' field (e.g. "Set up job", "Main actions/checkout@v4").
                     if (root.TryGetProperty("stage", out var stageEl))
                         stepId = stageEl.GetString()?.Trim();
+                    // When stage is a generic phase (Main/Pre/Post) and the JSON also provides a
+                    // 'step' field (the specific action name), combine them for a precise step ID
+                    // (e.g. stage="Main" + step="checkout" → "Main checkout"). This avoids the
+                    // less-stable text-parsing fallback used in RefineSubStep.
+                    // Also cache the result so that subsequent lines within the same step that
+                    // may not carry the 'step' field still get attributed to the correct action.
+                    if (stepId is ActPhaseMain or ActPhasePre or ActPhasePost &&
+                        root.TryGetProperty("step", out var stepEl))
+                    {
+                        var stepName = stepEl.GetString()?.Trim();
+                        if (!string.IsNullOrEmpty(stepName))
+                        {
+                            stepId = $"{stepId} {stepName}";
+                            _currentSubStep[runId] = stepId;
+                        }
+                    }
                     // Remap stream from act JSON level only if the original stream was stdout;
                     // if the container already routed the line to stderr, trust that.
                     if (stream == LogStream.Stdout &&
@@ -1043,19 +1059,26 @@ public class CiCdWorker(
             }
         }
 
-        // Refine generic act phases ("Main", "Pre", "Post") into per-action step IDs by detecting
-        // act's step-start messages (e.g., "⭐ Run Main actions/checkout@v4").
+        // Refine generic act phases ("Main", "Pre", "Post") into per-action step IDs.
+        // Primary: use the 'step' JSON field cached above (_currentSubStep was updated if found).
+        // Fallback: parse act's step-start messages (e.g., "⭐ Run Main actions/checkout@v4").
         // act emits stage="Main" for all steps in the main phase; without refinement they collapse
         // into one large group in the UI. We track the current sub-step per run so that intermediate
         // log lines (between step-start and step-end) are attributed to the correct action.
         if (stepId is ActPhaseMain or ActPhasePre or ActPhasePost)
         {
+            // stepId is still generic — the JSON 'step' field was absent for this line.
+            // Fall back to text parsing and the cached _currentSubStep value.
             stepId = RefineSubStep(displayLine, stepId, runId);
         }
         else
         {
-            // Phase changed to something other than Main/Pre/Post — clear any tracked sub-step.
-            _currentSubStep.TryRemove(runId, out _);
+            // Phase changed to something other than Main/Pre/Post (e.g. "Set up job").
+            // Clear the tracked sub-step unless this is the value we just cached from
+            // the JSON 'step' field above (in which case the sub-step is still current).
+            var stepWasJustCachedFromJson = _currentSubStep.TryGetValue(runId, out var cachedStep) && cachedStep == stepId;
+            if (!stepWasJustCachedFromJson)
+                _currentSubStep.TryRemove(runId, out _);
         }
 
         var log = new CiCdRunLog

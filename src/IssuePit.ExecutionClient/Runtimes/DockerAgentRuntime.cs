@@ -562,6 +562,10 @@ public class DockerAgentRuntime(
                 // to continue from this session (by restoring the opencode DB snapshot).
                 await onLogLine($"{OpenCodeSessionIdMarker}{httpSessionId}", LogStream.Stdout);
 
+                // Signal the start of post-run operations so IssueWorker can tag subsequent
+                // log lines (git state check, push, markers) with the PostRun section.
+                await onLogLine(PostRunStartMarker, LogStream.Stdout);
+
                 // Step 10: Check git state and emit markers so IssueWorker can trigger CI/CD.
                 if (gitRepository is not null)
                 {
