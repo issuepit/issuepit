@@ -1,5 +1,13 @@
 <template>
   <div>
+    <!-- Page header -->
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h2 class="text-lg font-semibold text-white">Scheduled Tasks</h2>
+        <p class="text-sm text-gray-400 mt-0.5">Monitor background service runs across all projects.</p>
+      </div>
+    </div>
+
     <!-- Filters bar -->
     <div class="flex flex-wrap gap-3 mb-6">
       <!-- Project filter -->
@@ -131,14 +139,24 @@
               </span>
             </td>
             <td class="px-4 py-3">
-              <span class="text-xs bg-blue-900/30 text-blue-300 px-2 py-0.5 rounded-full font-medium">
+              <NuxtLink
+                v-if="typeLink(run)"
+                :to="typeLink(run)"
+                class="text-xs bg-blue-900/30 text-blue-300 px-2 py-0.5 rounded-full font-medium hover:bg-blue-800/40 transition-colors"
+              >
+                {{ typeLabel(run.type) }}
+              </NuxtLink>
+              <span
+                v-else
+                class="text-xs bg-blue-900/30 text-blue-300 px-2 py-0.5 rounded-full font-medium"
+              >
                 {{ typeLabel(run.type) }}
               </span>
             </td>
             <td class="px-4 py-3 text-gray-300 text-xs font-medium">
               <NuxtLink
                 v-if="run.projectId"
-                :to="`/projects/${run.projectId}/github-sync`"
+                :to="`/projects/${run.projectId}`"
                 class="hover:text-brand-400 transition-colors"
               >
                 {{ run.projectName }}
@@ -157,20 +175,20 @@
             <td class="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
               {{ duration(run.startedAt, run.completedAt) }}
             </td>
-            <td class="px-4 py-3 text-right">
+            <td class="px-4 py-3 text-right whitespace-nowrap">
               <NuxtLink
-                v-if="run.type === 'GitHubSync'"
+                v-if="run.type === 'GitHubSync' && run.projectId"
                 :to="`/projects/${run.projectId}/github-sync?tab=Sync+Runs`"
                 class="text-xs text-brand-400 hover:text-brand-300"
               >
-                Details →
+                View logs →
               </NuxtLink>
               <button
-                v-else-if="run.type === 'SimilarIssues'"
+                v-else-if="run.type === 'SimilarIssues' || run.type === 'BranchDetection' || run.type === 'ConfigRepoSync'"
                 class="text-xs text-brand-400 hover:text-brand-300"
-                @click="openSimilarIssuesRunLogs(run.id)"
+                @click="openRunDetails(run)"
               >
-                View logs →
+                View →
               </button>
             </td>
           </tr>
@@ -195,7 +213,7 @@
       <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-2xl shadow-xl flex flex-col max-h-[80vh]">
         <div class="flex items-center justify-between px-6 py-4 border-b border-gray-800">
           <div>
-            <h2 class="text-base font-bold text-white">Similar Issues Run Logs</h2>
+            <h2 class="text-base font-bold text-white">{{ logsModalTitle }}</h2>
             <p class="text-xs text-gray-500 mt-0.5">
               <span :class="statusClass(logsModal.status)" class="px-1.5 py-0.5 rounded-full font-medium">
                 {{ statusLabel(logsModal.status) }}
@@ -208,6 +226,7 @@
         </div>
         <div class="overflow-y-auto p-4 font-mono text-xs space-y-0.5">
           <div v-if="logsModalLoading" class="text-gray-600 text-center py-6">Loading…</div>
+          <div v-else-if="logsModal.type !== 'SimilarIssues'" class="text-gray-500 text-center py-6">No detailed logs available for this task type.</div>
           <div v-else-if="!logsModal.logs?.length" class="text-gray-600 text-center py-6">No log entries.</div>
           <div
             v-for="log in logsModal.logs"
@@ -227,12 +246,13 @@
 </template>
 
 <script setup lang="ts">
-import type { ScheduledTaskType } from '~/types'
+import type { ScheduledTaskRun, ScheduledTaskType } from '~/types'
 import { GitHubSyncRunStatus, GitHubSyncLogLevel } from '~/types'
 import { useScheduledTasksStore } from '~/stores/scheduled-tasks'
 import { useApi } from '~/composables/useApi'
 
 const store = useScheduledTasksStore()
+const { get } = useApi()
 
 const filterProject = ref('')
 const filterType = ref('')
@@ -291,8 +311,26 @@ function typeLabel(type: ScheduledTaskType): string {
   }
 }
 
+function typeLink(run: ScheduledTaskRun): string | null {
+  switch (run.type) {
+    case 'GitHubSync': return run.projectId ? `/projects/${run.projectId}/github-sync` : null
+    case 'BranchDetection': return run.projectId ? `/projects/${run.projectId}/settings` : null
+    case 'SimilarIssues': return run.projectId ? `/projects/${run.projectId}/issues` : null
+    default: return null
+  }
+}
+
 interface RunLog { id: string; level: GitHubSyncLogLevel; message: string; timestamp: string }
 interface RunDetail {
+  id: string
+  type: ScheduledTaskType
+  status: GitHubSyncRunStatus
+  summary?: string
+  startedAt: string
+  completedAt?: string | null
+  logs?: RunLog[]
+}
+interface SimilarIssueRunResponse {
   id: string
   status: GitHubSyncRunStatus
   summary?: string
@@ -304,15 +342,38 @@ interface RunDetail {
 const logsModal = ref<RunDetail | null>(null)
 const logsModalLoading = ref(false)
 
-async function openSimilarIssuesRunLogs(runId: string) {
-  logsModalLoading.value = true
-  logsModal.value = { id: runId, status: GitHubSyncRunStatus.Pending, startedAt: '' }
-  try {
-    const { get } = useApi()
-    logsModal.value = await get<RunDetail>(`/api/similar-issue-runs/${runId}`)
-  } finally {
-    logsModalLoading.value = false
+const logsModalTitle = computed(() => {
+  switch (logsModal.value?.type) {
+    case 'SimilarIssues': return 'Similar Issues Run Logs'
+    case 'BranchDetection': return 'Branch Detection Run Details'
+    case 'ConfigRepoSync': return 'Config Repo Sync Run Details'
+    default: return 'Run Details'
   }
+})
+
+async function openRunDetails(run: ScheduledTaskRun) {
+  if (run.type === 'SimilarIssues') {
+    logsModalLoading.value = true
+    logsModal.value = { id: run.id, type: run.type, status: run.status, startedAt: run.startedAt, summary: run.summary, completedAt: run.completedAt }
+    try {
+      const data = await get<SimilarIssueRunResponse>(`/api/similar-issue-runs/${run.id}`)
+      logsModal.value = { ...data, type: run.type }
+    }
+    finally {
+      logsModalLoading.value = false
+    }
+    return
+  }
+  // For types without stored logs — show run metadata
+  logsModal.value = {
+    id: run.id,
+    type: run.type,
+    status: run.status,
+    summary: run.summary,
+    startedAt: run.startedAt,
+    completedAt: run.completedAt,
+  }
+  logsModalLoading.value = false
 }
 
 function logLevelLabel(level: GitHubSyncLogLevel): string {
