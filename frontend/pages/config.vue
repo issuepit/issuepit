@@ -3,7 +3,7 @@
   <NuxtPage v-if="isAgentsPage" />
 
   <!-- System config pages render with breadcrumb + tab bar -->
-  <div v-else class="p-8 max-w-4xl mx-auto">
+  <div v-else class="p-8 max-w-6xl mx-auto">
     <div class="mb-6">
       <PageBreadcrumb :items="breadcrumbItems" />
     </div>

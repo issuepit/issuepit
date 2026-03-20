@@ -28,4 +28,6 @@ public class ConfigRepoSyncRun
     public DateTime StartedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime? CompletedAt { get; set; }
+
+    public ICollection<ConfigRepoSyncRunLog> Logs { get; set; } = [];
 }
