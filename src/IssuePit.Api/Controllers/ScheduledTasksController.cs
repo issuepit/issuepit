@@ -200,4 +200,58 @@ public class ScheduledTasksController(
 
         return Ok(projects);
     }
+
+    /// <summary>Returns details and log entries for a specific branch-detection run.</summary>
+    [HttpGet("branch-detection-runs/{runId:guid}")]
+    public async Task<IActionResult> GetBranchDetectionRun(Guid runId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+
+        var run = await db.BranchDetectionRuns
+            .Include(r => r.Project)
+            .ThenInclude(p => p.Organization)
+            .Include(r => r.Logs)
+            .FirstOrDefaultAsync(r => r.Id == runId && r.Project.Organization.TenantId == ctx.CurrentTenant.Id);
+
+        if (run is null) return NotFound();
+
+        return Ok(new ScheduledTaskRunDetailResponse(
+            run.Id,
+            run.Status,
+            run.Summary,
+            run.StartedAt,
+            run.CompletedAt,
+            run.Logs.OrderBy(l => l.Timestamp).Select(l => new ScheduledTaskRunLogDto(l.Id, l.Level, l.Message, l.Timestamp)).ToList()));
+    }
+
+    /// <summary>Returns details and log entries for a specific config-repo sync run.</summary>
+    [HttpGet("config-repo-sync-runs/{runId:guid}")]
+    public async Task<IActionResult> GetConfigRepoSyncRun(Guid runId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+
+        var run = await db.ConfigRepoSyncRuns
+            .Include(r => r.Tenant)
+            .Include(r => r.Logs)
+            .FirstOrDefaultAsync(r => r.Id == runId && r.TenantId == ctx.CurrentTenant.Id);
+
+        if (run is null) return NotFound();
+
+        return Ok(new ScheduledTaskRunDetailResponse(
+            run.Id,
+            run.Status,
+            run.Summary,
+            run.StartedAt,
+            run.CompletedAt,
+            run.Logs.OrderBy(l => l.Timestamp).Select(l => new ScheduledTaskRunLogDto(l.Id, l.Level, l.Message, l.Timestamp)).ToList()));
+    }
 }
+
+public record ScheduledTaskRunLogDto(Guid Id, GitHubSyncLogLevel Level, string Message, DateTime Timestamp);
+public record ScheduledTaskRunDetailResponse(
+    Guid Id,
+    GitHubSyncRunStatus Status,
+    string? Summary,
+    DateTime StartedAt,
+    DateTime? CompletedAt,
+    IReadOnlyList<ScheduledTaskRunLogDto> Logs);

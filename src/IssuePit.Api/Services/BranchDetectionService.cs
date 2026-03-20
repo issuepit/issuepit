@@ -72,6 +72,9 @@ public partial class BranchDetectionService(
             db.BranchDetectionRuns.Add(run);
             await db.SaveChangesAsync(cancellationToken);
 
+            await AppendLogAsync(run, GitHubSyncLogLevel.Info,
+                $"Starting branch detection for project {projectId} ({group.Count()} repository/repositories).", cancellationToken);
+
             int projectMappings = 0;
             bool failed = false;
 
@@ -81,11 +84,15 @@ public partial class BranchDetectionService(
 
                 try
                 {
-                    projectMappings += await ScanRepositoryAsync(repo, cancellationToken);
+                    var repoMappings = await ScanRepositoryAsync(repo, run, cancellationToken);
+                    projectMappings += repoMappings;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     logger.LogError(ex, "BranchDetection: failed for repo {RepoId}", repo.Id);
+                    var repoLabel = repo.RemoteUrl.Length > 0 ? repo.RemoteUrl : repo.Id.ToString();
+                    await AppendLogAsync(run, GitHubSyncLogLevel.Error,
+                        $"Repository {repoLabel}: error — {ex.Message}", cancellationToken);
                     failed = true;
                 }
             }
@@ -95,12 +102,30 @@ public partial class BranchDetectionService(
                 ? $"{projectMappings} new mapping(s)"
                 : "No new mappings";
             run.CompletedAt = DateTime.UtcNow;
+            await AppendLogAsync(run, failed ? GitHubSyncLogLevel.Warn : GitHubSyncLogLevel.Info,
+                $"Completed: {run.Summary}.", cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
         }
     }
 
-    private async Task<int> ScanRepositoryAsync(GitRepository repo, CancellationToken cancellationToken)
+    private async Task AppendLogAsync(BranchDetectionRun run, GitHubSyncLogLevel level, string message, CancellationToken ct)
     {
+        logger.LogInformation("[BranchDetection] {Message}", message);
+        db.BranchDetectionRunLogs.Add(new BranchDetectionRunLog
+        {
+            Id = Guid.NewGuid(),
+            RunId = run.Id,
+            Level = level,
+            Message = message,
+            Timestamp = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync(ct);
+    }
+
+    private async Task<int> ScanRepositoryAsync(GitRepository repo, BranchDetectionRun run, CancellationToken cancellationToken)
+    {
+        var repoLabel = repo.RemoteUrl.Length > 0 ? repo.RemoteUrl : repo.Id.ToString();
+
         // Load the project to get its IssueKey (the short slug prefix, e.g. "IP", "PROJ").
         var project = await db.Projects.FindAsync([repo.ProjectId], cancellationToken);
         var issueKey = project?.IssueKey;
@@ -114,8 +139,13 @@ public partial class BranchDetectionService(
         if (issues.Count == 0)
         {
             logger.LogDebug("BranchDetection: repo {RepoId} has no issues — skipping", repo.Id);
+            await AppendLogAsync(run, GitHubSyncLogLevel.Info,
+                $"Repository {repoLabel}: no issues found, skipping.", cancellationToken);
             return 0;
         }
+
+        await AppendLogAsync(run, GitHubSyncLogLevel.Info,
+            $"Repository {repoLabel}: scanning {issues.Count} issue(s).", cancellationToken);
 
         // Build lookup maps: IssuePit number → issue id, GitHub number → issue id.
         var byNumber = issues.ToDictionary(i => i.Number, i => i.Id);
@@ -166,8 +196,13 @@ public partial class BranchDetectionService(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "BranchDetection: could not read branches for repo {RepoId}", repo.Id);
+            await AppendLogAsync(run, GitHubSyncLogLevel.Warn,
+                $"Repository {repoLabel}: could not read branches — {ex.Message}", cancellationToken);
             return 0;
         }
+
+        await AppendLogAsync(run, GitHubSyncLogLevel.Info,
+            $"Repository {repoLabel}: found {branches.Count} branch(es).", cancellationToken);
 
         foreach (var branch in branches)
         {
@@ -256,6 +291,13 @@ public partial class BranchDetectionService(
             logger.LogInformation(
                 "BranchDetection: added {Count} new mapping(s) for repo {RepoId}",
                 newMappings, repo.Id);
+            await AppendLogAsync(run, GitHubSyncLogLevel.Info,
+                $"Repository {repoLabel}: added {newMappings} new mapping(s).", cancellationToken);
+        }
+        else
+        {
+            await AppendLogAsync(run, GitHubSyncLogLevel.Info,
+                $"Repository {repoLabel}: no new mappings.", cancellationToken);
         }
 
         return newMappings;

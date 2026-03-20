@@ -1,5 +1,13 @@
 <template>
   <div>
+    <!-- Page header -->
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h2 class="text-lg font-semibold text-white">Scheduled Tasks</h2>
+        <p class="text-sm text-gray-400 mt-0.5">Monitor background task runs across all projects.</p>
+      </div>
+    </div>
+
     <!-- Filters bar -->
     <div class="flex flex-wrap gap-3 mb-6">
       <!-- Project filter -->
@@ -131,9 +139,12 @@
               </span>
             </td>
             <td class="px-4 py-3">
-              <span class="text-xs bg-blue-900/30 text-blue-300 px-2 py-0.5 rounded-full font-medium">
+              <NuxtLink
+                :to="typeSettingsLink(run)"
+                class="text-xs bg-blue-900/30 text-blue-300 px-2 py-0.5 rounded-full font-medium hover:bg-blue-900/50 transition-colors"
+              >
                 {{ typeLabel(run.type) }}
-              </span>
+              </NuxtLink>
             </td>
             <td class="px-4 py-3 text-gray-300 text-xs font-medium">
               <NuxtLink
@@ -157,7 +168,7 @@
             <td class="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
               {{ duration(run.startedAt, run.completedAt) }}
             </td>
-            <td class="px-4 py-3 text-right">
+            <td class="px-4 py-3 text-right whitespace-nowrap">
               <NuxtLink
                 v-if="run.type === 'GitHubSync'"
                 :to="`/projects/${run.projectId}/github-sync?tab=Sync+Runs`"
@@ -166,9 +177,9 @@
                 Details →
               </NuxtLink>
               <button
-                v-else-if="run.type === 'SimilarIssues'"
+                v-else
                 class="text-xs text-brand-400 hover:text-brand-300"
-                @click="openSimilarIssuesRunLogs(run.id)"
+                @click="openRunLogs(run)"
               >
                 View logs →
               </button>
@@ -186,16 +197,16 @@
       Showing {{ filteredRuns.length }} run(s)
     </p>
 
-    <!-- Similar Issues run logs modal -->
+    <!-- Run logs modal -->
     <div
       v-if="logsModal"
       class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-      @click.self="logsModal = null"
+      @click.self="logsModal = null; logsModalError = null"
     >
       <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-2xl shadow-xl flex flex-col max-h-[80vh]">
         <div class="flex items-center justify-between px-6 py-4 border-b border-gray-800">
           <div>
-            <h2 class="text-base font-bold text-white">Similar Issues Run Logs</h2>
+            <h2 class="text-base font-bold text-white">{{ typeLabel(logsModal.type) }} Run Logs</h2>
             <p class="text-xs text-gray-500 mt-0.5">
               <span :class="statusClass(logsModal.status)" class="px-1.5 py-0.5 rounded-full font-medium">
                 {{ statusLabel(logsModal.status) }}
@@ -204,10 +215,11 @@
               <span v-if="logsModal.summary" class="ml-2">— {{ logsModal.summary }}</span>
             </p>
           </div>
-          <button class="text-gray-500 hover:text-gray-300 text-xl leading-none" @click="logsModal = null">&times;</button>
+          <button class="text-gray-500 hover:text-gray-300 text-xl leading-none" @click="logsModal = null; logsModalError = null">&times;</button>
         </div>
         <div class="overflow-y-auto p-4 font-mono text-xs space-y-0.5">
           <div v-if="logsModalLoading" class="text-gray-600 text-center py-6">Loading…</div>
+          <div v-else-if="logsModalError" class="text-red-400 text-center py-6">{{ logsModalError }}</div>
           <div v-else-if="!logsModal.logs?.length" class="text-gray-600 text-center py-6">No log entries.</div>
           <div
             v-for="log in logsModal.logs"
@@ -291,9 +303,25 @@ function typeLabel(type: ScheduledTaskType): string {
   }
 }
 
+function typeSettingsLink(run: { type: ScheduledTaskType; projectId?: string | null }): string {
+  switch (run.type) {
+    case 'GitHubSync':
+      return run.projectId ? `/projects/${run.projectId}/github-sync` : '/config/keys'
+    case 'BranchDetection':
+      return run.projectId ? `/projects/${run.projectId}/github-sync` : '/config/keys'
+    case 'SimilarIssues':
+      return run.projectId ? `/projects/${run.projectId}/settings` : '/config/keys'
+    case 'ConfigRepoSync':
+      return '/admin/tenants'
+    default:
+      return '/config/keys'
+  }
+}
+
 interface RunLog { id: string; level: GitHubSyncLogLevel; message: string; timestamp: string }
 interface RunDetail {
   id: string
+  type: ScheduledTaskType
   status: GitHubSyncRunStatus
   summary?: string
   startedAt: string
@@ -303,13 +331,28 @@ interface RunDetail {
 
 const logsModal = ref<RunDetail | null>(null)
 const logsModalLoading = ref(false)
+const logsModalError = ref<string | null>(null)
 
-async function openSimilarIssuesRunLogs(runId: string) {
+async function openRunLogs(run: { id: string; type: ScheduledTaskType; status: GitHubSyncRunStatus; summary?: string; startedAt: string; completedAt?: string | null }) {
   logsModalLoading.value = true
-  logsModal.value = { id: runId, status: GitHubSyncRunStatus.Pending, startedAt: '' }
+  logsModalError.value = null
+  logsModal.value = { id: run.id, type: run.type, status: run.status, summary: run.summary, startedAt: run.startedAt, completedAt: run.completedAt }
   try {
     const { get } = useApi()
-    logsModal.value = await get<RunDetail>(`/api/similar-issue-runs/${runId}`)
+    let detail: Omit<RunDetail, 'type'>
+    if (run.type === 'SimilarIssues') {
+      detail = await get<Omit<RunDetail, 'type'>>(`/api/similar-issue-runs/${run.id}`)
+    } else if (run.type === 'BranchDetection') {
+      detail = await get<Omit<RunDetail, 'type'>>(`/api/scheduled-tasks/branch-detection-runs/${run.id}`)
+    } else if (run.type === 'ConfigRepoSync') {
+      detail = await get<Omit<RunDetail, 'type'>>(`/api/scheduled-tasks/config-repo-sync-runs/${run.id}`)
+    } else {
+      logsModalLoading.value = false
+      return
+    }
+    logsModal.value = { ...detail, type: run.type }
+  } catch {
+    logsModalError.value = 'Failed to load logs. Please try again.'
   } finally {
     logsModalLoading.value = false
   }

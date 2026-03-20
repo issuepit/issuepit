@@ -74,10 +74,16 @@ public class ConfigRepoSyncService(
                     db.ConfigRepoSyncRuns.Add(run);
                     await db.SaveChangesAsync(ct);
 
+                    await AppendLogAsync(db, run, GitHubSyncLogLevel.Info,
+                        $"Starting config repo sync for tenant {tenant.Name ?? tenant.Id.ToString()} from {url}.", ct);
+
                     ConfigSyncResult syncResult;
                     try
                     {
                         var configPath = await ConfigRepoApplier.ResolveConfigPathAsync(url, token, username, tenant.Id, reposBase, ct);
+
+                        await AppendLogAsync(db, run, GitHubSyncLogLevel.Info,
+                            $"Resolved config path: {configPath}.", ct);
 
                         var applier = scope.ServiceProvider.GetRequiredService<ConfigRepoApplier>();
                         syncResult = await applier.ApplyAsync(tenant, configPath, strict, ct);
@@ -87,14 +93,28 @@ public class ConfigRepoSyncService(
                         run.Status = GitHubSyncRunStatus.Failed;
                         run.Summary = $"Error: {ex.Message}";
                         run.CompletedAt = DateTime.UtcNow;
+                        await AppendLogAsync(db, run, GitHubSyncLogLevel.Error,
+                            $"Sync failed: {ex.Message}", ct);
                         await db.SaveChangesAsync(ct);
                         logger.LogError(ex, "Config repo sync failed for tenant {TenantId}", tenant.Id);
                         continue;
                     }
 
+                    // Log any issues (warnings/errors) from the sync result.
+                    foreach (var issue in syncResult.Issues)
+                    {
+                        var level = issue.Severity == ConfigSyncSeverity.Error
+                            ? GitHubSyncLogLevel.Error
+                            : GitHubSyncLogLevel.Warn;
+                        await AppendLogAsync(db, run, level,
+                            $"{issue.File}: {issue.Message}", ct);
+                    }
+
                     run.Status = syncResult.HasErrors ? GitHubSyncRunStatus.Failed : GitHubSyncRunStatus.Succeeded;
                     run.Summary = BuildSummary(syncResult);
                     run.CompletedAt = DateTime.UtcNow;
+                    await AppendLogAsync(db, run, syncResult.HasErrors ? GitHubSyncLogLevel.Warn : GitHubSyncLogLevel.Info,
+                        $"Completed: {run.Summary}.", ct);
                     await db.SaveChangesAsync(ct);
 
                     logger.LogInformation("Config repo sync completed for tenant {TenantId}", tenant.Id);
@@ -109,6 +129,20 @@ public class ConfigRepoSyncService(
         {
             logger.LogError(ex, "Unexpected error during config repo sync");
         }
+    }
+
+    private async Task AppendLogAsync(IssuePitDbContext db, ConfigRepoSyncRun run, GitHubSyncLogLevel level, string message, CancellationToken ct)
+    {
+        logger.LogInformation("[ConfigRepoSync] {Message}", message);
+        db.ConfigRepoSyncRunLogs.Add(new ConfigRepoSyncRunLog
+        {
+            Id = Guid.NewGuid(),
+            RunId = run.Id,
+            Level = level,
+            Message = message,
+            Timestamp = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync(ct);
     }
 
     private (string? url, string? token, string? username, bool strict) ResolveSettings(

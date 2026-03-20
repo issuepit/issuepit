@@ -28,4 +28,6 @@ public class BranchDetectionRun
     public DateTime StartedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime? CompletedAt { get; set; }
+
+    public ICollection<BranchDetectionRunLog> Logs { get; set; } = [];
 }

@@ -62,7 +62,9 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<GitHubSyncRunLog> GitHubSyncRunLogs => Set<GitHubSyncRunLog>();
     public DbSet<IssueGitMapping> IssueGitMappings => Set<IssueGitMapping>();
     public DbSet<BranchDetectionRun> BranchDetectionRuns => Set<BranchDetectionRun>();
+    public DbSet<BranchDetectionRunLog> BranchDetectionRunLogs => Set<BranchDetectionRunLog>();
     public DbSet<ConfigRepoSyncRun> ConfigRepoSyncRuns => Set<ConfigRepoSyncRun>();
+    public DbSet<ConfigRepoSyncRunLog> ConfigRepoSyncRunLogs => Set<ConfigRepoSyncRunLog>();
     public DbSet<ProjectProperty> ProjectProperties => Set<ProjectProperty>();
     public DbSet<IssuePropertyValue> IssuePropertyValues => Set<IssuePropertyValue>();
     public DbSet<McpToken> McpTokens => Set<McpToken>();
