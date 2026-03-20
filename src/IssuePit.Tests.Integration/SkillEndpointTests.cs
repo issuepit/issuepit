@@ -271,10 +271,9 @@ public class SkillEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
         _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
 
-        await _client.PostAsJsonAsync($"/api/skills/{skillId}/projects/${projectId}", new { });
+        await _client.PostAsJsonAsync($"/api/skills/{skillId}/projects/{projectId}", new { });
         var response = await _client.DeleteAsync($"/api/skills/{skillId}/projects/{projectId}");
-        // The link may not exist (since the POST URL had a $ typo for projectId), so accept either 204 or 404
-        Assert.True(response.StatusCode is HttpStatusCode.NoContent or HttpStatusCode.NotFound);
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
     }
