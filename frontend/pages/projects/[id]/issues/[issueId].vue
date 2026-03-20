@@ -46,6 +46,7 @@
             {{ similarIssuesTriggeringRun ? 'Searching…' : 'Find Similar' }}
           </button>
         </div>
+      </div>
 
       <!-- Inline title edit -->
       <div v-if="editingTitle" class="mb-5">
