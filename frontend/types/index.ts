@@ -315,6 +315,7 @@ export interface Issue {
   gitBranch?: string
   createdAt: string
   updatedAt: string
+  lastActivityAt: string
   subIssues?: Issue[]
 }
 

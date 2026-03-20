@@ -34,6 +34,7 @@
 
       <select v-model="sortBy"
         class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500">
+        <option value="lastActivity">Sort: Last Activity</option>
         <option value="updatedAt">Sort: Last Updated</option>
         <option value="createdAt">Sort: Date Created</option>
         <option value="number">Sort: Number</option>
@@ -165,7 +166,7 @@ const OPEN_FILTER = 'open'
 const search = ref('')
 const filterStatus = ref<IssueStatus | 'open' | ''>('')
 const filterPriority = ref<IssuePriority | ''>('')
-const sortBy = ref<'updatedAt' | 'createdAt' | 'number' | 'priority'>('updatedAt')
+const sortBy = ref<'lastActivity' | 'updatedAt' | 'createdAt' | 'number' | 'priority'>('lastActivity')
 const sortDir = ref<'asc' | 'desc'>('desc')
 
 const { priorityIcon, priorityLabel: priorityText, priorities } = usePriority()
@@ -204,7 +205,7 @@ watch([search, filterStatus, filterPriority, sortBy, sortDir], () => {
 
 // Issues to display — feed issues (server-side) or filtered store issues (client-side)
 const displayedIssues = computed(() => {
-  if (feedFilter.value) return [...store.issues].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  if (feedFilter.value) return [...store.issues].sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
   if (filterStatus.value === OPEN_FILTER) {
     return store.filteredIssues.filter(
       i => i.status !== IssueStatus.Done && i.status !== IssueStatus.Cancelled
@@ -239,7 +240,7 @@ function clearFilters() {
   search.value = ''
   filterStatus.value = ''
   filterPriority.value = ''
-  sortBy.value = 'updatedAt'
+  sortBy.value = 'lastActivity'
   sortDir.value = 'desc'
   store.clearFilters()
   router.replace({ query: {} })

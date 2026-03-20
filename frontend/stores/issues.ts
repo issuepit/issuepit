@@ -14,7 +14,7 @@ interface IssueFilters {
   labelId?: string
   milestoneId?: string
   search?: string
-  sortBy?: 'updatedAt' | 'createdAt' | 'number' | 'priority'
+  sortBy?: 'lastActivity' | 'updatedAt' | 'createdAt' | 'number' | 'priority'
   sortDir?: 'asc' | 'desc'
 }
 
@@ -45,7 +45,7 @@ export const useIssuesStore = defineStore('issues', () => {
       const q = filters.value.search.toLowerCase()
       result = result.filter(i => i.title.toLowerCase().includes(q))
     }
-    const sortBy = filters.value.sortBy ?? 'updatedAt'
+    const sortBy = filters.value.sortBy ?? 'lastActivity'
     const sortDir = filters.value.sortDir ?? 'desc'
     return [...result].sort((a, b) => {
       let cmp = 0
@@ -55,9 +55,11 @@ export const useIssuesStore = defineStore('issues', () => {
         cmp = a.createdAt.localeCompare(b.createdAt)
       } else if (sortBy === 'priority') {
         cmp = (PRIORITY_ORDER[a.priority] ?? 5) - (PRIORITY_ORDER[b.priority] ?? 5)
-      } else {
-        // updatedAt (default)
+      } else if (sortBy === 'updatedAt') {
         cmp = a.updatedAt.localeCompare(b.updatedAt)
+      } else {
+        // lastActivity (default)
+        cmp = a.lastActivityAt.localeCompare(b.lastActivityAt)
       }
       return sortDir === 'asc' ? cmp : -cmp
     })
