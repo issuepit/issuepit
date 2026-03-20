@@ -160,7 +160,7 @@ watch([search, filterStatus], () => {
 
 // Issues to display — feed issues (server-side) or filtered store issues (client-side)
 const displayedIssues = computed(() => {
-  if (feedFilter.value) return store.issues
+  if (feedFilter.value) return [...store.issues].sort((a, b) => b.number - a.number)
   if (filterStatus.value === OPEN_FILTER) {
     return store.filteredIssues.filter(
       i => i.status !== IssueStatus.Done && i.status !== IssueStatus.Cancelled

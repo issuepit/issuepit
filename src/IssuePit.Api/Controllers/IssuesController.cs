@@ -24,7 +24,7 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
             query = query.Where(i => i.ProjectId == projectId.Value);
         else if (orgId.HasValue)
             query = query.Where(i => i.Project!.OrgId == orgId.Value);
-        var issues = await query.ToListAsync();
+        var issues = await query.OrderByDescending(i => i.Number).ToListAsync();
         return Ok(issues);
     }
 
