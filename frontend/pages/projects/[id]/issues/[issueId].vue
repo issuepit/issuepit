@@ -936,38 +936,38 @@
         </div>
       </div>
     </div>
-  </div>
 
-  <!-- Similar Issues Logs Modal -->
-  <div v-if="similarIssuesLogsModal"
-    class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-    @click.self="similarIssuesLogsModal = null">
-    <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-2xl shadow-xl flex flex-col max-h-[80vh]">
-      <div class="flex items-center justify-between px-6 py-4 border-b border-gray-800">
-        <div>
-          <h2 class="text-base font-bold text-white">Similar Issues Run Logs</h2>
-          <p class="text-xs text-gray-500 mt-0.5">
-            <span :class="similarIssuesRunStatusClass" class="px-1.5 py-0.5 rounded-full font-medium">
-              {{ similarIssuesLogsModal.status }}
-            </span>
-            <span v-if="similarIssuesLogsModal.startedAt" class="ml-2">
-              <DateDisplay :date="similarIssuesLogsModal.startedAt" mode="auto" />
-            </span>
-            <span v-if="similarIssuesLogsModal.summary" class="ml-2">— {{ similarIssuesLogsModal.summary }}</span>
-          </p>
+    <!-- Similar Issues Logs Modal -->
+    <div v-if="similarIssuesLogsModal"
+      class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      @click.self="similarIssuesLogsModal = null">
+      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-2xl shadow-xl flex flex-col max-h-[80vh]">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-gray-800">
+          <div>
+            <h2 class="text-base font-bold text-white">Similar Issues Run Logs</h2>
+            <p class="text-xs text-gray-500 mt-0.5">
+              <span :class="similarIssuesRunStatusClass" class="px-1.5 py-0.5 rounded-full font-medium">
+                {{ similarIssuesLogsModal.status }}
+              </span>
+              <span v-if="similarIssuesLogsModal.startedAt" class="ml-2">
+                <DateDisplay :date="similarIssuesLogsModal.startedAt" mode="auto" />
+              </span>
+              <span v-if="similarIssuesLogsModal.summary" class="ml-2">— {{ similarIssuesLogsModal.summary }}</span>
+            </p>
+          </div>
+          <button class="text-gray-500 hover:text-gray-300 text-xl leading-none" @click="similarIssuesLogsModal = null">&times;</button>
         </div>
-        <button class="text-gray-500 hover:text-gray-300 text-xl leading-none" @click="similarIssuesLogsModal = null">&times;</button>
-      </div>
-      <div class="overflow-y-auto p-4 font-mono text-xs space-y-0.5">
-        <div v-if="similarIssuesLogsModalLoading" class="text-gray-600 text-center py-6">Loading…</div>
-        <div v-else-if="!similarIssuesLogsModal.logs?.length" class="text-gray-600 text-center py-6">No log entries.</div>
-        <div v-for="log in similarIssuesLogsModal.logs" :key="log.id"
-          :class="similarIssuesLogLineClass(log.level)">
-          <span class="text-gray-600 mr-2">{{ formatLogTime(log.timestamp) }}</span>
-          <span :class="similarIssuesLogBadgeClass(log.level)" class="mr-2 text-xs px-1 rounded">
-            [{{ log.level === 1 ? 'WARN' : log.level === 2 ? 'ERR' : 'INFO' }}]
-          </span>
-          {{ log.message }}
+        <div class="overflow-y-auto p-4 font-mono text-xs space-y-0.5">
+          <div v-if="similarIssuesLogsModalLoading" class="text-gray-600 text-center py-6">Loading…</div>
+          <div v-else-if="!similarIssuesLogsModal.logs?.length" class="text-gray-600 text-center py-6">No log entries.</div>
+          <div v-for="log in similarIssuesLogsModal.logs" :key="log.id"
+            :class="similarIssuesLogLineClass(log.level)">
+            <span class="text-gray-600 mr-2">{{ formatLogTime(log.timestamp) }}</span>
+            <span :class="similarIssuesLogBadgeClass(log.level)" class="mr-2 text-xs px-1 rounded">
+              [{{ log.level === 1 ? 'WARN' : log.level === 2 ? 'ERR' : 'INFO' }}]
+            </span>
+            {{ log.message }}
+          </div>
         </div>
       </div>
     </div>
