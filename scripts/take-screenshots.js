@@ -127,9 +127,15 @@ async function screenshot(page, name) {
 
 // Screenshot after an interactive action (e.g. modal open, sidebar expanded).
 // Does NOT wait for networkidle — just lets animations settle.
-async function screenshotState(page, name) {
+// Pass scrollToTop=true to scroll to the top of the page before capturing
+// (use when clicking a button near the bottom scrolls the viewport down).
+async function screenshotState(page, name, { scrollToTop = false } = {}) {
   const file = path.join(OUTPUT_DIR, `${name}.png`);
   await page.waitForTimeout(500);
+  if (scrollToTop) {
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(150);
+  }
   await page.screenshot({ path: file, fullPage: false });
   console.log(`  ✓  ${file}`);
 }
@@ -195,6 +201,7 @@ async function main() {
   await screenshot(page, 'projects');
 
   await page.goto(`${FRONTEND_URL}/issues`);
+  await page.evaluate(() => window.scrollTo(0, 0));
   await screenshot(page, 'issues');
 
   // Get the first available project for project-specific screenshots
@@ -224,10 +231,8 @@ async function main() {
 
     // Project dashboard — draft/customize mode
     try {
-      await page.evaluate(() => window.scrollTo(0, 0));
       await page.getByText('Customize dashboard').click({ timeout: 3000 });
-      await page.evaluate(() => window.scrollTo(0, 0));
-      await screenshotState(page, 'project-dashboard-draft');
+      await screenshotState(page, 'project-dashboard-draft', { scrollToTop: true });
       await page.getByRole('button', { name: 'Cancel' }).click();
       await page.waitForTimeout(300);
     } catch (e) {
