@@ -245,6 +245,25 @@
         <button @click="importError = null" class="text-red-500 hover:text-red-300 text-xs">✕</button>
       </div>
 
+      <!-- Git setup warning: HTTPS Working/Release repos without auth credentials -->
+      <div v-if="gitSetupWarnings.length > 0 && !gitWarningDismissed"
+        class="mb-4 rounded-lg bg-yellow-900/40 border border-yellow-700/50 p-3">
+        <div class="flex items-start gap-2">
+          <svg class="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          </svg>
+          <div class="flex-1 min-w-0">
+            <p class="text-xs font-medium text-yellow-300 mb-1">Git credentials not configured</p>
+            <p class="text-xs text-yellow-400/80">
+              {{ gitSetupWarnings.length === 1 ? 'One git repository is' : `${gitSetupWarnings.length} git repositories are` }}
+              configured as Working or Release but {{ gitSetupWarnings.length === 1 ? 'has' : 'have' }} no auth credentials. Agent git pushes will fail.
+              <NuxtLink :to="`/projects/${id}/settings`" class="underline hover:text-yellow-300 ml-1">Configure credentials →</NuxtLink>
+            </p>
+          </div>
+          <button @click="gitWarningDismissed = true" class="text-yellow-600 hover:text-yellow-300 text-xs shrink-0 ml-1" title="Dismiss">✕</button>
+        </div>
+      </div>
+
       <!-- Hidden sections restore row (draft mode) -->
       <div v-if="isDraftMode && layout.configs" class="mb-3 flex flex-wrap items-center gap-2 min-h-0">
         <template v-for="sid in layout.order" :key="sid">
@@ -1042,6 +1061,7 @@ import { useProjectsStore } from '~/stores/projects'
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useIssuesStore } from '~/stores/issues'
 import { useKanbanStore } from '~/stores/kanban'
+import { useGitStore } from '~/stores/git'
 import { formatIssueId } from '~/composables/useIssueFormat'
 import { useDashboardLayout, isDynamicSectionId, type LayoutSectionConfig } from '~/composables/useDashboardLayout'
 
@@ -1051,6 +1071,7 @@ const store = useProjectsStore()
 const runsStore = useCiCdRunsStore()
 const issuesStore = useIssuesStore()
 const kanbanStore = useKanbanStore()
+const gitStore = useGitStore()
 const api = useApi()
 
 // --- Issue creation ---
@@ -1392,6 +1413,17 @@ const showSaveModal = ref(false)
 const showLoadModal = ref(false)
 const importError = ref<string | null>(null)
 
+// ── Git setup warnings ────────────────────────────────────────────────────
+const gitWarningDismissed = ref(false)
+const gitSetupWarnings = computed(() =>
+  gitStore.repos.filter(r =>
+    (r.mode === 'Working' || r.mode === 'Release')
+    && r.remoteUrl.startsWith('https://')
+    && !r.hasAuth
+    && r.status !== 'Disabled'
+  )
+)
+
 function handleExportJson() {
   if (!import.meta.client) return
   const json = exportLayoutJson()
@@ -1515,6 +1547,7 @@ onMounted(async () => {
       })
       .catch(() => { commitCount.value = null }),
     kanbanStore.fetchBoards(id).catch((e) => { console.warn('Failed to load kanban boards:', e) }),
+    gitStore.fetchRepos(id).catch((e) => { console.warn(`Failed to load git repos for project ${id}`, e) }),
     api.get<TestRunSummary[]>(`/api/projects/${id}/test-history/runs?take=10`)
       .then(data => { dashboardTestRuns.value = data })
       .catch((e) => { console.warn(`Failed to load test history for project ${id}`, e) }),
