@@ -47,7 +47,8 @@ public class GitHubIdentitiesController(
                 Orgs = g.Orgs.Select(o => new { o.OrgId, o.Organization.Name }),
                 SyncProjects = db.GitHubSyncConfigs
                     .Where(c => c.GitHubIdentityId == g.Id)
-                    .Select(c => new { c.ProjectId, c.Project.Name }),
+                    .Select(c => new { c.ProjectId, c.Project.Name })
+                    .ToList(),
             })
             .ToListAsync();
 
