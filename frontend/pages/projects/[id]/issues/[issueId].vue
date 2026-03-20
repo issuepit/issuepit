@@ -35,6 +35,16 @@
             </svg>
             New Issue
           </button>
+          <button @click="triggerSimilarIssues"
+            :disabled="similarIssuesTriggeringRun"
+            class="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-300 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
+            title="Find similar issues">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            {{ similarIssuesTriggeringRun ? 'Searching…' : 'Find Similar' }}
+          </button>
         </div>
       </div>
 
@@ -513,6 +523,50 @@
             <div v-else class="text-sm text-gray-600">No runs yet.</div>
           </div>
 
+          <!-- Similar Issues -->
+          <div v-show="isTabActive('similar')" class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <div class="flex items-center justify-between mb-4">
+              <h2 class="text-xs font-medium text-gray-500 uppercase tracking-wide">Similar Issues</h2>
+              <div class="flex items-center gap-2">
+                <!-- Run status badge -->
+                <span v-if="similarIssuesRunStatus"
+                  :class="similarIssuesRunStatusClass"
+                  class="text-xs px-2 py-0.5 rounded-full font-medium">
+                  {{ similarIssuesRunStatus }}
+                </span>
+                <!-- View logs button -->
+                <button v-if="similarIssuesRunId"
+                  class="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                  @click="openSimilarIssuesLogs">
+                  View logs
+                </button>
+                <button @click="triggerSimilarIssues" :disabled="similarIssuesTriggeringRun"
+                  class="text-xs text-brand-400 hover:text-brand-300 disabled:opacity-50 transition-colors">
+                  {{ similarIssuesTriggeringRun ? 'Searching…' : 'Refresh' }}
+                </button>
+              </div>
+            </div>
+            <div v-if="similarIssuesLoading" class="text-sm text-gray-600">Loading…</div>
+            <div v-else-if="similarIssues.length" class="space-y-3">
+              <div v-for="item in similarIssues" :key="item.similarIssueId"
+                class="flex items-start gap-3 p-3 bg-gray-800/50 rounded-lg hover:bg-gray-800 transition-colors">
+                <div class="flex-1 min-w-0">
+                  <NuxtLink :to="`/projects/${route.params.id}/issues/${item.similarIssueId}`"
+                    class="text-sm text-white hover:text-brand-300 transition-colors font-medium truncate block">
+                    #{{ item.number }} {{ item.title }}
+                  </NuxtLink>
+                  <p v-if="item.reason" class="text-xs text-gray-400 mt-1">{{ item.reason }}</p>
+                </div>
+                <span class="shrink-0 text-xs font-medium px-2 py-0.5 rounded-full bg-brand-900/50 text-brand-300">
+                  {{ Math.round(item.score * 100) }}%
+                </span>
+              </div>
+            </div>
+            <div v-else class="text-sm text-gray-600">
+              No similar issues found. Click "Find Similar" to run detection.
+            </div>
+          </div>
+
         </div>
 
         <!-- Sidebar -->
@@ -882,6 +936,41 @@
         </div>
       </div>
     </div>
+
+    <!-- Similar Issues Logs Modal -->
+    <div v-if="similarIssuesLogsModal"
+      class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      @click.self="similarIssuesLogsModal = null">
+      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-2xl shadow-xl flex flex-col max-h-[80vh]">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-gray-800">
+          <div>
+            <h2 class="text-base font-bold text-white">Similar Issues Run Logs</h2>
+            <p class="text-xs text-gray-500 mt-0.5">
+              <span :class="similarIssuesRunStatusClass" class="px-1.5 py-0.5 rounded-full font-medium">
+                {{ similarIssuesLogsModal.status }}
+              </span>
+              <span v-if="similarIssuesLogsModal.startedAt" class="ml-2">
+                <DateDisplay :date="similarIssuesLogsModal.startedAt" mode="auto" />
+              </span>
+              <span v-if="similarIssuesLogsModal.summary" class="ml-2">— {{ similarIssuesLogsModal.summary }}</span>
+            </p>
+          </div>
+          <button class="text-gray-500 hover:text-gray-300 text-xl leading-none" @click="similarIssuesLogsModal = null">&times;</button>
+        </div>
+        <div class="overflow-y-auto p-4 font-mono text-xs space-y-0.5">
+          <div v-if="similarIssuesLogsModalLoading" class="text-gray-600 text-center py-6">Loading…</div>
+          <div v-else-if="!similarIssuesLogsModal.logs?.length" class="text-gray-600 text-center py-6">No log entries.</div>
+          <div v-for="log in similarIssuesLogsModal.logs" :key="log.id"
+            :class="similarIssuesLogLineClass(log.level)">
+            <span class="text-gray-600 mr-2">{{ formatLogTime(log.timestamp) }}</span>
+            <span :class="similarIssuesLogBadgeClass(log.level)" class="mr-2 text-xs px-1 rounded">
+              [{{ log.level === 1 ? 'WARN' : log.level === 2 ? 'ERR' : 'INFO' }}]
+            </span>
+            {{ log.message }}
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -970,7 +1059,7 @@ const editingCommentId = ref<string | null>(null)
 const commentEdit = ref('')
 
 // Issue view tabs
-type IssueTab = 'tasks' | 'subissues' | 'linked' | 'history' | 'comments' | 'attachments' | 'runs'
+type IssueTab = 'tasks' | 'subissues' | 'linked' | 'history' | 'comments' | 'attachments' | 'runs' | 'similar'
 const TABS_STORAGE_KEY = 'issue-view-tabs'
 const DEFAULT_TABS: IssueTab[] = ['tasks', 'comments']
 
@@ -1033,6 +1122,7 @@ const allTabs = computed(() => [
   { id: 'comments' as IssueTab, label: 'Comments', count: totalCommentsCount.value },
   { id: 'attachments' as IssueTab, label: 'Attachments', count: store.currentAttachments.length },
   { id: 'runs' as IssueTab, label: 'Runs', count: runsCount.value },
+  { id: 'similar' as IssueTab, label: 'Similar Issues', count: similarIssues.value.length },
 ])
 
 // Total comments includes regular and code review comments
@@ -1047,6 +1137,119 @@ const allCiCdRuns = computed(() =>
 const runsCount = computed(() =>
   (store.currentRuns?.agentSessions.length ?? 0) + allCiCdRuns.value.length
 )
+
+// Similar Issues
+const SIMILAR_ISSUES_POLL_ATTEMPTS = 12
+const SIMILAR_ISSUES_POLL_INTERVAL_MS = 2500
+const similarIssues = ref<Array<{ similarIssueId: string; number: number; title: string; score: number; reason?: string; detectedAt: string }>>([])
+const similarIssuesLoading = ref(false)
+const similarIssuesTriggeringRun = ref(false)
+const similarIssuesRunId = ref<string | null>(null)
+const similarIssuesRunStatus = ref<string | null>(null)
+
+const similarIssuesRunStatusClass = computed(() => {
+  switch (similarIssuesRunStatus.value) {
+    case 'Succeeded': return 'bg-green-900/40 text-green-300'
+    case 'Failed': return 'bg-red-900/40 text-red-300'
+    case 'Running': return 'bg-blue-900/40 text-blue-300'
+    case 'Pending': return 'bg-gray-800 text-gray-400'
+    default: return 'bg-gray-800 text-gray-400'
+  }
+})
+
+interface SimilarIssueRunLog { id: string; level: number; message: string; timestamp: string }
+interface SimilarIssueRunDetail {
+  id: string
+  status: string
+  summary?: string
+  startedAt: string
+  completedAt?: string | null
+  logs?: SimilarIssueRunLog[]
+}
+
+const similarIssuesLogsModal = ref<SimilarIssueRunDetail | null>(null)
+const similarIssuesLogsModalLoading = ref(false)
+
+function similarIssuesLogLineClass(level: number): string {
+  if (level === 1) return 'text-yellow-300'
+  if (level === 2) return 'text-red-400'
+  return 'text-gray-300'
+}
+
+function similarIssuesLogBadgeClass(level: number): string {
+  if (level === 1) return 'bg-yellow-900/40 text-yellow-300'
+  if (level === 2) return 'bg-red-900/40 text-red-300'
+  return 'bg-gray-800 text-gray-500'
+}
+
+function formatLogTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('en-GB', { hour12: false })
+}
+
+async function openSimilarIssuesLogs() {
+  if (!similarIssuesRunId.value) return
+  similarIssuesLogsModalLoading.value = true
+  similarIssuesLogsModal.value = { id: similarIssuesRunId.value, status: similarIssuesRunStatus.value ?? 'Pending', startedAt: '' }
+  try {
+    const { get } = useApi()
+    similarIssuesLogsModal.value = await get<SimilarIssueRunDetail>(`/api/similar-issue-runs/${similarIssuesRunId.value}`)
+  } finally {
+    similarIssuesLogsModalLoading.value = false
+  }
+}
+
+async function fetchSimilarIssues() {
+  if (!resolvedIssueId.value) return
+  similarIssuesLoading.value = true
+  try {
+    const { get } = useApi()
+    similarIssues.value = await get(`/api/issues/${resolvedIssueId.value}/similar-issues`)
+  } catch {
+    // ignore
+  } finally {
+    similarIssuesLoading.value = false
+  }
+}
+
+async function pollRunStatus(runId: string) {
+  const { get } = useApi()
+  for (let i = 0; i < SIMILAR_ISSUES_POLL_ATTEMPTS; i++) {
+    await new Promise(resolve => setTimeout(resolve, SIMILAR_ISSUES_POLL_INTERVAL_MS))
+    try {
+      const run = await get<SimilarIssueRunDetail>(`/api/similar-issue-runs/${runId}`)
+      similarIssuesRunStatus.value = run.status
+      if (run.status === 'Succeeded' || run.status === 'Failed') {
+        await fetchSimilarIssues()
+        break
+      }
+    } catch {
+      break
+    }
+  }
+}
+
+async function triggerSimilarIssues() {
+  similarIssuesTriggeringRun.value = true
+  similarIssuesRunStatus.value = 'Pending'
+  try {
+    const { post } = useApi()
+    const response = await post<{ runId: string; projectId: string }>(`/api/issues/${resolvedIssueId.value}/similar-issues/trigger`, {})
+    if (response?.runId) {
+      similarIssuesRunId.value = response.runId
+      similarIssuesRunStatus.value = 'Running'
+      await pollRunStatus(response.runId)
+    } else {
+      // Fallback: poll for results directly (no runId available)
+      for (let attempt = 0; attempt < SIMILAR_ISSUES_POLL_ATTEMPTS; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, SIMILAR_ISSUES_POLL_INTERVAL_MS))
+        await fetchSimilarIssues()
+      }
+      similarIssuesRunStatus.value = null
+    }
+  } finally {
+    similarIssuesTriggeringRun.value = false
+  }
+}
 
 // Links
 const addingLink = ref(false)
@@ -1113,6 +1316,7 @@ onMounted(async () => {
     projectsStore.fetchProject(id),
     propsStore.fetchProperties(actualProjectId.value),
     propsStore.fetchIssuePropertyValues(actualProjectId.value, resolvedIssueId.value).then(loadPropertyValues),
+    fetchSimilarIssues(),
   ])
   // Fetch all issues in this org for link target selection (excluding current), with project name for cross-project display
   try {

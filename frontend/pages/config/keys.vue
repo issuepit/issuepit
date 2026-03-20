@@ -103,8 +103,10 @@
 <script setup lang="ts">
 import { ApiKeyProvider, ApiKeyProviderLabels } from '~/types'
 import { useConfigStore } from '~/stores/config'
+import { useOrgsStore } from '~/stores/orgs'
 
 const store = useConfigStore()
+const orgsStore = useOrgsStore()
 
 onMounted(() => store.fetchApiKeys())
 
@@ -116,7 +118,6 @@ const form = reactive({
   provider: ApiKeyProvider.Custom,
   value: '',
   expiresAt: '',
-  orgId: '', // TODO: resolve from active org context
 })
 
 const providerOptions = computed(() =>
@@ -140,7 +141,7 @@ async function handleCreate() {
   saving.value = true
   try {
     await store.createApiKey({
-      orgId: form.orgId,
+      orgId: orgsStore.currentOrg?.id ?? undefined,
       name: form.name,
       provider: form.provider,
       value: form.value,

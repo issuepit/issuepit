@@ -66,6 +66,9 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<IssuePropertyValue> IssuePropertyValues => Set<IssuePropertyValue>();
     public DbSet<McpToken> McpTokens => Set<McpToken>();
     public DbSet<DashboardLayout> DashboardLayouts => Set<DashboardLayout>();
+    public DbSet<SimilarIssueRun> SimilarIssueRuns => Set<SimilarIssueRun>();
+    public DbSet<SimilarIssueRunLog> SimilarIssueRunLogs => Set<SimilarIssueRunLog>();
+    public DbSet<SimilarIssuePair> SimilarIssuePairs => Set<SimilarIssuePair>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -315,5 +318,17 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
         modelBuilder.Entity<McpToken>()
             .HasIndex(t => t.KeyHash)
             .IsUnique();
+
+        modelBuilder.Entity<SimilarIssuePair>()
+            .HasOne(p => p.Issue)
+            .WithMany()
+            .HasForeignKey(p => p.IssueId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<SimilarIssuePair>()
+            .HasOne(p => p.SimilarIssue)
+            .WithMany()
+            .HasForeignKey(p => p.SimilarIssueId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

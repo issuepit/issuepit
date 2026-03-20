@@ -125,10 +125,36 @@ public class ScheduledTasksController(
                 .ToListAsync();
         }
 
+        // ── Similar Issue Detection runs ──────────────────────────────────────
+        var siQuery = db.SimilarIssueRuns
+            .Include(r => r.Project)
+            .Where(r => r.Project.Organization.TenantId == ctx.CurrentTenant.Id);
+
+        if (projectId.HasValue)
+            siQuery = siQuery.Where(r => r.ProjectId == projectId.Value);
+
+        if (parsedStatus.HasValue)
+            siQuery = siQuery.Where(r => r.Status == parsedStatus.Value);
+
+        var siRuns = await siQuery
+            .OrderByDescending(r => r.StartedAt)
+            .Take(cappedTake)
+            .Select(r => new ScheduledTaskRunDto(
+                r.Id,
+                r.ProjectId,
+                r.Project.Name,
+                r.Status,
+                r.Summary,
+                r.StartedAt,
+                r.CompletedAt,
+                "SimilarIssues"))
+            .ToListAsync();
+
         // Merge and re-sort by StartedAt descending, then cap to requested take.
         var runs = ghRuns
             .Concat(bdRuns)
             .Concat(crRuns)
+            .Concat(siRuns)
             .OrderByDescending(r => r.StartedAt)
             .Take(cappedTake)
             .ToList();
@@ -157,8 +183,16 @@ public class ScheduledTasksController(
             .Distinct()
             .ToListAsync();
 
+        var siProjects = await db.SimilarIssueRuns
+            .Include(r => r.Project)
+            .Where(r => r.Project.Organization.TenantId == ctx.CurrentTenant.Id)
+            .Select(r => new { r.ProjectId, r.Project.Name })
+            .Distinct()
+            .ToListAsync();
+
         var projects = ghProjects
             .Concat(bdProjects)
+            .Concat(siProjects)
             .DistinctBy(p => p.ProjectId)
             .OrderBy(p => p.Name)
             .Select(p => new { p.ProjectId, p.Name })
