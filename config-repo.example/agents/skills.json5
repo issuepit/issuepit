@@ -1,0 +1,61 @@
+// Example skill configurations for IssuePit.
+//
+// Skills are reusable system-prompt snippets that get prepended to an agent's system prompt
+// before each run. You can:
+//   - Select skills per agent in Configuration → Agents → <agent> → Skills
+//   - Select skills per project in Project Settings → Skills
+//
+// Skills can optionally be backed by a git repository. When a git URL is set, IssuePit can
+// sync the skill content from the repository. Pin a specific branch or commit SHA to avoid
+// unintended changes from upstream updates.
+//
+// ─── Inline skill (no git repo) ────────────────────────────────────────────────────────
+{
+  "name": "Python Expert",
+  "description": "Instructs the agent to follow Python best practices",
+  "content": "You are an expert Python developer. Always follow PEP 8 style guidelines, use type hints, and write comprehensive docstrings."
+}
+
+// ─── Git-backed skill (pinned to a branch) ──────────────────────────────────────────────
+//
+// The skill content will be sourced from the git repository.
+// Use gitBranch to pin to a stable branch, or gitSha for an exact commit.
+//
+// Example: public .NET skills repo (https://github.com/dotnet/skills)
+{
+  "name": "dotnet-skills",
+  "description": "Community .NET development skills from github.com/dotnet/skills",
+  "content": "",
+
+  // Git repository containing the skill definition
+  "gitRepoUrl": "https://github.com/dotnet/skills.git",
+
+  // Optional: limit to a subdirectory (sparse checkout)
+  // "gitSubDir": "src/coding",
+
+  // Optional: pin to a specific branch (recommended for stability)
+  "gitBranch": "main",
+
+  // Optional: pin to an exact commit SHA (takes precedence over gitBranch)
+  // "gitSha": "abc1234def5678...",
+
+  // Optional: authentication for private repositories
+  // "gitAuthUsername": "x-access-token",
+  // "gitAuthToken": "ghp_XXXXXXXXXXXXXXXXXXXX"
+}
+
+// ─── Private git-backed skill ───────────────────────────────────────────────────────────
+//
+// For private repositories, provide credentials using gitAuthUsername + gitAuthToken.
+// GitHub PAT with 'contents: read' scope is sufficient.
+{
+  "name": "company-guidelines",
+  "description": "Internal coding standards and guidelines",
+  "content": "",
+  "gitRepoUrl": "https://github.com/my-org/coding-standards.git",
+  "gitBranch": "main",
+  "gitSubDir": "agent-skills",
+  "gitAuthUsername": "x-access-token",
+  // Replace with your actual PAT (scopes: repo or contents: read)
+  "gitAuthToken": "ghp_XXXXXXXXXXXXXXXXXXXX"
+}

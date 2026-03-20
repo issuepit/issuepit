@@ -115,6 +115,28 @@ export const useAgentsStore = defineStore('agents', () => {
     }
   }
 
+  // --- Skills ---
+
+  async function linkSkill(agentId: string, skillId: string) {
+    error.value = null
+    try {
+      await api.post(`/api/agents/${agentId}/skills/${skillId}`, {})
+      if (currentAgent.value?.id === agentId) await fetchAgent(agentId)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to link skill'
+    }
+  }
+
+  async function unlinkSkill(agentId: string, skillId: string) {
+    error.value = null
+    try {
+      await api.del(`/api/agents/${agentId}/skills/${skillId}`)
+      if (currentAgent.value?.id === agentId) await fetchAgent(agentId)
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to unlink skill'
+    }
+  }
+
   // --- Project agents ---
 
   async function fetchProjectAgents(projectId: string) {
@@ -212,6 +234,8 @@ export const useAgentsStore = defineStore('agents', () => {
     toggleAgent,
     linkMcpServer,
     unlinkMcpServer,
+    linkSkill,
+    unlinkSkill,
     fetchProjectAgents,
     linkAgentToProject,
     unlinkAgentFromProject,

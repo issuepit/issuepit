@@ -101,4 +101,6 @@ public class Project
     public string? Color { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public ICollection<ProjectSkill> ProjectSkills { get; set; } = [];
 }

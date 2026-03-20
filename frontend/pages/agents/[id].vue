@@ -176,6 +176,46 @@
         </div>
       </div>
 
+      <!-- Skills -->
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6">
+        <div class="flex items-center justify-between mb-1">
+          <h2 class="text-base font-semibold text-white">Skills</h2>
+          <NuxtLink to="/skills" class="text-xs text-gray-500 hover:text-gray-300 transition-colors">
+            Manage Skills →
+          </NuxtLink>
+        </div>
+        <p class="text-sm text-gray-500 mb-5">Link skills to inject their content into this agent's system prompt before each run.</p>
+
+        <div v-if="skillsStore.loading" class="text-sm text-gray-500">Loading skills…</div>
+        <div v-else-if="!skillsStore.skills.length" class="text-sm text-gray-600">
+          No skills configured yet. Create one in
+          <NuxtLink to="/skills" class="text-brand-400 hover:text-brand-300">Skills</NuxtLink>.
+        </div>
+        <div v-else class="space-y-2">
+          <div v-for="skill in skillsStore.skills" :key="skill.id"
+            class="flex items-center gap-3 bg-gray-800/60 rounded-lg px-4 py-3 border transition-colors"
+            :class="isSkillLinked(skill.id) ? 'border-purple-700/50' : 'border-gray-700/50'">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-medium text-white">{{ skill.name }}</span>
+                <span v-if="isSkillLinked(skill.id)" class="text-xs bg-purple-900/40 text-purple-400 px-1.5 py-0.5 rounded-full">Linked</span>
+              </div>
+              <p v-if="skill.description" class="text-xs text-gray-500 mt-0.5 truncate">{{ skill.description }}</p>
+            </div>
+            <button v-if="isSkillLinked(skill.id)"
+              @click="unlinkSkill(skill.id)"
+              class="text-xs text-red-400 hover:text-red-300 px-3 py-1.5 rounded-md border border-red-900/30 hover:bg-red-900/20 transition-colors shrink-0">
+              Unlink
+            </button>
+            <button v-else
+              @click="linkSkill(skill.id)"
+              class="text-xs text-brand-400 hover:text-brand-300 px-3 py-1.5 rounded-md border border-brand-900/30 hover:bg-brand-900/20 transition-colors shrink-0">
+              Link
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Allowed Tools -->
       <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
         <h2 class="text-base font-semibold text-white mb-1">Allowed Tools</h2>
@@ -252,12 +292,14 @@
 <script setup lang="ts">
 import { useAgentsStore } from '~/stores/agents'
 import { useMcpServersStore } from '~/stores/mcp-servers'
+import { useSkillsStore } from '~/stores/skills'
 import type { RunnerType, OpenCodeAgentType } from '~/types'
 import { RunnerTypeLabels, RunnerType as RunnerTypeEnum, OpenCodeAgentType as OpenCodeAgentTypeEnum, OpenCodeAgentTypeLabels } from '~/types'
 
 const route = useRoute()
 const store = useAgentsStore()
 const mcpStore = useMcpServersStore()
+const skillsStore = useSkillsStore()
 const config = useRuntimeConfig()
 const mcpBase = config.public.mcpBase as string
 
@@ -404,6 +446,18 @@ async function unlinkServer(mcpServerId: string) {
   await store.unlinkMcpServer(store.currentAgent!.id, mcpServerId)
 }
 
+function isSkillLinked(skillId: string) {
+  return store.currentAgent?.linkedSkills?.some(s => s.id === skillId) ?? false
+}
+
+async function linkSkill(skillId: string) {
+  await store.linkSkill(store.currentAgent!.id, skillId)
+}
+
+async function unlinkSkill(skillId: string) {
+  await store.unlinkSkill(store.currentAgent!.id, skillId)
+}
+
 async function saveSettings() {
   if (!store.currentAgent || !form.name) return
   saving.value = true
@@ -431,6 +485,7 @@ onMounted(async () => {
   await Promise.all([
     store.fetchAgent(id),
     mcpStore.fetchMcpServers(),
+    skillsStore.fetchSkills(),
   ])
   loadForm()
 })
