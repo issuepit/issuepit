@@ -28,6 +28,21 @@ public class CiCdWorker(
     // A limit of 0 means unlimited (no semaphore).
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _orgSemaphores = new();
 
+    // Tracks the current per-action sub-step within generic act phases ("Main", "Pre", "Post").
+    // act emits stage="Main" for all steps in the main execution phase; when a "Run Main {action}"
+    // message is detected we refine the stepId to "Main {action}" so the UI can group per action.
+    private readonly ConcurrentDictionary<Guid, string?> _currentSubStep = new();
+
+    // act phase names used as stage values in JSON output.
+    private const string ActPhaseMain = "Main";
+    private const string ActPhasePre = "Pre";
+    private const string ActPhasePost = "Post";
+
+    // Maximum character offset from the start of a message to still treat "Run {phase} {action}"
+    // as a genuine step-start indicator. This allows for a leading emoji (e.g. "⭐ ") while
+    // preventing false positives from user log output that happens to contain the same words.
+    private const int MaxStepStartPrefixOffset = 5;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // On startup, mark any runs that were left in Running/Pending state as Failed.
@@ -413,6 +428,7 @@ public class CiCdWorker(
         {
             semaphore?.Release();
             _activeRuns.TryRemove(run.Id, out _);
+            _currentSubStep.TryRemove(run.Id, out _);
             run.EndedAt = DateTime.UtcNow;
             // Note: do NOT save the terminal status here. The status is saved after all
             // artifact/test-result processing completes (see below) to prevent a race condition
@@ -898,6 +914,21 @@ public class CiCdWorker(
             }
         }
 
+        // Refine generic act phases ("Main", "Pre", "Post") into per-action step IDs by detecting
+        // act's step-start messages (e.g., "⭐ Run Main actions/checkout@v4").
+        // act emits stage="Main" for all steps in the main phase; without refinement they collapse
+        // into one large group in the UI. We track the current sub-step per run so that intermediate
+        // log lines (between step-start and step-end) are attributed to the correct action.
+        if (stepId is ActPhaseMain or ActPhasePre or ActPhasePost)
+        {
+            stepId = RefineSubStep(displayLine, stepId, runId);
+        }
+        else
+        {
+            // Phase changed to something other than Main/Pre/Post — clear any tracked sub-step.
+            _currentSubStep.TryRemove(runId, out _);
+        }
+
         var log = new CiCdRunLog
         {
             Id = Guid.NewGuid(),
@@ -939,6 +970,45 @@ public class CiCdWorker(
             await PublishLogLineAsync(runId.ToString(),
                 JsonSerializer.Serialize(new { @event = "job-status", jobId, status }));
         }
+    }
+
+    /// <summary>
+    /// Refines a generic act phase step ID ("Main", "Pre", "Post") into a per-action step ID
+    /// (e.g., "Main actions/checkout@v4") by parsing act's step-start log messages.
+    ///
+    /// act emits <c>stage="Main"</c> for every log line in the main execution phase regardless of
+    /// which action is running. When a message matches <c>"Run {phase} {action-name}"</c>
+    /// (optionally preceded by an emoji such as ⭐), we derive a specific step ID and cache it
+    /// for subsequent lines belonging to the same action. This allows the UI to display individual
+    /// collapsible step groups instead of one large "MAIN" block.
+    /// </summary>
+    private string RefineSubStep(string message, string phase, Guid runId)
+    {
+        // Look for "Run {phase} {action-name}" near the start of the message (within
+        // MaxStepStartPrefixOffset chars) to ignore false positives from user log output.
+        // An optional emoji (e.g., "⭐ ") may precede the pattern.
+        var prefix = $"Run {phase} ";
+        var idx = message.IndexOf(prefix, StringComparison.Ordinal);
+        if (idx >= 0 && idx <= MaxStepStartPrefixOffset)
+        {
+            var actionName = message[(idx + prefix.Length)..].Trim();
+            if (!string.IsNullOrEmpty(actionName))
+            {
+                var subStep = $"{phase} {actionName}";
+                _currentSubStep[runId] = subStep;
+                return subStep;
+            }
+        }
+
+        // Not a step-start message — use the last known sub-step if it belongs to the same phase.
+        if (_currentSubStep.TryGetValue(runId, out var lastSubStep) &&
+            lastSubStep is not null &&
+            lastSubStep.StartsWith(phase + " ", StringComparison.Ordinal))
+        {
+            return lastSubStep;
+        }
+
+        return phase;
     }
 
     private Task PublishLogLineAsync(string runId, string payload)
