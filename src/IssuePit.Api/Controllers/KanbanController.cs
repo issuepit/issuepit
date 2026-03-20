@@ -29,6 +29,7 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
         var boards = await db.KanbanBoards
             .Include(b => b.Columns)
             .Where(b => b.ProjectId == projectId)
+            .OrderBy(b => b.CreatedAt)
             .ToListAsync();
         return Ok(boards);
     }

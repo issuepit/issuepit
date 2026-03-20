@@ -226,6 +226,7 @@ async function main() {
     try {
       await page.evaluate(() => window.scrollTo(0, 0));
       await page.getByText('Customize dashboard').click({ timeout: 3000 });
+      await page.evaluate(() => window.scrollTo(0, 0));
       await screenshotState(page, 'project-dashboard-draft');
       await page.getByRole('button', { name: 'Cancel' }).click();
       await page.waitForTimeout(300);
