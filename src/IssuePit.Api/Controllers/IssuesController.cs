@@ -422,7 +422,7 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
         }
     }
 
-    [GeneratedRegex(@"@([\w][\w\-]*)")]
+    [GeneratedRegex(@"@([\w]+(?:-[\w]+)*)")]
     private static partial Regex AgentMentionRegex();
 
     [HttpPut("{id:guid}/comments/{commentId:guid}")]

@@ -363,7 +363,6 @@
                   class="w-full bg-gray-800 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none resize-none transition-colors"
                   :class="{ 'bg-brand-500/10': commentDragOver }"
                   v-bind="commentMention.textareaBindings"
-                  @input="(e: Event) => { newComment = (e.target as HTMLTextAreaElement).value; commentMention.textareaBindings.onInput(e) }"
                   @paste="e => handleImagePaste(e, md => newComment += md)"
                   @dragover.prevent="commentDragOver = true"
                   @dragleave="commentDragOver = false"
@@ -880,7 +879,6 @@
               :placeholder="`@${assignAgentModal.agentName} `"
               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none"
               v-bind="assignModalMention.textareaBindings"
-              @input="(e: Event) => { assignAgentModal.comment = (e.target as HTMLTextAreaElement).value; assignModalMention.textareaBindings.onInput(e) }"
             />
             <!-- Mention dropdown for assignment modal textarea -->
             <div v-if="assignModalMention.isOpen.value && assignModalMention.items.value.length"
@@ -1147,11 +1145,6 @@ const commentMention = useMentionDropdown({
   agents: mentionAgents,
   users: mentionUsers,
   hashTokens,
-})
-
-// Keep mention items reactive after agents/users load
-watch([mentionAgents, mentionUsers], () => {
-  commentMention.textareaBindings.ref.value = commentMention.textareaRef.value
 })
 
 // Agent assignment modal state

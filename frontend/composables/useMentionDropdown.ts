@@ -64,8 +64,8 @@ export function useMentionDropdown(options: UseMentionDropdownOptions): MentionD
 
   const items = computed<MentionItem[]>(() => {
     const q = query.value.toLowerCase()
-    const agentsArr = isRef(options.agents) ? options.agents.value : (options.agents ?? [])
-    const usersArr = isRef(options.users) ? options.users.value : (options.users ?? [])
+    const agentsArr = unref(options.agents) ?? []
+    const usersArr = unref(options.users) ?? []
     if (triggerChar.value === 'at') {
       const agents = agentsArr.filter(a => a.value.toLowerCase().includes(q) || a.label.toLowerCase().includes(q))
       const users = usersArr.filter(u => u.value.toLowerCase().includes(q) || u.label.toLowerCase().includes(q))
