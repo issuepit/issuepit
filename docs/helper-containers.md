@@ -31,7 +31,7 @@ A shared base image that all other helper images extend.
 
 Extends `helper-base` with [issuepit/act](https://github.com/issuepit/act) (a fork of [nektos/act](https://github.com/nektos/act)), which lets you run GitHub Actions workflows locally inside the container — used by `IssuePit.CiCdClient` for local CI runs.
 
-**Includes:** everything in `helper-base` + `act`
+**Includes:** everything in `helper-base` + `act` + `Go` (toolchain, for building Go projects inside the container)
 
 **Registry:** `ghcr.io/issuepit/issuepit-helper-act`
 
@@ -51,7 +51,7 @@ Extends `helper-base` with the [opencode CLI](https://github.com/anomalyco/openc
 
 Combines `helper-act` with the opencode CLI — the **default image for agent runs**. Provides full support for Docker-in-Docker (DinD) so agent tools can spawn containers, run CI workflows via `act`, and access all build tooling.
 
-**Includes:** everything in `helper-act` (Docker Engine, act, actionlint) + `opencode-ai` (npm global)
+**Includes:** everything in `helper-act` (Docker Engine, act, actionlint, Go) + `opencode-ai` (npm global)
 
 **Registry:** `ghcr.io/issuepit/issuepit-helper-opencode-act`
 

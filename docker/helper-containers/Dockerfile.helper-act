@@ -47,6 +47,13 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
 COPY --from=act-builder /usr/local/bin/act /usr/local/bin/act
 RUN act --version
 
+# Copy Go toolchain from the builder stage so Go is available in the final image.
+# This is required for e2e tests that clone and build Go projects (e.g. issuepit/act) inside
+# the container. The builder already has Go 1.24 at /usr/local/go.
+COPY --from=act-builder /usr/local/go /usr/local/go
+ENV PATH="/usr/local/go/bin:${PATH}"
+RUN go version
+
 # Install actionlint using the official download script.
 # Download to a temp file first since bash process substitution (<()) is not available in /bin/sh.
 RUN curl --proto '=https' --tlsv1.2 -fsSL \
@@ -57,6 +64,6 @@ RUN curl --proto '=https' --tlsv1.2 -fsSL \
     actionlint --version
 
 LABEL org.opencontainers.image.title="issuepit-helper-act" \
-      org.opencontainers.image.description="IssuePit helper image for CI/CD runs: helper-base + Docker Engine (DinD) + act + actionlint" \
+      org.opencontainers.image.description="IssuePit helper image for CI/CD runs: helper-base + Docker Engine (DinD) + act + actionlint + Go" \
       issuepit.act.commit="${ACT_COMMIT}" \
       issuepit.actionlint.version="${ACTIONLINT_VERSION}"
