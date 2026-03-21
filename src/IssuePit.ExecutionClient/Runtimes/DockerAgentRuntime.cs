@@ -1079,9 +1079,32 @@ public class DockerAgentRuntime(
                     containerId,
                     ["/bin/sh", "-c", "cat /tmp/.issuepit-real-git 2>/dev/null || echo /usr/bin/git"],
                     cancellationToken)).Trim();
-                var pushExit = await ExecCommandAsync(containerId, [realGit, "push", "origin", branch],
-                    async (line, stream) => await onLogLine($"[entrypoint] {line}", stream),
-                    cancellationToken);
+
+                // Build the authenticated push target. Git 2.39+ no longer persists credentials
+                // embedded in the clone URL to .git/config (it only uses them during clone), so a
+                // subsequent `git push origin` would fail with "could not read Username" when no
+                // credential helper is configured in the container. Passing the full authenticated
+                // URL directly to git push avoids this and also ensures we push to the correct
+                // Working-mode remote when multiple origins are configured.
+                var pushTarget = gitRepository is not null
+                    ? BuildAuthenticatedCloneUrl(gitRepository.RemoteUrl, gitRepository.AuthUsername, gitRepository.AuthToken)
+                    : "origin";
+
+                // Sanitize push output: git prints "To <url>" in its output, which would leak the
+                // auth token when credentials are embedded in the push URL.
+                var tokenToRedact = gitRepository?.AuthToken;
+                Task safeLogLine(string line, LogStream stream)
+                {
+                    var safeLine = !string.IsNullOrEmpty(tokenToRedact)
+                        ? line.Replace(tokenToRedact, "***", StringComparison.Ordinal)
+                        : line;
+                    return onLogLine($"[entrypoint] {safeLine}", stream);
+                }
+
+                var pushExit = await ExecCommandAsync(containerId, [realGit, "push", pushTarget, branch],
+                    safeLogLine,
+                    cancellationToken,
+                    env: ["GIT_TERMINAL_PROMPT=0"]);
                 if (pushExit != 0)
                 {
                     await onLogLine(
