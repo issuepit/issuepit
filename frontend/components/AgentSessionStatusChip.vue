@@ -207,7 +207,7 @@ function onMiniGraphJobClick(runId: string, jobId: string) {
   tooltipVisible.value = false
   subTooltipVisible.value = false
   hoveredCiCdRunId.value = null
-  navigateTo(`/projects/${run.projectId}/runs/cicd/${run.id}?tab=logs&job=${encodeURIComponent(jobId)}`)
+  navigateTo(`/projects/${run.projectId}/runs/cicd/${run.id}?tab=jobs&job=${jobId}`)
 }
 
 function positionSubTooltip(e: MouseEvent) {
