@@ -390,10 +390,29 @@
               class="text-gray-600 hover:text-red-400 transition-colors shrink-0">×</button>
           </div>
         </div>
-        <textarea v-model="generalComment" rows="3"
-          placeholder="Add an overall comment about this diff…"
-          class="w-full bg-gray-800 border border-gray-700 rounded-lg text-sm text-white px-3 py-2 focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none mb-2"
-          @paste="e => handleImagePaste(e, md => generalComment += md)"></textarea>
+        <div class="relative">
+          <textarea v-model="generalComment" rows="3"
+            placeholder="Add an overall comment about this diff… (type @ to mention an agent)"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg text-sm text-white px-3 py-2 focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none mb-2"
+            v-bind="reviewMention.textareaBindings"
+            @paste="e => handleImagePaste(e, md => generalComment += md)"></textarea>
+          <!-- @mention dropdown -->
+          <div v-if="reviewMention.isOpen.value && reviewMention.items.value.length"
+            class="absolute left-0 bottom-8 z-50 bg-gray-850 border border-gray-700 rounded-lg shadow-xl overflow-hidden min-w-48 max-h-52 overflow-y-auto">
+            <button
+              v-for="(item, idx) in reviewMention.items.value"
+              :key="item.value"
+              type="button"
+              class="w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors"
+              :class="idx === reviewMention.activeIndex.value ? 'bg-brand-700/40 text-white' : 'text-gray-300 hover:bg-gray-700'"
+              @mousedown.prevent="reviewMention.confirmSelection(item)">
+              <span class="w-5 h-5 rounded-full bg-brand-700 flex items-center justify-center text-xs text-brand-200 shrink-0">
+                {{ item.label.charAt(0).toUpperCase() }}
+              </span>
+              <span class="truncate">{{ item.label }}</span>
+            </button>
+          </div>
+        </div>
         <p v-if="uploadingImage" class="text-xs text-gray-400 mb-2">Uploading image…</p>
         <p v-if="uploadImageError" class="text-xs text-red-400 mb-2">{{ uploadImageError }}</p>
         <div class="flex gap-2 flex-wrap">
@@ -462,6 +481,8 @@ import { useAuthStore } from '~/stores/auth'
 import { IssueType, IssuePriority, IssueStatus } from '~/types'
 import type { GitDiffFile, GitDiffHunk, GitDiffLine } from '~/types'
 import { useProjectsStore } from '~/stores/projects'
+import { useAgentsStore } from '~/stores/agents'
+import { useMentionDropdown } from '~/composables/useMentionDropdown'
 
 const route = useRoute()
 const router = useRouter()
@@ -470,6 +491,7 @@ const store = useGitStore()
 const issuesStore = useIssuesStore()
 const authStore = useAuthStore()
 const projectsStore = useProjectsStore()
+const agentsStore = useAgentsStore()
 
 const { uploading: uploadingImage, uploadError: uploadImageError, handlePaste: handleImagePaste } = useImageUpload()
 
@@ -508,6 +530,15 @@ const savingReview = ref(false)
 const showFinishModal = ref(false)
 const reviewTitle = ref('')
 const targetIssueId = ref('')
+
+// Agents enabled for this project (for @mention dropdown)
+const projectEnabledAgents = ref<import('~/types').AgentProject[]>([])
+const reviewMentionAgents = computed(() =>
+  projectEnabledAgents.value
+    .filter(a => !a.isDisabled)
+    .map(a => ({ value: a.name, label: a.name }))
+)
+const reviewMention = useMentionDropdown({ agents: reviewMentionAgents })
 
 const reviewedFilesCount = computed(() => new Set(reviewComments.value.filter(c => c.filePath !== '(general)').map(c => c.filePath)).size)
 const generalReviewComments = computed(() => reviewComments.value.filter(c => c.filePath === '(general)'))
@@ -999,6 +1030,10 @@ onMounted(async () => {
   store.reset()
   await store.fetchRepo(id)
   repoChecked.value = true
+
+  // Fetch project-enabled agents for @mention dropdown
+  agentsStore.fetchProjectAgents(id).then(result => { projectEnabledAgents.value = result ?? [] })
+
   if (store.repo) {
     await store.fetchBranches(id)
     const def = store.repo.defaultBranch ?? 'main'

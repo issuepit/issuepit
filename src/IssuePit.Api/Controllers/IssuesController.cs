@@ -376,10 +376,19 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
         if (mentionedNames.Count == 0)
             return;
 
-        // Look up active agents that match the mentioned names, scoped to the current tenant.
+        // Build a set of agent IDs that are disabled for this specific project
+        // (an agent can be org-linked but disabled at project level via AgentProject.IsDisabled).
+        var disabledAgentIds = await db.AgentProjects
+            .Where(ap => ap.ProjectId == issue.ProjectId && ap.IsDisabled)
+            .Select(ap => ap.AgentId)
+            .ToHashSetAsync();
+
+        // Look up active agents that match the mentioned names, scoped to the current tenant
+        // and not disabled for this project.
         var matchedAgents = await db.Agents
             .Where(a => a.Organization.TenantId == ctx.CurrentTenant!.Id
                         && a.IsActive
+                        && !disabledAgentIds.Contains(a.Id)
                         && mentionedNames.Contains(a.Name))
             .ToListAsync();
 

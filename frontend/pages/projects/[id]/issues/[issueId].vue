@@ -1130,8 +1130,12 @@ const editingCommentId = ref<string | null>(null)
 const commentEdit = ref('')
 
 // Mention items for comment textarea (populated after agents are loaded)
+// Only shows agents enabled for this project (not disabled via project/org override)
+const projectEnabledAgents = ref<import('~/types').AgentProject[]>([])
 const mentionAgents = computed(() =>
-  agentsStore.agents.map(a => ({ value: a.name, label: a.name }))
+  projectEnabledAgents.value
+    .filter(a => !a.isDisabled)
+    .map(a => ({ value: a.name, label: a.name }))
 )
 const mentionUsers = computed(() =>
   tenantUsers.value.map(u => ({ value: u.username, label: u.username }))
@@ -1416,6 +1420,7 @@ onMounted(async () => {
     store.fetchGitMappings(resolvedIssueId.value),
     labelsStore.fetchLabels(actualProjectId.value),
     agentsStore.fetchAgents(),
+    agentsStore.fetchProjectAgents(actualProjectId.value).then(result => { projectEnabledAgents.value = result ?? [] }),
     fetchTenantUsers(),
     milestonesStore.fetchMilestones(actualProjectId.value),
     projectsStore.fetchProject(id),
