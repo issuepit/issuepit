@@ -1149,10 +1149,10 @@ const similarIssuesRunStatus = ref<string | null>(null)
 
 const similarIssuesRunStatusClass = computed(() => {
   switch (similarIssuesRunStatus.value) {
-    case 'Succeeded': return 'bg-green-900/40 text-green-300'
-    case 'Failed': return 'bg-red-900/40 text-red-300'
-    case 'Running': return 'bg-blue-900/40 text-blue-300'
-    case 'Pending': return 'bg-gray-800 text-gray-400'
+    case 'succeeded': return 'bg-green-900/40 text-green-300'
+    case 'failed': return 'bg-red-900/40 text-red-300'
+    case 'running': return 'bg-blue-900/40 text-blue-300'
+    case 'pending': return 'bg-gray-800 text-gray-400'
     default: return 'bg-gray-800 text-gray-400'
   }
 })
@@ -1218,7 +1218,7 @@ async function pollRunStatus(runId: string) {
     try {
       const run = await get<SimilarIssueRunDetail>(`/api/similar-issue-runs/${runId}`)
       similarIssuesRunStatus.value = run.status
-      if (run.status === 'Succeeded' || run.status === 'Failed') {
+      if (run.status === 'succeeded' || run.status === 'failed') {
         await fetchSimilarIssues()
         break
       }
@@ -1230,13 +1230,13 @@ async function pollRunStatus(runId: string) {
 
 async function triggerSimilarIssues() {
   similarIssuesTriggeringRun.value = true
-  similarIssuesRunStatus.value = 'Pending'
+  similarIssuesRunStatus.value = 'pending'
   try {
     const { post } = useApi()
     const response = await post<{ runId: string; projectId: string }>(`/api/issues/${resolvedIssueId.value}/similar-issues/trigger`, {})
     if (response?.runId) {
       similarIssuesRunId.value = response.runId
-      similarIssuesRunStatus.value = 'Running'
+      similarIssuesRunStatus.value = 'running'
       await pollRunStatus(response.runId)
     } else {
       // Fallback: poll for results directly (no runId available)
