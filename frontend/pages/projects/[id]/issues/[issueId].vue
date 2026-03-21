@@ -358,13 +358,33 @@
             <!-- Add comment -->
             <div class="border border-gray-700 rounded-lg overflow-hidden"
               :class="{ 'ring-2 ring-brand-500': commentDragOver }">
-              <textarea v-model="newComment" rows="3" placeholder="Leave a comment..."
-                class="w-full bg-gray-800 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none resize-none transition-colors"
-                :class="{ 'bg-brand-500/10': commentDragOver }"
-                @paste="e => handleImagePaste(e, md => newComment += md)"
-                @dragover.prevent="commentDragOver = true"
-                @dragleave="commentDragOver = false"
-                @drop.prevent="e => { commentDragOver = false; handleDropAttach(e, md => newComment += md) }" />
+              <div class="relative">
+                <textarea v-model="newComment" rows="3" placeholder="Leave a comment… (type @ to mention an agent or user)"
+                  class="w-full bg-gray-800 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none resize-none transition-colors"
+                  :class="{ 'bg-brand-500/10': commentDragOver }"
+                  v-bind="commentMention.textareaBindings"
+                  @input="(e: Event) => { newComment = (e.target as HTMLTextAreaElement).value; commentMention.textareaBindings.onInput(e) }"
+                  @paste="e => handleImagePaste(e, md => newComment += md)"
+                  @dragover.prevent="commentDragOver = true"
+                  @dragleave="commentDragOver = false"
+                  @drop.prevent="e => { commentDragOver = false; handleDropAttach(e, md => newComment += md) }" />
+                <!-- @/# Mention dropdown -->
+                <div v-if="commentMention.isOpen.value && commentMention.items.value.length"
+                  class="absolute left-0 bottom-full mb-1 z-50 bg-gray-850 border border-gray-700 rounded-lg shadow-xl overflow-hidden min-w-48 max-h-52 overflow-y-auto">
+                  <button
+                    v-for="(item, idx) in commentMention.items.value"
+                    :key="item.value"
+                    type="button"
+                    class="w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors"
+                    :class="idx === commentMention.activeIndex.value ? 'bg-brand-700/40 text-white' : 'text-gray-300 hover:bg-gray-700'"
+                    @mousedown.prevent="commentMention.confirmSelection(item)">
+                    <span class="w-5 h-5 rounded-full bg-brand-700 flex items-center justify-center text-xs text-brand-200 shrink-0">
+                      {{ (item.label || item.value).charAt(0).toUpperCase() }}
+                    </span>
+                    <span class="truncate">{{ item.label || item.value }}</span>
+                  </button>
+                </div>
+              </div>
               <div class="flex justify-end bg-gray-800/50 px-3 py-2 border-t border-gray-700 gap-2">
                 <p v-if="uploadingImage" class="text-xs text-gray-400 mr-auto self-center">Uploading image…</p>
                 <p v-else-if="uploadImageError" class="text-xs text-red-400 mr-auto self-center">{{ uploadImageError }}</p>
@@ -675,7 +695,7 @@
                 <option v-for="u in availableUsers" :key="u.id" :value="u.id">{{ u.username }}</option>
               </select>
               <!-- Add agent assignee -->
-              <select v-if="agentsStore.agents.length" @change="onAddAgentAssignee($event)"
+              <select v-if="agentsStore.agents.length" @change="onSelectAgentForAssignment($event)"
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-400 focus:outline-none focus:ring-1 focus:ring-brand-500">
                 <option value="">+ Assign agent</option>
                 <option v-for="a in availableAgents" :key="a.id" :value="a.id">🤖 {{ a.name }}</option>
@@ -842,6 +862,58 @@
       </div>
     </div>
 
+    <!-- Agent Assignment Modal -->
+    <div v-if="assignAgentModal.agentId" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md p-6 shadow-xl">
+        <h2 class="text-lg font-bold text-white mb-1">Assign Agent</h2>
+        <p class="text-sm text-gray-400 mb-4">
+          Assign <span class="text-brand-300 font-medium">{{ assignAgentModal.agentName }}</span> to this issue.
+          Optionally add a comment to give the agent a specific task.
+        </p>
+        <div class="mb-4">
+          <label class="block text-xs font-medium text-gray-400 mb-1.5">Task / Comment <span class="text-gray-600">(optional)</span></label>
+          <div class="relative">
+            <textarea
+              v-model="assignAgentModal.comment"
+              :ref="setAssignAgentModalRef"
+              rows="4"
+              :placeholder="`@${assignAgentModal.agentName} `"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none"
+              v-bind="assignModalMention.textareaBindings"
+              @input="(e: Event) => { assignAgentModal.comment = (e.target as HTMLTextAreaElement).value; assignModalMention.textareaBindings.onInput(e) }"
+            />
+            <!-- Mention dropdown for assignment modal textarea -->
+            <div v-if="assignModalMention.isOpen.value && assignModalMention.items.value.length"
+              class="absolute left-0 bottom-full mb-1 z-50 bg-gray-850 border border-gray-700 rounded-lg shadow-xl overflow-hidden min-w-48 max-h-52 overflow-y-auto">
+              <button
+                v-for="(item, idx) in assignModalMention.items.value"
+                :key="item.value"
+                type="button"
+                class="w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors"
+                :class="idx === assignModalMention.activeIndex.value ? 'bg-brand-700/40 text-white' : 'text-gray-300 hover:bg-gray-700'"
+                @mousedown.prevent="assignModalMention.confirmSelection(item)">
+                <span class="w-5 h-5 rounded-full bg-brand-700 flex items-center justify-center text-xs text-brand-200 shrink-0">
+                  {{ (item.label || item.value).charAt(0).toUpperCase() }}
+                </span>
+                <span class="truncate">{{ item.label || item.value }}</span>
+              </button>
+            </div>
+          </div>
+          <p class="text-xs text-gray-500 mt-1.5">Tip: type <code class="bg-gray-800 px-1 rounded">@agent-name</code> to trigger the agent when posting the comment.</p>
+        </div>
+        <div class="flex gap-3">
+          <button @click="confirmAssignAgent"
+            class="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
+            Assign{{ assignAgentModal.comment.trim() ? ' &amp; Comment' : '' }}
+          </button>
+          <button @click="cancelAssignAgent"
+            class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium py-2 rounded-lg transition-colors">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Create Issue Modal -->
     <div v-if="showCreate" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
       <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-lg p-6 shadow-xl">
@@ -986,6 +1058,7 @@ import { useMilestonesStore } from '~/stores/milestones'
 import { useProjectsStore } from '~/stores/projects'
 import { useProjectPropertiesStore } from '~/stores/projectProperties'
 import { formatIssueId } from '~/composables/useIssueFormat'
+import { useMentionDropdown } from '~/composables/useMentionDropdown'
 const route = useRoute()
 const router = useRouter()
 const id = route.params.id as string
@@ -1057,6 +1130,45 @@ const creatingSubIssue = ref(false)
 const newSubIssueTitle = ref('')
 const editingCommentId = ref<string | null>(null)
 const commentEdit = ref('')
+
+// Mention items for comment textarea (populated after agents are loaded)
+const mentionAgents = computed(() =>
+  agentsStore.agents.map(a => ({ value: a.name, label: a.name }))
+)
+const mentionUsers = computed(() =>
+  tenantUsers.value.map(u => ({ value: u.username, label: u.username }))
+)
+const hashTokens = [
+  { value: 'similar', label: '#similar — attach similar issues context' },
+  { value: 'runs', label: '#runs — attach recent CI/CD run context' },
+]
+
+const commentMention = useMentionDropdown({
+  agents: mentionAgents,
+  users: mentionUsers,
+  hashTokens,
+})
+
+// Keep mention items reactive after agents/users load
+watch([mentionAgents, mentionUsers], () => {
+  commentMention.textareaBindings.ref.value = commentMention.textareaRef.value
+})
+
+// Agent assignment modal state
+const assignAgentModal = reactive<{ agentId: string | null; agentName: string; comment: string }>({
+  agentId: null,
+  agentName: '',
+  comment: '',
+})
+const assignAgentModalRef = ref<HTMLTextAreaElement | null>(null)
+function setAssignAgentModalRef(el: unknown) {
+  assignAgentModalRef.value = el as HTMLTextAreaElement | null
+}
+const assignModalMention = useMentionDropdown({
+  agents: mentionAgents,
+  users: mentionUsers,
+  hashTokens,
+})
 
 // Issue view tabs
 type IssueTab = 'tasks' | 'subissues' | 'linked' | 'history' | 'comments' | 'attachments' | 'runs' | 'similar'
@@ -1500,12 +1612,40 @@ async function onAddUserAssignee(e: Event) {
   sel.value = ''
 }
 
-async function onAddAgentAssignee(e: Event) {
+function onSelectAgentForAssignment(e: Event) {
   const sel = e.target as HTMLSelectElement
   const agentId = sel.value
   if (!agentId) return
-  await store.addAssignee(resolvedIssueId.value, { agentId })
+  const agent = agentsStore.agents.find(a => a.id === agentId)
+  if (!agent) return
   sel.value = ''
+  // Open modal to optionally add a comment
+  assignAgentModal.agentId = agentId
+  assignAgentModal.agentName = agent.name
+  assignAgentModal.comment = `@${agent.name} `
+  nextTick(() => {
+    assignAgentModalRef.value?.focus()
+    assignAgentModalRef.value?.setSelectionRange(assignAgentModal.comment.length, assignAgentModal.comment.length)
+  })
+}
+
+async function confirmAssignAgent() {
+  if (!assignAgentModal.agentId) return
+  // Assign the agent to the issue
+  await store.addAssignee(resolvedIssueId.value, { agentId: assignAgentModal.agentId })
+  // If a comment was provided, post it (the backend will detect @mention and trigger the agent)
+  if (assignAgentModal.comment.trim()) {
+    await store.addComment(resolvedIssueId.value, assignAgentModal.comment.trim())
+  }
+  assignAgentModal.agentId = null
+  assignAgentModal.agentName = ''
+  assignAgentModal.comment = ''
+}
+
+function cancelAssignAgent() {
+  assignAgentModal.agentId = null
+  assignAgentModal.agentName = ''
+  assignAgentModal.comment = ''
 }
 
 function assigneeName(a: { userId?: string; agentId?: string; user?: { username: string } | null; agent?: { name: string } | null }) {
