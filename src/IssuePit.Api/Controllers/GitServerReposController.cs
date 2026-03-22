@@ -106,7 +106,8 @@ public class GitServerReposController(
         // Remove any existing permission for this user/key
         var existing = await db.GitServerPermissions
             .Where(p => p.RepoId == repoId &&
-                        (req.UserId.HasValue ? p.UserId == req.UserId : p.ApiKeyId == req.ApiKeyId))
+                        (req.UserId.HasValue && p.UserId == req.UserId ||
+                         req.ApiKeyId.HasValue && p.ApiKeyId == req.ApiKeyId))
             .ToListAsync();
         db.GitServerPermissions.RemoveRange(existing);
 
