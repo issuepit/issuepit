@@ -549,25 +549,32 @@ public class CiCdRunsController(
         if (recentRunIds.Count == 0)
             return Ok(Array.Empty<object>());
 
-        // Collect distinct job+step combinations from those runs.
+        // Collect distinct job+step combinations from those runs, with their first-seen timestamp.
         var pairs = await db.CiCdRunLogs
             .Where(l => recentRunIds.Contains(l.CiCdRunId) && l.JobId != null && l.StepId != null)
             .GroupBy(l => new { l.JobId, l.StepId })
-            .Select(g => new { g.Key.JobId, g.Key.StepId })
+            .Select(g => new { g.Key.JobId, g.Key.StepId, FirstSeen = g.Min(l => l.Timestamp) })
             .ToListAsync();
 
         // Normalise job IDs: act stores them as "WorkflowName/JobId" — use only the trailing part.
-        var result = pairs
+        // Re-group after normalisation in case multiple raw job IDs collapse to the same short name.
+        var normalised = pairs
             .Select(p => new
             {
                 JobId = p.JobId!.Contains('/') ? p.JobId[(p.JobId.LastIndexOf('/') + 1)..] : p.JobId,
                 StepId = p.StepId!,
+                p.FirstSeen,
             })
+            .GroupBy(p => new { p.JobId, p.StepId })
+            .Select(g => new { g.Key.JobId, g.Key.StepId, FirstSeen = g.Min(p => p.FirstSeen) })
+            .ToList();
+
+        var result = normalised
             .GroupBy(p => p.JobId)
-            .OrderBy(g => g.Key)
+            .OrderBy(g => g.Min(p => p.FirstSeen))
             .Select(g => new StepSuggestionJobDto(
                 g.Key,
-                g.Select(p => p.StepId).Distinct().OrderBy(s => s).ToList()))
+                g.OrderBy(p => p.FirstSeen).Select(p => p.StepId).ToList()))
             .ToList();
 
         return Ok(result);

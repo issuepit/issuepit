@@ -153,8 +153,17 @@ async function loadSuggestions() {
 
 async function toggleWizard() {
   showWizard.value = !showWizard.value
-  if (showWizard.value && suggestions.value.length === 0 && props.projectId) {
-    await loadSuggestions()
+  if (showWizard.value) {
+    // Pre-check items already present in the textarea.
+    const existing = (props.modelValue || '')
+      .split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length > 0)
+    wizardSelected.value = new Set(existing)
+
+    if (suggestions.value.length === 0 && props.projectId) {
+      await loadSuggestions()
+    }
   }
 }
 
