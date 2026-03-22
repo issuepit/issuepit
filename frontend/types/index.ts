@@ -1425,3 +1425,57 @@ export interface McpAccessToken {
   createdAt: string
   expiresAt?: string
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Git Server
+// ──────────────────────────────────────────────────────────────────────────────
+
+export type GitServerAccessLevel = 0 | 1 | 2 | 3
+
+export const GitServerAccessLevelLabels: Record<GitServerAccessLevel, string> = {
+  0: 'None',
+  1: 'Read',
+  2: 'Write',
+  3: 'Admin',
+}
+
+export interface GitServerRepo {
+  id: string
+  slug: string
+  description?: string
+  defaultBranch: string
+  isReadOnly: boolean
+  isTemporary: boolean
+  defaultAccessLevel: GitServerAccessLevel
+  gitRepositoryId?: string
+  createdAt: string
+}
+
+export interface GitServerPermission {
+  id: string
+  repoId: string
+  userId?: string
+  username?: string
+  apiKeyId?: string
+  accessLevel: GitServerAccessLevel
+  createdAt: string
+}
+
+export interface GitServerBranchProtection {
+  id: string
+  repoId: string
+  pattern: string
+  disallowForcePush: boolean
+  requirePullRequest: boolean
+  allowAdminBypass: boolean
+  createdAt: string
+}
+
+export interface GitPat {
+  id: string
+  name: string
+  prefix: string
+  createdAt: string
+  expiresAt?: string
+  lastUsedAt?: string
+}
