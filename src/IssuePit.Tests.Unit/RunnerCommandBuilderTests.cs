@@ -264,6 +264,69 @@ public class RunnerCommandBuilderTests
     }
 
     [Fact]
+    public void BuildTaskPrompt_WithSimilarIssues_IncludesSimilarIssuesSection()
+    {
+        var issue = MakeIssue("Issue with similar");
+        var similarIssue = MakeIssue("Similar feature request", number: 42);
+        issue.PromptSimilarIssues =
+        [
+            new SimilarIssuePair { Id = Guid.NewGuid(), IssueId = issue.Id, SimilarIssueId = similarIssue.Id, SimilarIssue = similarIssue, Score = 0.85f, Reason = "Both relate to authentication" },
+        ];
+        var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue);
+        Assert.Contains("<similar_issues>", prompt);
+        Assert.Contains("Similar feature request", prompt);
+        Assert.Contains("number=\"42\"", prompt);
+        Assert.Contains("score=\"0.85\"", prompt);
+        Assert.Contains("Both relate to authentication", prompt);
+    }
+
+    [Fact]
+    public void BuildTaskPrompt_WithSimilarIssues_NoReason_OmitsReasonAttribute()
+    {
+        var issue = MakeIssue("Issue with similar no reason");
+        var similarIssue = MakeIssue("Another issue", number: 7);
+        issue.PromptSimilarIssues =
+        [
+            new SimilarIssuePair { Id = Guid.NewGuid(), IssueId = issue.Id, SimilarIssueId = similarIssue.Id, SimilarIssue = similarIssue, Score = 0.60f, Reason = null },
+        ];
+        var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue);
+        Assert.Contains("<similar_issues>", prompt);
+        Assert.DoesNotContain("reason=", prompt);
+    }
+
+    [Fact]
+    public void BuildTaskPrompt_WithCiCdRuns_IncludesCiCdRunsSection()
+    {
+        var issue = MakeIssue("Issue with runs");
+        issue.PromptCiCdRuns =
+        [
+            new CiCdRun { Id = Guid.NewGuid(), ProjectId = Guid.NewGuid(), CommitSha = "abc123def456", Branch = "main", Workflow = "ci.yml", Status = IssuePit.Core.Enums.CiCdRunStatus.Failed, StartedAt = new DateTime(2025, 1, 15, 10, 0, 0, DateTimeKind.Utc) },
+        ];
+        var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue);
+        Assert.Contains("<cicd_runs>", prompt);
+        Assert.Contains("status=\"Failed\"", prompt);
+        Assert.Contains("branch=\"main\"", prompt);
+        Assert.Contains("workflow=\"ci.yml\"", prompt);
+        Assert.Contains("commit=\"abc123de\"", prompt);
+    }
+
+    [Fact]
+    public void BuildTaskPrompt_WithoutSimilarIssues_DoesNotIncludeSimilarSection()
+    {
+        var issue = MakeIssue("Issue without similar");
+        var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue);
+        Assert.DoesNotContain("<similar_issues>", prompt);
+    }
+
+    [Fact]
+    public void BuildTaskPrompt_WithoutCiCdRuns_DoesNotIncludeRunsSection()
+    {
+        var issue = MakeIssue("Issue without runs");
+        var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue);
+        Assert.DoesNotContain("<cicd_runs>", prompt);
+    }
+
+    [Fact]
     public void BuildRunnerEnv_NoRunnerType_ReturnsEmpty()
     {
         var agent = MakeAgent();

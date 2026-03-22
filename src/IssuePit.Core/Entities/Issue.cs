@@ -100,4 +100,18 @@ public class Issue
     /// </summary>
     [NotMapped]
     public Guid? TriggeringCommentId { get; set; }
+
+    /// <summary>
+    /// Similar issues to include in the agent prompt. Not persisted — populated on demand when
+    /// the triggering comment contains <c>#similar</c>.
+    /// </summary>
+    [NotMapped]
+    public IList<SimilarIssuePair> PromptSimilarIssues { get; set; } = [];
+
+    /// <summary>
+    /// Recent CI/CD runs to include in the agent prompt. Not persisted — populated on demand when
+    /// the triggering comment contains <c>#runs</c>.
+    /// </summary>
+    [NotMapped]
+    public IList<CiCdRun> PromptCiCdRuns { get; set; } = [];
 }
