@@ -109,9 +109,15 @@ public class DockerAgentRuntime(
         IReadOnlyDictionary<string, string> credentials,
         RuntimeConfiguration? runtimeConfig,
         GitRepository? gitRepository,
+        GitRepository? cloneRepository,
         Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {
+        // Resolve effective clone source. When only one remote is configured both are the same.
+        // When multiple remotes: gitRepository = Working-mode push target,
+        //                        cloneRepository = freshest remote (highest LastFetchedAt).
+        var cloneRepo = cloneRepository ?? gitRepository;
+
         var image = !string.IsNullOrWhiteSpace(agent.DockerImage)
             ? agent.DockerImage
             : DefaultDockerImage;
@@ -135,14 +141,16 @@ public class DockerAgentRuntime(
             await onLogLine($"[DEBUG] Internet       : restricted", LogStream.Stdout);
         if (session.KeepContainer)
             await onLogLine($"[DEBUG] Keep container : true (container will not be removed on exit)", LogStream.Stdout);
-        if (gitRepository is not null)
+        if (cloneRepo is not null)
         {
-            await onLogLine($"[DEBUG] Git remote     : {gitRepository.RemoteUrl} ({gitRepository.Mode})", LogStream.Stdout);
+            await onLogLine($"[DEBUG] Git clone src  : {cloneRepo.RemoteUrl} ({cloneRepo.Mode})", LogStream.Stdout);
+            if (gitRepository is not null && gitRepository != cloneRepo)
+                await onLogLine($"[DEBUG] Git push target: {gitRepository.RemoteUrl} ({gitRepository.Mode})", LogStream.Stdout);
             // Determine the branch the container will check out: issue.GitBranch takes precedence
-            // (feature branch for this issue), otherwise falls back to the repo's default branch.
+            // (feature branch for this issue), otherwise falls back to the clone source's default branch.
             var effectiveBranch = !string.IsNullOrWhiteSpace(issue.GitBranch)
                 ? issue.GitBranch
-                : gitRepository.DefaultBranch;
+                : cloneRepo.DefaultBranch;
             if (!string.IsNullOrWhiteSpace(effectiveBranch))
                 await onLogLine($"[DEBUG] Git branch     : {effectiveBranch}", LogStream.Stdout);
 
@@ -150,10 +158,10 @@ public class DockerAgentRuntime(
             // the entrypoint uses DefaultBranch as the base — if that is also empty there is
             // nothing to clone. Fail here with a clear message rather than letting the container
             // start and exit with a cryptic git error.
-            if (string.IsNullOrWhiteSpace(issue.GitBranch) && string.IsNullOrWhiteSpace(gitRepository.DefaultBranch))
+            if (string.IsNullOrWhiteSpace(issue.GitBranch) && string.IsNullOrWhiteSpace(cloneRepo.DefaultBranch))
                 throw new InvalidOperationException(
-                    $"GitRepository '{gitRepository.RemoteUrl}' has no DefaultBranch configured and the issue has no GitBranch set. " +
-                    "Set the default branch in the project's git repository settings before running an agent.");
+                    $"Clone-source remote '{cloneRepo.RemoteUrl}' has no DefaultBranch configured and the issue has no GitBranch set. " +
+                    "Set the default branch on at least one remote in the project's git repository settings before running an agent.");
         }
         if (agent.ChildAgents.Count > 0)
         {
@@ -455,23 +463,23 @@ public class DockerAgentRuntime(
             await onLogLine("[INFO] Starting workspace setup via docker exec…", LogStream.Stdout);
 
             // Step A: Clone the workspace (if a git repository is configured).
-            if (gitRepository is not null)
+            if (cloneRepo is not null)
             {
                 // Use issue.GitBranch only when it is set AND differs from the base branch —
                 // meaning a dedicated feature branch was already created for this issue in a
                 // prior run. When issue.GitBranch equals the default branch (or is empty) we
                 // generate a fresh feature branch name so we never work directly on main/master.
                 var featureBranch = !string.IsNullOrWhiteSpace(issue.GitBranch)
-                    && !string.Equals(issue.GitBranch, gitRepository.DefaultBranch, StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(issue.GitBranch, cloneRepo.DefaultBranch, StringComparison.OrdinalIgnoreCase)
                     ? issue.GitBranch
                     : GenerateFeatureBranchName(issue.Number, issue.Title ?? string.Empty);
                 await CloneWorkspaceAsync(
                     container.ID,
-                    gitRepository.RemoteUrl,
-                    gitRepository.DefaultBranch,
+                    cloneRepo.RemoteUrl,
+                    cloneRepo.DefaultBranch,
                     featureBranch,
-                    gitRepository.AuthUsername,
-                    gitRepository.AuthToken,
+                    cloneRepo.AuthUsername,
+                    cloneRepo.AuthToken,
                     onLogLine,
                     cancellationToken);
 
@@ -576,7 +584,7 @@ public class DockerAgentRuntime(
                 // EmitGitMarkersAsync runs after the agent completes and will overwrite these with
                 // the final committed state, but emitting here ensures the session header is populated
                 // even when the agent fails and EmitGitMarkersAsync never runs.
-                if (gitRepository is not null)
+                if (cloneRepo is not null)
                 {
                     try
                     {
@@ -663,7 +671,7 @@ public class DockerAgentRuntime(
             // EmitGitMarkersAsync runs after the agent completes and will overwrite these with
             // the final committed state, but emitting here ensures the session header is populated
             // even when the agent fails and EmitGitMarkersAsync never runs.
-            if (gitRepository is not null)
+            if (cloneRepo is not null)
             {
                 try
                 {
@@ -1125,7 +1133,6 @@ public class DockerAgentRuntime(
             }
             else
             {
-                await onLogLine($"[entrypoint] Pushing branch '{branch}' to origin…", LogStream.Stdout);
                 // Use the real git binary path written by the entrypoint before it installed the
                 // push-blocking wrapper at /usr/local/bin/git. This allows the execution client to
                 // push branches via docker exec without hitting the wrapper meant to stop agents.
@@ -1144,9 +1151,32 @@ public class DockerAgentRuntime(
                     ? BuildAuthenticatedCloneUrl(gitRepository.RemoteUrl, gitRepository.AuthUsername, gitRepository.AuthToken)
                     : "origin";
 
+                // Log the actual push target (redact credentials) for debugging.
+                var tokenToRedact = gitRepository?.AuthToken;
+                var safeTarget = !string.IsNullOrEmpty(tokenToRedact)
+                    ? pushTarget.Replace(tokenToRedact, "***", StringComparison.Ordinal)
+                    : pushTarget;
+                var modeLabel = gitRepository is not null ? $" ({gitRepository.Mode})" : "";
+                await onLogLine($"[entrypoint] Pushing branch '{branch}' to {safeTarget}{modeLabel}…", LogStream.Stdout);
+                if (gitRepository is not null)
+                    await onLogLine($"[DEBUG] Push hasCredentials={!string.IsNullOrEmpty(gitRepository.AuthToken)}", LogStream.Stdout);
+
+                // Log available git remotes inside the container for diagnostics.
+                // Redact the auth token so the URL that was embedded in the clone URL doesn't leak.
+                var gitRemotes = await ExecReadOutputAsync(
+                    containerId,
+                    ["/bin/sh", "-c", "git remote -v 2>/dev/null || echo '(no remotes)'"],
+                    cancellationToken);
+                foreach (var remoteLine in gitRemotes.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    var safeRemoteLine = !string.IsNullOrEmpty(tokenToRedact)
+                        ? remoteLine.Replace(tokenToRedact, "***", StringComparison.Ordinal)
+                        : remoteLine;
+                    await onLogLine($"[DEBUG] in-container remote: {safeRemoteLine}", LogStream.Stdout);
+                }
+
                 // Sanitize push output: git prints "To <url>" in its output, which would leak the
                 // auth token when credentials are embedded in the push URL.
-                var tokenToRedact = gitRepository?.AuthToken;
                 Task safeLogLine(string line, LogStream stream)
                 {
                     var safeLine = !string.IsNullOrEmpty(tokenToRedact)

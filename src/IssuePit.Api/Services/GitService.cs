@@ -330,6 +330,61 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
         return branch?.Tip?.Sha;
     }
 
+    /// <summary>
+    /// Returns the total number of commits reachable from the tip of <paramref name="branchName"/>,
+    /// or <c>null</c> if the repo is not cloned, the branch is not found, or the count cannot be
+    /// determined. Used by the agent runtime to select the clone source with the deepest commit chain.
+    /// </summary>
+    public int? GetBranchCommitCount(GitRepository repo, string branchName)
+    {
+        var localPath = GetLocalPath(repo);
+        if (!Repository.IsValid(localPath))
+            return null;
+
+        using var gitRepo = new Repository(localPath);
+        var branch = gitRepo.Branches.FirstOrDefault(b =>
+            b.FriendlyName.Equals(branchName, StringComparison.OrdinalIgnoreCase) ||
+            b.FriendlyName.Equals($"origin/{branchName}", StringComparison.OrdinalIgnoreCase));
+        if (branch?.Tip == null)
+            return null;
+
+        // Use git rev-list --count <sha> subprocess — fastest method even for very large repos
+        // because git uses pack-index / commit-graph files for O(1) reachability counts.
+        try
+        {
+            using var process = new System.Diagnostics.Process();
+            process.StartInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "git",
+                WorkingDirectory = localPath,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            process.StartInfo.ArgumentList.Add("rev-list");
+            process.StartInfo.ArgumentList.Add("--count");
+            process.StartInfo.ArgumentList.Add(branch.Tip.Sha);
+            process.Start();
+            var output = process.StandardOutput.ReadToEnd();
+            var stderr = process.StandardError.ReadToEnd();
+            process.WaitForExit();
+            if (process.ExitCode != 0)
+            {
+                logger.LogWarning(
+                    "git rev-list --count failed for repo {RepoId} branch '{Branch}' (exit {ExitCode}): {Stderr}",
+                    repo.Id, branchName, process.ExitCode, stderr.Trim());
+                return null;
+            }
+            return int.TryParse(output.Trim(), out var count) ? count : null;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to count commits for repo {RepoId} branch '{Branch}'", repo.Id, branchName);
+            return null;
+        }
+    }
+
     /// <summary>Returns the directory tree at the given path for a branch/commit.</summary>
     public IReadOnlyList<GitTreeEntry> GetTree(GitRepository repo, string? branchOrSha, string? path)
     {

@@ -51,6 +51,14 @@ public class GitRepository
     [MaxLength(200)]
     public string? LastKnownCommitSha { get; set; }
 
+    /// <summary>
+    /// The number of commits reachable from the tip of <see cref="DefaultBranch"/> as of the last
+    /// successful fetch. Used by the agent runtime to select the freshest clone source when multiple
+    /// remotes are configured — the remote with the highest commit count (deepest chain) is used.
+    /// Updated by <c>GitPollingService</c> on every successful fetch.
+    /// </summary>
+    public int? DefaultBranchCommitCount { get; set; }
+
     /// <summary>Current polling/health status of this repository.</summary>
     public GitRepoStatus Status { get; set; } = GitRepoStatus.Active;
 
