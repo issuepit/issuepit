@@ -20,19 +20,22 @@
 #                  (e.g. issuepit/act) during E2E CI runs
 #
 # Build args (override at build time):
+#   GO_VERSION  — Go major.minor version tag used for the golang provider image (default: 1.24)
 #   BASE_IMAGE  — fully-qualified helper-base image reference
 
+# Global ARGs — must be declared before the first FROM so they are available
+# to all FROM instructions in this multi-stage build (Docker scoping rule).
 ARG GO_VERSION=1.24
-
-# Stage 1: extract Go toolchain so we can COPY it into the final image.
-FROM golang:${GO_VERSION} AS go-provider
-
-# ARGs used in FROM instructions must be declared in the global scope (before the first FROM)
-# so they are available to the build engine when it resolves the base image reference.
 ARG BASE_IMAGE=ghcr.io/issuepit/issuepit-helper-base:latest
+
+# Stage 1: provide the Go toolchain. We use the official golang image as a
+# source-only stage so we can COPY /usr/local/go into the final image without
+# installing Go via apt (which ships older versions).
+FROM golang:${GO_VERSION} AS go-provider
 
 FROM ${BASE_IMAGE}
 
+# Re-declare after FROM so the value is accessible inside this build stage.
 ARG GO_VERSION=1.24
 
 # Install Docker Engine (dockerd + CLI + containerd) so that workflow steps can
