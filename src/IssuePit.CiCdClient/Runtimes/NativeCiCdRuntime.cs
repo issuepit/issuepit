@@ -530,19 +530,8 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
     /// Parses a newline-separated list of KEY=VALUE pairs, skipping blank lines and lines
     /// where the key part (before the first '=') is empty.
     /// </summary>
-    internal static IEnumerable<string> ParseKeyValuePairs(string? input)
-    {
-        if (string.IsNullOrWhiteSpace(input))
-            yield break;
-
-        foreach (var line in input.Split('\n'))
-        {
-            var trimmed = line.Trim();
-            var eqIdx = trimmed.IndexOf('=');
-            if (eqIdx > 0)
-                yield return trimmed;
-        }
-    }
+    internal static IEnumerable<string> ParseKeyValuePairs(string? input) =>
+        ParseLines(input).Where(l => l.IndexOf('=') > 0);
 
     /// <summary>
     /// Parses a newline-separated list of values, skipping blank lines.

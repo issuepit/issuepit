@@ -560,7 +560,7 @@ public class CiCdRunsController(
         var result = pairs
             .Select(p => new
             {
-                JobId = p.JobId!.Contains('/') ? p.JobId.Substring(p.JobId.LastIndexOf('/') + 1) : p.JobId,
+                JobId = p.JobId!.Contains('/') ? p.JobId[(p.JobId.LastIndexOf('/') + 1)..] : p.JobId,
                 StepId = p.StepId!,
             })
             .GroupBy(p => p.JobId)

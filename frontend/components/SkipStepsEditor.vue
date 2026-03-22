@@ -4,7 +4,7 @@
     <textarea
       :value="modelValue"
       rows="4"
-      :placeholder="`deploy\nbuild:upload-artifacts\nNotify Slack`"
+      placeholder="deploy&#10;build:upload-artifacts&#10;Notify Slack"
       class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y"
       @input="$emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)"
     />
@@ -69,11 +69,11 @@
             <!-- Job row -->
             <div class="flex items-center gap-2 mb-1.5">
               <input
+                :ref="(el) => setJobCheckboxRef(job.jobId, el as HTMLInputElement | null)"
                 :id="`job-${job.jobId}`"
                 type="checkbox"
                 class="w-3.5 h-3.5 rounded bg-gray-800 border-gray-600 text-brand-500 focus:ring-brand-500"
                 :checked="isJobChecked(job)"
-                :indeterminate="isJobIndeterminate(job)"
                 @change="toggleJob(job)"
               />
               <label :for="`job-${job.jobId}`" class="text-xs font-semibold text-gray-200 font-mono cursor-pointer">
@@ -120,6 +120,22 @@ const showWizard = ref(false)
 const loadingSuggestions = ref(false)
 const suggestions = ref<StepSuggestionJob[]>([])
 const wizardSelected = ref<Set<string>>(new Set())
+
+// Map of jobId → checkbox element reference, used to set the indeterminate DOM property.
+const jobCheckboxRefs = new Map<string, HTMLInputElement>()
+
+function setJobCheckboxRef(jobId: string, el: HTMLInputElement | null) {
+  if (el) jobCheckboxRefs.set(jobId, el)
+  else jobCheckboxRefs.delete(jobId)
+}
+
+// Keep indeterminate state in sync whenever selection changes.
+watchEffect(() => {
+  for (const job of suggestions.value) {
+    const el = jobCheckboxRefs.get(job.jobId)
+    if (el) el.indeterminate = isJobIndeterminate(job)
+  }
+})
 
 async function loadSuggestions() {
   if (!props.projectId) return
