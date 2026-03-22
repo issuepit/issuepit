@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 
 namespace IssuePit.Tests.E2E;
 
@@ -93,6 +94,23 @@ public class GitServerRealClientTests
         return $"{uri.Scheme}://{uri.UserName}:{uri.Password}@{uri.Host}:{uri.Port}/{orgSlug}/{repoSlug}.git";
     }
 
+    /// <summary>
+    /// Returns a <c>-c http.extraHeader=Authorization: Basic ...</c> argument pair
+    /// that forces git to include an Authorization header on every HTTP request,
+    /// bypassing credential helpers and URL credential-stripping behavior in newer git versions.
+    /// </summary>
+    private static string[] BuildAuthConfigArgs(string username, string password)
+    {
+        var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{username}:{password}"));
+        return ["-c", $"http.extraHeader=Authorization: Basic {encoded}"];
+    }
+
+    private static string BuildBareGitUrl(string baseUrl, string orgSlug, string repoSlug)
+    {
+        var uri = new Uri(baseUrl);
+        return $"{uri.Scheme}://{uri.Host}:{uri.Port}/{orgSlug}/{repoSlug}.git";
+    }
+
     private static bool IsGitAvailable()
     {
         try
@@ -178,10 +196,18 @@ public class GitServerRealClientTests
         {
             Directory.CreateDirectory(tempDir);
             var cloneDir = Path.Combine(tempDir, "cloned");
-            var cloneUrl = BuildGitUrl(_fixture.GitServerUrl, orgSlug, slug, username, password);
+            // Use a bare URL (no embedded credentials) — the repo has defaultAccessLevel=Write which allows
+            // unauthenticated read access, so clone doesn't need credentials.
+            var bareUrl = BuildBareGitUrl(_fixture.GitServerUrl, orgSlug, slug);
+            // Auth args for git: -c http.extraHeader=Authorization: Basic <base64>
+            // This is more reliable than URL-embedded credentials: it bypasses git's credential-helper
+            // lookup and credential-stripping security features introduced in newer git versions, and
+            // ensures the Authorization header is sent on every request (including the initial
+            // info/refs discovery that would otherwise get a 401 and require a retry with credentials).
+            var authArgs = BuildAuthConfigArgs(username, password);
 
-            // Step 1: clone (empty repo)
-            var (cloneCode, _, cloneErr) = RunGit(tempDir, "clone", cloneUrl, cloneDir);
+            // Step 1: clone (empty repo — unauthenticated read is allowed for defaultAccessLevel=Write)
+            var (cloneCode, _, cloneErr) = RunGit(tempDir, "clone", bareUrl, cloneDir);
             Assert.True(cloneCode == 0, $"git clone failed: {cloneErr}");
 
             // Step 2: configure git identity
@@ -195,12 +221,10 @@ public class GitServerRealClientTests
             var (commitCode, _, commitErr) = RunGit(cloneDir, "commit", "-m", "feat: initial commit from E2E test");
             Assert.True(commitCode == 0, $"git commit failed: {commitErr}");
 
-            // Step 4: push — use the full authenticated URL directly rather than the "origin"
-            // remote alias, because newer git versions strip the password from the stored remote URL
-            // in .git/config (security feature). Without a credential helper, git cannot re-supply
-            // the password, authentication fails, and git falls back to dumb HTTP. Passing the URL
-            // explicitly avoids the credential-stripping issue entirely.
-            var (pushCode, _, pushErr) = RunGit(cloneDir, "push", cloneUrl, "HEAD:main");
+            // Step 4: push — inject auth via http.extraHeader so the Authorization header is always
+            // present, regardless of git version credential-handling behavior.
+            var (authKey, authValue) = (authArgs[0], authArgs[1]);
+            var (pushCode, _, pushErr) = RunGit(cloneDir, authKey, authValue, "push", bareUrl, "HEAD:main");
             Assert.True(pushCode == 0,
                 $"git push failed (exit {pushCode}).\nstderr: {pushErr}");
         }
