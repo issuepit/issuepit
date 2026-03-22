@@ -523,6 +523,56 @@ public class CiCdRunsController(
         return Ok(steps);
     }
 
+    /// <summary>
+    /// Returns distinct job/step combinations seen in recent runs for a project.
+    /// Used by the wizard UI to provide autocomplete suggestions for skip-step configuration.
+    /// </summary>
+    [HttpGet("step-suggestions")]
+    public async Task<IActionResult> GetStepSuggestions([FromQuery] Guid? projectId)
+    {
+        if (projectId is null) return BadRequest("projectId is required.");
+
+        var projectExists = await db.Projects
+            .AnyAsync(p => p.Id == projectId && p.Organization.TenantId == tenant.CurrentTenant!.Id);
+
+        if (!projectExists) return NotFound();
+
+        // Take the 20 most recent completed runs for the project.
+        var recentRunIds = await db.CiCdRuns
+            .Where(r => r.ProjectId == projectId &&
+                        (r.Status == CiCdRunStatus.Succeeded || r.Status == CiCdRunStatus.Failed))
+            .OrderByDescending(r => r.StartedAt)
+            .Select(r => r.Id)
+            .Take(20)
+            .ToListAsync();
+
+        if (recentRunIds.Count == 0)
+            return Ok(Array.Empty<object>());
+
+        // Collect distinct job+step combinations from those runs.
+        var pairs = await db.CiCdRunLogs
+            .Where(l => recentRunIds.Contains(l.CiCdRunId) && l.JobId != null && l.StepId != null)
+            .GroupBy(l => new { l.JobId, l.StepId })
+            .Select(g => new { g.Key.JobId, g.Key.StepId })
+            .ToListAsync();
+
+        // Normalise job IDs: act stores them as "WorkflowName/JobId" — use only the trailing part.
+        var result = pairs
+            .Select(p => new
+            {
+                JobId = p.JobId!.Contains('/') ? p.JobId.Substring(p.JobId.LastIndexOf('/') + 1) : p.JobId,
+                StepId = p.StepId!,
+            })
+            .GroupBy(p => p.JobId)
+            .OrderBy(g => g.Key)
+            .Select(g => new StepSuggestionJobDto(
+                g.Key,
+                g.Select(p => p.StepId).Distinct().OrderBy(s => s).ToList()))
+            .ToList();
+
+        return Ok(result);
+    }
+
     private static string? TryFindWorkflowYamlPath(string workspacePath, string workflow)
     {
         // Resolve the workspace to a canonical path so we can detect path traversal attempts.
@@ -898,3 +948,10 @@ public record CiCdJobStatusDto(
     DateTime? StartedAt = null,
     /// <summary>Timestamp of the last log entry for this job (job end time).</summary>
     DateTime? EndedAt = null);
+
+/// <summary>Distinct steps seen for a single job in recent runs (used by the skip-step wizard).</summary>
+public record StepSuggestionJobDto(
+    /// <summary>The job ID as it appears in the workflow YAML.</summary>
+    string JobId,
+    /// <summary>Distinct step IDs (act stage values) seen for this job.</summary>
+    IReadOnlyList<string> Steps);

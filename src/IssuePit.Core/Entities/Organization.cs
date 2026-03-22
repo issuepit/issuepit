@@ -60,5 +60,12 @@ public class Organization
     /// </summary>
     public string? LocalRepositories { get; set; }
 
+    /// <summary>
+    /// Newline-separated list of step names or <c>job:step</c> pairs passed as
+    /// <c>--skip-step</c> arguments to <c>act</c>. Steps matching these entries are skipped
+    /// on every run. Useful to disable push/deploy steps in non-production environments.
+    /// </summary>
+    public string? SkipSteps { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

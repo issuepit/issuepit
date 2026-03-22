@@ -60,6 +60,7 @@ public class OrganizationsController(IssuePitDbContext db, TenantContext ctx) : 
         org.UseNewActionCache = updated.UseNewActionCache;
         org.ActionOfflineMode = updated.ActionOfflineMode;
         org.LocalRepositories = updated.LocalRepositories;
+        org.SkipSteps = updated.SkipSteps;
         await db.SaveChangesAsync();
         return Ok(org);
     }

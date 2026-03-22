@@ -516,6 +516,13 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
             list.Add(mapping);
         }
 
+        // Skip steps: skip specific steps by name or job:step pair.
+        foreach (var step in ParseLines(trigger.SkipSteps))
+        {
+            list.Add("--skip-step");
+            list.Add(step);
+        }
+
         return list;
     }
 
@@ -533,6 +540,22 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
             var trimmed = line.Trim();
             var eqIdx = trimmed.IndexOf('=');
             if (eqIdx > 0)
+                yield return trimmed;
+        }
+    }
+
+    /// <summary>
+    /// Parses a newline-separated list of values, skipping blank lines.
+    /// </summary>
+    internal static IEnumerable<string> ParseLines(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            yield break;
+
+        foreach (var line in input.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (!string.IsNullOrEmpty(trimmed))
                 yield return trimmed;
         }
     }
