@@ -57,7 +57,7 @@ public class GitBackendService(ILogger<GitBackendService> logger)
             return;
         }
 
-        ParseAndWriteCgiResponse(outputBytes, context.Response);
+        ParseAndWriteCgiResponse(outputBytes, context.Response, logger);
     }
 
     private static async Task<byte[]> ReadProcessOutputAsync(Stream stream)
@@ -67,7 +67,7 @@ public class GitBackendService(ILogger<GitBackendService> logger)
         return ms.ToArray();
     }
 
-    private static void ParseAndWriteCgiResponse(byte[] cgiOutput, HttpResponse response)
+    private static void ParseAndWriteCgiResponse(byte[] cgiOutput, HttpResponse response, ILogger logger)
     {
         int statusCode = 200;
         var headers = new List<(string Name, string Value)>();
@@ -103,7 +103,12 @@ public class GitBackendService(ILogger<GitBackendService> logger)
         foreach (var (name, value) in headers)
         {
             try { response.Headers[name] = value; }
-            catch { /* ignore invalid headers */ }
+            catch (Exception ex)
+            {
+                // Some CGI headers (e.g. invalid names) may be rejected; log and continue
+                // ReSharper disable once TemplateIsNotCompileTimeConstantProblem
+                logger.LogDebug("Skipping invalid response header '{Name}': {Message}", name, ex.Message);
+            }
         }
 
         if (bodyStart < cgiOutput.Length)

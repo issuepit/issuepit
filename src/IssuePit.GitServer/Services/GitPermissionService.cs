@@ -57,9 +57,11 @@ public class GitPermissionService(IssuePitDbContext db)
         if (pattern == branchName) return true;
         if (!pattern.Contains('*')) return false;
 
-        var regex = "^" + System.Text.RegularExpressions.Regex.Escape(pattern)
-            .Replace(@"\*\*", ".+")
-            .Replace(@"\*", "[^/]+") + "$";
+        // Process ** and * BEFORE Regex.Escape to avoid escaping the wildcards
+        var segments = pattern.Split("**");
+        var regexParts = segments.Select(s =>
+            string.Join("[^/]+", s.Split('*').Select(System.Text.RegularExpressions.Regex.Escape)));
+        var regex = "^" + string.Join(".+", regexParts) + "$";
         return System.Text.RegularExpressions.Regex.IsMatch(branchName, regex);
     }
 }

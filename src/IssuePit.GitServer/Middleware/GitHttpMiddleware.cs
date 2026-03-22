@@ -133,9 +133,15 @@ public class GitHttpMiddleware(RequestDelegate next)
         if (context.Request.Method != "POST" || context.Request.ContentLength is null or 0)
             return (true, null);
 
+        // Skip branch protection parsing for very large payloads to avoid memory pressure.
+        // Pkt-line ref update commands are always at the start and are tiny; large payloads
+        // indicate binary pack data follows, not ref commands we need to inspect.
+        const long MaxBranchCheckBytes = 64 * 1024; // 64 KB is sufficient for ref commands
+        var readLength = (int)Math.Min(context.Request.ContentLength.Value, MaxBranchCheckBytes);
+
         context.Request.EnableBuffering();
-        var body = new byte[context.Request.ContentLength.Value];
-        await context.Request.Body.ReadExactlyAsync(body);
+        var body = new byte[readLength];
+        _ = await context.Request.Body.ReadAsync(body);
         context.Request.Body.Seek(0, SeekOrigin.Begin);
 
         var refUpdates = ParseReceivePackRefs(body);
@@ -162,9 +168,10 @@ public class GitHttpMiddleware(RequestDelegate next)
                 if (rule.DisallowForcePush)
                 {
                     var zeroSha = new string('0', 40);
-                    // Reject all non-new-branch pushes conservatively; proper ancestry check would require git
+                    // Conservatively reject all non-new-branch pushes when force push is disallowed.
+                    // Proper ancestry checking would require running `git merge-base --is-ancestor`.
                     if (oldSha != zeroSha && newSha != zeroSha)
-                        return (false, $"Force push to protected branch '{branchName}' is not allowed.");
+                        return (false, $"Non-fast-forward push to protected branch '{branchName}' is not allowed (force push protection is enabled).");
                 }
             }
         }
