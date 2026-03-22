@@ -65,6 +65,7 @@ public class OrgConfigModel
     public bool? UseNewActionCache { get; set; }
     public bool? ActionOfflineMode { get; set; }
     public string? LocalRepositories { get; set; }
+    public string? SkipSteps { get; set; }
 
     public List<OrgMemberConfigModel>? Members { get; set; }
 }
@@ -148,6 +149,12 @@ public class ProjectConfigModel
     /// calls to local clones. Passed to <c>act</c> via <c>--local-repository</c> flags.
     /// </summary>
     public string? LocalRepositories { get; set; }
+
+    /// <summary>
+    /// Newline-separated list of step names or <c>job:step</c> pairs passed as
+    /// <c>--skip-step</c> arguments to <c>act</c>.
+    /// </summary>
+    public string? SkipSteps { get; set; }
 
     public List<ProjectMemberConfigModel>? Members { get; set; }
 }
