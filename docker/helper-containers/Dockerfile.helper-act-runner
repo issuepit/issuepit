@@ -1,4 +1,4 @@
-# IssuePit act runner image: helper-base + Docker Engine (DinD) + ffmpeg + jq
+# IssuePit act runner image: helper-base + Docker Engine (DinD) + ffmpeg + jq + Go
 #
 # This is the INNER runner image used by act for workflow job containers
 # (the -P ubuntu-latest=<image> mapping). Select this in the IssuePit CI/CD
@@ -16,13 +16,24 @@
 #   - Docker Engine (docker-ce, docker-ce-cli, containerd.io) — enables DinD
 #   - ffmpeg     — audio/video processing (required by media workflow steps)
 #   - jq         — JSON processor (commonly used in CI scripts)
+#   - Go         — required for workflow steps that clone and build Go projects
+#                  (e.g. issuepit/act) during E2E CI runs
 #
 # Build args (override at build time):
 #   BASE_IMAGE  — fully-qualified helper-base image reference
 
+ARG GO_VERSION=1.24
+
+# Stage 1: extract Go toolchain so we can COPY it into the final image.
+FROM golang:${GO_VERSION} AS go-provider
+
+# ARGs used in FROM instructions must be declared in the global scope (before the first FROM)
+# so they are available to the build engine when it resolves the base image reference.
 ARG BASE_IMAGE=ghcr.io/issuepit/issuepit-helper-base:latest
 
 FROM ${BASE_IMAGE}
+
+ARG GO_VERSION=1.24
 
 # Install Docker Engine (dockerd + CLI + containerd) so that workflow steps can
 # use Docker commands inside this container (DinD). The outer helper-act container
@@ -39,6 +50,13 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
     apt-get install -y --no-install-recommends docker-ce docker-ce-cli containerd.io ffmpeg jq && \
     rm -rf /var/lib/apt/lists/*
 
+# Copy Go toolchain from the go-provider stage so workflow steps that clone and build
+# Go projects (e.g. the issuepit/act fork used in E2E tests) can compile without
+# requiring a separate Go installation inside the container.
+COPY --from=go-provider /usr/local/go /usr/local/go
+ENV PATH="/usr/local/go/bin:${PATH}"
+RUN go version
+
 # Reset the entrypoint from helper-base: this image is used as an act inner runner
 # (workflow job container), not as an IssuePit agent container. The agent setup
 # entrypoint (git clone, DNS proxy, opencode config) is not needed here.
@@ -46,4 +64,5 @@ ENTRYPOINT []
 CMD ["/bin/bash"]
 
 LABEL org.opencontainers.image.title="issuepit-act-runner" \
-      org.opencontainers.image.description="IssuePit act runner: helper-base + Docker Engine (DinD) + ffmpeg + jq (Chrome and .NET already included via helper-base)"
+      org.opencontainers.image.description="IssuePit act runner: helper-base + Docker Engine (DinD) + ffmpeg + jq + Go (Chrome and .NET already included via helper-base)" \
+      issuepit.go.version="${GO_VERSION}"

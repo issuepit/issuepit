@@ -31,7 +31,7 @@ A shared base image that all other helper images extend.
 
 Extends `helper-base` with [issuepit/act](https://github.com/issuepit/act) (a fork of [nektos/act](https://github.com/nektos/act)), which lets you run GitHub Actions workflows locally inside the container — used by `IssuePit.CiCdClient` for local CI runs.
 
-**Includes:** everything in `helper-base` + `act` + `Go` (toolchain, for building Go projects inside the container)
+**Includes:** everything in `helper-base` + `act`
 
 **Registry:** `ghcr.io/issuepit/issuepit-helper-act`
 
@@ -51,11 +51,11 @@ Extends `helper-base` with the [opencode CLI](https://github.com/anomalyco/openc
 
 Combines `helper-act` with the opencode CLI — the **default image for agent runs**. Provides full support for Docker-in-Docker (DinD) so agent tools can spawn containers, run CI workflows via `act`, and access all build tooling.
 
-**Includes:** everything in `helper-act` (Docker Engine, act, actionlint, Go) + `opencode-ai` (npm global)
+**Includes:** everything in `helper-act` (Docker Engine, act, actionlint) + `opencode-ai` (npm global)
 
 **Registry:** `ghcr.io/issuepit/issuepit-helper-opencode-act`
 
-> **act runner image:** When the execution client starts an agent container it also writes `/root/.config/act/actrc` pointing to `ghcr.io/issuepit/issuepit-act-runner:latest`. This ensures that when the agent invokes `act` to run CI workflows the inner workflow job containers use an image that has .NET 10, Node.js, and Playwright — matching the toolchain installed in the outer helper image. Without this, `act` defaults to `catthehacker/ubuntu:act-latest` which only ships .NET 8, causing projects that target `net10.0` to fail `dotnet restore`. The runner image can be overridden via the `Agent__ActRunnerImage` configuration key on the `execution-client` service.
+> **act runner image:** When the execution client starts an agent container it also writes `/root/.config/act/actrc` pointing to `ghcr.io/issuepit/issuepit-act-runner:latest`. This ensures that when the agent invokes `act` to run CI workflows the inner workflow job containers use an image that has .NET 10, Node.js, Playwright, and **Go** — matching the toolchain installed in the outer helper image. Without this, `act` defaults to `catthehacker/ubuntu:act-latest` which only ships .NET 8, causing projects that target `net10.0` to fail `dotnet restore`. The runner image can be overridden via the `Agent__ActRunnerImage` configuration key on the `execution-client` service.
 
 ---
 
@@ -70,7 +70,7 @@ Tags follow the pattern `<version>-dotnet<DOTNET_MAJOR>-node<NODE_MAJOR>`, makin
 | `1.0.0-dotnet10-node24` | Pinned release with exact runtime versions |
 | `1.0-dotnet10-node24` | Pinned minor release |
 | `sha-<short-sha>` | Specific commit build |
-| `main-dotnet10-node24` | Latest commit on `main` |
+| `main-dotnet10-node24` | Latest release on the dotnet10+node24 track |
 
 ---
 
@@ -83,9 +83,10 @@ The Dockerfiles accept build arguments that you can override when building local
 | `PLAYWRIGHT_VERSION` | `helper-base` | `v1.58.0` | Playwright .NET image tag (e.g. `v1.58.0`) |
 | `NODE_MAJOR` | `helper-base` | `24` | Node.js major version |
 | `DOTNET_SDK_CHANNEL` | `helper-base` | `10.0` | .NET SDK release channel installed via `dotnet-install.sh` (e.g. `10.0`, `9.0`) |
-| `BASE_IMAGE` | `helper-act`, `helper-opencode`, `helper-opencode-act` | `ghcr.io/issuepit/issuepit-helper-base:latest` | Base image reference |
+| `BASE_IMAGE` | `helper-act`, `helper-opencode`, `helper-opencode-act`, `helper-act-runner` | `ghcr.io/issuepit/issuepit-helper-base:latest` | Base image reference |
 | `ACT_COMMIT` | `helper-act` | *(current commit hash)* | [issuepit/act](https://github.com/issuepit/act) git commit hash to build from |
 | `OPENCODE_VERSION` | `helper-opencode`, `helper-opencode-act` | `latest` | opencode-ai npm package version |
+| `GO_VERSION` | `helper-act-runner` | `1.24` | Go toolchain version (major.minor) |
 
 ### Building locally
 
