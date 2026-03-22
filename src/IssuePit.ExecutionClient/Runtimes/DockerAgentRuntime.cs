@@ -265,11 +265,11 @@ public class DockerAgentRuntime(
             await onLogLine($"[DEBUG] Comments       : {comments.Count} comment(s) included in prompt", LogStream.Stdout);
 
         // Build CLI args for exec flow (not used in HTTP server mode).
-        // When the session has a preserved previous opencode session ID (and the DB was injected),
-        // pass it as --session <id> so opencode continues from the preserved conversation.
+        // Only pass --session <id> when a DB snapshot was actually loaded; without the restored
+        // DB the session does not exist in the fresh container and opencode would throw NotFoundError.
         var runnerArgs = useHttpServerMode ? [] : RunnerCommandBuilder.BuildArgsList(
             agent, issue,
-            continueSessionId: session.PreviousOpenCodeSessionId,
+            continueSessionId: session.PreviousOpenCodeDbTar is { Length: > 0 } ? session.PreviousOpenCodeSessionId : null,
             comments: comments);
         var useExecFlow = !useHttpServerMode && runnerArgs.Count > 0;
 
@@ -407,11 +407,13 @@ public class DockerAgentRuntime(
             {
                 await onLogLine($"[INFO] Injecting previous opencode DB snapshot (session: {session.PreviousOpenCodeSessionId ?? "unknown"})…", LogStream.Stdout);
                 using var dbStream = new MemoryStream(session.PreviousOpenCodeDbTar);
-                // The tar archive path must already contain the correct relative directory
-                // so Docker extracts the file to /root/.local/share/opencode/opencode.db.
+                // Docker's GetArchiveFromContainerAsync for a FILE path returns a tar with just the
+                // basename (e.g. "opencode.db"), not the full relative path. Extracting at "/" would
+                // place the file at "/opencode.db" instead of the correct location. We must extract
+                // at the parent directory so Docker places it at the right path.
                 await dockerClient.Containers.ExtractArchiveToContainerAsync(
                     container.ID,
-                    new CopyToContainerParameters { Path = "/" },
+                    new CopyToContainerParameters { Path = "/root/.local/share/opencode" },
                     dbStream,
                     cancellationToken);
                 await onLogLine("[INFO] opencode DB snapshot injected — continuing from previous session", LogStream.Stdout);
@@ -420,6 +422,10 @@ public class DockerAgentRuntime(
             {
                 await onLogLine($"[WARN] Failed to inject opencode DB snapshot: {ex.Message} — starting fresh session", LogStream.Stderr);
                 logger.LogWarning(ex, "Failed to inject opencode DB into container {ContainerId}", container.ID);
+                // The session does not exist in the container without the restored DB; rebuild
+                // runner args without --session to avoid a "Session not found" crash in opencode.
+                session.PreviousOpenCodeSessionId = null;
+                runnerArgs = RunnerCommandBuilder.BuildArgsList(agent, issue, comments: comments);
             }
         }
 
@@ -530,6 +536,26 @@ public class DockerAgentRuntime(
                 var startScript = "cd /workspace && nohup opencode > /tmp/opencode-server.log 2>&1 &";
                 await ExecCommandAsync(container.ID, ["/bin/sh", "-c", startScript],
                     (_, _) => Task.CompletedTask, cancellationToken, workingDir: "/");
+            }
+
+            // Step F (exec flow only): Verify the previous opencode session exists in the restored DB.
+            // Even when the DB injection succeeded the session may be missing after a schema migration
+            // or if the tar was extracted to the wrong path. Fall back to a fresh session in that case
+            // to avoid a "Session not found" crash when opencode runs with --session <id>.
+            if (useExecFlow && !string.IsNullOrEmpty(session.PreviousOpenCodeSessionId) && agent.RunnerType == RunnerType.OpenCode)
+            {
+                var sessionVerified = await VerifyOpenCodeSessionExistsAsync(
+                    container.ID, session.PreviousOpenCodeSessionId, onLogLine, cancellationToken);
+                if (!sessionVerified)
+                {
+                    await onLogLine(
+                        $"[WARN] Previous opencode session {session.PreviousOpenCodeSessionId} not found in restored DB — starting fresh session",
+                        LogStream.Stderr);
+                    session.PreviousOpenCodeSessionId = null;
+                    runnerArgs = RunnerCommandBuilder.BuildArgsList(agent, issue, comments: comments);
+                    var newCmdDisplay = string.Join(" ", runnerArgs.Take(runnerArgs.Count - 1));
+                    await onLogLine($"[DEBUG] Runner cmd     : {newCmdDisplay}", LogStream.Stdout);
+                }
             }
 
             await onLogLine("[INFO] Workspace setup complete", LogStream.Stdout);
@@ -1067,6 +1093,39 @@ public class DockerAgentRuntime(
 
         if (!string.IsNullOrWhiteSpace(lastSessionId))
             await onLogLine($"{OpenCodeSessionIdMarker}{lastSessionId}", LogStream.Stdout);
+    }
+
+    /// <summary>
+    /// Runs <c>opencode session list</c> and returns <c>true</c> when <paramref name="sessionId"/>
+    /// appears in the output. Used before passing <c>--session &lt;id&gt;</c> to <c>opencode run</c>
+    /// to confirm the session exists in the restored DB and avoid a "Session not found" crash.
+    /// Returns <c>false</c> if the session is not found or if the command fails.
+    /// </summary>
+    private async Task<bool> VerifyOpenCodeSessionExistsAsync(
+        string containerId,
+        string sessionId,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        var found = false;
+        try
+        {
+            await ExecCommandAsync(containerId, ["opencode", "session", "list"],
+                (line, _) =>
+                {
+                    var trimmedLine = line.TrimStart();
+                    var tokenEnd = trimmedLine.IndexOfAny([' ', '\t']);
+                    var token = (tokenEnd > 0 ? trimmedLine[..tokenEnd] : trimmedLine).Trim();
+                    if (string.Equals(token, sessionId, StringComparison.Ordinal))
+                        found = true;
+                    return Task.CompletedTask;
+                }, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            await onLogLine($"[WARN] Could not verify opencode session existence: {ex.Message}", LogStream.Stderr);
+        }
+        return found;
     }
 
     /// <summary>
