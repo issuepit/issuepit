@@ -16,17 +16,13 @@ public class GitServerPermission
     [ForeignKey(nameof(RepoId))]
     public GitServerRepo Repo { get; set; } = null!;
 
-    /// <summary>User granted the permission. Null if the grant is for an API key.</summary>
+    /// <summary>User granted the permission. Null if the grant is for an API key.
+    /// No FK constraint — permissions may reference users that are not yet registered.</summary>
     public Guid? UserId { get; set; }
 
-    [ForeignKey(nameof(UserId))]
-    public User? User { get; set; }
-
-    /// <summary>API key granted the permission. Null if the grant is for a user.</summary>
+    /// <summary>API key granted the permission. Null if the grant is for a user.
+    /// No FK constraint — permissions may reference keys that have not yet been created.</summary>
     public Guid? ApiKeyId { get; set; }
-
-    [ForeignKey(nameof(ApiKeyId))]
-    public ApiKey? ApiKey { get; set; }
 
     public GitServerAccessLevel AccessLevel { get; set; }
 

@@ -82,10 +82,11 @@ public class GitServerReposController(
     {
         var perms = await db.GitServerPermissions
             .Where(p => p.RepoId == repoId)
-            .Include(p => p.User)
-            .Select(p => new GitServerPermissionResponse(
-                p.Id, p.RepoId, p.UserId, p.User != null ? p.User.Username : null,
-                p.ApiKeyId, p.AccessLevel, p.CreatedAt))
+            .GroupJoin(db.Users, p => p.UserId, u => (Guid?)u.Id, (p, users) => new { p, users })
+            .SelectMany(x => x.users.DefaultIfEmpty(), (x, u) =>
+                new GitServerPermissionResponse(
+                    x.p.Id, x.p.RepoId, x.p.UserId, u != null ? u.Username : null,
+                    x.p.ApiKeyId, x.p.AccessLevel, x.p.CreatedAt))
             .ToListAsync();
 
         return Ok(perms);
