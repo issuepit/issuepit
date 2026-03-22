@@ -521,14 +521,11 @@ public class IssueWorker(
             bool useExecForFixes = false;
 
             // Pre-flight: verify the base branch exists on all configured git remotes.
-            // Selects the best available remote (Working preferred; most-recently-fetched as tie-break).
-            // Results are stored on the session for display in the UI.
+            // The Working-mode repo is always the clone and push target (set above via OrderByDescending).
+            // CheckBranchOnRemotesAsync only validates and provides results for logging/UI.
             if (allGitRepositories.Count > 0)
             {
-                var (selectedRepo, checkResults) = await CheckBranchOnRemotesAsync(allGitRepositories, sessionCts.Token);
-                // Override the initially selected repo with the one chosen by the availability check.
-                if (selectedRepo is not null)
-                    gitRepository = selectedRepo;
+                var checkResults = await CheckBranchOnRemotesAsync(allGitRepositories, sessionCts.Token);
                 session.GitRemoteCheckResultsJson = JsonSerializer.Serialize(checkResults);
                 await db.SaveChangesAsync(sessionCts.Token);
 
@@ -537,7 +534,7 @@ public class IssueWorker(
                 foreach (var r in checkResults)
                 {
                     var availLabel = r.Available switch { true => "available", false => "not found", null => "skipped (no branch configured or git unavailable)" };
-                    var selectedLabel = r.Selected ? " ← selected" : "";
+                    var selectedLabel = r.Selected ? " ← clone/push target" : "";
                     await onLogLine($"[DEBUG]   {r.Mode,-12} {r.RemoteUrl}  branch={r.DefaultBranch ?? "(none)"}  check={availLabel}{selectedLabel}", LogStream.Stdout);
                 }
                 if (gitRepository is not null)
@@ -547,7 +544,7 @@ public class IssueWorker(
                     var safeRepoUrl = !string.IsNullOrEmpty(gitRepository.AuthToken)
                         ? gitRepository.RemoteUrl.Replace(gitRepository.AuthToken, "***", StringComparison.Ordinal)
                         : gitRepository.RemoteUrl;
-                    await onLogLine($"[DEBUG] Push target: {gitRepository.Mode} remote — {safeRepoUrl}  hasCredentials={!string.IsNullOrEmpty(gitRepository.AuthToken)}", LogStream.Stdout);
+                    await onLogLine($"[DEBUG] Clone/push target: {gitRepository.Mode} remote — {safeRepoUrl}  hasCredentials={!string.IsNullOrEmpty(gitRepository.AuthToken)}", LogStream.Stdout);
                 }
             }
 
@@ -1438,28 +1435,30 @@ public class IssueWorker(
     private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, Guid? SessionId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? DockerCmdOverride = null, string? ModelOverride = null, int? RunnerTypeOverride = null, bool? UseHttpServerOverride = null, int? RuntimeTypeOverride = null, bool ForceAgentId = false, Guid? TriggeringCommentId = null);
 
     /// <summary>
-    /// Checks whether the base branch of each configured git remote exists by running
-    /// <c>git ls-remote --heads</c> against each remote URL. Returns the best available
-    /// clone target (the remote that has the branch, preferring Working mode first and then the
-    /// most recently fetched) together with a per-remote result list suitable for display in the UI.
-    /// Throws an <see cref="InvalidOperationException"/> only when <em>no</em> remote has the
-    /// branch — in that case the container would fail to clone regardless of which remote is used.
-    /// When <c>git</c> is not available on the host every check returns <c>null</c> (skipped) and
-    /// the original priority-ordered first repository is returned unchanged.
+    /// Checks whether the base branch (<see cref="GitRepository.DefaultBranch"/>) of each
+    /// configured git remote exists by running <c>git ls-remote --heads</c> against each URL.
+    /// Returns a per-remote result list suitable for display in the UI.
     ///
-    /// Selection priority:
-    ///   1. Working-mode repo with confirmed availability (Available=true)
-    ///   2. Working-mode repo with inconclusive check (Available=null — no DefaultBranch configured
-    ///      or git not on host). Preferred over a confirmed non-Working repo because the execution
-    ///      client must push back to the Working remote after the run.
-    ///   3. Non-Working repo with confirmed availability (Available=true)
-    ///   4. First repo in priority order (fallback when all checks were inconclusive)
+    /// The Working-mode repository is always the clone and push target regardless of the check
+    /// results — <c>DefaultBranch</c> is just the base branch used for creating feature branches
+    /// and as the default target for merge/pull requests.
+    ///
+    /// Throws an <see cref="InvalidOperationException"/> when the Working-mode repo has a
+    /// <c>DefaultBranch</c> configured and the check confirms the branch does <em>not</em> exist
+    /// on that remote (exit code 0 but no matching ref). A skipped check (no branch configured,
+    /// git not on the host, or a network timeout) does not throw — the clone attempt itself will
+    /// produce a clear error if the remote is unreachable.
     /// </summary>
-    private static async Task<(GitRepository? Selected, List<GitRemoteCheckResult> Results)> CheckBranchOnRemotesAsync(
+    private static async Task<List<GitRemoteCheckResult>> CheckBranchOnRemotesAsync(
         IList<GitRepository> repositories,
         CancellationToken cancellationToken)
     {
         var results = new List<GitRemoteCheckResult>();
+
+        // The Working-mode repo is always the primary target for clone + push.
+        // Mark it as selected so the UI shows which remote will actually be used.
+        var primaryRepo = repositories.FirstOrDefault(r => r.Mode == GitOriginMode.Working)
+            ?? repositories.FirstOrDefault();
 
         foreach (var repo in repositories)
         {
@@ -1472,64 +1471,21 @@ public class IssueWorker(
                 RemoteUrl: repo.RemoteUrl,
                 Mode: repo.Mode.ToString(),
                 DefaultBranch: repo.DefaultBranch,
-                Available: available));
+                Available: available,
+                Selected: repo == primaryRepo));
         }
 
-        // Among repos that confirmed branch availability, pick the best one:
-        // 1. Working mode first (agents need to push back to Working)
-        // 2. Among ties, the most recently fetched remote
-        var confirmed = repositories
-            .Zip(results, (repo, res) => (repo, res))
-            .Where(x => x.res.Available == true)
-            .OrderByDescending(x => x.repo.Mode == GitOriginMode.Working)
-            .ThenByDescending(x => x.repo.LastFetchedAt)
-            .Select(x => x.repo)
-            .FirstOrDefault();
-
-        // If no Working-mode repo was confirmed, prefer a Working-mode repo whose check was
-        // inconclusive (null — no DefaultBranch configured or git not installed on the host)
-        // over a confirmed non-Working repo. The execution client always pushes to the Working
-        // remote; an inconclusive check is not evidence the branch is absent.
-        if (confirmed?.Mode != GitOriginMode.Working)
+        // Early error: if the Working-mode repo's DefaultBranch was confirmed absent,
+        // the clone will definitely fail — throw now with a clear message.
+        var primaryResult = results.FirstOrDefault(r => r.RepoId == primaryRepo?.Id);
+        if (primaryResult?.Available == false)
         {
-            var workingWithNullCheck = repositories
-                .Zip(results, (repo, res) => (repo, res))
-                .Where(x => x.repo.Mode == GitOriginMode.Working && x.res.Available != false)
-                .OrderByDescending(x => x.res.Available == true) // prefer confirmed-true over null
-                .ThenByDescending(x => x.repo.LastFetchedAt)
-                .Select(x => x.repo)
-                .FirstOrDefault();
-
-            if (workingWithNullCheck is not null)
-                confirmed = workingWithNullCheck;
-        }
-
-        // When no check returned a definitive "not found" (all skipped), fall back to priority order.
-        bool anyCheckRan = results.Any(r => r.Available.HasValue);
-        bool anyFound    = confirmed is not null;
-        bool anyNotFound = results.Any(r => r.Available == false);
-
-        if (anyCheckRan && !anyFound && anyNotFound)
-        {
-            // At least one check ran and none found the branch — this is a real misconfiguration.
-            var branchName = results.FirstOrDefault(r => r.DefaultBranch != null)?.DefaultBranch
-                ?? repositories.FirstOrDefault()?.DefaultBranch
-                ?? "(not configured)";
             throw new InvalidOperationException(
-                $"Base branch '{branchName}' was not found on any configured remote. " +
+                $"Base branch '{primaryResult.DefaultBranch}' was not found on the Working-mode remote ({primaryResult.RemoteUrl}). " +
                 "Update GitRepository.DefaultBranch in IssuePit to match the actual default branch of the remote.");
         }
 
-        // Mark the selected repo in the results list.
-        var selected = confirmed ?? repositories.FirstOrDefault();
-        if (selected is not null)
-        {
-            var idx = results.FindIndex(r => r.RepoId == selected.Id);
-            if (idx >= 0)
-                results[idx] = results[idx] with { Selected = true };
-        }
-
-        return (selected, results);
+        return results;
     }
 
     /// <summary>
