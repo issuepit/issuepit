@@ -3,12 +3,14 @@ WORKDIR /src
 
 COPY src/IssuePit.Core/IssuePit.Core.csproj IssuePit.Core/
 COPY src/IssuePit.ServiceDefaults/IssuePit.ServiceDefaults.csproj IssuePit.ServiceDefaults/
+COPY src/IssuePit.DockerRuntime/IssuePit.DockerRuntime.csproj IssuePit.DockerRuntime/
 COPY src/IssuePit.CiCdClient/IssuePit.CiCdClient.csproj IssuePit.CiCdClient/
 
 RUN dotnet restore IssuePit.CiCdClient/IssuePit.CiCdClient.csproj
 
 COPY src/IssuePit.Core/ IssuePit.Core/
 COPY src/IssuePit.ServiceDefaults/ IssuePit.ServiceDefaults/
+COPY src/IssuePit.DockerRuntime/ IssuePit.DockerRuntime/
 COPY src/IssuePit.CiCdClient/ IssuePit.CiCdClient/
 
 RUN dotnet publish IssuePit.CiCdClient/IssuePit.CiCdClient.csproj -c Release -o /app/publish --no-restore

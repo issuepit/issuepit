@@ -237,6 +237,7 @@ public class CiCdWorker(
                 UseNewActionCache = trigger.UseNewActionCache ?? (project.UseNewActionCache ?? orgSettings?.UseNewActionCache),
                 ActionOfflineMode = trigger.ActionOfflineMode ?? (project.ActionOfflineMode ?? orgSettings?.ActionOfflineMode),
                 LocalRepositories = trigger.LocalRepositories ?? project.LocalRepositories ?? orgSettings?.LocalRepositories,
+                SkipSteps = trigger.SkipSteps ?? project.SkipSteps ?? orgSettings?.SkipSteps,
             };
         }
 

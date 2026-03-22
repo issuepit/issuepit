@@ -70,6 +70,13 @@ public class Project
     public string? LocalRepositories { get; set; }
 
     /// <summary>
+    /// Newline-separated list of step names or <c>job:step</c> pairs passed as
+    /// <c>--skip-step</c> arguments to <c>act</c>. Steps matching these entries are skipped
+    /// on every run. Null means inherit from the organization setting.
+    /// </summary>
+    public string? SkipSteps { get; set; }
+
+    /// <summary>
     /// Short project key used as prefix for issue IDs in the UI (e.g. "IP" yields "IP-123").
     /// Auto-generated from the project name using initials. Must be unique within the organization.
     /// </summary>

@@ -32,6 +32,7 @@ public class OpenSandboxAgentRuntime(
         IReadOnlyDictionary<string, string> credentials,
         RuntimeConfiguration? runtimeConfig,
         GitRepository? gitRepository,
+        GitRepository? cloneRepository,
         Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {

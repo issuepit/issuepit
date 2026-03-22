@@ -66,6 +66,14 @@ public class GitPollingService(
                     continue;
                 }
 
+                // Update commit count (chain depth) on every successful fetch so the agent runtime
+                // can select the clone source with the deepest commit chain instead of relying on
+                // fetch timestamps. GetBranchCommitCount uses git rev-list --count which is fast
+                // even for large repos (uses pack-index / commit-graph files).
+                var commitCount = gitService.GetBranchCommitCount(repo, repo.DefaultBranch);
+                if (commitCount.HasValue)
+                    repo.DefaultBranchCommitCount = commitCount.Value;
+
                 if (sha != repo.LastKnownCommitSha)
                 {
                     logger.LogInformation(

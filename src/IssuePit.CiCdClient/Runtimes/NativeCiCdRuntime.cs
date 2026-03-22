@@ -516,6 +516,13 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
             list.Add(mapping);
         }
 
+        // Skip steps: skip specific steps by name or job:step pair.
+        foreach (var step in ParseLines(trigger.SkipSteps))
+        {
+            list.Add("--skip-step");
+            list.Add(step);
+        }
+
         return list;
     }
 
@@ -523,7 +530,13 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
     /// Parses a newline-separated list of KEY=VALUE pairs, skipping blank lines and lines
     /// where the key part (before the first '=') is empty.
     /// </summary>
-    internal static IEnumerable<string> ParseKeyValuePairs(string? input)
+    internal static IEnumerable<string> ParseKeyValuePairs(string? input) =>
+        ParseLines(input).Where(l => l.IndexOf('=') > 0);
+
+    /// <summary>
+    /// Parses a newline-separated list of values, skipping blank lines.
+    /// </summary>
+    internal static IEnumerable<string> ParseLines(string? input)
     {
         if (string.IsNullOrWhiteSpace(input))
             yield break;
@@ -531,8 +544,7 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
         foreach (var line in input.Split('\n'))
         {
             var trimmed = line.Trim();
-            var eqIdx = trimmed.IndexOf('=');
-            if (eqIdx > 0)
+            if (!string.IsNullOrEmpty(trimmed))
                 yield return trimmed;
         }
     }

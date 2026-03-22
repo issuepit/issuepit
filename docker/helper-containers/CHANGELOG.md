@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.6.0](https://github.com/issuepit/issuepit/compare/helper-containers-v1.5.0...helper-containers-v1.6.0) (2026-03-22)
+
+
+### Features
+
+* per-repo agent push policy (Forbidden/WorkingOriginOnly/Allowed/Yolo) ([#706](https://github.com/issuepit/issuepit/issues/706)) ([1e9ac20](https://github.com/issuepit/issuepit/commit/1e9ac20e3dd50a48423a81b806823ccb3f642e77))
+
+
+### Bug Fixes
+
+* docker helper image and agent execution ([#759](https://github.com/issuepit/issuepit/issues/759)) ([c3dce69](https://github.com/issuepit/issuepit/commit/c3dce698ec5949a75b66dc9debb831836b4b907c))
+
 ## [1.5.0](https://github.com/issuepit/issuepit/compare/helper-containers-v1.4.0...helper-containers-v1.5.0) (2026-03-19)
 
 

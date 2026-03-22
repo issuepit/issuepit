@@ -13,6 +13,7 @@ public class HetznerSshAgentRuntime(ILogger<HetznerSshAgentRuntime> logger) : IA
         IReadOnlyDictionary<string, string> credentials,
         RuntimeConfiguration? runtimeConfig,
         GitRepository? gitRepository,
+        GitRepository? cloneRepository,
         Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {

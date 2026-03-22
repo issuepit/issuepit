@@ -93,6 +93,11 @@ public record TriggerPayload(
     /// </summary>
     string? LocalRepositories = null,
     /// <summary>
+    /// Newline-separated list of step names or <c>job:step</c> pairs passed as
+    /// <c>--skip-step</c> arguments to <c>act</c>. Steps matching these entries are skipped.
+    /// </summary>
+    string? SkipSteps = null,
+    /// <summary>
     /// Overrides the CI/CD runtime for this individual run. Accepted values are
     /// <c>"Native"</c> (runs <c>act</c> directly on the host) and <c>"Docker"</c>
     /// (runs <c>act</c> inside a Docker container). When <c>null</c> the global

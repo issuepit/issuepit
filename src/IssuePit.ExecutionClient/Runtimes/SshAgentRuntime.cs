@@ -30,6 +30,7 @@ public class SshAgentRuntime(ILogger<SshAgentRuntime> logger) : IAgentRuntime
         IReadOnlyDictionary<string, string> credentials,
         RuntimeConfiguration? runtimeConfig,
         GitRepository? gitRepository,
+        GitRepository? cloneRepository,
         Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {

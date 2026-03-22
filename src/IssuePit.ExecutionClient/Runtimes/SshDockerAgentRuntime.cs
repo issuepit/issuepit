@@ -29,6 +29,7 @@ public class SshDockerAgentRuntime(ILogger<SshDockerAgentRuntime> logger) : IAge
         IReadOnlyDictionary<string, string> credentials,
         RuntimeConfiguration? runtimeConfig,
         GitRepository? gitRepository,
+        GitRepository? cloneRepository,
         Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {

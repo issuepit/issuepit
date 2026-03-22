@@ -50,6 +50,7 @@ export interface Organization {
   useNewActionCache?: boolean
   actionOfflineMode?: boolean
   localRepositories?: string | null
+  skipSteps?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -194,6 +195,7 @@ export interface Project {
   useNewActionCache?: boolean | null
   actionOfflineMode?: boolean | null
   localRepositories?: string | null
+  skipSteps?: string | null
   requiresRunApproval: boolean
   openMergeRequestCount: number
   /** Short project key used as prefix for issue IDs in the UI (e.g. "IP" yields "IP-123"). */
@@ -1425,6 +1427,19 @@ export interface McpAccessToken {
   createdAt: string
   expiresAt?: string
 }
+
+
+
+// ──────────────────────────────────────────────────────────────────────────────
+// CI/CD step suggestions (for skip-step wizard)
+// ──────────────────────────────────────────────────────────────────────────────
+
+export interface StepSuggestionJob {
+  jobId: string
+  steps: string[]
+}
+
+
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Git Server

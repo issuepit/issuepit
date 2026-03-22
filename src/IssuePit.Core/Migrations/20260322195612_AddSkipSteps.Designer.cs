@@ -3,6 +3,7 @@ using System;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace IssuePit.Core.Migrations
 {
     [DbContext(typeof(IssuePitDbContext))]
-    partial class IssuePitDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260322195612_AddSkipSteps")]
+    partial class AddSkipSteps
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -940,45 +943,6 @@ namespace IssuePit.Core.Migrations
                     b.ToTable("github_sync_run_logs");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.GitPat", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("LastUsedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("Prefix")
-                        .IsRequired()
-                        .HasMaxLength(8)
-                        .HasColumnType("character varying(8)");
-
-                    b.Property<string>("TokenHash")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("git_pats");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.GitRepository", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1000,9 +964,6 @@ namespace IssuePit.Core.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
-
-                    b.Property<int?>("DefaultBranchCommitCount")
-                        .HasColumnType("integer");
 
                     b.Property<Guid?>("GitHubIdentityId")
                         .HasColumnType("uuid");
@@ -1046,125 +1007,6 @@ namespace IssuePit.Core.Migrations
                     b.HasIndex("ProjectId");
 
                     b.ToTable("git_repositories");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.GitServerBranchProtection", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("AllowAdminBypass")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("DisallowForcePush")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Pattern")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<Guid>("RepoId")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("RequirePullRequest")
-                        .HasColumnType("boolean");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("RepoId");
-
-                    b.ToTable("git_server_branch_protections");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.GitServerPermission", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("AccessLevel")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid?>("ApiKeyId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("RepoId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("RepoId");
-
-                    b.ToTable("git_server_permissions");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.GitServerRepo", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("DefaultAccessLevel")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("DefaultBranch")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("DiskPath")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<Guid?>("GitRepositoryId")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("IsReadOnly")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsTemporary")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("OrgId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("ProjectId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Slug")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrgId");
-
-                    b.HasIndex("ProjectId");
-
-                    b.ToTable("git_server_repos");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.Issue", b =>
@@ -3082,17 +2924,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("SyncRun");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.GitPat", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.GitRepository", b =>
                 {
                     b.HasOne("IssuePit.Core.Entities.GitHubIdentity", "GitHubIdentity")
@@ -3106,45 +2937,6 @@ namespace IssuePit.Core.Migrations
                         .IsRequired();
 
                     b.Navigation("GitHubIdentity");
-
-                    b.Navigation("Project");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.GitServerBranchProtection", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.GitServerRepo", "Repo")
-                        .WithMany("BranchProtections")
-                        .HasForeignKey("RepoId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Repo");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.GitServerPermission", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.GitServerRepo", "Repo")
-                        .WithMany("Permissions")
-                        .HasForeignKey("RepoId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Repo");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.GitServerRepo", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Organization", "Org")
-                        .WithMany()
-                        .HasForeignKey("OrgId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("IssuePit.Core.Entities.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId");
-
-                    b.Navigation("Org");
 
                     b.Navigation("Project");
                 });
@@ -3843,13 +3635,6 @@ namespace IssuePit.Core.Migrations
             modelBuilder.Entity("IssuePit.Core.Entities.GitHubSyncRun", b =>
                 {
                     b.Navigation("Logs");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.GitServerRepo", b =>
-                {
-                    b.Navigation("BranchProtections");
-
-                    b.Navigation("Permissions");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.Issue", b =>

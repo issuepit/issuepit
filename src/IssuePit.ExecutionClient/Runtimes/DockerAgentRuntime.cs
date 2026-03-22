@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Formats.Tar;
 using System.Reflection;
 using System.Text;
@@ -77,6 +78,25 @@ public class DockerAgentRuntime(
             ?.InformationalVersion
         ?? "unknown";
 
+    // In-process pull cache: tracks the last pull time and image digest per image reference.
+    // Used to skip the registry round-trip when the image was pulled recently (within PullCacheSeconds).
+    // The cache is process-scoped (static) so it survives across multiple agent runs on the same instance.
+    private static readonly ConcurrentDictionary<string, (DateTime PullTime, string? Digest)> ImagePullCache = new();
+
+    /// <summary>Default number of seconds to cache a pull result (30 minutes).</summary>
+    private const int DefaultPullCacheSeconds = 1800;
+
+    /// <summary>Number of characters of the digest prefix to show in log lines (enough to identify sha256:abcdef…).</summary>
+    private const int DigestDisplayLength = 19;
+
+    /// <summary>
+    /// Number of seconds to cache a successful pull result before re-checking the registry.
+    /// Configured via <c>Execution:ImagePullCacheSeconds</c>. Defaults to <see cref="DefaultPullCacheSeconds"/> (30 minutes).
+    /// Set to 0 to always pull from the registry.
+    /// </summary>
+    private int ImagePullCacheSeconds =>
+        int.TryParse(configuration["Execution:ImagePullCacheSeconds"], out var v) ? v : DefaultPullCacheSeconds;
+
     // ──────────────────────────────────────────────────────────────────────────
     // IAgentRuntime / IExecCapableRuntime implementation
     // ──────────────────────────────────────────────────────────────────────────
@@ -89,9 +109,15 @@ public class DockerAgentRuntime(
         IReadOnlyDictionary<string, string> credentials,
         RuntimeConfiguration? runtimeConfig,
         GitRepository? gitRepository,
+        GitRepository? cloneRepository,
         Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {
+        // Resolve effective clone source. When only one remote is configured both are the same.
+        // When multiple remotes: gitRepository = Working-mode push target,
+        //                        cloneRepository = freshest remote (highest LastFetchedAt).
+        var cloneRepo = cloneRepository ?? gitRepository;
+
         var image = !string.IsNullOrWhiteSpace(agent.DockerImage)
             ? agent.DockerImage
             : DefaultDockerImage;
@@ -115,14 +141,16 @@ public class DockerAgentRuntime(
             await onLogLine($"[DEBUG] Internet       : restricted", LogStream.Stdout);
         if (session.KeepContainer)
             await onLogLine($"[DEBUG] Keep container : true (container will not be removed on exit)", LogStream.Stdout);
-        if (gitRepository is not null)
+        if (cloneRepo is not null)
         {
-            await onLogLine($"[DEBUG] Git remote     : {gitRepository.RemoteUrl} ({gitRepository.Mode})", LogStream.Stdout);
+            await onLogLine($"[DEBUG] Git clone src  : {cloneRepo.RemoteUrl} ({cloneRepo.Mode})", LogStream.Stdout);
+            if (gitRepository is not null && gitRepository != cloneRepo)
+                await onLogLine($"[DEBUG] Git push target: {gitRepository.RemoteUrl} ({gitRepository.Mode})", LogStream.Stdout);
             // Determine the branch the container will check out: issue.GitBranch takes precedence
-            // (feature branch for this issue), otherwise falls back to the repo's default branch.
+            // (feature branch for this issue), otherwise falls back to the clone source's default branch.
             var effectiveBranch = !string.IsNullOrWhiteSpace(issue.GitBranch)
                 ? issue.GitBranch
-                : gitRepository.DefaultBranch;
+                : cloneRepo.DefaultBranch;
             if (!string.IsNullOrWhiteSpace(effectiveBranch))
                 await onLogLine($"[DEBUG] Git branch     : {effectiveBranch}", LogStream.Stdout);
 
@@ -130,10 +158,10 @@ public class DockerAgentRuntime(
             // the entrypoint uses DefaultBranch as the base — if that is also empty there is
             // nothing to clone. Fail here with a clear message rather than letting the container
             // start and exit with a cryptic git error.
-            if (string.IsNullOrWhiteSpace(issue.GitBranch) && string.IsNullOrWhiteSpace(gitRepository.DefaultBranch))
+            if (string.IsNullOrWhiteSpace(issue.GitBranch) && string.IsNullOrWhiteSpace(cloneRepo.DefaultBranch))
                 throw new InvalidOperationException(
-                    $"GitRepository '{gitRepository.RemoteUrl}' has no DefaultBranch configured and the issue has no GitBranch set. " +
-                    "Set the default branch in the project's git repository settings before running an agent.");
+                    $"Clone-source remote '{cloneRepo.RemoteUrl}' has no DefaultBranch configured and the issue has no GitBranch set. " +
+                    "Set the default branch on at least one remote in the project's git repository settings before running an agent.");
         }
         if (agent.ChildAgents.Count > 0)
         {
@@ -155,13 +183,47 @@ public class DockerAgentRuntime(
                 $"(inner: {ex.Message})", ex);
         }
 
-        // Step 1: Pull the container image explicitly before creating the container.
-        var pullStart = DateTime.UtcNow;
-        await onLogLine($"[DEBUG] Pull started   : {pullStart:u}", LogStream.Stdout);
+        // Step 1: Pull the container image, logging the digest so we can verify which version is running.
+        // Smart pull: skip the registry round-trip if the image was pulled recently (within ImagePullCacheSeconds).
+        // If the cache entry is stale or absent, pull from the registry and update the cache.
+        var pullCacheSeconds = ImagePullCacheSeconds;
+        var cached = ImagePullCache.TryGetValue(image, out var cacheEntry);
+        var cacheAgeSec = cached ? (DateTime.UtcNow - cacheEntry.PullTime).TotalSeconds : double.MaxValue;
+        var skipPull = cached && pullCacheSeconds > 0 && cacheAgeSec < pullCacheSeconds;
+
         await onLogLine($"[DEBUG] Pulling image  : {image}", LogStream.Stdout);
-        await PullImageAsync(image, cancellationToken);
-        var pullDuration = (DateTime.UtcNow - pullStart).TotalSeconds;
-        await onLogLine($"[DEBUG] Pull finished  : {DateTime.UtcNow:u} (took {pullDuration:F1}s)", LogStream.Stdout);
+        if (skipPull)
+        {
+            var cacheAgeMin = (int)(cacheAgeSec / 60.0);
+            await onLogLine($"[DEBUG] Pull skipped   : image pulled {cacheAgeMin}m ago (cache: {pullCacheSeconds}s), using cached version", LogStream.Stdout);
+            if (!string.IsNullOrEmpty(cacheEntry.Digest))
+                await onLogLine($"[DEBUG] Image digest   : {cacheEntry.Digest}", LogStream.Stdout);
+        }
+        else
+        {
+            var pullStart = DateTime.UtcNow;
+            await onLogLine($"[DEBUG] Pull started   : {pullStart:u}", LogStream.Stdout);
+            await PullImageAsync(image, cancellationToken);
+            var pullDuration = (DateTime.UtcNow - pullStart).TotalSeconds;
+            await onLogLine($"[DEBUG] Pull finished  : {DateTime.UtcNow:u} (took {pullDuration:F1}s)", LogStream.Stdout);
+
+            // Inspect image to get the digest so we can verify which version is running
+            // and detect when a pull updates the image.
+            var digest = await TryGetImageDigestAsync(image, cancellationToken);
+            if (!string.IsNullOrEmpty(digest))
+                await onLogLine($"[DEBUG] Image digest   : {digest}", LogStream.Stdout);
+
+            // Check whether the image was actually updated (digest changed).
+            if (cached && !string.IsNullOrEmpty(cacheEntry.Digest) && !string.IsNullOrEmpty(digest))
+            {
+                if (cacheEntry.Digest != digest)
+                    await onLogLine($"[DEBUG] Image updated  : {cacheEntry.Digest[..Math.Min(DigestDisplayLength, cacheEntry.Digest.Length)]} → {digest[..Math.Min(DigestDisplayLength, digest.Length)]}", LogStream.Stdout);
+                else
+                    await onLogLine($"[DEBUG] Image up-to-date: digest unchanged", LogStream.Stdout);
+            }
+
+            ImagePullCache[image] = (DateTime.UtcNow, digest);
+        }
 
         // Step 2: Build environment including git repo info so the container can clone the repo on startup.
         // Replace localhost/127.0.0.1 with host.docker.internal so containers can reach the host's services
@@ -203,11 +265,11 @@ public class DockerAgentRuntime(
             await onLogLine($"[DEBUG] Comments       : {comments.Count} comment(s) included in prompt", LogStream.Stdout);
 
         // Build CLI args for exec flow (not used in HTTP server mode).
-        // When the session has a preserved previous opencode session ID (and the DB was injected),
-        // pass it as --session <id> so opencode continues from the preserved conversation.
+        // Only pass --session <id> when a DB snapshot was actually loaded; without the restored
+        // DB the session does not exist in the fresh container and opencode would throw NotFoundError.
         var runnerArgs = useHttpServerMode ? [] : RunnerCommandBuilder.BuildArgsList(
             agent, issue,
-            continueSessionId: session.PreviousOpenCodeSessionId,
+            continueSessionId: session.PreviousOpenCodeDbTar is { Length: > 0 } ? session.PreviousOpenCodeSessionId : null,
             comments: comments);
         var useExecFlow = !useHttpServerMode && runnerArgs.Count > 0;
 
@@ -345,11 +407,13 @@ public class DockerAgentRuntime(
             {
                 await onLogLine($"[INFO] Injecting previous opencode DB snapshot (session: {session.PreviousOpenCodeSessionId ?? "unknown"})…", LogStream.Stdout);
                 using var dbStream = new MemoryStream(session.PreviousOpenCodeDbTar);
-                // The tar archive path must already contain the correct relative directory
-                // so Docker extracts the file to /root/.local/share/opencode/opencode.db.
+                // Docker's GetArchiveFromContainerAsync for a FILE path returns a tar with just the
+                // basename (e.g. "opencode.db"), not the full relative path. Extracting at "/" would
+                // place the file at "/opencode.db" instead of the correct location. We must extract
+                // at the parent directory so Docker places it at the right path.
                 await dockerClient.Containers.ExtractArchiveToContainerAsync(
                     container.ID,
-                    new CopyToContainerParameters { Path = "/" },
+                    new CopyToContainerParameters { Path = "/root/.local/share/opencode" },
                     dbStream,
                     cancellationToken);
                 await onLogLine("[INFO] opencode DB snapshot injected — continuing from previous session", LogStream.Stdout);
@@ -358,6 +422,10 @@ public class DockerAgentRuntime(
             {
                 await onLogLine($"[WARN] Failed to inject opencode DB snapshot: {ex.Message} — starting fresh session", LogStream.Stderr);
                 logger.LogWarning(ex, "Failed to inject opencode DB into container {ContainerId}", container.ID);
+                // The session does not exist in the container without the restored DB; rebuild
+                // runner args without --session to avoid a "Session not found" crash in opencode.
+                session.PreviousOpenCodeSessionId = null;
+                runnerArgs = RunnerCommandBuilder.BuildArgsList(agent, issue, comments: comments);
             }
         }
 
@@ -401,23 +469,23 @@ public class DockerAgentRuntime(
             await onLogLine("[INFO] Starting workspace setup via docker exec…", LogStream.Stdout);
 
             // Step A: Clone the workspace (if a git repository is configured).
-            if (gitRepository is not null)
+            if (cloneRepo is not null)
             {
                 // Use issue.GitBranch only when it is set AND differs from the base branch —
                 // meaning a dedicated feature branch was already created for this issue in a
                 // prior run. When issue.GitBranch equals the default branch (or is empty) we
                 // generate a fresh feature branch name so we never work directly on main/master.
                 var featureBranch = !string.IsNullOrWhiteSpace(issue.GitBranch)
-                    && !string.Equals(issue.GitBranch, gitRepository.DefaultBranch, StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(issue.GitBranch, cloneRepo.DefaultBranch, StringComparison.OrdinalIgnoreCase)
                     ? issue.GitBranch
                     : GenerateFeatureBranchName(issue.Number, issue.Title ?? string.Empty);
                 await CloneWorkspaceAsync(
                     container.ID,
-                    gitRepository.RemoteUrl,
-                    gitRepository.DefaultBranch,
+                    cloneRepo.RemoteUrl,
+                    cloneRepo.DefaultBranch,
                     featureBranch,
-                    gitRepository.AuthUsername,
-                    gitRepository.AuthToken,
+                    cloneRepo.AuthUsername,
+                    cloneRepo.AuthToken,
                     onLogLine,
                     cancellationToken);
 
@@ -468,6 +536,26 @@ public class DockerAgentRuntime(
                 var startScript = "cd /workspace && nohup opencode > /tmp/opencode-server.log 2>&1 &";
                 await ExecCommandAsync(container.ID, ["/bin/sh", "-c", startScript],
                     (_, _) => Task.CompletedTask, cancellationToken, workingDir: "/");
+            }
+
+            // Step F (exec flow only): Verify the previous opencode session exists in the restored DB.
+            // Even when the DB injection succeeded the session may be missing after a schema migration
+            // or if the tar was extracted to the wrong path. Fall back to a fresh session in that case
+            // to avoid a "Session not found" crash when opencode runs with --session <id>.
+            if (useExecFlow && !string.IsNullOrEmpty(session.PreviousOpenCodeSessionId) && agent.RunnerType == RunnerType.OpenCode)
+            {
+                var sessionVerified = await VerifyOpenCodeSessionExistsAsync(
+                    container.ID, session.PreviousOpenCodeSessionId, onLogLine, cancellationToken);
+                if (!sessionVerified)
+                {
+                    await onLogLine(
+                        $"[WARN] Previous opencode session {session.PreviousOpenCodeSessionId} not found in restored DB — starting fresh session",
+                        LogStream.Stderr);
+                    session.PreviousOpenCodeSessionId = null;
+                    runnerArgs = RunnerCommandBuilder.BuildArgsList(agent, issue, comments: comments);
+                    var newCmdDisplay = string.Join(" ", runnerArgs.Take(runnerArgs.Count - 1));
+                    await onLogLine($"[DEBUG] Runner cmd     : {newCmdDisplay}", LogStream.Stdout);
+                }
             }
 
             await onLogLine("[INFO] Workspace setup complete", LogStream.Stdout);
@@ -522,7 +610,7 @@ public class DockerAgentRuntime(
                 // EmitGitMarkersAsync runs after the agent completes and will overwrite these with
                 // the final committed state, but emitting here ensures the session header is populated
                 // even when the agent fails and EmitGitMarkersAsync never runs.
-                if (gitRepository is not null)
+                if (cloneRepo is not null)
                 {
                     try
                     {
@@ -609,7 +697,7 @@ public class DockerAgentRuntime(
             // EmitGitMarkersAsync runs after the agent completes and will overwrite these with
             // the final committed state, but emitting here ensures the session header is populated
             // even when the agent fails and EmitGitMarkersAsync never runs.
-            if (gitRepository is not null)
+            if (cloneRepo is not null)
             {
                 try
                 {
@@ -1008,6 +1096,39 @@ public class DockerAgentRuntime(
     }
 
     /// <summary>
+    /// Runs <c>opencode session list</c> and returns <c>true</c> when <paramref name="sessionId"/>
+    /// appears in the output. Used before passing <c>--session &lt;id&gt;</c> to <c>opencode run</c>
+    /// to confirm the session exists in the restored DB and avoid a "Session not found" crash.
+    /// Returns <c>false</c> if the session is not found or if the command fails.
+    /// </summary>
+    private async Task<bool> VerifyOpenCodeSessionExistsAsync(
+        string containerId,
+        string sessionId,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        var found = false;
+        try
+        {
+            await ExecCommandAsync(containerId, ["opencode", "session", "list"],
+                (line, _) =>
+                {
+                    var trimmedLine = line.TrimStart();
+                    var tokenEnd = trimmedLine.IndexOfAny([' ', '\t']);
+                    var token = (tokenEnd > 0 ? trimmedLine[..tokenEnd] : trimmedLine).Trim();
+                    if (string.Equals(token, sessionId, StringComparison.Ordinal))
+                        found = true;
+                    return Task.CompletedTask;
+                }, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            await onLogLine($"[WARN] Could not verify opencode session existence: {ex.Message}", LogStream.Stderr);
+        }
+        return found;
+    }
+
+    /// <summary>
     /// Runs <c>git status --porcelain</c> in the workspace and emits
     /// <c>[ISSUEPIT:HAS_UNCOMMITTED_CHANGES]=true</c> when any uncommitted files are found.
     /// </summary>
@@ -1071,7 +1192,6 @@ public class DockerAgentRuntime(
             }
             else
             {
-                await onLogLine($"[entrypoint] Pushing branch '{branch}' to origin…", LogStream.Stdout);
                 // Use the real git binary path written by the entrypoint before it installed the
                 // push-blocking wrapper at /usr/local/bin/git. This allows the execution client to
                 // push branches via docker exec without hitting the wrapper meant to stop agents.
@@ -1079,9 +1199,55 @@ public class DockerAgentRuntime(
                     containerId,
                     ["/bin/sh", "-c", "cat /tmp/.issuepit-real-git 2>/dev/null || echo /usr/bin/git"],
                     cancellationToken)).Trim();
-                var pushExit = await ExecCommandAsync(containerId, [realGit, "push", "origin", branch],
-                    async (line, stream) => await onLogLine($"[entrypoint] {line}", stream),
+
+                // Build the authenticated push target. Git 2.39+ no longer persists credentials
+                // embedded in the clone URL to .git/config (it only uses them during clone), so a
+                // subsequent `git push origin` would fail with "could not read Username" when no
+                // credential helper is configured in the container. Passing the full authenticated
+                // URL directly to git push avoids this and also ensures we push to the correct
+                // Working-mode remote when multiple origins are configured.
+                var pushTarget = gitRepository is not null
+                    ? BuildAuthenticatedCloneUrl(gitRepository.RemoteUrl, gitRepository.AuthUsername, gitRepository.AuthToken)
+                    : "origin";
+
+                // Log the actual push target (redact credentials) for debugging.
+                var tokenToRedact = gitRepository?.AuthToken;
+                var safeTarget = !string.IsNullOrEmpty(tokenToRedact)
+                    ? pushTarget.Replace(tokenToRedact, "***", StringComparison.Ordinal)
+                    : pushTarget;
+                var modeLabel = gitRepository is not null ? $" ({gitRepository.Mode})" : "";
+                await onLogLine($"[entrypoint] Pushing branch '{branch}' to {safeTarget}{modeLabel}…", LogStream.Stdout);
+                if (gitRepository is not null)
+                    await onLogLine($"[DEBUG] Push hasCredentials={!string.IsNullOrEmpty(gitRepository.AuthToken)}", LogStream.Stdout);
+
+                // Log available git remotes inside the container for diagnostics.
+                // Redact the auth token so the URL that was embedded in the clone URL doesn't leak.
+                var gitRemotes = await ExecReadOutputAsync(
+                    containerId,
+                    ["/bin/sh", "-c", "git remote -v 2>/dev/null || echo '(no remotes)'"],
                     cancellationToken);
+                foreach (var remoteLine in gitRemotes.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    var safeRemoteLine = !string.IsNullOrEmpty(tokenToRedact)
+                        ? remoteLine.Replace(tokenToRedact, "***", StringComparison.Ordinal)
+                        : remoteLine;
+                    await onLogLine($"[DEBUG] in-container remote: {safeRemoteLine}", LogStream.Stdout);
+                }
+
+                // Sanitize push output: git prints "To <url>" in its output, which would leak the
+                // auth token when credentials are embedded in the push URL.
+                Task safeLogLine(string line, LogStream stream)
+                {
+                    var safeLine = !string.IsNullOrEmpty(tokenToRedact)
+                        ? line.Replace(tokenToRedact, "***", StringComparison.Ordinal)
+                        : line;
+                    return onLogLine($"[entrypoint] {safeLine}", stream);
+                }
+
+                var pushExit = await ExecCommandAsync(containerId, [realGit, "push", pushTarget, branch],
+                    safeLogLine,
+                    cancellationToken,
+                    env: ["GIT_TERMINAL_PROMPT=0"]);
                 if (pushExit != 0)
                 {
                     await onLogLine(
@@ -1189,6 +1355,29 @@ public class DockerAgentRuntime(
             cancellationToken);
 
         logger.LogInformation("Docker image {Image} is ready", image);
+    }
+
+    /// <summary>
+    /// Inspects the local Docker image and returns the first repo digest (e.g. <c>sha256:abc123…</c>),
+    /// or <c>null</c> when the image is not present locally or inspection fails.
+    /// </summary>
+    private async Task<string?> TryGetImageDigestAsync(string image, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var inspect = await dockerClient.Images.InspectImageAsync(image, cancellationToken);
+            // RepoDigests contains entries like "ghcr.io/org/image@sha256:abc123..."
+            // Return the digest portion after "@" for readability.
+            var fullDigest = inspect.RepoDigests?.FirstOrDefault();
+            if (string.IsNullOrEmpty(fullDigest)) return null;
+            var atIndex = fullDigest.IndexOf('@');
+            return atIndex >= 0 ? fullDigest[(atIndex + 1)..] : fullDigest;
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Could not inspect image {Image} to retrieve digest", image);
+            return null;
+        }
     }
 
     /// <summary>Returns the list of DNS server addresses to use when internet access is restricted.</summary>

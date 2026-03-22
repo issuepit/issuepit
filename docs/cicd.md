@@ -91,7 +91,45 @@ Configure via environment variables in your `docker-compose.yml`:
 
 ---
 
-## Secrets and Environment Variables
+## Skipping Steps
+
+IssuePit passes `--skip-step` flags to `act` so you can disable specific workflow steps without modifying the workflow files themselves. This removes the need for `if: github.event_name != 'act'` guards on every push or deploy step.
+
+### Configuring skip steps in the UI
+
+1. Go to **Project → Settings → CI/CD** (or **Organisation → Settings → CI/CD** for a shared default).
+2. Scroll to **Skip Steps**.
+3. Enter one entry per line:
+   - A bare step name (e.g. `deploy`) skips that step in every job.
+   - A `job-id:step-name` pair (e.g. `build:upload-to-s3`) skips the step only within the named job.
+
+   ![Skip Steps editor with wizard]({{ '/assets/screenshots/ci-cd-skip-steps.png' | relative_url }})
+
+4. Use the **wizard** to load steps from recent runs automatically — click **"Use wizard (auto-complete from recent runs)"**, check the steps you want to skip, then click **Apply**.
+5. Click **Save CI/CD Config**.
+
+### Project vs. organisation scope
+
+| Level | Effect |
+|-------|--------|
+| Project | Applies only to that project's runs |
+| Organisation | Default for all projects in the org (project setting overrides it) |
+
+If neither is set, no steps are skipped. The project value (when set) completely replaces the org default — it does not merge.
+
+### Config-repo (`skipSteps` field)
+
+`skipSteps` can also be set in the [config repository](config-repo) to manage it as infrastructure-as-code:
+
+```json5
+// orgs/my-org.json5 or projects/my-project.json5
+{
+  // One entry per line (\n separator in JSON strings)
+  "skipSteps": "deploy\nbuild:upload-to-s3\nNotify Slack"
+}
+```
+
+---
 
 Pass workflow secrets and environment variables to a CI/CD run:
 

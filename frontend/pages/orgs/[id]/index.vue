@@ -463,6 +463,17 @@
           </div>
         </div>
 
+        <!-- Skip Steps -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h2 class="font-semibold text-white mb-1">Skip Steps</h2>
+          <p class="text-sm text-gray-500 mb-4">
+            Skip specific workflow steps on every run for all projects in this organization without modifying workflow files.
+            Useful to disable push, deploy, or notification steps in non-production environments.
+            Individual projects can override this setting.
+          </p>
+          <SkipStepsEditor v-model="ciCdForm.skipSteps" />
+        </div>
+
         <!-- Save button -->
         <div class="flex items-center gap-4">
           <button
@@ -709,6 +720,7 @@ const ciCdForm = reactive({
   useNewActionCache: false,
   actionOfflineMode: false,
   localRepositories: '' as string,
+  skipSteps: '' as string,
 })
 const savingCiCd = ref(false)
 const saveCiCdError = ref<string | null>(null)
@@ -825,6 +837,7 @@ onMounted(async () => {
     ciCdForm.useNewActionCache = orgsStore.currentOrg.useNewActionCache ?? false
     ciCdForm.actionOfflineMode = orgsStore.currentOrg.actionOfflineMode ?? false
     ciCdForm.localRepositories = orgsStore.currentOrg.localRepositories || ''
+    ciCdForm.skipSteps = orgsStore.currentOrg.skipSteps || ''
   }
 })
 
@@ -863,6 +876,7 @@ async function saveCiCdSettings() {
       useNewActionCache: ciCdForm.useNewActionCache,
       actionOfflineMode: ciCdForm.actionOfflineMode,
       localRepositories: ciCdForm.localRepositories || null,
+      skipSteps: ciCdForm.skipSteps || null,
     })
     savedCiCdOk.value = true
     setTimeout(() => { savedCiCdOk.value = false }, 3000)

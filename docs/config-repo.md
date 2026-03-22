@@ -82,6 +82,10 @@ Only the fields you set are applied — omitted fields are left unchanged in the
   "useNewActionCache": true,
   "actionOfflineMode": false,
 
+  // Skip specific steps on every run without editing the workflow file.
+  // One entry per line: bare step name OR job-id:step-name
+  "skipSteps": "deploy\nbuild:upload-to-s3",
+
   // Members — resolved by userId (GUID, priority) or username
   "members": [
     { "username": "alice", "role": "owner" },
@@ -156,6 +160,9 @@ Only the fields you set are applied — omitted fields are left unchanged in the
   // Redirect reusable workflow calls to local clones.
   // Format: owner/repo=localPath  (multiple entries separated by \n in the JSON string)
   "localRepositories": "my-org/reusable-workflows=/home/runner/local/reusable-workflows\nmy-org/shared-actions=/home/runner/local/shared-actions",
+
+  // Skip steps on every run (project value overrides org default, does not merge).
+  "skipSteps": "deploy\nbuild:upload-to-s3",
 
   "actionCachePath": "/home/runner/.cache/act",
   "useNewActionCache": true,

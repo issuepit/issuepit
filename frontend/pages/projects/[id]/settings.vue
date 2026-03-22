@@ -156,6 +156,12 @@
           </div>
           <p class="text-sm text-gray-500 mb-4">Link one or more Git remotes to this project</p>
 
+          <!-- Warning: no remote has a DefaultBranch configured -->
+          <div v-if="!gitStore.loading && noRemoteHasDefaultBranch"
+            class="bg-yellow-900/30 border border-yellow-700/50 rounded-lg px-3 py-2 text-sm text-yellow-300 mb-3">
+            ⚠ No remote has a default branch configured. At least one remote must have a default branch set — it is used as the base for new agent feature branches and as the default target for merge/pull requests.
+          </div>
+
           <div v-if="gitStore.loading" class="flex items-center justify-center py-6">
             <div class="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
           </div>
@@ -897,6 +903,12 @@ const repoForm = reactive<{ remoteUrl: string; defaultBranch: string; authUserna
   mode: 'Working',
   gitHubIdentityId: '',
 })
+
+// True when at least one configured remote is missing a DefaultBranch. DefaultBranch is the
+// base pull branch: used to create agent feature branches and as the default PR target.
+const noRemoteHasDefaultBranch = computed(
+  () => gitStore.repos.length > 0 && gitStore.repos.every(r => !r.defaultBranch),
+)
 
 function modeClasses(mode: GitOriginMode) {
   if (mode === 'Working') return 'bg-brand-900/40 text-brand-400'

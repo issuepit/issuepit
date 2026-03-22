@@ -672,7 +672,8 @@ public abstract class DockerRuntimeBase
                  DISABLE_INTERNET={{(disableInternet ? "true" : "false")}}
                  if [ "${DISABLE_INTERNET}" = "true" ]; then
                    DNSMASQ_ARGS="${DNSMASQ_ARGS} --address=/#/0.0.0.0"
-                   for DOMAIN in {{allowedList}}; do
+                   for DOMAIN in {{allowedList}}
+                   do
                      DNSMASQ_ARGS="${DNSMASQ_ARGS} --server=/${DOMAIN}/${UPSTREAM_DNS}"
                    done
                  else
