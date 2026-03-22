@@ -352,6 +352,48 @@ public class NativeCiCdRuntimeTests
     }
 
     [Fact]
+    public void BuildActArgumentsList_WithSkipSteps_EmitsSkipStepFlags()
+    {
+        var trigger = new TriggerPayload(
+            ProjectId: Guid.NewGuid(),
+            CommitSha: null, Branch: null, Workflow: null,
+            AgentSessionId: null, WorkspacePath: null, EventName: null,
+            SkipSteps: "deploy\nbuild:upload-artifacts");
+        var args = NativeCiCdRuntime.BuildActArgumentsList(trigger).ToList();
+
+        Assert.Contains("--skip-step", args);
+        var firstIdx = args.IndexOf("--skip-step");
+        Assert.Equal("deploy", args[firstIdx + 1]);
+        Assert.Equal("--skip-step", args[firstIdx + 2]);
+        Assert.Equal("build:upload-artifacts", args[firstIdx + 3]);
+    }
+
+    [Fact]
+    public void BuildActArgumentsList_NoSkipSteps_NoFlag()
+    {
+        var args = NativeCiCdRuntime.BuildActArgumentsList(Trigger());
+        Assert.DoesNotContain("--skip-step", args);
+    }
+
+    [Fact]
+    public void BuildActArgumentsList_SkipSteps_IgnoresBlankLines()
+    {
+        var trigger = new TriggerPayload(
+            ProjectId: Guid.NewGuid(),
+            CommitSha: null, Branch: null, Workflow: null,
+            AgentSessionId: null, WorkspacePath: null, EventName: null,
+            SkipSteps: "deploy\n\n  \nbuild:upload-artifacts");
+        var args = NativeCiCdRuntime.BuildActArgumentsList(trigger).ToList();
+
+        var skipStepArgs = args
+            .Select((a, i) => (a, i))
+            .Where(t => t.a == "--skip-step")
+            .Select(t => args[t.i + 1])
+            .ToList();
+        Assert.Equal(["deploy", "build:upload-artifacts"], skipStepArgs);
+    }
+
+    [Fact]
     public void BuildActArgumentsList_AllCacheFlags_CombinedCorrectly()
     {
         var trigger = new TriggerPayload(

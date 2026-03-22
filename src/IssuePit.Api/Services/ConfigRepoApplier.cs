@@ -118,6 +118,7 @@ public class ConfigRepoApplier(
         if (model.UseNewActionCache.HasValue) org.UseNewActionCache = model.UseNewActionCache.Value;
         if (model.ActionOfflineMode.HasValue) org.ActionOfflineMode = model.ActionOfflineMode.Value;
         if (model.LocalRepositories is not null) org.LocalRepositories = model.LocalRepositories;
+        if (model.SkipSteps is not null) org.SkipSteps = model.SkipSteps;
 
         if (model.Members is not null)
             await ApplyOrgMembersAsync(tenant, org, model.Members, strictMode, result, filePath, ct);
@@ -248,6 +249,7 @@ public class ConfigRepoApplier(
         if (model.UseNewActionCache.HasValue) project.UseNewActionCache = model.UseNewActionCache;
         if (model.ActionOfflineMode.HasValue) project.ActionOfflineMode = model.ActionOfflineMode;
         if (model.LocalRepositories is not null) project.LocalRepositories = model.LocalRepositories;
+        if (model.SkipSteps is not null) project.SkipSteps = model.SkipSteps;
 
         if (!string.IsNullOrEmpty(model.GitUrl))
             await ApplyProjectGitRepoAsync(project, model, ct);
