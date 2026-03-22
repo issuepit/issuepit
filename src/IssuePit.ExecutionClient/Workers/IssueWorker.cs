@@ -327,13 +327,27 @@ public class IssueWorker(
             runtimeType = (RuntimeType)runtimeTypeOverride.Value;
 
         // Load all git repositories for the project so the pre-flight check can verify branch
-        // availability across every configured remote. The Working-mode repo is selected as the
-        // primary target (agents clone and push there); if none is Working the first one is used.
+        // availability across every configured remote.
         var allGitRepositories = await db.GitRepositories
             .Where(r => r.ProjectId == issue.ProjectId)
             .OrderByDescending(r => r.Mode == GitOriginMode.Working)
             .ToListAsync(cancellationToken);
-        var gitRepository = allGitRepositories.FirstOrDefault();
+
+        // Push target: always the Working-mode remote (agents push their changes back here).
+        var gitRepository = allGitRepositories.FirstOrDefault(r => r.Mode == GitOriginMode.Working)
+            ?? allGitRepositories.FirstOrDefault();
+
+        // Clone source: the remote with the most recently confirmed content (highest LastFetchedAt)
+        // that also has a DefaultBranch configured. DefaultBranch is the "base pull branch" — it is
+        // used to create agent feature branches when no issue.GitBranch is set and as the default
+        // target for merge/pull requests.  Falls back to the push target when no repo has
+        // LastFetchedAt data or none has a DefaultBranch.
+        var cloneRepository = allGitRepositories
+            .Where(r => !string.IsNullOrWhiteSpace(r.DefaultBranch))
+            .OrderByDescending(r => r.LastFetchedAt)
+            .ThenByDescending(r => r.Mode == GitOriginMode.Working)
+            .FirstOrDefault()
+            ?? gitRepository;
 
         // Load the per-project push policy for this agent. Falls back to Forbidden when no
         // explicit AgentProject row exists (e.g. org-level links without a project override).
@@ -521,11 +535,10 @@ public class IssueWorker(
             bool useExecForFixes = false;
 
             // Pre-flight: verify the base branch exists on all configured git remotes.
-            // The Working-mode repo is always the clone and push target (set above via OrderByDescending).
-            // CheckBranchOnRemotesAsync only validates and provides results for logging/UI.
+            // Validates and produces logging/UI results. Clone and push targets are determined above.
             if (allGitRepositories.Count > 0)
             {
-                var checkResults = await CheckBranchOnRemotesAsync(allGitRepositories, sessionCts.Token);
+                var checkResults = await CheckBranchOnRemotesAsync(allGitRepositories, cloneRepository, sessionCts.Token);
                 session.GitRemoteCheckResultsJson = JsonSerializer.Serialize(checkResults);
                 await db.SaveChangesAsync(sessionCts.Token);
 
@@ -533,24 +546,29 @@ public class IssueWorker(
                 await onLogLine($"[DEBUG] Git remote check: {checkResults.Count} remote(s) configured", LogStream.Stdout);
                 foreach (var r in checkResults)
                 {
-                    var availLabel = r.Available switch { true => "available", false => "not found", null => "skipped (no branch configured or git unavailable)" };
-                    var selectedLabel = r.Selected ? " ← clone/push target" : "";
-                    await onLogLine($"[DEBUG]   {r.Mode,-12} {r.RemoteUrl}  branch={r.DefaultBranch ?? "(none)"}  check={availLabel}{selectedLabel}", LogStream.Stdout);
+                    var availLabel = r.Available switch { true => "available", false => "not found", null => "skipped (no branch configured)" };
+                    var roleLabel = r.Selected ? " ← clone source" : (r.RepoId == gitRepository?.Id ? " ← push target" : "");
+                    await onLogLine($"[DEBUG]   {r.Mode,-12} {r.RemoteUrl}  branch={r.DefaultBranch ?? "(none)"}  check={availLabel}{roleLabel}", LogStream.Stdout);
                 }
-                if (gitRepository is not null)
+                if (cloneRepository is not null)
                 {
-                    // Redact any embedded auth token from the URL before logging (defensive — the
-                    // stored RemoteUrl should be clean, but some configurations may embed credentials).
-                    var safeRepoUrl = !string.IsNullOrEmpty(gitRepository.AuthToken)
+                    var safeCloneUrl = !string.IsNullOrEmpty(cloneRepository.AuthToken)
+                        ? cloneRepository.RemoteUrl.Replace(cloneRepository.AuthToken, "***", StringComparison.Ordinal)
+                        : cloneRepository.RemoteUrl;
+                    await onLogLine($"[DEBUG] Clone source: {cloneRepository.Mode} remote — {safeCloneUrl}  hasCredentials={!string.IsNullOrEmpty(cloneRepository.AuthToken)}", LogStream.Stdout);
+                }
+                if (gitRepository is not null && gitRepository != cloneRepository)
+                {
+                    var safePushUrl = !string.IsNullOrEmpty(gitRepository.AuthToken)
                         ? gitRepository.RemoteUrl.Replace(gitRepository.AuthToken, "***", StringComparison.Ordinal)
                         : gitRepository.RemoteUrl;
-                    await onLogLine($"[DEBUG] Clone/push target: {gitRepository.Mode} remote — {safeRepoUrl}  hasCredentials={!string.IsNullOrEmpty(gitRepository.AuthToken)}", LogStream.Stdout);
+                    await onLogLine($"[DEBUG] Push target:  {gitRepository.Mode} remote — {safePushUrl}  hasCredentials={!string.IsNullOrEmpty(gitRepository.AuthToken)}", LogStream.Stdout);
                 }
             }
 
             try
             {
-                runtimeId = await runtime.LaunchAsync(session, agent, issue, credentials, runtimeConfig, gitRepository, onLogLine, sessionCts.Token);
+                runtimeId = await runtime.LaunchAsync(session, agent, issue, credentials, runtimeConfig, gitRepository, cloneRepository, onLogLine, sessionCts.Token);
 
                 logger.LogInformation(
                     "Agent {AgentId} launched via {RuntimeType} with id '{RuntimeId}' for session {SessionId}",
@@ -633,7 +651,7 @@ public class IssueWorker(
                     else
                     {
                         (fixCommitSha, fixBranchName) = await RunCiCdFixAgentAsync(
-                            session, agent, fixUncommittedIssue, gitRepository, credentials, runtimeConfig,
+                            session, agent, fixUncommittedIssue, gitRepository, cloneRepository, credentials, runtimeConfig,
                             AgentLogSection.UncommittedChangesFix, sectionIndex: 0, db, sessionCts.Token);
                     }
 
@@ -654,7 +672,7 @@ public class IssueWorker(
                 if (cicdPrerequisitesMet && !capturedGitPushFailed)
                 {
                     var cicdSucceeded = await RunCiCdFixLoopAsync(
-                        session, agent, issue, gitRepository!, credentials, runtimeConfig,
+                        session, agent, issue, gitRepository!, cloneRepository, credentials, runtimeConfig,
                         capturedCommitSha!, capturedBranchName!, db, sessionCts.Token,
                         execRuntime: useExecForFixes ? execRuntime : null,
                         execContainerId: useExecForFixes ? runtimeId : null,
@@ -1001,6 +1019,7 @@ public class IssueWorker(
         Agent agent,
         Issue issue,
         GitRepository gitRepository,
+        GitRepository? cloneRepository,
         IReadOnlyDictionary<string, string> credentials,
         RuntimeConfiguration? runtimeConfig,
         string commitSha,
@@ -1086,7 +1105,7 @@ public class IssueWorker(
             {
                 // Fallback: launch a new container for the fix run (legacy behaviour for non-exec runtimes).
                 (fixCommitSha, fixBranchName) = await RunCiCdFixAgentAsync(
-                    session, agent, fixIssue, gitRepository, credentials, runtimeConfig,
+                    session, agent, fixIssue, gitRepository, cloneRepository, credentials, runtimeConfig,
                     AgentLogSection.CiCdFixRun, fixSectionIndex, db, cancellationToken);
             }
 
@@ -1347,6 +1366,7 @@ public class IssueWorker(
         Agent agent,
         Issue fixIssue,
         GitRepository gitRepository,
+        GitRepository? cloneRepository,
         IReadOnlyDictionary<string, string> credentials,
         RuntimeConfiguration? runtimeConfig,
         AgentLogSection section,
@@ -1373,7 +1393,7 @@ public class IssueWorker(
         {
             // The fix run uses the same agent session so all output appears under one session in the UI.
             await runtime.LaunchAsync(
-                parentSession, agent, fixIssue, credentials, runtimeConfig, gitRepository,
+                parentSession, agent, fixIssue, credentials, runtimeConfig, gitRepository, cloneRepository,
                 onFixLogLine, cancellationToken);
 
             // Persist updated git info on the parent session.
@@ -1439,26 +1459,79 @@ public class IssueWorker(
     /// configured git remote exists by running <c>git ls-remote --heads</c> against each URL.
     /// Returns a per-remote result list suitable for display in the UI.
     ///
-    /// The Working-mode repository is always the clone and push target regardless of the check
-    /// results — <c>DefaultBranch</c> is just the base branch used for creating feature branches
-    /// and as the default target for merge/pull requests.
+    /// <para>Clone vs push separation:</para>
+    /// <list type="bullet">
+    ///   <item><description>
+    ///     <b>Clone source</b>: <paramref name="cloneRepository"/> — the remote with the newest
+    ///     content (highest <see cref="GitRepository.LastFetchedAt"/>), marked as <c>Selected</c>
+    ///     in the results.
+    ///   </description></item>
+    ///   <item><description>
+    ///     <b>Push target</b>: always the Working-mode remote, handled by the caller.
+    ///   </description></item>
+    /// </list>
     ///
-    /// Throws an <see cref="InvalidOperationException"/> when the Working-mode repo has a
-    /// <c>DefaultBranch</c> configured and the check confirms the branch does <em>not</em> exist
-    /// on that remote (exit code 0 but no matching ref). A skipped check (no branch configured,
-    /// git not on the host, or a network timeout) does not throw — the clone attempt itself will
-    /// produce a clear error if the remote is unreachable.
+    /// <para>Pre-flight failures (throws <see cref="InvalidOperationException"/>):</para>
+    /// <list type="bullet">
+    ///   <item><description>
+    ///     <c>git</c> is not installed on the execution-client host — the run cannot proceed.
+    ///   </description></item>
+    ///   <item><description>
+    ///     No configured remote has a <see cref="GitRepository.DefaultBranch"/> set — at least one
+    ///     must be configured because <c>DefaultBranch</c> is the "base pull branch": it is used to
+    ///     create agent feature branches when no <c>issue.GitBranch</c> is set, and as the default
+    ///     merge/pull-request target.
+    ///   </description></item>
+    ///   <item><description>
+    ///     The clone-source remote's <c>DefaultBranch</c> was confirmed absent on that remote.
+    ///   </description></item>
+    /// </list>
+    ///
+    /// A skipped check (network timeout) does not throw — the clone itself will produce a clear error.
     /// </summary>
     private static async Task<List<GitRemoteCheckResult>> CheckBranchOnRemotesAsync(
         IList<GitRepository> repositories,
+        GitRepository? cloneRepository,
         CancellationToken cancellationToken)
     {
-        var results = new List<GitRemoteCheckResult>();
+        // git must be available on the host — not having git is a misconfiguration that must fail
+        // the run immediately rather than silently skipping all branch checks.
+        try
+        {
+            using var gitCheck = new Process();
+            gitCheck.StartInfo = new ProcessStartInfo
+            {
+                FileName = "git",
+                Arguments = "--version",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            gitCheck.Start();
+            await gitCheck.WaitForExitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                "git is not installed on the execution-client host. " +
+                "Install git so the execution client can verify branch availability before launching an agent run. " +
+                $"(inner: {ex.Message})", ex);
+        }
 
-        // The Working-mode repo is always the primary target for clone + push.
-        // Mark it as selected so the UI shows which remote will actually be used.
-        var primaryRepo = repositories.FirstOrDefault(r => r.Mode == GitOriginMode.Working)
-            ?? repositories.FirstOrDefault();
+        // At least one configured remote must have a DefaultBranch set.
+        // DefaultBranch is the "base pull branch": used to create agent feature branches when
+        // issue.GitBranch is not set, and as the default target for merge/pull requests.
+        if (repositories.All(r => string.IsNullOrWhiteSpace(r.DefaultBranch)))
+        {
+            throw new InvalidOperationException(
+                "No configured git remote has a DefaultBranch set. " +
+                "Set the default branch on at least one remote in the project's git repository settings. " +
+                "DefaultBranch is the base pull branch: used to create agent feature branches and as the default target for merge/pull requests.");
+        }
+
+        var results = new List<GitRemoteCheckResult>();
 
         foreach (var repo in repositories)
         {
@@ -1472,16 +1545,16 @@ public class IssueWorker(
                 Mode: repo.Mode.ToString(),
                 DefaultBranch: repo.DefaultBranch,
                 Available: available,
-                Selected: repo == primaryRepo));
+                Selected: repo == cloneRepository));
         }
 
-        // Early error: if the Working-mode repo's DefaultBranch was confirmed absent,
+        // Early error: if the clone-source remote's DefaultBranch was confirmed absent,
         // the clone will definitely fail — throw now with a clear message.
-        var primaryResult = results.FirstOrDefault(r => r.RepoId == primaryRepo?.Id);
-        if (primaryResult?.Available == false)
+        var cloneResult = results.FirstOrDefault(r => r.RepoId == cloneRepository?.Id);
+        if (cloneResult?.Available == false)
         {
             throw new InvalidOperationException(
-                $"Base branch '{primaryResult.DefaultBranch}' was not found on the Working-mode remote ({primaryResult.RemoteUrl}). " +
+                $"Base branch '{cloneResult.DefaultBranch}' was not found on the clone-source remote ({cloneResult.RemoteUrl}). " +
                 "Update GitRepository.DefaultBranch in IssuePit to match the actual default branch of the remote.");
         }
 
@@ -1492,7 +1565,7 @@ public class IssueWorker(
     /// Runs <c>git ls-remote --heads &lt;url&gt; &lt;branch&gt;</c> as a subprocess to check
     /// whether a branch exists on a remote. Returns <c>true</c> if found, <c>false</c> if the
     /// command succeeded but the branch was absent, <c>null</c> if the check could not be
-    /// performed (git not installed on the host, network error, or timeout).
+    /// performed (network error or timeout — git availability is verified before this is called).
     /// </summary>
     private static async Task<bool?> IsBranchOnRemoteAsync(
         string remoteUrl, string? authUsername, string? authToken, string branch,
@@ -1537,7 +1610,8 @@ public class IssueWorker(
         }
         catch
         {
-            // git is not installed on the host, or another error occurred — skip the check.
+            // Unexpected error (e.g. network failure) — treat as indeterminate and skip.
+            // git availability is verified in CheckBranchOnRemotesAsync before this is called.
             return null;
         }
     }
