@@ -303,7 +303,7 @@ public class RunnerCommandBuilderTests
             new CiCdRun { Id = Guid.NewGuid(), ProjectId = Guid.NewGuid(), CommitSha = "abc123def456", Branch = "main", Workflow = "ci.yml", Status = IssuePit.Core.Enums.CiCdRunStatus.Failed, StartedAt = new DateTime(2025, 1, 15, 10, 0, 0, DateTimeKind.Utc) },
         ];
         var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue);
-        Assert.Contains("<cicd_runs>", prompt);
+        Assert.Contains("limited_last_x=\"1\"", prompt);
         Assert.Contains("status=\"Failed\"", prompt);
         Assert.Contains("branch=\"main\"", prompt);
         Assert.Contains("workflow=\"ci.yml\"", prompt);
@@ -323,7 +323,7 @@ public class RunnerCommandBuilderTests
     {
         var issue = MakeIssue("Issue without runs");
         var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue);
-        Assert.DoesNotContain("<cicd_runs>", prompt);
+        Assert.DoesNotContain("<cicd_runs", prompt);
     }
 
     [Fact]

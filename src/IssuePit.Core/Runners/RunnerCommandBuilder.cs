@@ -278,7 +278,7 @@ public static class RunnerCommandBuilder
         // CI/CD runs (only included when the triggering comment contained #runs)
         if (issue.PromptCiCdRuns.Count > 0)
         {
-            sb.AppendLine("  <cicd_runs>");
+            sb.AppendLine($"  <cicd_runs limited_last_x=\"{issue.PromptCiCdRuns.Count}\">");
             foreach (var run in issue.PromptCiCdRuns)
             {
                 var attrs = $"status=\"{run.Status}\" started_at=\"{run.StartedAt:yyyy-MM-ddTHH:mm:ssZ}\"";
