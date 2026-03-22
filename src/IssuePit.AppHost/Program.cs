@@ -441,4 +441,9 @@ frontend
         u.Url = "/admin-login";
     });
 
+var gitServer = builder.AddProject<Projects.IssuePit_GitServer>("git-server")
+    .WithReference(postgresDb)
+    .WaitForCompletion(migrator)
+    .WithHttpHealthCheck("/health", endpointName: "http");
+
 builder.Build().Run();
