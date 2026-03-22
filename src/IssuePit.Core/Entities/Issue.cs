@@ -69,4 +69,35 @@ public class Issue
     /// </summary>
     [NotMapped]
     public IList<IssueComment> Comments { get; set; } = [];
+
+    /// <summary>
+    /// Sub-issues loaded for agent prompts. Not persisted — populated on demand before agent launch.
+    /// </summary>
+    [NotMapped]
+    public IList<Issue> PromptSubIssues { get; set; } = [];
+
+    /// <summary>
+    /// Tasks loaded for agent prompts. Not persisted — populated on demand before agent launch.
+    /// </summary>
+    [NotMapped]
+    public IList<IssueTask> PromptTasks { get; set; } = [];
+
+    /// <summary>
+    /// Linked issues loaded for agent prompts. Not persisted — populated on demand before agent launch.
+    /// </summary>
+    [NotMapped]
+    public IList<IssueLink> PromptLinks { get; set; } = [];
+
+    /// <summary>
+    /// Attachments loaded for agent prompts. Not persisted — populated on demand before agent launch.
+    /// </summary>
+    [NotMapped]
+    public IList<IssueAttachment> PromptAttachments { get; set; } = [];
+
+    /// <summary>
+    /// When set, the comment with this ID was the trigger for the current agent run.
+    /// Not persisted — set on demand before agent launch.
+    /// </summary>
+    [NotMapped]
+    public Guid? TriggeringCommentId { get; set; }
 }

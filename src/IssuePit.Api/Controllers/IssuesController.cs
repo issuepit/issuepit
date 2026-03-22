@@ -6,11 +6,12 @@ using IssuePit.Core.Enums;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 namespace IssuePit.Api.Controllers;
 
 [ApiController]
 [Route("api/issues")]
-public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer<string, string> producer, IssueEnhancementService enhancementService, ImageStorageService imageStorage, VoiceTranscriptionService voiceTranscription, GitHubSyncService githubSyncService, ILogger<IssuesController> logger) : ControllerBase
+public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer<string, string> producer, IssueEnhancementService enhancementService, ImageStorageService imageStorage, VoiceTranscriptionService voiceTranscription, GitHubSyncService githubSyncService, ILogger<IssuesController> logger) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetIssues(
@@ -332,7 +333,10 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
     public async Task<IActionResult> AddComment(Guid id, [FromBody] CommentRequest req)
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
-        var issue = await db.Issues.FindAsync(id);
+        var issue = await db.Issues
+            .Include(i => i.Assignees)
+            .Include(i => i.Project)
+            .FirstOrDefaultAsync(i => i.Id == id && i.Project!.Organization.TenantId == ctx.CurrentTenant.Id);
         if (issue is null) return NotFound();
         var now = DateTime.UtcNow;
         var comment = new IssueComment
@@ -348,8 +352,87 @@ public class IssuesController(IssuePitDbContext db, TenantContext ctx, IProducer
         db.IssueComments.Add(comment);
         await db.SaveChangesAsync();
         await db.Entry(comment).Reference(c => c.User).LoadAsync();
+
+        // Detect @agent-name mentions and trigger a run for each matched active agent.
+        await TriggerMentionedAgentsAsync(issue, comment);
+
         return Created($"/api/issues/{id}/comments/{comment.Id}", comment);
     }
+
+    /// <summary>
+    /// Extracts @mentions from a comment body, looks up matching active agents for the
+    /// current tenant, and publishes an <c>issue-assigned</c> Kafka event for each one.
+    /// When the agent is not yet assigned to the issue it is assigned automatically first.
+    /// </summary>
+    private async Task TriggerMentionedAgentsAsync(Issue issue, IssueComment comment)
+    {
+        // Extract all @word-word style mentions from the comment body.
+        var mentionedNames = AgentMentionRegex()
+            .Matches(comment.Body)
+            .Select(m => m.Groups[1].Value)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (mentionedNames.Count == 0)
+            return;
+
+        // Build a set of agent IDs that are disabled for this specific project
+        // (an agent can be org-linked but disabled at project level via AgentProject.IsDisabled).
+        var disabledAgentIds = await db.AgentProjects
+            .Where(ap => ap.ProjectId == issue.ProjectId && ap.IsDisabled)
+            .Select(ap => ap.AgentId)
+            .ToHashSetAsync();
+
+        // Look up active agents that match the mentioned names, scoped to the current tenant
+        // and not disabled for this project.
+        var matchedAgents = await db.Agents
+            .Where(a => a.Organization.TenantId == ctx.CurrentTenant!.Id
+                        && a.IsActive
+                        && !disabledAgentIds.Contains(a.Id)
+                        && mentionedNames.Contains(a.Name))
+            .ToListAsync();
+
+        if (matchedAgents.Count == 0)
+            return;
+
+        foreach (var agent in matchedAgents)
+        {
+            // Auto-assign the agent if not already assigned.
+            var isAssigned = issue.Assignees.Any(a => a.AgentId == agent.Id);
+            if (!isAssigned)
+            {
+                var newAssignee = new IssueAssignee
+                {
+                    Id = Guid.NewGuid(),
+                    IssueId = issue.Id,
+                    AgentId = agent.Id,
+                };
+                db.IssueAssignees.Add(newAssignee);
+                db.IssueEvents.Add(MakeEvent(issue.Id, IssueEventType.AssigneeAdded, newValue: agent.Name));
+                await db.SaveChangesAsync();
+            }
+
+            await producer.ProduceAsync("issue-assigned", new Message<string, string>
+            {
+                Key = issue.Id.ToString(),
+                Value = JsonSerializer.Serialize(new
+                {
+                    issue.Id,
+                    issue.ProjectId,
+                    issue.Title,
+                    AgentId = agent.Id,
+                    TriggeringCommentId = comment.Id,
+                })
+            });
+
+            logger.LogInformation(
+                "Triggered agent {AgentName} ({AgentId}) for issue {IssueId} via comment mention",
+                agent.Name, agent.Id, issue.Id);
+        }
+    }
+
+    [GeneratedRegex(@"@([\w]+(?:-[\w]+)*)")]
+    private static partial Regex AgentMentionRegex();
 
     [HttpPut("{id:guid}/comments/{commentId:guid}")]
     public async Task<IActionResult> UpdateComment(Guid id, Guid commentId, [FromBody] CommentRequest req)

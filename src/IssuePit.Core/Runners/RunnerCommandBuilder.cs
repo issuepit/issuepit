@@ -182,37 +182,121 @@ public static class RunnerCommandBuilder
     /// </summary>
     public const int MaxCommentsLength = 8000;
 
-    /// <summary>Formats the issue number, title, body, and optional comments into a single task prompt string.</summary>
+    /// <summary>
+    /// Formats the issue context into a structured XML prompt for the agent.
+    /// Reads sub-issues, tasks, linked issues, attachments, and the triggering comment ID
+    /// from the <see cref="Issue"/>'s <c>NotMapped</c> prompt-context properties
+    /// (<see cref="Issue.PromptSubIssues"/>, <see cref="Issue.PromptTasks"/>,
+    /// <see cref="Issue.PromptLinks"/>, <see cref="Issue.PromptAttachments"/>,
+    /// <see cref="Issue.TriggeringCommentId"/>).
+    /// When a <see cref="Issue.TriggeringCommentId"/> is set, that comment is marked as the
+    /// new instruction that triggered the agent run.
+    /// </summary>
     public static string BuildTaskPrompt(Issue issue, IReadOnlyList<IssueComment>? comments = null)
     {
         var sb = new StringBuilder();
-        sb.Append($"## Issue #{issue.Number}: {issue.Title}");
+        sb.AppendLine("<issue>");
+
+        // Metadata
+        sb.AppendLine("  <metadata>");
+        sb.AppendLine($"    <number>{issue.Number}</number>");
+        sb.AppendLine($"    <title>{EscapeXml(issue.Title)}</title>");
+        if (issue.Status != default)
+            sb.AppendLine($"    <status>{issue.Status}</status>");
+        if (issue.Type != default)
+            sb.AppendLine($"    <type>{issue.Type}</type>");
+        if (issue.Priority != default)
+            sb.AppendLine($"    <priority>{issue.Priority}</priority>");
+        sb.AppendLine("  </metadata>");
+
+        // Body
         if (!string.IsNullOrWhiteSpace(issue.Body))
         {
-            sb.AppendLine();
-            sb.AppendLine();
-            sb.Append(issue.Body);
+            sb.AppendLine("  <description>");
+            sb.AppendLine(issue.Body.Trim());
+            sb.AppendLine("  </description>");
         }
 
+        // Sub-issues
+        if (issue.PromptSubIssues.Count > 0)
+        {
+            sb.AppendLine("  <sub_issues>");
+            foreach (var sub in issue.PromptSubIssues)
+                sb.AppendLine($"    <sub_issue number=\"{sub.Number}\" status=\"{sub.Status}\">{EscapeXml(sub.Title)}</sub_issue>");
+            sb.AppendLine("  </sub_issues>");
+        }
+
+        // Tasks
+        if (issue.PromptTasks.Count > 0)
+        {
+            sb.AppendLine("  <tasks>");
+            foreach (var task in issue.PromptTasks)
+                sb.AppendLine($"    <task status=\"{task.Status}\">{EscapeXml(task.Title)}</task>");
+            sb.AppendLine("  </tasks>");
+        }
+
+        // Linked issues
+        if (issue.PromptLinks.Count > 0)
+        {
+            sb.AppendLine("  <linked_issues>");
+            foreach (var link in issue.PromptLinks)
+            {
+                var linked = link.TargetIssue;
+                if (linked is not null)
+                    sb.AppendLine($"    <linked_issue number=\"{linked.Number}\" link_type=\"{link.LinkType}\">{EscapeXml(linked.Title)}</linked_issue>");
+            }
+            sb.AppendLine("  </linked_issues>");
+        }
+
+        // Attachments
+        if (issue.PromptAttachments.Count > 0)
+        {
+            sb.AppendLine("  <attachments>");
+            foreach (var att in issue.PromptAttachments)
+                sb.AppendLine($"    <attachment content_type=\"{EscapeXml(att.ContentType)}\" url=\"{EscapeXml(att.FileUrl)}\">{EscapeXml(att.FileName)}</attachment>");
+            sb.AppendLine("  </attachments>");
+        }
+
+        // Comments
         if (comments is { Count: > 0 })
         {
-            sb.AppendLine();
-            sb.AppendLine();
-            sb.AppendLine("## Comments");
+            sb.AppendLine("  <comments>");
             foreach (var comment in comments)
             {
                 var author = comment.User?.Username ?? "Unknown";
-                sb.AppendLine($"<!-- comment by {author} on {comment.CreatedAt:yyyy-MM-dd} -->");
-                sb.AppendLine(comment.Body);
+                var isNew = issue.TriggeringCommentId.HasValue && comment.Id == issue.TriggeringCommentId.Value;
+                if (isNew)
+                    sb.AppendLine($"    <comment author=\"{EscapeXml(author)}\" date=\"{comment.CreatedAt:yyyy-MM-dd}\" is_new=\"true\">");
+                else
+                    sb.AppendLine($"    <comment author=\"{EscapeXml(author)}\" date=\"{comment.CreatedAt:yyyy-MM-dd}\">");
+                sb.AppendLine(comment.Body.Trim());
+                sb.AppendLine("    </comment>");
             }
+            sb.AppendLine("  </comments>");
         }
 
-        sb.AppendLine();
+        if (issue.TriggeringCommentId.HasValue)
+        {
+            sb.AppendLine("  <instruction>");
+            sb.AppendLine("    The comment marked with is_new=\"true\" is the new instruction that triggered this agent run. Focus on fulfilling that request.");
+            sb.AppendLine("  </instruction>");
+        }
+
+        sb.AppendLine("</issue>");
         sb.AppendLine();
         sb.Append("**Important:** Commit your changes after each meaningful step and make a final commit when the task is complete.");
 
         return sb.ToString().TrimEnd();
     }
+
+    /// <summary>Escapes special XML characters in a string.</summary>
+    private static string EscapeXml(string value) =>
+        value
+            .Replace("&", "&amp;")
+            .Replace("<", "&lt;")
+            .Replace(">", "&gt;")
+            .Replace("\"", "&quot;")
+            .Replace("'", "&apos;");
 
     /// <summary>Wraps a value in single quotes and escapes embedded single quotes for POSIX shell.</summary>
     private static string EscapeShellArg(string value) =>
