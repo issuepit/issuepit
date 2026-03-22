@@ -86,6 +86,7 @@ jobs:
             type=raw,value=${{ steps.semver.outputs.major_minor }}-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }},enable=${{ inputs.version != '' }}
             type=sha,prefix=sha-,format=short
             type=raw,value=dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }}
+            type=raw,value=main-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }},enable=${{ inputs.version != '' || startsWith(github.ref, 'refs/tags/helper-containers-v') }}
             type=raw,value=latest,enable=${{ inputs.version != '' || startsWith(github.ref, 'refs/tags/helper-containers-v') }}
             type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
 
@@ -101,6 +102,7 @@ jobs:
             type=raw,value=${{ steps.semver.outputs.major_minor }}-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }},enable=${{ inputs.version != '' }}
             type=sha,prefix=sha-,format=short
             type=raw,value=dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }}
+            type=raw,value=main-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }},enable=${{ inputs.version != '' || startsWith(github.ref, 'refs/tags/helper-containers-v') }}
             type=raw,value=latest,enable=${{ inputs.version != '' || startsWith(github.ref, 'refs/tags/helper-containers-v') }}
             type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
 
@@ -116,6 +118,7 @@ jobs:
             type=raw,value=${{ steps.semver.outputs.major_minor }}-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }},enable=${{ inputs.version != '' }}
             type=sha,prefix=sha-,format=short
             type=raw,value=dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }}
+            type=raw,value=main-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }},enable=${{ inputs.version != '' || startsWith(github.ref, 'refs/tags/helper-containers-v') }}
             type=raw,value=latest,enable=${{ inputs.version != '' || startsWith(github.ref, 'refs/tags/helper-containers-v') }}
             type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
 
@@ -131,6 +134,7 @@ jobs:
             type=raw,value=${{ steps.semver.outputs.major_minor }}-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }},enable=${{ inputs.version != '' }}
             type=sha,prefix=sha-,format=short
             type=raw,value=dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }}
+            type=raw,value=main-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }},enable=${{ inputs.version != '' || startsWith(github.ref, 'refs/tags/helper-containers-v') }}
             type=raw,value=latest,enable=${{ inputs.version != '' || startsWith(github.ref, 'refs/tags/helper-containers-v') }}
             type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
 
@@ -146,6 +150,7 @@ jobs:
             type=raw,value=${{ steps.semver.outputs.major_minor }}-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }},enable=${{ inputs.version != '' }}
             type=sha,prefix=sha-,format=short
             type=raw,value=dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }}
+            type=raw,value=main-dotnet${{ env.DOTNET_MAJOR }}-node${{ env.NODE_MAJOR }},enable=${{ inputs.version != '' || startsWith(github.ref, 'refs/tags/helper-containers-v') }}
             type=raw,value=latest,enable=${{ inputs.version != '' || startsWith(github.ref, 'refs/tags/helper-containers-v') }}
             type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
 
@@ -211,6 +216,14 @@ jobs:
             BASE_IMAGE=helper-base:local
 
       - name: Push images to registry
+        # Push only on real releases — never on plain main-branch commits or PRs.
+        # Conditions that trigger a push:
+        #   1. workflow_call  — release-please calls this workflow with inputs.version set;
+        #                       this is the primary release path (release-please creates the
+        #                       tag, then calls us with the semantic version as an input).
+        #   2. inputs.version — same as workflow_call; version is provided by release-please.
+        #   3. inputs.tag     — manual override via workflow_dispatch.
+        #   4. helper-containers-v* tag push — direct git tag push (e.g. for hotfixes).
         if: (startsWith(github.ref, 'refs/tags/helper-containers-v') || github.event_name == 'workflow_call' || inputs.tag != '' || inputs.version != '') && github.event_name != 'pull_request' && github.event_name != 'merge_group' && env.ISSUEPIT_RUN != 'true'
         env:
           BASE_TAGS: ${{ steps.meta-base.outputs.tags }}

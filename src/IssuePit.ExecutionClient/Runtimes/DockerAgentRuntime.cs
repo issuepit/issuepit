@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Formats.Tar;
 using System.Reflection;
 using System.Text;
@@ -77,6 +78,25 @@ public class DockerAgentRuntime(
             ?.InformationalVersion
         ?? "unknown";
 
+    // In-process pull cache: tracks the last pull time and image digest per image reference.
+    // Used to skip the registry round-trip when the image was pulled recently (within PullCacheSeconds).
+    // The cache is process-scoped (static) so it survives across multiple agent runs on the same instance.
+    private static readonly ConcurrentDictionary<string, (DateTime PullTime, string? Digest)> ImagePullCache = new();
+
+    /// <summary>Default number of seconds to cache a pull result (30 minutes).</summary>
+    private const int DefaultPullCacheSeconds = 1800;
+
+    /// <summary>Number of characters of the digest prefix to show in log lines (enough to identify sha256:abcdef…).</summary>
+    private const int DigestDisplayLength = 19;
+
+    /// <summary>
+    /// Number of seconds to cache a successful pull result before re-checking the registry.
+    /// Configured via <c>Execution:ImagePullCacheSeconds</c>. Defaults to <see cref="DefaultPullCacheSeconds"/> (30 minutes).
+    /// Set to 0 to always pull from the registry.
+    /// </summary>
+    private int ImagePullCacheSeconds =>
+        int.TryParse(configuration["Execution:ImagePullCacheSeconds"], out var v) ? v : DefaultPullCacheSeconds;
+
     // ──────────────────────────────────────────────────────────────────────────
     // IAgentRuntime / IExecCapableRuntime implementation
     // ──────────────────────────────────────────────────────────────────────────
@@ -155,13 +175,47 @@ public class DockerAgentRuntime(
                 $"(inner: {ex.Message})", ex);
         }
 
-        // Step 1: Pull the container image explicitly before creating the container.
-        var pullStart = DateTime.UtcNow;
-        await onLogLine($"[DEBUG] Pull started   : {pullStart:u}", LogStream.Stdout);
+        // Step 1: Pull the container image, logging the digest so we can verify which version is running.
+        // Smart pull: skip the registry round-trip if the image was pulled recently (within ImagePullCacheSeconds).
+        // If the cache entry is stale or absent, pull from the registry and update the cache.
+        var pullCacheSeconds = ImagePullCacheSeconds;
+        var cached = ImagePullCache.TryGetValue(image, out var cacheEntry);
+        var cacheAgeSec = cached ? (DateTime.UtcNow - cacheEntry.PullTime).TotalSeconds : double.MaxValue;
+        var skipPull = cached && pullCacheSeconds > 0 && cacheAgeSec < pullCacheSeconds;
+
         await onLogLine($"[DEBUG] Pulling image  : {image}", LogStream.Stdout);
-        await PullImageAsync(image, cancellationToken);
-        var pullDuration = (DateTime.UtcNow - pullStart).TotalSeconds;
-        await onLogLine($"[DEBUG] Pull finished  : {DateTime.UtcNow:u} (took {pullDuration:F1}s)", LogStream.Stdout);
+        if (skipPull)
+        {
+            var cacheAgeMin = (int)(cacheAgeSec / 60.0);
+            await onLogLine($"[DEBUG] Pull skipped   : image pulled {cacheAgeMin}m ago (cache: {pullCacheSeconds}s), using cached version", LogStream.Stdout);
+            if (!string.IsNullOrEmpty(cacheEntry.Digest))
+                await onLogLine($"[DEBUG] Image digest   : {cacheEntry.Digest}", LogStream.Stdout);
+        }
+        else
+        {
+            var pullStart = DateTime.UtcNow;
+            await onLogLine($"[DEBUG] Pull started   : {pullStart:u}", LogStream.Stdout);
+            await PullImageAsync(image, cancellationToken);
+            var pullDuration = (DateTime.UtcNow - pullStart).TotalSeconds;
+            await onLogLine($"[DEBUG] Pull finished  : {DateTime.UtcNow:u} (took {pullDuration:F1}s)", LogStream.Stdout);
+
+            // Inspect image to get the digest so we can verify which version is running
+            // and detect when a pull updates the image.
+            var digest = await TryGetImageDigestAsync(image, cancellationToken);
+            if (!string.IsNullOrEmpty(digest))
+                await onLogLine($"[DEBUG] Image digest   : {digest}", LogStream.Stdout);
+
+            // Check whether the image was actually updated (digest changed).
+            if (cached && !string.IsNullOrEmpty(cacheEntry.Digest) && !string.IsNullOrEmpty(digest))
+            {
+                if (cacheEntry.Digest != digest)
+                    await onLogLine($"[DEBUG] Image updated  : {cacheEntry.Digest[..Math.Min(DigestDisplayLength, cacheEntry.Digest.Length)]} → {digest[..Math.Min(DigestDisplayLength, digest.Length)]}", LogStream.Stdout);
+                else
+                    await onLogLine($"[DEBUG] Image up-to-date: digest unchanged", LogStream.Stdout);
+            }
+
+            ImagePullCache[image] = (DateTime.UtcNow, digest);
+        }
 
         // Step 2: Build environment including git repo info so the container can clone the repo on startup.
         // Replace localhost/127.0.0.1 with host.docker.internal so containers can reach the host's services
@@ -1212,6 +1266,29 @@ public class DockerAgentRuntime(
             cancellationToken);
 
         logger.LogInformation("Docker image {Image} is ready", image);
+    }
+
+    /// <summary>
+    /// Inspects the local Docker image and returns the first repo digest (e.g. <c>sha256:abc123…</c>),
+    /// or <c>null</c> when the image is not present locally or inspection fails.
+    /// </summary>
+    private async Task<string?> TryGetImageDigestAsync(string image, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var inspect = await dockerClient.Images.InspectImageAsync(image, cancellationToken);
+            // RepoDigests contains entries like "ghcr.io/org/image@sha256:abc123..."
+            // Return the digest portion after "@" for readability.
+            var fullDigest = inspect.RepoDigests?.FirstOrDefault();
+            if (string.IsNullOrEmpty(fullDigest)) return null;
+            var atIndex = fullDigest.IndexOf('@');
+            return atIndex >= 0 ? fullDigest[(atIndex + 1)..] : fullDigest;
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Could not inspect image {Image} to retrieve digest", image);
+            return null;
+        }
     }
 
     /// <summary>Returns the list of DNS server addresses to use when internet access is restricted.</summary>
