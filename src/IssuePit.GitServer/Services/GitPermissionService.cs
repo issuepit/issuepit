@@ -28,6 +28,10 @@ public class GitPermissionService(IssuePitDbContext db)
     public async Task<bool> CanReadAsync(Guid repoId, Guid userId) =>
         (int)await GetAccessLevelAsync(repoId, userId) >= (int)GitServerAccessLevel.Read;
 
+    /// <summary>Returns true if the user has Admin access on the repository.</summary>
+    public async Task<bool> IsAdminAsync(Guid repoId, Guid userId) =>
+        (int)await GetAccessLevelAsync(repoId, userId) >= (int)GitServerAccessLevel.Admin;
+
     /// <summary>Returns true if the user can write (push) to the repository.</summary>
     public async Task<bool> CanWriteAsync(Guid repoId, Guid userId)
     {

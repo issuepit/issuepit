@@ -147,16 +147,27 @@ public class GitHttpMiddleware(RequestDelegate next)
         var refUpdates = ParseReceivePackRefs(body);
         if (refUpdates.Count == 0) return (true, null);
 
+        // Resolve admin status once for all ref checks.
+        var isAdmin = await permService.IsAdminAsync(repo.Id, userId);
+
         foreach (var (oldSha, newSha, refName) in refUpdates)
         {
             if (!refName.StartsWith("refs/heads/")) continue;
             var branchName = refName[11..];
 
+            var zeroSha = new string('0', 40);
+            var isNewOrDelete = oldSha == zeroSha || newSha == zeroSha;
+
+            // Global rule: force push always requires Admin access level.
+            if (!isNewOrDelete)
+            {
+                var isForcePush = await IsForForcePushAsync(repo.DiskPath, oldSha, newSha);
+                if (isForcePush && !isAdmin)
+                    return (false, $"Force push to '{branchName}' requires Admin access.");
+            }
+
             var protections = await permService.GetBranchProtectionsAsync(repo.Id, branchName);
             if (protections.Count == 0) continue;
-
-            var isAdmin = (int)(await permService.GetAccessLevelAsync(repo.Id, userId)) >=
-                          (int)IssuePit.Core.Enums.GitServerAccessLevel.Admin;
 
             foreach (var rule in protections)
             {
@@ -165,18 +176,11 @@ public class GitHttpMiddleware(RequestDelegate next)
                 if (rule.RequirePullRequest)
                     return (false, $"Direct push to protected branch '{branchName}' is not allowed. Please open a pull request.");
 
-                if (rule.DisallowForcePush)
+                if (rule.DisallowForcePush && !isNewOrDelete)
                 {
-                    var zeroSha = new string('0', 40);
-                    // Only check force-push when updating an existing branch (not a new branch or deletion).
-                    if (oldSha != zeroSha && newSha != zeroSha)
-                    {
-                        // Check whether oldSha is an ancestor of newSha (fast-forward check).
-                        // A non-zero exit code means oldSha is NOT an ancestor → force push.
-                        var isForcePush = await IsForForcePushAsync(repo.DiskPath, oldSha, newSha);
-                        if (isForcePush)
-                            return (false, $"Force push to protected branch '{branchName}' is not allowed.");
-                    }
+                    var isForcePush = await IsForForcePushAsync(repo.DiskPath, oldSha, newSha);
+                    if (isForcePush)
+                        return (false, $"Force push to protected branch '{branchName}' is not allowed.");
                 }
             }
         }
