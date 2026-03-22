@@ -541,7 +541,14 @@ public class IssueWorker(
                     await onLogLine($"[DEBUG]   {r.Mode,-12} {r.RemoteUrl}  branch={r.DefaultBranch ?? "(none)"}  check={availLabel}{selectedLabel}", LogStream.Stdout);
                 }
                 if (gitRepository is not null)
-                    await onLogLine($"[DEBUG] Push target: {gitRepository.Mode} remote — {gitRepository.RemoteUrl}  hasCredentials={!string.IsNullOrEmpty(gitRepository.AuthToken)}", LogStream.Stdout);
+                {
+                    // Redact any embedded auth token from the URL before logging (defensive — the
+                    // stored RemoteUrl should be clean, but some configurations may embed credentials).
+                    var safeRepoUrl = !string.IsNullOrEmpty(gitRepository.AuthToken)
+                        ? gitRepository.RemoteUrl.Replace(gitRepository.AuthToken, "***", StringComparison.Ordinal)
+                        : gitRepository.RemoteUrl;
+                    await onLogLine($"[DEBUG] Push target: {gitRepository.Mode} remote — {safeRepoUrl}  hasCredentials={!string.IsNullOrEmpty(gitRepository.AuthToken)}", LogStream.Stdout);
+                }
             }
 
             try

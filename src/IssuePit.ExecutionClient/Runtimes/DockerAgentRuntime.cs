@@ -1154,12 +1154,18 @@ public class DockerAgentRuntime(
                     await onLogLine($"[DEBUG] Push hasCredentials={!string.IsNullOrEmpty(gitRepository.AuthToken)}", LogStream.Stdout);
 
                 // Log available git remotes inside the container for diagnostics.
+                // Redact the auth token so the URL that was embedded in the clone URL doesn't leak.
                 var gitRemotes = await ExecReadOutputAsync(
                     containerId,
                     ["/bin/sh", "-c", "git remote -v 2>/dev/null || echo '(no remotes)'"],
                     cancellationToken);
                 foreach (var remoteLine in gitRemotes.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                    await onLogLine($"[DEBUG] in-container remote: {remoteLine}", LogStream.Stdout);
+                {
+                    var safeRemoteLine = !string.IsNullOrEmpty(tokenToRedact)
+                        ? remoteLine.Replace(tokenToRedact, "***", StringComparison.Ordinal)
+                        : remoteLine;
+                    await onLogLine($"[DEBUG] in-container remote: {safeRemoteLine}", LogStream.Stdout);
+                }
 
                 // Sanitize push output: git prints "To <url>" in its output, which would leak the
                 // auth token when credentials are embedded in the push URL.
