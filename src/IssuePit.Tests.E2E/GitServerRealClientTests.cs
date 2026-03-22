@@ -195,9 +195,12 @@ public class GitServerRealClientTests
             var (commitCode, _, commitErr) = RunGit(cloneDir, "commit", "-m", "feat: initial commit from E2E test");
             Assert.True(commitCode == 0, $"git commit failed: {commitErr}");
 
-            // Step 4: push — use HEAD:main to explicitly name the branch on the remote regardless of
-            // the local default branch name configured in the git client environment.
-            var (pushCode, _, pushErr) = RunGit(cloneDir, "push", "origin", "HEAD:main");
+            // Step 4: push — use the full authenticated URL directly rather than the "origin"
+            // remote alias, because newer git versions strip the password from the stored remote URL
+            // in .git/config (security feature). Without a credential helper, git cannot re-supply
+            // the password, authentication fails, and git falls back to dumb HTTP. Passing the URL
+            // explicitly avoids the credential-stripping issue entirely.
+            var (pushCode, _, pushErr) = RunGit(cloneDir, "push", cloneUrl, "HEAD:main");
             Assert.True(pushCode == 0,
                 $"git push failed (exit {pushCode}).\nstderr: {pushErr}");
         }
