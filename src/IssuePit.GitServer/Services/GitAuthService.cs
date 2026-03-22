@@ -55,8 +55,46 @@ public class GitAuthService(IssuePitDbContext db, ILogger<GitAuthService> logger
             }
         }
 
-        // TODO: Implement API key auth via BCrypt-hashed key values
+        // PAT authentication: password field may contain a Personal Access Token (ip_...).
+        // Also supports the special username "__token__" where the password is the PAT.
+        if (password.StartsWith("ip_", StringComparison.Ordinal))
+        {
+            var authenticated = await TryAuthenticatePatAsync(user.Id, password);
+            if (authenticated) return user;
+        }
+
         logger.LogDebug("Authentication failed for user {Username}", username);
         return null;
+    }
+
+    /// <summary>
+    /// Checks a raw PAT value against all active (non-expired) PATs for the given user.
+    /// Updates <c>LastUsedAt</c> on success.
+    /// </summary>
+    private async Task<bool> TryAuthenticatePatAsync(Guid userId, string rawToken)
+    {
+        var now = DateTime.UtcNow;
+        var activePats = await db.GitPats
+            .Where(p => p.UserId == userId && (p.ExpiresAt == null || p.ExpiresAt > now))
+            .ToListAsync();
+
+        foreach (var pat in activePats)
+        {
+            try
+            {
+                if (BCrypt.Net.BCrypt.Verify(rawToken, pat.TokenHash))
+                {
+                    pat.LastUsedAt = now;
+                    await db.SaveChangesAsync();
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "BCrypt verification failed for PAT {PatId}", pat.Id);
+            }
+        }
+
+        return false;
     }
 }
