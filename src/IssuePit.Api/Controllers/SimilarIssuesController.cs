@@ -116,7 +116,7 @@ public class SimilarIssuesController(
             .Where(r => r.ProjectId == projectId)
             .OrderByDescending(r => r.StartedAt)
             .Take(20)
-            .Select(r => new { r.Id, r.Status, r.Summary, r.StartedAt, r.CompletedAt })
+            .Select(r => new SimilarIssueRunSummaryDto(r.Id, r.Status, r.Summary, r.StartedAt, r.CompletedAt))
             .ToListAsync(ct);
 
         return Ok(runs);
@@ -136,17 +136,26 @@ public class SimilarIssuesController(
 
         if (run is null) return NotFound();
 
-        return Ok(new
-        {
+        return Ok(new SimilarIssueRunDetailResponse(
             run.Id,
             run.Status,
             run.Summary,
             run.StartedAt,
             run.CompletedAt,
-            Logs = run.Logs.OrderBy(l => l.Timestamp).Select(l => new { l.Id, l.Level, l.Message, l.Timestamp }),
-        });
+            run.Logs.OrderBy(l => l.Timestamp)
+                .Select(l => new SimilarIssueRunLogDto(l.Id, l.Level, l.Message, l.Timestamp))
+                .ToList()));
     }
 }
 
 public record SimilarIssueDto(Guid SimilarIssueId, int Number, string Title, float Score, string? Reason, DateTime DetectedAt);
 public record SimilarIssueTriggerResponse(Guid RunId, Guid ProjectId);
+public record SimilarIssueRunSummaryDto(Guid Id, GitHubSyncRunStatus Status, string? Summary, DateTime StartedAt, DateTime? CompletedAt);
+public record SimilarIssueRunLogDto(Guid Id, GitHubSyncLogLevel Level, string Message, DateTime Timestamp);
+public record SimilarIssueRunDetailResponse(
+    Guid Id,
+    GitHubSyncRunStatus Status,
+    string? Summary,
+    DateTime StartedAt,
+    DateTime? CompletedAt,
+    IReadOnlyList<SimilarIssueRunLogDto> Logs);
