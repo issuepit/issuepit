@@ -962,6 +962,9 @@ namespace IssuePit.Core.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<int?>("DefaultBranchCommitCount")
+                        .HasColumnType("integer");
+
                     b.Property<Guid?>("GitHubIdentityId")
                         .HasColumnType("uuid");
 

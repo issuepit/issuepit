@@ -337,14 +337,18 @@ public class IssueWorker(
         var gitRepository = allGitRepositories.FirstOrDefault(r => r.Mode == GitOriginMode.Working)
             ?? allGitRepositories.FirstOrDefault();
 
-        // Clone source: the remote with the most recently confirmed content (highest LastFetchedAt)
-        // that also has a DefaultBranch configured. DefaultBranch is the "base pull branch" — it is
-        // used to create agent feature branches when no issue.GitBranch is set and as the default
-        // target for merge/pull requests.  Falls back to the push target when no repo has
-        // LastFetchedAt data or none has a DefaultBranch.
+        // Clone source: the remote with the most commits on its DefaultBranch (deepest commit chain).
+        // "Most commits" means the remote whose DefaultBranch HEAD is furthest from the root in the
+        // git ancestry graph — i.e. has the highest git rev-list --count value, updated by
+        // GitPollingService on every successful fetch. Falls back to LastFetchedAt when no
+        // DefaultBranchCommitCount is available yet (e.g. first run before polling has set it),
+        // and ultimately to the push target (Working-mode remote) when no remote has a DefaultBranch.
+        // DefaultBranch is the "base pull branch": used to create agent feature branches when
+        // issue.GitBranch is not set, and as the default target for merge/pull requests.
         var cloneRepository = allGitRepositories
             .Where(r => !string.IsNullOrWhiteSpace(r.DefaultBranch))
-            .OrderByDescending(r => r.LastFetchedAt)
+            .OrderByDescending(r => r.DefaultBranchCommitCount ?? 0)
+            .ThenByDescending(r => r.LastFetchedAt)
             .ThenByDescending(r => r.Mode == GitOriginMode.Working)
             .FirstOrDefault()
             ?? gitRepository;
@@ -546,16 +550,21 @@ public class IssueWorker(
                 await onLogLine($"[DEBUG] Git remote check: {checkResults.Count} remote(s) configured", LogStream.Stdout);
                 foreach (var r in checkResults)
                 {
+                    var repo = allGitRepositories.FirstOrDefault(gr => gr.Id == r.RepoId);
                     var availLabel = r.Available switch { true => "available", false => "not found", null => "skipped (no branch configured)" };
                     var roleLabel = r.Selected ? " ← clone source" : (r.RepoId == gitRepository?.Id ? " ← push target" : "");
-                    await onLogLine($"[DEBUG]   {r.Mode,-12} {r.RemoteUrl}  branch={r.DefaultBranch ?? "(none)"}  check={availLabel}{roleLabel}", LogStream.Stdout);
+                    var countLabel = repo?.DefaultBranchCommitCount.HasValue == true ? $"  commits={repo.DefaultBranchCommitCount}" : string.Empty;
+                    await onLogLine($"[DEBUG]   {r.Mode,-12} {r.RemoteUrl}  branch={r.DefaultBranch ?? "(none)"}  check={availLabel}{countLabel}{roleLabel}", LogStream.Stdout);
                 }
                 if (cloneRepository is not null)
                 {
                     var safeCloneUrl = !string.IsNullOrEmpty(cloneRepository.AuthToken)
                         ? cloneRepository.RemoteUrl.Replace(cloneRepository.AuthToken, "***", StringComparison.Ordinal)
                         : cloneRepository.RemoteUrl;
-                    await onLogLine($"[DEBUG] Clone source: {cloneRepository.Mode} remote — {safeCloneUrl}  hasCredentials={!string.IsNullOrEmpty(cloneRepository.AuthToken)}", LogStream.Stdout);
+                    var commitCountLabel = cloneRepository.DefaultBranchCommitCount.HasValue
+                        ? $"  commitCount={cloneRepository.DefaultBranchCommitCount}"
+                        : string.Empty;
+                    await onLogLine($"[DEBUG] Clone source: {cloneRepository.Mode} remote — {safeCloneUrl}  hasCredentials={!string.IsNullOrEmpty(cloneRepository.AuthToken)}{commitCountLabel}", LogStream.Stdout);
                 }
                 if (gitRepository is not null && gitRepository != cloneRepository)
                 {
