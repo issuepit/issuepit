@@ -22,7 +22,7 @@ public class GitServerReposController(
             .Where(r => r.OrgId == orgId && r.DeletedAt == null)
             .OrderBy(r => r.Slug)
             .Select(r => new GitServerRepoResponse(r.Id, r.Slug, r.Description, r.DefaultBranch,
-                r.IsReadOnly, r.IsTemporary, r.DefaultAccessLevel, r.CreatedAt))
+                r.IsReadOnly, r.IsTemporary, r.DefaultAccessLevel, r.GitRepositoryId, r.CreatedAt))
             .ToListAsync();
 
         return Ok(repos);
@@ -40,11 +40,12 @@ public class GitServerReposController(
                 req.Description,
                 req.DefaultBranch ?? "main",
                 req.IsTemporary,
-                req.DefaultAccessLevel ?? GitServerAccessLevel.Read);
+                req.DefaultAccessLevel ?? GitServerAccessLevel.Read,
+                req.GitRepositoryId);
 
             return Created($"/api/orgs/{orgId}/git-server/repos/{repo.Id}",
                 new GitServerRepoResponse(repo.Id, repo.Slug, repo.Description, repo.DefaultBranch,
-                    repo.IsReadOnly, repo.IsTemporary, repo.DefaultAccessLevel, repo.CreatedAt));
+                    repo.IsReadOnly, repo.IsTemporary, repo.DefaultAccessLevel, repo.GitRepositoryId, repo.CreatedAt));
         }
         catch (ArgumentException ex)
         {
@@ -218,6 +219,7 @@ public record GitServerRepoResponse(
     bool IsReadOnly,
     bool IsTemporary,
     GitServerAccessLevel DefaultAccessLevel,
+    Guid? GitRepositoryId,
     DateTime CreatedAt);
 
 public record GitServerPermissionResponse(
@@ -244,7 +246,8 @@ public record CreateGitServerRepoRequest(
     string? DefaultBranch,
     Guid? ProjectId,
     bool IsTemporary,
-    GitServerAccessLevel? DefaultAccessLevel);
+    GitServerAccessLevel? DefaultAccessLevel,
+    Guid? GitRepositoryId);
 
 public record GrantGitServerPermissionRequest(
     Guid? UserId,

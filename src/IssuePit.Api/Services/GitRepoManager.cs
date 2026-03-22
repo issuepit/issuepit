@@ -19,7 +19,8 @@ public class GitRepoManager(IssuePitDbContext db, IConfiguration config, ILogger
         string? description,
         string defaultBranch = "main",
         bool isTemporary = false,
-        GitServerAccessLevel defaultAccess = GitServerAccessLevel.Read)
+        GitServerAccessLevel defaultAccess = GitServerAccessLevel.Read,
+        Guid? gitRepositoryId = null)
     {
         if (string.IsNullOrWhiteSpace(slug) || !IsValidSlug(slug))
             throw new ArgumentException("Invalid repository slug. Use lowercase letters, digits, and hyphens only.", nameof(slug));
@@ -42,6 +43,7 @@ public class GitRepoManager(IssuePitDbContext db, IConfiguration config, ILogger
             Id = Guid.NewGuid(),
             OrgId = orgId,
             ProjectId = projectId,
+            GitRepositoryId = gitRepositoryId,
             Slug = slug,
             Description = description,
             DefaultBranch = defaultBranch,

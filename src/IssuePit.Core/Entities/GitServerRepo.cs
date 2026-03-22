@@ -21,6 +21,12 @@ public class GitServerRepo
     [ForeignKey(nameof(ProjectId))]
     public Project? Project { get; set; }
 
+    /// <summary>
+    /// Optional link to a <see cref="GitRepository"/> (external repo tracked by IssuePit).
+    /// Deliberately no FK constraint to keep the link loose — the GitRepository may not exist.
+    /// </summary>
+    public Guid? GitRepositoryId { get; set; }
+
     /// <summary>URL-safe name used in git clone URLs (e.g. "my-repo" → .../my-repo.git).</summary>
     [Required, MaxLength(100)]
     public string Slug { get; set; } = string.Empty;
