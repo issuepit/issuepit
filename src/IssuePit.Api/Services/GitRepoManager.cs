@@ -3,7 +3,7 @@ using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
 using Microsoft.EntityFrameworkCore;
 
-namespace IssuePit.GitServer.Services;
+namespace IssuePit.Api.Services;
 
 /// <summary>Manages the lifecycle of bare git repositories on disk.</summary>
 public class GitRepoManager(IssuePitDbContext db, IConfiguration config, ILogger<GitRepoManager> logger)

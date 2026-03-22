@@ -7,10 +7,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 builder.AddNpgsqlDbContext<IssuePitDbContext>("issuepit-db");
 
-builder.Services.AddControllers();
 builder.Services.AddScoped<GitAuthService>();
 builder.Services.AddScoped<GitPermissionService>();
-builder.Services.AddScoped<GitRepoManager>();
 builder.Services.AddSingleton<GitBackendService>();
 
 var app = builder.Build();
@@ -23,7 +21,5 @@ Directory.CreateDirectory(reposPath);
 
 // Git HTTP protocol middleware handles all /{org}/{repo}.git/* requests
 app.UseMiddleware<GitHttpMiddleware>();
-
-app.MapControllers();
 
 app.Run();

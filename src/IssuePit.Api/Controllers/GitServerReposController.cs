@@ -1,11 +1,11 @@
+using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
-using IssuePit.GitServer.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
-namespace IssuePit.GitServer.Controllers;
+namespace IssuePit.Api.Controllers;
 
 [ApiController]
 [Route("api/orgs/{orgId:guid}/git-server")]
