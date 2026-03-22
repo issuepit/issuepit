@@ -57,7 +57,7 @@ public class GitBackendService(ILogger<GitBackendService> logger)
             return;
         }
 
-        ParseAndWriteCgiResponse(outputBytes, context.Response, logger);
+        await ParseAndWriteCgiResponseAsync(outputBytes, context.Response, logger);
     }
 
     private static async Task<byte[]> ReadProcessOutputAsync(Stream stream)
@@ -67,7 +67,7 @@ public class GitBackendService(ILogger<GitBackendService> logger)
         return ms.ToArray();
     }
 
-    private static void ParseAndWriteCgiResponse(byte[] cgiOutput, HttpResponse response, ILogger logger)
+    private static async Task ParseAndWriteCgiResponseAsync(byte[] cgiOutput, HttpResponse response, ILogger logger)
     {
         int statusCode = 200;
         var headers = new List<(string Name, string Value)>();
@@ -115,7 +115,7 @@ public class GitBackendService(ILogger<GitBackendService> logger)
         {
             var bodyBytes = cgiOutput[bodyStart..];
             response.ContentLength = bodyBytes.Length;
-            response.Body.Write(bodyBytes);
+            await response.Body.WriteAsync(bodyBytes);
         }
     }
 

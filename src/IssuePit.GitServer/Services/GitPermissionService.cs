@@ -57,11 +57,22 @@ public class GitPermissionService(IssuePitDbContext db)
         if (pattern == branchName) return true;
         if (!pattern.Contains('*')) return false;
 
-        // Process ** and * BEFORE Regex.Escape to avoid escaping the wildcards
-        var segments = pattern.Split("**");
-        var regexParts = segments.Select(s =>
-            string.Join("[^/]+", s.Split('*').Select(System.Text.RegularExpressions.Regex.Escape)));
-        var regex = "^" + string.Join(".+", regexParts) + "$";
+        // Convert glob pattern to regex:
+        // - Escape all regex metacharacters first
+        // - Then replace placeholder tokens for ** and *
+        // Use placeholders to avoid re-escaping substituted values.
+        const string doubleStar = "\x01DOUBLESTAR\x01";
+        const string singleStar = "\x01SINGLESTAR\x01";
+
+        var escaped = pattern
+            .Replace("**", doubleStar)
+            .Replace("*", singleStar);
+
+        escaped = System.Text.RegularExpressions.Regex.Escape(escaped)
+            .Replace(System.Text.RegularExpressions.Regex.Escape(doubleStar), ".*")   // ** → any sequence (including /)
+            .Replace(System.Text.RegularExpressions.Regex.Escape(singleStar), "[^/]+"); // * → any sequence except /
+
+        var regex = "^" + escaped + "$";
         return System.Text.RegularExpressions.Regex.IsMatch(branchName, regex);
     }
 }

@@ -99,6 +99,10 @@ public class GitServerReposController(
             .FirstOrDefaultAsync(r => r.Id == repoId && r.OrgId == orgId && r.DeletedAt == null);
         if (repo is null) return NotFound();
 
+        // At least one of UserId or ApiKeyId must be provided
+        if (!req.UserId.HasValue && !req.ApiKeyId.HasValue)
+            return BadRequest("Either UserId or ApiKeyId must be specified.");
+
         // Remove any existing permission for this user/key
         var existing = await db.GitServerPermissions
             .Where(p => p.RepoId == repoId &&

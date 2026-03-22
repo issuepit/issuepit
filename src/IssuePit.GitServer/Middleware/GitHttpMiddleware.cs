@@ -168,15 +168,56 @@ public class GitHttpMiddleware(RequestDelegate next)
                 if (rule.DisallowForcePush)
                 {
                     var zeroSha = new string('0', 40);
-                    // Conservatively reject all non-new-branch pushes when force push is disallowed.
-                    // Proper ancestry checking would require running `git merge-base --is-ancestor`.
+                    // Only check force-push when updating an existing branch (not a new branch or deletion).
                     if (oldSha != zeroSha && newSha != zeroSha)
-                        return (false, $"Non-fast-forward push to protected branch '{branchName}' is not allowed (force push protection is enabled).");
+                    {
+                        // Check whether oldSha is an ancestor of newSha (fast-forward check).
+                        // A non-zero exit code means oldSha is NOT an ancestor → force push.
+                        var isForcePush = await IsForForcePushAsync(repo.DiskPath, oldSha, newSha);
+                        if (isForcePush)
+                            return (false, $"Force push to protected branch '{branchName}' is not allowed.");
+                    }
                 }
             }
         }
 
         return (true, null);
+    }
+
+    /// <summary>
+    /// Returns true when <paramref name="oldSha"/> is NOT an ancestor of <paramref name="newSha"/>,
+    /// i.e. the push would be a force push.
+    /// Runs <c>git merge-base --is-ancestor</c> inside the repository.
+    /// </summary>
+    private static async Task<bool> IsForForcePushAsync(string repoPath, string oldSha, string newSha)
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo("git")
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            psi.ArgumentList.Add("-C");
+            psi.ArgumentList.Add(repoPath);
+            psi.ArgumentList.Add("merge-base");
+            psi.ArgumentList.Add("--is-ancestor");
+            psi.ArgumentList.Add(oldSha);
+            psi.ArgumentList.Add(newSha);
+
+            using var process = System.Diagnostics.Process.Start(psi);
+            if (process is null) return false; // can't determine; be permissive
+            await process.WaitForExitAsync();
+            // Exit 0 = oldSha IS an ancestor of newSha (fast-forward), not a force push.
+            // Exit 1 = oldSha is NOT an ancestor (force push).
+            return process.ExitCode != 0;
+        }
+        catch
+        {
+            // If git is unavailable or fails, be permissive and allow the push.
+            return false;
+        }
     }
 
     private static List<(string OldSha, string NewSha, string RefName)> ParseReceivePackRefs(byte[] data)

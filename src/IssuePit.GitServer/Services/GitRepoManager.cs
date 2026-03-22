@@ -104,6 +104,12 @@ public class GitRepoManager(IssuePitDbContext db, IConfiguration config, ILogger
         return process.ExitCode;
     }
 
-    private static bool IsValidSlug(string slug) =>
-        System.Text.RegularExpressions.Regex.IsMatch(slug, @"^[a-z0-9][a-z0-9\-\.]{0,98}[a-z0-9]$|^[a-z0-9]$");
+    private static bool IsValidSlug(string slug)
+    {
+        // Must be lowercase letters, digits, and hyphens only (no dots to avoid .git confusion)
+        if (!System.Text.RegularExpressions.Regex.IsMatch(slug, @"^[a-z0-9][a-z0-9\-]{0,98}[a-z0-9]$|^[a-z0-9]$"))
+            return false;
+        // Disallow reserved suffixes
+        return !slug.EndsWith(".git", StringComparison.OrdinalIgnoreCase);
+    }
 }
