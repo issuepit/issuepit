@@ -224,6 +224,7 @@ public class IssueWorker(
                 message.ModelOverride, message.RunnerTypeOverride, message.UseHttpServerOverride, message.RuntimeTypeOverride,
                 // Only pass the pre-created session ID when exactly one agent is being launched (retry case).
                 agentIds.Count == 1 ? message.SessionId : null,
+                message.TriggeringCommentId,
                 cancellationToken)));
     }
 
@@ -243,6 +244,7 @@ public class IssueWorker(
         bool? useHttpServerOverride,
         int? runtimeTypeOverride,
         Guid? existingSessionId,
+        Guid? triggeringCommentId,
         CancellationToken cancellationToken)
     {
         using var scope = services.CreateScope();
@@ -292,6 +294,26 @@ public class IssueWorker(
 
         var comments = TrimCommentsToLimit(rawComments, MaxCommentsChars, out commentsWarning);
         issue.Comments = comments;
+
+        // Load additional prompt context: sub-issues, tasks, linked issues, attachments.
+        issue.PromptSubIssues = await db.Issues
+            .Where(i => i.ParentIssueId == issue.Id)
+            .ToListAsync(cancellationToken);
+
+        issue.PromptTasks = await db.IssueTasks
+            .Where(t => t.IssueId == issue.Id)
+            .ToListAsync(cancellationToken);
+
+        issue.PromptLinks = await db.IssueLinks
+            .Include(l => l.TargetIssue)
+            .Where(l => l.IssueId == issue.Id)
+            .ToListAsync(cancellationToken);
+
+        issue.PromptAttachments = await db.IssueAttachments
+            .Where(a => a.IssueId == issue.Id && a.IsPublic)
+            .ToListAsync(cancellationToken);
+
+        issue.TriggeringCommentId = triggeringCommentId;
 
         // Resolve runtime: use the org's default configuration or fall back to Docker
         var runtimeConfig = await db.RuntimeConfigurations
@@ -1395,7 +1417,7 @@ public class IssueWorker(
         GitBranch = branchName,
     };
 
-    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, Guid? SessionId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? DockerCmdOverride = null, string? ModelOverride = null, int? RunnerTypeOverride = null, bool? UseHttpServerOverride = null, int? RuntimeTypeOverride = null, bool ForceAgentId = false);
+    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, Guid? SessionId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? DockerCmdOverride = null, string? ModelOverride = null, int? RunnerTypeOverride = null, bool? UseHttpServerOverride = null, int? RuntimeTypeOverride = null, bool ForceAgentId = false, Guid? TriggeringCommentId = null);
 
     /// <summary>
     /// Checks whether the base branch of each configured git remote exists by running

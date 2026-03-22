@@ -37,7 +37,7 @@ public class RunnerCommandBuilderTests
         var args = RunnerCommandBuilder.BuildArgs(agent, issue);
         Assert.StartsWith("run", args);
         Assert.Contains("Fix the bug", args);
-        Assert.Contains("#7", args);
+        Assert.Contains("7", args);
     }
 
     [Fact]
@@ -172,10 +172,10 @@ public class RunnerCommandBuilderTests
     {
         var issue = MakeIssue("Fix the bug", "Body text.", number: 5);
         var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue);
-        Assert.Contains("Issue #5", prompt);
+        Assert.Contains("<number>5</number>", prompt);
         Assert.Contains("Fix the bug", prompt);
         Assert.Contains("Body text.", prompt);
-        Assert.DoesNotContain("## Comments", prompt);
+        Assert.DoesNotContain("<comments>", prompt);
     }
 
     [Fact]
@@ -196,7 +196,7 @@ public class RunnerCommandBuilderTests
             new() { Id = Guid.NewGuid(), IssueId = issue.Id, Body = "Please also fix the tests.", CreatedAt = DateTime.UtcNow },
         };
         var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue, comments);
-        Assert.Contains("## Comments", prompt);
+        Assert.Contains("<comments>", prompt);
         Assert.Contains("Please also fix the tests.", prompt);
     }
 
@@ -212,6 +212,55 @@ public class RunnerCommandBuilderTests
         var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue, comments);
         Assert.Contains("alice", prompt);
         Assert.Contains("Great idea!", prompt);
+    }
+
+    [Fact]
+    public void BuildTaskPrompt_WithTriggeringComment_MarksThatCommentAsNew()
+    {
+        var issue = MakeIssue("Fix the bug");
+        var commentId = Guid.NewGuid();
+        issue.TriggeringCommentId = commentId;
+        var comments = new List<IssueComment>
+        {
+            new() { Id = Guid.NewGuid(), IssueId = issue.Id, Body = "Old comment.", CreatedAt = DateTime.UtcNow.AddMinutes(-5) },
+            new() { Id = commentId, IssueId = issue.Id, Body = "New instruction: please add logging.", CreatedAt = DateTime.UtcNow },
+        };
+        var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue, comments);
+        Assert.Contains("is_new=\"true\"", prompt);
+        Assert.Contains("New instruction: please add logging.", prompt);
+        Assert.Contains("<instruction>", prompt);
+    }
+
+    [Fact]
+    public void BuildTaskPrompt_WithSubIssues_IncludesSubIssuesSection()
+    {
+        var issue = MakeIssue("Parent issue");
+        var sub = MakeIssue("Sub-issue A", number: 10);
+        issue.PromptSubIssues = [sub];
+        var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue);
+        Assert.Contains("<sub_issues>", prompt);
+        Assert.Contains("Sub-issue A", prompt);
+    }
+
+    [Fact]
+    public void BuildTaskPrompt_WithTasks_IncludesTasksSection()
+    {
+        var issue = MakeIssue("Issue with tasks");
+        issue.PromptTasks = [new IssueTask { Id = Guid.NewGuid(), IssueId = issue.Id, Title = "Write unit tests", Status = IssueStatus.Todo }];
+        var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue);
+        Assert.Contains("<tasks>", prompt);
+        Assert.Contains("Write unit tests", prompt);
+    }
+
+    [Fact]
+    public void BuildTaskPrompt_WithAttachments_IncludesAttachmentsSection()
+    {
+        var issue = MakeIssue("Issue with attachment");
+        issue.PromptAttachments = [new IssueAttachment { Id = Guid.NewGuid(), IssueId = issue.Id, FileName = "diagram.png", FileUrl = "https://example.com/diagram.png", ContentType = "image/png" }];
+        var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue);
+        Assert.Contains("<attachments>", prompt);
+        Assert.Contains("diagram.png", prompt);
+        Assert.Contains("https://example.com/diagram.png", prompt);
     }
 
     [Fact]
