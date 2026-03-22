@@ -366,6 +366,13 @@ var mcpServer = builder.AddProject<Projects.IssuePit_McpServer>("mcp-server")
 // Allow the API to discover and call the MCP server (e.g. for issue enhancement).
 api.WithEnvironment("McpServer__BaseUrl", mcpServer.GetEndpoint("http"));
 
+// Git server must be declared before execution-client and cicd-client so its endpoint
+// can be injected as GitServer__BaseUrl into both workers.
+var gitServer = builder.AddProject<Projects.IssuePit_GitServer>("git-server")
+    .WithReference(postgresDb)
+    .WaitForCompletion(migrator)
+    .WithHttpHealthCheck("/health", endpointName: "http");
+
 var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("execution-client")
     .WithReference(postgresDb)
     .WithReference(postgresServer)
@@ -376,6 +383,7 @@ var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("exe
     .WaitFor(kafka)
     .WaitFor(redis)
     .WithEnvironment("McpServer__BaseUrl", mcpServer.GetEndpoint("http"))
+    .WithEnvironment("GitServer__BaseUrl", gitServer.GetEndpoint("http"))
     .WithHttpHealthCheck("/health", endpointName: "http");
 
 // Scale cicd-client horizontally to allow multiple concurrent runs.
@@ -405,6 +413,8 @@ var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     .WithEnvironment("CiCd__InterceptAllTraffic", "true")
     // S3 storage for artifacts: reuse the same LocalStack instance as the API.
     .WithEnvironment("ImageStorage__ServiceUrl", storage.GetEndpoint("http"))
+    // Allow cicd-client to push build artifacts to the IssuePit git server.
+    .WithEnvironment("GitServer__BaseUrl", gitServer.GetEndpoint("http"))
     .WithHttpHealthCheck("/health", endpointName: "http")
     .WithReplicas(cicdClientWorkers);
 
@@ -440,10 +450,5 @@ frontend
         u.DisplayText = "Admin Login";
         u.Url = "/admin-login";
     });
-
-var gitServer = builder.AddProject<Projects.IssuePit_GitServer>("git-server")
-    .WithReference(postgresDb)
-    .WaitForCompletion(migrator)
-    .WithHttpHealthCheck("/health", endpointName: "http");
 
 builder.Build().Run();
