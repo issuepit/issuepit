@@ -531,6 +531,17 @@ public class IssueWorker(
                     gitRepository = selectedRepo;
                 session.GitRemoteCheckResultsJson = JsonSerializer.Serialize(checkResults);
                 await db.SaveChangesAsync(sessionCts.Token);
+
+                // Emit debug log lines so the session log shows which remotes were evaluated.
+                await onLogLine($"[DEBUG] Git remote check: {checkResults.Count} remote(s) configured", LogStream.Stdout);
+                foreach (var r in checkResults)
+                {
+                    var availLabel = r.Available switch { true => "available", false => "not found", null => "skipped (no branch configured or git unavailable)" };
+                    var selectedLabel = r.Selected ? " ← selected" : "";
+                    await onLogLine($"[DEBUG]   {r.Mode,-12} {r.RemoteUrl}  branch={r.DefaultBranch ?? "(none)"}  check={availLabel}{selectedLabel}", LogStream.Stdout);
+                }
+                if (gitRepository is not null)
+                    await onLogLine($"[DEBUG] Push target: {gitRepository.Mode} remote — {gitRepository.RemoteUrl}  hasCredentials={!string.IsNullOrEmpty(gitRepository.AuthToken)}", LogStream.Stdout);
             }
 
             try
@@ -1428,6 +1439,14 @@ public class IssueWorker(
     /// branch — in that case the container would fail to clone regardless of which remote is used.
     /// When <c>git</c> is not available on the host every check returns <c>null</c> (skipped) and
     /// the original priority-ordered first repository is returned unchanged.
+    ///
+    /// Selection priority:
+    ///   1. Working-mode repo with confirmed availability (Available=true)
+    ///   2. Working-mode repo with inconclusive check (Available=null — no DefaultBranch configured
+    ///      or git not on host). Preferred over a confirmed non-Working repo because the execution
+    ///      client must push back to the Working remote after the run.
+    ///   3. Non-Working repo with confirmed availability (Available=true)
+    ///   4. First repo in priority order (fallback when all checks were inconclusive)
     /// </summary>
     private static async Task<(GitRepository? Selected, List<GitRemoteCheckResult> Results)> CheckBranchOnRemotesAsync(
         IList<GitRepository> repositories,
@@ -1459,6 +1478,24 @@ public class IssueWorker(
             .ThenByDescending(x => x.repo.LastFetchedAt)
             .Select(x => x.repo)
             .FirstOrDefault();
+
+        // If no Working-mode repo was confirmed, prefer a Working-mode repo whose check was
+        // inconclusive (null — no DefaultBranch configured or git not installed on the host)
+        // over a confirmed non-Working repo. The execution client always pushes to the Working
+        // remote; an inconclusive check is not evidence the branch is absent.
+        if (confirmed?.Mode != GitOriginMode.Working)
+        {
+            var workingWithNullCheck = repositories
+                .Zip(results, (repo, res) => (repo, res))
+                .Where(x => x.repo.Mode == GitOriginMode.Working && x.res.Available != false)
+                .OrderByDescending(x => x.res.Available == true) // prefer confirmed-true over null
+                .ThenByDescending(x => x.repo.LastFetchedAt)
+                .Select(x => x.repo)
+                .FirstOrDefault();
+
+            if (workingWithNullCheck is not null)
+                confirmed = workingWithNullCheck;
+        }
 
         // When no check returned a definitive "not found" (all skipped), fall back to priority order.
         bool anyCheckRan = results.Any(r => r.Available.HasValue);

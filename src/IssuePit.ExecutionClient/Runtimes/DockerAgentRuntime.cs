@@ -1125,7 +1125,6 @@ public class DockerAgentRuntime(
             }
             else
             {
-                await onLogLine($"[entrypoint] Pushing branch '{branch}' to origin…", LogStream.Stdout);
                 // Use the real git binary path written by the entrypoint before it installed the
                 // push-blocking wrapper at /usr/local/bin/git. This allows the execution client to
                 // push branches via docker exec without hitting the wrapper meant to stop agents.
@@ -1144,9 +1143,26 @@ public class DockerAgentRuntime(
                     ? BuildAuthenticatedCloneUrl(gitRepository.RemoteUrl, gitRepository.AuthUsername, gitRepository.AuthToken)
                     : "origin";
 
+                // Log the actual push target (redact credentials) for debugging.
+                var tokenToRedact = gitRepository?.AuthToken;
+                var safeTarget = !string.IsNullOrEmpty(tokenToRedact)
+                    ? pushTarget.Replace(tokenToRedact, "***", StringComparison.Ordinal)
+                    : pushTarget;
+                var modeLabel = gitRepository is not null ? $" ({gitRepository.Mode})" : "";
+                await onLogLine($"[entrypoint] Pushing branch '{branch}' to {safeTarget}{modeLabel}…", LogStream.Stdout);
+                if (gitRepository is not null)
+                    await onLogLine($"[DEBUG] Push hasCredentials={!string.IsNullOrEmpty(gitRepository.AuthToken)}", LogStream.Stdout);
+
+                // Log available git remotes inside the container for diagnostics.
+                var gitRemotes = await ExecReadOutputAsync(
+                    containerId,
+                    ["/bin/sh", "-c", "git remote -v 2>/dev/null || echo '(no remotes)'"],
+                    cancellationToken);
+                foreach (var remoteLine in gitRemotes.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    await onLogLine($"[DEBUG] in-container remote: {remoteLine}", LogStream.Stdout);
+
                 // Sanitize push output: git prints "To <url>" in its output, which would leak the
                 // auth token when credentials are embedded in the push URL.
-                var tokenToRedact = gitRepository?.AuthToken;
                 Task safeLogLine(string line, LogStream stream)
                 {
                     var safeLine = !string.IsNullOrEmpty(tokenToRedact)
