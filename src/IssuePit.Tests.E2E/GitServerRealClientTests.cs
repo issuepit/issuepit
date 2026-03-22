@@ -118,9 +118,9 @@ public class GitServerRealClientTests
     public async Task Git_Clone_EmptyRepo_Succeeds()
     {
         if (_fixture.GitServerUrl is null)
-            throw Xunit.Sdk.SkipException.ForSkip("Git server not available in this test environment.");
+            throw new InvalidOperationException("Git server URL not available — ensure the 'git-server' Aspire resource is running.");
         if (!IsGitAvailable())
-            throw Xunit.Sdk.SkipException.ForSkip("git CLI not found on PATH.");
+            throw new InvalidOperationException("git CLI not found on PATH — install git to run E2E git tests.");
 
         var (client, orgId, orgSlug, username, password) = await SetupOrgAsync();
         var slug = $"clone-{Guid.NewGuid():N}"[..14];
@@ -160,9 +160,9 @@ public class GitServerRealClientTests
     public async Task Git_Push_ToRepo_Succeeds()
     {
         if (_fixture.GitServerUrl is null)
-            throw Xunit.Sdk.SkipException.ForSkip("Git server not available in this test environment.");
+            throw new InvalidOperationException("Git server URL not available — ensure the 'git-server' Aspire resource is running.");
         if (!IsGitAvailable())
-            throw Xunit.Sdk.SkipException.ForSkip("git CLI not found on PATH.");
+            throw new InvalidOperationException("git CLI not found on PATH — install git to run E2E git tests.");
 
         var (client, orgId, orgSlug, username, password) = await SetupOrgAsync();
         var slug = $"push-{Guid.NewGuid():N}"[..14];
@@ -195,8 +195,9 @@ public class GitServerRealClientTests
             var (commitCode, _, commitErr) = RunGit(cloneDir, "commit", "-m", "feat: initial commit from E2E test");
             Assert.True(commitCode == 0, $"git commit failed: {commitErr}");
 
-            // Step 4: push
-            var (pushCode, _, pushErr) = RunGit(cloneDir, "push", "origin", "main");
+            // Step 4: push — use HEAD:main to explicitly name the branch on the remote regardless of
+            // the local default branch name configured in the git client environment.
+            var (pushCode, _, pushErr) = RunGit(cloneDir, "push", "origin", "HEAD:main");
             Assert.True(pushCode == 0,
                 $"git push failed (exit {pushCode}).\nstderr: {pushErr}");
         }
@@ -215,9 +216,9 @@ public class GitServerRealClientTests
     public async Task Git_Clone_Unauthenticated_OnPrivateRepo_Fails()
     {
         if (_fixture.GitServerUrl is null)
-            throw Xunit.Sdk.SkipException.ForSkip("Git server not available in this test environment.");
+            throw new InvalidOperationException("Git server URL not available — ensure the 'git-server' Aspire resource is running.");
         if (!IsGitAvailable())
-            throw Xunit.Sdk.SkipException.ForSkip("git CLI not found on PATH.");
+            throw new InvalidOperationException("git CLI not found on PATH — install git to run E2E git tests.");
 
         var (client, orgId, orgSlug, username, _) = await SetupOrgAsync();
         var slug = $"priv-{Guid.NewGuid():N}"[..14];
