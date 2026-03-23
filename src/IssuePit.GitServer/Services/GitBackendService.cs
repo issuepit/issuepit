@@ -11,7 +11,12 @@ public class GitBackendService(ILogger<GitBackendService> logger)
     /// <param name="context">The current HTTP context.</param>
     /// <param name="repoPath">Absolute path to the bare repository directory.</param>
     /// <param name="pathInfo">The path portion relative to the repo root (e.g. /info/refs).</param>
-    public async Task ExecuteAsync(HttpContext context, string repoPath, string pathInfo)
+    /// <param name="remoteUser">
+    /// The authenticated username, or <c>null</c> for anonymous requests.
+    /// When non-null, <c>REMOTE_USER</c> is set in the environment so that
+    /// <c>git http-backend</c> enables <c>git-receive-pack</c> (push) support.
+    /// </param>
+    public async Task ExecuteAsync(HttpContext context, string repoPath, string pathInfo, string? remoteUser = null)
     {
         // git http-backend expects GIT_PROJECT_ROOT as the parent of the .git dir,
         // and PATH_INFO as /{repo.git}/{git-path}
@@ -30,6 +35,13 @@ public class GitBackendService(ILogger<GitBackendService> logger)
         psi.Environment["GIT_PROJECT_ROOT"] = repoParentDir;
         psi.Environment["GIT_HTTP_EXPORT_ALL"] = "1";
         psi.Environment["PATH_INFO"] = $"/{repoName}{pathInfo}";
+
+        // Setting REMOTE_USER tells git http-backend that the request is authenticated,
+        // which enables git-receive-pack (push) support.  Our middleware has already verified
+        // authentication and permissions before invoking the backend, so it is safe to set
+        // this whenever we have an authenticated user.
+        if (!string.IsNullOrEmpty(remoteUser))
+            psi.Environment["REMOTE_USER"] = remoteUser;
         psi.Environment["QUERY_STRING"] = context.Request.QueryString.Value ?? "";
         psi.Environment["REQUEST_METHOD"] = context.Request.Method;
         psi.Environment["CONTENT_TYPE"] = context.Request.ContentType ?? "";

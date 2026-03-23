@@ -87,7 +87,7 @@ public class GitHttpMiddleware(RequestDelegate next)
             }
         }
 
-        await backendService.ExecuteAsync(context, repo.DiskPath, gitPath);
+        await backendService.ExecuteAsync(context, repo.DiskPath, gitPath, user?.Username);
     }
 
     private static bool TryParseGitPath(string path, out string orgSlug, out string repoSlug, out string gitPath)
