@@ -8,6 +8,14 @@
         ]" class="mb-1" />
         <p class="text-gray-400 text-sm">Welcome back — here's what's happening.</p>
       </div>
+      <button v-if="!isDraftMode" @click="enterDraftMode"
+        class="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors px-3 py-1.5 rounded-lg border border-gray-700 hover:border-gray-600 hover:bg-gray-800/50">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+        </svg>
+        Customize
+      </button>
     </div>
 
     <!-- Draft mode toolbar -->
@@ -46,6 +54,18 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l4 4m0 0l4-4m-4 4V4" />
           </svg>
           Export
+        </button>
+        <button @click="addCiCdRunsCard()"
+          class="text-xs text-gray-500 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1">
+          + CI/CD Runs
+        </button>
+        <button @click="addAgentRunsCard()"
+          class="text-xs text-gray-500 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1">
+          + Agent Runs
+        </button>
+        <button @click="addRecentIssuesCard()"
+          class="text-xs text-gray-500 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1">
+          + Issues
         </button>
         <button @click="resetLayout"
           class="text-xs text-gray-400 hover:text-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-800 transition-colors">
@@ -86,7 +106,7 @@
         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
         </svg>
-        {{ SECTION_LABELS[sid as MainSectionId] }}
+        {{ allSectionLabels[sid] ?? sid }}
       </button>
     </div>
 
@@ -151,40 +171,54 @@
             <!-- Single section config bar -->
             <DashboardSectionBar
               v-if="item.type === 'section'"
-              :label="SECTION_LABELS[item.sid as MainSectionId]"
-              :display-modes="SECTION_DISPLAY_MODES[item.sid as MainSectionId]"
-              :current-display-mode="sectionCfg(item.sid as MainSectionId).displayMode"
-              :has-max-items="SECTION_HAS_MAX_ITEMS.has(item.sid as MainSectionId)"
+              :label="allSectionLabels[item.sid] ?? item.sid"
+              :display-modes="getSectionDisplayModes(item.sid)"
+              :current-display-mode="sectionCfg(item.sid).displayMode"
+              :has-max-items="sectionHasMaxItems(item.sid)"
               :max-items-options="[3,5,8,10]"
-              :current-max-items="sectionCfg(item.sid as MainSectionId).maxItems"
+              :current-max-items="sectionCfg(item.sid).maxItems"
               :widths="MAIN_WIDTHS"
-              :current-width="sectionCfg(item.sid as MainSectionId).width"
-              :current-chart-days="item.sid === 'chart' ? (sectionCfg(item.sid as MainSectionId).chartDays ?? CHART_DAY_DEFAULT) : undefined"
+              :current-width="sectionCfg(item.sid).width"
+              :current-chart-days="item.sid === 'chart' ? (sectionCfg(item.sid).chartDays ?? CHART_DAY_DEFAULT) : undefined"
               :chart-height-options="item.sid === 'chart' ? CHART_HEIGHT_OPTIONS : undefined"
-              :current-chart-height="item.sid === 'chart' ? (sectionCfg(item.sid as MainSectionId).chartHeightKey ?? 'md') : undefined"
-              :can-tab="SECTION_CAN_TAB.has(item.sid as MainSectionId) && layout.order.indexOf(item.sid) < layout.order.length - 1"
-              :is-tabbed="sectionCfg(item.sid as MainSectionId).tabGroup !== null"
-              :can-stack="SECTION_CAN_STACK.has(item.sid as MainSectionId) && layout.order.indexOf(item.sid) < layout.order.length - 1"
-              :is-stacked="sectionCfg(item.sid as MainSectionId).stackGroup !== null"
-              :hidden="sectionCfg(item.sid as MainSectionId).hidden"
+              :current-chart-height="item.sid === 'chart' ? (sectionCfg(item.sid).chartHeightKey ?? 'md') : undefined"
+              :sort-by-options="item.sid === 'recentProjects' ? RECENT_PROJECTS_SORT_OPTIONS : isRecentIssuesSid(item.sid) ? RECENT_ISSUES_SORT_OPTIONS : undefined"
+              :current-sort-by="(item.sid === 'recentProjects' || isRecentIssuesSid(item.sid)) ? (sectionCfg(item.sid).sortBy ?? 'default') : undefined"
+              :project-options="isRecentIssuesSid(item.sid) ? projectsStore.projects.map(p => ({ id: p.id, name: p.name })) : undefined"
+              :current-project-filter="isRecentIssuesSid(item.sid) ? (sectionCfg(item.sid).projectFilter ?? null) : undefined"
+              :max-per-project-options="isRecentIssuesSid(item.sid) ? MAX_PER_PROJECT_OPTIONS : undefined"
+              :current-max-per-project="isRecentIssuesSid(item.sid) ? (sectionCfg(item.sid).maxPerProject ?? 0) : undefined"
+              :failed-hours-options="item.sid === 'statAgentRuns' ? FAILED_HOURS_OPTIONS : undefined"
+              :current-failed-hours="item.sid === 'statAgentRuns' ? (sectionCfg(item.sid).failedHours ?? 24) : undefined"
+              :can-tab="sectionCanTab(item.sid) && layout.order.indexOf(item.sid) < layout.order.length - 1"
+              :is-tabbed="sectionCfg(item.sid).tabGroup !== null"
+              :can-stack="sectionCanStack(item.sid) && layout.order.indexOf(item.sid) < layout.order.length - 1"
+              :is-stacked="sectionCfg(item.sid).stackGroup !== null"
+              :hidden="sectionCfg(item.sid).hidden"
+              :can-remove="isDynamicVariant(item.sid)"
               :drag-hover="dragSectionId !== null && dragHoverSid === item.sid && dragSectionId !== item.sid"
-              @display-mode-change="m => updateCfg(item.sid as MainSectionId, { displayMode: m as MainDisplayMode })"
-              @max-items-change="n => updateCfg(item.sid as MainSectionId, { maxItems: n })"
-              @width-change="w => updateCfg(item.sid as MainSectionId, { width: w as MainWidth })"
-              @chart-days-change="d => updateCfg(item.sid as MainSectionId, { chartDays: d })"
-              @chart-height-change="k => updateCfg(item.sid as MainSectionId, { chartHeightKey: k })"
+              @display-mode-change="m => updateCfg(item.sid, { displayMode: m as MainDisplayMode })"
+              @max-items-change="n => updateCfg(item.sid, { maxItems: n })"
+              @width-change="w => updateCfg(item.sid, { width: w as MainWidth })"
+              @chart-days-change="d => updateCfg(item.sid, { chartDays: d })"
+              @chart-height-change="k => updateCfg(item.sid, { chartHeightKey: k })"
+              @sort-by-change="v => updateCfg(item.sid, { sortBy: v })"
+              @project-filter-change="v => updateCfg(item.sid, { projectFilter: v ?? undefined })"
+              @max-per-project-change="n => updateCfg(item.sid, { maxPerProject: n })"
+              @failed-hours-change="h => updateCfg(item.sid, { failedHours: h })"
               @tab-toggle="toggleTabGroupWithNext(item.sid as MainSectionId)"
               @tab-drop="droppedSid => tabWithSection(item.sid, droppedSid)"
               @stack-toggle="toggleStackGroupWithNext(item.sid as MainSectionId)"
               @stack-drop="droppedSid => stackWithSection(item.sid, droppedSid)"
               @hide="hideSection(item.sid as MainSectionId)"
               @show="showSection(item.sid as MainSectionId)"
+              @remove="removeDynamicSection(item.sid)"
             />
             <!-- Tab group config bar -->
             <DashboardTabGroupBar
               v-else-if="item.type === 'tabgroup'"
               :sections="item.sections"
-              :section-labels="SECTION_LABELS"
+              :section-labels="allSectionLabels"
               :widths="MAIN_WIDTHS"
               :current-width="sectionCfg(item.sections[0] as MainSectionId).width"
               @split="toggleTabGroupWithNext(item.sections[0] as MainSectionId)"
@@ -194,7 +228,7 @@
             <DashboardStackGroupBar
               v-else-if="item.type === 'stackgroup'"
               :sections="item.sections"
-              :section-labels="SECTION_LABELS"
+              :section-labels="allSectionLabels"
               :widths="MAIN_WIDTHS"
               :current-width="sectionCfg(item.sections[0] as MainSectionId).width"
               :is-dragging="!!dragSectionId"
@@ -221,7 +255,7 @@
                     : 'text-gray-500 hover:text-gray-300',
                 ]"
                 class="px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0">
-                {{ SECTION_LABELS[sec as MainSectionId] }}
+                {{ allSectionLabels[sec] ?? sec }}
               </button>
             </div>
 
@@ -241,19 +275,21 @@
 
                 <!-- ── statOpenIssues ── -->
                 <template v-else-if="sid === 'statOpenIssues'">
-                  <NuxtLink to="/issues?status=open"
+                  <NuxtLink :to="statOpenIssuesLink(sectionCfg('statOpenIssues').displayMode ?? 'open')"
                     class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 block transition-colors">
-                    <p class="text-sm text-gray-400">Open Issues</p>
-                    <p class="text-3xl font-bold text-amber-400 mt-1">{{ stats.openIssues }}</p>
+                    <p class="text-sm text-gray-400">{{ statOpenIssuesLabel(sectionCfg('statOpenIssues').displayMode ?? 'open') }}</p>
+                    <p :class="statOpenIssuesColor(sectionCfg('statOpenIssues').displayMode ?? 'open')" class="text-3xl font-bold mt-1">
+                      {{ statOpenIssuesCount(sectionCfg('statOpenIssues').displayMode ?? 'open') }}
+                    </p>
                   </NuxtLink>
                 </template>
 
                 <!-- ── statInProgress ── -->
                 <template v-else-if="sid === 'statInProgress'">
-                  <NuxtLink to="/issues?status=in_progress"
+                  <NuxtLink to="/runs"
                     class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 block transition-colors">
-                    <p class="text-sm text-gray-400">In Progress</p>
-                    <p class="text-3xl font-bold text-indigo-400 mt-1">{{ stats.inProgress }}</p>
+                    <p class="text-sm text-gray-400">CI/CD Running</p>
+                    <p class="text-3xl font-bold text-yellow-400 mt-1">{{ stats.runningCiCd }}</p>
                   </NuxtLink>
                 </template>
 
@@ -261,27 +297,50 @@
                 <template v-else-if="sid === 'statAgentRuns'">
                   <NuxtLink to="/runs"
                     class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 block transition-colors">
-                    <p class="text-sm text-gray-400">Agent Runs</p>
-                    <p class="text-3xl font-bold text-green-400 mt-1">{{ stats.agentRuns }}</p>
+                    <p class="text-sm text-gray-400">{{ statAgentRunsLabel(sectionCfg('statAgentRuns').displayMode ?? 'running', sectionCfg('statAgentRuns').failedHours ?? 24) }}</p>
+                    <p :class="statAgentRunsColor(sectionCfg('statAgentRuns').displayMode ?? 'running')" class="text-3xl font-bold mt-1">
+                      {{ statAgentRunsCount(sectionCfg('statAgentRuns').displayMode ?? 'running', sectionCfg('statAgentRuns').failedHours ?? 24) }}
+                    </p>
                   </NuxtLink>
                 </template>
 
-                <!-- ── recentIssues ── -->
-                <template v-else-if="sid === 'recentIssues'">
+                <!-- ── recentIssues (and dynamic recentIssues-* variants) ── -->
+                <template v-else-if="isRecentIssuesSid(sid)">
                   <div :class="item.type !== 'tabgroup' ? 'bg-gray-900 border border-gray-800 rounded-xl p-5 mb-4' : ''">
                     <div class="flex items-center justify-between mb-4">
                       <h2 class="font-semibold text-white">Recent Issues</h2>
                       <NuxtLink to="/issues" class="text-xs text-brand-400 hover:text-brand-300">View all →</NuxtLink>
                     </div>
-                    <template v-if="sectionCfg('recentIssues').displayMode === 'count'">
+                    <template v-if="sectionCfg(sid).displayMode === 'count'">
                       <div class="text-4xl font-bold text-white text-center py-6">
                         {{ stats.openIssues }}
                         <p class="text-sm text-gray-400 font-normal mt-1">open issues</p>
                       </div>
                     </template>
+                    <template v-else-if="sectionCfg(sid).displayMode === 'chart'">
+                      <div class="py-2">
+                        <p v-if="issuesDailyData.every(d => d.count === 0)" class="text-sm text-gray-500 text-center py-4">No issues created in the last {{ CICD_CHART_DAY_DEFAULT }} days</p>
+                        <template v-else>
+                          <svg :viewBox="`0 0 ${chartWidth} 120`" class="w-full" style="min-width:300px">
+                            <g v-for="(d, i) in issuesDailyData" :key="d.date">
+                              <rect
+                                :x="barX(i, issuesDailyData.length)"
+                                :y="120 - 30 - (issuesDailyMaxY > 0 ? (d.count / issuesDailyMaxY) * 80 : 0)"
+                                :width="barW(issuesDailyData.length)"
+                                :height="issuesDailyMaxY > 0 ? (d.count / issuesDailyMaxY) * 80 : 0"
+                                fill="#f59e0b" opacity="0.8" rx="2" />
+                              <text :x="barX(i, issuesDailyData.length) + barW(issuesDailyData.length) / 2" y="118"
+                                text-anchor="middle" fill="#6b7280" font-size="8">{{ shortDate(d.date) }}</text>
+                            </g>
+                            <text x="2" y="38" fill="#6b7280" font-size="8">{{ issuesDailyMaxY }}</text>
+                            <text x="2" y="118" fill="#6b7280" font-size="8">0</text>
+                          </svg>
+                        </template>
+                      </div>
+                    </template>
                     <template v-else>
                       <div class="space-y-1">
-                        <NuxtLink v-for="issue in recentIssues" :key="issue.id"
+                        <NuxtLink v-for="issue in sortedIssues(sid)" :key="issue.id"
                           :to="`/projects/${issue.projectId}/issues/${issue.number}`"
                           class="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-800 transition-colors block">
                           <span :class="statusDot(issue.status)" class="w-2 h-2 rounded-full shrink-0"></span>
@@ -293,7 +352,7 @@
                             {{ issue.priority }}
                           </span>
                         </NuxtLink>
-                        <p v-if="recentIssues.length === 0" class="text-sm text-gray-500 py-4 text-center">No recent issues</p>
+                        <p v-if="sortedIssues(sid).length === 0" class="text-sm text-gray-500 py-4 text-center">No recent issues</p>
                       </div>
                     </template>
                   </div>
@@ -314,7 +373,7 @@
                     </template>
                     <template v-else>
                       <div class="space-y-1">
-                        <NuxtLink v-for="project in projectsStore.projects.slice(0, sectionCfg('recentProjects').maxItems)" :key="project.id"
+                        <NuxtLink v-for="project in sortedProjects('recentProjects')" :key="project.id"
                           :to="`/projects/${project.id}`"
                           class="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-800 transition-colors block">
                           <div :style="{ background: project.color || '#4c6ef5' }"
@@ -373,24 +432,45 @@
                   </div>
                 </template>
 
-                <!-- ── cicdRuns ── -->
-                <template v-else-if="sid === 'cicdRuns'">
+                <!-- ── cicdRuns (and dynamic cicdRuns-* variants) ── -->
+                <template v-else-if="isCiCdRunsSid(sid)">
                   <div :class="item.type !== 'tabgroup' ? 'bg-gray-900 border border-gray-800 rounded-xl p-5 mb-4' : ''">
                     <div class="flex items-center justify-between mb-4">
                       <h2 class="font-semibold text-white">CI/CD Runs</h2>
                       <NuxtLink to="/runs" class="text-xs text-brand-400 hover:text-brand-300">View all →</NuxtLink>
                     </div>
-                    <template v-if="sectionCfg('cicdRuns').displayMode === 'count'">
+                    <template v-if="sectionCfg(sid).displayMode === 'count'">
                       <div class="text-4xl font-bold text-white text-center py-6">
                         {{ runsStore.runs.length }}
                         <p class="text-sm text-gray-400 font-normal mt-1">CI/CD runs</p>
                       </div>
                     </template>
+                    <template v-else-if="sectionCfg(sid).displayMode === 'chart'">
+                      <div class="py-2">
+                        <p v-if="cicdDailyData.length === 0" class="text-sm text-gray-500 text-center py-4">No data yet</p>
+                        <template v-else>
+                          <svg :viewBox="`0 0 ${chartWidth} 120`" class="w-full" style="min-width:300px">
+                            <g v-for="(d, i) in cicdDailyData" :key="d.date">
+                              <rect
+                                :x="barX(i, cicdDailyData.length)"
+                                :y="120 - 30 - (cicdMaxY > 0 ? (d.count / cicdMaxY) * 80 : 0)"
+                                :width="barW(cicdDailyData.length)"
+                                :height="cicdMaxY > 0 ? (d.count / cicdMaxY) * 80 : 0"
+                                fill="#3b82f6" opacity="0.8" rx="2" />
+                              <text :x="barX(i, cicdDailyData.length) + barW(cicdDailyData.length) / 2" y="118"
+                                text-anchor="middle" fill="#6b7280" font-size="8">{{ shortDate(d.date) }}</text>
+                            </g>
+                            <text x="2" y="38" fill="#6b7280" font-size="8">{{ cicdMaxY }}</text>
+                            <text x="2" y="118" fill="#6b7280" font-size="8">0</text>
+                          </svg>
+                        </template>
+                      </div>
+                    </template>
                     <template v-else>
-                      <div v-if="cicdRunsItems.length" class="rounded-lg border border-gray-800 overflow-hidden">
+                      <div v-if="cicdRunsItemsForSid(sid).length" class="rounded-lg border border-gray-800 overflow-hidden">
                         <table class="w-full text-sm">
                           <tbody class="divide-y divide-gray-800">
-                            <tr v-for="run in cicdRunsItems" :key="run.id"
+                            <tr v-for="run in cicdRunsItemsForSid(sid)" :key="run.id"
                               class="hover:bg-gray-800/40 transition-colors cursor-pointer"
                               @click="navigateTo(`/projects/${run.projectId}/runs/cicd/${run.id}`)">
                               <td class="px-3 py-2"><CiCdStatusChip :runs="[run]" /></td>
@@ -406,24 +486,45 @@
                   </div>
                 </template>
 
-                <!-- ── agentRunsList ── -->
-                <template v-else-if="sid === 'agentRunsList'">
+                <!-- ── agentRunsList (and dynamic agentRuns-* variants) ── -->
+                <template v-else-if="isAgentRunsSid(sid)">
                   <div :class="item.type !== 'tabgroup' ? 'bg-gray-900 border border-gray-800 rounded-xl p-5 mb-4' : ''">
                     <div class="flex items-center justify-between mb-4">
                       <h2 class="font-semibold text-white">Agent Runs</h2>
                       <NuxtLink to="/runs" class="text-xs text-brand-400 hover:text-brand-300">View all →</NuxtLink>
                     </div>
-                    <template v-if="sectionCfg('agentRunsList').displayMode === 'count'">
+                    <template v-if="sectionCfg(sid).displayMode === 'count'">
                       <div class="text-4xl font-bold text-white text-center py-6">
                         {{ runsStore.dashboardSessions.length }}
                         <p class="text-sm text-gray-400 font-normal mt-1">agent runs</p>
                       </div>
                     </template>
+                    <template v-else-if="sectionCfg(sid).displayMode === 'chart'">
+                      <div class="py-2">
+                        <p v-if="agentDailyData.length === 0" class="text-sm text-gray-500 text-center py-4">No data yet</p>
+                        <template v-else>
+                          <svg :viewBox="`0 0 ${chartWidth} 120`" class="w-full" style="min-width:300px">
+                            <g v-for="(d, i) in agentDailyData" :key="d.date">
+                              <rect
+                                :x="barX(i, agentDailyData.length)"
+                                :y="120 - 30 - (agentMaxY > 0 ? (d.count / agentMaxY) * 80 : 0)"
+                                :width="barW(agentDailyData.length)"
+                                :height="agentMaxY > 0 ? (d.count / agentMaxY) * 80 : 0"
+                                fill="#22c55e" opacity="0.8" rx="2" />
+                              <text :x="barX(i, agentDailyData.length) + barW(agentDailyData.length) / 2" y="118"
+                                text-anchor="middle" fill="#6b7280" font-size="8">{{ shortDate(d.date) }}</text>
+                            </g>
+                            <text x="2" y="38" fill="#6b7280" font-size="8">{{ agentMaxY }}</text>
+                            <text x="2" y="118" fill="#6b7280" font-size="8">0</text>
+                          </svg>
+                        </template>
+                      </div>
+                    </template>
                     <template v-else>
-                      <div v-if="agentRunsItems.length" class="rounded-lg border border-gray-800 overflow-hidden">
+                      <div v-if="agentRunsItemsForSid(sid).length" class="rounded-lg border border-gray-800 overflow-hidden">
                         <table class="w-full text-sm">
                           <tbody class="divide-y divide-gray-800">
-                            <tr v-for="session in agentRunsItems" :key="session.id"
+                            <tr v-for="session in agentRunsItemsForSid(sid)" :key="session.id"
                               class="hover:bg-gray-800/40 transition-colors cursor-pointer"
                               @click="navigateTo(`/projects/${session.projectId}/runs/agent-sessions/${session.id}`)">
                               <td class="px-3 py-2"><AgentSessionStatusChip :session="session" /></td>
@@ -483,7 +584,7 @@
 </template>
 
 <script setup lang="ts">
-import { IssueStatus, IssuePriority, type IssueHistoryEntry } from '~/types'
+import { IssueStatus, IssuePriority, CiCdRunStatus, AgentSessionStatus, type IssueHistoryEntry } from '~/types'
 import { useProjectsStore } from '~/stores/projects'
 import { useIssuesStore } from '~/stores/issues'
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
@@ -503,9 +604,9 @@ type MainSectionId =
   | 'recentIssues' | 'recentProjects' | 'chart' | 'cicdRuns' | 'agentRunsList'
 
 type MainWidth = 'xxs' | 'xs' | 'quarter' | 'sm' | 'md' | 'lg'
-type MainDisplayMode = 'list' | 'count'
+type MainDisplayMode = 'list' | 'count' | 'chart' | 'open' | 'in_progress' | 'closed' | 'total' | 'newly_created' | 'running' | 'failed'
 
-const MAIN_LAYOUT_KEY = 'main-dashboard-layout-v6'
+const MAIN_LAYOUT_KEY = 'main-dashboard-layout-v9'
 
 const DEFAULT_ORDER: MainSectionId[] = [
   'statProjects', 'statOpenIssues', 'statInProgress', 'statAgentRuns',
@@ -514,9 +615,9 @@ const DEFAULT_ORDER: MainSectionId[] = [
 
 const DEFAULT_CONFIGS = {
   statProjects:   { hidden: false, width: 'quarter', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
-  statOpenIssues: { hidden: false, width: 'quarter', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
+  statOpenIssues: { hidden: false, width: 'quarter', displayMode: 'open', maxItems: 5, tabGroup: null, stackGroup: null },
   statInProgress: { hidden: false, width: 'quarter', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
-  statAgentRuns:  { hidden: false, width: 'quarter', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
+  statAgentRuns:  { hidden: false, width: 'quarter', displayMode: 'running', maxItems: 5, tabGroup: null, stackGroup: null },
   recentIssues:   { hidden: false, width: 'md', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
   recentProjects: { hidden: false, width: 'md', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
   chart:          { hidden: false, width: 'lg', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
@@ -527,8 +628,8 @@ const DEFAULT_CONFIGS = {
 const SECTION_LABELS: Record<MainSectionId, string> = {
   statProjects:   'Projects',
   statOpenIssues: 'Open Issues',
-  statInProgress: 'In Progress',
-  statAgentRuns:  'Agent Runs',
+  statInProgress: 'CI/CD Running',
+  statAgentRuns:  'Running Agents',
   recentIssues:   'Recent Issues',
   recentProjects: 'Recent Projects',
   chart:          'Issue Activity Chart',
@@ -539,12 +640,16 @@ const SECTION_LABELS: Record<MainSectionId, string> = {
 const WIDTH_LABELS: Record<MainWidth, string> = { xxs: '1/12', xs: '1/6', quarter: '1/4', sm: '1/3', md: '1/2', lg: 'Full' }
 const MAIN_WIDTHS = (['xxs', 'xs', 'quarter', 'sm', 'md', 'lg'] as MainWidth[]).map(v => ({ value: v, label: WIDTH_LABELS[v] }))
 
-const SECTION_DISPLAY_MODES: Partial<Record<MainSectionId, MainDisplayMode[]>> = {
-  recentIssues:   ['list', 'count'],
+const SECTION_DISPLAY_MODES: Partial<Record<string, string[]>> = {
+  statOpenIssues: ['open', 'in_progress', 'closed', 'total', 'newly_created'],
+  statAgentRuns:  ['running', 'total', 'failed'],
+  recentIssues:   ['list', 'count', 'chart'],
   recentProjects: ['list', 'count'],
-  cicdRuns:       ['list', 'count'],
-  agentRunsList:  ['list', 'count'],
+  cicdRuns:       ['list', 'count', 'chart'],
+  agentRunsList:  ['list', 'count', 'chart'],
 }
+
+const DYNAMIC_SECTION_DISPLAY_MODES = ['list', 'count', 'chart']
 
 const SECTION_HAS_MAX_ITEMS = new Set<MainSectionId>(['recentIssues', 'recentProjects', 'cicdRuns', 'agentRunsList'])
 const SECTION_CAN_TAB = new Set<MainSectionId>(['recentIssues', 'recentProjects', 'chart', 'cicdRuns', 'agentRunsList'])
@@ -572,6 +677,8 @@ const {
   addRowBreak,
   captureSnapshot,
   removeRowBreak,
+  addDynamicSection,
+  removeDynamicSection,
   exportLayoutJson,
   importLayoutJson,
   onDragStart: onDragStartRaw,
@@ -618,8 +725,8 @@ function applyImportedLayout(json: string) {
   }
 }
 
-function sectionCfg(s: MainSectionId) { return sectionCfgRaw(s) }
-function updateCfg(s: MainSectionId, patch: object) { updateCfgRaw(s, patch) }
+function sectionCfg(s: string) { return sectionCfgRaw(s) }
+function updateCfg(s: string, patch: object) { updateCfgRaw(s, patch) }
 function hideSection(id: MainSectionId) { hideSectionRaw(id) }
 function showSection(id: MainSectionId) { showSectionRaw(id) }
 function onDragStart(e: DragEvent, id: string) { onDragStartRaw(e, id) }
@@ -627,6 +734,63 @@ function onDragOver(e: DragEvent, id: string) { onDragOverRaw(e, id) }
 function onDragEnter(e: DragEvent, id: string) { onDragEnterRaw(e, id) }
 function toggleTabGroupWithNext(sid: MainSectionId) { toggleTabGroupWithNextRaw(sid) }
 function toggleStackGroupWithNext(sid: MainSectionId) { toggleStackGroupWithNextRaw(sid) }
+
+function isCiCdRunsSid(sid: string) { return sid === 'cicdRuns' || /^cicdRuns-\d/.test(sid) }
+function isAgentRunsSid(sid: string) { return sid === 'agentRunsList' || /^agentRuns-\d/.test(sid) }
+function isRecentIssuesSid(sid: string) { return sid === 'recentIssues' || /^recentIssues-\d/.test(sid) }
+
+function isDynamicVariant(sid: string): boolean {
+  return (isCiCdRunsSid(sid) && sid !== 'cicdRuns')
+    || (isAgentRunsSid(sid) && sid !== 'agentRunsList')
+    || (isRecentIssuesSid(sid) && sid !== 'recentIssues')
+}
+
+function getSectionDisplayModes(sid: string): string[] | undefined {
+  if (SECTION_DISPLAY_MODES[sid]) return SECTION_DISPLAY_MODES[sid]
+  if (isCiCdRunsSid(sid) || isAgentRunsSid(sid) || isRecentIssuesSid(sid)) return DYNAMIC_SECTION_DISPLAY_MODES
+  return undefined
+}
+
+function sectionHasMaxItems(sid: string): boolean {
+  return SECTION_HAS_MAX_ITEMS.has(sid as MainSectionId) || isCiCdRunsSid(sid) || isAgentRunsSid(sid) || isRecentIssuesSid(sid)
+}
+
+function sectionCanTab(sid: string): boolean {
+  return SECTION_CAN_TAB.has(sid as MainSectionId) || isCiCdRunsSid(sid) || isAgentRunsSid(sid) || isRecentIssuesSid(sid)
+}
+
+function sectionCanStack(sid: string): boolean {
+  return SECTION_CAN_STACK.has(sid as MainSectionId) || isCiCdRunsSid(sid) || isAgentRunsSid(sid) || isRecentIssuesSid(sid)
+}
+
+function getDynamicSectionLabel(sid: string): string {
+  if (isCiCdRunsSid(sid)) return 'CI/CD Runs'
+  if (isAgentRunsSid(sid)) return 'Agent Runs'
+  if (isRecentIssuesSid(sid)) return 'Recent Issues'
+  return sid
+}
+
+const allSectionLabels = computed<Record<string, string>>(() => {
+  const extra: Record<string, string> = {}
+  for (const sid of layout.value.order) {
+    if (!(sid in SECTION_LABELS)) {
+      extra[sid] = getDynamicSectionLabel(sid)
+    }
+  }
+  return { ...SECTION_LABELS, ...extra }
+})
+
+const DEFAULT_DYNAMIC_CFG = { hidden: false, width: 'md' as MainWidth, displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null }
+
+function addCiCdRunsCard() {
+  addDynamicSection('cicdRuns', { ...DEFAULT_DYNAMIC_CFG })
+}
+function addAgentRunsCard() {
+  addDynamicSection('agentRuns', { ...DEFAULT_DYNAMIC_CFG })
+}
+function addRecentIssuesCard() {
+  addDynamicSection('recentIssues', { ...DEFAULT_DYNAMIC_CFG })
+}
 
 function mainColSpanClass(width: MainWidth): string {
   if (width === 'xxs')     return 'col-span-12 sm:col-span-6 lg:col-span-1'
@@ -644,22 +808,80 @@ function itemColSpanClass(item: { type: string; sid?: string; sections?: string[
 }
 
 // ── Data ─────────────────────────────────────────────────────────────────
+const NEWLY_CREATED_DAYS = 7
+const sevenDaysAgo = computed(() => { const d = new Date(); d.setDate(d.getDate() - NEWLY_CREATED_DAYS); return d })
+
+const PRIORITY_ORDER: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3, no_priority: 4 }
+
 const stats = computed(() => ({
   projects: projectsStore.projects.length,
-  openIssues: issuesStore.issues.filter(i => i.status !== IssueStatus.Done && i.status !== IssueStatus.Cancelled).length,
+  openIssues: issuesStore.issues.filter(i => i.status !== IssueStatus.Done && i.status !== IssueStatus.Cancelled && i.status !== IssueStatus.InProgress).length,
   inProgress: issuesStore.issues.filter(i => i.status === IssueStatus.InProgress).length,
-  agentRuns: runsStore.dashboardSessions.length
+  closed: issuesStore.issues.filter(i => i.status === IssueStatus.Done || i.status === IssueStatus.Cancelled).length,
+  total: issuesStore.issues.length,
+  newlyCreated: issuesStore.issues.filter(i => new Date(i.createdAt) >= sevenDaysAgo.value).length,
+  runningCiCd: runsStore.runs.filter(r => r.status === CiCdRunStatus.Running || r.status === CiCdRunStatus.Pending).length,
+  runningAgents: runsStore.dashboardSessions.filter(s => s.status === AgentSessionStatus.Running || s.status === AgentSessionStatus.Pending).length,
+  agentRuns: runsStore.dashboardSessions.length,
 }))
 
-const recentIssues = computed(() =>
-  issuesStore.issues.slice(0, sectionCfg('recentIssues').maxItems).map(i => ({
-    ...i,
-    projectName: projectsStore.projects.find(p => p.id === i.projectId)?.name ?? ''
-  }))
-)
+function statOpenIssuesLabel(mode: string): string {
+  if (mode === 'in_progress') return 'In Progress'
+  if (mode === 'closed') return 'Closed Issues'
+  if (mode === 'total') return 'Total Issues'
+  if (mode === 'newly_created') return `New (${NEWLY_CREATED_DAYS}d)`
+  return 'Open Issues'
+}
+function statOpenIssuesCount(mode: string): number {
+  if (mode === 'in_progress') return stats.value.inProgress
+  if (mode === 'closed') return stats.value.closed
+  if (mode === 'total') return stats.value.total
+  if (mode === 'newly_created') return stats.value.newlyCreated
+  return stats.value.openIssues
+}
+function statOpenIssuesLink(mode: string): string {
+  if (mode === 'in_progress') return '/issues?status=in_progress'
+  if (mode === 'closed') return '/issues?status=done'
+  return '/issues?status=open'
+}
+function statOpenIssuesColor(mode: string): string {
+  if (mode === 'in_progress') return 'text-indigo-400'
+  if (mode === 'closed') return 'text-green-400'
+  if (mode === 'total') return 'text-gray-300'
+  if (mode === 'newly_created') return 'text-purple-400'
+  return 'text-amber-400'
+}
 
-const cicdRunsItems = computed(() => runsStore.runs.slice(0, sectionCfg('cicdRuns').maxItems))
-const agentRunsItems = computed(() => runsStore.dashboardSessions.slice(0, sectionCfg('agentRunsList').maxItems))
+const SEVEN_DAYS_IN_HOURS = 168 // 7 × 24
+const FAILED_HOURS_OPTIONS = [1, 6, 24, 48, SEVEN_DAYS_IN_HOURS, 0]
+
+function failedHoursLabel(h: number): string {
+  if (h === 0) return 'all time'
+  if (h === SEVEN_DAYS_IN_HOURS) return '7d'
+  return `${h}h`
+}
+
+function statAgentRunsLabel(mode: string, failedHours = 24): string {
+  if (mode === 'total') return 'Agent Runs'
+  if (mode === 'failed') return `Failed (${failedHoursLabel(failedHours)})`
+  return 'Running Agents'
+}
+function statAgentRunsCount(mode: string, failedHours = 24): number {
+  if (mode === 'total') return stats.value.agentRuns
+  if (mode === 'failed') {
+    const sessions = runsStore.dashboardSessions.filter(s => s.status === AgentSessionStatus.Failed)
+    if (failedHours === 0) return sessions.length
+    const cutoff = new Date()
+    cutoff.setHours(cutoff.getHours() - failedHours)
+    return sessions.filter(s => s.endedAt && new Date(s.endedAt) >= cutoff).length
+  }
+  return stats.value.runningAgents
+}
+function statAgentRunsColor(mode: string): string {
+  if (mode === 'failed') return 'text-red-400'
+  if (mode === 'total') return 'text-gray-300'
+  return 'text-green-400'
+}
 
 // ── Chart helpers ─────────────────────────────────────────────────────────
 const chartWidth = 600
@@ -736,6 +958,131 @@ function priorityBadge(priority: IssuePriority) {
   }
   return map[priority] ?? 'bg-gray-800 text-gray-400'
 }
+
+// ── Bar chart helpers (CI/CD + Agent + Issues daily counts) ──────────────
+const CICD_CHART_DAY_DEFAULT = 14
+
+function isoDateStr(isoString?: string | null): string {
+  return isoString?.slice(0, 10) ?? ''
+}
+
+function buildDailyData(days: number, matchFn: (dateStr: string) => number): { date: string; count: number }[] {
+  const result: { date: string; count: number }[] = []
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date()
+    d.setDate(d.getDate() - i)
+    const dateStr = d.toISOString().slice(0, 10)
+    result.push({ date: dateStr, count: matchFn(dateStr) })
+  }
+  return result
+}
+
+const cicdDailyData = computed(() =>
+  buildDailyData(CICD_CHART_DAY_DEFAULT, dateStr =>
+    runsStore.runs.filter(r => isoDateStr(r.startedAt) === dateStr).length
+  )
+)
+const cicdMaxY = computed(() => Math.max(...cicdDailyData.value.map(d => d.count), 1))
+
+const agentDailyData = computed(() =>
+  buildDailyData(CICD_CHART_DAY_DEFAULT, dateStr =>
+    runsStore.dashboardSessions.filter(s => isoDateStr(s.startedAt) === dateStr).length
+  )
+)
+const agentMaxY = computed(() => Math.max(...agentDailyData.value.map(d => d.count), 1))
+
+const issuesDailyData = computed(() =>
+  buildDailyData(CICD_CHART_DAY_DEFAULT, dateStr =>
+    issuesStore.issues.filter(i => isoDateStr(i.createdAt) === dateStr).length
+  )
+)
+const issuesDailyMaxY = computed(() => Math.max(...issuesDailyData.value.map(d => d.count), 1))
+
+function barX(i: number, total: number): number {
+  const plotW = chartWidth - chartPad * 2
+  const w = plotW / total
+  return chartPad + i * w + w * 0.1
+}
+function barW(total: number): number {
+  const plotW = chartWidth - chartPad * 2
+  return (plotW / total) * 0.8
+}
+
+// ── Sort helpers ──────────────────────────────────────────────────────────
+
+/** Maps projectId → latest activity date string (from agent sessions + CI/CD runs). */
+const projectLastActivityMap = computed(() => {
+  const map = new Map<string, string>()
+  for (const s of runsStore.dashboardSessions) {
+    const cur = map.get(s.projectId)
+    if (!cur || s.startedAt > cur) map.set(s.projectId, s.startedAt)
+  }
+  for (const r of runsStore.runs) {
+    const cur = map.get(r.projectId)
+    if (!cur || r.startedAt > cur) map.set(r.projectId, r.startedAt)
+  }
+  return map
+})
+
+const RECENT_PROJECTS_SORT_OPTIONS = [
+  { value: 'default', label: 'Default' },
+  { value: 'name', label: 'Name' },
+  { value: 'issueCount', label: 'Issues' },
+  { value: 'lastActivity', label: 'Last Active' },
+]
+
+function sortedProjects(sid: string) {
+  const sortBy = sectionCfg(sid).sortBy ?? 'default'
+  const list = [...projectsStore.projects]
+  if (sortBy === 'name') list.sort((a, b) => a.name.localeCompare(b.name))
+  else if (sortBy === 'issueCount') list.sort((a, b) => (b.issueCount ?? 0) - (a.issueCount ?? 0))
+  else if (sortBy === 'lastActivity') {
+    list.sort((a, b) => {
+      const aDate = projectLastActivityMap.value.get(a.id) ?? a.createdAt
+      const bDate = projectLastActivityMap.value.get(b.id) ?? b.createdAt
+      return bDate.localeCompare(aDate)
+    })
+  }
+  return list.slice(0, sectionCfg(sid).maxItems)
+}
+
+const RECENT_ISSUES_SORT_OPTIONS = [
+  { value: 'default', label: 'Default' },
+  { value: 'priority', label: 'Priority' },
+  { value: 'status', label: 'Status' },
+]
+
+const MAX_PER_PROJECT_OPTIONS = [0, 1, 2, 3, 5]
+
+function sortedIssues(sid: string) {
+  const sortBy = sectionCfg(sid).sortBy ?? 'default'
+  const projectFilter = sectionCfg(sid).projectFilter ?? ''
+  const maxPerProject = sectionCfg(sid).maxPerProject ?? 0
+  let list = [...issuesStore.issues]
+  if (projectFilter) list = list.filter(i => i.projectId === projectFilter)
+  if (sortBy === 'priority') {
+    list.sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 99) - (PRIORITY_ORDER[b.priority] ?? 99))
+  } else if (sortBy === 'status') {
+    list.sort((a, b) => a.status.localeCompare(b.status))
+  }
+  // Apply per-project limit before the global maxItems limit
+  if (maxPerProject > 0) {
+    const countByProject = new Map<string, number>()
+    list = list.filter(i => {
+      const cnt = countByProject.get(i.projectId) ?? 0
+      if (cnt >= maxPerProject) return false
+      countByProject.set(i.projectId, cnt + 1)
+      return true
+    })
+  }
+  return list.slice(0, sectionCfg(sid).maxItems).map(i => ({
+    ...i,
+    projectName: projectsStore.projects.find(p => p.id === i.projectId)?.name ?? ''
+  }))
+}
+
+function cicdRunsItemsForSid(sid: string) { return runsStore.runs.slice(0, sectionCfg(sid).maxItems) }
+function agentRunsItemsForSid(sid: string) { return runsStore.dashboardSessions.slice(0, sectionCfg(sid).maxItems) }
 
 
 onMounted(async () => {

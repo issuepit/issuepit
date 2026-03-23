@@ -174,6 +174,44 @@
           :class="currentTestHistoryXMode === x.value ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
           class="text-xs px-1.5 py-0.5 rounded transition-colors">{{ x.label }}</button>
       </div>
+      <!-- Sort by -->
+      <div v-if="sortByOptions?.length" class="flex items-center gap-0.5">
+        <span class="text-xs text-gray-500 mr-1">Sort</span>
+        <button
+          v-for="s in sortByOptions" :key="s.value"
+          @click.stop="$emit('sort-by-change', s.value)"
+          :class="currentSortBy === s.value ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
+          class="text-xs px-1.5 py-0.5 rounded transition-colors">{{ s.label }}</button>
+      </div>
+      <!-- Project filter -->
+      <div v-if="projectOptions?.length" class="flex items-center gap-1.5">
+        <span class="text-xs text-gray-500">Project</span>
+        <select
+          :value="currentProjectFilter ?? ''"
+          @change.stop="onProjectFilterChange"
+          class="text-xs bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500">
+          <option value="">All</option>
+          <option v-for="p in projectOptions" :key="p.id" :value="p.id">{{ p.name }}</option>
+        </select>
+      </div>
+      <!-- Max per project -->
+      <div v-if="maxPerProjectOptions?.length" class="flex items-center gap-0.5">
+        <span class="text-xs text-gray-500 mr-1">Max/proj</span>
+        <button
+          v-for="n in maxPerProjectOptions" :key="n"
+          @click.stop="$emit('max-per-project-change', n)"
+          :class="currentMaxPerProject === n ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
+          class="text-xs px-1.5 py-0.5 rounded transition-colors">{{ n === 0 ? '∞' : n }}</button>
+      </div>
+      <!-- Failed hours -->
+      <div v-if="failedHoursOptions?.length" class="flex items-center gap-0.5">
+        <span class="text-xs text-gray-500 mr-1">Failed in</span>
+        <button
+          v-for="h in failedHoursOptions" :key="h"
+          @click.stop="$emit('failed-hours-change', h)"
+          :class="currentFailedHours === h ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
+          class="text-xs px-1.5 py-0.5 rounded transition-colors">{{ formatFailedHours(h) }}</button>
+      </div>
     </div>
   </div>
 </template>
@@ -203,6 +241,14 @@ const props = defineProps<{
   currentTestHistoryYAxis?: string
   testHistoryXModeOptions?: { value: string; label: string }[]
   currentTestHistoryXMode?: string
+  sortByOptions?: { value: string; label: string }[]
+  currentSortBy?: string
+  projectOptions?: { id: string; name: string }[]
+  currentProjectFilter?: string | null
+  maxPerProjectOptions?: number[]
+  currentMaxPerProject?: number
+  failedHoursOptions?: number[]
+  currentFailedHours?: number
   canTab?: boolean
   isTabbed?: boolean
   canStack?: boolean
@@ -223,6 +269,10 @@ const emit = defineEmits<{
   'test-history-color-mode-change': [mode: string]
   'test-history-y-axis-change': [axis: string]
   'test-history-x-mode-change': [mode: string]
+  'sort-by-change': [value: string]
+  'project-filter-change': [projectId: string | null]
+  'max-per-project-change': [n: number]
+  'failed-hours-change': [hours: number]
   'tab-toggle': []
   'tab-drop': [droppedSid: string]
   'stack-toggle': []
@@ -235,6 +285,13 @@ const emit = defineEmits<{
 const showSettings = ref(false)
 const tabDragOver = ref(false)
 const stackDragOver = ref(false)
+
+/** Convert a failedHours number to a short display label. 0 means "all time". */
+function formatFailedHours(h: number): string {
+  if (h === 0) return '∞'
+  if (h === 168) return '7d'
+  return `${h}h`
+}
 
 /** Split a fraction label like "1/12" into { num, den }. "Full" maps to { num:"1", den:"1" }. */
 function fractionParts(label: string): { num: string; den: string } {
@@ -250,10 +307,14 @@ const CHART_DAYS_MAX = 60
 const hasSettings = computed(() =>
   props.currentChartDays !== undefined ||
   (props.chartHeightOptions?.length ?? 0) > 0 ||
-  props.kanbanBoards !== undefined ||  // show cog even if boards haven't loaded yet
+  props.kanbanBoards !== undefined ||
   props.testHistoryBranches !== undefined ||
   (props.testHistoryColorModeOptions?.length ?? 0) > 0 ||
-  (props.testHistoryXModeOptions?.length ?? 0) > 0,
+  (props.testHistoryXModeOptions?.length ?? 0) > 0 ||
+  (props.sortByOptions?.length ?? 0) > 0 ||
+  (props.projectOptions?.length ?? 0) > 0 ||
+  (props.maxPerProjectOptions?.length ?? 0) > 0 ||
+  (props.failedHoursOptions?.length ?? 0) > 0,
 )
 
 function onChartDaysChange(e: Event) {
@@ -269,6 +330,11 @@ function onBoardChange(e: Event) {
 function onBranchChange(e: Event) {
   const v = (e.target as HTMLSelectElement).value
   emit('test-history-branch-change', v || null)
+}
+
+function onProjectFilterChange(e: Event) {
+  const v = (e.target as HTMLSelectElement).value
+  emit('project-filter-change', v || null)
 }
 
 function onTabDrop(e: DragEvent) {

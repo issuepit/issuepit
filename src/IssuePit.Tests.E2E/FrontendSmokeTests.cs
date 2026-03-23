@@ -123,11 +123,11 @@ public class FrontendSmokeTests : IAsyncLifetime
         // Open Issues stat card links to the filtered issues page
         Assert.True(await dashboard.OpenIssuesStatCard.CountAsync() > 0, "Open Issues stat card should be a link to /issues?status=open");
 
-        // In Progress stat card links to the filtered issues page
-        Assert.True(await dashboard.InProgressStatCard.CountAsync() > 0, "In Progress stat card should be a link to /issues?status=in_progress");
+        // CI/CD Running stat card links to /runs (reworked from "In Progress issues")
+        Assert.True(await dashboard.CiCdRunningStatCard.CountAsync() > 0, "CI/CD Running stat card should be a link to /runs");
 
-        // Agents stat card links to /runs
-        Assert.True(await dashboard.AgentsStatCard.CountAsync() > 0, "Agent Runs stat card should be a link to /runs");
+        // Running Agents stat card links to /runs (reworked from total agent runs)
+        Assert.True(await dashboard.RunningAgentsStatCard.CountAsync() > 0, "Running Agents stat card should be a link to /runs");
     }
 
     [Fact]
