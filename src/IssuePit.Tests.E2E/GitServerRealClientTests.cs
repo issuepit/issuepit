@@ -81,6 +81,34 @@ public class GitServerRealClientTests
         return (p.ExitCode, stdout, stderr);
     }
 
+    /// <summary>
+    /// Runs git with URL-embedded credentials.  Unlike <see cref="RunGit"/>, this method does
+    /// NOT suppress credential helpers, so libcurl can send preemptive Basic-Auth from the URL
+    /// on the very first request — preventing git from falling back to the dumb HTTP protocol.
+    /// </summary>
+    private static (int exitCode, string stdout, string stderr) RunGitAuthenticated(
+        string workingDir, params string[] args)
+    {
+        var psi = new ProcessStartInfo("git")
+        {
+            WorkingDirectory = workingDir,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        // Suppress interactive prompts, but do NOT blank out credential.helper —
+        // we rely on credentials embedded directly in the push URL.
+        psi.Environment["GIT_TERMINAL_PROMPT"] = "0";
+        foreach (var arg in args) psi.ArgumentList.Add(arg);
+
+        using var p = Process.Start(psi) ?? throw new InvalidOperationException("Could not start git");
+        var stdout = p.StandardOutput.ReadToEnd();
+        var stderr = p.StandardError.ReadToEnd();
+        p.WaitForExit();
+        return (p.ExitCode, stdout, stderr);
+    }
+
     private static string BuildGitUrl(string baseUrl, string orgSlug, string repoSlug,
         string username, string password)
     {
@@ -184,20 +212,12 @@ public class GitServerRealClientTests
         {
             Directory.CreateDirectory(tempDir);
             var cloneDir = Path.Combine(tempDir, "cloned");
-            // Use a bare URL (no embedded credentials) — the repo has defaultAccessLevel=Write which allows
-            // unauthenticated read access, so clone doesn't need credentials.
+            // Unauthenticated clone URL — defaultAccessLevel=Write allows unauthenticated reads.
             var bareUrl = BuildBareGitUrl(_fixture.GitServerUrl, orgSlug, slug);
-
-            // Create a git credential store file so the push can authenticate.
-            // Using credential-store is more reliable than URL-embedded credentials (which newer git
-            // versions strip from stored remote configs) or http.extraHeader (which may not be sent
-            // before the initial 401 in all git versions). The store helper is consulted whenever git
-            // needs credentials and returns them without any interactive prompt, ensuring the smart
-            // HTTP push protocol is used (not the dumb git-http-push fallback).
-            var credFile = Path.Combine(tempDir, ".git-credentials");
-            var serverUri = new Uri(_fixture.GitServerUrl);
-            await File.WriteAllTextAsync(credFile,
-                $"http://{Uri.EscapeDataString(username)}:{Uri.EscapeDataString(password)}@{serverUri.Host}:{serverUri.Port}\n");
+            // Authenticated URL for push — credentials embedded in the URL so libcurl sends
+            // Basic Auth on the very first request (preemptive auth), bypassing the 401→retry
+            // dance that causes newer git versions to fall back to the dumb HTTP push protocol.
+            var authPushUrl = BuildGitUrl(_fixture.GitServerUrl, orgSlug, slug, username, password);
 
             // Step 1: clone (empty repo — unauthenticated read is allowed for defaultAccessLevel=Write)
             var (cloneCode, _, cloneErr) = RunGit(tempDir, "clone", bareUrl, cloneDir);
@@ -214,13 +234,13 @@ public class GitServerRealClientTests
             var (commitCode, _, commitErr) = RunGit(cloneDir, "commit", "-m", "feat: initial commit from E2E test");
             Assert.True(commitCode == 0, $"git commit failed: {commitErr}");
 
-            // Step 4: push — use credential store so git can authenticate when the server returns 401
-            // for the initial smart-HTTP discovery (GET /info/refs?service=git-receive-pack).
-            // The -c credential.helper=store --file ... overrides the empty credential.helper set by
-            // RunGit's GIT_CONFIG_COUNT env vars (command-line -c has highest priority).
-            var (pushCode, _, pushErr) = RunGit(cloneDir,
-                "-c", $"credential.helper=store --file {credFile}",
-                "push", bareUrl, "HEAD:main");
+            // Step 4: push using the authenticated URL.
+            // RunGitAuthenticated does NOT blank out credential.helper, so libcurl can use the
+            // credentials embedded in authPushUrl preemptively — the server gets an authenticated
+            // request on the smart-HTTP discovery and responds with 200 (no 401 retry needed).
+            var (pushCode, _, pushErr) = RunGitAuthenticated(cloneDir,
+                "-c", "transfer.credentialsInUrl=allow",
+                "push", authPushUrl, "HEAD:main");
             Assert.True(pushCode == 0,
                 $"git push failed (exit {pushCode}).\nstderr: {pushErr}");
         }
