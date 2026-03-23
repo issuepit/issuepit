@@ -1818,8 +1818,8 @@ public class IssueWorker(
         {
             var tried = string.Join("; ", cloneCandidates.Select((c, i) =>
             {
-                var r = results.First(x => x.RepoId == c.Id);
-                return $"[{i + 1}] {c.Mode} {c.RemoteUrl} branch='{r.DefaultBranch}'";
+                var r = results.FirstOrDefault(x => x.RepoId == c.Id);
+                return $"[{i + 1}] {c.Mode} {c.RemoteUrl} branch='{r?.DefaultBranch ?? c.DefaultBranch}'";
             }));
             throw new InvalidOperationException(
                 $"Base branch was not found on any configured clone-source remote (tried {cloneCandidates.Count}): {tried}. " +
