@@ -731,6 +731,109 @@ public class CiCdPipelineTests(AspireFixture fixture)
 
         Assert.Equal(HttpStatusCode.BadRequest, triggerResp.StatusCode);
     }
+
+    /// <summary>
+    /// Verifies that a step configured in the project's <c>SkipSteps</c> setting is actually
+    /// skipped during the run. The dummy <c>ci.yml</c> workflow has an "Upload build output"
+    /// step in the <c>build</c> job; skipping it should prevent the <c>build-output</c> artifact
+    /// from being created while allowing the rest of the workflow (including the <c>test</c> job)
+    /// to succeed.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(RuntimeModes))]
+    public async Task CiCdRun_SkipsStepWhenConfigured(string runtimeMode)
+    {
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip(SkipReason(runtimeMode));
+
+        var (client, projectId) = await SetupProjectAsync();
+        using var _ = client;
+
+        // Fetch the project to get its current name and slug before updating.
+        var getResp = await client.GetAsync($"/api/projects/{projectId}");
+        getResp.EnsureSuccessStatusCode();
+        var existing = await getResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        // Update the project with skipSteps set to skip the artifact-upload step in the build job.
+        // Skipping "Upload build output" leaves the build/test echo steps intact so the run succeeds.
+        var updateResp = await client.PutAsJsonAsync($"/api/projects/{projectId}", new
+        {
+            name = existing.GetProperty("name").GetString(),
+            slug = existing.GetProperty("slug").GetString(),
+            orgId = Guid.Parse(existing.GetProperty("orgId").GetString()!),
+            skipSteps = "build:Upload build output",
+        });
+        updateResp.EnsureSuccessStatusCode();
+
+        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+            BuildTriggerPayload(projectId, "e2e-skipstep-abc", runtimeMode, "ci.yml"));
+
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
+
+        // Allow a short window for artifact processing after the run completes, then check.
+        await Task.Delay(TimeSpan.FromSeconds(3));
+        var artifactsResp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts");
+        artifactsResp.EnsureSuccessStatusCode();
+        var artifacts = await artifactsResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        var artifactNames = artifacts.EnumerateArray()
+            .Select(a => a.GetProperty("name").GetString())
+            .ToList();
+
+        // The "Upload build output" step was skipped — so "build-output" must not be present.
+        Assert.DoesNotContain("build-output", artifactNames);
+
+        // The test job (which does not depend on the artifact file) should still have run.
+        Assert.Contains("test-results", artifactNames);
+    }
+
+    /// <summary>
+    /// Verifies that <c>GET /api/cicd-runs/step-suggestions</c> returns job/step combinations
+    /// from recent runs and that the result is non-empty after at least one run has completed.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(RuntimeModes))]
+    public async Task StepSuggestions_ReturnsStepsAfterRun(string runtimeMode)
+    {
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip(SkipReason(runtimeMode));
+
+        var (client, projectId) = await SetupProjectAsync();
+        using var _ = client;
+
+        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+            BuildTriggerPayload(projectId, "e2e-suggestions-abc", runtimeMode, "ci.yml"));
+
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
+
+        var suggestResp = await client.GetAsync(
+            $"/api/cicd-runs/step-suggestions?projectId={projectId}");
+        Assert.Equal(HttpStatusCode.OK, suggestResp.StatusCode);
+
+        var jobs = await suggestResp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(jobs.GetArrayLength() > 0, "Expected at least one job in step suggestions.");
+
+        // The dummy ci.yml defines "build" and "test" (stored as "CI/build", "CI/test");
+        // after normalisation the suggestions should expose just "build" and "test".
+        var jobIds = jobs.EnumerateArray()
+            .Select(j => j.GetProperty("jobId").GetString()!)
+            .ToList();
+        Assert.Contains("build", jobIds);
+        Assert.Contains("test", jobIds);
+
+        // Each job should have at least one step.
+        foreach (var job in jobs.EnumerateArray())
+        {
+            var steps = job.GetProperty("steps");
+            Assert.True(steps.GetArrayLength() > 0,
+                $"Job '{job.GetProperty("jobId").GetString()}' should have at least one step.");
+        }
+    }
+
     private static async Task<JsonElement> WaitForRunOfProjectAsync(
         HttpClient client,
         string projectId,
