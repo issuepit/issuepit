@@ -746,6 +746,18 @@
               <span v-else class="text-xs text-gray-400">#{{ store.currentIssue.gitHubIssueNumber }}</span>
             </div>
 
+            <!-- Issue Branch -->
+            <div v-if="store.currentIssue.gitBranch">
+              <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Branch</p>
+              <div class="flex items-center gap-1.5">
+                <svg class="w-3 h-3 text-green-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />
+                </svg>
+                <span class="text-xs font-mono text-green-300 truncate" :title="store.currentIssue.gitBranch">{{ store.currentIssue.gitBranch }}</span>
+              </div>
+            </div>
+
             <!-- Linked Branches / Commits -->
             <div v-if="store.currentGitMappings.length">
               <p class="text-xs text-gray-500 uppercase tracking-wide mb-1.5">Linked Branches</p>

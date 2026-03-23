@@ -164,4 +164,67 @@ public class IssueDetailPage(IPage page)
     {
         return await page.Locator("textarea[placeholder*='Leave a comment']").InputValueAsync();
     }
+
+    /// <summary>
+    /// Returns true if the branch input in the comment footer is visible.
+    /// Appears when the comment textarea contains an @agent mention.
+    /// </summary>
+    public async Task<bool> IsCommentBranchInputVisibleAsync()
+    {
+        return await page.Locator("input[placeholder*='branch (optional)']").IsVisibleAsync();
+    }
+
+    /// <summary>
+    /// Sets the branch value in the comment footer branch input.
+    /// </summary>
+    public async Task SetCommentBranchAsync(string branch)
+    {
+        var input = page.Locator("input[placeholder*='branch (optional)']");
+        await input.FillAsync(branch);
+    }
+
+    /// <summary>
+    /// Returns the current value of the comment footer branch input.
+    /// </summary>
+    public async Task<string> GetCommentBranchValueAsync()
+    {
+        return await page.Locator("input[placeholder*='branch (optional)']").InputValueAsync();
+    }
+
+    /// <summary>
+    /// Opens the agent assignment modal by selecting the given agent from the sidebar dropdown.
+    /// </summary>
+    public async Task OpenAssignAgentModalAsync(string agentName)
+    {
+        var assignSelect = page.Locator("select:has(option:has-text('Assign agent'))");
+        await assignSelect.WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Default });
+        await assignSelect.SelectOptionAsync(new SelectOptionValue { Label = $"🤖 {agentName}" });
+        await page.WaitForSelectorAsync("text=Optionally add a comment",
+            new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+    }
+
+    /// <summary>
+    /// Returns true if the branch input inside the agent assignment modal is visible.
+    /// </summary>
+    public async Task<bool> IsAssignAgentModalBranchInputVisibleAsync()
+    {
+        return await page.Locator(".fixed input[placeholder*='default branch']").IsVisibleAsync();
+    }
+
+    /// <summary>
+    /// Sets the branch value inside the agent assignment modal.
+    /// </summary>
+    public async Task SetAssignAgentModalBranchAsync(string branch)
+    {
+        var input = page.Locator(".fixed input[placeholder*='default branch']");
+        await input.FillAsync(branch);
+    }
+
+    /// <summary>
+    /// Returns the value of the branch input inside the agent assignment modal.
+    /// </summary>
+    public async Task<string> GetAssignAgentModalBranchValueAsync()
+    {
+        return await page.Locator(".fixed input[placeholder*='default branch']").InputValueAsync();
+    }
 }
