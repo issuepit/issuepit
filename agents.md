@@ -86,6 +86,8 @@ When working as a coding agent on this repository, follow these conventions:
 
 - **Do not hide errors with silent fallbacks.** A fallback that masks a misconfiguration (e.g. cloning a git repo without `--branch` when the configured branch does not exist in the remote) prevents the user from understanding what went wrong. Instead, fail fast with a clear, actionable error message that identifies the misconfiguration and how to fix it.
 
+- **No hidden fallbacks in git remote selection.** When selecting a clone source or push target, do not fall back to an arbitrary remote (e.g. by `LastFetchedAt` or similar implementation-detail ordering). If the project's git remotes are not correctly configured (e.g. no remote has a `DefaultBranch` set, or no Working-mode remote exists), the agent run must fail immediately with a clear error message instructing the user to fix the configuration. Silent fallbacks would let a run proceed against the wrong remote, making the failure much harder to diagnose.
+
 ## Date Formats
 
 Always use **ISO 8601 format** (`YYYY-MM-DD`) for dates in custom issue properties, API responses, and any user-visible date fields. Do not rely on browser locale formatting (e.g. `mm/dd/yyyy`) for date values stored or displayed in the application. Date inputs in forms should accept and display dates in `YYYY-MM-DD` format.

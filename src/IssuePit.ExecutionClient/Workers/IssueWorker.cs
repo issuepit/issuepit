@@ -368,30 +368,28 @@ public class IssueWorker(
         // Clone source: the remote with the most commits on its DefaultBranch (deepest commit chain).
         // "Most commits" means the remote whose DefaultBranch HEAD is furthest from the root in the
         // git ancestry graph — i.e. has the highest git rev-list --count value, updated by
-        // GitPollingService on every successful fetch. Falls back to LastFetchedAt when no
-        // DefaultBranchCommitCount is available yet (e.g. first run before polling has set it),
-        // and ultimately to the push target (Working-mode remote) when no remote has a DefaultBranch.
+        // GitPollingService on every successful fetch.
         //
         // Ordering rationale:
         //   1st: DefaultBranchCommitCount descending — prefer the remote with the newest/most commits.
-        //   2nd: LastFetchedAt descending        — tiebreaker when commit counts are equal/unavailable.
-        //   3rd: Working mode                    — final tiebreaker: prefer Working to co-locate clone
-        //                                          and push target when everything else is equal.
+        //   2nd: Working mode                        — tiebreaker: prefer Working to co-locate clone
+        //                                              and push target when commit counts are equal.
         //
         // The clone source and push target are intentionally kept separate: any remote with a
         // DefaultBranch set may be used for cloning (e.g. a Release/upstream remote that is more
         // up-to-date), while the push target is always the Working-mode remote. Both configurations —
         // same clone/push remote and different clone/push remote — are supported.
         //
+        // No fallback: if no remote has a DefaultBranch configured, CheckBranchOnRemotesAsync throws
+        // with a clear error rather than silently selecting an unrelated remote.
+        //
         // DefaultBranch is the "base pull branch": used to create agent feature branches when
         // issue.GitBranch is not set, and as the default target for merge/pull requests.
         var cloneRepository = allGitRepositories
             .Where(r => !string.IsNullOrWhiteSpace(r.DefaultBranch))
             .OrderByDescending(r => r.DefaultBranchCommitCount ?? 0)
-            .ThenByDescending(r => r.LastFetchedAt)
             .ThenByDescending(r => r.Mode == GitOriginMode.Working)
-            .FirstOrDefault()
-            ?? gitRepository;
+            .FirstOrDefault();
 
         // Load the per-project push policy for this agent. Falls back to Forbidden when no
         // explicit AgentProject row exists (e.g. org-level links without a project override).
@@ -1511,9 +1509,9 @@ public class IssueWorker(
     /// <para>Clone vs push separation:</para>
     /// <list type="bullet">
     ///   <item><description>
-    ///     <b>Clone source</b>: <paramref name="cloneRepository"/> — the remote with the newest
-    ///     content (highest <see cref="GitRepository.LastFetchedAt"/>), marked as <c>Selected</c>
-    ///     in the results.
+    ///     <b>Clone source</b>: <paramref name="cloneRepository"/> — the remote with the most
+    ///     commits on its DefaultBranch (highest <see cref="GitRepository.DefaultBranchCommitCount"/>),
+    ///     marked as <c>Selected</c> in the results.
     ///   </description></item>
     ///   <item><description>
     ///     <b>Push target</b>: always the Working-mode remote, handled by the caller.
