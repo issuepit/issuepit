@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/issuepit/issuepit/compare/helper-containers-v1.6.0...helper-containers-v1.6.1) (2026-03-23)
+
+
+### Bug Fixes
+
+* cicd skip-steps — settings lost on reload, wizard pre-populate, execution order, e2e tests, act version bump ([#771](https://github.com/issuepit/issuepit/issues/771)) ([9e6600f](https://github.com/issuepit/issuepit/commit/9e6600faad6a4ce60ef8a2367a3ef8d704147799))
+
 ## [1.6.0](https://github.com/issuepit/issuepit/compare/helper-containers-v1.5.0...helper-containers-v1.6.0) (2026-03-22)
 
 
