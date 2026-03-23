@@ -56,6 +56,8 @@ public class IssueWorker(
     // Emitted by DockerAgentRuntime just before post-agent ops (session capture, git push).
     // Must stay in sync with DockerAgentRuntime.PostRunStartMarker.
     private const string PostRunStartMarker = "[ISSUEPIT:POST_RUN_START]";
+    // Emitted by DockerAgentRuntime in manual mode with the full container ID.
+    private const string ManualModeContainerIdMarker = "[ISSUEPIT:MANUAL_MODE_CONTAINER_ID]=";
 
     /// <summary>
     /// Maximum total character count for comments included in the task prompt.
@@ -543,6 +545,7 @@ public class IssueWorker(
             var capturedHasUncommittedChanges = false;
             var capturedGitPushFailed = false;
             string? capturedServerWebUiUrl = null;
+            string? capturedManualModeContainerId = null;
 
             // Track the current phase of the workflow so every log line is tagged with its section.
             var currentSection = AgentLogSection.InitialAgentRun;
@@ -563,6 +566,8 @@ public class IssueWorker(
                     capturedGitPushFailed = true;
                 else if (line.StartsWith(ServerWebUiUrlMarker, StringComparison.Ordinal))
                     capturedServerWebUiUrl = line[ServerWebUiUrlMarker.Length..].Trim();
+                else if (line.StartsWith(ManualModeContainerIdMarker, StringComparison.Ordinal))
+                    capturedManualModeContainerId = line[ManualModeContainerIdMarker.Length..].Trim();
                 else if (line == PostRunStartMarker)
                 {
                     // Transition to the PostRun section for git push and related post-agent operations.
@@ -646,6 +651,42 @@ public class IssueWorker(
                 // Persist the opencode session ID so future runs for the same issue can continue from it.
                 if (!string.IsNullOrEmpty(capturedOpenCodeSessionId))
                     session.OpenCodeSessionId = capturedOpenCodeSessionId;
+                // Persist the container ID for manual mode so the terminal endpoint can attach to it.
+                if (!string.IsNullOrEmpty(capturedManualModeContainerId))
+                    session.ContainerId = capturedManualModeContainerId;
+
+                // In manual mode LaunchAsync returns immediately after workspace setup;
+                // the container is kept alive for the user's terminal session. Persist the
+                // session state and wait for cancellation (user explicitly cancels the session).
+                // Skip all autonomous agent logic (CI/CD, fix loops, etc.).
+                if (agent.ManualMode && !string.IsNullOrEmpty(capturedManualModeContainerId))
+                {
+                    await db.SaveChangesAsync(sessionCts.Token);
+                    // Publish an event so connected clients know the workspace is ready.
+                    await PublishSessionEventAsync(session.Id.ToString(),
+                        JsonSerializer.Serialize(new { @event = "manual-mode-ready", containerId = capturedManualModeContainerId[..Math.Min(12, capturedManualModeContainerId.Length)] }));
+                    // Block until the user cancels the session.
+                    try
+                    {
+                        await Task.Delay(Timeout.Infinite, sessionCts.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Session was cancelled by the user — proceed to cleanup below.
+                    }
+                    // Stop and remove the container on session end.
+                    if (execRuntime is not null && capturedManualModeContainerId is not null)
+                    {
+                        if (session.KeepContainer)
+                            await AppendLogAsync(session.Id,
+                                $"[DEBUG] Container kept alive for inspection (KeepContainer=true). ID: {capturedManualModeContainerId[..Math.Min(12, capturedManualModeContainerId.Length)]}",
+                                LogStream.Stdout, section: null, sectionIndex: 0, db, CancellationToken.None);
+                        else
+                            await execRuntime.StopContainerAsync(capturedManualModeContainerId, remove: true, CancellationToken.None);
+                    }
+                    session.ContainerId = null; // clear — container is gone
+                    throw new OperationCanceledException(sessionCts.Token); // re-throw so catch sets Cancelled status
+                }
 
                 // When git push failed, attempt to upload the .git folder as a recovery artifact
                 // so the agent's committed work is not lost. Only attempted for the exec flow

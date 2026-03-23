@@ -136,4 +136,14 @@ public class AgentSession
     /// </summary>
     [NotMapped]
     public AgentPushPolicy PushPolicy { get; set; } = AgentPushPolicy.Forbidden;
+
+    /// <summary>
+    /// The ID of the running Docker container for this session.
+    /// Set when the session is in manual mode (<see cref="Agent.ManualMode"/>) so the API
+    /// terminal endpoint can attach to the container and relay PTY I/O to the browser.
+    /// Also set for autonomous runs while the container is alive.
+    /// Cleared when the container is removed.
+    /// </summary>
+    [MaxLength(200)]
+    public string? ContainerId { get; set; }
 }

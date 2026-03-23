@@ -8,6 +8,7 @@
     <PackageReference Include="Aspire.Npgsql.EntityFrameworkCore.PostgreSQL" Version="13.1.2" />
     <PackageReference Include="Aspire.StackExchange.Redis" Version="13.1.2" />
     <PackageReference Include="AWSSDK.S3" Version="4.0.18.7" />
+    <PackageReference Include="Docker.DotNet.Enhanced" Version="3.132.0" />
     <PackageReference Include="FFMpegCore" Version="5.4.0" />
     <PackageReference Include="FFMpegCore.Extensions.Downloader" Version="5.0.0" />
     <PackageReference Include="LibGit2Sharp" Version="0.30.0" />
@@ -29,6 +30,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\IssuePit.Core\IssuePit.Core.csproj" />
+    <ProjectReference Include="..\IssuePit.DockerRuntime\IssuePit.DockerRuntime.csproj" />
     <ProjectReference Include="..\IssuePit.ServiceDefaults\IssuePit.ServiceDefaults.csproj" />
   </ItemGroup>
 </Project>
