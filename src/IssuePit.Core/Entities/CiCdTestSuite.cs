@@ -19,6 +19,13 @@ public class CiCdTestSuite
     [MaxLength(500)]
     public string ArtifactName { get; set; } = string.Empty;
 
+    /// <summary>
+    /// The CI/CD job name (act <c>jobID</c>) that uploaded this artifact, inferred from run log entries.
+    /// Null when the job name could not be determined (e.g. bare TRX files or legacy rows).
+    /// </summary>
+    [MaxLength(200)]
+    public string? JobId { get; set; }
+
     public int TotalTests { get; set; }
     public int PassedTests { get; set; }
     public int FailedTests { get; set; }
