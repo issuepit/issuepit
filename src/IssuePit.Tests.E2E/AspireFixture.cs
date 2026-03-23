@@ -23,6 +23,12 @@ public sealed class AspireFixture : IAsyncLifetime
     /// <summary>HTTP client pre-pointed at the <c>mcp-server</c> Aspire resource.</summary>
     public HttpClient? McpClient { get; private set; }
 
+    /// <summary>HTTP client pre-pointed at the <c>git-server</c> Aspire resource.</summary>
+    public HttpClient? GitServerClient { get; private set; }
+
+    /// <summary>Base URL of the git server (e.g. "http://localhost:5038"), used for git CLI operations.</summary>
+    public string? GitServerUrl { get; private set; }
+
     /// <summary>Kafka bootstrap servers resolved from the Aspire-started Kafka container.</summary>
     public string? KafkaBootstrapServers { get; private set; }
 
@@ -152,6 +158,18 @@ public sealed class AspireFixture : IAsyncLifetime
         McpClient = App.CreateHttpClient("mcp-server");
         KafkaBootstrapServers = await App.GetConnectionStringAsync("kafka");
 
+        // Resolve the git server URL for real git CLI operations in E2E tests.
+        try
+        {
+            GitServerClient = App.CreateHttpClient("git-server");
+            GitServerUrl = GitServerClient.BaseAddress?.ToString().TrimEnd('/');
+        }
+        catch
+        {
+            GitServerClient = null;
+            GitServerUrl = null;
+        }
+
         // Attempt to resolve the Aspire-started frontend URL; fall back to env var.
         try
         {
@@ -177,6 +195,7 @@ public sealed class AspireFixture : IAsyncLifetime
     {
         ApiClient?.Dispose();
         McpClient?.Dispose();
+        GitServerClient?.Dispose();
         if (App is not null)
             await App.DisposeAsync();
 

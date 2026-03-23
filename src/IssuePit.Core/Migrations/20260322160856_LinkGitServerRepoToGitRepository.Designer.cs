@@ -3,6 +3,7 @@ using System;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace IssuePit.Core.Migrations
 {
     [DbContext(typeof(IssuePitDbContext))]
-    partial class IssuePitDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260322160856_LinkGitServerRepoToGitRepository")]
+    partial class LinkGitServerRepoToGitRepository
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -469,9 +472,6 @@ namespace IssuePit.Core.Migrations
                     b.Property<Guid?>("RetryOfRunId")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("SkipSteps")
-                        .HasColumnType("text");
-
                     b.Property<DateTime>("StartedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -598,10 +598,6 @@ namespace IssuePit.Core.Migrations
 
                     b.Property<int>("FailedTests")
                         .HasColumnType("integer");
-
-                    b.Property<string>("JobId")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
 
                     b.Property<int>("PassedTests")
                         .HasColumnType("integer");
@@ -1007,9 +1003,6 @@ namespace IssuePit.Core.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
-
-                    b.Property<int?>("DefaultBranchCommitCount")
-                        .HasColumnType("integer");
 
                     b.Property<Guid?>("GitHubIdentityId")
                         .HasColumnType("uuid");
@@ -1961,9 +1954,6 @@ namespace IssuePit.Core.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
-                    b.Property<string>("SkipSteps")
-                        .HasColumnType("text");
-
                     b.Property<string>("Slug")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -2066,9 +2056,6 @@ namespace IssuePit.Core.Migrations
 
                     b.Property<bool>("RequiresRunApproval")
                         .HasColumnType("boolean");
-
-                    b.Property<string>("SkipSteps")
-                        .HasColumnType("text");
 
                     b.Property<string>("Slug")
                         .IsRequired()

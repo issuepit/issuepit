@@ -49,6 +49,7 @@ builder.Services.AddHostedService<SimilarIssueBackgroundService>();
 builder.Services.AddScoped<TenantContext>();
 builder.Services.AddScoped<TenantDatabaseService>();
 builder.Services.AddScoped<GitService>();
+builder.Services.AddScoped<GitRepoManager>();
 builder.Services.AddScoped<ApiKeyResolverService>();
 builder.Services.AddScoped<IssueEnhancementService>();
 builder.Services.AddScoped<CiCdRunQueueService>();

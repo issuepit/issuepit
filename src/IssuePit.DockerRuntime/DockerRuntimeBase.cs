@@ -253,6 +253,14 @@ public abstract class DockerRuntimeBase
             : branch;
 
     /// <summary>
+    /// Returns the IssuePit Git Server base URL from configuration, or <c>null</c> when not configured.
+    /// Agents can use this to add the IssuePit git server as a remote inside containers.
+    /// Configured via <c>GitServer__BaseUrl</c> (injected by AppHost into execution-client and cicd-client).
+    /// </summary>
+    protected static string? GetIssuePitGitServerUrl(Microsoft.Extensions.Configuration.IConfiguration config) =>
+        config["GitServer__BaseUrl"];
+
+    /// <summary>
     /// Generates a conventional-commits-style feature branch name from an issue number and title.
     /// Format: <c>{verb}/{number}-{slug}</c> (e.g. <c>fix/42-null-pointer-in-login</c>).
     /// Mirrors the branch-name logic that was previously in <c>entrypoint.sh</c>.
