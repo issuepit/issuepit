@@ -718,13 +718,11 @@ public class CiCdRunsController(
                 .FirstOrDefaultAsync();
 
             if (activeRun is not null)
-                return Conflict(new
-                {
-                    error = "Another run is already in progress for this project.",
-                    activeRunId = activeRun.Id,
-                    activeRunStatus = activeRun.StatusName,
-                    canForce = true,
-                });
+                return Conflict(new ActiveRunConflictResponse(
+                    Error: "Another run is already in progress for this project.",
+                    ActiveRunId: activeRun.Id,
+                    ActiveRunStatus: activeRun.StatusName,
+                    CanForce: true));
         }
 
         // Re-resolve the remote URL so the container can clone the latest state of the repo.
@@ -813,6 +811,23 @@ public class CiCdRunsController(
         var commitSha = !string.IsNullOrWhiteSpace(request.CommitSha)
             ? request.CommitSha
             : (repo is not null ? gitService.GetBranchTipSha(repo, request.Branch!) : null) ?? request.Branch!;
+
+        // Warn if another run for the same project is already in progress, unless the caller forces it.
+        if (request.Force != true)
+        {
+            var activeRun = await db.CiCdRuns
+                .Where(r => r.ProjectId == request.ProjectId
+                    && (r.Status == CiCdRunStatus.Running || r.Status == CiCdRunStatus.Pending))
+                .Select(r => new { r.Id, StatusName = r.Status.ToString() })
+                .FirstOrDefaultAsync();
+
+            if (activeRun is not null)
+                return Conflict(new ActiveRunConflictResponse(
+                    Error: "Another run is already in progress for this project.",
+                    ActiveRunId: activeRun.Id,
+                    ActiveRunStatus: activeRun.StatusName,
+                    CanForce: true));
+        }
 
         // Create the run record immediately (Pending) so it shows as queued in the UI.
         // Manual triggers are user-initiated so they bypass RequiresRunApproval.
@@ -958,7 +973,16 @@ public record TriggerRunRequest(
     /// <summary>Input key-value pairs for workflow_dispatch events.</summary>
     Dictionary<string, string>? Inputs = null,
     /// <summary>Override the Docker image used for the CI/CD container (the container that runs act). Null or empty = use configured default.</summary>
-    string? CustomImage = null);
+    string? CustomImage = null,
+    /// <summary>When true the trigger proceeds even if another run for the same project is already in progress.</summary>
+    bool Force = false);
+
+/// <summary>Conflict response returned when another run is already active for the project and the caller has not set the force flag.</summary>
+public record ActiveRunConflictResponse(
+    string Error,
+    Guid ActiveRunId,
+    string ActiveRunStatus,
+    bool CanForce);
 
 
 /// <summary>Per-job status derived from log analysis for the mini-graph tooltip.</summary>
