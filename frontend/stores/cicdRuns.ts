@@ -149,7 +149,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
 
   async function retryRun(runId: string, options?: {
     keepContainerOnFailure?: boolean
-    forceRetry?: boolean
+    forceRetryWithActiveRunIds?: string[]
     noDind?: boolean
     noVolumeMounts?: boolean
     customImage?: string
@@ -223,7 +223,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     workflow?: string
     inputs?: Record<string, string>
     customImage?: string
-    force?: boolean
+    forceWithActiveRunIds?: string[]
   }) {
     await api.post('/api/cicd-runs/trigger', request)
   }

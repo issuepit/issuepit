@@ -707,21 +707,25 @@ public class CiCdRunsController(
         if (run.Status is CiCdRunStatus.Pending or CiCdRunStatus.Running or CiCdRunStatus.WaitingForApproval)
             return Conflict(new { error = "Run is still in progress. Cancel it before retriggering.", run.Status, StatusName = run.Status.ToString() });
 
-        // Warn if another run for the same project is already in progress, unless the caller forces it.
-        if (options?.ForceRetry != true)
-        {
-            var activeRun = await db.CiCdRuns
-                .Where(r => r.ProjectId == run.ProjectId
-                    && r.Id != run.Id
-                    && (r.Status == CiCdRunStatus.Running || r.Status == CiCdRunStatus.Pending))
-                .Select(r => new { r.Id, StatusName = r.Status.ToString() })
-                .FirstOrDefaultAsync();
+        // Warn if another run for the same project is already in progress, unless the caller
+        // explicitly acknowledges the active runs by providing their IDs.
+        var activeRunIds = await db.CiCdRuns
+            .Where(r => r.ProjectId == run.ProjectId
+                && r.Id != run.Id
+                && (r.Status == CiCdRunStatus.Running || r.Status == CiCdRunStatus.Pending))
+            .Select(r => r.Id)
+            .ToListAsync();
 
-            if (activeRun is not null)
+        if (activeRunIds.Count > 0)
+        {
+            var unacknowledged = activeRunIds
+                .Except(options?.ForceRetryWithActiveRunIds ?? [])
+                .ToList();
+
+            if (unacknowledged.Count > 0)
                 return Conflict(new ActiveRunConflictResponse(
                     Error: "Another run is already in progress for this project.",
-                    ActiveRunId: activeRun.Id,
-                    ActiveRunStatus: activeRun.StatusName,
+                    ActiveRunIds: activeRunIds,
                     CanForce: true));
         }
 
@@ -812,20 +816,26 @@ public class CiCdRunsController(
             ? request.CommitSha
             : (repo is not null ? gitService.GetBranchTipSha(repo, request.Branch!) : null) ?? request.Branch!;
 
-        // Warn if another run for the same project is already in progress, unless the caller forces it.
-        if (request.Force != true)
-        {
-            var activeRun = await db.CiCdRuns
-                .Where(r => r.ProjectId == request.ProjectId
-                    && (r.Status == CiCdRunStatus.Running || r.Status == CiCdRunStatus.Pending))
-                .Select(r => new { r.Id, StatusName = r.Status.ToString() })
-                .FirstOrDefaultAsync();
+        // Warn if another run for the same project is already in progress, unless the caller
+        // explicitly acknowledges the active runs by providing their IDs.
+        var activeRunIds = await db.CiCdRuns
+            .Where(r => r.ProjectId == request.ProjectId
+                && (r.Status == CiCdRunStatus.Running || r.Status == CiCdRunStatus.Pending))
+            .Select(r => r.Id)
+            .ToListAsync();
 
-            if (activeRun is not null)
+        if (activeRunIds.Count > 0)
+        {
+            // Check whether any currently-active run was not in the caller's acknowledged list.
+            // This catches runs that started after the conflict dialog was shown.
+            var unacknowledged = activeRunIds
+                .Except(request.ForceWithActiveRunIds ?? [])
+                .ToList();
+
+            if (unacknowledged.Count > 0)
                 return Conflict(new ActiveRunConflictResponse(
                     Error: "Another run is already in progress for this project.",
-                    ActiveRunId: activeRun.Id,
-                    ActiveRunStatus: activeRun.StatusName,
+                    ActiveRunIds: activeRunIds,
                     CanForce: true));
         }
 
@@ -918,8 +928,12 @@ public class CiCdRunsController(
 public record RetryRunOptions(
     /// <summary>When true the Docker container is not removed after a failed run, for debugging.</summary>
     bool KeepContainerOnFailure = false,
-    /// <summary>When true the retry proceeds even if another run for the same project is already in progress.</summary>
-    bool ForceRetry = false,
+    /// <summary>
+    /// IDs of the active runs the caller has explicitly acknowledged. When provided, the retry
+    /// proceeds even if those runs are still in progress. If any new active runs have appeared
+    /// since the conflict was surfaced, a fresh 409 is returned.
+    /// </summary>
+    IReadOnlyList<Guid>? ForceRetryWithActiveRunIds = null,
     /// <summary>When true the Docker socket is NOT mounted into the container (disables Docker-in-Docker).</summary>
     bool NoDind = false,
     /// <summary>When true no host volumes are mounted into the container (workspace and docker socket are omitted).</summary>
@@ -974,14 +988,17 @@ public record TriggerRunRequest(
     Dictionary<string, string>? Inputs = null,
     /// <summary>Override the Docker image used for the CI/CD container (the container that runs act). Null or empty = use configured default.</summary>
     string? CustomImage = null,
-    /// <summary>When true the trigger proceeds even if another run for the same project is already in progress.</summary>
-    bool Force = false);
+    /// <summary>
+    /// IDs of the active runs the caller has explicitly acknowledged. When provided, the trigger
+    /// proceeds even if those runs are still in progress. If any new active runs have appeared
+    /// since the conflict was surfaced, a fresh 409 is returned.
+    /// </summary>
+    IReadOnlyList<Guid>? ForceWithActiveRunIds = null);
 
-/// <summary>Conflict response returned when another run is already active for the project and the caller has not set the force flag.</summary>
+/// <summary>Conflict response returned when another run is already active for the project and the caller has not acknowledged all active run IDs.</summary>
 public record ActiveRunConflictResponse(
     string Error,
-    Guid ActiveRunId,
-    string ActiveRunStatus,
+    IReadOnlyList<Guid> ActiveRunIds,
     bool CanForce);
 
 

@@ -177,7 +177,7 @@
 import type { WorkflowInfo, WorkflowInput } from '~/types'
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 
-interface TriggerConflictResponse { error?: string; canForce?: boolean; activeRunId?: string }
+interface TriggerConflictResponse { error?: string; canForce?: boolean; activeRunIds?: string[] }
 
 const props = defineProps<{
   projectId: string
@@ -220,7 +220,7 @@ const inputValues = ref<Record<string, string>>({})
 const inputBooleans = ref<Record<string, boolean>>({})
 const triggering = ref(false)
 const triggerError = ref<string | null>(null)
-const triggerConflict = ref<{ message: string; activeRunId: string } | null>(null)
+const triggerConflict = ref<{ message: string; activeRunIds: string[] } | null>(null)
 const loadingWorkflows = ref(false)
 const workflows = ref<WorkflowInfo[]>([])
 
@@ -263,7 +263,7 @@ onMounted(async () => {
   loadingWorkflows.value = false
 })
 
-async function triggerRun(force = false) {
+async function triggerRun(forceWithActiveRunIds?: string[]) {
   triggerError.value = null
 
   // When commitSha prop is provided (e.g. triggered from the code view), use it directly.
@@ -295,7 +295,7 @@ async function triggerRun(force = false) {
       workflow: selectedWorkflow.value || undefined,
       inputs,
       customImage: import.meta.client ? (localStorage.getItem(ACT_CONTAINER_STORAGE_KEY) ?? undefined) : undefined,
-      force: force ? true : undefined,
+      forceWithActiveRunIds,
     })
     emit('triggered')
   } catch (e: unknown) {
@@ -304,7 +304,7 @@ async function triggerRun(force = false) {
     if (data?.canForce) {
       triggerConflict.value = {
         message: data.error ?? 'Another run is already in progress for this project.',
-        activeRunId: data.activeRunId ?? '',
+        activeRunIds: data.activeRunIds ?? [],
       }
     } else {
       triggerError.value = e instanceof Error ? e.message : 'Failed to trigger run'
@@ -315,7 +315,8 @@ async function triggerRun(force = false) {
 }
 
 async function triggerForce() {
+  const ids = triggerConflict.value?.activeRunIds
   triggerConflict.value = null
-  await triggerRun(true)
+  await triggerRun(ids)
 }
 </script>
