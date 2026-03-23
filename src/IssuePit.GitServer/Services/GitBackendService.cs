@@ -42,7 +42,10 @@ public class GitBackendService(ILogger<GitBackendService> logger)
         // this whenever we have an authenticated user.
         if (!string.IsNullOrEmpty(remoteUser))
             psi.Environment["REMOTE_USER"] = remoteUser;
-        psi.Environment["QUERY_STRING"] = context.Request.QueryString.Value ?? "";
+        // CGI spec requires QUERY_STRING without the leading '?'.
+        // ASP.NET Core's QueryString.Value includes the leading '?', so we strip it.
+        var rawQuery = context.Request.QueryString.Value ?? "";
+        psi.Environment["QUERY_STRING"] = rawQuery.StartsWith('?') ? rawQuery[1..] : rawQuery;
         psi.Environment["REQUEST_METHOD"] = context.Request.Method;
         psi.Environment["CONTENT_TYPE"] = context.Request.ContentType ?? "";
         psi.Environment["REMOTE_ADDR"] = context.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
