@@ -129,7 +129,8 @@ public class IssueWorkerFailureReportTests
     [Fact]
     public void BuildFailedTestsXml_MultipleSuites_AllIncluded()
     {
-        // Scenario: multiple jobs fail, each with test results.
+        // Scenario: multiple suites have failures — all are included in one XML document.
+        // This covers the case where multiple jobs each produce test result artifacts.
         var suites = new List<FailedTestSuiteInfo>
         {
             new("suite-a", 5, 1, [new FailedTestCaseInfo("A.Test1", "A", "Test1", 1.0, "Suite A assertion failure", null)]),

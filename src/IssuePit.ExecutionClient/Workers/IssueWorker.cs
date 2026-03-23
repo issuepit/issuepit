@@ -1340,9 +1340,14 @@ public class IssueWorker(
         sb.AppendLine();
 
         // ── Check for stored test results ────────────────────────────────────────
-        // Query for any suites with failures so they can be emitted as XML below.
-        // Test results and raw job logs are emitted independently — both may appear
-        // together when some jobs have test artifacts and others do not.
+        // We split the output into two groups:
+        //   • "Jobs with tests" — at least one CiCdTestSuite was stored for this run.
+        //     If any suite has failures → emit XML (precise, structured failure details).
+        //     If all suites pass but the run still fails → emit raw logs (non-test failure
+        //     despite passing tests).
+        //   • "Jobs without tests" — no CiCdTestSuite rows exist for this run.
+        //     Emit raw logs for every failed job.
+        // Note: CiCdTestSuite has no JobId field, so the split is at the run level.
         var failedSuites = await db.CiCdTestSuites
             .Where(s => s.CiCdRunId == runId && s.FailedTests > 0)
             .OrderBy(s => s.ArtifactName)
@@ -1367,12 +1372,16 @@ public class IssueWorker(
             })
             .ToListAsync(cancellationToken);
 
-        // ── Failed test results (XML) ────────────────────────────────────────────
-        // Always emit XML when any test suite has failures, regardless of whether raw
-        // job logs are also included below.  This handles: multiple jobs each with tests,
-        // and the mixed case where some jobs have test results and others do not.
+        // Short-circuits: AnyAsync is only called when failedSuites is empty (no DB round-trip
+        // needed when we already know there are failed suites for this run).
+        var hasAnyTestSuites = failedSuites.Count > 0 ||
+            await db.CiCdTestSuites.AnyAsync(s => s.CiCdRunId == runId, cancellationToken);
+
         if (failedSuites.Count > 0)
         {
+            // ── Failed test results (XML) ─────────────────────────────────────────
+            // Tests are available and some failed → structured XML is more useful than
+            // raw CI/CD logs. Do not emit raw job logs for these jobs to avoid redundancy.
             sb.AppendLine("--- Failed Test Results ---");
             var suiteInfos = failedSuites
                 .Select(s => new FailedTestSuiteInfo(
@@ -1384,33 +1393,20 @@ public class IssueWorker(
                         .ToList()))
                 .ToList();
             sb.AppendLine(BuildFailedTestsXml(suiteInfos));
-            sb.AppendLine();
         }
-
-        // ── Failed job logs ──────────────────────────────────────────────────────
-        // Always emit raw logs for every failed job so that non-test job failures are
-        // covered even when some jobs produced test result artifacts.
-        if (failedJobIds.Count > 0)
+        else if (hasAnyTestSuites)
         {
-            foreach (var jobId in failedJobIds.OrderBy(j => j))
-            {
-                sb.AppendLine($"--- Failed Job: {jobId} ---");
-
-                var jobLogs = await db.CiCdRunLogs
-                    .Where(l => l.CiCdRunId == runId && l.JobId == jobId)
-                    .OrderByDescending(l => l.Timestamp)
-                    .Take(100)
-                    .OrderBy(l => l.Timestamp)
-                    .Select(l => new { l.Line, l.Stream })
-                    .ToListAsync(cancellationToken);
-
-                foreach (var log in jobLogs)
-                    sb.AppendLine(log.Stream == LogStream.Stderr ? $"[stderr] {log.Line}" : log.Line);
-
-                sb.AppendLine();
-            }
+            // ── All tests pass but the run still failed ───────────────────────────
+            // Test results exist but show no failures — something outside the tests broke
+            // the job. Emit raw job logs so the agent can diagnose the real cause.
+            await AppendFailedJobLogsAsync(sb, runId, failedJobIds, db, cancellationToken);
         }
-        else if (failedSuites.Count == 0)
+        else if (failedJobIds.Count > 0)
+        {
+            // ── No test results — emit raw job logs ───────────────────────────────
+            await AppendFailedJobLogsAsync(sb, runId, failedJobIds, db, cancellationToken);
+        }
+        else
         {
             // No jobs had a "Job failed" terminal line and no test results — fall back to the last
             // 200 total lines plus extra stderr lines to ensure errors are always represented.
@@ -1443,6 +1439,36 @@ public class IssueWorker(
         }
 
         return sb.ToString().Trim();
+    }
+
+    /// <summary>
+    /// Appends the last 100 log lines for each failed job to <paramref name="sb"/>.
+    /// Used when raw CI/CD logs are the appropriate diagnostic output (no test failures).
+    /// </summary>
+    private static async Task AppendFailedJobLogsAsync(
+        StringBuilder sb,
+        Guid runId,
+        IEnumerable<string> failedJobIds,
+        IssuePitDbContext db,
+        CancellationToken cancellationToken)
+    {
+        foreach (var jobId in failedJobIds.OrderBy(j => j))
+        {
+            sb.AppendLine($"--- Failed Job: {jobId} ---");
+
+            var jobLogs = await db.CiCdRunLogs
+                .Where(l => l.CiCdRunId == runId && l.JobId == jobId)
+                .OrderByDescending(l => l.Timestamp)
+                .Take(100)
+                .OrderBy(l => l.Timestamp)
+                .Select(l => new { l.Line, l.Stream })
+                .ToListAsync(cancellationToken);
+
+            foreach (var log in jobLogs)
+                sb.AppendLine(log.Stream == LogStream.Stderr ? $"[stderr] {log.Line}" : log.Line);
+
+            sb.AppendLine();
+        }
     }
 
     /// <summary>
