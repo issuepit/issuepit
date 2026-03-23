@@ -286,6 +286,15 @@
                     placeholder="e.g. --verbose --reuse"
                     class="w-full bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-300 px-2.5 py-1.5 placeholder-gray-600 focus:outline-none focus:border-brand-500" />
                 </div>
+                <div>
+                  <label class="block text-xs text-gray-500 mb-1">Skip steps</label>
+                  <textarea
+                    v-model="retryOptions.skipSteps"
+                    rows="3"
+                    placeholder="deploy&#10;build:upload-artifacts"
+                    class="w-full bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-300 font-mono px-2.5 py-1.5 placeholder-gray-600 focus:outline-none focus:border-brand-500 resize-y" />
+                  <p class="text-xs text-gray-600 mt-1">One entry per line. Overrides the project skip-step setting for this retry. Leave blank to inherit from the project setting.</p>
+                </div>
               </div>
             </details>
 
@@ -521,6 +530,7 @@
                           : blockedJobIds.has(job.id)
                             ? 'border-gray-700 bg-gray-800/40 opacity-40'
                             : 'border-gray-700 bg-gray-800/80 hover:border-gray-600',
+                    ignoredJobIds.has(job.id) ? 'cicd-job-ignored' : '',
                   ]"
                   @mouseenter="hoveredJob = job.id"
                   @mouseleave="hoveredJob = null"
@@ -528,6 +538,13 @@
                   <span class="flex items-center gap-1.5 w-full">
                     <span :class="jobStatusDot(job)" class="w-2 h-2 rounded-full shrink-0" />
                     <span class="text-sm font-medium text-white break-words leading-tight">{{ job.name }}</span>
+                    <!-- Skip-step indicator badge -->
+                    <span
+                      v-if="ignoredJobIds.has(job.id)"
+                      class="ml-auto shrink-0 text-[9px] font-semibold uppercase tracking-wide px-1 py-0.5 rounded bg-orange-900/50 text-orange-400 border border-orange-700/50"
+                      title="One or more steps in this job are configured to be skipped">
+                      skip
+                    </span>
                   </span>
                   <!-- Debug mode: show raw act log IDs and workflow triggers -->
                   <template v-if="debugMode">
@@ -1052,6 +1069,7 @@ const retryOptions = reactive({
   eventName: '',
   branch: '',
   commitSha: '',
+  skipSteps: '',
 })
 const retryConflict = ref<{ message: string; activeRunId: string } | null>(null)
 
@@ -1758,7 +1776,42 @@ const blockedJobIds = computed<Set<string>>(() => {
   return blocked
 })
 
-// ── SVG graph layout ───────────────────────────────────────────────────────────
+/**
+ * Set of job IDs that have at least one step configured to be skipped via the run's skipSteps setting.
+ * An entry `jobId:stepName` marks the named job; bare step names (no colon) mark all jobs.
+ */
+const ignoredJobIds = computed<Set<string>>(() => {
+  const skipSteps = store.currentRun?.skipSteps
+  if (!skipSteps) return new Set()
+
+  const lines = skipSteps.split('\n').map(l => l.trim()).filter(l => l.length > 0)
+  if (lines.length === 0) return new Set()
+
+  // Check if any bare (non-prefixed) step names are configured — if so, all jobs are potentially affected.
+  const hasBareSteps = lines.some(l => !l.includes(':'))
+  if (hasBareSteps) {
+    // Return all graph job IDs
+    return new Set((store.currentRunGraph?.jobs ?? []).map(j => j.id))
+  }
+
+  // Otherwise collect only the job IDs explicitly named in `job:step` entries.
+  const ignored = new Set<string>()
+  const graphJobs = store.currentRunGraph?.jobs ?? []
+  for (const line of lines) {
+    const colonIdx = line.indexOf(':')
+    if (colonIdx < 0) continue
+    const jobPart = line.slice(0, colonIdx).trim().toLowerCase()
+    // Match against graph job IDs (case-insensitive; also match normalized suffix after '/').
+    for (const job of graphJobs) {
+      const normalized = job.id.includes('/')
+        ? job.id.slice(job.id.lastIndexOf('/') + 1).toLowerCase()
+        : job.id.toLowerCase()
+      if (normalized === jobPart || job.id.toLowerCase() === jobPart)
+        ignored.add(job.id)
+    }
+  }
+  return ignored
+})
 
 interface SvgEdge { path: string; highlighted: boolean; isFailure: boolean }
 
@@ -2118,6 +2171,7 @@ function openRetryModal() {
   retryOptions.eventName = store.currentRun?.eventName ?? 'push'
   retryOptions.branch = store.currentRun?.branch ?? ''
   retryOptions.commitSha = store.currentRun?.commitSha ?? ''
+  retryOptions.skipSteps = store.currentRun?.skipSteps ?? ''
   showRetryModal.value = true
 }
 
@@ -2138,6 +2192,7 @@ async function retryRunWithOptions() {
       eventName: retryOptions.eventName.trim() || undefined,
       branch: retryOptions.branch.trim() || undefined,
       commitSha: retryOptions.commitSha.trim() || undefined,
+      skipSteps: retryOptions.skipSteps.trim() !== '' ? retryOptions.skipSteps.trim() : undefined,
     })
     retryOptions.forceRetry = false
     navigateTo(`/projects/${projectId}/runs`)
@@ -2322,3 +2377,17 @@ function navigateToLinkedRun(link: LinkedCiCdRun) {
   }
 }
 </script>
+
+
+<style scoped>
+/* Diagonal-line hatching for job boxes that have one or more skipped steps. */
+.cicd-job-ignored {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 6px,
+    rgba(251, 146, 60, 0.07) 6px,
+    rgba(251, 146, 60, 0.07) 8px
+  );
+}
+</style>

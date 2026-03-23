@@ -53,6 +53,7 @@ public class CiCdRunsController(
                 r.WorkspacePath,
                 r.EventName,
                 r.InputsJson,
+                r.SkipSteps,
             })
             .Take(100)
             .ToListAsync();
@@ -85,6 +86,7 @@ public class CiCdRunsController(
                 r.WorkspacePath,
                 r.EventName,
                 r.InputsJson,
+                r.SkipSteps,
             })
             .FirstOrDefaultAsync();
 
@@ -765,6 +767,9 @@ public class CiCdRunsController(
                 customEntrypoint = options?.CustomEntrypoint,
                 customArgs = options?.CustomArgs,
                 actRunnerImage = options?.ActRunnerImage,
+                // Pass an explicit skipSteps override when the caller supplies one.
+                // The worker falls back to project/org settings when this is null (not sent).
+                skipSteps = options?.SkipSteps,
             },
             userTriggered: true);
 
@@ -913,7 +918,13 @@ public record RetryRunOptions(
     /// <summary>Override the branch to run against. Null or empty = use the original run's branch.</summary>
     string? Branch = null,
     /// <summary>Override the commit SHA to run against. Null or empty = use the original run's commit SHA (or the branch tip when Branch is overridden).</summary>
-    string? CommitSha = null);
+    string? CommitSha = null,
+    /// <summary>
+    /// Override the newline-separated list of step names / job:step pairs to skip.
+    /// Null means inherit from the project / org setting (same as the original run's behaviour).
+    /// Empty string explicitly clears skip-step configuration for this retry.
+    /// </summary>
+    string? SkipSteps = null);
 
 /// <summary>Request body for the external CI/CD sync endpoint.</summary>
 public record ExternalSyncRequest(

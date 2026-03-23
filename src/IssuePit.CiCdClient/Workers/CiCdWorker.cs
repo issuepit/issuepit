@@ -334,6 +334,7 @@ public class CiCdWorker(
 
         run.Status = CiCdRunStatus.Running;
         run.StartedAt = DateTime.UtcNow;
+        run.SkipSteps = trigger.SkipSteps;
         await db.SaveChangesAsync(stoppingToken);
 
         try

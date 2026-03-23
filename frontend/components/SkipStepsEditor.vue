@@ -154,16 +154,33 @@ async function loadSuggestions() {
 async function toggleWizard() {
   showWizard.value = !showWizard.value
   if (showWizard.value) {
+    // Load suggestions first so we can resolve bare step names against jobs.
+    if (suggestions.value.length === 0 && props.projectId) {
+      await loadSuggestions()
+    }
+
     // Pre-check items already present in the textarea.
+    // Supports both `job:step` format (exact match) and bare step names (match against all jobs).
     const existing = (props.modelValue || '')
       .split('\n')
       .map(l => l.trim())
       .filter(l => l.length > 0)
-    wizardSelected.value = new Set(existing)
 
-    if (suggestions.value.length === 0 && props.projectId) {
-      await loadSuggestions()
+    const preSelected = new Set<string>()
+    for (const entry of existing) {
+      if (entry.includes(':')) {
+        // Already `job:step` format — add as-is.
+        preSelected.add(entry)
+      } else {
+        // Bare step name — check it for every job that contains this step.
+        for (const job of suggestions.value) {
+          if (job.steps.includes(entry)) {
+            preSelected.add(`${job.jobId}:${entry}`)
+          }
+        }
+      }
     }
+    wizardSelected.value = preSelected
   }
 }
 

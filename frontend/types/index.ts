@@ -791,6 +791,7 @@ export interface CiCdRun {
   workspacePath?: string
   eventName?: string
   inputsJson?: string
+  skipSteps?: string | null
 }
 
 export type LinkedRunType = 'retry-of' | 'retry' | 'agent-triggered' | 'same-sha'
