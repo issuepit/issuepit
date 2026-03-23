@@ -395,6 +395,23 @@
                   Attach
                   <input type="file" class="hidden" @change="handleCommentFileAttach" />
                 </label>
+                <!-- Branch selector: shown when comment contains an @agent mention -->
+                <div v-if="commentHasAgentMention" class="flex items-center gap-1 self-center">
+                  <svg class="w-3.5 h-3.5 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />
+                  </svg>
+                  <input
+                    v-model="commentBranch"
+                    type="text"
+                    list="comment-branch-list"
+                    placeholder="branch (optional)"
+                    class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-brand-500 font-mono w-36"
+                    title="Branch the agent will start from"
+                  />
+                  <datalist id="comment-branch-list">
+                    <option v-for="b in gitStore.branches" :key="b.name" :value="b.name" />
+                  </datalist>
+                </div>
                 <button @click="submitComment" :disabled="!newComment.trim()"
                   class="text-xs bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white px-3 py-1.5 rounded transition-colors">
                   Comment
@@ -729,6 +746,18 @@
               <span v-else class="text-xs text-gray-400">#{{ store.currentIssue.gitHubIssueNumber }}</span>
             </div>
 
+            <!-- Issue Branch -->
+            <div v-if="store.currentIssue.gitBranch">
+              <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Branch</p>
+              <div class="flex items-center gap-1.5">
+                <svg class="w-3 h-3 text-green-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />
+                </svg>
+                <span class="text-xs font-mono text-green-300 truncate" :title="store.currentIssue.gitBranch">{{ store.currentIssue.gitBranch }}</span>
+              </div>
+            </div>
+
             <!-- Linked Branches / Commits -->
             <div v-if="store.currentGitMappings.length">
               <p class="text-xs text-gray-500 uppercase tracking-wide mb-1.5">Linked Branches</p>
@@ -899,6 +928,26 @@
           </div>
           <p class="text-xs text-gray-500 mt-1.5">Tip: type <code class="bg-gray-800 px-1 rounded">@agent-name</code> to trigger the agent when posting the comment.</p>
         </div>
+        <!-- Branch selector -->
+        <div class="mb-5">
+          <label class="block text-xs font-medium text-gray-400 mb-1.5">
+            <svg class="w-3.5 h-3.5 inline-block mr-1 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />
+            </svg>
+            Branch <span class="text-gray-600">(optional)</span>
+          </label>
+          <input
+            v-model="assignAgentModal.branch"
+            type="text"
+            list="assign-agent-branch-list"
+            placeholder="default branch"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-brand-500 font-mono"
+          />
+          <datalist id="assign-agent-branch-list">
+            <option v-for="b in gitStore.branches" :key="b.name" :value="b.name" />
+          </datalist>
+          <p class="text-xs text-gray-600 mt-1">Agent will start from this branch instead of the default.</p>
+        </div>
         <div class="flex gap-3">
           <button @click="confirmAssignAgent"
             class="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
@@ -1055,6 +1104,7 @@ import { useAgentsStore } from '~/stores/agents'
 import { useMilestonesStore } from '~/stores/milestones'
 import { useProjectsStore } from '~/stores/projects'
 import { useProjectPropertiesStore } from '~/stores/projectProperties'
+import { useGitStore } from '~/stores/git'
 import { formatIssueId } from '~/composables/useIssueFormat'
 import { useMentionDropdown } from '~/composables/useMentionDropdown'
 const route = useRoute()
@@ -1070,6 +1120,7 @@ const agentsStore = useAgentsStore()
 const milestonesStore = useMilestonesStore()
 const projectsStore = useProjectsStore()
 const propsStore = useProjectPropertiesStore()
+const gitStore = useGitStore()
 const api = useApi()
 const { uploading: uploadingImage, uploadError: uploadImageError, handlePaste: handleImagePaste } = useImageUpload()
 
@@ -1128,6 +1179,7 @@ const creatingSubIssue = ref(false)
 const newSubIssueTitle = ref('')
 const editingCommentId = ref<string | null>(null)
 const commentEdit = ref('')
+const commentBranch = ref('')
 
 // Mention items for comment textarea (populated after agents are loaded)
 // Only shows agents enabled for this project (not disabled via project/org override)
@@ -1151,11 +1203,26 @@ const commentMention = useMentionDropdown({
   hashTokens,
 })
 
+// Whether the current comment text mentions at least one known agent (shows branch selector)
+const commentHasAgentMention = computed(() => {
+  if (!newComment.value) return false
+  const agentNames = mentionAgents.value.map(a => a.value.toLowerCase())
+  return agentNames.some(name => newComment.value.toLowerCase().includes(`@${name}`))
+})
+
+// Lazy-load branches when a comment mentions an agent (for the branch selector)
+watch(commentHasAgentMention, (hasMention) => {
+  if (hasMention && !gitStore.branches.length) {
+    gitStore.fetchBranches(actualProjectId.value)
+  }
+})
+
 // Agent assignment modal state
-const assignAgentModal = reactive<{ agentId: string | null; agentName: string; comment: string }>({
+const assignAgentModal = reactive<{ agentId: string | null; agentName: string; comment: string; branch: string }>({
   agentId: null,
   agentName: '',
   comment: '',
+  branch: '',
 })
 const assignAgentModalRef = ref<HTMLTextAreaElement | null>(null)
 function setAssignAgentModalRef(el: unknown) {
@@ -1539,8 +1606,10 @@ async function confirmDelete() {
 
 async function submitComment() {
   if (!newComment.value.trim()) return
-  await store.addComment(resolvedIssueId.value, newComment.value.trim())
+  const branch = commentBranch.value.trim() || undefined
+  await store.addComment(resolvedIssueId.value, newComment.value.trim(), undefined, branch)
   newComment.value = ''
+  commentBranch.value = ''
 }
 
 function startEditingComment(comment: { id: string; body: string }) {
@@ -1620,30 +1689,35 @@ function onSelectAgentForAssignment(e: Event) {
   // Open modal to optionally add a comment
   assignAgentModal.agentId = agentId
   assignAgentModal.agentName = agent.name
-  assignAgentModal.comment = `@${agent.name} `
+  assignAgentModal.comment = ''
+  assignAgentModal.branch = ''
+  // Ensure branches are loaded for the branch selector
+  if (!gitStore.branches.length) gitStore.fetchBranches(actualProjectId.value)
   nextTick(() => {
     assignAgentModalRef.value?.focus()
-    assignAgentModalRef.value?.setSelectionRange(assignAgentModal.comment.length, assignAgentModal.comment.length)
   })
 }
 
 async function confirmAssignAgent() {
   if (!assignAgentModal.agentId) return
-  // Assign the agent to the issue
-  await store.addAssignee(resolvedIssueId.value, { agentId: assignAgentModal.agentId })
+  const branch = assignAgentModal.branch.trim() || undefined
+  // Assign the agent to the issue (with optional branch override)
+  await store.addAssignee(resolvedIssueId.value, { agentId: assignAgentModal.agentId, branch })
   // If a comment was provided, post it (the backend will detect @mention and trigger the agent)
   if (assignAgentModal.comment.trim()) {
-    await store.addComment(resolvedIssueId.value, assignAgentModal.comment.trim())
+    await store.addComment(resolvedIssueId.value, assignAgentModal.comment.trim(), undefined, branch)
   }
   assignAgentModal.agentId = null
   assignAgentModal.agentName = ''
   assignAgentModal.comment = ''
+  assignAgentModal.branch = ''
 }
 
 function cancelAssignAgent() {
   assignAgentModal.agentId = null
   assignAgentModal.agentName = ''
   assignAgentModal.comment = ''
+  assignAgentModal.branch = ''
 }
 
 function assigneeName(a: { userId?: string; agentId?: string; user?: { username: string } | null; agent?: { name: string } | null }) {

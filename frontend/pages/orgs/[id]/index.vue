@@ -851,6 +851,15 @@ async function saveRunnerSettings() {
       slug: orgsStore.currentOrg.slug,
       maxConcurrentRunners: runnerSettingsForm.maxConcurrentRunners,
       concurrentJobs: runnerSettingsForm.concurrentJobs,
+      // Preserve all CI/CD fields so saving runner settings doesn't clear them.
+      actRunnerImage: ciCdForm.actRunnerImage,
+      actEnv: ciCdForm.actEnv || null,
+      actSecrets: ciCdForm.actSecrets || null,
+      actionCachePath: ciCdForm.actionCachePath || null,
+      useNewActionCache: ciCdForm.useNewActionCache,
+      actionOfflineMode: ciCdForm.actionOfflineMode,
+      localRepositories: ciCdForm.localRepositories || null,
+      skipSteps: ciCdForm.skipSteps || null,
     })
   } catch (e: unknown) {
     saveRunnerSettingsError.value = e instanceof Error ? e.message : 'Failed to save'
@@ -869,6 +878,7 @@ async function saveCiCdSettings() {
       name: orgsStore.currentOrg.name,
       slug: orgsStore.currentOrg.slug,
       maxConcurrentRunners: orgsStore.currentOrg.maxConcurrentRunners,
+      concurrentJobs: runnerSettingsForm.concurrentJobs,
       actRunnerImage: ciCdForm.actRunnerImage,
       actEnv: ciCdForm.actEnv || null,
       actSecrets: ciCdForm.actSecrets || null,

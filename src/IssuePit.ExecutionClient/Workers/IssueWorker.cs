@@ -225,6 +225,7 @@ public class IssueWorker(
                 // Only pass the pre-created session ID when exactly one agent is being launched (retry case).
                 agentIds.Count == 1 ? message.SessionId : null,
                 message.TriggeringCommentId,
+                message.Branch,
                 cancellationToken)));
     }
 
@@ -245,6 +246,7 @@ public class IssueWorker(
         int? runtimeTypeOverride,
         Guid? existingSessionId,
         Guid? triggeringCommentId,
+        string? branchOverride,
         CancellationToken cancellationToken)
     {
         using var scope = services.CreateScope();
@@ -282,6 +284,13 @@ public class IssueWorker(
         if (useHttpServerOverride.HasValue)
             agent.UseHttpServer = useHttpServerOverride.Value;
 
+        // Apply branch override: detach issue so the change is never persisted.
+        if (!string.IsNullOrWhiteSpace(branchOverride))
+        {
+            db.Entry(issue).State = EntityState.Detached;
+            issue.GitBranch = branchOverride;
+        }
+
         // Load issue comments for context. Truncate old comments if the total size would be too large
         // to avoid exceeding LLM context limits. Newest comments are kept; a warning is stored when any
         // comments are dropped.
@@ -315,6 +324,34 @@ public class IssueWorker(
 
         issue.TriggeringCommentId = triggeringCommentId;
 
+        // When the triggering comment contains #similar or #runs, load the relevant context
+        // so it can be included in the agent prompt.
+        if (triggeringCommentId.HasValue)
+        {
+            var triggeringComment = rawComments.FirstOrDefault(c => c.Id == triggeringCommentId.Value);
+            if (triggeringComment is not null)
+            {
+                if (triggeringComment.Body.Contains("#similar", StringComparison.OrdinalIgnoreCase))
+                {
+                    issue.PromptSimilarIssues = await db.SimilarIssuePairs
+                        .Where(p => p.IssueId == issue.Id)
+                        .Include(p => p.SimilarIssue)
+                        .OrderByDescending(p => p.Score)
+                        .Take(5)
+                        .ToListAsync(cancellationToken);
+                }
+
+                if (triggeringComment.Body.Contains("#runs", StringComparison.OrdinalIgnoreCase))
+                {
+                    issue.PromptCiCdRuns = await db.CiCdRuns
+                        .Where(r => r.AgentSession != null && r.AgentSession.IssueId == issue.Id)
+                        .OrderByDescending(r => r.StartedAt)
+                        .Take(10)
+                        .ToListAsync(cancellationToken);
+                }
+            }
+        }
+
         // Resolve runtime: use the org's default configuration or fall back to Docker
         var runtimeConfig = await db.RuntimeConfigurations
             .Where(r => r.OrgId == agent.OrgId && r.IsDefault)
@@ -334,24 +371,33 @@ public class IssueWorker(
             .ToListAsync(cancellationToken);
 
         // Push target: always the Working-mode remote (agents push their changes back here).
-        var gitRepository = allGitRepositories.FirstOrDefault(r => r.Mode == GitOriginMode.Working)
-            ?? allGitRepositories.FirstOrDefault();
+        // No fallback: if no Working-mode remote is configured, CheckBranchOnRemotesAsync throws
+        // with a clear error rather than silently pushing to an unrelated remote.
+        var gitRepository = allGitRepositories.FirstOrDefault(r => r.Mode == GitOriginMode.Working);
 
         // Clone source: the remote with the most commits on its DefaultBranch (deepest commit chain).
         // "Most commits" means the remote whose DefaultBranch HEAD is furthest from the root in the
         // git ancestry graph — i.e. has the highest git rev-list --count value, updated by
-        // GitPollingService on every successful fetch. Falls back to LastFetchedAt when no
-        // DefaultBranchCommitCount is available yet (e.g. first run before polling has set it),
-        // and ultimately to the push target (Working-mode remote) when no remote has a DefaultBranch.
+        // GitPollingService on every successful fetch.
+        //
+        // Ordering rationale:
+        //   1st: DefaultBranchCommitCount descending — prefer the remote with the newest/most commits.
+        //
+        // The clone source and push target are intentionally kept separate: any remote with a
+        // DefaultBranch set may be used for cloning (e.g. a Release/upstream remote that is more
+        // up-to-date), while the push target is always the Working-mode remote. Both configurations —
+        // same clone/push remote and different clone/push remote — are supported.
+        //
+        // No fallbacks: if no remote has a DefaultBranch configured, or if no Working-mode remote
+        // exists for push, CheckBranchOnRemotesAsync throws with a clear error rather than silently
+        // selecting an unrelated remote.
+        //
         // DefaultBranch is the "base pull branch": used to create agent feature branches when
         // issue.GitBranch is not set, and as the default target for merge/pull requests.
         var cloneRepository = allGitRepositories
             .Where(r => !string.IsNullOrWhiteSpace(r.DefaultBranch))
             .OrderByDescending(r => r.DefaultBranchCommitCount ?? 0)
-            .ThenByDescending(r => r.LastFetchedAt)
-            .ThenByDescending(r => r.Mode == GitOriginMode.Working)
-            .FirstOrDefault()
-            ?? gitRepository;
+            .FirstOrDefault();
 
         // Load the per-project push policy for this agent. Falls back to Forbidden when no
         // explicit AgentProject row exists (e.g. org-level links without a project override).
@@ -1244,9 +1290,11 @@ public class IssueWorker(
 
     /// <summary>
     /// Returns a structured CI/CD failure report to pass directly to the opencode task prompt.
-    /// Includes run metadata, a job-level overview (pass/fail), and the last 100 log lines
-    /// for each failed job (identified by having any stderr output). Also ensures the last 20
-    /// stderr lines are always included even for jobs without a <c>JobId</c>.
+    /// When the run has stored test results with failures, formats them as JUnit XML.
+    /// Raw job logs are always included for every failed job (regardless of test results) so
+    /// that non-test job failures are never silently dropped. Both sections may appear together
+    /// when some jobs produce test artifacts and others do not. Falls back to recent logs when
+    /// no named jobs are detected and no test results exist.
     /// </summary>
     private static async Task<string> GetCiCdFailureLogsAsync(
         Guid runId,
@@ -1309,31 +1357,114 @@ public class IssueWorker(
 
         sb.AppendLine();
 
-        // ── Failed job logs ──────────────────────────────────────────────────────
-        if (failedJobIds.Count > 0)
-        {
-            foreach (var jobId in failedJobIds.OrderBy(j => j))
+        // ── Check for stored test results ────────────────────────────────────────
+        // Query ALL test suites for this run (including their JobId if available) so we can
+        // do a per-job split:
+        //   • Failed job with suites that have failures → XML only (no raw logs)
+        //   • Failed job with suites but all passing   → raw logs (non-test failure)
+        //   • Failed job with no suites                → raw logs
+        // Legacy rows (JobId = null) fall back to the run-level split.
+        var allSuites = await db.CiCdTestSuites
+            .Where(s => s.CiCdRunId == runId)
+            .OrderBy(s => s.ArtifactName)
+            .Select(s => new
             {
-                sb.AppendLine($"--- Failed Job: {jobId} ---");
+                s.JobId,
+                s.ArtifactName,
+                s.TotalTests,
+                s.FailedTests,
+                FailedCases = s.TestCases
+                    .Where(tc => tc.Outcome == TestOutcome.Failed)
+                    .OrderBy(tc => tc.FullName)
+                    .Select(tc => new
+                    {
+                        tc.FullName,
+                        tc.ClassName,
+                        tc.MethodName,
+                        tc.DurationMs,
+                        tc.ErrorMessage,
+                        tc.StackTrace,
+                    })
+                    .ToList(),
+            })
+            .ToListAsync(cancellationToken);
 
-                var jobLogs = await db.CiCdRunLogs
-                    .Where(l => l.CiCdRunId == runId && l.JobId == jobId)
-                    .OrderByDescending(l => l.Timestamp)
-                    .Take(100)
-                    .OrderBy(l => l.Timestamp)
-                    .Select(l => new { l.Line, l.Stream })
-                    .ToListAsync(cancellationToken);
+        // Split into suites linked to a specific job vs. unlinked (JobId = null) legacy rows.
+        var suitesWithJob = allSuites.Where(s => s.JobId != null).ToList();
+        var suitesWithoutJob = allSuites.Where(s => s.JobId == null).ToList();
 
-                foreach (var log in jobLogs)
-                    sb.AppendLine(log.Stream == LogStream.Stderr ? $"[stderr] {log.Line}" : log.Line);
+        if (suitesWithJob.Count > 0)
+        {
+            // ── Per-job split (new runs with JobId populated) ──────────────────────
+            // Group suites by the job that produced them, then decide what to emit per job.
+            var suitesByJob = suitesWithJob.GroupBy(s => s.JobId!).ToDictionary(g => g.Key, g => g.ToList());
 
+            var jobsEmittedAsXml = new HashSet<string>(StringComparer.Ordinal);
+
+            // 1. Jobs with failed test suites → XML only.
+            foreach (var (jobId, jobSuites) in suitesByJob.OrderBy(kv => kv.Key))
+            {
+                var jobFailedSuites = jobSuites.Where(s => s.FailedTests > 0).ToList();
+                if (jobFailedSuites.Count == 0) continue;
+
+                sb.AppendLine($"--- Failed Test Results ({jobId}) ---");
+                var suiteInfos = jobFailedSuites
+                    .Select(s => new FailedTestSuiteInfo(
+                        s.ArtifactName,
+                        s.TotalTests,
+                        s.FailedTests,
+                        s.FailedCases
+                            .Select(tc => new FailedTestCaseInfo(tc.FullName, tc.ClassName, tc.MethodName, tc.DurationMs, tc.ErrorMessage, tc.StackTrace))
+                            .ToList()))
+                    .ToList();
+                sb.AppendLine(BuildFailedTestsXml(suiteInfos));
                 sb.AppendLine();
+                jobsEmittedAsXml.Add(jobId);
             }
+
+            // 2. For each failed job not covered by XML above:
+            //    • If the job has suites (all passing) → something non-test broke it → raw logs.
+            //    • If the job has no suites             → no test results at all → raw logs.
+            var failedJobsNeedingLogs = failedJobIds
+                .Where(j => !jobsEmittedAsXml.Contains(j))
+                .OrderBy(j => j);
+
+            await AppendFailedJobLogsAsync(sb, runId, failedJobsNeedingLogs, db, cancellationToken);
+        }
+        else if (suitesWithoutJob.Count > 0)
+        {
+            // ── Run-level split (legacy rows without JobId) ────────────────────────
+            var failedSuites = suitesWithoutJob.Where(s => s.FailedTests > 0).ToList();
+            if (failedSuites.Count > 0)
+            {
+                // Tests are available and some failed → structured XML is more useful than raw logs.
+                sb.AppendLine("--- Failed Test Results ---");
+                var suiteInfos = failedSuites
+                    .Select(s => new FailedTestSuiteInfo(
+                        s.ArtifactName,
+                        s.TotalTests,
+                        s.FailedTests,
+                        s.FailedCases
+                            .Select(tc => new FailedTestCaseInfo(tc.FullName, tc.ClassName, tc.MethodName, tc.DurationMs, tc.ErrorMessage, tc.StackTrace))
+                            .ToList()))
+                    .ToList();
+                sb.AppendLine(BuildFailedTestsXml(suiteInfos));
+            }
+            else
+            {
+                // All suites pass but the run still failed → emit raw logs.
+                await AppendFailedJobLogsAsync(sb, runId, failedJobIds, db, cancellationToken);
+            }
+        }
+        else if (failedJobIds.Count > 0)
+        {
+            // ── No test results at all — emit raw job logs ─────────────────────────
+            await AppendFailedJobLogsAsync(sb, runId, failedJobIds, db, cancellationToken);
         }
         else
         {
-            // No jobs had a "Job failed" terminal line — fall back to the last 200 total lines
-            // plus extra stderr lines to ensure errors are always represented.
+            // No jobs had a "Job failed" terminal line and no test results — fall back to the last
+            // 200 total lines plus extra stderr lines to ensure errors are always represented.
             sb.AppendLine("--- Recent Logs ---");
 
             var recent = await db.CiCdRunLogs
@@ -1364,6 +1495,77 @@ public class IssueWorker(
 
         return sb.ToString().Trim();
     }
+
+    /// <summary>
+    /// Appends the last 100 log lines for each failed job to <paramref name="sb"/>.
+    /// Used when raw CI/CD logs are the appropriate diagnostic output (no test failures).
+    /// </summary>
+    private static async Task AppendFailedJobLogsAsync(
+        StringBuilder sb,
+        Guid runId,
+        IEnumerable<string> failedJobIds,
+        IssuePitDbContext db,
+        CancellationToken cancellationToken)
+    {
+        foreach (var jobId in failedJobIds.OrderBy(j => j))
+        {
+            sb.AppendLine($"--- Failed Job: {jobId} ---");
+
+            var jobLogs = await db.CiCdRunLogs
+                .Where(l => l.CiCdRunId == runId && l.JobId == jobId)
+                .OrderByDescending(l => l.Timestamp)
+                .Take(100)
+                .OrderBy(l => l.Timestamp)
+                .Select(l => new { l.Line, l.Stream })
+                .ToListAsync(cancellationToken);
+
+            foreach (var log in jobLogs)
+                sb.AppendLine(log.Stream == LogStream.Stderr ? $"[stderr] {log.Line}" : log.Line);
+
+            sb.AppendLine();
+        }
+    }
+
+    /// <summary>
+    /// Builds a JUnit-style XML string from a list of failed test suites so the fix agent
+    /// receives precise, structured failure details (name, error message, stack trace).
+    /// </summary>
+    internal static string BuildFailedTestsXml(IReadOnlyList<FailedTestSuiteInfo> suites)
+    {
+        var xml = new StringBuilder();
+        xml.AppendLine("<testsuites>");
+        foreach (var suite in suites)
+        {
+            xml.AppendLine($"  <testsuite name=\"{XmlEscapeAttribute(suite.ArtifactName)}\" tests=\"{suite.TotalTests}\" failures=\"{suite.FailedTests}\">");
+            foreach (var tc in suite.FailedCases)
+            {
+                var testName = XmlEscapeAttribute(tc.MethodName ?? tc.FullName);
+                var classAttr = tc.ClassName is not null ? $" classname=\"{XmlEscapeAttribute(tc.ClassName)}\"" : "";
+                xml.AppendLine($"    <testcase name=\"{testName}\"{classAttr} time=\"{tc.DurationMs / 1000.0:F3}\">");
+                xml.AppendLine($"      <failure message=\"{XmlEscapeAttribute(tc.ErrorMessage ?? "Test failed")}\">");
+                if (!string.IsNullOrWhiteSpace(tc.StackTrace))
+                    xml.AppendLine(XmlEscapeContent(tc.StackTrace.Trim()));
+                xml.AppendLine("      </failure>");
+                xml.AppendLine("    </testcase>");
+            }
+            xml.AppendLine("  </testsuite>");
+        }
+        xml.AppendLine("</testsuites>");
+        return xml.ToString().Trim();
+    }
+
+    private static string XmlEscapeAttribute(string? value) =>
+        string.IsNullOrEmpty(value) ? string.Empty : value
+            .Replace("&", "&amp;")
+            .Replace("\"", "&quot;")
+            .Replace("<", "&lt;")
+            .Replace(">", "&gt;");
+
+    private static string XmlEscapeContent(string? value) =>
+        string.IsNullOrEmpty(value) ? string.Empty : value
+            .Replace("&", "&amp;")
+            .Replace("<", "&lt;")
+            .Replace(">", "&gt;");
 
     /// <summary>
     /// Runs a fix agent container with a task that includes the CI/CD failure context.
@@ -1461,7 +1663,7 @@ public class IssueWorker(
         GitBranch = branchName,
     };
 
-    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, Guid? SessionId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? DockerCmdOverride = null, string? ModelOverride = null, int? RunnerTypeOverride = null, bool? UseHttpServerOverride = null, int? RuntimeTypeOverride = null, bool ForceAgentId = false, Guid? TriggeringCommentId = null);
+    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, Guid? SessionId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? DockerCmdOverride = null, string? ModelOverride = null, int? RunnerTypeOverride = null, bool? UseHttpServerOverride = null, int? RuntimeTypeOverride = null, bool ForceAgentId = false, Guid? TriggeringCommentId = null, string? Branch = null);
 
     /// <summary>
     /// Checks whether the base branch (<see cref="GitRepository.DefaultBranch"/>) of each
@@ -1471,9 +1673,9 @@ public class IssueWorker(
     /// <para>Clone vs push separation:</para>
     /// <list type="bullet">
     ///   <item><description>
-    ///     <b>Clone source</b>: <paramref name="cloneRepository"/> — the remote with the newest
-    ///     content (highest <see cref="GitRepository.LastFetchedAt"/>), marked as <c>Selected</c>
-    ///     in the results.
+    ///     <b>Clone source</b>: <paramref name="cloneRepository"/> — the remote with the most
+    ///     commits on its DefaultBranch (highest <see cref="GitRepository.DefaultBranchCommitCount"/>),
+    ///     marked as <c>Selected</c> in the results.
     ///   </description></item>
     ///   <item><description>
     ///     <b>Push target</b>: always the Working-mode remote, handled by the caller.
@@ -1490,6 +1692,10 @@ public class IssueWorker(
     ///     must be configured because <c>DefaultBranch</c> is the "base pull branch": it is used to
     ///     create agent feature branches when no <c>issue.GitBranch</c> is set, and as the default
     ///     merge/pull-request target.
+    ///   </description></item>
+    ///   <item><description>
+    ///     No Working-mode remote is configured — the push target is always the Working remote and
+    ///     there is no fallback; the run fails with a clear message so the user can fix the config.
     ///   </description></item>
     ///   <item><description>
     ///     The clone-source remote's <c>DefaultBranch</c> was confirmed absent on that remote.
@@ -1538,6 +1744,15 @@ public class IssueWorker(
                 "No configured git remote has a DefaultBranch set. " +
                 "Set the default branch on at least one remote in the project's git repository settings. " +
                 "DefaultBranch is the base pull branch: used to create agent feature branches and as the default target for merge/pull requests.");
+        }
+
+        // Exactly one Working-mode remote must be configured for push.
+        if (repositories.All(r => r.Mode != GitOriginMode.Working))
+        {
+            throw new InvalidOperationException(
+                "No Working-mode git remote is configured for this project. " +
+                "Set one remote to Mode=Working in the project's git repository settings. " +
+                "The Working remote is the push target for agent branches.");
         }
 
         var results = new List<GitRemoteCheckResult>();
@@ -1678,4 +1893,20 @@ public class IssueWorker(
         return kept;
     }
 }
+
+/// <summary>Data for one test suite with at least one failing test case.</summary>
+internal sealed record FailedTestSuiteInfo(
+    string ArtifactName,
+    int TotalTests,
+    int FailedTests,
+    IReadOnlyList<FailedTestCaseInfo> FailedCases);
+
+/// <summary>Data for a single failing test case.</summary>
+internal sealed record FailedTestCaseInfo(
+    string FullName,
+    string? ClassName,
+    string? MethodName,
+    double DurationMs,
+    string? ErrorMessage,
+    string? StackTrace);
 

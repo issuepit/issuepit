@@ -153,9 +153,42 @@ async function loadSuggestions() {
 
 async function toggleWizard() {
   showWizard.value = !showWizard.value
-  if (showWizard.value && suggestions.value.length === 0 && props.projectId) {
-    await loadSuggestions()
+  if (showWizard.value) {
+    if (suggestions.value.length === 0 && props.projectId) {
+      await loadSuggestions()
+    }
+    // Pre-check items already present in the textarea, including bare step names
+    // (expanded to all matching job:step pairs across loaded suggestions).
+    prePopulateFromTextarea()
   }
+}
+
+/** Parses the textarea value and pre-checks matching wizard items, handling both
+ *  "job:step" pairs and bare step names (which expand to all matching jobs). */
+function prePopulateFromTextarea() {
+  const existing = (props.modelValue || '')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line.length > 0)
+  const next = new Set<string>()
+  // Add exact job:step pairs that are directly in the textarea.
+  for (const entry of existing) {
+    if (entry.includes(':')) {
+      next.add(entry)
+    }
+  }
+  // Expand bare step names to all job:step pairs where the step name matches.
+  const bareNames = existing.filter(e => !e.includes(':'))
+  if (bareNames.length > 0) {
+    for (const job of suggestions.value) {
+      for (const step of job.steps) {
+        if (bareNames.includes(step)) {
+          next.add(`${job.jobId}:${step}`)
+        }
+      }
+    }
+  }
+  wizardSelected.value = next
 }
 
 function isJobChecked(job: StepSuggestionJob): boolean {

@@ -257,6 +257,42 @@ public static class RunnerCommandBuilder
             sb.AppendLine("  </attachments>");
         }
 
+        // Similar issues (only included when the triggering comment contained #similar)
+        if (issue.PromptSimilarIssues.Count > 0)
+        {
+            sb.AppendLine("  <similar_issues>");
+            foreach (var pair in issue.PromptSimilarIssues)
+            {
+                var similar = pair.SimilarIssue;
+                if (similar is not null)
+                {
+                    var attrs = $"number=\"{similar.Number}\" score=\"{pair.Score:F2}\"";
+                    if (!string.IsNullOrWhiteSpace(pair.Reason))
+                        attrs += $" reason=\"{EscapeXml(pair.Reason)}\"";
+                    sb.AppendLine($"    <similar_issue {attrs}>{EscapeXml(similar.Title)}</similar_issue>");
+                }
+            }
+            sb.AppendLine("  </similar_issues>");
+        }
+
+        // CI/CD runs (only included when the triggering comment contained #runs)
+        if (issue.PromptCiCdRuns.Count > 0)
+        {
+            sb.AppendLine($"  <cicd_runs limited_last_x=\"{issue.PromptCiCdRuns.Count}\">");
+            foreach (var run in issue.PromptCiCdRuns)
+            {
+                var attrs = $"status=\"{run.Status}\" started_at=\"{run.StartedAt:yyyy-MM-ddTHH:mm:ssZ}\"";
+                if (!string.IsNullOrWhiteSpace(run.Branch))
+                    attrs += $" branch=\"{EscapeXml(run.Branch)}\"";
+                if (!string.IsNullOrWhiteSpace(run.CommitSha))
+                    attrs += $" commit=\"{EscapeXml(run.CommitSha[..Math.Min(8, run.CommitSha.Length)])}\"";
+                if (!string.IsNullOrWhiteSpace(run.Workflow))
+                    attrs += $" workflow=\"{EscapeXml(run.Workflow)}\"";
+                sb.AppendLine($"    <cicd_run {attrs} />");
+            }
+            sb.AppendLine("  </cicd_runs>");
+        }
+
         // Comments
         if (comments is { Count: > 0 })
         {

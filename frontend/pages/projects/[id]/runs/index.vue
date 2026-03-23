@@ -132,6 +132,11 @@
                     @click.stop="retryRun(run.id)">
                     Retry
                   </button>
+                  <button v-else-if="run.status === CiCdRunStatus.Succeeded || run.status === CiCdRunStatus.SucceededWithWarnings"
+                    class="text-xs text-brand-400 hover:text-brand-300 transition-colors"
+                    @click.stop="retryRun(run.id)">
+                    Retrigger
+                  </button>
                 </template>
                 <a v-else-if="run.externalRunUrl"
                   :href="run.externalRunUrl"

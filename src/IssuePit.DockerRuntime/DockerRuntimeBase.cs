@@ -341,6 +341,7 @@ public abstract class DockerRuntimeBase
             if (featureExitCode == 0)
             {
                 await onLogLine("[INFO] Feature branch cloned successfully", LogStream.Stdout);
+                await StripCloneCredentialsAsync(containerId, remoteUrl, authToken, onLogLine, cancellationToken);
                 return;
             }
             await onLogLine($"[INFO] Feature branch '{branch}' not found in remote; cloning base branch '{baseBranch}'", LogStream.Stdout);
@@ -369,6 +370,39 @@ public abstract class DockerRuntimeBase
                 "Verify the remote URL is accessible, the branch exists, and the auth token has read access. " +
                 "To fix a branch mismatch, update GitRepository.DefaultBranch in IssuePit to match the " +
                 "actual default branch of the remote.");
+
+        await StripCloneCredentialsAsync(containerId, remoteUrl, authToken, onLogLine, cancellationToken);
+    }
+
+    /// <summary>
+    /// Removes credentials embedded in the clone URL from <c>/workspace/.git/config</c> by
+    /// resetting the remote URL to the plain (unauthenticated) form. This prevents auth tokens
+    /// from persisting inside the agent container after the clone completes.
+    /// Best-effort — a failure is logged as a warning and does not abort setup.
+    /// </summary>
+    private async Task StripCloneCredentialsAsync(
+        string containerId,
+        string remoteUrl,
+        string? authToken,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(authToken))
+            return; // No credentials were injected — nothing to strip.
+
+        try
+        {
+            // Reset the origin URL to the unauthenticated form so the token is not stored in .git/config.
+            await ExecCommandAsync(
+                containerId,
+                ["git", "remote", "set-url", "origin", remoteUrl],
+                (_, _) => Task.CompletedTask,
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            await onLogLine($"[WARN] Could not strip credentials from git remote URL (non-fatal): {ex.Message}", LogStream.Stderr);
+        }
     }
 
     /// <summary>
@@ -672,8 +706,7 @@ public abstract class DockerRuntimeBase
                  DISABLE_INTERNET={{(disableInternet ? "true" : "false")}}
                  if [ "${DISABLE_INTERNET}" = "true" ]; then
                    DNSMASQ_ARGS="${DNSMASQ_ARGS} --address=/#/0.0.0.0"
-                   for DOMAIN in {{allowedList}}
-                   do
+                   for DOMAIN in {{allowedList}}; do
                      DNSMASQ_ARGS="${DNSMASQ_ARGS} --server=/${DOMAIN}/${UPSTREAM_DNS}"
                    done
                  else

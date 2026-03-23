@@ -125,19 +125,19 @@
               {{ approving ? 'Approving…' : 'Approve Run' }}
             </button>
           </div>
-          <div v-else-if="store.currentRun.status === CiCdRunStatus.Failed || store.currentRun.status === CiCdRunStatus.Cancelled || store.currentRun.status === CiCdRunStatus.SucceededWithWarnings"
+          <div v-else-if="store.currentRun.status === CiCdRunStatus.Failed || store.currentRun.status === CiCdRunStatus.Cancelled || store.currentRun.status === CiCdRunStatus.SucceededWithWarnings || store.currentRun.status === CiCdRunStatus.Succeeded"
             class="mt-4 pt-4 border-t border-gray-800 flex justify-end">
             <button
               :disabled="retrying"
               class="flex items-center gap-1.5 text-sm text-brand-400 hover:text-brand-300 disabled:opacity-50 transition-colors"
-              :title="'Click to retry · Shift+click for options'"
+              :title="isRetrigger ? 'Click to retrigger · Shift+click for options' : 'Click to retry · Shift+click for options'"
               @click.exact="retryRun()"
               @click.shift="openRetryModal()">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-              {{ retrying ? 'Retrying…' : 'Retry Run' }}
+              {{ retrying ? (isRetrigger ? 'Retriggering…' : 'Retrying…') : (isRetrigger ? 'Retrigger Run' : 'Retry Run') }}
             </button>
           </div>
         </div>
@@ -162,7 +162,7 @@
       <Teleport to="body">
         <div v-if="showRetryModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @mousedown.self="showRetryModal = false">
           <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-xl p-6 w-full max-w-md">
-            <h3 class="text-base font-semibold text-white mb-4">Retry Options</h3>
+            <h3 class="text-base font-semibold text-white mb-4">{{ isRetrigger ? 'Retrigger Options' : 'Retry Options' }}</h3>
 
             <!-- Conflict warning -->
             <div v-if="retryConflict" class="mb-4 rounded-lg bg-yellow-900/40 border border-yellow-700/50 p-3 text-xs text-yellow-300">
@@ -227,6 +227,31 @@
                 <span class="block text-xs text-gray-500 mt-0.5">Retry even if another run for this project is already in progress.</span>
               </span>
             </label>
+
+            <!-- Skip Steps override -->
+            <div class="mb-4">
+              <div class="flex items-center justify-between mb-1">
+                <label class="block text-xs text-gray-500">Skip Steps</label>
+                <label class="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+                  <input
+                    v-model="retryOptions.overrideSkipSteps"
+                    type="checkbox"
+                    class="rounded border-gray-600 bg-gray-800 text-brand-500 focus:ring-brand-500" />
+                  Override (clear inherited steps)
+                </label>
+              </div>
+              <SkipStepsEditor v-model="retryOptions.skipSteps" :project-id="projectId" />
+              <p class="text-xs text-gray-600 mt-1">
+                Leave blank to inherit the original run's skip steps
+                <template v-if="store.currentRun?.skipSteps">
+                  (<code class="text-gray-400">{{ store.currentRun.skipSteps.split('\n').filter(s => s.trim()).join(', ') }}</code>).
+                </template>
+                <template v-else>
+                  (none).
+                </template>
+                Check "Override" to explicitly clear them.
+              </p>
+            </div>
 
             <!-- Advanced section -->
             <details class="mb-4">
@@ -299,7 +324,7 @@
                 :disabled="retrying"
                 class="px-4 py-1.5 text-sm bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white rounded-md transition-colors"
                 @click="retryRunWithOptions">
-                {{ retrying ? 'Retrying…' : 'Retry Run' }}
+                {{ retrying ? (isRetrigger ? 'Retriggering…' : 'Retrying…') : (isRetrigger ? 'Retrigger Run' : 'Retry Run') }}
               </button>
             </div>
           </div>
@@ -638,7 +663,12 @@
                       class="flex items-center gap-2 mt-3 mb-1 first:mt-0 select-none cursor-pointer group"
                       @click="toggleStep(group.key)">
                       <span class="text-gray-600 transition-transform" :class="collapsedSteps.has(group.key) ? '' : 'rotate-90'">▶</span>
-                      <span class="text-xs font-semibold text-gray-400 tracking-wide uppercase group-hover:text-gray-200 transition-colors">{{ group.label }}</span>
+                      <span
+                        class="text-xs font-semibold tracking-wide uppercase group-hover:text-gray-200 transition-colors"
+                        :class="isStepIgnored(group.stepId) ? 'text-gray-600 line-through' : 'text-gray-400'">
+                        {{ group.label }}
+                      </span>
+                      <span v-if="isStepIgnored(group.stepId)" class="text-[10px] text-gray-600 bg-gray-800 px-1 rounded font-mono normal-case tracking-normal">skipped</span>
                       <span v-if="stepDuration(group)" class="text-[10px] text-gray-600 font-mono">{{ stepDuration(group) }}</span>
                       <span class="flex-1 border-t border-gray-800" />
                     </div>
@@ -1052,8 +1082,16 @@ const retryOptions = reactive({
   eventName: '',
   branch: '',
   commitSha: '',
+  skipSteps: '',
+  overrideSkipSteps: false,
 })
 const retryConflict = ref<{ message: string; activeRunId: string } | null>(null)
+
+// True when the run succeeded (green run) — action is "Retrigger" rather than "Retry".
+const isRetrigger = computed(() =>
+  store.currentRun?.status === CiCdRunStatus.Succeeded ||
+  store.currentRun?.status === CiCdRunStatus.SucceededWithWarnings,
+)
 
 const sectionTabs = [
   { label: 'Jobs', value: 'jobs' },
@@ -1242,6 +1280,46 @@ const jobFilteredLogs = computed(() => {
 
 /** Groups job-filtered logs by step, preserving order. Each group has a stepId (null = no step) and its log lines. */
 interface StepGroup { stepId: string | null; key: string; label: string; logs: CiCdRunLog[]; startTs?: string; endTs?: string }
+
+/**
+ * Parsed skip-step entries from the current run's skipSteps field.
+ * Returns two sets: globalSkips (bare step names) and jobStepSkips (job:step pairs).
+ */
+const parsedSkipSteps = computed(() => {
+  const raw = store.currentRun?.skipSteps
+  if (!raw) return { global: new Set<string>(), jobStep: new Map<string, Set<string>>() }
+  const global = new Set<string>()
+  const jobStep = new Map<string, Set<string>>()
+  for (const line of raw.split('\n').map(l => l.trim()).filter(l => l.length > 0)) {
+    const colonIdx = line.indexOf(':')
+    if (colonIdx > 0) {
+      const jobId = line.slice(0, colonIdx).toLowerCase()
+      const stepId = line.slice(colonIdx + 1)
+      if (!jobStep.has(jobId)) jobStep.set(jobId, new Set())
+      jobStep.get(jobId)!.add(stepId)
+    } else {
+      global.add(line)
+    }
+  }
+  return { global, jobStep }
+})
+
+/**
+ * Returns true if the given step is in the run's skip-step configuration.
+ * Checks both bare step names and job:step pairs against the currently selected job.
+ */
+function isStepIgnored(stepId: string | null): boolean {
+  if (!stepId) return false
+  const { global, jobStep } = parsedSkipSteps.value
+  if (global.has(stepId)) return true
+  if (!selectedJob.value) return false
+  // Normalise the selected job ID: strip workflow prefix (e.g. "CI/build" → "build")
+  const jobPart = selectedJob.value.includes('/')
+    ? selectedJob.value.slice(selectedJob.value.lastIndexOf('/') + 1)
+    : selectedJob.value
+  const steps = jobStep.get(jobPart.toLowerCase())
+  return steps != null && steps.has(stepId)
+}
 
 const jobLogsByStep = computed<StepGroup[]>(() => {
   const groups: StepGroup[] = []
@@ -2118,6 +2196,8 @@ function openRetryModal() {
   retryOptions.eventName = store.currentRun?.eventName ?? 'push'
   retryOptions.branch = store.currentRun?.branch ?? ''
   retryOptions.commitSha = store.currentRun?.commitSha ?? ''
+  retryOptions.skipSteps = store.currentRun?.skipSteps ?? ''
+  retryOptions.overrideSkipSteps = false
   showRetryModal.value = true
 }
 
@@ -2138,6 +2218,8 @@ async function retryRunWithOptions() {
       eventName: retryOptions.eventName.trim() || undefined,
       branch: retryOptions.branch.trim() || undefined,
       commitSha: retryOptions.commitSha.trim() || undefined,
+      skipSteps: retryOptions.skipSteps.trim() || undefined,
+      overrideSkipSteps: retryOptions.overrideSkipSteps,
     })
     retryOptions.forceRetry = false
     navigateTo(`/projects/${projectId}/runs`)

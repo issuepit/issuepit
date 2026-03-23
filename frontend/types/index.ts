@@ -791,6 +791,8 @@ export interface CiCdRun {
   workspacePath?: string
   eventName?: string
   inputsJson?: string
+  /** Effective skip-step configuration used for this run (newline-separated step names or job:step pairs). */
+  skipSteps?: string | null
 }
 
 export type LinkedRunType = 'retry-of' | 'retry' | 'agent-triggered' | 'same-sha'
