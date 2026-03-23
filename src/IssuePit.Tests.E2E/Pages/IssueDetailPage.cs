@@ -98,6 +98,9 @@ public class IssueDetailPage(IPage page)
     // Selector for the @/# mention dropdown buttons rendered next to the comment textarea.
     private const string MentionDropdownButtonSelector = "textarea[placeholder*='Leave a comment'] ~ div button";
 
+    // Aria-label used by the BranchSelect component's search input for accessibility and test targeting.
+    private const string BranchSearchInputAriaLabel = "Search branches";
+
     /// <summary>
     /// Navigates directly to an issue page using project slug and issue number.
     /// </summary>
@@ -221,7 +224,7 @@ public class IssueDetailPage(IPage page)
         // Click the BranchSelect trigger to open its dropdown
         await page.Locator(".fixed button[aria-expanded]").ClickAsync();
         // Wait for the search input inside BranchSelect
-        var searchInput = page.Locator("input[aria-label='Search branches']");
+        var searchInput = page.Locator($"input[aria-label='{BranchSearchInputAriaLabel}']");
         await searchInput.WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Default });
         // Type the branch name — allowFreeForm=true means pressing Enter accepts the typed value
         await searchInput.FillAsync(branch);

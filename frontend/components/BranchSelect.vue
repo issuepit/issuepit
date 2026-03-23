@@ -43,14 +43,14 @@
       <ul ref="listRef" class="max-h-56 overflow-y-auto py-1">
         <!-- Free-form entry: when no branch exactly matches the typed query -->
         <li
-          v-if="props.allowFreeForm && search && !filtered.some(b => b.name === search)"
+          v-if="hasFreeFormEntry"
           class="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer text-brand-300 hover:bg-gray-800 transition-colors"
           @click="select(search)"
         >
           <span class="font-mono truncate flex-1">{{ search }}</span>
           <span class="text-xs text-gray-500 shrink-0">Use this</span>
         </li>
-        <li v-if="filtered.length === 0 && !(props.allowFreeForm && search)" class="px-3 py-2 text-sm text-gray-500">No branches found</li>
+        <li v-if="filtered.length === 0 && !hasFreeFormEntry" class="px-3 py-2 text-sm text-gray-500">No branches found</li>
         <li
           v-for="(branch, i) in filtered"
           :key="branch.name"
@@ -106,6 +106,10 @@ const filtered = computed(() => {
   return props.branches.filter(b => b.name.toLowerCase().includes(q))
 })
 
+const hasFreeFormEntry = computed(() =>
+  props.allowFreeForm && search.value !== '' && !filtered.value.some(b => b.name === search.value),
+)
+
 function toggleOpen() {
   open.value = !open.value
   if (open.value) {
@@ -133,7 +137,7 @@ function moveFocus(delta: number) {
 function selectFocused() {
   if (focusedIndex.value >= 0 && focusedIndex.value < filtered.value.length) {
     select(filtered.value[focusedIndex.value].name)
-  } else if (props.allowFreeForm && search.value.trim()) {
+  } else if (hasFreeFormEntry.value) {
     select(search.value.trim())
   }
 }
