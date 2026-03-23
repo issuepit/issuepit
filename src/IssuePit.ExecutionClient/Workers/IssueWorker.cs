@@ -388,16 +388,19 @@ public class IssueWorker(
         // up-to-date), while the push target is always the Working-mode remote. Both configurations —
         // same clone/push remote and different clone/push remote — are supported.
         //
-        // No fallbacks: if no remote has a DefaultBranch configured, or if no Working-mode remote
-        // exists for push, CheckBranchOnRemotesAsync throws with a clear error rather than silently
-        // selecting an unrelated remote.
+        // CheckBranchOnRemotesAsync will try candidates in order and skip any whose DefaultBranch
+        // is confirmed absent on the remote (treating it as a stale/outdated remote). This avoids
+        // hard-failing the run when the top candidate's branch name is misconfigured.
         //
         // DefaultBranch is the "base pull branch": used to create agent feature branches when
         // issue.GitBranch is not set, and as the default target for merge/pull requests.
-        var cloneRepository = allGitRepositories
+        var cloneCandidates = allGitRepositories
             .Where(r => !string.IsNullOrWhiteSpace(r.DefaultBranch))
             .OrderByDescending(r => r.DefaultBranchCommitCount ?? 0)
-            .FirstOrDefault();
+            .ToList();
+        // Initial selection — may be updated by CheckBranchOnRemotesAsync if the top candidate's
+        // branch is not found on the remote.
+        var cloneRepository = cloneCandidates.FirstOrDefault();
 
         // Load the per-project push policy for this agent. Falls back to Forbidden when no
         // explicit AgentProject row exists (e.g. org-level links without a project override).
@@ -588,7 +591,28 @@ public class IssueWorker(
             // Validates and produces logging/UI results. Clone and push targets are determined above.
             if (allGitRepositories.Count > 0)
             {
-                var checkResults = await CheckBranchOnRemotesAsync(allGitRepositories, cloneRepository, sessionCts.Token);
+                // Log clone candidates with position and commit count so we know why the selected
+                // remote was picked (useful for diagnosing "branch not found" errors).
+                if (cloneCandidates.Count > 0)
+                {
+                    await onLogLine($"[DEBUG] Clone candidate(s): {cloneCandidates.Count} remote(s) with DefaultBranch configured (ordered by commit count descending)", LogStream.Stdout);
+                    for (int i = 0; i < cloneCandidates.Count; i++)
+                    {
+                        var c = cloneCandidates[i];
+                        var safeUrl = !string.IsNullOrEmpty(c.AuthToken)
+                            ? c.RemoteUrl.Replace(c.AuthToken, "***", StringComparison.Ordinal)
+                            : c.RemoteUrl;
+                        var commitLabel = c.DefaultBranchCommitCount.HasValue
+                            ? $"  commits={c.DefaultBranchCommitCount}"
+                            : "  commits=unknown";
+                        await onLogLine($"[DEBUG]   [{i + 1}/{cloneCandidates.Count}] {c.Mode,-12} {safeUrl}  branch={c.DefaultBranch}{commitLabel}", LogStream.Stdout);
+                    }
+                }
+
+                var (checkResults, selectedCloneRepo) = await CheckBranchOnRemotesAsync(allGitRepositories, cloneCandidates, sessionCts.Token);
+                // Update clone repository to the one selected after branch availability checks
+                // (may differ from initial selection if the top candidate's branch was not found).
+                cloneRepository = selectedCloneRepo;
                 session.GitRemoteCheckResultsJson = JsonSerializer.Serialize(checkResults);
                 await db.SaveChangesAsync(sessionCts.Token);
 
@@ -1668,14 +1692,16 @@ public class IssueWorker(
     /// <summary>
     /// Checks whether the base branch (<see cref="GitRepository.DefaultBranch"/>) of each
     /// configured git remote exists by running <c>git ls-remote --heads</c> against each URL.
-    /// Returns a per-remote result list suitable for display in the UI.
+    /// Returns a per-remote result list suitable for display in the UI, and the selected clone
+    /// source repository.
     ///
     /// <para>Clone vs push separation:</para>
     /// <list type="bullet">
     ///   <item><description>
-    ///     <b>Clone source</b>: <paramref name="cloneRepository"/> — the remote with the most
-    ///     commits on its DefaultBranch (highest <see cref="GitRepository.DefaultBranchCommitCount"/>),
-    ///     marked as <c>Selected</c> in the results.
+    ///     <b>Clone source</b>: chosen from <paramref name="cloneCandidates"/> (ordered by
+    ///     <see cref="GitRepository.DefaultBranchCommitCount"/> descending). Candidates whose
+    ///     <c>DefaultBranch</c> is confirmed absent on the remote are skipped (treated as stale).
+    ///     The first candidate whose branch is available (or whose check is indeterminate) is selected.
     ///   </description></item>
     ///   <item><description>
     ///     <b>Push target</b>: always the Working-mode remote, handled by the caller.
@@ -1698,15 +1724,16 @@ public class IssueWorker(
     ///     there is no fallback; the run fails with a clear message so the user can fix the config.
     ///   </description></item>
     ///   <item><description>
-    ///     The clone-source remote's <c>DefaultBranch</c> was confirmed absent on that remote.
+    ///     Every candidate clone-source remote's <c>DefaultBranch</c> was confirmed absent — all
+    ///     candidates were skipped and no usable clone source remains.
     ///   </description></item>
     /// </list>
     ///
     /// A skipped check (network timeout) does not throw — the clone itself will produce a clear error.
     /// </summary>
-    private static async Task<List<GitRemoteCheckResult>> CheckBranchOnRemotesAsync(
+    private static async Task<(List<GitRemoteCheckResult> Results, GitRepository? SelectedCloneRepo)> CheckBranchOnRemotesAsync(
         IList<GitRepository> repositories,
-        GitRepository? cloneRepository,
+        IList<GitRepository> cloneCandidates,
         CancellationToken cancellationToken)
     {
         // git must be available on the host — not having git is a misconfiguration that must fail
@@ -1768,21 +1795,51 @@ public class IssueWorker(
                 RemoteUrl: repo.RemoteUrl,
                 Mode: repo.Mode.ToString(),
                 DefaultBranch: repo.DefaultBranch,
-                Available: available,
-                Selected: repo == cloneRepository));
+                Available: available));
         }
 
-        // Early error: if the clone-source remote's DefaultBranch was confirmed absent,
-        // the clone will definitely fail — throw now with a clear message.
-        var cloneResult = results.FirstOrDefault(r => r.RepoId == cloneRepository?.Id);
-        if (cloneResult?.Available == false)
+        // Select the best clone source: iterate candidates in order (highest commit count first)
+        // and pick the first one whose DefaultBranch is available or indeterminate (not confirmed absent).
+        // Candidates with Available==false are treated as stale/outdated and skipped.
+        GitRepository? selectedCloneRepo = null;
+        foreach (var candidate in cloneCandidates)
         {
+            var candidateResult = results.FirstOrDefault(r => r.RepoId == candidate.Id);
+            if (candidateResult?.Available == false)
+                // Branch confirmed absent on this remote — assume stale, try next candidate.
+                continue;
+            selectedCloneRepo = candidate;
+            break;
+        }
+
+        // If every candidate had its branch confirmed absent, fail with a descriptive error listing
+        // all tried remotes so the user knows exactly what to fix.
+        if (cloneCandidates.Count > 0 && selectedCloneRepo is null)
+        {
+            var tried = string.Join("; ", cloneCandidates.Select((c, i) =>
+            {
+                var r = results.FirstOrDefault(x => x.RepoId == c.Id);
+                return $"[{i + 1}] {c.Mode} {c.RemoteUrl} branch='{r?.DefaultBranch ?? c.DefaultBranch}'";
+            }));
             throw new InvalidOperationException(
-                $"Base branch '{cloneResult.DefaultBranch}' was not found on the clone-source remote ({cloneResult.RemoteUrl}). " +
+                $"Base branch was not found on any configured clone-source remote (tried {cloneCandidates.Count}): {tried}. " +
                 "Update GitRepository.DefaultBranch in IssuePit to match the actual default branch of the remote.");
         }
 
-        return results;
+        // Mark the selected clone source in the results.
+        if (selectedCloneRepo is not null)
+        {
+            for (int i = 0; i < results.Count; i++)
+            {
+                if (results[i].RepoId == selectedCloneRepo.Id)
+                {
+                    results[i] = results[i] with { Selected = true };
+                    break;
+                }
+            }
+        }
+
+        return (results, selectedCloneRepo);
     }
 
     /// <summary>
