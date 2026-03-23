@@ -143,11 +143,18 @@ public class IssueDetailPage(IPage page)
 
     /// <summary>
     /// Clicks a mention dropdown item whose visible text contains <paramref name="label"/>.
+    /// Vue's dropdown uses <c>@mousedown.prevent</c> (not @click) for selection, so we
+    /// dispatch a mousedown event directly — this triggers <c>confirmSelection()</c>
+    /// without viewport/z-index positioning issues that can affect Force-click.
+    /// Waits for the dropdown to disappear before returning so callers can immediately
+    /// read the resulting textarea value.
     /// </summary>
     public async Task ClickMentionDropdownItemAsync(string label)
     {
-        await page.Locator($"{MentionDropdownButtonSelector}:has-text('{label}')").ClickAsync(
-            new LocatorClickOptions { Force = true });
+        await page.Locator($"{MentionDropdownButtonSelector}:has-text('{label}')").DispatchEventAsync("mousedown");
+        // Wait for the dropdown to close, confirming confirmSelection() ran.
+        await page.WaitForSelectorAsync(MentionDropdownButtonSelector,
+            new PageWaitForSelectorOptions { State = WaitForSelectorState.Hidden, Timeout = E2ETimeouts.Short });
     }
 
     /// <summary>
