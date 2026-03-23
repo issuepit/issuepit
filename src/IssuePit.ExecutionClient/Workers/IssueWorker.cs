@@ -1272,9 +1272,11 @@ public class IssueWorker(
 
     /// <summary>
     /// Returns a structured CI/CD failure report to pass directly to the opencode task prompt.
-    /// When the run has stored test results with failures, formats them as JUnit XML and uses that
-    /// instead of raw job logs so the agent gets precise failure details. Falls back to the last
-    /// 100 log lines per failed job (or recent logs) when no test results are available.
+    /// When the run has stored test results with failures, formats them as JUnit XML.
+    /// Raw job logs are always included for every failed job (regardless of test results) so
+    /// that non-test job failures are never silently dropped. Both sections may appear together
+    /// when some jobs produce test artifacts and others do not. Falls back to recent logs when
+    /// no named jobs are detected and no test results exist.
     /// </summary>
     private static async Task<string> GetCiCdFailureLogsAsync(
         Guid runId,
@@ -1338,8 +1340,9 @@ public class IssueWorker(
         sb.AppendLine();
 
         // ── Check for stored test results ────────────────────────────────────────
-        // When test results are available prefer structured XML over raw CI/CD logs so
-        // the agent gets precise failure details (name, error message, stack trace).
+        // Query for any suites with failures so they can be emitted as XML below.
+        // Test results and raw job logs are emitted independently — both may appear
+        // together when some jobs have test artifacts and others do not.
         var failedSuites = await db.CiCdTestSuites
             .Where(s => s.CiCdRunId == runId && s.FailedTests > 0)
             .OrderBy(s => s.ArtifactName)
@@ -1364,9 +1367,12 @@ public class IssueWorker(
             })
             .ToListAsync(cancellationToken);
 
+        // ── Failed test results (XML) ────────────────────────────────────────────
+        // Always emit XML when any test suite has failures, regardless of whether raw
+        // job logs are also included below.  This handles: multiple jobs each with tests,
+        // and the mixed case where some jobs have test results and others do not.
         if (failedSuites.Count > 0)
         {
-            // ── Failed test results (XML) ────────────────────────────────────────
             sb.AppendLine("--- Failed Test Results ---");
             var suiteInfos = failedSuites
                 .Select(s => new FailedTestSuiteInfo(
@@ -1378,10 +1384,14 @@ public class IssueWorker(
                         .ToList()))
                 .ToList();
             sb.AppendLine(BuildFailedTestsXml(suiteInfos));
+            sb.AppendLine();
         }
-        else if (failedJobIds.Count > 0)
+
+        // ── Failed job logs ──────────────────────────────────────────────────────
+        // Always emit raw logs for every failed job so that non-test job failures are
+        // covered even when some jobs produced test result artifacts.
+        if (failedJobIds.Count > 0)
         {
-            // ── Failed job logs (fallback when no test results are stored) ────────
             foreach (var jobId in failedJobIds.OrderBy(j => j))
             {
                 sb.AppendLine($"--- Failed Job: {jobId} ---");
@@ -1400,7 +1410,7 @@ public class IssueWorker(
                 sb.AppendLine();
             }
         }
-        else
+        else if (failedSuites.Count == 0)
         {
             // No jobs had a "Job failed" terminal line and no test results — fall back to the last
             // 200 total lines plus extra stderr lines to ensure errors are always represented.

@@ -129,6 +129,7 @@ public class IssueWorkerFailureReportTests
     [Fact]
     public void BuildFailedTestsXml_MultipleSuites_AllIncluded()
     {
+        // Scenario: multiple jobs fail, each with test results.
         var suites = new List<FailedTestSuiteInfo>
         {
             new("suite-a", 5, 1, [new FailedTestCaseInfo("A.Test1", "A", "Test1", 1.0, "Suite A assertion failure", null)]),
@@ -141,6 +142,7 @@ public class IssueWorkerFailureReportTests
 
         var xml = IssueWorker.BuildFailedTestsXml(suites);
 
+        // Both suites are present with all their failing test cases.
         Assert.Contains("name=\"suite-a\"", xml);
         Assert.Contains("name=\"suite-b\"", xml);
         Assert.Equal(2, xml.Split("<testsuite ").Length - 1);
@@ -179,5 +181,35 @@ public class IssueWorkerFailureReportTests
         var xml = IssueWorker.BuildFailedTestsXml(suites);
 
         Assert.Contains("message=\"Test failed\"", xml);
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="IssueWorker.BuildFailedTestsXml"/> produces one
+    /// &lt;testsuite&gt; per suite, covering the "multiple jobs each with tests" scenario.
+    /// </summary>
+    [Fact]
+    public void BuildFailedTestsXml_MultipleJobSuites_EachEmittedAsSeparateSuite()
+    {
+        var suites = new List<FailedTestSuiteInfo>
+        {
+            new("job-a-tests", 20, 2,
+            [
+                new FailedTestCaseInfo("A.Suite.Test1", "A.Suite", "Test1", 50.0, "Job A failure 1", null),
+                new FailedTestCaseInfo("A.Suite.Test2", "A.Suite", "Test2", 60.0, "Job A failure 2", null),
+            ]),
+            new("job-b-tests", 15, 1,
+            [
+                new FailedTestCaseInfo("B.Suite.Test1", "B.Suite", "Test1", 30.0, "Job B failure", null),
+            ]),
+        };
+
+        var xml = IssueWorker.BuildFailedTestsXml(suites);
+
+        Assert.Contains("name=\"job-a-tests\"", xml);
+        Assert.Contains("failures=\"2\"", xml);
+        Assert.Contains("name=\"job-b-tests\"", xml);
+        Assert.Contains("failures=\"1\"", xml);
+        Assert.Equal(2, xml.Split("<testsuite ").Length - 1);
+        Assert.Equal(3, xml.Split("<testcase ").Length - 1);
     }
 }
