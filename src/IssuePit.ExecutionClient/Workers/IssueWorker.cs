@@ -365,19 +365,31 @@ public class IssueWorker(
         var gitRepository = allGitRepositories.FirstOrDefault(r => r.Mode == GitOriginMode.Working)
             ?? allGitRepositories.FirstOrDefault();
 
-        // Clone source: always prefer the Working-mode remote when it has a DefaultBranch set.
-        // Cloning from the same remote we push to ensures all ancestor commits exist on the push
-        // target (push failures with "did not receive expected object" happen when the clone source
-        // and push target are different repositories with diverged or unsynchronised histories).
-        // Falls back to the remote with the most commits when no Working-mode remote has a
-        // DefaultBranch, and ultimately to the push target when no remote has a DefaultBranch.
+        // Clone source: the remote with the most commits on its DefaultBranch (deepest commit chain).
+        // "Most commits" means the remote whose DefaultBranch HEAD is furthest from the root in the
+        // git ancestry graph — i.e. has the highest git rev-list --count value, updated by
+        // GitPollingService on every successful fetch. Falls back to LastFetchedAt when no
+        // DefaultBranchCommitCount is available yet (e.g. first run before polling has set it),
+        // and ultimately to the push target (Working-mode remote) when no remote has a DefaultBranch.
+        //
+        // Ordering rationale:
+        //   1st: DefaultBranchCommitCount descending — prefer the remote with the newest/most commits.
+        //   2nd: LastFetchedAt descending        — tiebreaker when commit counts are equal/unavailable.
+        //   3rd: Working mode                    — final tiebreaker: prefer Working to co-locate clone
+        //                                          and push target when everything else is equal.
+        //
+        // The clone source and push target are intentionally kept separate: any remote with a
+        // DefaultBranch set may be used for cloning (e.g. a Release/upstream remote that is more
+        // up-to-date), while the push target is always the Working-mode remote. Both configurations —
+        // same clone/push remote and different clone/push remote — are supported.
+        //
         // DefaultBranch is the "base pull branch": used to create agent feature branches when
         // issue.GitBranch is not set, and as the default target for merge/pull requests.
         var cloneRepository = allGitRepositories
             .Where(r => !string.IsNullOrWhiteSpace(r.DefaultBranch))
-            .OrderByDescending(r => r.Mode == GitOriginMode.Working)
-            .ThenByDescending(r => r.DefaultBranchCommitCount ?? 0)
+            .OrderByDescending(r => r.DefaultBranchCommitCount ?? 0)
             .ThenByDescending(r => r.LastFetchedAt)
+            .ThenByDescending(r => r.Mode == GitOriginMode.Working)
             .FirstOrDefault()
             ?? gitRepository;
 
