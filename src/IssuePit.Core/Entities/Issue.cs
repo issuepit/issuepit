@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 using IssuePit.Core.Enums;
 
 namespace IssuePit.Core.Entities;
@@ -100,4 +101,20 @@ public class Issue
     /// </summary>
     [NotMapped]
     public Guid? TriggeringCommentId { get; set; }
+
+    /// <summary>
+    /// Similar issues to include in the agent prompt. Not persisted — populated on demand when
+    /// the triggering comment contains <c>#similar</c>.
+    /// </summary>
+    [NotMapped]
+    [JsonIgnore]
+    public IList<SimilarIssuePair> PromptSimilarIssues { get; set; } = [];
+
+    /// <summary>
+    /// Recent CI/CD runs to include in the agent prompt. Not persisted — populated on demand when
+    /// the triggering comment contains <c>#runs</c>.
+    /// </summary>
+    [NotMapped]
+    [JsonIgnore]
+    public IList<CiCdRun> PromptCiCdRuns { get; set; } = [];
 }

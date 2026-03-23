@@ -315,6 +315,34 @@ public class IssueWorker(
 
         issue.TriggeringCommentId = triggeringCommentId;
 
+        // When the triggering comment contains #similar or #runs, load the relevant context
+        // so it can be included in the agent prompt.
+        if (triggeringCommentId.HasValue)
+        {
+            var triggeringComment = rawComments.FirstOrDefault(c => c.Id == triggeringCommentId.Value);
+            if (triggeringComment is not null)
+            {
+                if (triggeringComment.Body.Contains("#similar", StringComparison.OrdinalIgnoreCase))
+                {
+                    issue.PromptSimilarIssues = await db.SimilarIssuePairs
+                        .Where(p => p.IssueId == issue.Id)
+                        .Include(p => p.SimilarIssue)
+                        .OrderByDescending(p => p.Score)
+                        .Take(5)
+                        .ToListAsync(cancellationToken);
+                }
+
+                if (triggeringComment.Body.Contains("#runs", StringComparison.OrdinalIgnoreCase))
+                {
+                    issue.PromptCiCdRuns = await db.CiCdRuns
+                        .Where(r => r.AgentSession != null && r.AgentSession.IssueId == issue.Id)
+                        .OrderByDescending(r => r.StartedAt)
+                        .Take(10)
+                        .ToListAsync(cancellationToken);
+                }
+            }
+        }
+
         // Resolve runtime: use the org's default configuration or fall back to Docker
         var runtimeConfig = await db.RuntimeConfigurations
             .Where(r => r.OrgId == agent.OrgId && r.IsDefault)

@@ -4,6 +4,7 @@ using System.Text.Json;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace IssuePit.Tests.Integration;
@@ -265,6 +266,129 @@ public class IssueCreationKafkaTests(TrackingApiFactory factory) : IClassFixture
         var message = factory.Producer.Produced.Single(m => m.Topic == "issue-assigned" && m.Message.Key == issueId);
         var payload = JsonSerializer.Deserialize<JsonElement>(message.Message.Value);
         Assert.False(payload.TryGetProperty("AgentId", out _), "Issue-created event must not contain AgentId");
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+}
+
+[Trait("Category", "Integration")]
+public class IssueCommentMentionTests(TrackingApiFactory factory) : IClassFixture<TrackingApiFactory>
+{
+    private readonly HttpClient _client = factory.CreateClient();
+
+    private async Task<(Guid tenantId, Guid projectId, Guid orgId)> SeedProjectAsync()
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+        var tenantId = Guid.NewGuid();
+        db.Tenants.Add(new Tenant { Id = tenantId, Name = "T", Hostname = $"host-{tenantId}" });
+        var org = new Organization { Id = Guid.NewGuid(), TenantId = tenantId, Name = "Org", Slug = $"org-{tenantId}" };
+        db.Organizations.Add(org);
+        var project = new Project { Id = Guid.NewGuid(), OrgId = org.Id, Name = "Proj", Slug = $"proj-{tenantId}" };
+        db.Projects.Add(project);
+        await db.SaveChangesAsync();
+        return (tenantId, project.Id, org.Id);
+    }
+
+    [Fact]
+    public async Task AddComment_WithAgentMention_PublishesIssueAssignedEventWithTriggeringCommentId()
+    {
+        var (tenantId, projectId, orgId) = await SeedProjectAsync();
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+        var issue = new Issue { Id = Guid.NewGuid(), ProjectId = projectId, Title = "Issue for mention test", Number = 1 };
+        db.Issues.Add(issue);
+
+        var agent = new Agent { Id = Guid.NewGuid(), OrgId = orgId, Name = "code-agent", SystemPrompt = "sys", DockerImage = "img", IsActive = true, AllowedTools = "[]", CreatedAt = DateTime.UtcNow };
+        db.Agents.Add(agent);
+
+        // Assign the agent so it's picked up when triggered
+        db.IssueAssignees.Add(new IssueAssignee { Id = Guid.NewGuid(), IssueId = issue.Id, AgentId = agent.Id });
+
+        await db.SaveChangesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var beforeCount = factory.Producer.Produced.Count;
+        var response = await _client.PostAsJsonAsync($"/api/issues/{issue.Id}/comments", new { body = "Please fix the bug @code-agent" });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        // A new issue-assigned event should have been published for the mentioned agent.
+        var newMessages = factory.Producer.Produced.Skip(beforeCount).ToList();
+        var matchingEvents = newMessages.Where(m => m.Topic == "issue-assigned" && m.Message.Key == issue.Id.ToString()).ToList();
+        Assert.Single(matchingEvents);
+
+        var payload = JsonSerializer.Deserialize<JsonElement>(matchingEvents[0].Message.Value);
+        Assert.Equal(agent.Id.ToString(), payload.GetProperty("AgentId").GetString());
+
+        // The triggering comment ID must be present in the payload so the prompt builder can mark
+        // that comment as is_new="true".
+        Assert.True(payload.TryGetProperty("TriggeringCommentId", out var tcProp));
+        Assert.False(string.IsNullOrEmpty(tcProp.GetString()));
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
+    public async Task AddComment_WithUnknownAgentMention_DoesNotPublishEvent()
+    {
+        var (tenantId, projectId, _) = await SeedProjectAsync();
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+        var issue = new Issue { Id = Guid.NewGuid(), ProjectId = projectId, Title = "Issue no agent", Number = 2 };
+        db.Issues.Add(issue);
+        await db.SaveChangesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var beforeCount = factory.Producer.Produced.Count;
+        var response = await _client.PostAsJsonAsync($"/api/issues/{issue.Id}/comments", new { body = "@nonexistent-agent please help" });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        // No new issue-assigned events should have been published.
+        var newMessages = factory.Producer.Produced.Skip(beforeCount)
+            .Where(m => m.Topic == "issue-assigned")
+            .ToList();
+        Assert.Empty(newMessages);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
+    public async Task AddComment_WithAgentMention_AutoAssignsAgentIfNotAlreadyAssigned()
+    {
+        var (tenantId, projectId, orgId) = await SeedProjectAsync();
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+        var issue = new Issue { Id = Guid.NewGuid(), ProjectId = projectId, Title = "Auto-assign test", Number = 3 };
+        db.Issues.Add(issue);
+
+        var agent = new Agent { Id = Guid.NewGuid(), OrgId = orgId, Name = "auto-agent", SystemPrompt = "sys", DockerImage = "img", IsActive = true, AllowedTools = "[]", CreatedAt = DateTime.UtcNow };
+        db.Agents.Add(agent);
+        // Do NOT assign the agent to the issue yet.
+
+        await db.SaveChangesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var response = await _client.PostAsJsonAsync($"/api/issues/{issue.Id}/comments", new { body = "@auto-agent please implement this" });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        // The agent should have been auto-assigned.
+        using var verifyScope = factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+        var isAssigned = await verifyDb.IssueAssignees.AnyAsync(a => a.IssueId == issue.Id && a.AgentId == agent.Id);
+        Assert.True(isAssigned, "Agent should have been auto-assigned after comment @mention");
 
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
     }
