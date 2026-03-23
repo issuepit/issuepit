@@ -1620,10 +1620,9 @@ function onSelectAgentForAssignment(e: Event) {
   // Open modal to optionally add a comment
   assignAgentModal.agentId = agentId
   assignAgentModal.agentName = agent.name
-  assignAgentModal.comment = `@${agent.name} `
+  assignAgentModal.comment = ''
   nextTick(() => {
     assignAgentModalRef.value?.focus()
-    assignAgentModalRef.value?.setSelectionRange(assignAgentModal.comment.length, assignAgentModal.comment.length)
   })
 }
 
