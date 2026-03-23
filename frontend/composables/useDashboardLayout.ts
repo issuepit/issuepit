@@ -17,6 +17,8 @@ export interface LayoutSectionConfig {
   sortBy?: string
   countMode?: string
   projectFilter?: string
+  failedHours?: number
+  maxPerProject?: number
 }
 
 interface LayoutData {

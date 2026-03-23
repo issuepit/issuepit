@@ -194,6 +194,24 @@
           <option v-for="p in projectOptions" :key="p.id" :value="p.id">{{ p.name }}</option>
         </select>
       </div>
+      <!-- Max per project -->
+      <div v-if="maxPerProjectOptions?.length" class="flex items-center gap-0.5">
+        <span class="text-xs text-gray-500 mr-1">Max/proj</span>
+        <button
+          v-for="n in maxPerProjectOptions" :key="n"
+          @click.stop="$emit('max-per-project-change', n)"
+          :class="currentMaxPerProject === n ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
+          class="text-xs px-1.5 py-0.5 rounded transition-colors">{{ n === 0 ? '∞' : n }}</button>
+      </div>
+      <!-- Failed hours -->
+      <div v-if="failedHoursOptions?.length" class="flex items-center gap-0.5">
+        <span class="text-xs text-gray-500 mr-1">Failed in</span>
+        <button
+          v-for="h in failedHoursOptions" :key="h"
+          @click.stop="$emit('failed-hours-change', h)"
+          :class="currentFailedHours === h ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
+          class="text-xs px-1.5 py-0.5 rounded transition-colors">{{ h < 24 ? h + 'h' : h === 24 ? '24h' : h === 168 ? '7d' : h + 'h' }}</button>
+      </div>
     </div>
   </div>
 </template>
@@ -227,6 +245,10 @@ const props = defineProps<{
   currentSortBy?: string
   projectOptions?: { id: string; name: string }[]
   currentProjectFilter?: string | null
+  maxPerProjectOptions?: number[]
+  currentMaxPerProject?: number
+  failedHoursOptions?: number[]
+  currentFailedHours?: number
   canTab?: boolean
   isTabbed?: boolean
   canStack?: boolean
@@ -249,6 +271,8 @@ const emit = defineEmits<{
   'test-history-x-mode-change': [mode: string]
   'sort-by-change': [value: string]
   'project-filter-change': [projectId: string | null]
+  'max-per-project-change': [n: number]
+  'failed-hours-change': [hours: number]
   'tab-toggle': []
   'tab-drop': [droppedSid: string]
   'stack-toggle': []
@@ -281,7 +305,9 @@ const hasSettings = computed(() =>
   (props.testHistoryColorModeOptions?.length ?? 0) > 0 ||
   (props.testHistoryXModeOptions?.length ?? 0) > 0 ||
   (props.sortByOptions?.length ?? 0) > 0 ||
-  (props.projectOptions?.length ?? 0) > 0,
+  (props.projectOptions?.length ?? 0) > 0 ||
+  (props.maxPerProjectOptions?.length ?? 0) > 0 ||
+  (props.failedHoursOptions?.length ?? 0) > 0,
 )
 
 function onChartDaysChange(e: Event) {
