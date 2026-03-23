@@ -18,9 +18,11 @@ public class DashboardPage(IPage page)
 
     public ILocator OpenIssuesStatCard => page.Locator("a[href='/issues?status=open']:has-text('Open Issues')");
 
-    public ILocator InProgressStatCard => page.Locator("a[href='/issues?status=in_progress']:has-text('In Progress')");
+    /// <summary>Formerly "In Progress issues" — now shows the count of currently running CI/CD runs.</summary>
+    public ILocator CiCdRunningStatCard => page.Locator("a[href='/runs']:has-text('CI/CD Running')");
 
-    public ILocator AgentsStatCard => page.Locator("a[href='/runs']:has-text('Agent Runs')");
+    /// <summary>Formerly "Agent Runs (total)" — now shows currently running agent sessions.</summary>
+    public ILocator RunningAgentsStatCard => page.Locator("a[href='/runs']:has-text('Running Agents')");
 
     private ILocator RecentIssuesSection => page.Locator("h2:has-text('Recent Issues') ~ div");
 

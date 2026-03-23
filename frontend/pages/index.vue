@@ -106,7 +106,7 @@
         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
         </svg>
-        {{ SECTION_LABELS[sid as MainSectionId] }}
+        {{ allSectionLabels[sid] ?? sid }}
       </button>
     </div>
 
@@ -171,10 +171,10 @@
             <!-- Single section config bar -->
             <DashboardSectionBar
               v-if="item.type === 'section'"
-              :label="SECTION_LABELS[item.sid as MainSectionId] ?? item.sid"
-              :display-modes="SECTION_DISPLAY_MODES[item.sid] ?? (isCiCdRunsSid(item.sid) || isAgentRunsSid(item.sid) || isRecentIssuesSid(item.sid) ? ['list','count','chart'] : undefined)"
+              :label="allSectionLabels[item.sid] ?? item.sid"
+              :display-modes="getSectionDisplayModes(item.sid)"
               :current-display-mode="sectionCfg(item.sid).displayMode"
-              :has-max-items="SECTION_HAS_MAX_ITEMS.has(item.sid as MainSectionId) || isCiCdRunsSid(item.sid) || isAgentRunsSid(item.sid) || isRecentIssuesSid(item.sid)"
+              :has-max-items="sectionHasMaxItems(item.sid)"
               :max-items-options="[3,5,8,10]"
               :current-max-items="sectionCfg(item.sid).maxItems"
               :widths="MAIN_WIDTHS"
@@ -182,14 +182,14 @@
               :current-chart-days="item.sid === 'chart' ? (sectionCfg(item.sid).chartDays ?? CHART_DAY_DEFAULT) : undefined"
               :chart-height-options="item.sid === 'chart' ? CHART_HEIGHT_OPTIONS : undefined"
               :current-chart-height="item.sid === 'chart' ? (sectionCfg(item.sid).chartHeightKey ?? 'md') : undefined"
-              :sort-by-options="item.sid === 'recentProjects' || isRecentIssuesSid(item.sid) ? (item.sid === 'recentProjects' ? RECENT_PROJECTS_SORT_OPTIONS : RECENT_ISSUES_SORT_OPTIONS) : undefined"
+              :sort-by-options="item.sid === 'recentProjects' ? RECENT_PROJECTS_SORT_OPTIONS : isRecentIssuesSid(item.sid) ? RECENT_ISSUES_SORT_OPTIONS : undefined"
               :current-sort-by="(item.sid === 'recentProjects' || isRecentIssuesSid(item.sid)) ? (sectionCfg(item.sid).sortBy ?? 'default') : undefined"
-              :can-tab="(SECTION_CAN_TAB.has(item.sid as MainSectionId) || isCiCdRunsSid(item.sid) || isAgentRunsSid(item.sid) || isRecentIssuesSid(item.sid)) && layout.order.indexOf(item.sid) < layout.order.length - 1"
+              :can-tab="sectionCanTab(item.sid) && layout.order.indexOf(item.sid) < layout.order.length - 1"
               :is-tabbed="sectionCfg(item.sid).tabGroup !== null"
-              :can-stack="(SECTION_CAN_STACK.has(item.sid as MainSectionId) || isCiCdRunsSid(item.sid) || isAgentRunsSid(item.sid) || isRecentIssuesSid(item.sid)) && layout.order.indexOf(item.sid) < layout.order.length - 1"
+              :can-stack="sectionCanStack(item.sid) && layout.order.indexOf(item.sid) < layout.order.length - 1"
               :is-stacked="sectionCfg(item.sid).stackGroup !== null"
               :hidden="sectionCfg(item.sid).hidden"
-              :can-remove="(isCiCdRunsSid(item.sid) && item.sid !== 'cicdRuns') || (isAgentRunsSid(item.sid) && item.sid !== 'agentRunsList') || (isRecentIssuesSid(item.sid) && item.sid !== 'recentIssues')"
+              :can-remove="isDynamicVariant(item.sid)"
               :drag-hover="dragSectionId !== null && dragHoverSid === item.sid && dragSectionId !== item.sid"
               @display-mode-change="m => updateCfg(item.sid, { displayMode: m as MainDisplayMode })"
               @max-items-change="n => updateCfg(item.sid, { maxItems: n })"
@@ -209,7 +209,7 @@
             <DashboardTabGroupBar
               v-else-if="item.type === 'tabgroup'"
               :sections="item.sections"
-              :section-labels="SECTION_LABELS"
+              :section-labels="allSectionLabels"
               :widths="MAIN_WIDTHS"
               :current-width="sectionCfg(item.sections[0] as MainSectionId).width"
               @split="toggleTabGroupWithNext(item.sections[0] as MainSectionId)"
@@ -219,7 +219,7 @@
             <DashboardStackGroupBar
               v-else-if="item.type === 'stackgroup'"
               :sections="item.sections"
-              :section-labels="SECTION_LABELS"
+              :section-labels="allSectionLabels"
               :widths="MAIN_WIDTHS"
               :current-width="sectionCfg(item.sections[0] as MainSectionId).width"
               :is-dragging="!!dragSectionId"
@@ -246,7 +246,7 @@
                     : 'text-gray-500 hover:text-gray-300',
                 ]"
                 class="px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0">
-                {{ SECTION_LABELS[sec as MainSectionId] }}
+                {{ allSectionLabels[sec] ?? sec }}
               </button>
             </div>
 
@@ -307,7 +307,7 @@
                       </div>
                     </template>
                     <template v-else-if="sectionCfg(sid).displayMode === 'chart'">
-                      <div class="py-2 text-sm text-gray-500 text-center py-4">No chart data yet</div>
+                      <div class="py-4 text-sm text-gray-500 text-center">No chart data yet</div>
                     </template>
                     <template v-else>
                       <div class="space-y-1">
@@ -619,6 +619,8 @@ const SECTION_DISPLAY_MODES: Partial<Record<string, string[]>> = {
   agentRunsList:  ['list', 'count', 'chart'],
 }
 
+const DYNAMIC_SECTION_DISPLAY_MODES = ['list', 'count', 'chart']
+
 const SECTION_HAS_MAX_ITEMS = new Set<MainSectionId>(['recentIssues', 'recentProjects', 'cicdRuns', 'agentRunsList'])
 const SECTION_CAN_TAB = new Set<MainSectionId>(['recentIssues', 'recentProjects', 'chart', 'cicdRuns', 'agentRunsList'])
 const SECTION_CAN_STACK = new Set<MainSectionId>([
@@ -707,6 +709,47 @@ function isCiCdRunsSid(sid: string) { return sid === 'cicdRuns' || /^cicdRuns-\d
 function isAgentRunsSid(sid: string) { return sid === 'agentRunsList' || /^agentRuns-\d/.test(sid) }
 function isRecentIssuesSid(sid: string) { return sid === 'recentIssues' || /^recentIssues-\d/.test(sid) }
 
+function isDynamicVariant(sid: string): boolean {
+  return (isCiCdRunsSid(sid) && sid !== 'cicdRuns')
+    || (isAgentRunsSid(sid) && sid !== 'agentRunsList')
+    || (isRecentIssuesSid(sid) && sid !== 'recentIssues')
+}
+
+function getSectionDisplayModes(sid: string): string[] | undefined {
+  if (SECTION_DISPLAY_MODES[sid]) return SECTION_DISPLAY_MODES[sid]
+  if (isCiCdRunsSid(sid) || isAgentRunsSid(sid) || isRecentIssuesSid(sid)) return DYNAMIC_SECTION_DISPLAY_MODES
+  return undefined
+}
+
+function sectionHasMaxItems(sid: string): boolean {
+  return SECTION_HAS_MAX_ITEMS.has(sid as MainSectionId) || isCiCdRunsSid(sid) || isAgentRunsSid(sid) || isRecentIssuesSid(sid)
+}
+
+function sectionCanTab(sid: string): boolean {
+  return SECTION_CAN_TAB.has(sid as MainSectionId) || isCiCdRunsSid(sid) || isAgentRunsSid(sid) || isRecentIssuesSid(sid)
+}
+
+function sectionCanStack(sid: string): boolean {
+  return SECTION_CAN_STACK.has(sid as MainSectionId) || isCiCdRunsSid(sid) || isAgentRunsSid(sid) || isRecentIssuesSid(sid)
+}
+
+function getDynamicSectionLabel(sid: string): string {
+  if (isCiCdRunsSid(sid)) return 'CI/CD Runs'
+  if (isAgentRunsSid(sid)) return 'Agent Runs'
+  if (isRecentIssuesSid(sid)) return 'Recent Issues'
+  return sid
+}
+
+const allSectionLabels = computed<Record<string, string>>(() => {
+  const extra: Record<string, string> = {}
+  for (const sid of layout.value.order) {
+    if (!(sid in SECTION_LABELS)) {
+      extra[sid] = getDynamicSectionLabel(sid)
+    }
+  }
+  return { ...SECTION_LABELS, ...extra }
+})
+
 const DEFAULT_DYNAMIC_CFG = { hidden: false, width: 'md' as MainWidth, displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null }
 
 function addCiCdRunsCard() {
@@ -735,7 +778,10 @@ function itemColSpanClass(item: { type: string; sid?: string; sections?: string[
 }
 
 // ── Data ─────────────────────────────────────────────────────────────────
-const sevenDaysAgo = computed(() => { const d = new Date(); d.setDate(d.getDate() - 7); return d })
+const NEWLY_CREATED_DAYS = 7
+const sevenDaysAgo = computed(() => { const d = new Date(); d.setDate(d.getDate() - NEWLY_CREATED_DAYS); return d })
+
+const PRIORITY_ORDER: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3, no_priority: 4 }
 
 const stats = computed(() => ({
   projects: projectsStore.projects.length,
@@ -753,7 +799,7 @@ function statOpenIssuesLabel(mode: string): string {
   if (mode === 'in_progress') return 'In Progress'
   if (mode === 'closed') return 'Closed Issues'
   if (mode === 'total') return 'Total Issues'
-  if (mode === 'newly_created') return 'New (7d)'
+  if (mode === 'newly_created') return `New (${NEWLY_CREATED_DAYS}d)`
   return 'Open Issues'
 }
 function statOpenIssuesCount(mode: string): number {
@@ -765,7 +811,7 @@ function statOpenIssuesCount(mode: string): number {
 }
 function statOpenIssuesLink(mode: string): string {
   if (mode === 'in_progress') return '/issues?status=in_progress'
-  if (mode === 'closed') return '/issues?status=closed'
+  if (mode === 'closed') return '/issues?status=done'
   return '/issues?status=open'
 }
 function statOpenIssuesColor(mode: string): string {
@@ -919,8 +965,7 @@ function sortedIssues(sid: string) {
   const sortBy = sectionCfg(sid).sortBy ?? 'default'
   const list = [...issuesStore.issues]
   if (sortBy === 'priority') {
-    const pOrder: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3, no_priority: 4 }
-    list.sort((a, b) => (pOrder[a.priority] ?? 99) - (pOrder[b.priority] ?? 99))
+    list.sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 99) - (PRIORITY_ORDER[b.priority] ?? 99))
   } else if (sortBy === 'status') {
     list.sort((a, b) => a.status.localeCompare(b.status))
   }
