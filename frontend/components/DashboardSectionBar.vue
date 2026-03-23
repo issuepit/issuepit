@@ -210,7 +210,7 @@
           v-for="h in failedHoursOptions" :key="h"
           @click.stop="$emit('failed-hours-change', h)"
           :class="currentFailedHours === h ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
-          class="text-xs px-1.5 py-0.5 rounded transition-colors">{{ h < 24 ? h + 'h' : h === 24 ? '24h' : h === 168 ? '7d' : h + 'h' }}</button>
+          class="text-xs px-1.5 py-0.5 rounded transition-colors">{{ formatFailedHours(h) }}</button>
       </div>
     </div>
   </div>
@@ -285,6 +285,13 @@ const emit = defineEmits<{
 const showSettings = ref(false)
 const tabDragOver = ref(false)
 const stackDragOver = ref(false)
+
+/** Convert a failedHours number to a short display label. 0 means "all time". */
+function formatFailedHours(h: number): string {
+  if (h === 0) return '∞'
+  if (h === 168) return '7d'
+  return `${h}h`
+}
 
 /** Split a fraction label like "1/12" into { num, den }. "Full" maps to { num:"1", den:"1" }. */
 function fractionParts(label: string): { num: string; den: string } {

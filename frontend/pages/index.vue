@@ -852,14 +852,12 @@ function statOpenIssuesColor(mode: string): string {
   return 'text-amber-400'
 }
 
-const FAILED_HOURS_OPTIONS = [1, 6, 24, 48, 168, 0]
+const SEVEN_DAYS_IN_HOURS = 168 // 7 × 24
+const FAILED_HOURS_OPTIONS = [1, 6, 24, 48, SEVEN_DAYS_IN_HOURS, 0]
 
 function failedHoursLabel(h: number): string {
   if (h === 0) return 'all time'
-  if (h < 24) return `${h}h`
-  if (h === 24) return '24h'
-  if (h === 48) return '48h'
-  if (h === 168) return '7d'
+  if (h === SEVEN_DAYS_IN_HOURS) return '7d'
   return `${h}h`
 }
 
