@@ -362,8 +362,9 @@ public class IssueWorker(
             .ToListAsync(cancellationToken);
 
         // Push target: always the Working-mode remote (agents push their changes back here).
-        var gitRepository = allGitRepositories.FirstOrDefault(r => r.Mode == GitOriginMode.Working)
-            ?? allGitRepositories.FirstOrDefault();
+        // No fallback: if no Working-mode remote is configured, CheckBranchOnRemotesAsync throws
+        // with a clear error rather than silently pushing to an unrelated remote.
+        var gitRepository = allGitRepositories.FirstOrDefault(r => r.Mode == GitOriginMode.Working);
 
         // Clone source: the remote with the most commits on its DefaultBranch (deepest commit chain).
         // "Most commits" means the remote whose DefaultBranch HEAD is furthest from the root in the
@@ -372,23 +373,21 @@ public class IssueWorker(
         //
         // Ordering rationale:
         //   1st: DefaultBranchCommitCount descending — prefer the remote with the newest/most commits.
-        //   2nd: Working mode                        — tiebreaker: prefer Working to co-locate clone
-        //                                              and push target when commit counts are equal.
         //
         // The clone source and push target are intentionally kept separate: any remote with a
         // DefaultBranch set may be used for cloning (e.g. a Release/upstream remote that is more
         // up-to-date), while the push target is always the Working-mode remote. Both configurations —
         // same clone/push remote and different clone/push remote — are supported.
         //
-        // No fallback: if no remote has a DefaultBranch configured, CheckBranchOnRemotesAsync throws
-        // with a clear error rather than silently selecting an unrelated remote.
+        // No fallbacks: if no remote has a DefaultBranch configured, or if no Working-mode remote
+        // exists for push, CheckBranchOnRemotesAsync throws with a clear error rather than silently
+        // selecting an unrelated remote.
         //
         // DefaultBranch is the "base pull branch": used to create agent feature branches when
         // issue.GitBranch is not set, and as the default target for merge/pull requests.
         var cloneRepository = allGitRepositories
             .Where(r => !string.IsNullOrWhiteSpace(r.DefaultBranch))
             .OrderByDescending(r => r.DefaultBranchCommitCount ?? 0)
-            .ThenByDescending(r => r.Mode == GitOriginMode.Working)
             .FirstOrDefault();
 
         // Load the per-project push policy for this agent. Falls back to Forbidden when no
@@ -1530,6 +1529,10 @@ public class IssueWorker(
     ///     merge/pull-request target.
     ///   </description></item>
     ///   <item><description>
+    ///     No Working-mode remote is configured — the push target is always the Working remote and
+    ///     there is no fallback; the run fails with a clear message so the user can fix the config.
+    ///   </description></item>
+    ///   <item><description>
     ///     The clone-source remote's <c>DefaultBranch</c> was confirmed absent on that remote.
     ///   </description></item>
     /// </list>
@@ -1576,6 +1579,15 @@ public class IssueWorker(
                 "No configured git remote has a DefaultBranch set. " +
                 "Set the default branch on at least one remote in the project's git repository settings. " +
                 "DefaultBranch is the base pull branch: used to create agent feature branches and as the default target for merge/pull requests.");
+        }
+
+        // Exactly one Working-mode remote must be configured for push.
+        if (repositories.All(r => r.Mode != GitOriginMode.Working))
+        {
+            throw new InvalidOperationException(
+                "No Working-mode git remote is configured for this project. " +
+                "Set one remote to Mode=Working in the project's git repository settings. " +
+                "The Working remote is the push target for agent branches.");
         }
 
         var results = new List<GitRemoteCheckResult>();
