@@ -809,63 +809,71 @@ public class CiCdPipelineTests(AspireFixture fixture)
         var (client, projectId) = await SetupProjectAsync();
         using var _ = client;
 
-        // Fetch the project to get its current name and slug before updating.
+        // Fetch the project to get its current name and slug.
         var getResp = await client.GetAsync($"/api/projects/{projectId}");
         getResp.EnsureSuccessStatusCode();
         var existing = await getResp.Content.ReadFromJsonAsync<JsonElement>();
 
-        // Run without skip steps initially so the "build-output" artifact is created.
-        var triggerPayload = BuildTriggerPayload(projectId, "e2e-retry-skip-abc", runtimeMode, "ci.yml");
-        await client.PostAsJsonAsync("/api/cicd-runs/trigger", triggerPayload);
+        // Set requiresRunApproval = true so the triggered run stays in WaitingForApproval
+        // (never dispatched to the worker). This gives us a stable non-terminal run we can
+        // cancel deterministically, then retry.
+        var updateResp = await client.PutAsJsonAsync($"/api/projects/{projectId}", new
+        {
+            name = existing.GetProperty("name").GetString(),
+            slug = existing.GetProperty("slug").GetString(),
+            orgId = Guid.Parse(existing.GetProperty("orgId").GetString()!),
+            requiresRunApproval = true,
+        });
+        updateResp.EnsureSuccessStatusCode();
 
-        var firstRun = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
-        var firstRunId = firstRun.GetProperty("id").GetString()!;
-        await AssertRunSucceededAsync(client, firstRun, firstRunId);
+        // Trigger a run — it goes to WaitingForApproval (never starts executing).
+        var triggerResp = await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+            BuildTriggerPayload(projectId, "e2e-retry-skip-abc", runtimeMode, "ci.yml"));
+        Assert.Equal(HttpStatusCode.Accepted, triggerResp.StatusCode);
+        var triggerBody = await triggerResp.Content.ReadFromJsonAsync<JsonElement>();
+        var firstRunId = triggerBody.GetProperty("runId").GetString()!;
 
-        var firstArtifacts = await WaitForArtifactsAsync(client, firstRunId, 1, TimeSpan.FromSeconds(10));
-        var firstArtifactNames = firstArtifacts.EnumerateArray()
-            .Select(a => a.GetProperty("name").GetString())
-            .ToList();
-        Assert.Contains("build-output", firstArtifactNames);
+        // Cancel the WaitingForApproval run → Cancelled.
+        var cancelResp = await client.PostAsJsonAsync($"/api/cicd-runs/{firstRunId}/cancel", new { });
+        Assert.Equal(HttpStatusCode.OK, cancelResp.StatusCode);
 
-        // Retry the run but override SkipSteps to skip the artifact upload step.
+        // Confirm the run is Cancelled.
+        var checkResp = await client.GetAsync($"/api/cicd-runs/{firstRunId}");
+        checkResp.EnsureSuccessStatusCode();
+        var cancelledRun = await checkResp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Cancelled", cancelledRun.GetProperty("statusName").GetString());
+
+        // Retry the cancelled run with the skip-steps override.
+        // Retries are user-triggered and bypass requiresRunApproval, so the retry runs immediately.
         var retryResp = await client.PostAsJsonAsync($"/api/cicd-runs/{firstRunId}/retry", new
         {
             skipSteps = "build:Upload build output",
             overrideSkipSteps = true,
-            forceRetry = false,
         });
         Assert.Equal(HttpStatusCode.Accepted, retryResp.StatusCode);
         var retryBody = await retryResp.Content.ReadFromJsonAsync<JsonElement>();
         var retryRunId = retryBody.GetProperty("retriedRunId").GetString()!;
 
-        // Wait for the retry run to complete.
-        var deadline = DateTime.UtcNow + TimeSpan.FromMinutes(5);
-        JsonElement retryRun;
-        do
-        {
-            var resp = await client.GetAsync($"/api/cicd-runs/{retryRunId}");
-            resp.EnsureSuccessStatusCode();
-            retryRun = await resp.Content.ReadFromJsonAsync<JsonElement>();
-            var st = retryRun.GetProperty("statusName").GetString();
-            if (st is "Succeeded" or "Failed" or "Cancelled") break;
-            await Task.Delay(TimeSpan.FromMilliseconds(500));
-        } while (DateTime.UtcNow < deadline);
-
+        // Wait for the retry run to reach a terminal state.
+        var retryRun = await WaitForRunAsync(client, retryRunId, TimeSpan.FromMinutes(5));
         await AssertRunSucceededAsync(client, retryRun, retryRunId);
 
-        // The retry run should NOT have the build-output artifact.
+        // The "Upload build output" step was skipped, so "build-output" must not be present.
+        await Task.Delay(TimeSpan.FromSeconds(3));
         var retryArtifacts = await WaitForArtifactsAsync(client, retryRunId, 1, TimeSpan.FromSeconds(10));
         var retryArtifactNames = retryArtifacts.EnumerateArray()
             .Select(a => a.GetProperty("name").GetString())
             .ToList();
         Assert.DoesNotContain("build-output", retryArtifactNames);
+        Assert.Contains("test-results", retryArtifactNames);
 
         // The retry run's skipSteps should reflect the override.
         var retryDetailResp = await client.GetAsync($"/api/cicd-runs/{retryRunId}");
         retryDetailResp.EnsureSuccessStatusCode();
         var retryDetail = await retryDetailResp.Content.ReadFromJsonAsync<JsonElement>();
-        var retrySkipSteps = retryDetail.TryGetProperty("skipSteps", out var retrySkipStepsElement) ? retrySkipStepsElement.GetString() : null;
+        var retrySkipSteps = retryDetail.TryGetProperty("skipSteps", out var retrySkipStepsElement)
+            ? retrySkipStepsElement.GetString()
+            : null;
         Assert.Contains("Upload build output", retrySkipSteps ?? string.Empty);
     }
 
@@ -1096,6 +1104,30 @@ public class CiCdPipelineTests(AspireFixture fixture)
         }
 
         throw new TimeoutException($"No completed CI/CD run found for project {projectId} within {timeout}.");
+    }
+
+    /// <summary>
+    /// Polls <c>GET /api/cicd-runs/{runId}</c> until the run reaches a terminal state
+    /// (Succeeded, Failed, or Cancelled), or the timeout elapses.
+    /// </summary>
+    private static async Task<JsonElement> WaitForRunAsync(
+        HttpClient client,
+        string runId,
+        TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            var resp = await client.GetAsync($"/api/cicd-runs/{runId}");
+            resp.EnsureSuccessStatusCode();
+            var run = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            var statusName = run.GetProperty("statusName").GetString();
+            if (statusName is "Succeeded" or "Failed" or "Cancelled")
+                return run;
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+        }
+
+        throw new TimeoutException($"CI/CD run {runId} did not reach a terminal state within {timeout}.");
     }
 
     /// <summary>
