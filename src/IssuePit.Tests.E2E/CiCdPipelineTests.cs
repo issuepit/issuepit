@@ -772,12 +772,9 @@ public class CiCdPipelineTests(AspireFixture fixture)
         var runId = run.GetProperty("id").GetString()!;
         await AssertRunSucceededAsync(client, run, runId);
 
-        // Allow a short window for artifact processing after the run completes, then check.
-        await Task.Delay(TimeSpan.FromSeconds(3));
-        var artifactsResp = await client.GetAsync($"/api/cicd-runs/{runId}/artifacts");
-        artifactsResp.EnsureSuccessStatusCode();
-        var artifacts = await artifactsResp.Content.ReadFromJsonAsync<JsonElement>();
-
+        // Poll until "test-results" appears — this confirms artifact processing has caught up.
+        // The test job is unaffected and should upload its artifact despite the build-job skip.
+        var artifacts = await WaitForArtifactByNameAsync(client, runId, "test-results", TimeSpan.FromSeconds(30));
         var artifactNames = artifacts.EnumerateArray()
             .Select(a => a.GetProperty("name").GetString())
             .ToList();
@@ -787,6 +784,162 @@ public class CiCdPipelineTests(AspireFixture fixture)
 
         // The test job (which does not depend on the artifact file) should still have run.
         Assert.Contains("test-results", artifactNames);
+    }
+
+    /// <summary>
+    /// Verifies that skipping a step in a <em>dependent</em> job works correctly.
+    /// The <c>test</c> job depends on <c>build</c>; skipping its "Upload test results" step
+    /// should prevent the <c>test-results</c> artifact from being created, while the
+    /// <c>build-output</c> artifact from the unaffected <c>build</c> job is still present.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(RuntimeModes))]
+    public async Task CiCdRun_SkipsStepInDependentJob(string runtimeMode)
+    {
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip(SkipReason(runtimeMode));
+
+        var (client, projectId) = await SetupProjectAsync();
+        using var _ = client;
+
+        var getResp = await client.GetAsync($"/api/projects/{projectId}");
+        getResp.EnsureSuccessStatusCode();
+        var existing = await getResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        // Skip the "Upload test results" step in the test job (which depends on build).
+        var updateResp = await client.PutAsJsonAsync($"/api/projects/{projectId}", new
+        {
+            name = existing.GetProperty("name").GetString(),
+            slug = existing.GetProperty("slug").GetString(),
+            orgId = Guid.Parse(existing.GetProperty("orgId").GetString()!),
+            skipSteps = "test:Upload test results",
+        });
+        updateResp.EnsureSuccessStatusCode();
+
+        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+            BuildTriggerPayload(projectId, "e2e-skipstep-dep-abc", runtimeMode, "ci.yml"));
+
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
+
+        // Poll until "build-output" appears — confirms the build job artifact was processed.
+        // Once the run has completed and build-output is visible, artifact processing is done.
+        var artifacts = await WaitForArtifactByNameAsync(client, runId, "build-output", TimeSpan.FromSeconds(30));
+        var artifactNames = artifacts.EnumerateArray()
+            .Select(a => a.GetProperty("name").GetString())
+            .ToList();
+
+        // The "Upload test results" step was skipped — test-results must not be present.
+        Assert.DoesNotContain("test-results", artifactNames);
+
+        // The build job was unaffected and should have produced its artifact normally.
+        Assert.Contains("build-output", artifactNames);
+    }
+
+    /// <summary>
+    /// Verifies that a step in the deepest job of a dependency chain can be skipped.
+    /// The <c>coverage</c> job depends on <c>test</c>, which depends on <c>build</c>
+    /// (three-level chain). Skipping "Upload coverage report" should prevent
+    /// <c>coverage-report</c> from being created while both upstream jobs produce their
+    /// artifacts normally.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(RuntimeModes))]
+    public async Task CiCdRun_SkipsStepInDeeplyNestedJob(string runtimeMode)
+    {
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip(SkipReason(runtimeMode));
+
+        var (client, projectId) = await SetupProjectAsync();
+        using var _ = client;
+
+        var getResp = await client.GetAsync($"/api/projects/{projectId}");
+        getResp.EnsureSuccessStatusCode();
+        var existing = await getResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        // Skip the upload step in the deepest job: build → test → coverage.
+        var updateResp = await client.PutAsJsonAsync($"/api/projects/{projectId}", new
+        {
+            name = existing.GetProperty("name").GetString(),
+            slug = existing.GetProperty("slug").GetString(),
+            orgId = Guid.Parse(existing.GetProperty("orgId").GetString()!),
+            skipSteps = "coverage:Upload coverage report",
+        });
+        updateResp.EnsureSuccessStatusCode();
+
+        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+            BuildTriggerPayload(projectId, "e2e-skipstep-deep-abc", runtimeMode, "ci.yml"));
+
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
+
+        // Poll until "test-results" appears — it is produced by the upstream test job and
+        // confirms that artifact processing for the chain has caught up before we assert absence.
+        var artifacts = await WaitForArtifactByNameAsync(client, runId, "test-results", TimeSpan.FromSeconds(30));
+        var artifactNames = artifacts.EnumerateArray()
+            .Select(a => a.GetProperty("name").GetString())
+            .ToList();
+
+        // The "Upload coverage report" step was skipped — coverage-report must not be present.
+        Assert.DoesNotContain("coverage-report", artifactNames);
+
+        // Both upstream jobs ran normally and produced their artifacts.
+        Assert.Contains("build-output", artifactNames);
+        Assert.Contains("test-results", artifactNames);
+    }
+
+    /// <summary>
+    /// Verifies that skip steps work when multiple jobs each have a step skipped simultaneously.
+    /// Skipping "Upload build output" in <c>build</c> and "Upload test results" in <c>test</c>
+    /// leaves the downstream <c>coverage</c> job unaffected; only <c>coverage-report</c>
+    /// should be present.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(RuntimeModes))]
+    public async Task CiCdRun_SkipsStepsAcrossMultipleJobs(string runtimeMode)
+    {
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip(SkipReason(runtimeMode));
+
+        var (client, projectId) = await SetupProjectAsync();
+        using var _ = client;
+
+        var getResp = await client.GetAsync($"/api/projects/{projectId}");
+        getResp.EnsureSuccessStatusCode();
+        var existing = await getResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        // Skip artifact-upload steps in both build and test jobs.
+        var updateResp = await client.PutAsJsonAsync($"/api/projects/{projectId}", new
+        {
+            name = existing.GetProperty("name").GetString(),
+            slug = existing.GetProperty("slug").GetString(),
+            orgId = Guid.Parse(existing.GetProperty("orgId").GetString()!),
+            skipSteps = "build:Upload build output\ntest:Upload test results",
+        });
+        updateResp.EnsureSuccessStatusCode();
+
+        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+            BuildTriggerPayload(projectId, "e2e-skipstep-multi-abc", runtimeMode, "ci.yml"));
+
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
+
+        // Poll until "coverage-report" appears — the coverage job is downstream of both skipped
+        // jobs and still runs since the upstream jobs succeed (they just skip the upload steps).
+        var artifacts = await WaitForArtifactByNameAsync(client, runId, "coverage-report", TimeSpan.FromSeconds(30));
+        var artifactNames = artifacts.EnumerateArray()
+            .Select(a => a.GetProperty("name").GetString())
+            .ToList();
+
+        // Both skipped upload steps must have produced no artifacts.
+        Assert.DoesNotContain("build-output", artifactNames);
+        Assert.DoesNotContain("test-results", artifactNames);
+
+        // The coverage job was unaffected and uploaded its artifact normally.
+        Assert.Contains("coverage-report", artifactNames);
     }
 
     /// <summary>
