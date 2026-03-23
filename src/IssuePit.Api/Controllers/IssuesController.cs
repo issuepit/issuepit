@@ -354,7 +354,7 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
         await db.Entry(comment).Reference(c => c.User).LoadAsync();
 
         // Detect @agent-name mentions and trigger a run for each matched active agent.
-        await TriggerMentionedAgentsAsync(issue, comment);
+        await TriggerMentionedAgentsAsync(issue, comment, req.Branch);
 
         return Created($"/api/issues/{id}/comments/{comment.Id}", comment);
     }
@@ -364,7 +364,7 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
     /// current tenant, and publishes an <c>issue-assigned</c> Kafka event for each one.
     /// When the agent is not yet assigned to the issue it is assigned automatically first.
     /// </summary>
-    private async Task TriggerMentionedAgentsAsync(Issue issue, IssueComment comment)
+    private async Task TriggerMentionedAgentsAsync(Issue issue, IssueComment comment, string? branch = null)
     {
         // Extract all @word-word style mentions from the comment body.
         var mentionedNames = AgentMentionRegex()
@@ -422,6 +422,7 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
                     issue.Title,
                     AgentId = agent.Id,
                     TriggeringCommentId = comment.Id,
+                    Branch = branch,
                 })
             });
 
@@ -563,7 +564,7 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
             await producer.ProduceAsync("issue-assigned", new Message<string, string>
             {
                 Key = issue.Id.ToString(),
-                Value = JsonSerializer.Serialize(new { issue.Id, issue.ProjectId, issue.Title, AgentId = req.AgentId.Value, req.DockerCmdOverride })
+                Value = JsonSerializer.Serialize(new { issue.Id, issue.ProjectId, issue.Title, AgentId = req.AgentId.Value, req.DockerCmdOverride, Branch = req.Branch })
             });
         }
 
@@ -910,10 +911,10 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
         => new() { Id = Guid.NewGuid(), IssueId = issueId, EventType = eventType, OldValue = oldValue, NewValue = newValue, ActorUserId = ctx.CurrentUser?.Id, CreatedAt = DateTime.UtcNow };
 }
 
-public record CommentRequest(string Body, Guid? UserId);
+public record CommentRequest(string Body, Guid? UserId, string? Branch = null);
 public record CodeReviewCommentRequest(string FilePath, int StartLine, int EndLine, string Sha, string? Snippet, string? ContextBefore, string? ContextAfter, string Body);
 /// <param name="DockerCmdOverride">Optional command override for the agent container (for diagnostic/test runs, e.g. a connectivity check). Only applies when no RunnerType is set.</param>
-public record AssigneeRequest(Guid? UserId, Guid? AgentId, string[]? DockerCmdOverride = null);
+public record AssigneeRequest(Guid? UserId, Guid? AgentId, string[]? DockerCmdOverride = null, string? Branch = null);
 public record LabelAssignRequest(Guid LabelId);
 public record IssueLinkRequest(Guid TargetIssueId, IssueLinkType LinkType);
 public record IssueLinkDto(Guid Id, Guid IssueId, Guid TargetIssueId, Issue? TargetIssue, IssueLinkType LinkType, DateTime CreatedAt);

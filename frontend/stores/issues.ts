@@ -186,9 +186,9 @@ export const useIssuesStore = defineStore('issues', () => {
     }
   }
 
-  async function addComment(issueId: string, body: string, userId?: string) {
+  async function addComment(issueId: string, body: string, userId?: string, branch?: string) {
     try {
-      const data = await api.post<IssueComment>(`/api/issues/${issueId}/comments`, { body, userId })
+      const data = await api.post<IssueComment>(`/api/issues/${issueId}/comments`, { body, userId, branch: branch || undefined })
       currentComments.value.push(data)
       return data
     } catch (e: unknown) {
@@ -292,7 +292,7 @@ export const useIssuesStore = defineStore('issues', () => {
 
   // --- Assignees ---
 
-  async function addAssignee(issueId: string, payload: { userId?: string; agentId?: string }) {
+  async function addAssignee(issueId: string, payload: { userId?: string; agentId?: string; branch?: string }) {
     try {
       const data = await api.post<IssueAssignee>(`/api/issues/${issueId}/assignees`, payload)
       if (currentIssue.value?.id === issueId) {

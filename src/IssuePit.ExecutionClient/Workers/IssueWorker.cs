@@ -225,6 +225,7 @@ public class IssueWorker(
                 // Only pass the pre-created session ID when exactly one agent is being launched (retry case).
                 agentIds.Count == 1 ? message.SessionId : null,
                 message.TriggeringCommentId,
+                message.Branch,
                 cancellationToken)));
     }
 
@@ -245,6 +246,7 @@ public class IssueWorker(
         int? runtimeTypeOverride,
         Guid? existingSessionId,
         Guid? triggeringCommentId,
+        string? branchOverride,
         CancellationToken cancellationToken)
     {
         using var scope = services.CreateScope();
@@ -281,6 +283,13 @@ public class IssueWorker(
             agent.RunnerType = (RunnerType)runnerTypeOverride.Value;
         if (useHttpServerOverride.HasValue)
             agent.UseHttpServer = useHttpServerOverride.Value;
+
+        // Apply branch override: detach issue so the change is never persisted.
+        if (!string.IsNullOrWhiteSpace(branchOverride))
+        {
+            db.Entry(issue).State = EntityState.Detached;
+            issue.GitBranch = branchOverride;
+        }
 
         // Load issue comments for context. Truncate old comments if the total size would be too large
         // to avoid exceeding LLM context limits. Newest comments are kept; a warning is stored when any
@@ -1489,7 +1498,7 @@ public class IssueWorker(
         GitBranch = branchName,
     };
 
-    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, Guid? SessionId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? DockerCmdOverride = null, string? ModelOverride = null, int? RunnerTypeOverride = null, bool? UseHttpServerOverride = null, int? RuntimeTypeOverride = null, bool ForceAgentId = false, Guid? TriggeringCommentId = null);
+    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, Guid? SessionId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? DockerCmdOverride = null, string? ModelOverride = null, int? RunnerTypeOverride = null, bool? UseHttpServerOverride = null, int? RuntimeTypeOverride = null, bool ForceAgentId = false, Guid? TriggeringCommentId = null, string? Branch = null);
 
     /// <summary>
     /// Checks whether the base branch (<see cref="GitRepository.DefaultBranch"/>) of each
