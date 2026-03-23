@@ -1778,7 +1778,8 @@ const blockedJobIds = computed<Set<string>>(() => {
 
 /**
  * Set of job IDs that have at least one step configured to be skipped via the run's skipSteps setting.
- * An entry `jobId:stepName` marks the named job; bare step names (no colon) mark all jobs.
+ * An entry `jobId:stepName` marks the named job; bare step names (no colon) mark jobs that were
+ * observed to have a step with that name in this run's log entries.
  */
 const ignoredJobIds = computed<Set<string>>(() => {
   const skipSteps = store.currentRun?.skipSteps
@@ -1787,27 +1788,39 @@ const ignoredJobIds = computed<Set<string>>(() => {
   const lines = skipSteps.split('\n').map(l => l.trim()).filter(l => l.length > 0)
   if (lines.length === 0) return new Set()
 
-  // Check if any bare (non-prefixed) step names are configured — if so, all jobs are potentially affected.
-  const hasBareSteps = lines.some(l => !l.includes(':'))
-  if (hasBareSteps) {
-    // Return all graph job IDs
-    return new Set((store.currentRunGraph?.jobs ?? []).map(j => j.id))
+  const graphJobs = store.currentRunGraph?.jobs ?? []
+  const ignored = new Set<string>()
+
+  // Build a map of normalized job ID → set of step IDs from this run's logs.
+  // Used to resolve bare step names (no job prefix) to specific jobs.
+  const jobStepMap = new Map<string, Set<string>>()
+  for (const log of store.currentRunLogs) {
+    if (!log.jobId || !log.stepId) continue
+    const resolvedId = resolveLogJobId(log.jobId)
+    if (!jobStepMap.has(resolvedId)) jobStepMap.set(resolvedId, new Set())
+    jobStepMap.get(resolvedId)!.add(log.stepId)
   }
 
-  // Otherwise collect only the job IDs explicitly named in `job:step` entries.
-  const ignored = new Set<string>()
-  const graphJobs = store.currentRunGraph?.jobs ?? []
   for (const line of lines) {
     const colonIdx = line.indexOf(':')
-    if (colonIdx < 0) continue
-    const jobPart = line.slice(0, colonIdx).trim().toLowerCase()
-    // Match against graph job IDs (case-insensitive; also match normalized suffix after '/').
-    for (const job of graphJobs) {
-      const normalized = job.id.includes('/')
-        ? job.id.slice(job.id.lastIndexOf('/') + 1).toLowerCase()
-        : job.id.toLowerCase()
-      if (normalized === jobPart || job.id.toLowerCase() === jobPart)
-        ignored.add(job.id)
+    if (colonIdx < 0) {
+      // Bare step name — mark any job that actually ran a step with this name.
+      const stepName = line.toLowerCase()
+      for (const job of graphJobs) {
+        const steps = jobStepMap.get(job.id)
+        if (steps && [...steps].some(s => s.toLowerCase() === stepName))
+          ignored.add(job.id)
+      }
+    } else {
+      // `job:step` format — match against graph job IDs (case-insensitive).
+      const jobPart = line.slice(0, colonIdx).trim().toLowerCase()
+      for (const job of graphJobs) {
+        const normalized = job.id.includes('/')
+          ? job.id.slice(job.id.lastIndexOf('/') + 1).toLowerCase()
+          : job.id.toLowerCase()
+        if (normalized === jobPart || job.id.toLowerCase() === jobPart)
+          ignored.add(job.id)
+      }
     }
   }
   return ignored

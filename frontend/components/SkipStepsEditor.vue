@@ -171,14 +171,17 @@ async function toggleWizard() {
       if (entry.includes(':')) {
         // Already `job:step` format — add as-is.
         preSelected.add(entry)
-      } else {
+      } else if (suggestions.value.length > 0) {
         // Bare step name — check it for every job that contains this step.
+        // If no suggestions loaded, skip resolution (the textarea retains the bare value).
         for (const job of suggestions.value) {
           if (job.steps.includes(entry)) {
             preSelected.add(`${job.jobId}:${entry}`)
           }
         }
       }
+      // Note: if suggestions are empty and entry is bare, it won't appear pre-checked,
+      // but the textarea still contains the original value and will not be lost on Apply.
     }
     wizardSelected.value = preSelected
   }

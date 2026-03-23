@@ -790,7 +790,99 @@ public class CiCdPipelineTests(AspireFixture fixture)
     }
 
     /// <summary>
-    /// Verifies that <c>GET /api/cicd-runs/step-suggestions</c> returns job/step combinations
+    /// Verifies that when a run completes with a <c>SkipSteps</c> configuration, the
+    /// effective skip-steps value is stored in the <c>CiCdRun</c> record and returned
+    /// by the <c>GET /api/cicd-runs/{id}</c> endpoint.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(RuntimeModes))]
+    public async Task CiCdRun_SkipSteps_IsStoredInRunRecord(string runtimeMode)
+    {
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip(SkipReason(runtimeMode));
+
+        var (client, projectId) = await SetupProjectAsync();
+        using var _ = client;
+
+        const string skipStepsValue = "build:Upload build output";
+
+        var getResp = await client.GetAsync($"/api/projects/{projectId}");
+        getResp.EnsureSuccessStatusCode();
+        var existing = await getResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        // Configure the project to skip a specific step.
+        var updateResp = await client.PutAsJsonAsync($"/api/projects/{projectId}", new
+        {
+            name = existing.GetProperty("name").GetString(),
+            slug = existing.GetProperty("slug").GetString(),
+            orgId = Guid.Parse(existing.GetProperty("orgId").GetString()!),
+            skipSteps = skipStepsValue,
+        });
+        updateResp.EnsureSuccessStatusCode();
+
+        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+            BuildTriggerPayload(projectId, "e2e-skipstore-abc", runtimeMode, "ci.yml"));
+
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
+
+        // Verify the run detail endpoint exposes the effective skipSteps value.
+        var runDetailResp = await client.GetAsync($"/api/cicd-runs/{runId}");
+        Assert.Equal(HttpStatusCode.OK, runDetailResp.StatusCode);
+        var runDetail = await runDetailResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        var storedSkipSteps = runDetail.TryGetProperty("skipSteps", out var el) ? el.GetString() : null;
+        Assert.Equal(skipStepsValue, storedSkipSteps);
+    }
+
+    /// <summary>
+    /// Verifies that the retry endpoint accepts a <c>SkipSteps</c> override and that the
+    /// resulting retry run stores the overridden value (not the project-level setting).
+    /// Uses <c>ci-fail.yml</c> for the initial run so it reaches a <c>Failed</c> terminal
+    /// state, which is required before the run can be retried.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(RuntimeModes))]
+    public async Task CiCdRun_RetryWithSkipStepsOverride_StoresOverriddenValue(string runtimeMode)
+    {
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip(SkipReason(runtimeMode));
+
+        var (client, projectId) = await SetupProjectAsync();
+        using var _ = client;
+
+        // Trigger a run using the failing workflow so we get a Failed run to retry.
+        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+            BuildTriggerPayload(projectId, "e2e-retryskip-abc", runtimeMode, "ci-fail.yml"));
+
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var runId = run.GetProperty("id").GetString()!;
+        var statusName = run.GetProperty("statusName").GetString();
+        Assert.Equal("Failed", statusName);
+
+        // Retry with a skipSteps override — the project has no skipSteps configured so
+        // the stored value on the retry run must come entirely from the override.
+        const string retrySkipSteps = "build:Run tests";
+        var retryResp = await client.PostAsJsonAsync($"/api/cicd-runs/{runId}/retry", new
+        {
+            skipSteps = retrySkipSteps,
+        });
+        Assert.Equal(HttpStatusCode.Accepted, retryResp.StatusCode);
+
+        // Wait for the retry run (there will now be two runs for this project; take the newest).
+        var retryRun = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var retryRunId = retryRun.GetProperty("id").GetString()!;
+        Assert.NotEqual(runId, retryRunId);
+
+        // Verify the retry run has the overridden skipSteps stored.
+        var retryDetailResp = await client.GetAsync($"/api/cicd-runs/{retryRunId}");
+        Assert.Equal(HttpStatusCode.OK, retryDetailResp.StatusCode);
+        var retryDetail = await retryDetailResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        var storedSkipSteps = retryDetail.TryGetProperty("skipSteps", out var el) ? el.GetString() : null;
+        Assert.Equal(retrySkipSteps, storedSkipSteps);
+    }
     /// from recent runs and that the result is non-empty after at least one run has completed.
     /// </summary>
     [Theory]
