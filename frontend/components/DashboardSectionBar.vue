@@ -174,6 +174,15 @@
           :class="currentTestHistoryXMode === x.value ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
           class="text-xs px-1.5 py-0.5 rounded transition-colors">{{ x.label }}</button>
       </div>
+      <!-- Sort by -->
+      <div v-if="sortByOptions?.length" class="flex items-center gap-0.5">
+        <span class="text-xs text-gray-500 mr-1">Sort</span>
+        <button
+          v-for="s in sortByOptions" :key="s.value"
+          @click.stop="$emit('sort-by-change', s.value)"
+          :class="currentSortBy === s.value ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
+          class="text-xs px-1.5 py-0.5 rounded transition-colors">{{ s.label }}</button>
+      </div>
     </div>
   </div>
 </template>
@@ -203,6 +212,8 @@ const props = defineProps<{
   currentTestHistoryYAxis?: string
   testHistoryXModeOptions?: { value: string; label: string }[]
   currentTestHistoryXMode?: string
+  sortByOptions?: { value: string; label: string }[]
+  currentSortBy?: string
   canTab?: boolean
   isTabbed?: boolean
   canStack?: boolean
@@ -223,6 +234,7 @@ const emit = defineEmits<{
   'test-history-color-mode-change': [mode: string]
   'test-history-y-axis-change': [axis: string]
   'test-history-x-mode-change': [mode: string]
+  'sort-by-change': [value: string]
   'tab-toggle': []
   'tab-drop': [droppedSid: string]
   'stack-toggle': []
@@ -250,10 +262,11 @@ const CHART_DAYS_MAX = 60
 const hasSettings = computed(() =>
   props.currentChartDays !== undefined ||
   (props.chartHeightOptions?.length ?? 0) > 0 ||
-  props.kanbanBoards !== undefined ||  // show cog even if boards haven't loaded yet
+  props.kanbanBoards !== undefined ||
   props.testHistoryBranches !== undefined ||
   (props.testHistoryColorModeOptions?.length ?? 0) > 0 ||
-  (props.testHistoryXModeOptions?.length ?? 0) > 0,
+  (props.testHistoryXModeOptions?.length ?? 0) > 0 ||
+  (props.sortByOptions?.length ?? 0) > 0,
 )
 
 function onChartDaysChange(e: Event) {

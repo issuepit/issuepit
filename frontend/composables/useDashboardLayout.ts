@@ -14,6 +14,8 @@ export interface LayoutSectionConfig {
   testHistoryColorMode?: 'failure-rate' | 'pass-fail' | 'groups'
   testHistoryYAxis?: 'count' | 'duration'
   testHistoryXMode?: 'date' | 'runs'
+  sortBy?: string
+  countMode?: string
 }
 
 interface LayoutData {
@@ -31,7 +33,7 @@ type RenderItem =
 function isVirtualId(id: string) { return id.startsWith('rowbreak-') }
 
 /** Returns true for dynamically added section IDs (e.g. 'kanban-1234567890-1', 'testHistory-1234567890-1'). */
-export function isDynamicSectionId(id: string) { return /^(kanban|testHistory)-\d/.test(id) }
+export function isDynamicSectionId(id: string) { return /^(kanban|testHistory|cicdRuns|agentRuns|recentIssues)-\d/.test(id) }
 
 export function useDashboardLayout(options: {
   defaultOrder: string[]
