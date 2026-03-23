@@ -1272,9 +1272,9 @@ public class IssueWorker(
 
     /// <summary>
     /// Returns a structured CI/CD failure report to pass directly to the opencode task prompt.
-    /// Includes run metadata, a job-level overview (pass/fail), and the last 100 log lines
-    /// for each failed job (identified by having any stderr output). Also ensures the last 20
-    /// stderr lines are always included even for jobs without a <c>JobId</c>.
+    /// When the run has stored test results with failures, formats them as JUnit XML and uses that
+    /// instead of raw job logs so the agent gets precise failure details. Falls back to the last
+    /// 100 log lines per failed job (or recent logs) when no test results are available.
     /// </summary>
     private static async Task<string> GetCiCdFailureLogsAsync(
         Guid runId,
@@ -1337,9 +1337,51 @@ public class IssueWorker(
 
         sb.AppendLine();
 
-        // ── Failed job logs ──────────────────────────────────────────────────────
-        if (failedJobIds.Count > 0)
+        // ── Check for stored test results ────────────────────────────────────────
+        // When test results are available prefer structured XML over raw CI/CD logs so
+        // the agent gets precise failure details (name, error message, stack trace).
+        var failedSuites = await db.CiCdTestSuites
+            .Where(s => s.CiCdRunId == runId && s.FailedTests > 0)
+            .OrderBy(s => s.ArtifactName)
+            .Select(s => new
+            {
+                s.ArtifactName,
+                s.TotalTests,
+                s.FailedTests,
+                FailedCases = s.TestCases
+                    .Where(tc => tc.Outcome == TestOutcome.Failed)
+                    .OrderBy(tc => tc.FullName)
+                    .Select(tc => new
+                    {
+                        tc.FullName,
+                        tc.ClassName,
+                        tc.MethodName,
+                        tc.DurationMs,
+                        tc.ErrorMessage,
+                        tc.StackTrace,
+                    })
+                    .ToList(),
+            })
+            .ToListAsync(cancellationToken);
+
+        if (failedSuites.Count > 0)
         {
+            // ── Failed test results (XML) ────────────────────────────────────────
+            sb.AppendLine("--- Failed Test Results ---");
+            var suiteInfos = failedSuites
+                .Select(s => new FailedTestSuiteInfo(
+                    s.ArtifactName,
+                    s.TotalTests,
+                    s.FailedTests,
+                    s.FailedCases
+                        .Select(tc => new FailedTestCaseInfo(tc.FullName, tc.ClassName, tc.MethodName, tc.DurationMs, tc.ErrorMessage, tc.StackTrace))
+                        .ToList()))
+                .ToList();
+            sb.AppendLine(BuildFailedTestsXml(suiteInfos));
+        }
+        else if (failedJobIds.Count > 0)
+        {
+            // ── Failed job logs (fallback when no test results are stored) ────────
             foreach (var jobId in failedJobIds.OrderBy(j => j))
             {
                 sb.AppendLine($"--- Failed Job: {jobId} ---");
@@ -1360,8 +1402,8 @@ public class IssueWorker(
         }
         else
         {
-            // No jobs had a "Job failed" terminal line — fall back to the last 200 total lines
-            // plus extra stderr lines to ensure errors are always represented.
+            // No jobs had a "Job failed" terminal line and no test results — fall back to the last
+            // 200 total lines plus extra stderr lines to ensure errors are always represented.
             sb.AppendLine("--- Recent Logs ---");
 
             var recent = await db.CiCdRunLogs
@@ -1392,6 +1434,47 @@ public class IssueWorker(
 
         return sb.ToString().Trim();
     }
+
+    /// <summary>
+    /// Builds a JUnit-style XML string from a list of failed test suites so the fix agent
+    /// receives precise, structured failure details (name, error message, stack trace).
+    /// </summary>
+    internal static string BuildFailedTestsXml(IReadOnlyList<FailedTestSuiteInfo> suites)
+    {
+        var xml = new StringBuilder();
+        xml.AppendLine("<testsuites>");
+        foreach (var suite in suites)
+        {
+            xml.AppendLine($"  <testsuite name=\"{XmlEscapeAttribute(suite.ArtifactName)}\" tests=\"{suite.TotalTests}\" failures=\"{suite.FailedTests}\">");
+            foreach (var tc in suite.FailedCases)
+            {
+                var testName = XmlEscapeAttribute(tc.MethodName ?? tc.FullName);
+                var classAttr = tc.ClassName is not null ? $" classname=\"{XmlEscapeAttribute(tc.ClassName)}\"" : "";
+                xml.AppendLine($"    <testcase name=\"{testName}\"{classAttr} time=\"{tc.DurationMs / 1000.0:F3}\">");
+                xml.AppendLine($"      <failure message=\"{XmlEscapeAttribute(tc.ErrorMessage ?? "Test failed")}\">");
+                if (!string.IsNullOrWhiteSpace(tc.StackTrace))
+                    xml.AppendLine(XmlEscapeContent(tc.StackTrace.Trim()));
+                xml.AppendLine("      </failure>");
+                xml.AppendLine("    </testcase>");
+            }
+            xml.AppendLine("  </testsuite>");
+        }
+        xml.AppendLine("</testsuites>");
+        return xml.ToString().Trim();
+    }
+
+    private static string XmlEscapeAttribute(string? value) =>
+        string.IsNullOrEmpty(value) ? string.Empty : value
+            .Replace("&", "&amp;")
+            .Replace("\"", "&quot;")
+            .Replace("<", "&lt;")
+            .Replace(">", "&gt;");
+
+    private static string XmlEscapeContent(string? value) =>
+        string.IsNullOrEmpty(value) ? string.Empty : value
+            .Replace("&", "&amp;")
+            .Replace("<", "&lt;")
+            .Replace(">", "&gt;");
 
     /// <summary>
     /// Runs a fix agent container with a task that includes the CI/CD failure context.
@@ -1706,4 +1789,20 @@ public class IssueWorker(
         return kept;
     }
 }
+
+/// <summary>Data for one test suite with at least one failing test case.</summary>
+internal sealed record FailedTestSuiteInfo(
+    string ArtifactName,
+    int TotalTests,
+    int FailedTests,
+    IReadOnlyList<FailedTestCaseInfo> FailedCases);
+
+/// <summary>Data for a single failing test case.</summary>
+internal sealed record FailedTestCaseInfo(
+    string FullName,
+    string? ClassName,
+    string? MethodName,
+    double DurationMs,
+    string? ErrorMessage,
+    string? StackTrace);
 
