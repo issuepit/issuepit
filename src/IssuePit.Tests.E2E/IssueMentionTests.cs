@@ -232,4 +232,111 @@ public class IssueMentionTests : IAsyncLifetime
             await context.CloseAsync();
         }
     }
+
+    /// <summary>
+    /// The agent assignment modal shows a branch input field.
+    /// </summary>
+    [Fact]
+    public async Task AssignAgentModal_ShowsBranchInput()
+    {
+        var (context, page, projectSlug, issueNumber, agentName) = await SetUpAsync();
+        try
+        {
+            var detailPage = new IssueDetailPage(page);
+            await detailPage.GotoAsync(projectSlug, issueNumber);
+
+            await detailPage.OpenAssignAgentModalAsync(agentName);
+
+            Assert.True(await detailPage.IsAssignAgentModalBranchInputVisibleAsync(),
+                "Branch input should be visible inside the agent assignment modal");
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
+
+    /// <summary>
+    /// Typing a branch value in the agent assignment modal branch input stores the value.
+    /// </summary>
+    [Fact]
+    public async Task AssignAgentModal_BranchInput_AcceptsValue()
+    {
+        var (context, page, projectSlug, issueNumber, agentName) = await SetUpAsync();
+        try
+        {
+            var detailPage = new IssueDetailPage(page);
+            await detailPage.GotoAsync(projectSlug, issueNumber);
+
+            await detailPage.OpenAssignAgentModalAsync(agentName);
+            await detailPage.SetAssignAgentModalBranchAsync("feature/my-branch");
+
+            var value = await detailPage.GetAssignAgentModalBranchValueAsync();
+            Assert.Equal("feature/my-branch", value);
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
+
+    /// <summary>
+    /// When the comment textarea contains an @agent mention, the branch input in the
+    /// comment footer becomes visible.
+    /// </summary>
+    [Fact]
+    public async Task CommentFooter_AgentMention_ShowsBranchInput()
+    {
+        var (context, page, projectSlug, issueNumber, agentName) = await SetUpAsync();
+        try
+        {
+            var detailPage = new IssueDetailPage(page);
+            await detailPage.GotoAsync(projectSlug, issueNumber);
+
+            // Branch input should NOT be visible before typing an @mention
+            Assert.False(await detailPage.IsCommentBranchInputVisibleAsync(),
+                "Branch input should not be visible before typing an @mention");
+
+            // Type the full @agent-name mention to trigger the branch selector
+            await detailPage.TypeInCommentAsync($"@{agentName}");
+
+            // Wait for the branch input to appear
+            await page.WaitForSelectorAsync("input[placeholder*='branch (optional)']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+
+            Assert.True(await detailPage.IsCommentBranchInputVisibleAsync(),
+                "Branch input should be visible after typing an @agent mention");
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
+
+    /// <summary>
+    /// The comment footer branch input accepts a value and retains it.
+    /// </summary>
+    [Fact]
+    public async Task CommentFooter_BranchInput_AcceptsValue()
+    {
+        var (context, page, projectSlug, issueNumber, agentName) = await SetUpAsync();
+        try
+        {
+            var detailPage = new IssueDetailPage(page);
+            await detailPage.GotoAsync(projectSlug, issueNumber);
+
+            await detailPage.TypeInCommentAsync($"@{agentName}");
+            await page.WaitForSelectorAsync("input[placeholder*='branch (optional)']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+
+            await detailPage.SetCommentBranchAsync("main");
+
+            var value = await detailPage.GetCommentBranchValueAsync();
+            Assert.Equal("main", value);
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
 }
