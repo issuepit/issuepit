@@ -53,6 +53,7 @@ public class CiCdRunsController(
                 r.WorkspacePath,
                 r.EventName,
                 r.InputsJson,
+                r.SkipSteps,
             })
             .Take(100)
             .ToListAsync();
@@ -85,6 +86,7 @@ public class CiCdRunsController(
                 r.WorkspacePath,
                 r.EventName,
                 r.InputsJson,
+                r.SkipSteps,
             })
             .FirstOrDefaultAsync();
 
@@ -700,8 +702,10 @@ public class CiCdRunsController(
 
         if (run is null) return NotFound();
 
-        if (run.Status is not (CiCdRunStatus.Failed or CiCdRunStatus.Cancelled))
-            return Conflict(new { error = "Only failed or cancelled runs can be retried.", run.Status, StatusName = run.Status.ToString() });
+        // Only terminal runs can be retried/retriggered; in-progress or pending runs should be
+        // cancelled first to avoid duplicate execution.
+        if (run.Status is CiCdRunStatus.Pending or CiCdRunStatus.Running or CiCdRunStatus.WaitingForApproval)
+            return Conflict(new { error = "Run is still in progress. Cancel it before retriggering.", run.Status, StatusName = run.Status.ToString() });
 
         // Warn if another run for the same project is already in progress, unless the caller forces it.
         if (options?.ForceRetry != true)
@@ -746,6 +750,10 @@ public class CiCdRunsController(
 
         // Create the new run record immediately (Pending) so it shows as queued in the UI.
         // Retries are user-initiated so they bypass RequiresRunApproval.
+        // Inherit skip steps from original run unless explicitly overridden by the caller.
+        var retrySkipSteps = options?.OverrideSkipSteps == true
+            ? options.SkipSteps
+            : (options?.SkipSteps ?? run.SkipSteps);
         var newRun = await runQueue.EnqueueAsync(
             projectId: run.ProjectId,
             commitSha: retryCommitSha,
@@ -765,6 +773,7 @@ public class CiCdRunsController(
                 customEntrypoint = options?.CustomEntrypoint,
                 customArgs = options?.CustomArgs,
                 actRunnerImage = options?.ActRunnerImage,
+                skipSteps = retrySkipSteps,
             },
             userTriggered: true);
 
@@ -913,7 +922,14 @@ public record RetryRunOptions(
     /// <summary>Override the branch to run against. Null or empty = use the original run's branch.</summary>
     string? Branch = null,
     /// <summary>Override the commit SHA to run against. Null or empty = use the original run's commit SHA (or the branch tip when Branch is overridden).</summary>
-    string? CommitSha = null);
+    string? CommitSha = null,
+    /// <summary>
+    /// Override the skip-step configuration for this retry. Newline-separated step names or <c>job:step</c> pairs.
+    /// When null the original run's skip steps are inherited. Pass an empty string to explicitly clear skip steps.
+    /// </summary>
+    string? SkipSteps = null,
+    /// <summary>When true, the SkipSteps value (even if empty) explicitly overrides the inherited skip steps rather than falling back to the original run.</summary>
+    bool OverrideSkipSteps = false);
 
 /// <summary>Request body for the external CI/CD sync endpoint.</summary>
 public record ExternalSyncRequest(

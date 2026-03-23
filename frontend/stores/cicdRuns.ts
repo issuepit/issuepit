@@ -159,6 +159,8 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     eventName?: string
     branch?: string
     commitSha?: string
+    skipSteps?: string
+    overrideSkipSteps?: boolean
   }) {
     await api.post(`/api/cicd-runs/${runId}/retry`, options ?? {})
   }
