@@ -1281,9 +1281,11 @@ public class IssueWorker(
 
     /// <summary>
     /// Returns a structured CI/CD failure report to pass directly to the opencode task prompt.
-    /// Includes run metadata, a job-level overview (pass/fail), and the last 100 log lines
-    /// for each failed job (identified by having any stderr output). Also ensures the last 20
-    /// stderr lines are always included even for jobs without a <c>JobId</c>.
+    /// When the run has stored test results with failures, formats them as JUnit XML.
+    /// Raw job logs are always included for every failed job (regardless of test results) so
+    /// that non-test job failures are never silently dropped. Both sections may appear together
+    /// when some jobs produce test artifacts and others do not. Falls back to recent logs when
+    /// no named jobs are detected and no test results exist.
     /// </summary>
     private static async Task<string> GetCiCdFailureLogsAsync(
         Guid runId,
@@ -1346,31 +1348,114 @@ public class IssueWorker(
 
         sb.AppendLine();
 
-        // ── Failed job logs ──────────────────────────────────────────────────────
-        if (failedJobIds.Count > 0)
-        {
-            foreach (var jobId in failedJobIds.OrderBy(j => j))
+        // ── Check for stored test results ────────────────────────────────────────
+        // Query ALL test suites for this run (including their JobId if available) so we can
+        // do a per-job split:
+        //   • Failed job with suites that have failures → XML only (no raw logs)
+        //   • Failed job with suites but all passing   → raw logs (non-test failure)
+        //   • Failed job with no suites                → raw logs
+        // Legacy rows (JobId = null) fall back to the run-level split.
+        var allSuites = await db.CiCdTestSuites
+            .Where(s => s.CiCdRunId == runId)
+            .OrderBy(s => s.ArtifactName)
+            .Select(s => new
             {
-                sb.AppendLine($"--- Failed Job: {jobId} ---");
+                s.JobId,
+                s.ArtifactName,
+                s.TotalTests,
+                s.FailedTests,
+                FailedCases = s.TestCases
+                    .Where(tc => tc.Outcome == TestOutcome.Failed)
+                    .OrderBy(tc => tc.FullName)
+                    .Select(tc => new
+                    {
+                        tc.FullName,
+                        tc.ClassName,
+                        tc.MethodName,
+                        tc.DurationMs,
+                        tc.ErrorMessage,
+                        tc.StackTrace,
+                    })
+                    .ToList(),
+            })
+            .ToListAsync(cancellationToken);
 
-                var jobLogs = await db.CiCdRunLogs
-                    .Where(l => l.CiCdRunId == runId && l.JobId == jobId)
-                    .OrderByDescending(l => l.Timestamp)
-                    .Take(100)
-                    .OrderBy(l => l.Timestamp)
-                    .Select(l => new { l.Line, l.Stream })
-                    .ToListAsync(cancellationToken);
+        // Split into suites linked to a specific job vs. unlinked (JobId = null) legacy rows.
+        var suitesWithJob = allSuites.Where(s => s.JobId != null).ToList();
+        var suitesWithoutJob = allSuites.Where(s => s.JobId == null).ToList();
 
-                foreach (var log in jobLogs)
-                    sb.AppendLine(log.Stream == LogStream.Stderr ? $"[stderr] {log.Line}" : log.Line);
+        if (suitesWithJob.Count > 0)
+        {
+            // ── Per-job split (new runs with JobId populated) ──────────────────────
+            // Group suites by the job that produced them, then decide what to emit per job.
+            var suitesByJob = suitesWithJob.GroupBy(s => s.JobId!).ToDictionary(g => g.Key, g => g.ToList());
 
+            var jobsEmittedAsXml = new HashSet<string>(StringComparer.Ordinal);
+
+            // 1. Jobs with failed test suites → XML only.
+            foreach (var (jobId, jobSuites) in suitesByJob.OrderBy(kv => kv.Key))
+            {
+                var jobFailedSuites = jobSuites.Where(s => s.FailedTests > 0).ToList();
+                if (jobFailedSuites.Count == 0) continue;
+
+                sb.AppendLine($"--- Failed Test Results ({jobId}) ---");
+                var suiteInfos = jobFailedSuites
+                    .Select(s => new FailedTestSuiteInfo(
+                        s.ArtifactName,
+                        s.TotalTests,
+                        s.FailedTests,
+                        s.FailedCases
+                            .Select(tc => new FailedTestCaseInfo(tc.FullName, tc.ClassName, tc.MethodName, tc.DurationMs, tc.ErrorMessage, tc.StackTrace))
+                            .ToList()))
+                    .ToList();
+                sb.AppendLine(BuildFailedTestsXml(suiteInfos));
                 sb.AppendLine();
+                jobsEmittedAsXml.Add(jobId);
             }
+
+            // 2. For each failed job not covered by XML above:
+            //    • If the job has suites (all passing) → something non-test broke it → raw logs.
+            //    • If the job has no suites             → no test results at all → raw logs.
+            var failedJobsNeedingLogs = failedJobIds
+                .Where(j => !jobsEmittedAsXml.Contains(j))
+                .OrderBy(j => j);
+
+            await AppendFailedJobLogsAsync(sb, runId, failedJobsNeedingLogs, db, cancellationToken);
+        }
+        else if (suitesWithoutJob.Count > 0)
+        {
+            // ── Run-level split (legacy rows without JobId) ────────────────────────
+            var failedSuites = suitesWithoutJob.Where(s => s.FailedTests > 0).ToList();
+            if (failedSuites.Count > 0)
+            {
+                // Tests are available and some failed → structured XML is more useful than raw logs.
+                sb.AppendLine("--- Failed Test Results ---");
+                var suiteInfos = failedSuites
+                    .Select(s => new FailedTestSuiteInfo(
+                        s.ArtifactName,
+                        s.TotalTests,
+                        s.FailedTests,
+                        s.FailedCases
+                            .Select(tc => new FailedTestCaseInfo(tc.FullName, tc.ClassName, tc.MethodName, tc.DurationMs, tc.ErrorMessage, tc.StackTrace))
+                            .ToList()))
+                    .ToList();
+                sb.AppendLine(BuildFailedTestsXml(suiteInfos));
+            }
+            else
+            {
+                // All suites pass but the run still failed → emit raw logs.
+                await AppendFailedJobLogsAsync(sb, runId, failedJobIds, db, cancellationToken);
+            }
+        }
+        else if (failedJobIds.Count > 0)
+        {
+            // ── No test results at all — emit raw job logs ─────────────────────────
+            await AppendFailedJobLogsAsync(sb, runId, failedJobIds, db, cancellationToken);
         }
         else
         {
-            // No jobs had a "Job failed" terminal line — fall back to the last 200 total lines
-            // plus extra stderr lines to ensure errors are always represented.
+            // No jobs had a "Job failed" terminal line and no test results — fall back to the last
+            // 200 total lines plus extra stderr lines to ensure errors are always represented.
             sb.AppendLine("--- Recent Logs ---");
 
             var recent = await db.CiCdRunLogs
@@ -1401,6 +1486,77 @@ public class IssueWorker(
 
         return sb.ToString().Trim();
     }
+
+    /// <summary>
+    /// Appends the last 100 log lines for each failed job to <paramref name="sb"/>.
+    /// Used when raw CI/CD logs are the appropriate diagnostic output (no test failures).
+    /// </summary>
+    private static async Task AppendFailedJobLogsAsync(
+        StringBuilder sb,
+        Guid runId,
+        IEnumerable<string> failedJobIds,
+        IssuePitDbContext db,
+        CancellationToken cancellationToken)
+    {
+        foreach (var jobId in failedJobIds.OrderBy(j => j))
+        {
+            sb.AppendLine($"--- Failed Job: {jobId} ---");
+
+            var jobLogs = await db.CiCdRunLogs
+                .Where(l => l.CiCdRunId == runId && l.JobId == jobId)
+                .OrderByDescending(l => l.Timestamp)
+                .Take(100)
+                .OrderBy(l => l.Timestamp)
+                .Select(l => new { l.Line, l.Stream })
+                .ToListAsync(cancellationToken);
+
+            foreach (var log in jobLogs)
+                sb.AppendLine(log.Stream == LogStream.Stderr ? $"[stderr] {log.Line}" : log.Line);
+
+            sb.AppendLine();
+        }
+    }
+
+    /// <summary>
+    /// Builds a JUnit-style XML string from a list of failed test suites so the fix agent
+    /// receives precise, structured failure details (name, error message, stack trace).
+    /// </summary>
+    internal static string BuildFailedTestsXml(IReadOnlyList<FailedTestSuiteInfo> suites)
+    {
+        var xml = new StringBuilder();
+        xml.AppendLine("<testsuites>");
+        foreach (var suite in suites)
+        {
+            xml.AppendLine($"  <testsuite name=\"{XmlEscapeAttribute(suite.ArtifactName)}\" tests=\"{suite.TotalTests}\" failures=\"{suite.FailedTests}\">");
+            foreach (var tc in suite.FailedCases)
+            {
+                var testName = XmlEscapeAttribute(tc.MethodName ?? tc.FullName);
+                var classAttr = tc.ClassName is not null ? $" classname=\"{XmlEscapeAttribute(tc.ClassName)}\"" : "";
+                xml.AppendLine($"    <testcase name=\"{testName}\"{classAttr} time=\"{tc.DurationMs / 1000.0:F3}\">");
+                xml.AppendLine($"      <failure message=\"{XmlEscapeAttribute(tc.ErrorMessage ?? "Test failed")}\">");
+                if (!string.IsNullOrWhiteSpace(tc.StackTrace))
+                    xml.AppendLine(XmlEscapeContent(tc.StackTrace.Trim()));
+                xml.AppendLine("      </failure>");
+                xml.AppendLine("    </testcase>");
+            }
+            xml.AppendLine("  </testsuite>");
+        }
+        xml.AppendLine("</testsuites>");
+        return xml.ToString().Trim();
+    }
+
+    private static string XmlEscapeAttribute(string? value) =>
+        string.IsNullOrEmpty(value) ? string.Empty : value
+            .Replace("&", "&amp;")
+            .Replace("\"", "&quot;")
+            .Replace("<", "&lt;")
+            .Replace(">", "&gt;");
+
+    private static string XmlEscapeContent(string? value) =>
+        string.IsNullOrEmpty(value) ? string.Empty : value
+            .Replace("&", "&amp;")
+            .Replace("<", "&lt;")
+            .Replace(">", "&gt;");
 
     /// <summary>
     /// Runs a fix agent container with a task that includes the CI/CD failure context.
@@ -1728,4 +1884,20 @@ public class IssueWorker(
         return kept;
     }
 }
+
+/// <summary>Data for one test suite with at least one failing test case.</summary>
+internal sealed record FailedTestSuiteInfo(
+    string ArtifactName,
+    int TotalTests,
+    int FailedTests,
+    IReadOnlyList<FailedTestCaseInfo> FailedCases);
+
+/// <summary>Data for a single failing test case.</summary>
+internal sealed record FailedTestCaseInfo(
+    string FullName,
+    string? ClassName,
+    string? MethodName,
+    double DurationMs,
+    string? ErrorMessage,
+    string? StackTrace);
 

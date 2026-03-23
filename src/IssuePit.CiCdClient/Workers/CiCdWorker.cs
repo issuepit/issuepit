@@ -574,6 +574,14 @@ public class CiCdWorker(
 
             var suiteCount = 0;
 
+            // Pre-build a lookup of artifact name → job name from run log entries.
+            // When actions/upload-artifact runs it logs lines containing the artifact name
+            // (e.g. "Uploading artifact: my-test-results"). Those lines have the JobId set by act.
+            // Loading all job-scoped logs that mention any artifact path is impractical, so we
+            // instead build a bulk lookup of every distinct (JobId, Line) pair and match against
+            // artifact names after the fact.
+            var artifactJobMap = await BuildArtifactJobMapAsync(runId, db, cancellationToken);
+
             // 1. Bare .trx files on disk (produced by non-act environments or plain uploads).
             var bareTrxFiles = TrxParser.FindTrxFiles(artifactDir).ToList();
             foreach (var trxFile in bareTrxFiles)
@@ -586,6 +594,7 @@ public class CiCdWorker(
                 }
 
                 suite.CiCdRunId = runId;
+                // No artifact name context for bare TRX files; JobId stays null.
                 db.CiCdTestSuites.Add(suite);
                 suiteCount++;
             }
@@ -607,6 +616,8 @@ public class CiCdWorker(
                     var artifactName = Path.GetFileName(artifactSubDir);
                     if (string.IsNullOrEmpty(artifactName) || artifactName.StartsWith('.'))
                         continue;
+
+                    artifactJobMap.TryGetValue(artifactName, out var inferredJobId);
 
                     foreach (var artifactFile in Directory.EnumerateFiles(artifactSubDir, "*", SearchOption.AllDirectories))
                     {
@@ -638,6 +649,7 @@ public class CiCdWorker(
                                 }
 
                                 suite.CiCdRunId = runId;
+                                suite.JobId = inferredJobId;
                                 db.CiCdTestSuites.Add(suite);
                                 suiteCount++;
                                 foundInZip = true;
@@ -666,6 +678,7 @@ public class CiCdWorker(
                             if (suite is not null)
                             {
                                 suite.CiCdRunId = runId;
+                                suite.JobId = inferredJobId;
                                 db.CiCdTestSuites.Add(suite);
                                 suiteCount++;
                             }
@@ -691,6 +704,83 @@ public class CiCdWorker(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to collect test results for run {RunId}", runId);
+        }
+    }
+
+    /// <summary>
+    /// Builds a lookup of <c>artifactName → jobId</c> by scanning run log entries.
+    /// <para>
+    /// When <c>actions/upload-artifact</c> runs it emits log lines that include the artifact name
+    /// (e.g. <c>"Uploading artifact: my-test-results"</c>).  Those lines have <c>JobId</c> set by
+    /// act, which lets us infer which job produced each artifact without a schema change in the
+    /// artifact server.
+    /// </para>
+    /// <para>Best-effort: returns an empty dictionary on failure; job names stay null in that case.</para>
+    /// </summary>
+    private static async Task<Dictionary<string, string>> BuildArtifactJobMapAsync(
+        Guid runId,
+        IssuePitDbContext db,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Load all job-scoped log lines for this run. We match artifact names client-side
+            // to avoid pushing dynamic LIKE patterns with user-derived strings into the DB.
+            var jobLines = await db.CiCdRunLogs
+                .Where(l => l.CiCdRunId == runId && l.JobId != null)
+                .Select(l => new { l.JobId, l.Line })
+                .ToListAsync(cancellationToken);
+
+            // Build a set of all artifact names seen in the act artifact server layout so we only
+            // scan for names that actually exist in this run's artifact directory.
+            // The caller already knows the names, but we don't have them here, so we instead
+            // collect all (jobId, artifactName) pairs by scanning log lines: any log line whose
+            // text contains an artifact-upload keyword followed by the artifact name.
+            // act/actions/upload-artifact@v3 logs: "Uploading artifact: <name>"
+            // actions/upload-artifact@v4 logs:     "With the provided path(s) ...", "Artifact <name> has been successfully uploaded"
+            // We match the most reliable pattern: lines containing " artifact" (case-insensitive)
+            // and extract the artifact name from lines like "Uploading artifact: <name>" or
+            // "Artifact <name> has been successfully uploaded".
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in jobLines)
+            {
+                if (entry.JobId is null) continue;
+
+                var line = entry.Line;
+
+                // Pattern 1: "Uploading artifact: <name>" (actions/upload-artifact@v3/v4)
+                var uploadingPrefix = "Uploading artifact: ";
+                var idx = line.IndexOf(uploadingPrefix, StringComparison.OrdinalIgnoreCase);
+                if (idx >= 0)
+                {
+                    var name = line[(idx + uploadingPrefix.Length)..].Trim();
+                    if (!string.IsNullOrEmpty(name))
+                        map.TryAdd(name, entry.JobId!);
+                    continue;
+                }
+
+                // Pattern 2: "Artifact <name> has been successfully uploaded"
+                var artifactPrefix = "Artifact ";
+                var uploadedSuffix = " has been successfully uploaded";
+                idx = line.IndexOf(artifactPrefix, StringComparison.OrdinalIgnoreCase);
+                if (idx >= 0)
+                {
+                    var rest = line[(idx + artifactPrefix.Length)..];
+                    var suffixIdx = rest.IndexOf(uploadedSuffix, StringComparison.OrdinalIgnoreCase);
+                    if (suffixIdx > 0)
+                    {
+                        var name = rest[..suffixIdx].Trim();
+                        if (!string.IsNullOrEmpty(name))
+                            map.TryAdd(name, entry.JobId!);
+                    }
+                }
+            }
+
+            return map;
+        }
+        catch
+        {
+            return [];
         }
     }
 
