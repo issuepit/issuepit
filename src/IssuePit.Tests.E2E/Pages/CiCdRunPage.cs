@@ -46,7 +46,7 @@ public class CiCdRunPage(IPage page)
     /// </summary>
     public async Task WaitForTestsTabContentAsync() =>
         await page.WaitForFunctionAsync(
-            "document.body.innerText.includes('passed') || document.body.innerText.includes('No test results available')",
+            "document.body?.innerText?.includes('passed') || document.body?.innerText?.includes('No test results available')",
             null,
             new PageWaitForFunctionOptions { Timeout = E2ETimeouts.Navigation });
 
@@ -87,7 +87,7 @@ public class CiCdRunPage(IPage page)
     /// </summary>
     public async Task WaitForArtifactsTabContentAsync() =>
         await page.WaitForFunctionAsync(
-            "document.body.innerText.includes('produced by this run') || document.body.innerText.includes('No artifacts found for this run')",
+            "document.body?.innerText?.includes('produced by this run') || document.body?.innerText?.includes('No artifacts found for this run')",
             null,
             new PageWaitForFunctionOptions { Timeout = E2ETimeouts.Navigation });
 
@@ -98,7 +98,7 @@ public class CiCdRunPage(IPage page)
     /// </summary>
     public async Task WaitForNonEmptyArtifactsTabAsync() =>
         await page.WaitForFunctionAsync(
-            "document.body.innerText.includes('produced by this run')",
+            "document.body?.innerText?.includes('produced by this run')",
             null,
             new PageWaitForFunctionOptions { Timeout = E2ETimeouts.Navigation });
 
