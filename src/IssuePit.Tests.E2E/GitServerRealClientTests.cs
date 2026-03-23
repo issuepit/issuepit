@@ -82,44 +82,12 @@ public class GitServerRealClientTests
     }
 
     /// <summary>
-    /// Runs git with URL-embedded credentials.  Unlike <see cref="RunGit"/>, this method does
-    /// NOT suppress credential helpers, so libcurl can send preemptive Basic-Auth from the URL
-    /// on the very first request — preventing git from falling back to the dumb HTTP protocol.
+    /// Builds a Base64-encoded Basic auth header value for the given username and password.
+    /// Use with <c>-c http.extraheader=Authorization: Basic {value}</c> to send auth
+    /// preemptively on every request without relying on the 401→retry credential dance.
     /// </summary>
-    private static (int exitCode, string stdout, string stderr) RunGitAuthenticated(
-        string workingDir, params string[] args)
-    {
-        var psi = new ProcessStartInfo("git")
-        {
-            WorkingDirectory = workingDir,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-        // Suppress interactive prompts, but do NOT blank out credential.helper —
-        // we rely on credentials embedded directly in the push URL.
-        psi.Environment["GIT_TERMINAL_PROMPT"] = "0";
-        foreach (var arg in args) psi.ArgumentList.Add(arg);
-
-        using var p = Process.Start(psi) ?? throw new InvalidOperationException("Could not start git");
-        var stdout = p.StandardOutput.ReadToEnd();
-        var stderr = p.StandardError.ReadToEnd();
-        p.WaitForExit();
-        return (p.ExitCode, stdout, stderr);
-    }
-
-    private static string BuildGitUrl(string baseUrl, string orgSlug, string repoSlug,
-        string username, string password)
-    {
-        // Encode username/password into the URL: http://user:pass@host/org/repo.git
-        var uri = new UriBuilder(baseUrl)
-        {
-            UserName = Uri.EscapeDataString(username),
-            Password = Uri.EscapeDataString(password),
-        };
-        return $"{uri.Scheme}://{uri.UserName}:{uri.Password}@{uri.Host}:{uri.Port}/{orgSlug}/{repoSlug}.git";
-    }
+    private static string BuildBasicAuthHeader(string username, string password) =>
+        Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{username}:{password}"));
 
     private static string BuildBareGitUrl(string baseUrl, string orgSlug, string repoSlug)
     {
@@ -156,10 +124,10 @@ public class GitServerRealClientTests
         if (!IsGitAvailable())
             throw new InvalidOperationException("git CLI not found on PATH — install git to run E2E git tests.");
 
-        var (client, orgId, orgSlug, username, password) = await SetupOrgAsync();
+        var (client, orgId, orgSlug, _, _) = await SetupOrgAsync();
         var slug = $"clone-{Guid.NewGuid():N}"[..14];
 
-        // Create repo with Write access for the user (so anonymous gets nothing, but our user can clone)
+        // Create repo with Read default access (allows anonymous clone).
         var createResp = await client.PostAsJsonAsync(
             $"/api/orgs/{orgId}/git-server/repos",
             new { slug, isTemporary = true, defaultAccessLevel = 1 }); // 1 = Read
@@ -169,7 +137,8 @@ public class GitServerRealClientTests
         try
         {
             Directory.CreateDirectory(tempDir);
-            var cloneUrl = BuildGitUrl(_fixture.GitServerUrl, orgSlug, slug, username, password);
+            // defaultAccessLevel=Read allows anonymous clone, so no credentials needed.
+            var cloneUrl = BuildBareGitUrl(_fixture.GitServerUrl, orgSlug, slug);
             var cloneDir = Path.Combine(tempDir, "cloned");
 
             var (exitCode, stdout, stderr) = RunGit(tempDir, "clone", cloneUrl, cloneDir);
@@ -214,10 +183,6 @@ public class GitServerRealClientTests
             var cloneDir = Path.Combine(tempDir, "cloned");
             // Unauthenticated clone URL — defaultAccessLevel=Write allows unauthenticated reads.
             var bareUrl = BuildBareGitUrl(_fixture.GitServerUrl, orgSlug, slug);
-            // Authenticated URL for push — credentials embedded in the URL so libcurl sends
-            // Basic Auth on the very first request (preemptive auth), bypassing the 401→retry
-            // dance that causes newer git versions to fall back to the dumb HTTP push protocol.
-            var authPushUrl = BuildGitUrl(_fixture.GitServerUrl, orgSlug, slug, username, password);
 
             // Step 1: clone (empty repo — unauthenticated read is allowed for defaultAccessLevel=Write)
             var (cloneCode, _, cloneErr) = RunGit(tempDir, "clone", bareUrl, cloneDir);
@@ -234,13 +199,17 @@ public class GitServerRealClientTests
             var (commitCode, _, commitErr) = RunGit(cloneDir, "commit", "-m", "feat: initial commit from E2E test");
             Assert.True(commitCode == 0, $"git commit failed: {commitErr}");
 
-            // Step 4: push using the authenticated URL.
-            // RunGitAuthenticated does NOT blank out credential.helper, so libcurl can use the
-            // credentials embedded in authPushUrl preemptively — the server gets an authenticated
-            // request on the smart-HTTP discovery and responds with 200 (no 401 retry needed).
-            var (pushCode, _, pushErr) = RunGitAuthenticated(cloneDir,
-                "-c", "transfer.credentialsInUrl=allow",
-                "push", authPushUrl, "HEAD:main");
+            // Step 4: push with an explicit Authorization header so that Basic Auth is sent
+            // preemptively on the very first smart-HTTP discovery request.  The 401→retry
+            // credential dance is unreliable in some environments (e.g. a system credential
+            // helper that returns empty credentials for localhost causes git to fall back to
+            // the legacy dumb-HTTP push protocol, which then fails).  Using http.extraheader
+            // bypasses that entirely: git includes the Authorization header on every request
+            // without waiting for a challenge.
+            var basicAuth = BuildBasicAuthHeader(username, password);
+            var (pushCode, _, pushErr) = RunGit(cloneDir,
+                "-c", $"http.extraheader=Authorization: Basic {basicAuth}",
+                "push", bareUrl, "HEAD:main");
             Assert.True(pushCode == 0,
                 $"git push failed (exit {pushCode}).\nstderr: {pushErr}");
         }
