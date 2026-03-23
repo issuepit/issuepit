@@ -787,6 +787,89 @@ public class CiCdPipelineTests(AspireFixture fixture)
 
         // The test job (which does not depend on the artifact file) should still have run.
         Assert.Contains("test-results", artifactNames);
+
+        // Verify that the effective SkipSteps were persisted on the run record.
+        var runDetailResp = await client.GetAsync($"/api/cicd-runs/{runId}");
+        runDetailResp.EnsureSuccessStatusCode();
+        var runDetail = await runDetailResp.Content.ReadFromJsonAsync<JsonElement>();
+        var storedSkipSteps = runDetail.TryGetProperty("skipSteps", out var skipStepsElement) ? skipStepsElement.GetString() : null;
+        Assert.False(string.IsNullOrWhiteSpace(storedSkipSteps),
+            $"Expected run.skipSteps to be set after a skip-step run, but was: '{storedSkipSteps}'");
+        Assert.Contains("Upload build output", storedSkipSteps!);
+    }
+
+    /// <summary>
+    /// Verifies that retrying a run with an overridden <c>SkipSteps</c> value uses the new
+    /// skip-step configuration rather than inheriting from the original run.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(RuntimeModes))]
+    public async Task CiCdRun_RetryWithSkipStepsOverride(string runtimeMode)
+    {
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip(SkipReason(runtimeMode));
+
+        var (client, projectId) = await SetupProjectAsync();
+        using var _ = client;
+
+        // Fetch the project to get its current name and slug before updating.
+        var getResp = await client.GetAsync($"/api/projects/{projectId}");
+        getResp.EnsureSuccessStatusCode();
+        var existing = await getResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        // Run without skip steps initially so the "build-output" artifact is created.
+        var triggerPayload = BuildTriggerPayload(projectId, "e2e-retry-skip-abc", runtimeMode, "ci.yml");
+        await client.PostAsJsonAsync("/api/cicd-runs/trigger", triggerPayload);
+
+        var firstRun = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var firstRunId = firstRun.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, firstRun, firstRunId);
+
+        var firstArtifacts = await WaitForArtifactsAsync(client, firstRunId, 1, TimeSpan.FromSeconds(10));
+        var firstArtifactNames = firstArtifacts.EnumerateArray()
+            .Select(a => a.GetProperty("name").GetString())
+            .ToList();
+        Assert.Contains("build-output", firstArtifactNames);
+
+        // Retry the run but override SkipSteps to skip the artifact upload step.
+        var retryResp = await client.PostAsJsonAsync($"/api/cicd-runs/{firstRunId}/retry", new
+        {
+            skipSteps = "build:Upload build output",
+            overrideSkipSteps = true,
+            forceRetry = false,
+        });
+        Assert.Equal(HttpStatusCode.Accepted, retryResp.StatusCode);
+        var retryBody = await retryResp.Content.ReadFromJsonAsync<JsonElement>();
+        var retryRunId = retryBody.GetProperty("retriedRunId").GetString()!;
+
+        // Wait for the retry run to complete.
+        var deadline = DateTime.UtcNow + TimeSpan.FromMinutes(5);
+        JsonElement retryRun;
+        do
+        {
+            var resp = await client.GetAsync($"/api/cicd-runs/{retryRunId}");
+            resp.EnsureSuccessStatusCode();
+            retryRun = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            var st = retryRun.GetProperty("statusName").GetString();
+            if (st is "Succeeded" or "Failed" or "Cancelled") break;
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+        } while (DateTime.UtcNow < deadline);
+
+        await AssertRunSucceededAsync(client, retryRun, retryRunId);
+
+        // The retry run should NOT have the build-output artifact.
+        var retryArtifacts = await WaitForArtifactsAsync(client, retryRunId, 1, TimeSpan.FromSeconds(10));
+        var retryArtifactNames = retryArtifacts.EnumerateArray()
+            .Select(a => a.GetProperty("name").GetString())
+            .ToList();
+        Assert.DoesNotContain("build-output", retryArtifactNames);
+
+        // The retry run's skipSteps should reflect the override.
+        var retryDetailResp = await client.GetAsync($"/api/cicd-runs/{retryRunId}");
+        retryDetailResp.EnsureSuccessStatusCode();
+        var retryDetail = await retryDetailResp.Content.ReadFromJsonAsync<JsonElement>();
+        var retrySkipSteps = retryDetail.TryGetProperty("skipSteps", out var retrySkipStepsElement) ? retrySkipStepsElement.GetString() : null;
+        Assert.Contains("Upload build output", retrySkipSteps ?? string.Empty);
     }
 
     /// <summary>

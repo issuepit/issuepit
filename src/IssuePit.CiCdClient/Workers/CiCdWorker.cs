@@ -334,6 +334,8 @@ public class CiCdWorker(
 
         run.Status = CiCdRunStatus.Running;
         run.StartedAt = DateTime.UtcNow;
+        // Persist the effective skip-steps configuration so the UI can show which steps were ignored.
+        run.SkipSteps = trigger.SkipSteps;
         await db.SaveChangesAsync(stoppingToken);
 
         try

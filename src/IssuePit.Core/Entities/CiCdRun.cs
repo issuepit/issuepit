@@ -75,6 +75,13 @@ public class CiCdRun
     public string? WorkflowGraphJson { get; set; }
 
     /// <summary>
+    /// The effective skip-step configuration used for this run (newline-separated list of step names
+    /// or <c>job:step</c> pairs). Resolved from the trigger payload, falling back to the project then
+    /// org setting at the time the run was dispatched. Null when no steps were skipped.
+    /// </summary>
+    public string? SkipSteps { get; set; }
+
+    /// <summary>
     /// Transient runtime flag (not persisted). Set by the CI/CD runtime when the cloned commit SHA
     /// does not match the requested trigger SHA. The <see cref="CiCdWorker"/> uses this flag to
     /// transition a successful run to <see cref="CiCdRunStatus.SucceededWithWarnings"/> rather than
