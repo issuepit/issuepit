@@ -86,6 +86,8 @@ When working as a coding agent on this repository, follow these conventions:
 
 - **Do not hide errors with silent fallbacks.** A fallback that masks a misconfiguration (e.g. cloning a git repo without `--branch` when the configured branch does not exist in the remote) prevents the user from understanding what went wrong. Instead, fail fast with a clear, actionable error message that identifies the misconfiguration and how to fix it.
 
+- **No hidden fallbacks when configuration is incomplete or ambiguous.** This applies broadly: git remote selection, runtime resolution, credential lookup, and any other place where the system cannot determine the correct value unambiguously. When the required configuration is absent or incorrect, fail immediately with an error that tells the user exactly what to fix. Silent fallbacks let runs proceed in an unexpected state, making failures far harder to diagnose. Examples of what NOT to do: falling back to the first available remote when no Working remote is configured; falling back to a default org when the target org is missing; silently ignoring a missing credential and proceeding unauthenticated.
+
 ## Date Formats
 
 Always use **ISO 8601 format** (`YYYY-MM-DD`) for dates in custom issue properties, API responses, and any user-visible date fields. Do not rely on browser locale formatting (e.g. `mm/dd/yyyy`) for date values stored or displayed in the application. Date inputs in forms should accept and display dates in `YYYY-MM-DD` format.

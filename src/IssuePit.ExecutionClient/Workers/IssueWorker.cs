@@ -362,24 +362,33 @@ public class IssueWorker(
             .ToListAsync(cancellationToken);
 
         // Push target: always the Working-mode remote (agents push their changes back here).
-        var gitRepository = allGitRepositories.FirstOrDefault(r => r.Mode == GitOriginMode.Working)
-            ?? allGitRepositories.FirstOrDefault();
+        // No fallback: if no Working-mode remote is configured, CheckBranchOnRemotesAsync throws
+        // with a clear error rather than silently pushing to an unrelated remote.
+        var gitRepository = allGitRepositories.FirstOrDefault(r => r.Mode == GitOriginMode.Working);
 
         // Clone source: the remote with the most commits on its DefaultBranch (deepest commit chain).
         // "Most commits" means the remote whose DefaultBranch HEAD is furthest from the root in the
         // git ancestry graph — i.e. has the highest git rev-list --count value, updated by
-        // GitPollingService on every successful fetch. Falls back to LastFetchedAt when no
-        // DefaultBranchCommitCount is available yet (e.g. first run before polling has set it),
-        // and ultimately to the push target (Working-mode remote) when no remote has a DefaultBranch.
+        // GitPollingService on every successful fetch.
+        //
+        // Ordering rationale:
+        //   1st: DefaultBranchCommitCount descending — prefer the remote with the newest/most commits.
+        //
+        // The clone source and push target are intentionally kept separate: any remote with a
+        // DefaultBranch set may be used for cloning (e.g. a Release/upstream remote that is more
+        // up-to-date), while the push target is always the Working-mode remote. Both configurations —
+        // same clone/push remote and different clone/push remote — are supported.
+        //
+        // No fallbacks: if no remote has a DefaultBranch configured, or if no Working-mode remote
+        // exists for push, CheckBranchOnRemotesAsync throws with a clear error rather than silently
+        // selecting an unrelated remote.
+        //
         // DefaultBranch is the "base pull branch": used to create agent feature branches when
         // issue.GitBranch is not set, and as the default target for merge/pull requests.
         var cloneRepository = allGitRepositories
             .Where(r => !string.IsNullOrWhiteSpace(r.DefaultBranch))
             .OrderByDescending(r => r.DefaultBranchCommitCount ?? 0)
-            .ThenByDescending(r => r.LastFetchedAt)
-            .ThenByDescending(r => r.Mode == GitOriginMode.Working)
-            .FirstOrDefault()
-            ?? gitRepository;
+            .FirstOrDefault();
 
         // Load the per-project push policy for this agent. Falls back to Forbidden when no
         // explicit AgentProject row exists (e.g. org-level links without a project override).
@@ -1499,9 +1508,9 @@ public class IssueWorker(
     /// <para>Clone vs push separation:</para>
     /// <list type="bullet">
     ///   <item><description>
-    ///     <b>Clone source</b>: <paramref name="cloneRepository"/> — the remote with the newest
-    ///     content (highest <see cref="GitRepository.LastFetchedAt"/>), marked as <c>Selected</c>
-    ///     in the results.
+    ///     <b>Clone source</b>: <paramref name="cloneRepository"/> — the remote with the most
+    ///     commits on its DefaultBranch (highest <see cref="GitRepository.DefaultBranchCommitCount"/>),
+    ///     marked as <c>Selected</c> in the results.
     ///   </description></item>
     ///   <item><description>
     ///     <b>Push target</b>: always the Working-mode remote, handled by the caller.
@@ -1518,6 +1527,10 @@ public class IssueWorker(
     ///     must be configured because <c>DefaultBranch</c> is the "base pull branch": it is used to
     ///     create agent feature branches when no <c>issue.GitBranch</c> is set, and as the default
     ///     merge/pull-request target.
+    ///   </description></item>
+    ///   <item><description>
+    ///     No Working-mode remote is configured — the push target is always the Working remote and
+    ///     there is no fallback; the run fails with a clear message so the user can fix the config.
     ///   </description></item>
     ///   <item><description>
     ///     The clone-source remote's <c>DefaultBranch</c> was confirmed absent on that remote.
@@ -1566,6 +1579,15 @@ public class IssueWorker(
                 "No configured git remote has a DefaultBranch set. " +
                 "Set the default branch on at least one remote in the project's git repository settings. " +
                 "DefaultBranch is the base pull branch: used to create agent feature branches and as the default target for merge/pull requests.");
+        }
+
+        // Exactly one Working-mode remote must be configured for push.
+        if (repositories.All(r => r.Mode != GitOriginMode.Working))
+        {
+            throw new InvalidOperationException(
+                "No Working-mode git remote is configured for this project. " +
+                "Set one remote to Mode=Working in the project's git repository settings. " +
+                "The Working remote is the push target for agent branches.");
         }
 
         var results = new List<GitRemoteCheckResult>();
