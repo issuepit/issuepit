@@ -125,19 +125,19 @@
               {{ approving ? 'Approving…' : 'Approve Run' }}
             </button>
           </div>
-          <div v-else-if="store.currentRun.status === CiCdRunStatus.Failed || store.currentRun.status === CiCdRunStatus.Cancelled || store.currentRun.status === CiCdRunStatus.SucceededWithWarnings"
+          <div v-else-if="store.currentRun.status === CiCdRunStatus.Failed || store.currentRun.status === CiCdRunStatus.Cancelled || store.currentRun.status === CiCdRunStatus.SucceededWithWarnings || store.currentRun.status === CiCdRunStatus.Succeeded"
             class="mt-4 pt-4 border-t border-gray-800 flex justify-end">
             <button
               :disabled="retrying"
               class="flex items-center gap-1.5 text-sm text-brand-400 hover:text-brand-300 disabled:opacity-50 transition-colors"
-              :title="'Click to retry · Shift+click for options'"
+              :title="isRetrigger ? 'Click to retrigger · Shift+click for options' : 'Click to retry · Shift+click for options'"
               @click.exact="retryRun()"
               @click.shift="openRetryModal()">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-              {{ retrying ? 'Retrying…' : 'Retry Run' }}
+              {{ retrying ? (isRetrigger ? 'Retriggering…' : 'Retrying…') : (isRetrigger ? 'Retrigger Run' : 'Retry Run') }}
             </button>
           </div>
         </div>
@@ -162,7 +162,7 @@
       <Teleport to="body">
         <div v-if="showRetryModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @mousedown.self="showRetryModal = false">
           <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-xl p-6 w-full max-w-md">
-            <h3 class="text-base font-semibold text-white mb-4">Retry Options</h3>
+            <h3 class="text-base font-semibold text-white mb-4">{{ isRetrigger ? 'Retrigger Options' : 'Retry Options' }}</h3>
 
             <!-- Conflict warning -->
             <div v-if="retryConflict" class="mb-4 rounded-lg bg-yellow-900/40 border border-yellow-700/50 p-3 text-xs text-yellow-300">
@@ -324,7 +324,7 @@
                 :disabled="retrying"
                 class="px-4 py-1.5 text-sm bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white rounded-md transition-colors"
                 @click="retryRunWithOptions">
-                {{ retrying ? 'Retrying…' : 'Retry Run' }}
+                {{ retrying ? (isRetrigger ? 'Retriggering…' : 'Retrying…') : (isRetrigger ? 'Retrigger Run' : 'Retry Run') }}
               </button>
             </div>
           </div>
@@ -1086,6 +1086,12 @@ const retryOptions = reactive({
   overrideSkipSteps: false,
 })
 const retryConflict = ref<{ message: string; activeRunId: string } | null>(null)
+
+// True when the run succeeded (green run) — action is "Retrigger" rather than "Retry".
+const isRetrigger = computed(() =>
+  store.currentRun?.status === CiCdRunStatus.Succeeded ||
+  store.currentRun?.status === CiCdRunStatus.SucceededWithWarnings,
+)
 
 const sectionTabs = [
   { label: 'Jobs', value: 'jobs' },

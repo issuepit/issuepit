@@ -702,8 +702,10 @@ public class CiCdRunsController(
 
         if (run is null) return NotFound();
 
-        if (run.Status is not (CiCdRunStatus.Failed or CiCdRunStatus.Cancelled))
-            return Conflict(new { error = "Only failed or cancelled runs can be retried.", run.Status, StatusName = run.Status.ToString() });
+        // Only terminal runs can be retried/retriggered; in-progress or pending runs should be
+        // cancelled first to avoid duplicate execution.
+        if (run.Status is CiCdRunStatus.Pending or CiCdRunStatus.Running or CiCdRunStatus.WaitingForApproval)
+            return Conflict(new { error = "Run is still in progress. Cancel it before retriggering.", run.Status, StatusName = run.Status.ToString() });
 
         // Warn if another run for the same project is already in progress, unless the caller forces it.
         if (options?.ForceRetry != true)
