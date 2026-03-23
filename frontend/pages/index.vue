@@ -172,7 +172,7 @@
             <DashboardSectionBar
               v-if="item.type === 'section'"
               :label="SECTION_LABELS[item.sid as MainSectionId] ?? item.sid"
-              :display-modes="SECTION_DISPLAY_MODES[item.sid] ?? (isCiCdRunsSid(item.sid) ? ['list','count','chart'] : isAgentRunsSid(item.sid) ? ['list','count','chart'] : isRecentIssuesSid(item.sid) ? ['list','count','chart'] : undefined)"
+              :display-modes="SECTION_DISPLAY_MODES[item.sid] ?? (isCiCdRunsSid(item.sid) || isAgentRunsSid(item.sid) || isRecentIssuesSid(item.sid) ? ['list','count','chart'] : undefined)"
               :current-display-mode="sectionCfg(item.sid).displayMode"
               :has-max-items="SECTION_HAS_MAX_ITEMS.has(item.sid as MainSectionId) || isCiCdRunsSid(item.sid) || isAgentRunsSid(item.sid) || isRecentIssuesSid(item.sid)"
               :max-items-options="[3,5,8,10]"
@@ -189,7 +189,7 @@
               :can-stack="(SECTION_CAN_STACK.has(item.sid as MainSectionId) || isCiCdRunsSid(item.sid) || isAgentRunsSid(item.sid) || isRecentIssuesSid(item.sid)) && layout.order.indexOf(item.sid) < layout.order.length - 1"
               :is-stacked="sectionCfg(item.sid).stackGroup !== null"
               :hidden="sectionCfg(item.sid).hidden"
-              :can-remove="isCiCdRunsSid(item.sid) && item.sid !== 'cicdRuns' || isAgentRunsSid(item.sid) && item.sid !== 'agentRunsList' || isRecentIssuesSid(item.sid) && item.sid !== 'recentIssues'"
+              :can-remove="(isCiCdRunsSid(item.sid) && item.sid !== 'cicdRuns') || (isAgentRunsSid(item.sid) && item.sid !== 'agentRunsList') || (isRecentIssuesSid(item.sid) && item.sid !== 'recentIssues')"
               :drag-hover="dragSectionId !== null && dragHoverSid === item.sid && dragSectionId !== item.sid"
               @display-mode-change="m => updateCfg(item.sid, { displayMode: m as MainDisplayMode })"
               @max-items-change="n => updateCfg(item.sid, { maxItems: n })"
@@ -707,14 +707,16 @@ function isCiCdRunsSid(sid: string) { return sid === 'cicdRuns' || /^cicdRuns-\d
 function isAgentRunsSid(sid: string) { return sid === 'agentRunsList' || /^agentRuns-\d/.test(sid) }
 function isRecentIssuesSid(sid: string) { return sid === 'recentIssues' || /^recentIssues-\d/.test(sid) }
 
+const DEFAULT_DYNAMIC_CFG = { hidden: false, width: 'md' as MainWidth, displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null }
+
 function addCiCdRunsCard() {
-  addDynamicSection('cicdRuns', { hidden: false, width: 'md', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null })
+  addDynamicSection('cicdRuns', { ...DEFAULT_DYNAMIC_CFG })
 }
 function addAgentRunsCard() {
-  addDynamicSection('agentRuns', { hidden: false, width: 'md', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null })
+  addDynamicSection('agentRuns', { ...DEFAULT_DYNAMIC_CFG })
 }
 function addRecentIssuesCard() {
-  addDynamicSection('recentIssues', { hidden: false, width: 'md', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null })
+  addDynamicSection('recentIssues', { ...DEFAULT_DYNAMIC_CFG })
 }
 
 function mainColSpanClass(width: MainWidth): string {
@@ -763,7 +765,7 @@ function statOpenIssuesCount(mode: string): number {
 }
 function statOpenIssuesLink(mode: string): string {
   if (mode === 'in_progress') return '/issues?status=in_progress'
-  if (mode === 'closed') return '/issues?status=done'
+  if (mode === 'closed') return '/issues?status=closed'
   return '/issues?status=open'
 }
 function statOpenIssuesColor(mode: string): string {
@@ -853,32 +855,33 @@ function priorityBadge(priority: IssuePriority) {
 // ── Bar chart helpers (CI/CD + Agent daily counts) ────────────────────────
 const CICD_CHART_DAY_DEFAULT = 14
 
-const cicdDailyData = computed(() => {
-  const days = CICD_CHART_DAY_DEFAULT
+function isoDateStr(isoString?: string | null): string {
+  return isoString?.slice(0, 10) ?? ''
+}
+
+function buildDailyData(days: number, matchFn: (dateStr: string) => number): { date: string; count: number }[] {
   const result: { date: string; count: number }[] = []
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date()
     d.setDate(d.getDate() - i)
     const dateStr = d.toISOString().slice(0, 10)
-    const count = runsStore.runs.filter(r => r.startedAt?.slice(0, 10) === dateStr).length
-    result.push({ date: dateStr, count })
+    result.push({ date: dateStr, count: matchFn(dateStr) })
   }
   return result
-})
+}
+
+const cicdDailyData = computed(() =>
+  buildDailyData(CICD_CHART_DAY_DEFAULT, dateStr =>
+    runsStore.runs.filter(r => isoDateStr(r.startedAt) === dateStr).length
+  )
+)
 const cicdMaxY = computed(() => Math.max(...cicdDailyData.value.map(d => d.count), 1))
 
-const agentDailyData = computed(() => {
-  const days = CICD_CHART_DAY_DEFAULT
-  const result: { date: string; count: number }[] = []
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
-    const dateStr = d.toISOString().slice(0, 10)
-    const count = runsStore.dashboardSessions.filter(s => s.startedAt?.slice(0, 10) === dateStr).length
-    result.push({ date: dateStr, count })
-  }
-  return result
-})
+const agentDailyData = computed(() =>
+  buildDailyData(CICD_CHART_DAY_DEFAULT, dateStr =>
+    runsStore.dashboardSessions.filter(s => isoDateStr(s.startedAt) === dateStr).length
+  )
+)
 const agentMaxY = computed(() => Math.max(...agentDailyData.value.map(d => d.count), 1))
 
 function barX(i: number, total: number): number {
