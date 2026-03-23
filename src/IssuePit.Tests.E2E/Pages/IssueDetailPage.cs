@@ -204,27 +204,42 @@ public class IssueDetailPage(IPage page)
     }
 
     /// <summary>
-    /// Returns true if the branch input inside the agent assignment modal is visible.
+    /// Returns true if the branch selector inside the agent assignment modal is visible.
     /// </summary>
     public async Task<bool> IsAssignAgentModalBranchInputVisibleAsync()
     {
-        return await page.Locator(".fixed input[placeholder*='default branch']").IsVisibleAsync();
+        // BranchSelect renders a trigger button with aria-expanded attribute inside the modal overlay.
+        return await page.Locator(".fixed button[aria-expanded]").IsVisibleAsync();
     }
 
     /// <summary>
-    /// Sets the branch value inside the agent assignment modal.
+    /// Sets the branch value inside the agent assignment modal using the BranchSelect component.
+    /// Opens the dropdown, types the branch name, and presses Enter to accept (free-form mode).
     /// </summary>
     public async Task SetAssignAgentModalBranchAsync(string branch)
     {
-        var input = page.Locator(".fixed input[placeholder*='default branch']");
-        await input.FillAsync(branch);
+        // Click the BranchSelect trigger to open its dropdown
+        await page.Locator(".fixed button[aria-expanded]").ClickAsync();
+        // Wait for the search input inside BranchSelect
+        var searchInput = page.Locator("input[aria-label='Search branches']");
+        await searchInput.WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Default });
+        // Type the branch name — allowFreeForm=true means pressing Enter accepts the typed value
+        await searchInput.FillAsync(branch);
+        await searchInput.PressAsync("Enter");
+        // Wait for the dropdown to close
+        await searchInput.WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Hidden,
+            Timeout = E2ETimeouts.Short,
+        });
     }
 
     /// <summary>
-    /// Returns the value of the branch input inside the agent assignment modal.
+    /// Returns the value of the branch selected in the agent assignment modal.
     /// </summary>
     public async Task<string> GetAssignAgentModalBranchValueAsync()
     {
-        return await page.Locator(".fixed input[placeholder*='default branch']").InputValueAsync();
+        // The BranchSelect trigger button shows the selected value in its inner span
+        return (await page.Locator(".fixed button[aria-expanded] > span.flex-1").InnerTextAsync()).Trim();
     }
 }
