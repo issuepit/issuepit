@@ -183,6 +183,17 @@
           :class="currentSortBy === s.value ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-gray-300'"
           class="text-xs px-1.5 py-0.5 rounded transition-colors">{{ s.label }}</button>
       </div>
+      <!-- Project filter -->
+      <div v-if="projectOptions?.length" class="flex items-center gap-1.5">
+        <span class="text-xs text-gray-500">Project</span>
+        <select
+          :value="currentProjectFilter ?? ''"
+          @change.stop="onProjectFilterChange"
+          class="text-xs bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-gray-300 focus:outline-none focus:ring-1 focus:ring-brand-500">
+          <option value="">All</option>
+          <option v-for="p in projectOptions" :key="p.id" :value="p.id">{{ p.name }}</option>
+        </select>
+      </div>
     </div>
   </div>
 </template>
@@ -214,6 +225,8 @@ const props = defineProps<{
   currentTestHistoryXMode?: string
   sortByOptions?: { value: string; label: string }[]
   currentSortBy?: string
+  projectOptions?: { id: string; name: string }[]
+  currentProjectFilter?: string | null
   canTab?: boolean
   isTabbed?: boolean
   canStack?: boolean
@@ -235,6 +248,7 @@ const emit = defineEmits<{
   'test-history-y-axis-change': [axis: string]
   'test-history-x-mode-change': [mode: string]
   'sort-by-change': [value: string]
+  'project-filter-change': [projectId: string | null]
   'tab-toggle': []
   'tab-drop': [droppedSid: string]
   'stack-toggle': []
@@ -266,7 +280,8 @@ const hasSettings = computed(() =>
   props.testHistoryBranches !== undefined ||
   (props.testHistoryColorModeOptions?.length ?? 0) > 0 ||
   (props.testHistoryXModeOptions?.length ?? 0) > 0 ||
-  (props.sortByOptions?.length ?? 0) > 0,
+  (props.sortByOptions?.length ?? 0) > 0 ||
+  (props.projectOptions?.length ?? 0) > 0,
 )
 
 function onChartDaysChange(e: Event) {
@@ -282,6 +297,11 @@ function onBoardChange(e: Event) {
 function onBranchChange(e: Event) {
   const v = (e.target as HTMLSelectElement).value
   emit('test-history-branch-change', v || null)
+}
+
+function onProjectFilterChange(e: Event) {
+  const v = (e.target as HTMLSelectElement).value
+  emit('project-filter-change', v || null)
 }
 
 function onTabDrop(e: DragEvent) {

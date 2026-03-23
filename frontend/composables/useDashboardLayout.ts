@@ -16,6 +16,7 @@ export interface LayoutSectionConfig {
   testHistoryXMode?: 'date' | 'runs'
   sortBy?: string
   countMode?: string
+  projectFilter?: string
 }
 
 interface LayoutData {

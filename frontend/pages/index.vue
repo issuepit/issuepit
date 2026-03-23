@@ -184,6 +184,8 @@
               :current-chart-height="item.sid === 'chart' ? (sectionCfg(item.sid).chartHeightKey ?? 'md') : undefined"
               :sort-by-options="item.sid === 'recentProjects' ? RECENT_PROJECTS_SORT_OPTIONS : isRecentIssuesSid(item.sid) ? RECENT_ISSUES_SORT_OPTIONS : undefined"
               :current-sort-by="(item.sid === 'recentProjects' || isRecentIssuesSid(item.sid)) ? (sectionCfg(item.sid).sortBy ?? 'default') : undefined"
+              :project-options="isRecentIssuesSid(item.sid) ? projectsStore.projects.map(p => ({ id: p.id, name: p.name })) : undefined"
+              :current-project-filter="isRecentIssuesSid(item.sid) ? (sectionCfg(item.sid).projectFilter ?? null) : undefined"
               :can-tab="sectionCanTab(item.sid) && layout.order.indexOf(item.sid) < layout.order.length - 1"
               :is-tabbed="sectionCfg(item.sid).tabGroup !== null"
               :can-stack="sectionCanStack(item.sid) && layout.order.indexOf(item.sid) < layout.order.length - 1"
@@ -197,6 +199,7 @@
               @chart-days-change="d => updateCfg(item.sid, { chartDays: d })"
               @chart-height-change="k => updateCfg(item.sid, { chartHeightKey: k })"
               @sort-by-change="v => updateCfg(item.sid, { sortBy: v })"
+              @project-filter-change="v => updateCfg(item.sid, { projectFilter: v ?? undefined })"
               @tab-toggle="toggleTabGroupWithNext(item.sid as MainSectionId)"
               @tab-drop="droppedSid => tabWithSection(item.sid, droppedSid)"
               @stack-toggle="toggleStackGroupWithNext(item.sid as MainSectionId)"
@@ -288,8 +291,10 @@
                 <template v-else-if="sid === 'statAgentRuns'">
                   <NuxtLink to="/runs"
                     class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 block transition-colors">
-                    <p class="text-sm text-gray-400">Running Agents</p>
-                    <p class="text-3xl font-bold text-green-400 mt-1">{{ stats.runningAgents }}</p>
+                    <p class="text-sm text-gray-400">{{ statAgentRunsLabel(sectionCfg('statAgentRuns').displayMode ?? 'running') }}</p>
+                    <p :class="statAgentRunsColor(sectionCfg('statAgentRuns').displayMode ?? 'running')" class="text-3xl font-bold mt-1">
+                      {{ statAgentRunsCount(sectionCfg('statAgentRuns').displayMode ?? 'running') }}
+                    </p>
                   </NuxtLink>
                 </template>
 
@@ -307,7 +312,25 @@
                       </div>
                     </template>
                     <template v-else-if="sectionCfg(sid).displayMode === 'chart'">
-                      <div class="py-4 text-sm text-gray-500 text-center">No chart data yet</div>
+                      <div class="py-2">
+                        <p v-if="issuesDailyData.every(d => d.count === 0)" class="text-sm text-gray-500 text-center py-4">No issues created in the last {{ CICD_CHART_DAY_DEFAULT }} days</p>
+                        <template v-else>
+                          <svg :viewBox="`0 0 ${chartWidth} 120`" class="w-full" style="min-width:300px">
+                            <g v-for="(d, i) in issuesDailyData" :key="d.date">
+                              <rect
+                                :x="barX(i, issuesDailyData.length)"
+                                :y="120 - 30 - (issuesDailyMaxY > 0 ? (d.count / issuesDailyMaxY) * 80 : 0)"
+                                :width="barW(issuesDailyData.length)"
+                                :height="issuesDailyMaxY > 0 ? (d.count / issuesDailyMaxY) * 80 : 0"
+                                fill="#f59e0b" opacity="0.8" rx="2" />
+                              <text :x="barX(i, issuesDailyData.length) + barW(issuesDailyData.length) / 2" y="118"
+                                text-anchor="middle" fill="#6b7280" font-size="8">{{ shortDate(d.date) }}</text>
+                            </g>
+                            <text x="2" y="38" fill="#6b7280" font-size="8">{{ issuesDailyMaxY }}</text>
+                            <text x="2" y="118" fill="#6b7280" font-size="8">0</text>
+                          </svg>
+                        </template>
+                      </div>
                     </template>
                     <template v-else>
                       <div class="space-y-1">
@@ -575,9 +598,9 @@ type MainSectionId =
   | 'recentIssues' | 'recentProjects' | 'chart' | 'cicdRuns' | 'agentRunsList'
 
 type MainWidth = 'xxs' | 'xs' | 'quarter' | 'sm' | 'md' | 'lg'
-type MainDisplayMode = 'list' | 'count' | 'chart' | 'open' | 'in_progress' | 'closed' | 'total' | 'newly_created'
+type MainDisplayMode = 'list' | 'count' | 'chart' | 'open' | 'in_progress' | 'closed' | 'total' | 'newly_created' | 'running' | 'failed' | 'failed_24h'
 
-const MAIN_LAYOUT_KEY = 'main-dashboard-layout-v7'
+const MAIN_LAYOUT_KEY = 'main-dashboard-layout-v8'
 
 const DEFAULT_ORDER: MainSectionId[] = [
   'statProjects', 'statOpenIssues', 'statInProgress', 'statAgentRuns',
@@ -588,7 +611,7 @@ const DEFAULT_CONFIGS = {
   statProjects:   { hidden: false, width: 'quarter', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
   statOpenIssues: { hidden: false, width: 'quarter', displayMode: 'open', maxItems: 5, tabGroup: null, stackGroup: null },
   statInProgress: { hidden: false, width: 'quarter', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
-  statAgentRuns:  { hidden: false, width: 'quarter', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
+  statAgentRuns:  { hidden: false, width: 'quarter', displayMode: 'running', maxItems: 5, tabGroup: null, stackGroup: null },
   recentIssues:   { hidden: false, width: 'md', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
   recentProjects: { hidden: false, width: 'md', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
   chart:          { hidden: false, width: 'lg', displayMode: 'list', maxItems: 5, tabGroup: null, stackGroup: null },
@@ -613,6 +636,7 @@ const MAIN_WIDTHS = (['xxs', 'xs', 'quarter', 'sm', 'md', 'lg'] as MainWidth[]).
 
 const SECTION_DISPLAY_MODES: Partial<Record<string, string[]>> = {
   statOpenIssues: ['open', 'in_progress', 'closed', 'total', 'newly_created'],
+  statAgentRuns:  ['running', 'total', 'failed', 'failed_24h'],
   recentIssues:   ['list', 'count', 'chart'],
   recentProjects: ['list', 'count'],
   cicdRuns:       ['list', 'count', 'chart'],
@@ -783,6 +807,8 @@ const sevenDaysAgo = computed(() => { const d = new Date(); d.setDate(d.getDate(
 
 const PRIORITY_ORDER: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3, no_priority: 4 }
 
+const twentyFourHoursAgo = computed(() => { const d = new Date(); d.setHours(d.getHours() - 24); return d })
+
 const stats = computed(() => ({
   projects: projectsStore.projects.length,
   openIssues: issuesStore.issues.filter(i => i.status !== IssueStatus.Done && i.status !== IssueStatus.Cancelled && i.status !== IssueStatus.InProgress).length,
@@ -793,6 +819,8 @@ const stats = computed(() => ({
   runningCiCd: runsStore.runs.filter(r => r.status === CiCdRunStatus.Running || r.status === CiCdRunStatus.Pending).length,
   runningAgents: runsStore.dashboardSessions.filter(s => s.status === AgentSessionStatus.Running || s.status === AgentSessionStatus.Pending).length,
   agentRuns: runsStore.dashboardSessions.length,
+  failedAgents: runsStore.dashboardSessions.filter(s => s.status === AgentSessionStatus.Failed).length,
+  failedAgents24h: runsStore.dashboardSessions.filter(s => s.status === AgentSessionStatus.Failed && s.endedAt && new Date(s.endedAt) >= twentyFourHoursAgo.value).length,
 }))
 
 function statOpenIssuesLabel(mode: string): string {
@@ -820,6 +848,24 @@ function statOpenIssuesColor(mode: string): string {
   if (mode === 'total') return 'text-gray-300'
   if (mode === 'newly_created') return 'text-purple-400'
   return 'text-amber-400'
+}
+
+function statAgentRunsLabel(mode: string): string {
+  if (mode === 'total') return 'Agent Runs'
+  if (mode === 'failed') return 'Failed Agents'
+  if (mode === 'failed_24h') return 'Failed (24h)'
+  return 'Running Agents'
+}
+function statAgentRunsCount(mode: string): number {
+  if (mode === 'total') return stats.value.agentRuns
+  if (mode === 'failed') return stats.value.failedAgents
+  if (mode === 'failed_24h') return stats.value.failedAgents24h
+  return stats.value.runningAgents
+}
+function statAgentRunsColor(mode: string): string {
+  if (mode === 'failed' || mode === 'failed_24h') return 'text-red-400'
+  if (mode === 'total') return 'text-gray-300'
+  return 'text-green-400'
 }
 
 // ── Chart helpers ─────────────────────────────────────────────────────────
@@ -898,7 +944,7 @@ function priorityBadge(priority: IssuePriority) {
   return map[priority] ?? 'bg-gray-800 text-gray-400'
 }
 
-// ── Bar chart helpers (CI/CD + Agent daily counts) ────────────────────────
+// ── Bar chart helpers (CI/CD + Agent + Issues daily counts) ──────────────
 const CICD_CHART_DAY_DEFAULT = 14
 
 function isoDateStr(isoString?: string | null): string {
@@ -930,6 +976,13 @@ const agentDailyData = computed(() =>
 )
 const agentMaxY = computed(() => Math.max(...agentDailyData.value.map(d => d.count), 1))
 
+const issuesDailyData = computed(() =>
+  buildDailyData(CICD_CHART_DAY_DEFAULT, dateStr =>
+    issuesStore.issues.filter(i => isoDateStr(i.createdAt) === dateStr).length
+  )
+)
+const issuesDailyMaxY = computed(() => Math.max(...issuesDailyData.value.map(d => d.count), 1))
+
 function barX(i: number, total: number): number {
   const plotW = chartWidth - chartPad * 2
   const w = plotW / total
@@ -945,6 +998,7 @@ const RECENT_PROJECTS_SORT_OPTIONS = [
   { value: 'default', label: 'Default' },
   { value: 'name', label: 'Name' },
   { value: 'issueCount', label: 'Issues' },
+  { value: 'lastActivity', label: 'Last Active' },
 ]
 
 function sortedProjects(sid: string) {
@@ -952,6 +1006,7 @@ function sortedProjects(sid: string) {
   const list = [...projectsStore.projects]
   if (sortBy === 'name') list.sort((a, b) => a.name.localeCompare(b.name))
   else if (sortBy === 'issueCount') list.sort((a, b) => (b.issueCount ?? 0) - (a.issueCount ?? 0))
+  else if (sortBy === 'lastActivity') list.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   return list.slice(0, sectionCfg(sid).maxItems)
 }
 
@@ -963,7 +1018,9 @@ const RECENT_ISSUES_SORT_OPTIONS = [
 
 function sortedIssues(sid: string) {
   const sortBy = sectionCfg(sid).sortBy ?? 'default'
-  const list = [...issuesStore.issues]
+  const projectFilter = sectionCfg(sid).projectFilter ?? ''
+  let list = [...issuesStore.issues]
+  if (projectFilter) list = list.filter(i => i.projectId === projectFilter)
   if (sortBy === 'priority') {
     list.sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 99) - (PRIORITY_ORDER[b.priority] ?? 99))
   } else if (sortBy === 'status') {
