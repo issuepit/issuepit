@@ -74,7 +74,8 @@ builder.Services.AddCors(options =>
                 .SetIsOriginAllowed(_ => true)
                 .AllowAnyHeader()
                 .AllowAnyMethod()
-                .AllowCredentials();
+                .AllowCredentials()
+                .WithExposedHeaders("Mcp-Session-Id");
         }
         else
         {
@@ -92,7 +93,8 @@ builder.Services.AddCors(options =>
             })
             .AllowAnyHeader()
             .AllowAnyMethod()
-            .AllowCredentials();
+            .AllowCredentials()
+            .WithExposedHeaders("Mcp-Session-Id");
         }
     });
 });

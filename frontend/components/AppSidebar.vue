@@ -104,8 +104,11 @@ stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
           </template>
         </SidebarSection>
         <SidebarNavLink to="/skills" icon="skills" label="Skills" />
-        <SidebarNavLink to="/config/mcp-servers" icon="mcp" label="MCP Servers" />
-        <SidebarNavLink to="/config/mcp-keys" icon="mcp" label="MCP Keys" />
+        <SidebarSection label="MCP" icon="mcp" :default-open="true">
+          <SidebarNavLink to="/config/mcp-servers" icon="mcp" label="MCP Servers" />
+          <SidebarNavLink to="/config/mcp-keys" icon="mcp" label="MCP Keys" />
+          <SidebarNavLink to="/config/mcp-playground" icon="mcp-playground" label="Playground" />
+        </SidebarSection>
         <SidebarNavLink to="/config/runtimes" icon="config" label="Runtimes" />
       </SidebarSection>
 
