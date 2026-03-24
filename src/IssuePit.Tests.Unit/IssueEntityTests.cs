@@ -47,4 +47,26 @@ public class IssueEntityTests
         var issue = new Issue();
         Assert.Empty(issue.Assignees);
     }
+
+    [Fact]
+    public void Issue_ExternalId_DefaultsToNull()
+    {
+        var issue = new Issue();
+        Assert.Null(issue.ExternalId);
+    }
+
+    [Fact]
+    public void Issue_ExternalSource_DefaultsToNull()
+    {
+        var issue = new Issue();
+        Assert.Null(issue.ExternalSource);
+    }
+
+    [Fact]
+    public void Issue_CanSetExternalIdAndSource()
+    {
+        var issue = new Issue { ExternalId = 42, ExternalSource = "github" };
+        Assert.Equal(42, issue.ExternalId);
+        Assert.Equal("github", issue.ExternalSource);
+    }
 }

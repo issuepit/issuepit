@@ -625,7 +625,7 @@
                             <span :class="issueStatusDot(issue.status)" class="w-2 h-2 rounded-full shrink-0 mt-1.5"></span>
                             <div class="flex-1 min-w-0">
                               <p class="text-sm text-gray-200 truncate group-hover:text-brand-300 transition-colors">{{ issue.title }}</p>
-                              <p class="text-xs text-gray-500">{{ formatIssueId(issue.number, store.currentProject) }} · <DateDisplay :date="issue.updatedAt" mode="relative" /></p>
+                              <p class="text-xs text-gray-500">{{ formatIssueId(issue.number, store.currentProject, issue.externalId, issue.externalSource) }} · <DateDisplay :date="issue.updatedAt" mode="relative" /></p>
                             </div>
                             <span :class="issuePriorityBadge(issue.priority)" class="text-xs px-1.5 py-0.5 rounded font-medium shrink-0">
                               {{ issue.priority === 'no_priority' ? '—' : issue.priority }}

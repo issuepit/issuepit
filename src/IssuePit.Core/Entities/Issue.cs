@@ -51,6 +51,19 @@ public class Issue
 
     public string? GitHubIssueUrl { get; set; }
 
+    /// <summary>
+    /// The issue number from an external tracker (e.g. GitHub issue #69, Jira ticket number).
+    /// Used as the primary display ID when set.
+    /// </summary>
+    public int? ExternalId { get; set; }
+
+    /// <summary>
+    /// Identifies the external source system (e.g. "github", "jira").
+    /// Paired with <see cref="ExternalId"/> to form the primary display ID (e.g. "#GH-69").
+    /// </summary>
+    [MaxLength(100)]
+    public string? ExternalSource { get; set; }
+
     public string? GitBranch { get; set; }
 
     public int KanbanRank { get; set; }

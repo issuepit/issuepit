@@ -314,6 +314,10 @@ export interface Issue {
   kanbanRank: number
   gitHubIssueNumber?: number
   gitHubIssueUrl?: string
+  /** External issue number from an external tracker (e.g. GitHub #69). Used as primary display ID. */
+  externalId?: number | null
+  /** External source identifier (e.g. "github", "jira"). Paired with externalId. */
+  externalSource?: string | null
   gitBranch?: string
   createdAt: string
   updatedAt: string

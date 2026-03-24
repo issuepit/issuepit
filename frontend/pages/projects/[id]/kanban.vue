@@ -120,7 +120,7 @@
               @dragend="onIssueDragEnd"
               @click="openPreview(issue)">
               <div class="flex items-start justify-between gap-2 mb-2">
-                <span class="text-xs text-gray-600">{{ formatIssueId(issue.number, projectsStore.currentProject) }}</span>
+                <span class="text-xs text-gray-600">{{ formatIssueId(issue.number, projectsStore.currentProject, issue.externalId, issue.externalSource) }}</span>
                 <span :class="priorityColor(issue.priority)" class="text-xs shrink-0">
                   {{ priorityIcon(issue.priority) }}
                 </span>
@@ -174,7 +174,7 @@
       <div v-if="previewIssue" class="fixed right-0 top-0 h-full w-96 bg-gray-900 border-l border-gray-700 shadow-2xl z-40 flex flex-col overflow-hidden">
         <!-- Sidebar header -->
         <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800 shrink-0">
-          <span class="text-xs text-gray-500">{{ formatIssueId(previewIssue.number, projectsStore.currentProject) }}</span>
+          <span class="text-xs text-gray-500">{{ formatIssueId(previewIssue.number, projectsStore.currentProject, previewIssue.externalId, previewIssue.externalSource) }}</span>
           <div class="flex items-center gap-2">
             <NuxtLink :to="`/projects/${id}/issues/${previewIssue.number}`"
               class="text-xs text-brand-400 hover:text-brand-300 transition-colors">
