@@ -103,4 +103,10 @@ public record TriggerPayload(
     /// (runs <c>act</c> inside a Docker container). When <c>null</c> the global
     /// <c>CiCd:Runtime</c> configuration value is used.
     /// </summary>
-    string? RuntimeOverride = null);
+    string? RuntimeOverride = null,
+    /// <summary>
+    /// Indicates where <see cref="ActRunnerImage"/> was resolved from.
+    /// Populated by the worker when it merges project/org settings into the trigger.
+    /// Values: <c>"trigger-override"</c>, <c>"project"</c>, <c>"org"</c>, or <c>null</c> (global default).
+    /// </summary>
+    string? ActRunnerImageSource = null);

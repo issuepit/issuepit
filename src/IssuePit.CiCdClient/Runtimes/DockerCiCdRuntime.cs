@@ -274,9 +274,23 @@ public partial class DockerCiCdRuntime(
         // first-run prompt ("Please choose the default image") that causes EOF in non-interactive containers.
         // Default is the Medium runner image (~500 MB, compatible with most actions).
         // Priority: trigger (project/org override) → CiCd__ActImage config → hardcoded default.
-        var actRunnerImage = !string.IsNullOrWhiteSpace(trigger.ActRunnerImage)
-            ? trigger.ActRunnerImage
-            : configuration["CiCd__ActImage"] ?? "catthehacker/ubuntu:act-latest";
+        string actRunnerImageSource;
+        string actRunnerImage;
+        if (!string.IsNullOrWhiteSpace(trigger.ActRunnerImage))
+        {
+            actRunnerImage = trigger.ActRunnerImage;
+            actRunnerImageSource = trigger.ActRunnerImageSource ?? "trigger-override";
+        }
+        else if (configuration["CiCd__ActImage"] is { Length: > 0 } cfgActImage)
+        {
+            actRunnerImage = cfgActImage;
+            actRunnerImageSource = "server-config";
+        }
+        else
+        {
+            actRunnerImage = "catthehacker/ubuntu:act-latest";
+            actRunnerImageSource = "global-default";
+        }
 
         // Build -P platform flags appended to the act command so the prompt is suppressed
         // even if the actrc isn't read (stale image layer, wrong XDG_CONFIG_HOME, etc.).
@@ -290,6 +304,7 @@ public partial class DockerCiCdRuntime(
         await onLogLine($"[DEBUG] IssuePit ver   : {AppVersion}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Docker image   : {image}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Act runner img : {actRunnerImage}", LogStream.Stdout);
+        await onLogLine($"[DEBUG] Runner img src : {actRunnerImageSource}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Container name : {containerName}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Command        : {string.Join(' ', actCmd)}", LogStream.Stdout);
         if (hasGitRepo)

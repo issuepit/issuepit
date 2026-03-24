@@ -295,7 +295,7 @@
                   <input
                     v-model="retryOptions.customImage"
                     type="text"
-                    placeholder="e.g. ghcr.io/catthehacker/ubuntu:act-24.04"
+                    :placeholder="currentOuterImagePlaceholder"
                     class="w-full bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-300 px-2.5 py-1.5 placeholder-gray-600 focus:outline-none focus:border-brand-500" />
                   <p class="text-xs text-gray-600 mt-1">Outer Docker image for the container that executes the act tool itself.</p>
                 </div>
@@ -304,7 +304,7 @@
                   <input
                     v-model="retryOptions.actRunnerImage"
                     type="text"
-                    placeholder="e.g. ghcr.io/catthehacker/ubuntu:act-latest"
+                    :placeholder="currentActRunnerImagePlaceholder"
                     class="w-full bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-300 px-2.5 py-1.5 placeholder-gray-600 focus:outline-none focus:border-brand-500" />
                   <p class="text-xs text-gray-600 mt-1">Runner image used by act for platform mapping (overrides project/org setting).</p>
                 </div>
@@ -890,7 +890,37 @@
               <tbody>
                 <tr v-for="(entry, i) in debugMetadata" :key="i" class="border-b border-gray-800 last:border-0">
                   <td class="py-2 pr-6 text-gray-500 whitespace-nowrap align-top w-40">{{ entry.key }}</td>
-                  <td class="py-2 text-gray-300 break-all">{{ entry.value }}</td>
+                  <td class="py-2 break-all">
+                    <!-- Docker image (outer) -->
+                    <template v-if="entry.key === 'Docker image'">
+                      <span
+                        :class="isNonDefaultOuterImage ? 'text-yellow-300 font-semibold' : 'text-gray-300'"
+                        :title="isNonDefaultOuterImage ? 'Custom outer image (not the configured default)' : 'Configured outer image'"
+                      >{{ entry.value }}</span>
+                      <span v-if="isNonDefaultOuterImage" class="ml-2 inline-flex items-center gap-1 text-yellow-500 text-xs">
+                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                          <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                        </svg>
+                        custom
+                      </span>
+                    </template>
+                    <!-- Act runner image (inner) -->
+                    <template v-else-if="entry.key === 'Act runner img'">
+                      <span
+                        :class="runnerImgSourceLabel === 'global-default' || runnerImgSourceLabel === 'server-config' ? 'text-gray-400' : 'text-yellow-300 font-semibold'"
+                        :title="runnerImgSourceTitle"
+                      >{{ entry.value }}</span>
+                      <span v-if="runnerImgSourceBadge" class="ml-2 text-xs" :class="runnerImgSourceBadgeClass">{{ runnerImgSourceBadge }}</span>
+                    </template>
+                    <!-- Runner image source annotation -->
+                    <template v-else-if="entry.key === 'Runner img src'">
+                      <span class="text-xs" :class="runnerImgSourceBadgeClass">{{ runnerImgSourceLabel }}</span>
+                    </template>
+                    <!-- Default display -->
+                    <template v-else>
+                      <span class="text-gray-300">{{ entry.value }}</span>
+                    </template>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -2093,6 +2123,71 @@ const shaWarningMessage = computed(() => {
     if (log.line.includes('[WARN] Commit SHA mismatch:')) return log.line
   }
   return null
+})
+
+// ── Image source helpers for the Details tab ───────────────────────────────────
+
+/** True when a custom outer image (not the server-configured default) was used. */
+const isNonDefaultOuterImage = computed(() => {
+  const customImage = debugMetadata.value.find(e => e.key === 'Docker image')?.value
+  if (!customImage) return false
+  // The outer image comes from trigger.CustomImage override → that's non-default
+  const retryEntry = debugMetadata.value.find(e => e.key === 'Runner img src')
+  // No source entry means it's an older run; just check if it looks like a custom image
+  return !!retryEntry && retryEntry.value === 'trigger-override'
+})
+
+/** The resolved 'Runner img src' value from debug metadata. */
+const runnerImgSourceLabel = computed(() =>
+  debugMetadata.value.find(e => e.key === 'Runner img src')?.value ?? null,
+)
+
+const runnerImgSourceBadge = computed(() => {
+  switch (runnerImgSourceLabel.value) {
+    case 'project': return 'project override'
+    case 'org': return 'org override'
+    case 'trigger-override': return 'run override'
+    case 'server-config': return 'server config'
+    case 'global-default': return 'global default'
+    default: return null
+  }
+})
+
+const runnerImgSourceBadgeClass = computed(() => {
+  switch (runnerImgSourceLabel.value) {
+    case 'project':
+    case 'org':
+      return 'text-yellow-400'
+    case 'trigger-override':
+      return 'text-orange-400'
+    case 'server-config':
+    case 'global-default':
+    default:
+      return 'text-gray-500'
+  }
+})
+
+const runnerImgSourceTitle = computed(() => {
+  switch (runnerImgSourceLabel.value) {
+    case 'project': return 'Act runner image overridden at project level'
+    case 'org': return 'Act runner image overridden at organization level'
+    case 'trigger-override': return 'Act runner image explicitly set for this run'
+    case 'server-config': return 'Act runner image from server configuration (CiCd__ActImage)'
+    case 'global-default': return 'Act runner image using global hardcoded default'
+    default: return 'Act runner image source unknown'
+  }
+})
+
+/** Placeholder for the retry "Custom image" field: shows actual outer image used in this run. */
+const currentOuterImagePlaceholder = computed(() => {
+  const val = debugMetadata.value.find(e => e.key === 'Docker image')?.value
+  return val ? `current: ${val}` : 'e.g. ghcr.io/issuepit/issuepit-helper-act:latest'
+})
+
+/** Placeholder for the retry "Act runner image" field: shows actual runner image used in this run. */
+const currentActRunnerImagePlaceholder = computed(() => {
+  const val = debugMetadata.value.find(e => e.key === 'Act runner img')?.value
+  return val ? `current: ${val}` : 'e.g. catthehacker/ubuntu:act-latest'
 })
 
 // `now` is updated on each server-pushed event so the duration display stays live without a timer

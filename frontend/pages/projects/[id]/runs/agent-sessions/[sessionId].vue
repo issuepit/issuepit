@@ -194,7 +194,7 @@
                   v-if="retryDockerImage === 'custom'"
                   v-model="retryCustomDockerImage"
                   type="text"
-                  placeholder="e.g. ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24"
+                  :placeholder="`e.g. ${agentImageOptions[0].value}`"
                   class="w-full bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-300 px-2.5 py-1.5 placeholder-gray-600 focus:outline-none focus:border-brand-500" />
               </div>
             </div>
@@ -867,16 +867,39 @@ async function cancelSession() {
   }
 }
 
-const agentImageOptions = [
-  {
-    value: 'ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24',
-    description: 'Latest build from the main branch — recommended.',
-    isDefault: true,
-  },
-]
+// Docker image selection for retry: dynamically built from current agent's image.
+// Falls back to the known default when no agent is loaded yet.
+const DEFAULT_AGENT_IMAGE = 'ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24'
+
+const agentImageOptions = computed(() => {
+  const currentAgent = agentsStore.agents.find(a => a.id === retryAgentId.value)
+  const agentImage = currentAgent?.dockerImage ?? DEFAULT_AGENT_IMAGE
+  // Deduplicate: if the agent image matches the known default, show only one option.
+  if (agentImage === DEFAULT_AGENT_IMAGE) {
+    return [
+      {
+        value: DEFAULT_AGENT_IMAGE,
+        description: 'Latest build from the main branch — recommended.',
+        isDefault: true,
+      },
+    ]
+  }
+  return [
+    {
+      value: agentImage,
+      description: 'Current agent image.',
+      isDefault: true,
+    },
+    {
+      value: DEFAULT_AGENT_IMAGE,
+      description: 'Latest build from the main branch.',
+      isDefault: false,
+    },
+  ]
+})
 
 // Default to the first (stable/latest) option
-const retryDockerImage = ref(agentImageOptions[0].value)
+const retryDockerImage = ref(agentImageOptions.value[0].value)
 const retryCustomDockerImage = ref('')
 const retryKeepContainer = ref(false)
 
@@ -912,7 +935,7 @@ async function openRetryModal() {
   retryModel.value = ''
   retryCli.value = ''
   retryRuntimeType.value = ''
-  retryDockerImage.value = agentImageOptions[0].value
+  retryDockerImage.value = agentImageOptions.value[0].value
   retryCustomDockerImage.value = ''
   retryKeepContainer.value = false
   showRetryModal.value = true
@@ -925,7 +948,7 @@ async function retrySession() {
     let imageOverride: string | undefined
     if (retryDockerImage.value === 'custom') {
       imageOverride = retryCustomDockerImage.value.trim() || undefined
-    } else if (retryDockerImage.value !== agentImageOptions[0].value) {
+    } else if (retryDockerImage.value !== agentImageOptions.value[0].value) {
       imageOverride = retryDockerImage.value
     }
 
