@@ -416,24 +416,66 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
                 await db.SaveChangesAsync();
             }
 
-            await producer.ProduceAsync("issue-assigned", new Message<string, string>
+            // Create a pending session immediately so the UI can show a queued run before
+            // the ExecutionClient picks up the Kafka message.
+            var queuedSession = await CreatePendingAgentSessionAsync(agent.Id, issue.Id);
+
+            try
             {
-                Key = issue.Id.ToString(),
-                Value = JsonSerializer.Serialize(new
+                await producer.ProduceAsync("issue-assigned", new Message<string, string>
                 {
-                    issue.Id,
-                    issue.ProjectId,
-                    issue.Title,
-                    AgentId = agent.Id,
-                    TriggeringCommentId = comment.Id,
-                    Branch = branch,
-                })
-            });
+                    Key = issue.Id.ToString(),
+                    Value = JsonSerializer.Serialize(new
+                    {
+                        issue.Id,
+                        issue.ProjectId,
+                        issue.Title,
+                        AgentId = agent.Id,
+                        sessionId = queuedSession.Id,
+                        TriggeringCommentId = comment.Id,
+                        Branch = branch,
+                    })
+                });
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to publish issue-assigned Kafka message for issue {IssueId}", issue.Id);
+                await MarkSessionKafkaFailedAsync(queuedSession, ex);
+            }
 
             logger.LogInformation(
                 "Triggered agent {AgentName} ({AgentId}) for issue {IssueId} via comment mention",
                 agent.Name, agent.Id, issue.Id);
         }
+    }
+
+    /// <summary>
+    /// Creates and persists a <see cref="AgentSession"/> with <see cref="AgentSessionStatus.Pending"/> status
+    /// so the UI can show a queued run immediately, before the ExecutionClient picks up the Kafka message.
+    /// </summary>
+    private async Task<AgentSession> CreatePendingAgentSessionAsync(Guid agentId, Guid issueId)
+    {
+        var session = new AgentSession
+        {
+            Id = Guid.NewGuid(),
+            AgentId = agentId,
+            IssueId = issueId,
+            Status = AgentSessionStatus.Pending,
+        };
+        db.AgentSessions.Add(session);
+        await db.SaveChangesAsync();
+        return session;
+    }
+
+    /// <summary>
+    /// Marks a pre-created pending session as failed when the Kafka publish fails.
+    /// </summary>
+    private async Task MarkSessionKafkaFailedAsync(AgentSession session, Exception ex)
+    {
+        session.Status = AgentSessionStatus.Failed;
+        session.EndedAt = DateTime.UtcNow;
+        session.Warnings = JsonSerializer.Serialize(new[] { $"Failed to queue agent run: {ex.Message}" });
+        await db.SaveChangesAsync();
     }
 
     [GeneratedRegex(@"@([\w]+(?:-[\w]+)*)")]
@@ -565,11 +607,23 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
 
         if (req.AgentId.HasValue)
         {
-            await producer.ProduceAsync("issue-assigned", new Message<string, string>
+            // Create a pending session immediately so the UI can show a queued run before
+            // the ExecutionClient picks up the Kafka message.
+            var queuedSession = await CreatePendingAgentSessionAsync(req.AgentId.Value, id);
+
+            try
             {
-                Key = issue.Id.ToString(),
-                Value = JsonSerializer.Serialize(new { issue.Id, issue.ProjectId, issue.Title, AgentId = req.AgentId.Value, req.DockerCmdOverride, Branch = req.Branch })
-            });
+                await producer.ProduceAsync("issue-assigned", new Message<string, string>
+                {
+                    Key = issue.Id.ToString(),
+                    Value = JsonSerializer.Serialize(new { issue.Id, issue.ProjectId, issue.Title, AgentId = req.AgentId.Value, sessionId = queuedSession.Id, req.DockerCmdOverride, Branch = req.Branch })
+                });
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to publish issue-assigned Kafka message for issue {IssueId}", id);
+                await MarkSessionKafkaFailedAsync(queuedSession, ex);
+            }
         }
 
         return Created($"/api/issues/{id}/assignees/{assignee.Id}", assignee);
