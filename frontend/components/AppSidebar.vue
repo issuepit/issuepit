@@ -27,7 +27,7 @@ stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
     <!-- Nav -->
     <nav v-if="!sidebarCollapsed" class="flex-1 p-3 space-y-0.5 overflow-y-auto">
       <SidebarNavLink to="/" icon="dashboard" label="Dashboard" />
-      <SidebarNavLink to="/runs" icon="runs" label="Runs" />
+      <SidebarNavLink :to="runsLink" icon="runs" label="Runs" />
       <SidebarNavLink to="/todos" icon="todos" label="Todos" />
 
       <!-- Issues section -->
@@ -172,6 +172,21 @@ const route = useRoute()
 
 const displayName = computed(() => auth.user?.username ?? auth.user?.email?.split('@')[0] ?? 'User')
 const initials = computed(() => displayName.value.slice(0, 2).padEnd(2, displayName.value[0] ?? 'U').toUpperCase())
+
+// Smart "Runs" sidebar link:
+// - If inside a project but not on the project runs page → go to project runs
+// - If already on the project runs page → go to global runs
+// - Otherwise → global runs
+const runsLink = computed(() => {
+  const match = route.path.match(/^\/projects\/([^/]+)(\/.*)?$/)
+  if (match) {
+    const projectId = match[1]
+    const subPath = match[2] ?? ''
+    if (subPath.startsWith('/runs')) return '/runs'
+    return `/projects/${projectId}/runs`
+  }
+  return '/runs'
+})
 
 // Returns the sidebar link for a project, preserving the current sub-page when possible.
 // e.g. /projects/OLD/kanban → /projects/NEW/kanban

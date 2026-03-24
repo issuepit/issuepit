@@ -286,7 +286,7 @@
 
                 <!-- ── statInProgress ── -->
                 <template v-else-if="sid === 'statInProgress'">
-                  <NuxtLink to="/runs"
+                  <NuxtLink to="/runs?tab=cicd&status=running,pending"
                     class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 block transition-colors">
                     <p class="text-sm text-gray-400">CI/CD Running</p>
                     <p class="text-3xl font-bold text-yellow-400 mt-1">{{ stats.runningCiCd }}</p>
@@ -295,7 +295,7 @@
 
                 <!-- ── statAgentRuns ── -->
                 <template v-else-if="sid === 'statAgentRuns'">
-                  <NuxtLink to="/runs"
+                  <NuxtLink :to="statAgentRunsLink(sectionCfg('statAgentRuns').displayMode ?? 'running')"
                     class="bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-5 block transition-colors">
                     <p class="text-sm text-gray-400">{{ statAgentRunsLabel(sectionCfg('statAgentRuns').displayMode ?? 'running', sectionCfg('statAgentRuns').failedHours ?? 24) }}</p>
                     <p :class="statAgentRunsColor(sectionCfg('statAgentRuns').displayMode ?? 'running')" class="text-3xl font-bold mt-1">
@@ -881,6 +881,11 @@ function statAgentRunsColor(mode: string): string {
   if (mode === 'failed') return 'text-red-400'
   if (mode === 'total') return 'text-gray-300'
   return 'text-green-400'
+}
+function statAgentRunsLink(mode: string): string {
+  if (mode === 'failed') return '/runs?tab=agent&status=failed'
+  if (mode === 'total') return '/runs?tab=agent'
+  return '/runs?tab=agent&status=running,pending'
 }
 
 // ── Chart helpers ─────────────────────────────────────────────────────────
