@@ -27,6 +27,95 @@ public class AgentEnvironmentBuilderTests
             ChildAgents = childAgents?.ToList() ?? [],
         };
 
+    private static AgentSession MakeSession() =>
+        new() { Id = Guid.NewGuid(), PushPolicy = AgentPushPolicy.Forbidden };
+
+    private static Issue MakeIssue() =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = Guid.NewGuid(),
+            Number = 42,
+            Title = "Test Issue",
+        };
+
+    private static GitRepository MakeRepo(string url, string defaultBranch = "main",
+        string? authToken = null, GitOriginMode mode = GitOriginMode.Working) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            RemoteUrl = url,
+            DefaultBranch = defaultBranch,
+            AuthToken = authToken,
+            Mode = mode,
+        };
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Build — clone-source vs push-target separation
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Build_NoCloneRepository_UsesGitRepositoryUrlForClone()
+    {
+        var agent = MakeAgent();
+        var session = MakeSession();
+        var issue = MakeIssue();
+        var working = MakeRepo("https://github.com/org/working.git");
+
+        var env = AgentEnvironmentBuilder.Build(session, agent, issue, new Dictionary<string, string>(), working);
+
+        Assert.Contains("ISSUEPIT_GIT_REMOTE_URL=https://github.com/org/working.git", env);
+    }
+
+    [Fact]
+    public void Build_WithCloneRepository_UsesCloneRepoUrlForClone()
+    {
+        var agent = MakeAgent();
+        var session = MakeSession();
+        var issue = MakeIssue();
+        var working = MakeRepo("https://github.com/org/working.git");
+        var release = MakeRepo("https://github.com/org/release.git", mode: GitOriginMode.Release);
+
+        // Pass working as push target, release as clone source.
+        var env = AgentEnvironmentBuilder.Build(session, agent, issue, new Dictionary<string, string>(),
+            gitRepository: working, cloneRepository: release);
+
+        // ISSUEPIT_GIT_REMOTE_URL must point at the clone source (release), NOT the push target.
+        Assert.Contains("ISSUEPIT_GIT_REMOTE_URL=https://github.com/org/release.git", env);
+        Assert.DoesNotContain("ISSUEPIT_GIT_REMOTE_URL=https://github.com/org/working.git", env);
+    }
+
+    [Fact]
+    public void Build_WithCloneRepository_CloneSourceCredentialsInjected()
+    {
+        var agent = MakeAgent();
+        var session = MakeSession();
+        var issue = MakeIssue();
+        var working = MakeRepo("https://github.com/org/working.git", authToken: "working-token");
+        var release = MakeRepo("https://github.com/org/release.git", authToken: "release-token",
+            mode: GitOriginMode.Release);
+
+        var env = AgentEnvironmentBuilder.Build(session, agent, issue, new Dictionary<string, string>(),
+            gitRepository: working, cloneRepository: release);
+
+        // Clone credentials must come from the clone source (release).
+        Assert.Contains("ISSUEPIT_GIT_AUTH_TOKEN=release-token", env);
+        Assert.DoesNotContain("ISSUEPIT_GIT_AUTH_TOKEN=working-token", env);
+    }
+
+    [Fact]
+    public void Build_WithNullGitRepository_NoGitEnvVarsEmitted()
+    {
+        var agent = MakeAgent();
+        var session = MakeSession();
+        var issue = MakeIssue();
+
+        var env = AgentEnvironmentBuilder.Build(session, agent, issue, new Dictionary<string, string>(),
+            gitRepository: null);
+
+        Assert.DoesNotContain(env, e => e.StartsWith("ISSUEPIT_GIT_REMOTE_URL=", StringComparison.Ordinal));
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // BuildExtraMcpJson — MCP server serialisation
     // ──────────────────────────────────────────────────────────────────────────

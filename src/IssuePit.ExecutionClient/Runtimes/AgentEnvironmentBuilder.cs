@@ -16,14 +16,38 @@ internal static class AgentEnvironmentBuilder
     /// Returns the environment variables for an agent container as a list of
     /// <c>KEY=VALUE</c> strings suitable for Docker's <c>Env</c> parameter.
     /// </summary>
+    /// <param name="gitRepository">
+    ///   The Working-mode push-target remote. Used for <c>ISSUEPIT_GIT_DEFAULT_BRANCH</c>
+    ///   (the base branch used to name agent feature branches) when no separate
+    ///   <paramref name="cloneRepository"/> is provided.
+    /// </param>
+    /// <param name="cloneRepository">
+    ///   The clone-source remote (typically the one with the highest commit count). When
+    ///   provided its URL and credentials are injected as <c>ISSUEPIT_GIT_REMOTE_URL</c> /
+    ///   <c>ISSUEPIT_GIT_AUTH_*</c> so the container clones from the correct origin.
+    ///   When <c>null</c> <paramref name="gitRepository"/> is used as the clone source too.
+    ///
+    ///   <para>
+    ///     In the exec flow (modern path) the C# code drives the clone directly with
+    ///     <see cref="DockerRuntimeBase.CloneWorkspaceAsync"/> so these env vars are not used
+    ///     for cloning. They ARE still used by legacy-flow containers whose <c>entrypoint.sh</c>
+    ///     performs the clone itself.
+    ///   </para>
+    /// </param>
     public static List<string> Build(
         AgentSession session,
         Agent agent,
         Issue issue,
         IReadOnlyDictionary<string, string> credentials,
         GitRepository? gitRepository,
+        GitRepository? cloneRepository = null,
         string? issuePitMcpUrl = null)
     {
+        // Use the dedicated clone-source remote when it is different from the push-target.
+        // Falls back to gitRepository so callers that only pass one remote still work.
+        // Use the dedicated clone-source remote when it is different from the push-target.
+        // Falls back to gitRepository so callers that only pass one remote still work.
+        var cloneRepo = cloneRepository ?? gitRepository;
         var env = new List<string>
         {
             $"ISSUEPIT_SESSION_ID={session.Id}",
@@ -46,15 +70,18 @@ internal static class AgentEnvironmentBuilder
         // Inform the entrypoint whether internet access is disabled (used for DNS logging display).
         env.Add($"ISSUEPIT_DISABLE_INTERNET={agent.DisableInternet.ToString().ToLowerInvariant()}");
 
-        // Inject git repository info so the container can clone the repo on startup.
-        if (gitRepository is not null)
+        // Inject git clone-source info so the container can clone the repo on startup
+        // (used by legacy-flow entrypoint.sh). The clone source may differ from the push target:
+        // we always clone from the remote with the most commits (typically Release/upstream) so
+        // the agent works from the freshest code, while pushes go to the Working remote.
+        if (cloneRepo is not null)
         {
-            env.Add($"ISSUEPIT_GIT_REMOTE_URL={gitRepository.RemoteUrl}");
-            env.Add($"ISSUEPIT_GIT_DEFAULT_BRANCH={gitRepository.DefaultBranch}");
-            if (!string.IsNullOrEmpty(gitRepository.AuthUsername))
-                env.Add($"ISSUEPIT_GIT_AUTH_USERNAME={gitRepository.AuthUsername}");
-            if (!string.IsNullOrEmpty(gitRepository.AuthToken))
-                env.Add($"ISSUEPIT_GIT_AUTH_TOKEN={gitRepository.AuthToken}");
+            env.Add($"ISSUEPIT_GIT_REMOTE_URL={cloneRepo.RemoteUrl}");
+            env.Add($"ISSUEPIT_GIT_DEFAULT_BRANCH={cloneRepo.DefaultBranch}");
+            if (!string.IsNullOrEmpty(cloneRepo.AuthUsername))
+                env.Add($"ISSUEPIT_GIT_AUTH_USERNAME={cloneRepo.AuthUsername}");
+            if (!string.IsNullOrEmpty(cloneRepo.AuthToken))
+                env.Add($"ISSUEPIT_GIT_AUTH_TOKEN={cloneRepo.AuthToken}");
         }
 
         // Inject agent logins / API key credentials as environment variables.
