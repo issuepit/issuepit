@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Confluent.Kafka;
+using Docker.DotNet;
 using IssuePit.Core;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
@@ -71,6 +72,10 @@ public class IssueWorker(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // On startup, clean up any manual-mode sessions that were left in Running state
+        // but whose containers are no longer alive (e.g. after a service restart).
+        await CleanUpStaleManualSessionsAsync(stoppingToken);
+
         // Run the cancel-signal consumer in parallel with the trigger consumer.
         var cancelConsumerTask = RunCancelConsumerAsync(stoppingToken);
 
@@ -107,6 +112,76 @@ public class IssueWorker(
 
         consumer.Close();
         await cancelConsumerTask;
+    }
+
+    /// <summary>
+    /// On service startup, marks any manual-mode <see cref="AgentSession"/> records that are still
+    /// in <c>Running</c> state but whose containers are no longer alive as <c>Cancelled</c>.
+    /// This prevents orphaned "Running" sessions in the UI after a service restart.
+    /// </summary>
+    private async Task CleanUpStaleManualSessionsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var scope = services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+            var stale = await db.AgentSessions
+                .Include(s => s.Agent)
+                .Where(s => s.Agent.ManualMode
+                    && (s.Status == AgentSessionStatus.Running || s.Status == AgentSessionStatus.Pending)
+                    && s.ContainerId != null)
+                .ToListAsync(cancellationToken);
+
+            if (stale.Count == 0) return;
+
+            logger.LogInformation("Found {Count} stale manual-mode session(s) to clean up on startup", stale.Count);
+
+            // Build a Docker client to check container liveness.
+            // Use a scoped client factory when available; fall back to a direct builder.
+            DockerClient? dockerClient = null;
+            try
+            {
+                dockerClient = new DockerClientBuilder().Build();
+
+                foreach (var session in stale)
+                {
+                    var alive = false;
+                    try
+                    {
+                        var inspect = await dockerClient.Containers.InspectContainerAsync(session.ContainerId!, cancellationToken);
+                        alive = inspect?.State?.Running == true;
+                    }
+                    catch (Exception)
+                    {
+                        // Container not found or Docker daemon unreachable — treat as dead.
+                        alive = false;
+                    }
+
+                    if (!alive)
+                    {
+                        logger.LogInformation(
+                            "Manual session {SessionId} (container {ContainerId}) is no longer running — marking as Cancelled",
+                            session.Id, session.ContainerId?[..Math.Min(12, session.ContainerId.Length)]);
+
+                        session.Status = AgentSessionStatus.Cancelled;
+                        session.EndedAt = DateTime.UtcNow;
+                        session.ContainerId = null;
+                    }
+                }
+            }
+            finally
+            {
+                dockerClient?.Dispose();
+            }
+
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Non-fatal: startup cleanup failure should not prevent the worker from starting.
+            logger.LogWarning(ex, "Failed to clean up stale manual-mode sessions on startup");
+        }
     }
 
     /// <summary>Subscribes to 'agent-cancel' and cancels any in-flight agent launch matching the session id.</summary>
@@ -542,6 +617,29 @@ public class IssueWorker(
                     ["ISSUEPIT_MCP_TOKEN"] = ephemeralMcpToken
                 };
                 credentials = credentialsWithToken;
+            }
+
+            // Inject a backed-up opencode auth.json if one is marked RestoreOnAgentRuns for this org.
+            // This allows users to authenticate once in a manual terminal session and reuse those
+            // credentials in subsequent autonomous runs without having to re-authenticate.
+            if (!agent.ManualMode)
+            {
+                var activeAuth = await db.AgentAuths
+                    .Where(a => a.OrgId == agent.OrgId && a.RestoreOnAgentRuns)
+                    .OrderByDescending(a => a.CapturedAt)
+                    .FirstOrDefaultAsync(sessionCts.Token);
+
+                if (activeAuth is not null)
+                {
+                    var authCredentials = new Dictionary<string, string>(credentials)
+                    {
+                        ["ISSUEPIT_AUTH_JSON_CONTENT"] = activeAuth.AuthJsonContent
+                    };
+                    credentials = authCredentials;
+                    activeAuth.LastUsedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync(sessionCts.Token);
+                    logger.LogInformation("Injecting auth.json from backup {AuthId} into session {SessionId}", activeAuth.Id, session.Id);
+                }
             }
 
             string? capturedOpenCodeSessionId = null;

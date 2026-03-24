@@ -10,7 +10,12 @@ namespace IssuePit.Api.Controllers;
 
 [ApiController]
 [Route("api/agent-sessions")]
-public class AgentSessionsController(IssuePitDbContext db, TenantContext tenant, IProducer<string, string> producer) : ControllerBase
+public class AgentSessionsController(
+    IssuePitDbContext db,
+    TenantContext tenant,
+    IProducer<string, string> producer,
+    CiCdRunQueueService runQueue,
+    GitService gitService) : ControllerBase
 {
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetSession(Guid id)
@@ -177,9 +182,61 @@ public class AgentSessionsController(IssuePitDbContext db, TenantContext tenant,
 
         return Accepted(new RetrySessionResponse(queuedSession.Id));
     }
+
+    /// <summary>
+    /// Triggers a CI/CD run for the current feature branch of a manual-mode agent session.
+    /// Called from within the container by the <c>issuepit-trigger-cicd</c> script, authenticated
+    /// using the ephemeral MCP token injected as the <c>ISSUEPIT_MCP_TOKEN</c> environment variable.
+    /// </summary>
+    [HttpPost("{id:guid}/trigger-cicd")]
+    public async Task<IActionResult> TriggerCiCd(Guid id, CancellationToken cancellationToken)
+    {
+        var session = await db.AgentSessions
+            .Include(s => s.Agent)
+            .Include(s => s.Issue).ThenInclude(i => i!.Project).ThenInclude(p => p!.Organization)
+            .Where(s => s.Id == id && s.Issue!.Project!.Organization.TenantId == tenant.CurrentTenant!.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (session is null) return NotFound();
+
+        if (session.Issue?.ProjectId is null)
+            return BadRequest(new { error = "Session is not linked to a project." });
+
+        if (!session.Agent.ManualMode)
+            return BadRequest(new { error = "CI/CD trigger is only available for manual-mode sessions." });
+
+        var issue = session.Issue;
+        var branch = issue.GitBranch;
+
+        if (string.IsNullOrWhiteSpace(branch))
+            return BadRequest(new { error = "No feature branch associated with this session. Push your branch first." });
+
+        var repo = await db.GitRepositories
+            .Where(r => r.ProjectId == issue.ProjectId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var commitSha = repo is not null
+            ? gitService.GetBranchTipSha(repo, branch) ?? branch
+            : branch;
+
+        var run = await runQueue.EnqueueAsync(
+            projectId: issue.ProjectId,
+            commitSha: commitSha,
+            branch: branch,
+            workflow: null,
+            eventName: "push",
+            inputs: null,
+            gitRepoUrl: repo?.RemoteUrl,
+            agentSessionId: session.Id,
+            cancellationToken: cancellationToken);
+
+        return Accepted(new TriggerCiCdResponse(run.Id, run.Status.ToString(), branch, commitSha));
+    }
 }
 
 public record RetrySessionResponse(Guid RetriedSessionId);
+
+public record TriggerCiCdResponse(Guid RunId, string Status, string Branch, string CommitSha);
 
 public record RetrySessionRequest(
     string? DockerImageOverride = null,

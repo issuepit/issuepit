@@ -243,11 +243,15 @@ public class DockerAgentRuntime(
         // ToDockerHostUrl converts localhost → host.docker.internal so the container reaches T
         // via 172.17.0.1:{T}. The MCP server binds to 0.0.0.0:{T} via ListenAnyIP in Program.cs.
         var issuePitMcpUrl = ToDockerHostUrl(configuration["McpServer:BaseUrl"]);
+        var issuePitApiUrl = ToDockerHostUrl(configuration["ApiServer:BaseUrl"]);
         var env = AgentEnvironmentBuilder.Build(session, agent, issue, credentials, gitRepository,
             cloneRepository: cloneRepo != gitRepository ? cloneRepo : null,
-            issuePitMcpUrl: issuePitMcpUrl);
+            issuePitMcpUrl: issuePitMcpUrl,
+            issuePitApiUrl: issuePitApiUrl);
         if (!string.IsNullOrWhiteSpace(issuePitMcpUrl))
             await onLogLine($"[DEBUG] IssuePit MCP   : {issuePitMcpUrl}", LogStream.Stdout);
+        if (!string.IsNullOrWhiteSpace(issuePitApiUrl))
+            await onLogLine($"[DEBUG] IssuePit API   : {issuePitApiUrl}", LogStream.Stdout);
 
         // Inject the HTTP server password so opencode can use it for authentication when UseHttpServer=true.
         if (agent.UseHttpServer && !string.IsNullOrWhiteSpace(agent.HttpServerPassword))
@@ -586,6 +590,26 @@ public class DockerAgentRuntime(
                     runnerArgs = RunnerCommandBuilder.BuildArgsList(agent, issue, comments: comments);
                     var newCmdDisplay = string.Join(" ", runnerArgs.Take(runnerArgs.Count - 1));
                     await onLogLine($"[DEBUG] Runner cmd     : {newCmdDisplay}", LogStream.Stdout);
+                }
+            }
+
+            // Step G: Inject backed-up auth.json if provided via the ISSUEPIT_AUTH_JSON_CONTENT credential.
+            // This allows users to authenticate once in a manual terminal session and reuse those
+            // credentials in subsequent autonomous runs.
+            var authJsonEntry = env.FirstOrDefault(e => e.StartsWith("ISSUEPIT_AUTH_JSON_CONTENT=", StringComparison.Ordinal));
+            if (authJsonEntry is not null)
+            {
+                var authJsonContent = authJsonEntry["ISSUEPIT_AUTH_JSON_CONTENT=".Length..];
+                {
+                    try
+                    {
+                        await InjectAuthJsonAsync(container.ID, authJsonContent, onLogLine, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        await onLogLine($"[WARN] Failed to inject auth.json: {ex.Message} — proceeding without auth restore", LogStream.Stderr);
+                        logger.LogWarning(ex, "Failed to inject auth.json into container {ContainerId}", container.ID);
+                    }
                 }
             }
 
@@ -1059,10 +1083,58 @@ public class DockerAgentRuntime(
     }
 
     /// <summary>
+    /// Injects a backed-up opencode <c>auth.json</c> file into the container at
+    /// <c>/root/.local/share/opencode/auth.json</c>.
+    /// Called when <c>ISSUEPIT_AUTH_JSON_CONTENT</c> is set in the container environment,
+    /// meaning a previously captured auth backup should be restored for this run.
+    /// </summary>
+    private async Task InjectAuthJsonAsync(
+        string containerId,
+        string authJsonContent,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        const string AuthJsonPath = "/root/.local/share/opencode";
+        const string AuthJsonFileName = "auth.json";
+
+        // Normalise line endings for the JSON file.
+        var authBytes = System.Text.Encoding.UTF8.GetBytes(authJsonContent.Replace("\r\n", "\n").Replace("\r", "\n"));
+
+        // Ensure the target directory exists inside the container.
+        await ExecCommandAsync(containerId, ["/bin/sh", "-c", $"mkdir -p {AuthJsonPath}"],
+            (_, _) => Task.CompletedTask, cancellationToken, workingDir: "/");
+
+        using var tarBuffer = new MemoryStream();
+        await using (var tarWriter = new TarWriter(tarBuffer, TarEntryFormat.Ustar, leaveOpen: true))
+        {
+            var entry = new UstarTarEntry(TarEntryType.RegularFile, AuthJsonFileName)
+            {
+                Mode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
+                DataStream = new MemoryStream(authBytes),
+            };
+            await tarWriter.WriteEntryAsync(entry, cancellationToken);
+        }
+
+        tarBuffer.Seek(0, SeekOrigin.Begin);
+        await dockerClient.Containers.ExtractArchiveToContainerAsync(
+            containerId,
+            new CopyToContainerParameters { Path = AuthJsonPath },
+            tarBuffer,
+            cancellationToken);
+
+        await onLogLine("[INFO] auth.json restored from backup — GitHub authentication available", LogStream.Stdout);
+    }
+
+    /// <summary>
     /// Injects the <c>issuepit-trigger-cicd</c> script into the container at
     /// <c>/usr/local/bin/issuepit-trigger-cicd</c>.
     /// The script allows the user in a manual terminal session to push the current feature
-    /// branch and trigger a CI/CD run with a single command.
+    /// branch and trigger a CI/CD run with a single command, then waits for the result.
+    ///
+    /// Prerequisites in the container environment:
+    ///   - <c>ISSUEPIT_API_URL</c>: base URL of the IssuePit API (e.g. http://host.docker.internal:5000)
+    ///   - <c>ISSUEPIT_MCP_TOKEN</c>: ephemeral token accepted by the API via <c>X-Mcp-Token</c>
+    ///   - <c>ISSUEPIT_SESSION_ID</c>: the agent session ID used to look up project/branch server-side
     /// </summary>
     private async Task InjectCiCdTriggerScriptAsync(
         string containerId,
@@ -1071,22 +1143,101 @@ public class DockerAgentRuntime(
     {
         const string scriptContent = """
             #!/bin/sh
-            # issuepit-trigger-cicd — push the current branch and trigger a CI/CD run.
-            # Run this script from /workspace to push your changes and start a pipeline.
+            # issuepit-trigger-cicd — commit (optional), push the current branch, trigger a
+            # CI/CD run in IssuePit, wait for it to finish, and exit with the CI/CD result.
+            #
+            # Usage:
+            #   issuepit-trigger-cicd              # push + trigger (requires clean working tree)
+            #   issuepit-trigger-cicd --commit      # auto-commit all changes, then push + trigger
+            #
+            # Environment variables (injected by IssuePit on container startup):
+            #   ISSUEPIT_API_URL      Base URL of the IssuePit API
+            #   ISSUEPIT_MCP_TOKEN    Ephemeral auth token accepted by the API
+            #   ISSUEPIT_SESSION_ID   Agent session ID used to resolve project / branch
             set -e
             cd /workspace 2>/dev/null || true
 
-            # 1. Fail if there are uncommitted changes.
-            if ! git diff --quiet || ! git diff --cached --quiet; then
-              echo "[ERROR] Uncommitted changes detected. Please commit or stash your changes first."
+            AUTO_COMMIT=0
+            if [ "$1" = "--commit" ]; then
+              AUTO_COMMIT=1
+            fi
+
+            # 1. Fail if there are uncommitted changes (unless --commit was given).
+            if [ "$AUTO_COMMIT" = "1" ]; then
+              echo "[INFO] Staging all changes..."
+              git add -A
+              if ! git diff --cached --quiet; then
+                git commit -m "chore: auto-commit before CI/CD trigger"
+                echo "[INFO] Changes committed."
+              else
+                echo "[INFO] Nothing to commit."
+              fi
+            elif ! git diff --quiet || ! git diff --cached --quiet; then
+              echo "[ERROR] Uncommitted changes detected. Commit or stash your changes first, or run with --commit."
               exit 1
             fi
 
             # 2. Push the current feature branch.
-            echo "[INFO] Pushing current branch..."
+            echo "[INFO] Pushing branch '$(git branch --show-current)' to origin..."
             git push --set-upstream origin "$(git branch --show-current)"
+            echo "[OK] Branch pushed."
 
-            echo "[OK] Branch pushed. A CI/CD run will be triggered automatically by IssuePit."
+            # 3. Trigger a CI/CD run via the IssuePit API.
+            if [ -z "$ISSUEPIT_API_URL" ] || [ -z "$ISSUEPIT_MCP_TOKEN" ] || [ -z "$ISSUEPIT_SESSION_ID" ]; then
+              echo "[WARN] ISSUEPIT_API_URL / ISSUEPIT_MCP_TOKEN / ISSUEPIT_SESSION_ID not set — skipping IssuePit CI/CD trigger."
+              exit 0
+            fi
+
+            echo "[INFO] Triggering CI/CD run via IssuePit API..."
+            TRIGGER_RESPONSE=$(curl -s -X POST \
+              "$ISSUEPIT_API_URL/api/agent-sessions/$ISSUEPIT_SESSION_ID/trigger-cicd" \
+              -H "X-Mcp-Token: $ISSUEPIT_MCP_TOKEN" \
+              -H "Content-Type: application/json")
+
+            RUN_ID=$(echo "$TRIGGER_RESPONSE" | grep -o '"runId":"[^"]*"' | cut -d'"' -f4)
+            if [ -z "$RUN_ID" ]; then
+              echo "[ERROR] Failed to trigger CI/CD run. API response:"
+              echo "$TRIGGER_RESPONSE"
+              exit 1
+            fi
+
+            echo "[INFO] CI/CD run queued: $RUN_ID"
+            echo "[INFO] Tracking run at: $ISSUEPIT_API_URL/../projects/runs/cicd/$RUN_ID"
+
+            # 4. Poll for completion (max 30 minutes, every 10 seconds).
+            POLL_MAX=180
+            POLL_COUNT=0
+            while [ "$POLL_COUNT" -lt "$POLL_MAX" ]; do
+              STATUS_RESPONSE=$(curl -s \
+                "$ISSUEPIT_API_URL/api/cicd-runs/$RUN_ID" \
+                -H "X-Mcp-Token: $ISSUEPIT_MCP_TOKEN")
+
+              STATUS=$(echo "$STATUS_RESPONSE" | grep -o '"statusName":"[^"]*"' | cut -d'"' -f4)
+
+              case "$STATUS" in
+                Succeeded|SucceededWithWarnings)
+                  echo "[OK] CI/CD run completed successfully (status: $STATUS)."
+                  exit 0
+                  ;;
+                Failed|Cancelled|TimedOut)
+                  echo "[FAIL] CI/CD run finished with status: $STATUS."
+                  exit 1
+                  ;;
+                Pending|Running|WaitingForApproval)
+                  printf "."
+                  ;;
+                *)
+                  echo "[WARN] Unknown CI/CD status '$STATUS' — continuing to poll..."
+                  ;;
+              esac
+
+              POLL_COUNT=$((POLL_COUNT + 1))
+              sleep 10
+            done
+
+            echo ""
+            echo "[WARN] Timed out waiting for CI/CD run $RUN_ID after 30 minutes."
+            exit 1
             """;
 
         var scriptBytes = System.Text.Encoding.UTF8.GetBytes(scriptContent.Replace("\r\n", "\n").Replace("\r", "\n"));

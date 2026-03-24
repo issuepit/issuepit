@@ -41,7 +41,8 @@ internal static class AgentEnvironmentBuilder
         IReadOnlyDictionary<string, string> credentials,
         GitRepository? gitRepository,
         GitRepository? cloneRepository = null,
-        string? issuePitMcpUrl = null)
+        string? issuePitMcpUrl = null,
+        string? issuePitApiUrl = null)
     {
         // Use the dedicated clone-source remote when it is different from the push-target.
         // Falls back to gitRepository so callers that only pass one remote still work.
@@ -95,6 +96,11 @@ internal static class AgentEnvironmentBuilder
         // Inject the IssuePit MCP server URL so the entrypoint can write the opencode config.
         if (!string.IsNullOrWhiteSpace(issuePitMcpUrl))
             env.Add($"ISSUEPIT_MCP_URL={issuePitMcpUrl}");
+
+        // Inject the IssuePit API base URL so container scripts (e.g. issuepit-trigger-cicd)
+        // can call API endpoints authenticated with the ephemeral MCP token.
+        if (!string.IsNullOrWhiteSpace(issuePitApiUrl))
+            env.Add($"ISSUEPIT_API_URL={issuePitApiUrl}");
 
         // Note: the ephemeral MCP token is passed through the credentials dictionary
         // (keyed as ISSUEPIT_MCP_TOKEN) and added via the foreach loop above.

@@ -84,9 +84,22 @@
             </div>
           </div>
         </div>
-        <!-- Cancel button for active sessions -->
+        <!-- Cancel / auth-backup buttons for active sessions -->
         <div v-if="store.currentSession.status === AgentSessionStatus.Running || store.currentSession.status === AgentSessionStatus.Pending"
-          class="mt-4 pt-4 border-t border-gray-800 flex justify-end">
+          class="mt-4 pt-4 border-t border-gray-800 flex items-center justify-between gap-4">
+          <button
+            v-if="store.currentSession.isManualMode"
+            :disabled="backingUpAuth"
+            class="flex items-center gap-1.5 text-sm text-green-400 hover:text-green-300 disabled:opacity-50 transition-colors"
+            title="Back up the opencode auth.json from the container so credentials can be reused in autonomous runs"
+            @click="backupAuthJson">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+            </svg>
+            {{ backingUpAuth ? 'Backing up…' : 'Backup auth.json' }}
+          </button>
+          <span v-else />
           <button
             :disabled="cancelling"
             class="flex items-center gap-1.5 text-sm text-red-400 hover:text-red-300 disabled:opacity-50 transition-colors"
@@ -240,6 +253,21 @@
           </svg>
           <p class="text-sm text-yellow-300">{{ warning }}</p>
         </div>
+      </div>
+
+      <!-- Auth backup success / error -->
+      <div v-if="authBackupSuccess" class="mb-4 flex items-start gap-3 bg-green-950/40 border border-green-800/50 rounded-lg px-4 py-3">
+        <svg class="w-4 h-4 text-green-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+        </svg>
+        <p class="text-sm text-green-300">{{ authBackupSuccess }}</p>
+      </div>
+      <div v-if="authBackupError" class="mb-4 flex items-start gap-3 bg-red-950/40 border border-red-800/50 rounded-lg px-4 py-3">
+        <svg class="w-4 h-4 text-red-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        <p class="text-sm text-red-300">Backup failed: {{ authBackupError }}</p>
+        <button class="ml-auto text-red-500 hover:text-red-400" @click="authBackupError = null">✕</button>
       </div>
 
       <!-- Logs / Details -->
@@ -873,6 +901,36 @@ onMounted(async () => {
 const retrying = ref(false)
 const showRetryModal = ref(false)
 const cancelling = ref(false)
+const backingUpAuth = ref(false)
+const authBackupError = ref<string | null>(null)
+const authBackupSuccess = ref<string | null>(null)
+
+const config = useRuntimeConfig()
+
+async function backupAuthJson() {
+  backingUpAuth.value = true
+  authBackupError.value = null
+  try {
+    const base = (config.public.terminalBase as string).replace(/\/$/, '')
+    const resp = await fetch(`${base}/api/agent-sessions/${sessionId}/auth-json/backup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: null, restoreOnAgentRuns: false }),
+    })
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: resp.statusText }))
+      throw new Error(err.error || resp.statusText)
+    }
+    authBackupSuccess.value = 'auth.json backed up. Go to System → Agent Auth Backups to manage it.'
+    setTimeout(() => { authBackupSuccess.value = null }, 6000)
+  }
+  catch (e: unknown) {
+    authBackupError.value = e instanceof Error ? e.message : 'Failed to backup auth.json'
+  }
+  finally {
+    backingUpAuth.value = false
+  }
+}
 
 async function cancelSession() {
   cancelling.value = true

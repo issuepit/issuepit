@@ -4,6 +4,7 @@ using System.Text.Json;
 using Docker.DotNet;
 using Docker.DotNet.Models;
 using IssuePit.Core.Data;
+using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
 using IssuePit.TerminalServer.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -331,4 +332,92 @@ public class TerminalController(
         }
         return sb.ToString().Trim();
     }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // auth.json backup/restore
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Reads the opencode <c>auth.json</c> file from the running container and saves it to the
+    /// database as an <see cref="AgentAuth"/> record.  Call this from the live terminal after
+    /// authenticating with GitHub (or another provider) inside the container so the credentials
+    /// can be reused by autonomous agent runs later.
+    ///
+    /// The file is read from <c>~/.local/share/opencode/auth.json</c> (the default opencode
+    /// credentials location). Returns 404 if the file does not exist yet.
+    /// </summary>
+    [HttpPost("{id:guid}/auth-json/backup")]
+    public async Task<IActionResult> BackupAuthJson(Guid id, [FromBody] BackupAuthJsonRequest request, CancellationToken cancellationToken)
+    {
+        var session = await db.AgentSessions
+            .Include(s => s.Agent)
+            .Include(s => s.Issue).ThenInclude(i => i!.Project).ThenInclude(p => p!.Organization)
+            .Where(s => s.Id == id && s.Issue!.Project!.Organization.TenantId == tenant.CurrentTenant!.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (session is null) return NotFound();
+
+        if (!session.Agent.ManualMode)
+            return BadRequest(new { error = "Auth backup is only available for manual-mode sessions." });
+
+        if (string.IsNullOrEmpty(session.ContainerId))
+            return Conflict(new { error = "Container is not yet ready or has been stopped." });
+
+        // Verify container is running.
+        try
+        {
+            var inspect = await dockerClient.Containers.InspectContainerAsync(session.ContainerId, cancellationToken);
+            if (inspect?.State?.Running != true)
+                return Conflict(new { error = "Container is not running." });
+        }
+        catch
+        {
+            return Conflict(new { error = "Container is not accessible." });
+        }
+
+        // Read auth.json from the container.
+        const string authPath = "/root/.local/share/opencode/auth.json";
+        string authContent;
+        try
+        {
+            authContent = await ExecReadOutputAsync(session.ContainerId, ["cat", authPath], cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to read auth.json from container {ContainerId}", session.ContainerId[..Math.Min(12, session.ContainerId.Length)]);
+            return NotFound(new { error = "auth.json not found in container. Authenticate first (e.g. run opencode and log in to GitHub)." });
+        }
+
+        if (string.IsNullOrWhiteSpace(authContent) || authContent.Length < 10)
+            return NotFound(new { error = "auth.json is empty or does not exist. Authenticate first." });
+
+        var orgId = session.Issue!.Project!.OrgId;
+        var tenantId = tenant.CurrentTenant!.Id;
+
+        var label = string.IsNullOrWhiteSpace(request.Label)
+            ? $"auth backup from session {id.ToString()[..8]} on {DateTime.UtcNow:yyyy-MM-dd}"
+            : request.Label;
+
+        var auth = new AgentAuth
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            OrgId = orgId,
+            AgentSessionId = id,
+            Label = label,
+            AuthJsonContent = authContent,
+            RestoreOnAgentRuns = request.RestoreOnAgentRuns,
+            CapturedAt = DateTime.UtcNow,
+        };
+
+        db.AgentAuths.Add(auth);
+        await db.SaveChangesAsync(cancellationToken);
+
+        logger.LogInformation("auth.json backed up from session {SessionId} as AgentAuth {AuthId}", id, auth.Id);
+        return Ok(new { auth.Id, auth.Label, auth.CapturedAt, auth.RestoreOnAgentRuns });
+    }
 }
+
+public record BackupAuthJsonRequest(
+    string? Label = null,
+    bool RestoreOnAgentRuns = false);

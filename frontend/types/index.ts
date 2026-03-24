@@ -1501,3 +1501,16 @@ export interface GitPat {
   expiresAt?: string
   lastUsedAt?: string
 }
+
+export interface AgentAuth {
+  id: string
+  label: string
+  capturedAt: string
+  lastUsedAt?: string
+  restoreOnAgentRuns: boolean
+  agentSessionId?: string
+}
+
+export interface AgentAuthDetail extends AgentAuth {
+  authJsonContent: string
+}

@@ -389,6 +389,7 @@ var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("exe
     .WaitFor(kafka)
     .WaitFor(redis)
     .WithEnvironment("McpServer__BaseUrl", mcpServer.GetEndpoint("http"))
+    .WithEnvironment("ApiServer__BaseUrl", api.GetEndpoint("http"))
     .WithEnvironment("GitServer__BaseUrl", gitServer.GetEndpoint("http"))
     .WithHttpHealthCheck("/health", endpointName: "http");
 
