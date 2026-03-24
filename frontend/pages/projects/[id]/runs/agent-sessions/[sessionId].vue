@@ -435,8 +435,17 @@
           <div v-else class="py-10 text-center text-sm text-gray-500">{{ logSearchQuery ? 'No matching log lines' : 'No logs available' }}</div>
         </template>
 
-        <!-- Details tab -->
-        <template v-else>
+        <!-- Terminal tab (manual mode only) -->
+        <template v-else-if="activeSection === 'terminal'">
+          <div class="p-4">
+            <AgentTerminal
+              :session-id="sessionId"
+              :container-id="store.currentSession.containerId"
+              :active="store.currentSession.status === AgentSessionStatus.Running" />
+          </div>
+        </template>
+
+        <template v-else-if="activeSection === 'details'">
           <!-- Git remote availability -->
           <div v-if="gitRemoteChecks.length" class="p-4 border-b border-gray-800">
             <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">Git Remotes</h3>
@@ -570,12 +579,15 @@ function renderLogLine(line: string, highlight?: string): string {
   return html
 }
 
-const sectionTabs = [
+const isManualMode = computed(() => store.currentSession?.isManualMode === true)
+
+const sectionTabs = computed(() => [
   { label: 'Logs', value: 'logs' },
   { label: 'Steps', value: 'steps' },
+  ...(isManualMode.value ? [{ label: 'Terminal', value: 'terminal' }] : []),
   { label: 'Details', value: 'details' },
-]
-const activeSection = ref<'steps' | 'logs' | 'details'>('logs')
+])
+const activeSection = ref<'steps' | 'logs' | 'details' | 'terminal'>('logs')
 
 const streamTabs = [
   { label: 'All', value: null },
@@ -811,6 +823,11 @@ const isActive = computed(() =>
 onMounted(async () => {
   projectsStore.fetchProject(projectId)
   await store.fetchAgentSession(sessionId)
+
+  // Auto-switch to terminal tab for active manual mode sessions.
+  if (store.currentSession?.isManualMode && store.currentSession?.status === AgentSessionStatus.Running) {
+    activeSection.value = 'terminal'
+  }
 
   // Connect to project hub so the session and its CI/CD runs table refresh in real time
   await connect()
