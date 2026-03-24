@@ -59,13 +59,11 @@ stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
             />
             <button
               class="absolute right-1 opacity-0 group-hover/proj:opacity-100 transition-opacity p-0.5 rounded hover:bg-gray-700"
+              :class="project.isPinned ? 'text-brand-400' : 'text-gray-500'"
               :title="project.isPinned ? 'Unpin project' : 'Pin project'"
               @click.prevent="togglePin(project)"
             >
-              <svg class="w-3 h-3" :class="project.isPinned ? 'text-brand-400' : 'text-gray-500'" fill="currentColor" viewBox="0 0 24 24">
-                <path v-if="project.isPinned" d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
-                <path v-else d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z" opacity="0.4"/>
-              </svg>
+              <PinIcon :pinned="project.isPinned" size="sm" />
             </button>
           </div>
           <div v-if="projects.length === 0" class="px-2 py-1 text-xs text-gray-600">No projects</div>

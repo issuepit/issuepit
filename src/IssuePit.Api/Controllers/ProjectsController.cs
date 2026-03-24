@@ -16,11 +16,11 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
     public async Task<IActionResult> GetProjects()
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
-        var userId = ctx.CurrentUser?.Id;
+        var pinnedIds = await GetPinnedIdsAsync();
         var projects = await ProjectsQuery()
             .Where(p => p.Organization.TenantId == ctx.CurrentTenant.Id)
             .OrderBy(p => p.CreatedAt)
-            .Select(ProjectDto.Selector(db, userId))
+            .Select(ProjectDto.Selector(db, pinnedIds))
             .ToListAsync();
         return Ok(projects);
     }
@@ -29,10 +29,10 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
     public async Task<IActionResult> GetProject(Guid id)
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
-        var userId = ctx.CurrentUser?.Id;
+        var pinnedIds = await GetPinnedIdsAsync();
         var project = await ProjectsQuery()
             .Where(p => p.Id == id && p.Organization.TenantId == ctx.CurrentTenant.Id)
-            .Select(ProjectDto.Selector(db, userId))
+            .Select(ProjectDto.Selector(db, pinnedIds))
             .FirstOrDefaultAsync();
         return project is null ? NotFound() : Ok(project);
     }
@@ -41,12 +41,21 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
     public async Task<IActionResult> GetProjectBySlug(string slug)
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
-        var userId = ctx.CurrentUser?.Id;
+        var pinnedIds = await GetPinnedIdsAsync();
         var project = await ProjectsQuery()
             .Where(p => p.Slug == slug && p.Organization.TenantId == ctx.CurrentTenant.Id)
-            .Select(ProjectDto.Selector(db, userId))
+            .Select(ProjectDto.Selector(db, pinnedIds))
             .FirstOrDefaultAsync();
         return project is null ? NotFound() : Ok(project);
+    }
+
+    private async Task<HashSet<Guid>> GetPinnedIdsAsync()
+    {
+        if (ctx.CurrentUser is null) return [];
+        return await db.UserPinnedProjects
+            .Where(pp => pp.UserId == ctx.CurrentUser.Id)
+            .Select(pp => pp.ProjectId)
+            .ToHashSetAsync();
     }
 
     private IQueryable<Project> ProjectsQuery() =>
@@ -546,7 +555,7 @@ public record ProjectDto(
     string? Color,
     bool IsPinned)
 {
-    public static Expression<Func<Project, ProjectDto>> Selector(IssuePitDbContext db, Guid? userId) =>
+    public static Expression<Func<Project, ProjectDto>> Selector(IssuePitDbContext db, HashSet<Guid> pinnedIds) =>
         p => new ProjectDto(
             p.Id, p.OrgId, p.Name, p.Slug, p.Description, p.GitHubRepo, p.CreatedAt,
             db.Issues.Count(i => i.ProjectId == p.Id),
@@ -563,5 +572,5 @@ public record ProjectDto(
             p.IssueKey,
             p.IssueNumberOffset,
             p.Color,
-            userId != null && db.UserPinnedProjects.Any(pp => pp.UserId == userId && pp.ProjectId == p.Id));
+            pinnedIds.Contains(p.Id));
 }

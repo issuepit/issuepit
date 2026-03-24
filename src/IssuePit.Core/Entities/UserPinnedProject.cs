@@ -20,5 +20,5 @@ public class UserPinnedProject
     [ForeignKey(nameof(ProjectId))]
     public Project Project { get; set; } = null!;
 
-    public DateTime PinnedAt { get; set; } = DateTime.UtcNow;
+    public DateTime PinnedAt { get; set; }
 }

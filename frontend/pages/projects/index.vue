@@ -30,9 +30,7 @@
       <!-- Pinned projects -->
       <div v-if="pinnedProjects.length > 0" class="mb-8">
         <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-          <svg class="w-3.5 h-3.5 text-brand-400" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
-          </svg>
+          <PinIcon :pinned="true" size="sm" class="text-brand-400" />
           Pinned
         </h2>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -71,9 +69,7 @@
               title="Unpin project"
               @click.prevent="store.unpinProject(project.id)"
             >
-              <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
-              </svg>
+              <PinIcon :pinned="true" />
             </button>
           </div>
         </div>
@@ -121,10 +117,7 @@
               :title="project.isPinned ? 'Unpin project' : 'Pin project'"
               @click.prevent="project.isPinned ? store.unpinProject(project.id) : store.pinProject(project.id)"
             >
-              <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                <path v-if="project.isPinned" d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
-                <path v-else d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z" opacity="0.4"/>
-              </svg>
+              <PinIcon :pinned="project.isPinned" />
             </button>
           </div>
 
