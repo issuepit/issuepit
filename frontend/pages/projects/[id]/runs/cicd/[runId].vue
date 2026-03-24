@@ -895,14 +895,19 @@
                     <template v-if="entry.key === 'Docker image'">
                       <span
                         :class="isNonDefaultOuterImage ? 'text-yellow-300 font-semibold' : 'text-gray-300'"
-                        :title="isNonDefaultOuterImage ? 'Custom outer image (not the configured default)' : 'Configured outer image'"
+                        :title="isNonDefaultOuterImage ? 'Custom outer image overridden for this run' : 'Configured outer image'"
                       >{{ entry.value }}</span>
                       <span v-if="isNonDefaultOuterImage" class="ml-2 inline-flex items-center gap-1 text-yellow-500 text-xs">
                         <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                           <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
                         </svg>
-                        custom
+                        run override
                       </span>
+                      <span v-else-if="outerImgSourceLabel" class="ml-2 text-xs text-gray-500">{{ outerImgSourceLabel }}</span>
+                    </template>
+                    <!-- Docker image source annotation -->
+                    <template v-else-if="entry.key === 'Docker img src'">
+                      <span class="text-xs" :class="isNonDefaultOuterImage ? 'text-orange-400' : 'text-gray-500'">{{ entry.value }}</span>
                     </template>
                     <!-- Act runner image (inner) -->
                     <template v-else-if="entry.key === 'Act runner img'">
@@ -2127,15 +2132,15 @@ const shaWarningMessage = computed(() => {
 
 // ── Image source helpers for the Details tab ───────────────────────────────────
 
+/** The resolved 'Docker img src' value from debug metadata. */
+const outerImgSourceLabel = computed(() =>
+  debugMetadata.value.find(e => e.key === 'Docker img src')?.value ?? null,
+)
+
 /** True when a custom outer image (not the server-configured default) was used. */
-const isNonDefaultOuterImage = computed(() => {
-  const customImage = debugMetadata.value.find(e => e.key === 'Docker image')?.value
-  if (!customImage) return false
-  // The outer image comes from trigger.CustomImage override → that's non-default
-  const retryEntry = debugMetadata.value.find(e => e.key === 'Runner img src')
-  // No source entry means it's an older run; just check if it looks like a custom image
-  return !!retryEntry && retryEntry.value === 'trigger-override'
-})
+const isNonDefaultOuterImage = computed(() =>
+  outerImgSourceLabel.value === 'run-override',
+)
 
 /** The resolved 'Runner img src' value from debug metadata. */
 const runnerImgSourceLabel = computed(() =>

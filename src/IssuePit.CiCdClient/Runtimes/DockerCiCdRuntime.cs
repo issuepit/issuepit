@@ -128,6 +128,11 @@ public partial class DockerCiCdRuntime(
         var image = !string.IsNullOrWhiteSpace(trigger.CustomImage)
             ? trigger.CustomImage
             : configuration["CiCd__Docker__Image"] ?? DefaultImage;
+        var outerImageSource = !string.IsNullOrWhiteSpace(trigger.CustomImage)
+            ? "run-override"
+            : configuration["CiCd__Docker__Image"] is { Length: > 0 }
+                ? "server-config"
+                : "global-default";
         var actBin = configuration["CiCd__ActBinaryPath"] ?? "act";
         var workspacePath = trigger.WorkspacePath ?? configuration["CiCd__DefaultWorkspacePath"];
 
@@ -291,6 +296,7 @@ public partial class DockerCiCdRuntime(
         await onLogLine($"[DEBUG] Runtime        : Docker (exec model)", LogStream.Stdout);
         await onLogLine($"[DEBUG] IssuePit ver   : {AppVersion}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Docker image   : {image}", LogStream.Stdout);
+        await onLogLine($"[DEBUG] Docker img src : {outerImageSource}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Act runner img : {actRunnerImage}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Runner img src : {actRunnerImageSource}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Container name : {containerName}", LogStream.Stdout);
