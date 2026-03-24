@@ -376,13 +376,13 @@ async function main() {
         await page.goto(`${FRONTEND_URL}/projects/${proj.id}/issues/${firstIssue.id}`);
         await page.waitForLoadState('networkidle');
 
-        // @mention dropdown — type @ in the comment textarea to open autocomplete
+        // @mention dropdown — type @Co to show Code Agent in autocomplete (agents shown before users)
         try {
           const textarea = page.locator('textarea[placeholder*="Leave a comment"]');
           await textarea.click();
-          await page.keyboard.type('@');
+          await textarea.pressSequentially('@Co');
           // Wait for at least one dropdown item to render
-          await page.waitForSelector('div[class*="absolute"] button', { timeout: 3000 });
+          await page.waitForSelector('div[class*="absolute"] button', { timeout: 5000 });
           await screenshotState(page, 'issue-comment-mention-dropdown');
           await textarea.fill('');
           await page.keyboard.press('Escape');
@@ -395,8 +395,10 @@ async function main() {
         try {
           const textarea = page.locator('textarea[placeholder*="Leave a comment"]');
           await textarea.click();
-          await textarea.fill('@Code Agent');
-          await page.waitForTimeout(600); // let commentHasAgentMention computed settle
+          // Use pressSequentially to simulate real typing so Vue v-model and watchers fire correctly
+          await textarea.pressSequentially('@Code Agent');
+          // Wait for the branch input to appear (v-if="commentHasAgentMention")
+          await page.waitForSelector('input[list="comment-branch-list"]', { timeout: 5000 });
           await screenshotState(page, 'issue-comment-branch-selector');
           await textarea.fill('');
           await page.waitForTimeout(200);
