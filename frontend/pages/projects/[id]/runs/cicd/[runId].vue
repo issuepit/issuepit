@@ -160,14 +160,37 @@
 
       <!-- Retry options modal -->
       <Teleport to="body">
-        <div v-if="showRetryModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @mousedown.self="showRetryModal = false">
+        <div v-if="showRetryModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @mousedown.self="cancelRetry">
           <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-xl p-6 w-full max-w-md">
-            <h3 class="text-base font-semibold text-white mb-4">{{ isRetrigger ? 'Retrigger Options' : 'Retry Options' }}</h3>
+            <!-- Conflict confirmation view -->
+            <template v-if="retryConflict">
+              <h3 class="text-base font-semibold text-white mb-4">Run Already in Progress</h3>
+              <div class="mb-4 rounded-lg bg-yellow-900/40 border border-yellow-700/50 p-3 text-sm text-yellow-300">
+                {{ retryConflict.message }}
+              </div>
+              <p class="text-sm text-gray-400 mb-6">Do you want to {{ isRetrigger ? 'retrigger' : 'retry' }} anyway? The existing run will continue in parallel.</p>
+              <div class="flex justify-end gap-2">
+                <button
+                  class="px-4 py-1.5 text-sm text-gray-400 hover:text-gray-200 transition-colors"
+                  @click="cancelRetry">
+                  Cancel
+                </button>
+                <button
+                  :disabled="retrying"
+                  class="px-4 py-1.5 text-sm bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white rounded-md transition-colors flex items-center gap-2"
+                  @click="retryConflict && retryRunWithOptions(retryConflict.activeRunIds)">
+                  <svg v-if="retrying" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  {{ retrying ? (isRetrigger ? 'Retriggering…' : 'Retrying…') : (isRetrigger ? 'Retrigger Anyway' : 'Retry Anyway') }}
+                </button>
+              </div>
+            </template>
 
-            <!-- Conflict warning -->
-            <div v-if="retryConflict" class="mb-4 rounded-lg bg-yellow-900/40 border border-yellow-700/50 p-3 text-xs text-yellow-300">
-              {{ retryConflict.message }}
-            </div>
+            <!-- Options form view -->
+            <template v-else>
+            <h3 class="text-base font-semibold text-white mb-4">{{ isRetrigger ? 'Retrigger Options' : 'Retry Options' }}</h3>
 
             <!-- Event / trigger selector -->
             <div class="mb-3">
@@ -207,7 +230,7 @@
               <p class="text-xs text-gray-600 mt-1">Defaults to the original commit. Clear to use the latest commit of the specified branch.</p>
             </div>
 
-            <label class="flex items-start gap-3 cursor-pointer mb-3">
+            <label class="flex items-start gap-3 cursor-pointer mb-4">
               <input
                 v-model="retryOptions.keepContainerOnFailure"
                 type="checkbox"
@@ -215,16 +238,6 @@
               <span class="text-sm text-gray-300">
                 Keep container on failure
                 <span class="block text-xs text-gray-500 mt-0.5">The Docker container is not removed when the run fails, so you can inspect it (e.g. verify where <code class="text-gray-400">act</code> is installed).</span>
-              </span>
-            </label>
-            <label class="flex items-start gap-3 cursor-pointer mb-4">
-              <input
-                v-model="retryOptions.forceRetry"
-                type="checkbox"
-                class="mt-0.5 rounded border-gray-600 bg-gray-800 text-brand-500 focus:ring-brand-500" />
-              <span class="text-sm text-gray-300">
-                Force retry
-                <span class="block text-xs text-gray-500 mt-0.5">Retry even if another run for this project is already in progress.</span>
               </span>
             </label>
 
@@ -317,16 +330,17 @@
             <div class="flex justify-end gap-2">
               <button
                 class="px-4 py-1.5 text-sm text-gray-400 hover:text-gray-200 transition-colors"
-                @click="showRetryModal = false; retryConflict = null; retryOptions.forceRetry = false">
+                @click="cancelRetry">
                 Cancel
               </button>
               <button
                 :disabled="retrying"
                 class="px-4 py-1.5 text-sm bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white rounded-md transition-colors"
-                @click="retryRunWithOptions">
+                @click="retryRunWithOptions()">
                 {{ retrying ? (isRetrigger ? 'Retriggering…' : 'Retrying…') : (isRetrigger ? 'Retrigger Run' : 'Retry Run') }}
               </button>
             </div>
+            </template>
           </div>
         </div>
       </Teleport>
@@ -1072,7 +1086,6 @@ const approving = ref(false)
 const showRetryModal = ref(false)
 const retryOptions = reactive({
   keepContainerOnFailure: false,
-  forceRetry: false,
   noDind: false,
   noVolumeMounts: false,
   customImage: '',
@@ -1085,7 +1098,7 @@ const retryOptions = reactive({
   skipSteps: '',
   overrideSkipSteps: false,
 })
-const retryConflict = ref<{ message: string; activeRunId: string } | null>(null)
+const retryConflict = ref<{ message: string; activeRunIds: string[] } | null>(null)
 
 // True when the run succeeded (green run) — action is "Retrigger" rather than "Retry".
 const isRetrigger = computed(() =>
@@ -2201,14 +2214,19 @@ function openRetryModal() {
   showRetryModal.value = true
 }
 
-async function retryRunWithOptions() {
+function cancelRetry() {
+  showRetryModal.value = false
+  retryConflict.value = null
+}
+
+async function retryRunWithOptions(forceRetryWithActiveRunIds?: string[]) {
   retrying.value = true
   retryConflict.value = null
   showRetryModal.value = false
   try {
     await store.retryRun(runId, {
       keepContainerOnFailure: retryOptions.keepContainerOnFailure,
-      forceRetry: retryOptions.forceRetry,
+      forceRetryWithActiveRunIds,
       noDind: retryOptions.noDind,
       noVolumeMounts: retryOptions.noVolumeMounts,
       customImage: retryOptions.customImage.trim() || undefined,
@@ -2221,16 +2239,15 @@ async function retryRunWithOptions() {
       skipSteps: retryOptions.skipSteps.trim() || undefined,
       overrideSkipSteps: retryOptions.overrideSkipSteps,
     })
-    retryOptions.forceRetry = false
     navigateTo(`/projects/${projectId}/runs`)
   } catch (e: unknown) {
     // Handle 409 "already running" conflict — surface it in the options modal
-    interface RetryConflictResponse { error?: string; canForce?: boolean; activeRunId?: string }
+    interface RetryConflictResponse { error?: string; canForce?: boolean; activeRunIds?: string[] }
     const data = (e as { data?: RetryConflictResponse })?.data
     if (data?.canForce) {
       retryConflict.value = {
         message: data.error ?? 'Another run is already in progress for this project.',
-        activeRunId: data.activeRunId ?? '',
+        activeRunIds: data.activeRunIds ?? [],
       }
       showRetryModal.value = true
     } else {
