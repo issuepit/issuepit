@@ -36,5 +36,13 @@ public class CiCdArtifact
     /// <summary>True when the artifact contains test result files (e.g. .trx files). Used by the UI to group and optionally hide test-result artifacts.</summary>
     public bool IsTestResultArtifact { get; set; }
 
+    /// <summary>
+    /// When non-null the artifact was unwrapped at save time: the stored object is the raw single file
+    /// (not a ZIP) and this value is its MIME type (e.g. "application/pdf" or "image/png").
+    /// Null means the artifact is stored as a ZIP archive.
+    /// </summary>
+    [MaxLength(100)]
+    public string? UnwrappedContentType { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

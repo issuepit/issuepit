@@ -80,27 +80,28 @@ public class ArtifactStorageService(IConfiguration configuration, ILogger<Artifa
 
     /// <summary>
     /// Zips the given <paramref name="artifactDir"/> and uploads it to S3.
-    /// Returns a tuple of (publicDownloadUrl, storageKey), or <c>(null, null)</c> if the service is not configured.
+    /// Returns a tuple of (publicDownloadUrl, storageKey, unwrappedContentType).
+    /// When <paramref name="unwrapIfSingleFile"/> is <c>true</c> and the artifact contains exactly
+    /// one file of a supported type (pdf, png), the raw file is uploaded directly instead of a ZIP
+    /// and <c>unwrappedContentType</c> contains its MIME type; otherwise it is <c>null</c>.
+    /// Returns <c>(null, null, null)</c> if the service is not configured.
     /// </summary>
     /// <param name="artifactDir">Full path to the artifact directory (produced by the act artifact server).</param>
     /// <param name="artifactName">The artifact name (used in the S3 key).</param>
     /// <param name="runId">The CI/CD run ID (used in the S3 key for namespacing).</param>
+    /// <param name="unwrapIfSingleFile">When <c>true</c>, attempt to upload the raw file for single-file artifacts of supported types.</param>
     /// <param name="ct">Cancellation token.</param>
-    public async Task<(string? Url, string? Key)> UploadArtifactAsync(
+    public async Task<(string? Url, string? Key, string? UnwrappedContentType)> UploadArtifactAsync(
         string artifactDir,
         string artifactName,
         Guid runId,
+        bool unwrapIfSingleFile = false,
         CancellationToken ct = default)
     {
-        if (!IsConfigured) return (null, null);
+        if (!IsConfigured) return (null, null, null);
 
         var safeRunId = runId.ToString("N");
         var safeName = SanitizeArtifactName(artifactName);
-        var key = $"artifacts/{safeRunId}/{safeName}.zip";
-
-        using var memStream = new MemoryStream();
-        await ZipDirectoryAsync(artifactDir, memStream, ct);
-        memStream.Position = 0;
 
         using var s3 = CreateClient();
 
@@ -109,6 +110,42 @@ public class ArtifactStorageService(IConfiguration configuration, ILogger<Artifa
             await EnsureBucketExistsAsync(s3, ct);
             _bucketEnsured = true;
         }
+
+        // Attempt to unwrap a single-file artifact of a supported type.
+        if (unwrapIfSingleFile)
+        {
+            var unwrapped = TryExtractSingleSupportedFile(artifactDir);
+            if (unwrapped.HasValue)
+            {
+                var (fileStream, mimeType, fileExt) = unwrapped.Value;
+                await using (fileStream)
+                {
+                    var unwrappedKey = $"artifacts/{safeRunId}/{safeName}{fileExt}";
+                    var unwrappedRequest = new PutObjectRequest
+                    {
+                        BucketName = _bucketName,
+                        Key = unwrappedKey,
+                        InputStream = fileStream,
+                        ContentType = mimeType,
+                    };
+                    await RetryS3Async(() =>
+                    {
+                        if (fileStream.CanSeek) fileStream.Position = 0;
+                        return s3.PutObjectAsync(unwrappedRequest, ct);
+                    }, ct);
+
+                    var unwrappedUrl = BuildPublicUrl(unwrappedKey);
+                    logger.LogInformation("Uploaded unwrapped artifact '{Name}' for run {RunId} to S3: {Url}", artifactName, runId, unwrappedUrl);
+                    return (unwrappedUrl, unwrappedKey, mimeType);
+                }
+            }
+        }
+
+        var key = $"artifacts/{safeRunId}/{safeName}.zip";
+
+        using var memStream = new MemoryStream();
+        await ZipDirectoryAsync(artifactDir, memStream, ct);
+        memStream.Position = 0;
 
         var request = new PutObjectRequest
         {
@@ -126,7 +163,86 @@ public class ArtifactStorageService(IConfiguration configuration, ILogger<Artifa
 
         var url = BuildPublicUrl(key);
         logger.LogInformation("Uploaded artifact '{Name}' for run {RunId} to S3: {Url}", artifactName, runId, url);
-        return (url, key);
+        return (url, key, null);
+    }
+
+    /// <summary>
+    /// Tries to extract a single file of a supported type (pdf, png) from the artifact directory.
+    /// Returns the file stream, MIME type, and file extension, or <c>null</c> when the artifact does
+    /// not qualify (more than one file, or the file type is not supported).
+    /// </summary>
+    private static (Stream FileStream, string MimeType, string FileExt)? TryExtractSingleSupportedFile(string artifactDir)
+    {
+        // Collect all "logical" files — unwrapping inner zip archives just like ZipDirectoryAsync does.
+        string? singleEntryName = null;
+        var logicalCount = 0;
+
+        foreach (var filePath in Directory.EnumerateFiles(artifactDir, "*", SearchOption.AllDirectories))
+        {
+            var ext = Path.GetExtension(filePath);
+            if (string.Equals(ext, ".zip", StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(ext))
+            {
+                try
+                {
+                    using var innerZip = ZipFile.OpenRead(filePath);
+                    var innerEntries = innerZip.Entries
+                        .Where(e => !e.FullName.EndsWith('/') && !e.FullName.EndsWith('\\'))
+                        .ToList();
+                    if (innerEntries.Count == 0) continue;
+                    logicalCount += innerEntries.Count;
+                    if (logicalCount > 1) return null;
+                    singleEntryName = innerEntries[0].FullName;
+                    continue;
+                }
+                catch { /* fall through */ }
+            }
+
+            logicalCount++;
+            if (logicalCount > 1) return null;
+            singleEntryName = Path.GetFileName(filePath);
+        }
+
+        if (logicalCount != 1 || singleEntryName is null) return null;
+
+        var singleExt = Path.GetExtension(singleEntryName).ToLowerInvariant();
+        var mimeType = singleExt switch
+        {
+            ".pdf" => "application/pdf",
+            ".png" => "image/png",
+            _ => null,
+        };
+        if (mimeType is null) return null;
+
+        // Re-scan to open the actual file stream.
+        foreach (var filePath in Directory.EnumerateFiles(artifactDir, "*", SearchOption.AllDirectories))
+        {
+            var ext = Path.GetExtension(filePath);
+            if (string.Equals(ext, ".zip", StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(ext))
+            {
+                try
+                {
+                    var innerZip = ZipFile.OpenRead(filePath);
+                    var matchingEntry = innerZip.Entries
+                        .FirstOrDefault(e => !e.FullName.EndsWith('/') && !e.FullName.EndsWith('\\'));
+                    if (matchingEntry is null) { innerZip.Dispose(); continue; }
+
+                    // Copy entry into a MemoryStream so the archive can be closed.
+                    var ms = new MemoryStream((int)matchingEntry.Length);
+                    using var entryStream = matchingEntry.Open();
+                    entryStream.CopyTo(ms);
+                    innerZip.Dispose();
+                    ms.Position = 0;
+                    return (ms, mimeType, singleExt);
+                }
+                catch { /* fall through */ }
+            }
+            else if (string.Equals(Path.GetExtension(filePath), singleExt, StringComparison.OrdinalIgnoreCase))
+            {
+                return (File.OpenRead(filePath), mimeType, singleExt);
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

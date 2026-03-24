@@ -7,7 +7,6 @@ using IssuePit.Core.Enums;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
-using System.IO.Compression;
 
 namespace IssuePit.Api.Controllers;
 
@@ -316,9 +315,9 @@ public class CiCdRunsController(
     }
 
     /// <summary>
-    /// Downloads the artifact ZIP by proxying the S3 object through the backend.
-    /// When the project has <c>UnwrapSingleFileArtifacts</c> enabled and the artifact contains
-    /// exactly one supported file (pdf, png), returns that file directly instead of a ZIP.
+    /// Downloads the artifact by proxying the S3 object through the backend.
+    /// When the artifact was stored as an unwrapped file (single-file artifact with a supported type),
+    /// it is returned with the appropriate MIME type. Otherwise the ZIP archive is returned.
     /// Returns 503 when artifact storage is not configured.
     /// </summary>
     [HttpGet("{id:guid}/artifacts/{artifactId:guid}/download")]
@@ -331,7 +330,7 @@ public class CiCdRunsController(
             .Where(a => a.Id == artifactId
                         && a.CiCdRunId == id
                         && a.CiCdRun.Project.Organization.TenantId == tenant.CurrentTenant!.Id)
-            .Select(a => new { a.Name, a.StorageKey, a.FileCount, a.CiCdRun.Project.UnwrapSingleFileArtifacts })
+            .Select(a => new { a.Name, a.StorageKey, a.UnwrappedContentType })
             .FirstOrDefaultAsync(ct);
 
         if (artifact is null) return NotFound();
@@ -340,68 +339,25 @@ public class CiCdRunsController(
 
         try
         {
-            var (s3Stream, s3ContentType) = await imageStorage.OpenDownloadStreamAsync(artifact.StorageKey, ct);
+            var (stream, contentType) = await imageStorage.OpenDownloadStreamAsync(artifact.StorageKey, ct);
 
-            // Unwrap single-file artifacts when the project setting is enabled.
-            if (artifact.UnwrapSingleFileArtifacts && artifact.FileCount == 1)
+            if (!string.IsNullOrEmpty(artifact.UnwrappedContentType))
             {
-                // Buffer the zip into memory so we can both attempt unwrapping and fall back to
-                // serving the ZIP when the single file is not a supported type.
-                var ms = new MemoryStream();
-                await s3Stream.CopyToAsync(ms, ct);
-                await s3Stream.DisposeAsync();
-                ms.Position = 0;
-
-                var unwrapped = TryUnwrapSingleFileArtifact(ms, artifact.Name);
-                if (unwrapped.HasValue)
-                    return File(unwrapped.Value.Stream, unwrapped.Value.ContentType, unwrapped.Value.FileName);
-
-                // File type not supported for unwrapping — serve the ZIP.
-                ms.Position = 0;
-                return File(ms, s3ContentType, $"{artifact.Name}.zip");
+                // Artifact was unwrapped at save time — derive the file extension from the content type.
+                var ext = artifact.UnwrappedContentType switch
+                {
+                    "application/pdf" => ".pdf",
+                    "image/png" => ".png",
+                    _ => string.Empty,
+                };
+                return File(stream, artifact.UnwrappedContentType, $"{artifact.Name}{ext}");
             }
 
-            return File(s3Stream, s3ContentType, $"{artifact.Name}.zip");
+            return File(stream, contentType, $"{artifact.Name}.zip");
         }
         catch (FileNotFoundException)
         {
             return NotFound(new { error = "Artifact file not found in storage." });
-        }
-    }
-
-    private static (Stream Stream, string ContentType, string FileName)? TryUnwrapSingleFileArtifact(MemoryStream zipBuffer, string artifactName)
-    {
-        try
-        {
-            using var archive = new ZipArchive(zipBuffer, ZipArchiveMode.Read, leaveOpen: true);
-            var entries = archive.Entries.Where(e => !e.FullName.EndsWith('/') && !e.FullName.EndsWith('\\')).ToList();
-            if (entries.Count != 1) return null;
-
-            var entry = entries[0];
-            var ext = Path.GetExtension(entry.FullName).ToLowerInvariant();
-            var mimeType = ext switch
-            {
-                ".pdf" => "application/pdf",
-                ".png" => "image/png",
-                _ => null,
-            };
-            if (mimeType is null) return null;
-
-            var fileName = Path.GetFileName(entry.FullName);
-            if (string.IsNullOrEmpty(fileName))
-                fileName = $"{artifactName}{ext}";
-
-            // Copy the entry into a new MemoryStream so it can be returned after the archive is disposed.
-            var result = new MemoryStream((int)entry.Length);
-            using var entryStream = entry.Open();
-            entryStream.CopyTo(result);
-            result.Position = 0;
-
-            return (result, mimeType, fileName);
-        }
-        catch
-        {
-            return null;
         }
     }
 
