@@ -348,6 +348,72 @@ public class OrgProjectAgentTests : IAsyncLifetime
 
     // ── Helpers ────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// API: create agent with ManualMode=true → verify the response includes the manualMode flag.
+    /// Update to ManualMode=false → verify the flag is cleared.
+    /// Does not require Docker.
+    /// </summary>
+    [Fact]
+    public async Task Api_CreateAgent_WithManualMode_ReturnsManualModeFlag()
+    {
+        using var client = CreateCookieClient();
+
+        var tenantId = await GetDefaultTenantIdAsync();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"e2e{Guid.NewGuid():N}"[..12];
+        await client.PostAsJsonAsync("/api/auth/register", new { username, password = "TestPass1!" });
+
+        var orgSlug = $"mm-org-{Guid.NewGuid():N}"[..16];
+        var orgResp = await client.PostAsJsonAsync("/api/orgs", new { name = "Manual Mode Org", slug = orgSlug });
+        var org = await orgResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var orgId = Guid.Parse(org.GetProperty("id").GetString()!);
+
+        // Create agent with manualMode = true
+        var createResp = await client.PostAsJsonAsync("/api/agents",
+            new
+            {
+                name = "Manual Mode Agent",
+                orgId,
+                systemPrompt = "Live terminal agent.",
+                dockerImage = "busybox:latest",
+                allowedTools = "[]",
+                isActive = false,
+                manualMode = true,
+            });
+
+        Assert.Equal(HttpStatusCode.Created, createResp.StatusCode);
+        var created = await createResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.True(created.GetProperty("manualMode").GetBoolean(),
+            "Expected manualMode=true in create response");
+
+        var agentId = created.GetProperty("id").GetString()!;
+
+        // Verify GET /api/agents/{id} also reflects the flag
+        var getResp = await client.GetAsync($"/api/agents/{agentId}");
+        Assert.Equal(HttpStatusCode.OK, getResp.StatusCode);
+        var detail = await getResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.True(detail.GetProperty("manualMode").GetBoolean(),
+            "Expected manualMode=true in detail response");
+
+        // Update agent with manualMode = false
+        var updateResp = await client.PutAsJsonAsync($"/api/agents/{agentId}",
+            new
+            {
+                name = "Manual Mode Agent",
+                systemPrompt = "Live terminal agent.",
+                dockerImage = "busybox:latest",
+                allowedTools = "[]",
+                isActive = false,
+                manualMode = false,
+            });
+
+        Assert.Equal(HttpStatusCode.OK, updateResp.StatusCode);
+        var updated = await updateResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.False(updated.GetProperty("manualMode").GetBoolean(),
+            "Expected manualMode=false after update");
+    }
+
     private HttpClient CreateCookieClient()
     {
         var handler = new HttpClientHandler { CookieContainer = new System.Net.CookieContainer() };
