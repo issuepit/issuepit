@@ -2,8 +2,11 @@
   <div ref="containerRef" class="relative">
     <button
       type="button"
-      class="flex items-center gap-1.5 bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500 min-w-28 max-w-[50ch] overflow-hidden"
-      :class="{ 'ring-2 ring-brand-500': open }"
+      :class="[
+        'flex items-center gap-1.5 bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500 overflow-hidden',
+        props.full ? 'w-full' : 'min-w-28 max-w-[50ch]',
+        open ? 'ring-2 ring-brand-500' : '',
+      ]"
       :aria-expanded="open"
       @click="toggleOpen"
     >
@@ -38,7 +41,16 @@
 
       <!-- Branch list -->
       <ul ref="listRef" class="max-h-56 overflow-y-auto py-1">
-        <li v-if="filtered.length === 0" class="px-3 py-2 text-sm text-gray-500">No branches found</li>
+        <!-- Free-form entry: when no branch exactly matches the typed query -->
+        <li
+          v-if="hasFreeFormEntry"
+          class="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer text-brand-300 hover:bg-gray-800 transition-colors"
+          @click="select(search)"
+        >
+          <span class="font-mono truncate flex-1">{{ search }}</span>
+          <span class="text-xs text-gray-500 shrink-0">Use this</span>
+        </li>
+        <li v-if="filtered.length === 0 && !hasFreeFormEntry" class="px-3 py-2 text-sm text-gray-500">No branches found</li>
         <li
           v-for="(branch, i) in filtered"
           :key="branch.name"
@@ -67,8 +79,14 @@ const props = withDefaults(defineProps<{
   modelValue: string
   branches: GitBranch[]
   placeholder?: string
+  /** When true, the user can type any value and press Enter to accept it even if it's not in the list. */
+  allowFreeForm?: boolean
+  /** When true, the trigger button fills its container width. */
+  full?: boolean
 }>(), {
-  placeholder: 'Select branch'
+  placeholder: 'Select branch',
+  allowFreeForm: false,
+  full: false,
 })
 
 const emit = defineEmits<{
@@ -87,6 +105,10 @@ const filtered = computed(() => {
   if (!q) return props.branches
   return props.branches.filter(b => b.name.toLowerCase().includes(q))
 })
+
+const hasFreeFormEntry = computed(() =>
+  props.allowFreeForm && search.value !== '' && !filtered.value.some(b => b.name === search.value),
+)
 
 function toggleOpen() {
   open.value = !open.value
@@ -115,6 +137,8 @@ function moveFocus(delta: number) {
 function selectFocused() {
   if (focusedIndex.value >= 0 && focusedIndex.value < filtered.value.length) {
     select(filtered.value[focusedIndex.value].name)
+  } else if (hasFreeFormEntry.value) {
+    select(search.value.trim())
   }
 }
 
