@@ -58,9 +58,11 @@ public class Issue
     public int? ExternalId { get; set; }
 
     /// <summary>
-    /// Identifies the external source system. Use "github" for GitHub imports; for other
-    /// trackers (e.g. Jira) this holds the project slug used as a display prefix (e.g. "PROJ").
-    /// GitHub issues have no slug, so they display as bare numbers (e.g. "#69").
+    /// Identifies the external source system. Use <c>"github"</c> for GitHub imports; for
+    /// other trackers (e.g. Jira) set this to the project slug (e.g. <c>"PROJ"</c>) so the
+    /// frontend can render it as a prefix. Display formatting is applied by <c>formatIssueId</c>
+    /// in the frontend: GitHub issues show as bare numbers (e.g. <c>#69</c>), others as
+    /// <c>#PROJ-42</c>.
     /// </summary>
     [MaxLength(100)]
     public string? ExternalSource { get; set; }
