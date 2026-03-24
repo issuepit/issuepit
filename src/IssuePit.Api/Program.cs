@@ -1,5 +1,4 @@
 using System.Text.Json.Serialization;
-using Docker.DotNet;
 using FFMpegCore;
 using FFMpegCore.Extensions.Downloader;
 using FFMpegCore.Extensions.Downloader.Enums;
@@ -66,9 +65,6 @@ builder.Services.Configure<IssuePit.Api.Services.VoiceTranscriptionOptions>(
 builder.Services.AddSingleton<IssuePit.Api.Services.VoiceTranscriptionService>();
 
 builder.Services.AddSingleton<IBotNotificationService, TelegramBotNotificationService>();
-
-// Register Docker client for the terminal endpoint (allows the API to attach to agent containers).
-builder.Services.AddSingleton(_ => new DockerClientBuilder().Build());
 
 builder.Services.AddHttpClient("openrouter");
 builder.Services.AddHttpClient("telegram");
@@ -214,8 +210,6 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors();
-
-app.UseWebSockets();
 
 app.UseAuthentication();
 app.UseAuthorization();
