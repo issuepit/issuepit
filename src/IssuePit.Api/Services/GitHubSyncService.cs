@@ -86,6 +86,30 @@ public class GitHubSyncService(
                         "Set a Project Key in Project Settings → Issue ID Format first, then re-run the sync.", ct);
                     return run;
                 }
+
+                // Ensure a single IssueExternalSource record exists for this project + GitHub repo.
+                // This is created once and reused for all imported issues.
+                var githubUrl = $"https://github.com/{repo}";
+                var externalSource = await db.IssueExternalSources
+                    .FirstOrDefaultAsync(s => s.ProjectId == projectId && s.Type == "github", ct);
+                if (externalSource is null)
+                {
+                    externalSource = new IssueExternalSource
+                    {
+                        Id = Guid.NewGuid(),
+                        ProjectId = projectId,
+                        Type = "github",
+                        Slug = null, // GitHub has no project-level issue prefix
+                        Url = githubUrl,
+                    };
+                    db.IssueExternalSources.Add(externalSource);
+                    await db.SaveChangesAsync(ct);
+                }
+                else if (externalSource.Url != githubUrl)
+                {
+                    externalSource.Url = githubUrl;
+                    await db.SaveChangesAsync(ct);
+                }
                 // Fetch issues — throws GitHubApiException when the API returns an error.
                 List<GitHubIssueDto> ghIssues;
                 List<GitHubPullRequestDto> ghPrs;
@@ -138,7 +162,7 @@ public class GitHubSyncService(
                                 GitHubIssueNumber = ghIssue.Number,
                                 GitHubIssueUrl = ghIssue.HtmlUrl,
                                 ExternalId = ghIssue.Number,
-                                ExternalSource = "github",
+                                ExternalSourceId = externalSource.Id,
                                 CreatedAt = DateTime.UtcNow,
                                 UpdatedAt = DateTime.UtcNow,
                             });

@@ -1132,7 +1132,7 @@ const commentDragOver = ref(false)
 // Resolved project GUID (falls back to URL param before issue is loaded)
 const actualProjectId = computed(() => store.currentIssue?.projectId ?? id)
 
-function formatLinkedIssueId(number: number, projectId: string | undefined, externalId?: number | null, externalSource?: string | null): string {
+function formatLinkedIssueId(number: number, projectId: string | undefined, externalId?: number | null, externalSource?: import('~/types').IssueExternalSource | null): string {
   const proj = projectsStore.projects.find(p => p.id === projectId)
   return formatIssueId(number, proj, externalId, externalSource)
 }

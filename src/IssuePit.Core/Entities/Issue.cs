@@ -58,14 +58,17 @@ public class Issue
     public int? ExternalId { get; set; }
 
     /// <summary>
-    /// Identifies the external source system. Use <c>"github"</c> for GitHub imports; for
-    /// other trackers (e.g. Jira) set this to the project slug (e.g. <c>"PROJ"</c>) so the
-    /// frontend can render it as a prefix. Display formatting is applied by <c>formatIssueId</c>
-    /// in the frontend: GitHub issues show as bare numbers (e.g. <c>#69</c>), others as
+    /// FK to the <see cref="IssueExternalSource"/> record that describes the external tracker
+    /// (type, slug, URL). Null when the issue has no external counterpart.
+    /// Display formatting is handled by <c>formatIssueId</c> in the frontend:
+    /// GitHub issues render as bare numbers (e.g. <c>#69</c>), Jira-style sources as
     /// <c>#PROJ-42</c>.
     /// </summary>
-    [MaxLength(100)]
-    public string? ExternalSource { get; set; }
+    public Guid? ExternalSourceId { get; set; }
+
+    /// <summary>Navigation property — included on demand in API queries.</summary>
+    [ForeignKey(nameof(ExternalSourceId))]
+    public IssueExternalSource? ExternalSource { get; set; }
 
     public string? GitBranch { get; set; }
 

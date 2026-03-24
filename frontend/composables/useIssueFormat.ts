@@ -1,4 +1,4 @@
-import type { Project } from '~/types'
+import type { IssueExternalSource, Project } from '~/types'
 
 /**
  * Returns the display ID for an issue, taking into account the project's IssueKey and
@@ -8,11 +8,10 @@ import type { Project } from '~/types'
  * the primary identifier. The native IssuePit number is used as a fallback.
  *
  * GitHub has no project slugs, so GitHub issues are shown as bare numbers:
- *  - externalId=69, externalSource="github"       → "#69"
+ *  - externalId=69, externalSource.type="github"       → "#69"
  *
- * For other trackers (e.g. Jira), the externalSource stores the project key/slug and is
- * used as a prefix:
- *  - externalId=42, externalSource="PROJ"         → "#PROJ-42"
+ * For other trackers (e.g. Jira), externalSource.slug is used as a prefix:
+ *  - externalId=42, externalSource.slug="PROJ"         → "#PROJ-42"
  *
  * Native IssuePit issues:
  *  - issueKey="IP", offset=0, number=5            → "#IP-5"
@@ -24,15 +23,19 @@ export function formatIssueId(
   number: number,
   project: Pick<Project, 'issueKey' | 'issueNumberOffset'> | null | undefined,
   externalId?: number | null,
-  externalSource?: string | null,
+  externalSource?: IssueExternalSource | null,
 ): string {
   if (externalId != null && externalSource) {
-    // GitHub has no project slugs — show bare number (e.g. "#69")
-    if (externalSource === 'github') {
+    // GitHub has no project-level slug — show bare number (e.g. "#69")
+    if (externalSource.type === 'github') {
       return `#${externalId}`
     }
-    // For other trackers (e.g. Jira), externalSource holds the project key/slug (e.g. "PROJ")
-    return `#${externalSource}-${externalId}`
+    // For other trackers (e.g. Jira), use the slug as a prefix (e.g. "#PROJ-42")
+    if (externalSource.slug) {
+      return `#${externalSource.slug}-${externalId}`
+    }
+    // Fallback: bare external number if slug is absent
+    return `#${externalId}`
   }
   const offset = project?.issueNumberOffset ?? 0
   const displayed = number + offset

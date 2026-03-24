@@ -56,7 +56,14 @@ public class IssueEntityTests
     }
 
     [Fact]
-    public void Issue_ExternalSource_DefaultsToNull()
+    public void Issue_ExternalSourceId_DefaultsToNull()
+    {
+        var issue = new Issue();
+        Assert.Null(issue.ExternalSourceId);
+    }
+
+    [Fact]
+    public void Issue_ExternalSource_NavigationProperty_DefaultsToNull()
     {
         var issue = new Issue();
         Assert.Null(issue.ExternalSource);
@@ -65,8 +72,11 @@ public class IssueEntityTests
     [Fact]
     public void Issue_CanSetExternalIdAndSource()
     {
-        var issue = new Issue { ExternalId = 42, ExternalSource = "github" };
+        var sourceId = Guid.NewGuid();
+        var source = new IssueExternalSource { Id = sourceId, Type = "github", ProjectId = Guid.NewGuid() };
+        var issue = new Issue { ExternalId = 42, ExternalSourceId = sourceId, ExternalSource = source };
         Assert.Equal(42, issue.ExternalId);
-        Assert.Equal("github", issue.ExternalSource);
+        Assert.Equal(sourceId, issue.ExternalSourceId);
+        Assert.Equal("github", issue.ExternalSource!.Type);
     }
 }

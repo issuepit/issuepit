@@ -76,6 +76,7 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<GitServerPermission> GitServerPermissions => Set<GitServerPermission>();
     public DbSet<GitServerBranchProtection> GitServerBranchProtections => Set<GitServerBranchProtection>();
     public DbSet<GitPat> GitPats => Set<GitPat>();
+    public DbSet<IssueExternalSource> IssueExternalSources => Set<IssueExternalSource>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -295,6 +295,22 @@ export interface CodeReviewComment {
   createdAt: string
 }
 
+/**
+ * Describes an external issue-tracking system linked to an IssuePit project.
+ * Stored as a separate entity so the tracker's type, slug, and URL are
+ * available for deep-linking and display formatting.
+ */
+export interface IssueExternalSource {
+  id: string
+  /** Tracker type: "github", "jira", etc. */
+  type: string
+  /** Project key / slug used as a display prefix (e.g. "PROJ" for Jira). Null for GitHub. */
+  slug?: string | null
+  /** Base URL of the external repository or project. */
+  url?: string | null
+  projectId: string
+}
+
 export interface Issue {
   id: string
   projectId: string
@@ -316,8 +332,9 @@ export interface Issue {
   gitHubIssueUrl?: string
   /** External issue number from an external tracker (e.g. GitHub #69). Used as primary display ID. */
   externalId?: number | null
-  /** External source identifier (e.g. "github", "jira"). Paired with externalId. */
-  externalSource?: string | null
+  /** External source record describing the tracker (type, slug, URL). Null when no external counterpart. */
+  externalSourceId?: string | null
+  externalSource?: IssueExternalSource | null
   gitBranch?: string
   createdAt: string
   updatedAt: string
