@@ -341,18 +341,6 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
             .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<PinnedProject>()
-            .HasOne(pp => pp.User)
-            .WithMany()
-            .HasForeignKey(pp => pp.UserId)
-            .OnDelete(DeleteBehavior.Cascade);
-
-        modelBuilder.Entity<PinnedProject>()
-            .HasOne(pp => pp.Project)
-            .WithMany()
-            .HasForeignKey(pp => pp.ProjectId)
-            .OnDelete(DeleteBehavior.Cascade);
-
-        modelBuilder.Entity<PinnedProject>()
             .HasIndex(pp => new { pp.UserId, pp.ProjectId })
             .IsUnique();
     }

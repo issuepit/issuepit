@@ -258,7 +258,6 @@ function toggleSidebar() {
 }
 
 // Lazy-loaded data
-const projects = ref<Project[]>([])
 const orgs = ref<Organization[]>([])
 const agents = ref<Agent[]>([])
 const projectsLoading = ref(false)
@@ -272,12 +271,17 @@ const projectsStore = useProjectsStore()
 const orgsStore = useOrgsStore()
 const agentsStore = useAgentsStore()
 
+// Sidebar project list: pinned first, then by the order the API returns (activity)
+const projects = computed(() => {
+  const all = projectsStore.projects
+  return [...all.filter(p => p.isPinned), ...all.filter(p => !p.isPinned)]
+})
+
 async function loadProjects() {
   if (projectsLoaded.value) return
   projectsLoading.value = true
   try {
     await projectsStore.fetchProjects()
-    projects.value = projectsStore.projects
     projectsLoaded.value = true
   } finally {
     projectsLoading.value = false
@@ -290,11 +294,6 @@ async function togglePin(project: Project) {
   } else {
     await projectsStore.pinProject(project.id)
   }
-  // Re-sort: pinned first, preserve relative order
-  projects.value = [
-    ...projects.value.filter(p => p.isPinned),
-    ...projects.value.filter(p => !p.isPinned),
-  ]
 }
 
 async function loadOrgs() {
