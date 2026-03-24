@@ -45,11 +45,24 @@ public class IssuesPage(IPage page)
 
     /// <summary>
     /// Verifies the Voice button is visible and opens the voice recording modal.
+    /// Retries once on TimeoutException (Vue hydration race: the click handler may not yet be
+    /// attached when the button first becomes visible in SSR output).
     /// </summary>
     public async Task OpenVoiceModalAsync()
     {
-        await page.ClickAsync("button:has-text('Voice')");
-        await page.WaitForSelectorAsync("text=Create Issue from Voice", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        try
+        {
+            await page.ClickAsync("button:has-text('Voice')");
+            await page.WaitForSelectorAsync("text=Create Issue from Voice",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (TimeoutException)
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.ClickAsync("button:has-text('Voice')");
+            await page.WaitForSelectorAsync("text=Create Issue from Voice",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        }
     }
 
     /// <summary>
@@ -69,12 +82,24 @@ public class IssuesPage(IPage page)
     /// <summary>
     /// Starts voice recording by clicking the microphone button inside the already-open voice modal.
     /// Waits for the recording indicator to appear.
+    /// Retries once on TimeoutException (getUserMedia resolution may be slightly delayed).
     /// </summary>
     public async Task StartVoiceRecordingAsync()
     {
         // The mic button is the preceding sibling of the "Click to start recording" paragraph.
-        await page.ClickAsync("xpath=//p[contains(.,'Click to start recording')]/preceding-sibling::button");
-        await page.WaitForSelectorAsync("text=Recording", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        try
+        {
+            await page.ClickAsync("xpath=//p[contains(.,'Click to start recording')]/preceding-sibling::button");
+            await page.WaitForSelectorAsync("text=Recording",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (TimeoutException)
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.ClickAsync("xpath=//p[contains(.,'Click to start recording')]/preceding-sibling::button");
+            await page.WaitForSelectorAsync("text=Recording",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        }
     }
 
     /// <summary>

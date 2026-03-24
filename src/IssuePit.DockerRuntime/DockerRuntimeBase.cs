@@ -253,6 +253,14 @@ public abstract class DockerRuntimeBase
             : branch;
 
     /// <summary>
+    /// Returns the IssuePit Git Server base URL from configuration, or <c>null</c> when not configured.
+    /// Agents can use this to add the IssuePit git server as a remote inside containers.
+    /// Configured via <c>GitServer__BaseUrl</c> (injected by AppHost into execution-client and cicd-client).
+    /// </summary>
+    protected static string? GetIssuePitGitServerUrl(Microsoft.Extensions.Configuration.IConfiguration config) =>
+        config["GitServer__BaseUrl"];
+
+    /// <summary>
     /// Generates a conventional-commits-style feature branch name from an issue number and title.
     /// Format: <c>{verb}/{number}-{slug}</c> (e.g. <c>fix/42-null-pointer-in-login</c>).
     /// Mirrors the branch-name logic that was previously in <c>entrypoint.sh</c>.
@@ -299,6 +307,22 @@ public abstract class DockerRuntimeBase
     ///   <item>If that fails (branch not in remote), fall back to <paramref name="baseBranch"/>.</item>
     ///   <item>If the base branch clone also fails, throw with a clear error message visible in the UI.</item>
     /// </list>
+    ///
+    /// <para>Shallow vs full-history clone:</para>
+    /// <list type="bullet">
+    ///   <item><description>
+    ///     When <paramref name="fullHistory"/> is <c>false</c> (default) <c>--depth=1</c> is used for
+    ///     a fast shallow clone. This is safe when the clone source and push target are the same remote,
+    ///     because all parent objects already exist on the push target.
+    ///   </description></item>
+    ///   <item><description>
+    ///     When <paramref name="fullHistory"/> is <c>true</c> <c>--depth=1</c> is omitted. A full-history
+    ///     clone is required whenever the push target (Working remote) is a different repository from the
+    ///     clone source (Release/upstream remote). Without it, <c>git push</c> would fail with
+    ///     <c>remote: fatal: did not receive expected object</c> because the working remote does not have
+    ///     the shallow commit's parent objects and cannot resolve the pack delta.
+    ///   </description></item>
+    /// </list>
     /// </summary>
     protected async Task CloneWorkspaceAsync(
         string containerId,
@@ -308,12 +332,20 @@ public abstract class DockerRuntimeBase
         string? authUsername,
         string? authToken,
         Func<string, LogStream, Task> onLogLine,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool fullHistory = false)
     {
         var cloneUrl = BuildAuthenticatedCloneUrl(remoteUrl, authUsername, authToken);
         // GIT_TERMINAL_PROMPT=0 prevents git from prompting for credentials, ensuring that
         // auth failures fail fast with a clear error visible in the UI instead of hanging.
         IReadOnlyList<string> gitEnv = ["GIT_TERMINAL_PROMPT=0"];
+
+        // --depth=1 gives a fast shallow clone suitable for same-remote scenarios.
+        // When fullHistory=true (different push target) we omit --depth=1 so the working
+        // remote can receive a push without missing parent object errors.
+        var depthArgs = fullHistory ? Array.Empty<string>() : new[] { "--depth=1" };
+        if (fullHistory)
+            await onLogLine("[INFO] Full-history clone (push target differs from clone source — skipping --depth=1 to ensure pushable history)", LogStream.Stdout);
 
         // Ensure /workspace exists before cloning.
         await ExecCommandAsync(containerId, ["mkdir", "-p", "/workspace"],
@@ -324,7 +356,9 @@ public abstract class DockerRuntimeBase
         {
             var branch = StripOriginPrefix(featureBranch);
             await onLogLine($"[INFO] Cloning {remoteUrl} (feature branch: {branch}) into /workspace", LogStream.Stdout);
-            var featureArgs = new List<string> { "git", "clone", "--depth=1", "-b", branch, cloneUrl, "/workspace" };
+            var featureArgs = new List<string> { "git", "clone" };
+            featureArgs.AddRange(depthArgs);
+            featureArgs.AddRange(["-b", branch, cloneUrl, "/workspace"]);
             // Use a sink callback — feature branch absence is expected, not an error.
             var featureExitCode = await ExecCommandAsync(
                 containerId, featureArgs, (_, _) => Task.CompletedTask,
@@ -345,7 +379,9 @@ public abstract class DockerRuntimeBase
                 $"No base branch configured for repository '{remoteUrl}'. " +
                 "Set DefaultBranch on the GitRepository record.");
 
-        var baseCloneArgs = new List<string> { "git", "clone", "--depth=1", "-b", baseBranch, cloneUrl, "/workspace" };
+        var baseCloneArgs = new List<string> { "git", "clone" };
+        baseCloneArgs.AddRange(depthArgs);
+        baseCloneArgs.AddRange(["-b", baseBranch, cloneUrl, "/workspace"]);
         await onLogLine(!string.IsNullOrWhiteSpace(featureBranch)
             ? $"[INFO] Cloning base branch '{baseBranch}'…"
             : $"[INFO] Cloning {remoteUrl} (branch: {baseBranch}) into /workspace",
@@ -698,7 +734,8 @@ public abstract class DockerRuntimeBase
                  DISABLE_INTERNET={{(disableInternet ? "true" : "false")}}
                  if [ "${DISABLE_INTERNET}" = "true" ]; then
                    DNSMASQ_ARGS="${DNSMASQ_ARGS} --address=/#/0.0.0.0"
-                   for DOMAIN in {{allowedList}}; do
+                   for DOMAIN in {{allowedList}}
+                   do
                      DNSMASQ_ARGS="${DNSMASQ_ARGS} --server=/${DOMAIN}/${UPSTREAM_DNS}"
                    done
                  else

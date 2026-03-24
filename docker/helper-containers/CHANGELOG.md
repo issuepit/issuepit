@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/issuepit/issuepit/compare/helper-containers-v1.6.1...helper-containers-v1.7.0) (2026-03-23)
+
+
+### Features
+
+* update issuepit/act to a471da1 with stage-aware skip-step logging ([#796](https://github.com/issuepit/issuepit/issues/796)) ([6ad5ab5](https://github.com/issuepit/issuepit/commit/6ad5ab50bc3d6b45708c0639f6363d84fcc45b50))
+
 ## [1.6.1](https://github.com/issuepit/issuepit/compare/helper-containers-v1.6.0...helper-containers-v1.6.1) (2026-03-23)
 
 

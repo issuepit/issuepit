@@ -793,6 +793,26 @@ public class CiCdPipelineTests(AspireFixture fixture)
         Assert.False(string.IsNullOrWhiteSpace(storedSkipSteps),
             $"Expected run.skipSteps to be set after a skip-step run, but was: '{storedSkipSteps}'");
         Assert.Contains("Upload build output", storedSkipSteps!);
+
+        // Verify the new act log format: act now emits ⏭️ log lines when steps are skipped.
+        // 1) At job start: "⏭️  Skipping steps configured via '--skip-step': [...]"
+        // 2) At step skip: "⏭️  Skipping <stage> <step>" (e.g. "⏭️  Skipping Main Upload build output")
+        var runLogsResp = await client.GetAsync($"/api/cicd-runs/{runId}/logs");
+        runLogsResp.EnsureSuccessStatusCode();
+        var runLogs = await runLogsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var logLines = runLogs.EnumerateArray()
+            .Select(l => l.TryGetProperty("line", out var ln) ? ln.GetString() ?? "" : "")
+            .ToList();
+
+        Assert.True(
+            logLines.Any(l => l.Contains("Skipping steps configured via")),
+            "Expected an act log line announcing configured skip steps at job start, but none found.\n" +
+            $"Log lines captured: {string.Join('\n', logLines.TakeLast(20))}");
+
+        Assert.True(
+            logLines.Any(l => l.Contains("Skipping") && l.Contains("Upload build output")),
+            "Expected an act log line indicating 'Upload build output' was skipped, but none found.\n" +
+            $"Log lines captured: {string.Join('\n', logLines.TakeLast(20))}");
     }
 
     /// <summary>

@@ -14,4 +14,5 @@
   <Project Path="IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj" />
   <Project Path="IssuePit.Tests.Integration/IssuePit.Tests.Integration.csproj" />
   <Project Path="IssuePit.Tests.Unit/IssuePit.Tests.Unit.csproj" />
+  <Project Path="IssuePit.GitServer/IssuePit.GitServer.csproj" />
 </Solution>

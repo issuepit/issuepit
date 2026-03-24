@@ -72,6 +72,10 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<SimilarIssueRun> SimilarIssueRuns => Set<SimilarIssueRun>();
     public DbSet<SimilarIssueRunLog> SimilarIssueRunLogs => Set<SimilarIssueRunLog>();
     public DbSet<SimilarIssuePair> SimilarIssuePairs => Set<SimilarIssuePair>();
+    public DbSet<GitServerRepo> GitServerRepos => Set<GitServerRepo>();
+    public DbSet<GitServerPermission> GitServerPermissions => Set<GitServerPermission>();
+    public DbSet<GitServerBranchProtection> GitServerBranchProtections => Set<GitServerBranchProtection>();
+    public DbSet<GitPat> GitPats => Set<GitPat>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

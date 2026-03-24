@@ -222,7 +222,22 @@ public class DemoDataSeeder(IssuePitDbContext db, ILogger<DemoDataSeeder> logger
         await db.SaveChangesAsync();
 
         // --- Agents + MCP Servers (delegated to DemoAgentSeeder) ---
-        await new DemoAgentSeeder(db).SeedAsync(org.Id);
+        var (planAgent, codeAgent, _, _) = await new DemoAgentSeeder(db).SeedAsync(org.Id);
+
+        // Link Code Agent and Plan Agent to the main demo projects so they appear in @mention autocomplete
+        await db.AgentProjects.AddIfNotExistsAsync(
+            ap => ap.AgentId == codeAgent.Id && ap.ProjectId == frontendProject.Id,
+            new AgentProject { AgentId = codeAgent.Id, ProjectId = frontendProject.Id });
+        await db.AgentProjects.AddIfNotExistsAsync(
+            ap => ap.AgentId == planAgent.Id && ap.ProjectId == frontendProject.Id,
+            new AgentProject { AgentId = planAgent.Id, ProjectId = frontendProject.Id });
+        await db.AgentProjects.AddIfNotExistsAsync(
+            ap => ap.AgentId == codeAgent.Id && ap.ProjectId == backendProject.Id,
+            new AgentProject { AgentId = codeAgent.Id, ProjectId = backendProject.Id });
+        await db.AgentProjects.AddIfNotExistsAsync(
+            ap => ap.AgentId == planAgent.Id && ap.ProjectId == backendProject.Id,
+            new AgentProject { AgentId = planAgent.Id, ProjectId = backendProject.Id });
+        await db.SaveChangesAsync();
 
         // --- IssuePit project ---
         const string issuePitColor = "#4c6ef5";

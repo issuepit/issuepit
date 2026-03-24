@@ -356,11 +356,11 @@
             </div>
 
             <!-- Add comment -->
-            <div class="border border-gray-700 rounded-lg overflow-hidden"
+            <div class="border border-gray-700 rounded-lg"
               :class="{ 'ring-2 ring-brand-500': commentDragOver }">
               <div class="relative">
                 <textarea v-model="newComment" rows="3" placeholder="Leave a comment… (type @ to mention an agent or user)"
-                  class="w-full bg-gray-800 px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none resize-none transition-colors"
+                  class="w-full bg-gray-800 rounded-t-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none resize-none transition-colors"
                   :class="{ 'bg-brand-500/10': commentDragOver }"
                   v-bind="commentMention.textareaBindings"
                   @paste="e => handleImagePaste(e, md => newComment += md)"
@@ -369,7 +369,7 @@
                   @drop.prevent="e => { commentDragOver = false; handleDropAttach(e, md => newComment += md) }" />
                 <!-- @/# Mention dropdown -->
                 <div v-if="commentMention.isOpen.value && commentMention.items.value.length"
-                  class="absolute left-0 bottom-full mb-1 z-50 bg-gray-850 border border-gray-700 rounded-lg shadow-xl overflow-hidden min-w-48 max-h-52 overflow-y-auto">
+                  class="absolute left-0 bottom-full mb-1 z-50 bg-gray-900 border border-gray-700 rounded-lg shadow-xl overflow-hidden min-w-48 max-h-52 overflow-y-auto">
                   <button
                     v-for="(item, idx) in commentMention.items.value"
                     :key="item.value"
@@ -384,7 +384,7 @@
                   </button>
                 </div>
               </div>
-              <div class="flex justify-end bg-gray-800/50 px-3 py-2 border-t border-gray-700 gap-2">
+              <div class="flex justify-end bg-gray-800/50 rounded-b-lg px-3 py-2 border-t border-gray-700 gap-2">
                 <p v-if="uploadingImage" class="text-xs text-gray-400 mr-auto self-center">Uploading image…</p>
                 <p v-else-if="uploadImageError" class="text-xs text-red-400 mr-auto self-center">{{ uploadImageError }}</p>
                 <!-- File attachment for comment -->
@@ -911,7 +911,7 @@
             />
             <!-- Mention dropdown for assignment modal textarea -->
             <div v-if="assignModalMention.isOpen.value && assignModalMention.items.value.length"
-              class="absolute left-0 bottom-full mb-1 z-50 bg-gray-850 border border-gray-700 rounded-lg shadow-xl overflow-hidden min-w-48 max-h-52 overflow-y-auto">
+              class="absolute left-0 bottom-full mb-1 z-50 bg-gray-900 border border-gray-700 rounded-lg shadow-xl overflow-hidden min-w-48 max-h-52 overflow-y-auto">
               <button
                 v-for="(item, idx) in assignModalMention.items.value"
                 :key="item.value"
@@ -936,16 +936,13 @@
             </svg>
             Branch <span class="text-gray-600">(optional)</span>
           </label>
-          <input
+          <BranchSelect
             v-model="assignAgentModal.branch"
-            type="text"
-            list="assign-agent-branch-list"
+            :branches="gitStore.branches"
+            :allow-free-form="true"
+            :full="true"
             placeholder="default branch"
-            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-brand-500 font-mono"
           />
-          <datalist id="assign-agent-branch-list">
-            <option v-for="b in gitStore.branches" :key="b.name" :value="b.name" />
-          </datalist>
           <p class="text-xs text-gray-600 mt-1">Agent will start from this branch instead of the default.</p>
         </div>
         <div class="flex gap-3">

@@ -27,7 +27,7 @@
 
     <!-- Agents Grid -->
     <div v-else class="space-y-3">
-      <div v-for="agent in store.agents" :key="agent.id"
+      <div v-for="{ agent, tools } in agentsWithTools" :key="agent.id"
         class="bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors">
         <div class="flex items-start justify-between">
           <NuxtLink :to="`/agents/${agent.id}`" class="flex items-center gap-3 flex-1 min-w-0 mr-4">
@@ -75,12 +75,12 @@
           <div class="bg-gray-800/40 rounded-lg p-3">
             <p class="text-xs text-gray-500 uppercase tracking-wide mb-2">Allowed Tools</p>
             <div class="flex flex-wrap gap-1">
-              <span v-for="tool in (agent.allowedTools ?? []).slice(0, 4)" :key="tool"
+              <span v-for="tool in tools.slice(0, 4)" :key="tool"
                 class="text-xs bg-blue-900/30 text-blue-300 px-1.5 py-0.5 rounded font-mono">{{ tool }}</span>
-              <span v-if="(agent.allowedTools ?? []).length > 4" class="text-xs text-gray-500">
-                +{{ agent.allowedTools.length - 4 }} more
+              <span v-if="tools.length > 4" class="text-xs text-gray-500">
+                +{{ tools.length - 4 }} more
               </span>
-              <span v-if="!agent.allowedTools?.length" class="text-xs text-gray-600">None</span>
+              <span v-if="!tools.length" class="text-xs text-gray-600">None</span>
             </div>
           </div>
           <div class="bg-gray-800/40 rounded-lg p-3">
@@ -188,6 +188,21 @@ import { RunnerTypeLabels } from '~/types'
 
 const store = useAgentsStore()
 const orgsStore = useOrgsStore()
+
+function parseTools(value: string | string[] | undefined): string[] {
+  if (!value) return []
+  if (Array.isArray(value)) return value
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+const agentsWithTools = computed(() =>
+  store.agents.map(a => ({ agent: a, tools: parseTools(a.allowedTools) }))
+)
 const showModal = ref(false)
 const editingId = ref<string | null>(null)
 const toolsInput = ref('')
