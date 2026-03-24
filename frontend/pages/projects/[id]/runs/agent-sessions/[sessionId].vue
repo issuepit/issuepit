@@ -899,7 +899,7 @@ const agentImageOptions = computed(() => {
 })
 
 // Default to the first (stable/latest) option
-const retryDockerImage = ref(agentImageOptions.value[0].value)
+const retryDockerImage = ref(DEFAULT_AGENT_IMAGE)
 const retryCustomDockerImage = ref('')
 const retryKeepContainer = ref(false)
 
