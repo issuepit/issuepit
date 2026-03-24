@@ -204,6 +204,8 @@ export interface Project {
   issueNumberOffset: number
   createdAt: string
   updatedAt: string
+  /** Whether the current user has pinned this project. */
+  isPinned?: boolean
 }
 
 export interface IssueAssignee {

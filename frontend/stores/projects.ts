@@ -98,6 +98,28 @@ export const useProjectsStore = defineStore('projects', () => {
     }
   }
 
+  async function pinProject(id: string) {
+    try {
+      await api.post(`/api/projects/${id}/pin`, {})
+      const idx = projects.value.findIndex(p => p.id === id)
+      if (idx !== -1) projects.value[idx] = { ...projects.value[idx], isPinned: true }
+      if (currentProject.value?.id === id) currentProject.value = { ...currentProject.value, isPinned: true }
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to pin project'
+    }
+  }
+
+  async function unpinProject(id: string) {
+    try {
+      await api.del(`/api/projects/${id}/pin`)
+      const idx = projects.value.findIndex(p => p.id === id)
+      if (idx !== -1) projects.value[idx] = { ...projects.value[idx], isPinned: false }
+      if (currentProject.value?.id === id) currentProject.value = { ...currentProject.value, isPinned: false }
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : 'Failed to unpin project'
+    }
+  }
+
   return {
     projects,
     currentProject,
@@ -108,6 +130,8 @@ export const useProjectsStore = defineStore('projects', () => {
     createProject,
     updateProject,
     deleteProject,
-    moveProject
+    moveProject,
+    pinProject,
+    unpinProject
   }
 })
