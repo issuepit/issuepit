@@ -58,8 +58,9 @@ public class Issue
     public int? ExternalId { get; set; }
 
     /// <summary>
-    /// Identifies the external source system (e.g. "github", "jira").
-    /// Paired with <see cref="ExternalId"/> to form the primary display ID (e.g. "#GH-69").
+    /// Identifies the external source system. Use "github" for GitHub imports; for other
+    /// trackers (e.g. Jira) this holds the project slug used as a display prefix (e.g. "PROJ").
+    /// GitHub issues have no slug, so they display as bare numbers (e.g. "#69").
     /// </summary>
     [MaxLength(100)]
     public string? ExternalSource { get; set; }
