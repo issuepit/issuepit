@@ -1140,7 +1140,7 @@ public class DockerAgentRuntime(
     }
 
     /// <summary>
-    /// Runs <c>opencode agent</c> inside the container and emits the output as log lines.
+    /// Runs <c>opencode agent list</c> inside the container and emits the output as log lines.
     /// Best-effort: failure is non-fatal and only logs a warning.
     /// </summary>
     private async Task LogOpenCodeAgentsAsync(
@@ -1148,10 +1148,10 @@ public class DockerAgentRuntime(
         Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {
-        await onLogLine("[INFO] opencode agents (opencode agent):", LogStream.Stdout);
+        await onLogLine("[INFO] opencode agents (opencode agent list):", LogStream.Stdout);
         try
         {
-            await ExecCommandAsync(containerId, ["opencode", "agent"],
+            await ExecCommandAsync(containerId, ["opencode", "agent", "list"],
                 async (line, stream) => await onLogLine($"[INFO]   {line}", stream),
                 cancellationToken, workingDir: "/");
         }
