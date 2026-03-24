@@ -524,6 +524,9 @@ public class DockerAgentRuntime(
                     pluginsJson: null,
                     onLogLine: onLogLine,
                     cancellationToken: cancellationToken);
+
+                // Step D2: Log which agents are configured in opencode for diagnostics.
+                await LogOpenCodeAgentsAsync(container.ID, onLogLine, cancellationToken);
             }
 
             // Step E (HTTP server mode only): Start opencode as a background process via exec.
@@ -1126,6 +1129,32 @@ public class DockerAgentRuntime(
             await onLogLine($"[WARN] Could not verify opencode session existence: {ex.Message}", LogStream.Stderr);
         }
         return found;
+    }
+
+    /// <summary>
+    /// Runs <c>opencode agent</c> inside the container and emits the output as log lines.
+    /// Best-effort: failure is non-fatal and only logs a warning.
+    /// </summary>
+    private async Task LogOpenCodeAgentsAsync(
+        string containerId,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        await onLogLine("[INFO] opencode agents (opencode agent):", LogStream.Stdout);
+        try
+        {
+            await ExecCommandAsync(containerId, ["opencode", "agent"],
+                async (line, stream) => await onLogLine($"[INFO]   {line}", stream),
+                cancellationToken, workingDir: "/");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            await onLogLine($"[WARN] Could not list opencode agents: {ex.Message}", LogStream.Stderr);
+        }
     }
 
     /// <summary>
