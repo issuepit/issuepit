@@ -107,5 +107,11 @@ public class Project
     [MaxLength(7)]
     public string? Color { get; set; }
 
+    /// <summary>
+    /// When <c>true</c>, single-file artifacts whose content is a supported type (pdf, png) are
+    /// returned as the raw file on download instead of a ZIP archive.
+    /// </summary>
+    public bool UnwrapSingleFileArtifacts { get; set; } = false;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

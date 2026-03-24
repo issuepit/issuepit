@@ -144,6 +144,7 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
         project.LocalRepositories = updated.LocalRepositories;
         project.SkipSteps = updated.SkipSteps;
         project.RequiresRunApproval = updated.RequiresRunApproval;
+        project.UnwrapSingleFileArtifacts = updated.UnwrapSingleFileArtifacts;
         project.IssueKey = string.IsNullOrWhiteSpace(updated.IssueKey) ? null : updated.IssueKey.Trim().ToUpperInvariant();
         project.IssueNumberOffset = updated.IssueNumberOffset;
         project.Color = updated.Color;

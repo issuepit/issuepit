@@ -3,6 +3,7 @@ using System;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace IssuePit.Core.Migrations
 {
     [DbContext(typeof(IssuePitDbContext))]
-    partial class IssuePitDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260324045742_AddProjectUnwrapSingleFileArtifacts")]
+    partial class AddProjectUnwrapSingleFileArtifacts
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -373,10 +376,6 @@ namespace IssuePit.Core.Migrations
                     b.Property<string>("StorageKey")
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
-
-                    b.Property<string>("UnwrappedContentType")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
 
                     b.HasKey("Id");
 
@@ -1190,12 +1189,6 @@ namespace IssuePit.Core.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int?>("ExternalId")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid?>("ExternalSourceId")
-                        .HasColumnType("uuid");
-
                     b.Property<string>("GitBranch")
                         .HasColumnType("text");
 
@@ -1241,8 +1234,6 @@ namespace IssuePit.Core.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("ExternalSourceId");
 
                     b.HasIndex("MilestoneId");
 
@@ -1396,35 +1387,6 @@ namespace IssuePit.Core.Migrations
                     b.HasIndex("IssueId");
 
                     b.ToTable("issue_events");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.IssueExternalSource", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Slug")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("Type")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("Url")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProjectId");
-
-                    b.ToTable("issue_external_sources");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.IssueGitMapping", b =>
@@ -3202,10 +3164,6 @@ namespace IssuePit.Core.Migrations
 
             modelBuilder.Entity("IssuePit.Core.Entities.Issue", b =>
                 {
-                    b.HasOne("IssuePit.Core.Entities.IssueExternalSource", "ExternalSource")
-                        .WithMany()
-                        .HasForeignKey("ExternalSourceId");
-
                     b.HasOne("IssuePit.Core.Entities.Milestone", "Milestone")
                         .WithMany()
                         .HasForeignKey("MilestoneId");
@@ -3219,8 +3177,6 @@ namespace IssuePit.Core.Migrations
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("ExternalSource");
 
                     b.Navigation("Milestone");
 
@@ -3307,17 +3263,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("ActorUser");
 
                     b.Navigation("Issue");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.IssueExternalSource", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Project");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.IssueGitMapping", b =>
