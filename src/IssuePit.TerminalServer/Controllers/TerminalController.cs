@@ -3,13 +3,13 @@ using System.Text;
 using System.Text.Json;
 using Docker.DotNet;
 using Docker.DotNet.Models;
-using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Enums;
+using IssuePit.TerminalServer.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
-namespace IssuePit.Api.Controllers;
+namespace IssuePit.TerminalServer.Controllers;
 
 /// <summary>
 /// Provides a live terminal WebSocket endpoint for manual-mode agent sessions.
@@ -129,10 +129,11 @@ public class TerminalController(
                 containerId,
                 new ContainerExecCreateParameters
                 {
+                    Cmd = [shell],
                     AttachStdin = true,
                     AttachStdout = true,
                     AttachStderr = true,
-                    Tty = true,
+                    TTY = true,
                     WorkingDir = "/workspace",
                     Env = ["TERM=xterm-256color"],
                 },
@@ -175,9 +176,12 @@ public class TerminalController(
             {
                 while (!cts.Token.IsCancellationRequested && webSocket.State == WebSocketState.Open)
                 {
-                    int count = await execStream.ReadAsync(buffer, 0, buffer.Length, cts.Token);
-                    if (count == 0)
+                    // In TTY mode the output is a raw byte stream — ReadOutputAsync reads it
+                    // treating all bytes as stdout (no multiplex header is present with TTY=true).
+                    var readResult = await execStream.ReadOutputAsync(buffer, 0, buffer.Length, cts.Token);
+                    if (readResult.EOF)
                         break;
+                    int count = (int)readResult.Count;
 
                     await webSocket.SendAsync(
                         new ArraySegment<byte>(buffer, 0, count),
@@ -260,10 +264,6 @@ public class TerminalController(
             {
                 var cols = doc.RootElement.GetProperty("cols").GetInt32();
                 var rows = doc.RootElement.GetProperty("rows").GetInt32();
-                // Resize the PTY for this exec session. In Docker.DotNet.Enhanced the exec resize
-                // endpoint is exposed as ResizeContainerTtyAsync (reusing the same ContainerResizeParameters).
-                // The underlying Docker REST endpoint differs: /exec/{id}/resize vs /containers/{id}/resize.
-                // We call it via a raw HTTP request to ensure correct routing.
                 await ResizeExecTtyAsync(execId, cols, rows, cancellationToken);
             }
         }
@@ -282,10 +282,8 @@ public class TerminalController(
     {
         try
         {
-            // Access the underlying HttpClient via reflection or use the Docker client's
-            // Containers.ResizeContainerTtyAsync which calls the same endpoint pattern.
-            // As a best-effort approach, use Containers.ResizeContainerTtyAsync with the exec ID
-            // which maps to POST /containers/{id}/resize — Docker accepts exec IDs here too in some versions.
+            // Best-effort: use Containers.ResizeContainerTtyAsync with the exec ID.
+            // Docker accepts exec IDs on the container resize endpoint in some versions.
             await dockerClient.Containers.ResizeContainerTtyAsync(
                 execId,
                 new ContainerResizeParameters { Width = (uint)cols, Height = (uint)rows },
@@ -329,7 +327,7 @@ public class TerminalController(
             var result = await stream.ReadOutputAsync(buf, 0, buf.Length, cancellationToken);
             if (result.EOF) break;
             if (result.Count > 0)
-                sb.Append(Encoding.UTF8.GetString(buf, 0, result.Count));
+                sb.Append(Encoding.UTF8.GetString(buf, 0, (int)result.Count));
         }
         return sb.ToString().Trim();
     }

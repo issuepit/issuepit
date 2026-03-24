@@ -75,6 +75,20 @@ services:
       kafka:
         condition: service_healthy
 
+  terminal-server:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.terminal-server
+    ports:
+      - "5010:8080"
+    environment:
+      ConnectionStrings__issuepit-db: "Host=postgres;Database=issuepit;Username=issuepit;Password=issuepit"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   cicd-client:
     build:
       context: .

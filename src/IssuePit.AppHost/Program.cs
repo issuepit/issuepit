@@ -366,6 +366,12 @@ var mcpServer = builder.AddProject<Projects.IssuePit_McpServer>("mcp-server")
 // Allow the API to discover and call the MCP server (e.g. for issue enhancement).
 api.WithEnvironment("McpServer__BaseUrl", mcpServer.GetEndpoint("http"));
 
+// Terminal server: provides live WebSocket terminal sessions into running agent containers.
+// Needs access to the database (to resolve sessions) and the Docker daemon socket (to exec into containers).
+var terminalServer = builder.AddProject<Projects.IssuePit_TerminalServer>("terminal-server")
+    .WithReference(postgresDb)
+    .WaitForCompletion(migrator);
+
 var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("execution-client")
     .WithReference(postgresDb)
     .WithReference(postgresServer)
@@ -434,6 +440,7 @@ if (!string.IsNullOrEmpty(e2eHelperActImage))
 frontend
     .WithEnvironment("NUXT_PUBLIC_API_BASE", api.GetEndpoint("http"))
     .WithEnvironment("NUXT_PUBLIC_MCP_BASE", mcpServer.GetEndpoint("http"))
+    .WithEnvironment("NUXT_PUBLIC_TERMINAL_BASE", terminalServer.GetEndpoint("http"))
     .WaitFor(api)
     .WithUrlForEndpoint("http", u =>
     {
