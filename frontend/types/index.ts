@@ -202,6 +202,8 @@ export interface Project {
   issueKey?: string | null
   /** Offset added to issue numbers when displayed in the UI. Defaults to 0. */
   issueNumberOffset: number
+  /** Whether this project is pinned by the current user. */
+  isPinned: boolean
   createdAt: string
   updatedAt: string
 }

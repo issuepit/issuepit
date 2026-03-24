@@ -26,48 +26,125 @@
     </div>
 
     <!-- Grid -->
-    <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      <NuxtLink v-for="project in store.projects" :key="project.id"
-        :to="`/projects/${project.id}`"
-        class="bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors group">
-        <div class="flex items-start gap-3 mb-3">
-          <div :style="{ background: project.color || '#4c6ef5' }"
-            class="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-lg shrink-0">
-            {{ project.name.charAt(0).toUpperCase() }}
-          </div>
-          <div class="flex-1 min-w-0">
-            <h3 class="font-semibold text-white group-hover:text-brand-300 transition-colors truncate">
-              {{ project.name }}
-            </h3>
-            <p class="text-xs text-gray-500">/{{ project.slug }}</p>
-          </div>
-          <span v-if="project.isPrivate"
-            class="text-xs bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">Private</span>
-        </div>
-        <p v-if="project.description" class="text-sm text-gray-400 mb-4 line-clamp-2">
-          {{ project.description }}
-        </p>
-        <div class="flex items-center gap-4 text-xs text-gray-500">
-          <span>{{ project.issueCount }} issues</span>
-          <span>{{ project.memberCount }} members</span>
-        </div>
-      </NuxtLink>
-
-      <!-- Empty state -->
-      <div v-if="!store.loading && store.projects.length === 0"
-        class="col-span-full flex flex-col items-center justify-center py-20 text-center">
-        <div class="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mb-4">
-          <svg class="w-8 h-8 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-              d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+    <div v-else>
+      <!-- Pinned projects -->
+      <div v-if="pinnedProjects.length > 0" class="mb-8">
+        <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5 text-brand-400" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
           </svg>
+          Pinned
+        </h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div
+            v-for="project in pinnedProjects"
+            :key="project.id"
+            class="relative group/card"
+          >
+            <NuxtLink
+              :to="`/projects/${project.id}`"
+              class="bg-gray-900 border border-brand-800/50 rounded-xl p-5 hover:border-brand-700/70 transition-colors group block">
+              <div class="flex items-start gap-3 mb-3">
+                <div :style="{ background: project.color || '#4c6ef5' }"
+                  class="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-lg shrink-0">
+                  {{ project.name.charAt(0).toUpperCase() }}
+                </div>
+                <div class="flex-1 min-w-0">
+                  <h3 class="font-semibold text-white group-hover:text-brand-300 transition-colors truncate">
+                    {{ project.name }}
+                  </h3>
+                  <p class="text-xs text-gray-500">/{{ project.slug }}</p>
+                </div>
+                <span v-if="project.isPrivate"
+                  class="text-xs bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">Private</span>
+              </div>
+              <p v-if="project.description" class="text-sm text-gray-400 mb-4 line-clamp-2">
+                {{ project.description }}
+              </p>
+              <div class="flex items-center gap-4 text-xs text-gray-500">
+                <span>{{ project.issueCount }} issues</span>
+                <span>{{ project.memberCount }} members</span>
+              </div>
+            </NuxtLink>
+            <button
+              class="absolute top-3 right-3 opacity-0 group-hover/card:opacity-100 transition-opacity p-1 rounded hover:bg-gray-700 text-brand-400"
+              title="Unpin project"
+              @click.prevent="store.unpinProject(project.id)"
+            >
+              <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
+              </svg>
+            </button>
+          </div>
         </div>
-        <p class="text-gray-400 font-medium">No projects yet</p>
-        <p class="text-gray-600 text-sm mt-1">Create your first project to get started</p>
-        <button @click="showCreate = true"
-          class="mt-4 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-          Create Project
-        </button>
+      </div>
+
+      <!-- All projects -->
+      <div>
+        <h2 v-if="pinnedProjects.length > 0" class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+          All Projects
+        </h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div
+            v-for="project in store.projects"
+            :key="project.id"
+            class="relative group/card"
+          >
+            <NuxtLink
+              :to="`/projects/${project.id}`"
+              class="bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors group block">
+              <div class="flex items-start gap-3 mb-3">
+                <div :style="{ background: project.color || '#4c6ef5' }"
+                  class="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-lg shrink-0">
+                  {{ project.name.charAt(0).toUpperCase() }}
+                </div>
+                <div class="flex-1 min-w-0">
+                  <h3 class="font-semibold text-white group-hover:text-brand-300 transition-colors truncate">
+                    {{ project.name }}
+                  </h3>
+                  <p class="text-xs text-gray-500">/{{ project.slug }}</p>
+                </div>
+                <span v-if="project.isPrivate"
+                  class="text-xs bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">Private</span>
+              </div>
+              <p v-if="project.description" class="text-sm text-gray-400 mb-4 line-clamp-2">
+                {{ project.description }}
+              </p>
+              <div class="flex items-center gap-4 text-xs text-gray-500">
+                <span>{{ project.issueCount }} issues</span>
+                <span>{{ project.memberCount }} members</span>
+              </div>
+            </NuxtLink>
+            <button
+              class="absolute top-3 right-3 opacity-0 group-hover/card:opacity-100 transition-opacity p-1 rounded hover:bg-gray-700"
+              :class="project.isPinned ? 'text-brand-400' : 'text-gray-500'"
+              :title="project.isPinned ? 'Unpin project' : 'Pin project'"
+              @click.prevent="project.isPinned ? store.unpinProject(project.id) : store.pinProject(project.id)"
+            >
+              <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path v-if="project.isPinned" d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
+                <path v-else d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z" opacity="0.4"/>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Empty state -->
+          <div v-if="!store.loading && store.projects.length === 0"
+            class="col-span-full flex flex-col items-center justify-center py-20 text-center">
+            <div class="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mb-4">
+              <svg class="w-8 h-8 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                  d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+              </svg>
+            </div>
+            <p class="text-gray-400 font-medium">No projects yet</p>
+            <p class="text-gray-600 text-sm mt-1">Create your first project to get started</p>
+            <button @click="showCreate = true"
+              class="mt-4 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+              Create Project
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -129,6 +206,8 @@ const store = useProjectsStore()
 const orgsStore = useOrgsStore()
 const showCreate = ref(false)
 const form = reactive({ name: '', slug: '', description: '', orgId: '', issueKey: '' })
+
+const pinnedProjects = computed(() => store.projects.filter(p => p.isPinned))
 
 function generateIssueKey(name: string): string {
   const words = name.split(/[\s\-_]+/).filter(Boolean)

@@ -2715,6 +2715,31 @@ namespace IssuePit.Core.Migrations
                     b.ToTable("users");
                 });
 
+            modelBuilder.Entity("IssuePit.Core.Entities.UserPinnedProject", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("PinnedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("UserId", "ProjectId")
+                        .IsUnique();
+
+                    b.ToTable("user_pinned_projects");
+                });
+
             modelBuilder.Entity("issue_labels", b =>
                 {
                     b.Property<Guid>("IssueId")
@@ -3839,6 +3864,25 @@ namespace IssuePit.Core.Migrations
                         .IsRequired();
 
                     b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("IssuePit.Core.Entities.UserPinnedProject", b =>
+                {
+                    b.HasOne("IssuePit.Core.Entities.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("IssuePit.Core.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Project");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("issue_labels", b =>

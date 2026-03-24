@@ -45,14 +45,29 @@ stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
           <div class="h-3 bg-gray-800 rounded animate-pulse w-1/2"/>
         </div>
         <template v-else>
-          <SidebarNavLink
-            v-for="project in projects"
+          <div
+            v-for="project in sortedProjects"
             :key="project.id"
-            :to="getProjectLink(project.id)"
-            icon="project-item"
-            :label="project.name"
-            :color="project.color"
-          />
+            class="group/proj relative flex items-center"
+          >
+            <SidebarNavLink
+              :to="getProjectLink(project.id)"
+              icon="project-item"
+              :label="project.name"
+              :color="project.color"
+              class="flex-1 min-w-0"
+            />
+            <button
+              class="absolute right-1 opacity-0 group-hover/proj:opacity-100 transition-opacity p-0.5 rounded hover:bg-gray-700"
+              :title="project.isPinned ? 'Unpin project' : 'Pin project'"
+              @click.prevent="togglePin(project)"
+            >
+              <svg class="w-3 h-3" :class="project.isPinned ? 'text-brand-400' : 'text-gray-500'" fill="currentColor" viewBox="0 0 24 24">
+                <path v-if="project.isPinned" d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
+                <path v-else d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z" opacity="0.4"/>
+              </svg>
+            </button>
+          </div>
           <div v-if="projects.length === 0" class="px-2 py-1 text-xs text-gray-600">No projects</div>
           <NuxtLink to="/projects" class="flex items-center gap-2 px-2 py-1 text-xs text-gray-500 hover:text-gray-400 rounded transition-colors">
             All projects →
@@ -263,6 +278,21 @@ async function loadProjects() {
     projectsLoaded.value = true
   } finally {
     projectsLoading.value = false
+  }
+}
+
+const sortedProjects = computed(() =>
+  [...projects.value].sort((a, b) => {
+    if (a.isPinned === b.isPinned) return 0
+    return a.isPinned ? -1 : 1
+  })
+)
+
+async function togglePin(project: Project) {
+  if (project.isPinned) {
+    await projectsStore.unpinProject(project.id)
+  } else {
+    await projectsStore.pinProject(project.id)
   }
 }
 

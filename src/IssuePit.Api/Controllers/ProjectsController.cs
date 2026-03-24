@@ -16,10 +16,11 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
     public async Task<IActionResult> GetProjects()
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
+        var userId = ctx.CurrentUser?.Id;
         var projects = await ProjectsQuery()
             .Where(p => p.Organization.TenantId == ctx.CurrentTenant.Id)
             .OrderBy(p => p.CreatedAt)
-            .Select(ProjectDto.Selector(db))
+            .Select(ProjectDto.Selector(db, userId))
             .ToListAsync();
         return Ok(projects);
     }
@@ -28,9 +29,10 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
     public async Task<IActionResult> GetProject(Guid id)
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
+        var userId = ctx.CurrentUser?.Id;
         var project = await ProjectsQuery()
             .Where(p => p.Id == id && p.Organization.TenantId == ctx.CurrentTenant.Id)
-            .Select(ProjectDto.Selector(db))
+            .Select(ProjectDto.Selector(db, userId))
             .FirstOrDefaultAsync();
         return project is null ? NotFound() : Ok(project);
     }
@@ -39,9 +41,10 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
     public async Task<IActionResult> GetProjectBySlug(string slug)
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
+        var userId = ctx.CurrentUser?.Id;
         var project = await ProjectsQuery()
             .Where(p => p.Slug == slug && p.Organization.TenantId == ctx.CurrentTenant.Id)
-            .Select(ProjectDto.Selector(db))
+            .Select(ProjectDto.Selector(db, userId))
             .FirstOrDefaultAsync();
         return project is null ? NotFound() : Ok(project);
     }
@@ -178,6 +181,36 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
         project.OrgId = req.OrgId;
         await db.SaveChangesAsync();
         return Ok(project);
+    }
+
+    [HttpPost("{id:guid}/pin")]
+    public async Task<IActionResult> PinProject(Guid id)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        if (ctx.CurrentUser is null) return Unauthorized();
+        var project = await db.Projects
+            .Include(p => p.Organization)
+            .FirstOrDefaultAsync(p => p.Id == id && p.Organization.TenantId == ctx.CurrentTenant.Id);
+        if (project is null) return NotFound();
+        var alreadyPinned = await db.UserPinnedProjects
+            .AnyAsync(pp => pp.UserId == ctx.CurrentUser.Id && pp.ProjectId == id);
+        if (alreadyPinned) return Conflict();
+        db.UserPinnedProjects.Add(new UserPinnedProject { UserId = ctx.CurrentUser.Id, ProjectId = id, PinnedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpDelete("{id:guid}/pin")]
+    public async Task<IActionResult> UnpinProject(Guid id)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        if (ctx.CurrentUser is null) return Unauthorized();
+        var pin = await db.UserPinnedProjects
+            .FirstOrDefaultAsync(pp => pp.UserId == ctx.CurrentUser.Id && pp.ProjectId == id);
+        if (pin is null) return NotFound();
+        db.UserPinnedProjects.Remove(pin);
+        await db.SaveChangesAsync();
+        return NoContent();
     }
 
     [HttpGet("{id:guid}/agent-sessions")]
@@ -510,9 +543,10 @@ public record ProjectDto(
     int OpenMergeRequestCount,
     string? IssueKey,
     int IssueNumberOffset,
-    string? Color)
+    string? Color,
+    bool IsPinned)
 {
-    public static Expression<Func<Project, ProjectDto>> Selector(IssuePitDbContext db) =>
+    public static Expression<Func<Project, ProjectDto>> Selector(IssuePitDbContext db, Guid? userId) =>
         p => new ProjectDto(
             p.Id, p.OrgId, p.Name, p.Slug, p.Description, p.GitHubRepo, p.CreatedAt,
             db.Issues.Count(i => i.ProjectId == p.Id),
@@ -528,5 +562,6 @@ public record ProjectDto(
             db.MergeRequests.Count(mr => mr.ProjectId == p.Id && mr.Status == MergeRequestStatus.Open),
             p.IssueKey,
             p.IssueNumberOffset,
-            p.Color);
+            p.Color,
+            userId != null && db.UserPinnedProjects.Any(pp => pp.UserId == userId && pp.ProjectId == p.Id));
 }
