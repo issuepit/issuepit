@@ -197,6 +197,7 @@ export interface Project {
   localRepositories?: string | null
   skipSteps?: string | null
   requiresRunApproval: boolean
+  unwrapSingleFileArtifacts: boolean
   openMergeRequestCount: number
   /** Short project key used as prefix for issue IDs in the UI (e.g. "IP" yields "IP-123"). */
   issueKey?: string | null

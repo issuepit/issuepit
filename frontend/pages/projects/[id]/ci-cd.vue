@@ -126,6 +126,21 @@
                   class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" />
               </button>
             </div>
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="block text-sm font-medium text-gray-300">Unwrap single-file artifacts</label>
+                <p class="text-xs text-gray-500 mt-0.5">When an artifact contains exactly one supported file (PDF, PNG), download it directly instead of as a ZIP archive.</p>
+              </div>
+              <button
+                type="button"
+                :class="ciCdForm.unwrapSingleFileArtifacts ? 'bg-brand-600' : 'bg-gray-700'"
+                class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-gray-900"
+                @click="ciCdForm.unwrapSingleFileArtifacts = !ciCdForm.unwrapSingleFileArtifacts">
+                <span
+                  :class="ciCdForm.unwrapSingleFileArtifacts ? 'translate-x-6' : 'translate-x-1'"
+                  class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -295,6 +310,7 @@ const ciCdForm = reactive({
   localRepositories: '' as string,
   skipSteps: '' as string,
   requiresRunApproval: false,
+  unwrapSingleFileArtifacts: false,
 })
 
 const saving = ref(false)
@@ -329,6 +345,7 @@ onMounted(async () => {
     ciCdForm.localRepositories = p.localRepositories || ''
     ciCdForm.skipSteps = p.skipSteps || ''
     ciCdForm.requiresRunApproval = p.requiresRunApproval ?? false
+    ciCdForm.unwrapSingleFileArtifacts = p.unwrapSingleFileArtifacts ?? false
   }
 })
 
@@ -353,6 +370,7 @@ async function save() {
       localRepositories: ciCdForm.localRepositories || null,
       skipSteps: ciCdForm.skipSteps || null,
       requiresRunApproval: ciCdForm.requiresRunApproval,
+      unwrapSingleFileArtifacts: ciCdForm.unwrapSingleFileArtifacts,
     })
     savedOk.value = true
     setTimeout(() => { savedOk.value = false }, 3000)
