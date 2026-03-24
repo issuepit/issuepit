@@ -72,6 +72,44 @@ public class GitHubSyncService(
 
             if (syncContent.HasFlag(GitHubSyncContent.Issues))
             {
+                // Require the project to have a short key (IssueKey) configured so that
+                // native IssuePit numbers and external GitHub numbers can coexist in the UI.
+                var projectIssueKey = await db.Projects
+                    .Where(p => p.Id == projectId)
+                    .Select(p => p.IssueKey)
+                    .FirstOrDefaultAsync(ct);
+
+                if (string.IsNullOrWhiteSpace(projectIssueKey))
+                {
+                    await FailRunAsync(run,
+                        "GitHub issue import requires a project key (short slug) to be configured. " +
+                        "Set a Project Key in Project Settings → Issue ID Format first, then re-run the sync.", ct);
+                    return run;
+                }
+
+                // Ensure a single IssueExternalSource record exists for this project + GitHub repo.
+                // This is created once and reused for all imported issues.
+                var githubUrl = $"https://github.com/{repo}";
+                var externalSource = await db.IssueExternalSources
+                    .FirstOrDefaultAsync(s => s.ProjectId == projectId && s.Type == "github", ct);
+                if (externalSource is null)
+                {
+                    externalSource = new IssueExternalSource
+                    {
+                        Id = Guid.NewGuid(),
+                        ProjectId = projectId,
+                        Type = "github",
+                        Slug = null, // GitHub has no project-level issue prefix
+                        Url = githubUrl,
+                    };
+                    db.IssueExternalSources.Add(externalSource);
+                    await db.SaveChangesAsync(ct);
+                }
+                else if (externalSource.Url != githubUrl)
+                {
+                    externalSource.Url = githubUrl;
+                    await db.SaveChangesAsync(ct);
+                }
                 // Fetch issues — throws GitHubApiException when the API returns an error.
                 List<GitHubIssueDto> ghIssues;
                 List<GitHubPullRequestDto> ghPrs;
@@ -123,6 +161,8 @@ public class GitHubSyncService(
                                 Type = IssueType.Issue,
                                 GitHubIssueNumber = ghIssue.Number,
                                 GitHubIssueUrl = ghIssue.HtmlUrl,
+                                ExternalId = ghIssue.Number,
+                                ExternalSourceId = externalSource.Id,
                                 CreatedAt = DateTime.UtcNow,
                                 UpdatedAt = DateTime.UtcNow,
                             });

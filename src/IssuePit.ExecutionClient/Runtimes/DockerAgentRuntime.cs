@@ -235,7 +235,9 @@ public class DockerAgentRuntime(
         // ToDockerHostUrl converts localhost → host.docker.internal so the container reaches T
         // via 172.17.0.1:{T}. The MCP server binds to 0.0.0.0:{T} via ListenAnyIP in Program.cs.
         var issuePitMcpUrl = ToDockerHostUrl(configuration["McpServer:BaseUrl"]);
-        var env = AgentEnvironmentBuilder.Build(session, agent, issue, credentials, gitRepository, issuePitMcpUrl);
+        var env = AgentEnvironmentBuilder.Build(session, agent, issue, credentials, gitRepository,
+            cloneRepository: cloneRepo != gitRepository ? cloneRepo : null,
+            issuePitMcpUrl: issuePitMcpUrl);
         if (!string.IsNullOrWhiteSpace(issuePitMcpUrl))
             await onLogLine($"[DEBUG] IssuePit MCP   : {issuePitMcpUrl}", LogStream.Stdout);
 
@@ -479,6 +481,11 @@ public class DockerAgentRuntime(
                     && !string.Equals(issue.GitBranch, cloneRepo.DefaultBranch, StringComparison.OrdinalIgnoreCase)
                     ? issue.GitBranch
                     : GenerateFeatureBranchName(issue.Number, issue.Title ?? string.Empty);
+                // Full-history clone is required when the push target (Working remote) differs from the
+                // clone source (e.g. Release/upstream remote with the most commits). Without it git push
+                // fails with "remote: fatal: did not receive expected object" because a shallow clone's
+                // parent commit is not present in the working remote's object store.
+                var fullHistory = gitRepository is not null && gitRepository.Id != cloneRepo.Id;
                 await CloneWorkspaceAsync(
                     container.ID,
                     cloneRepo.RemoteUrl,
@@ -487,7 +494,8 @@ public class DockerAgentRuntime(
                     cloneRepo.AuthUsername,
                     cloneRepo.AuthToken,
                     onLogLine,
-                    cancellationToken);
+                    cancellationToken,
+                    fullHistory: fullHistory);
 
                 await SetupGitIdentityAndBranchAsync(container.ID, featureBranch, onLogLine, cancellationToken);
                 await InstallGitPushWrapperAsync(container.ID, onLogLine, cancellationToken);
@@ -524,6 +532,9 @@ public class DockerAgentRuntime(
                     pluginsJson: null,
                     onLogLine: onLogLine,
                     cancellationToken: cancellationToken);
+
+                // Step D2: Log which agents are configured in opencode for diagnostics.
+                await LogOpenCodeAgentsAsync(container.ID, onLogLine, cancellationToken);
             }
 
             // Step E (HTTP server mode only): Start opencode as a background process via exec.
@@ -1129,6 +1140,32 @@ public class DockerAgentRuntime(
     }
 
     /// <summary>
+    /// Runs <c>opencode agent list</c> inside the container and emits the output as log lines.
+    /// Best-effort: failure is non-fatal and only logs a warning.
+    /// </summary>
+    private async Task LogOpenCodeAgentsAsync(
+        string containerId,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        await onLogLine("[INFO] opencode agents (opencode agent list):", LogStream.Stdout);
+        try
+        {
+            await ExecCommandAsync(containerId, ["opencode", "agent", "list"],
+                async (line, stream) => await onLogLine($"[INFO]   {line}", stream),
+                cancellationToken, workingDir: "/");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            await onLogLine($"[WARN] Could not list opencode agents: {ex.Message}", LogStream.Stderr);
+        }
+    }
+
+    /// <summary>
     /// Runs <c>git status --porcelain</c> in the workspace and emits
     /// <c>[ISSUEPIT:HAS_UNCOMMITTED_CHANGES]=true</c> when any uncommitted files are found.
     /// </summary>
@@ -1253,6 +1290,26 @@ public class DockerAgentRuntime(
                     await onLogLine(
                         "[entrypoint] Push failed (allowed — credentials may not be configured or push was rejected)",
                         LogStream.Stdout);
+                    // Log a diagnostic hint when pushing to a URL that differs from the in-container origin.
+                    // This is the cross-remote push scenario (Working ≠ clone source): the most common
+                    // failure mode is a shallow clone whose parent objects the working remote does not have.
+                    var inContainerOrigin = await ExecReadOutputAsync(
+                        containerId,
+                        ["/bin/sh", "-c", "git remote get-url origin 2>/dev/null || echo ''"],
+                        cancellationToken);
+                    var originUrl = inContainerOrigin.Trim().TrimEnd('/');
+                    var pushUrl = gitRepository?.RemoteUrl?.TrimEnd('/');
+                    if (!string.IsNullOrEmpty(pushUrl) && !string.IsNullOrEmpty(originUrl)
+                        && !originUrl.Equals(pushUrl, StringComparison.OrdinalIgnoreCase))
+                    {
+                        await onLogLine(
+                            $"[DEBUG] Push target ({pushUrl}) differs from in-container origin ({originUrl}). " +
+                            "If the error above is 'remote: fatal: did not receive expected object', " +
+                            "this is a shallow-clone/cross-remote push failure. " +
+                            "Verify the working remote has a base branch in common with the clone source, " +
+                            "or ensure both remotes share the same git history.",
+                            LogStream.Stdout);
+                    }
                     // Emit a structured marker so IssueWorker can trigger a .git archive upload for recovery.
                     await onLogLine(GitPushFailedMarker, LogStream.Stdout);
                 }

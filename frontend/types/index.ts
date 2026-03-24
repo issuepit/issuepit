@@ -295,6 +295,22 @@ export interface CodeReviewComment {
   createdAt: string
 }
 
+/**
+ * Describes an external issue-tracking system linked to an IssuePit project.
+ * Stored as a separate entity so the tracker's type, slug, and URL are
+ * available for deep-linking and display formatting.
+ */
+export interface IssueExternalSource {
+  id: string
+  /** Tracker type: "github", "jira", etc. */
+  type: string
+  /** Project key / slug used as a display prefix (e.g. "PROJ" for Jira). Null for GitHub. */
+  slug?: string | null
+  /** Base URL of the external repository or project. */
+  url?: string | null
+  projectId: string
+}
+
 export interface Issue {
   id: string
   projectId: string
@@ -314,6 +330,11 @@ export interface Issue {
   kanbanRank: number
   gitHubIssueNumber?: number
   gitHubIssueUrl?: string
+  /** External issue number from an external tracker (e.g. GitHub #69). Used as primary display ID. */
+  externalId?: number | null
+  /** External source record describing the tracker (type, slug, URL). Null when no external counterpart. */
+  externalSourceId?: string | null
+  externalSource?: IssueExternalSource | null
   gitBranch?: string
   createdAt: string
   updatedAt: string
@@ -1430,6 +1451,8 @@ export interface McpAccessToken {
   expiresAt?: string
 }
 
+
+
 // ──────────────────────────────────────────────────────────────────────────────
 // CI/CD step suggestions (for skip-step wizard)
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1437,4 +1460,60 @@ export interface McpAccessToken {
 export interface StepSuggestionJob {
   jobId: string
   steps: string[]
+}
+
+
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Git Server
+// ──────────────────────────────────────────────────────────────────────────────
+
+export type GitServerAccessLevel = 0 | 1 | 2 | 3
+
+export const GitServerAccessLevelLabels: Record<GitServerAccessLevel, string> = {
+  0: 'None',
+  1: 'Read',
+  2: 'Write',
+  3: 'Admin',
+}
+
+export interface GitServerRepo {
+  id: string
+  slug: string
+  description?: string
+  defaultBranch: string
+  isReadOnly: boolean
+  isTemporary: boolean
+  defaultAccessLevel: GitServerAccessLevel
+  gitRepositoryId?: string
+  createdAt: string
+}
+
+export interface GitServerPermission {
+  id: string
+  repoId: string
+  userId?: string
+  username?: string
+  apiKeyId?: string
+  accessLevel: GitServerAccessLevel
+  createdAt: string
+}
+
+export interface GitServerBranchProtection {
+  id: string
+  repoId: string
+  pattern: string
+  disallowForcePush: boolean
+  requirePullRequest: boolean
+  allowAdminBypass: boolean
+  createdAt: string
+}
+
+export interface GitPat {
+  id: string
+  name: string
+  prefix: string
+  createdAt: string
+  expiresAt?: string
+  lastUsedAt?: string
 }

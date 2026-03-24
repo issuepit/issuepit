@@ -1,6 +1,38 @@
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @mousedown.self="$emit('close')">
-    <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-lg mx-4 shadow-xl">
+    <!-- Conflict confirm modal (shown on top of main modal when another run is active) -->
+    <div v-if="triggerConflict" class="bg-gray-900 border border-yellow-700/50 rounded-xl w-full max-w-md mx-4 shadow-xl">
+      <div class="flex items-center justify-between px-5 py-4 border-b border-gray-800">
+        <h2 class="text-base font-semibold text-white">Run Already in Progress</h2>
+        <button @click="triggerConflict = null" class="text-gray-500 hover:text-gray-300 transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <div class="px-5 py-4">
+        <div class="rounded-lg bg-yellow-900/40 border border-yellow-700/50 p-3 text-sm text-yellow-300 mb-4">
+          {{ triggerConflict.message }}
+        </div>
+        <p class="text-sm text-gray-400">Do you want to trigger a new run anyway? The existing run will continue in parallel.</p>
+      </div>
+      <div class="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-800">
+        <button @click="triggerConflict = null"
+          class="text-sm text-gray-400 hover:text-gray-200 px-3 py-1.5 rounded-lg transition-colors">
+          Cancel
+        </button>
+        <button @click="triggerForce" :disabled="triggering"
+          class="text-sm bg-brand-600 hover:bg-brand-700 text-white px-4 py-1.5 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2">
+          <svg v-if="triggering" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          {{ triggering ? 'Triggering…' : 'Trigger Anyway' }}
+        </button>
+      </div>
+    </div>
+
+    <div v-else class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-lg mx-4 shadow-xl">
       <!-- Header -->
       <div class="flex items-center justify-between px-5 py-4 border-b border-gray-800">
         <h2 class="text-base font-semibold text-white">Trigger CI/CD Run</h2>
@@ -145,6 +177,8 @@
 import type { WorkflowInfo, WorkflowInput } from '~/types'
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 
+interface TriggerConflictResponse { error?: string; canForce?: boolean; activeRunIds?: string[] }
+
 const props = defineProps<{
   projectId: string
   /** When provided, the SHA is shown as read-only; when empty the user must type it. */
@@ -186,6 +220,7 @@ const inputValues = ref<Record<string, string>>({})
 const inputBooleans = ref<Record<string, boolean>>({})
 const triggering = ref(false)
 const triggerError = ref<string | null>(null)
+const triggerConflict = ref<{ message: string; activeRunIds: string[] } | null>(null)
 const loadingWorkflows = ref(false)
 const workflows = ref<WorkflowInfo[]>([])
 
@@ -228,7 +263,7 @@ onMounted(async () => {
   loadingWorkflows.value = false
 })
 
-async function triggerRun() {
+async function triggerRun(forceWithActiveRunIds?: string[]) {
   triggerError.value = null
 
   // When commitSha prop is provided (e.g. triggered from the code view), use it directly.
@@ -260,12 +295,28 @@ async function triggerRun() {
       workflow: selectedWorkflow.value || undefined,
       inputs,
       customImage: import.meta.client ? (localStorage.getItem(ACT_CONTAINER_STORAGE_KEY) ?? undefined) : undefined,
+      forceWithActiveRunIds,
     })
     emit('triggered')
   } catch (e: unknown) {
-    triggerError.value = e instanceof Error ? e.message : 'Failed to trigger run'
+    // Handle 409 "already running" conflict — show confirm modal
+    const data = (e as { data?: TriggerConflictResponse })?.data
+    if (data?.canForce) {
+      triggerConflict.value = {
+        message: data.error ?? 'Another run is already in progress for this project.',
+        activeRunIds: data.activeRunIds ?? [],
+      }
+    } else {
+      triggerError.value = e instanceof Error ? e.message : 'Failed to trigger run'
+    }
   } finally {
     triggering.value = false
   }
+}
+
+async function triggerForce() {
+  const ids = triggerConflict.value?.activeRunIds
+  triggerConflict.value = null
+  await triggerRun(ids)
 }
 </script>

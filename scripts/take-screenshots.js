@@ -103,8 +103,8 @@ async function seedData(apiClient, tenantId) {
     });
   }
 
-  // Create an agent mode
-  await apiClient.post(`${API_URL}/api/agents`, {
+  // Create an agent mode and link it to the project (so it appears in @mention autocomplete)
+  const agentRes = await apiClient.post(`${API_URL}/api/agents`, {
     headers,
     data: JSON.stringify({
       name: 'Code Agent',
@@ -114,6 +114,10 @@ async function seedData(apiClient, tenantId) {
       queue: 'Code',
     }),
   });
+  const agent = await agentRes.json();
+  if (agent?.id) {
+    await apiClient.post(`${API_URL}/api/projects/${project.id}/agents/${agent.id}`, { headers });
+  }
 
   return project;
 }
@@ -356,6 +360,72 @@ async function main() {
       await page.waitForTimeout(300);
     } catch (e) {
       console.warn('  ⚠  custom-property-form skipped:', e.message);
+    }
+
+    // --- Agent trigger: @mention dropdown + branch selector + assign agent modal ---
+    // Fetch the first issue from the project and navigate to its detail page.
+    try {
+      const issuesRes = await apiClient.get(`${API_URL}/api/issues?projectId=${proj.id}`, {
+        headers: tenantId ? { 'X-Tenant-Id': tenantId } : {},
+      });
+      const issuesData = await issuesRes.json();
+      const issuesList = Array.isArray(issuesData) ? issuesData : (issuesData.items ?? []);
+      const firstIssue = issuesList[0] ?? null;
+
+      if (firstIssue) {
+        await page.goto(`${FRONTEND_URL}/projects/${proj.id}/issues/${firstIssue.id}`);
+        await page.waitForLoadState('networkidle');
+
+        // @mention dropdown — type @Co to show Code Agent in autocomplete (agents shown before users)
+        try {
+          const textarea = page.locator('textarea[placeholder*="Leave a comment"]');
+          await textarea.click();
+          await textarea.pressSequentially('@Co');
+          // Wait for at least one dropdown item to render
+          await page.waitForSelector('div[class*="absolute"] button', { timeout: 5000 });
+          await screenshotState(page, 'issue-comment-mention-dropdown');
+          await textarea.fill('');
+          await page.keyboard.press('Escape');
+          await page.waitForTimeout(200);
+        } catch (e) {
+          console.warn('  ⚠  issue-comment-mention-dropdown skipped:', e.message);
+        }
+
+        // Branch selector in comment footer — visible after typing a full @agent-name mention
+        try {
+          const textarea = page.locator('textarea[placeholder*="Leave a comment"]');
+          await textarea.click();
+          // Use pressSequentially to simulate real typing so Vue v-model and watchers fire correctly
+          await textarea.pressSequentially('@Code Agent');
+          // Wait for the branch input to appear (v-if="commentHasAgentMention")
+          await page.waitForSelector('input[list="comment-branch-list"]', { timeout: 5000 });
+          await screenshotState(page, 'issue-comment-branch-selector');
+          await textarea.fill('');
+          await page.waitForTimeout(200);
+        } catch (e) {
+          console.warn('  ⚠  issue-comment-branch-selector skipped:', e.message);
+        }
+
+        // Assign agent modal + BranchSelect dropdown open
+        try {
+          const agentSelect = page.locator('select').filter({ hasText: '+ Assign agent' });
+          await agentSelect.selectOption({ index: 1 }); // pick first agent from the list
+          await page.waitForTimeout(400); // wait for modal to open
+          // Open the BranchSelect dropdown inside the modal
+          const branchBtn = page.locator('button[aria-expanded]').first();
+          await branchBtn.click();
+          await page.waitForTimeout(300);
+          await screenshotState(page, 'assign-agent-branch-select');
+          await page.keyboard.press('Escape'); // close dropdown
+          await page.waitForTimeout(150);
+          await page.keyboard.press('Escape'); // close modal
+          await page.waitForTimeout(200);
+        } catch (e) {
+          console.warn('  ⚠  assign-agent-branch-select skipped:', e.message);
+        }
+      }
+    } catch (e) {
+      console.warn('  ⚠  agent-trigger screenshots skipped:', e.message);
     }
   }
 

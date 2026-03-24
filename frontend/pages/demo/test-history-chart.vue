@@ -47,7 +47,7 @@
               d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
           </svg>
           Test History
-          <span class="text-xs font-normal text-gray-500">({{ range }}d · mock data)</span>
+          <span class="text-xs font-normal text-gray-500">({{ range }}d · mock data · up to {{ FIXED_ANCHOR_DATE }})</span>
         </h2>
         <span class="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded">{{ colorModeLabel }} · {{ yAxisLabel }} · {{ xModeLabel }}</span>
       </div>
@@ -116,10 +116,19 @@ const xModeLabel = computed(() => X_MODES.find(x => x.value === xMode.value)?.la
 
 // ── Mock data ──────────────────────────────────────────────────────────────────
 
-/** Generate a date string YYYY-MM-DD for `daysAgo` days before today. */
+/**
+ * Fixed reference date for all mock data.
+ * Using a constant anchor instead of `new Date()` ensures the chart renders
+ * identical bars every time the demo page is visited, making screenshots
+ * reproducible regardless of when they are taken.
+ */
+const FIXED_ANCHOR_DATE = '2026-03-24'
+const FIXED_ANCHOR_MS = new Date(FIXED_ANCHOR_DATE + 'T00:00:00Z').getTime()
+
+/** Generate a date string YYYY-MM-DD for `daysAgo` days before the fixed anchor. */
 function daysAgo(n: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() - n)
+  const d = new Date(FIXED_ANCHOR_MS)
+  d.setUTCDate(d.getUTCDate() - n)
   return d.toISOString().slice(0, 10)
 }
 
@@ -189,7 +198,7 @@ const mockRunsData: TestRunSummary[] = (() => {
       runId: `run-${i}`,
       commitSha: generateMockSha(i),
       branch: branches[i % branches.length],
-      startedAt: new Date(Date.now() - dayOffset * 86_400_000 - Math.round(prng(i * 11) * 3_600_000)).toISOString(),
+      startedAt: new Date(FIXED_ANCHOR_MS - dayOffset * 86_400_000 - Math.round(prng(i * 11) * 3_600_000)).toISOString(),
       statusName: failed > 0 ? 'Failed' : 'Succeeded',
       totalTests: base,
       passedTests: passed,

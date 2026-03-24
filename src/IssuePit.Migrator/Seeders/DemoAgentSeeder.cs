@@ -8,7 +8,7 @@ namespace IssuePit.Migrator.Seeders;
 /// <summary>Seeds demo agents and MCP servers for an organization.</summary>
 public class DemoAgentSeeder(IssuePitDbContext db)
 {
-    public async Task SeedAsync(Guid orgId)
+    public async Task<(Agent PlanAgent, Agent CodeAgent, Agent EvalAgent, Agent QualityAgent)> SeedAsync(Guid orgId)
     {
         // --- MCP Servers ---
         // Note: The GitHub MCP and Filesystem MCP entries use placeholder URLs and are kept for
@@ -115,6 +115,8 @@ public class DemoAgentSeeder(IssuePitDbContext db)
 
         // Note: MCP server links to the placeholder GitHub/Filesystem servers have been removed.
         // The IssuePit MCP server is injected automatically via ISSUEPIT_MCP_URL at agent run time.
+
+        return (planAgent, codeAgent, evalAgent, qualityAgent);
     }
 
     private static string LoadSystemPrompt(string fileName)

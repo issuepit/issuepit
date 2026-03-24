@@ -26,6 +26,7 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
         var tenantId = ctx.CurrentTenant.Id;
         var query = db.Issues
             .Include(i => i.Labels)
+            .Include(i => i.ExternalSource)
             .Where(i => i.Project!.Organization.TenantId == tenantId);
         if (projectId.HasValue)
             query = query.Where(i => i.ProjectId == projectId.Value);
@@ -104,6 +105,7 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
 
         var query = db.Issues
             .Include(i => i.Labels)
+            .Include(i => i.ExternalSource)
             .Include(i => i.Assignees).ThenInclude(a => a.User)
             .Include(i => i.Assignees).ThenInclude(a => a.Agent)
             .Where(i => projectIds.Contains(i.ProjectId));
@@ -132,6 +134,7 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
             .Include(i => i.ParentIssue)
             .Include(i => i.Assignees).ThenInclude(a => a.User)
             .Include(i => i.Assignees).ThenInclude(a => a.Agent)
+            .Include(i => i.ExternalSource)
             .FirstOrDefaultAsync(i => i.Id == id);
         return issue is null ? NotFound() : Ok(issue);
     }
@@ -149,6 +152,7 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
             .Include(i => i.ParentIssue)
             .Include(i => i.Assignees).ThenInclude(a => a.User)
             .Include(i => i.Assignees).ThenInclude(a => a.Agent)
+            .Include(i => i.ExternalSource)
             .Where(i => i.Number == issueNumber && i.Project!.Organization.TenantId == ctx.CurrentTenant.Id);
         if (Guid.TryParse(projectIdentifier, out var projectId))
             query = query.Where(i => i.ProjectId == projectId);

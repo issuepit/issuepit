@@ -75,10 +75,42 @@ Each issue moves through these stages automatically when agents are assigned.
 
 ## Assigning an Agent Mode to an Issue
 
+There are two ways to trigger an agent on an issue:
+
+### Option A — Sidebar dropdown
+
 1. Open any issue.
-2. In the **Assignees** section, click **Assign Agent**.
-3. Select an agent mode from the list.
-4. The agent mode is added to the queue and `IssuePit.ExecutionClient` spawns a work agent automatically.
+2. In the **Assignees** section on the right sidebar, choose an agent from the **Assign agent** dropdown.
+3. A modal opens where you can optionally provide a task comment and **select a starting branch**.
+
+   ![Assign Agent modal with branch selector]({{ '/assets/screenshots/assign-agent-branch-select.png' | relative_url }})
+
+4. Click **Assign** (or **Assign & Comment** if you filled the comment field).
+
+### Option B — @mention in a comment
+
+Type `@` anywhere in the comment textarea to open the **autocomplete dropdown**. Select an agent (or user) from the list — the dropdown shows all agents linked to the project.
+
+![@ mention autocomplete dropdown in the comment textarea]({{ '/assets/screenshots/issue-comment-mention-dropdown.png' | relative_url }})
+
+Once your comment contains an `@agent-name` mention, a **branch selector** appears in the comment footer so you can specify which branch the agent should start from.
+
+![Branch selector visible in comment footer after typing an @mention]({{ '/assets/screenshots/issue-comment-branch-selector.png' | relative_url }})
+
+> **Tip:** Leave the branch field empty to use the project's default branch.
+
+---
+
+### Selecting a branch
+
+Both trigger methods support choosing a **starting branch**:
+
+| Method | Where to set the branch |
+|--------|------------------------|
+| Sidebar modal | **Branch** field inside the *Assign Agent* modal (searchable dropdown) |
+| @mention comment | Branch input in the comment footer (appears after typing `@agent-name`) |
+
+The branch selector lets you search through all branches fetched for the project. You can also type a branch name that is not yet in the list and press **Enter** to use it directly.
 
 ---
 

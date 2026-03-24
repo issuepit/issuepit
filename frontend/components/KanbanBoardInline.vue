@@ -74,7 +74,7 @@
                 @dragend="onIssueDragEnd"
                 @click="$router.push(`/projects/${projectId}/issues/${issue.number}`)">
                 <div class="flex items-start justify-between gap-1 mb-1">
-                  <span class="text-xs text-gray-600">{{ formatIssueId(issue.number, projectsStore.currentProject) }}</span>
+                  <span class="text-xs text-gray-600">{{ formatIssueId(issue.number, projectsStore.currentProject, issue.externalId, issue.externalSource) }}</span>
                   <span :class="priorityColor(issue.priority)" class="text-xs shrink-0">{{ priorityIcon(issue.priority) }}</span>
                 </div>
                 <p class="text-xs text-gray-200 leading-snug group-hover:text-white transition-colors line-clamp-2">
