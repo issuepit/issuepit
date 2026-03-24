@@ -731,11 +731,11 @@
             <!-- External Issue (GitHub, Jira, etc.) -->
             <div v-if="store.currentIssue.externalId || store.currentIssue.gitHubIssueUrl || store.currentIssue.gitHubIssueNumber">
               <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">
-                {{ store.currentIssue.externalSource === 'github' || store.currentIssue.gitHubIssueNumber ? 'GitHub Issue' : store.currentIssue.externalSource ? store.currentIssue.externalSource.toUpperCase() + ' Issue' : 'External Issue' }}
+                {{ store.currentIssue.externalSource?.type === 'github' || store.currentIssue.gitHubIssueNumber ? 'GitHub Issue' : store.currentIssue.externalSource ? store.currentIssue.externalSource.type.toUpperCase() + ' Issue' : 'External Issue' }}
               </p>
               <a
-                v-if="store.currentIssue.gitHubIssueUrl"
-                :href="store.currentIssue.gitHubIssueUrl"
+                v-if="store.currentIssue.gitHubIssueUrl || (store.currentIssue.externalSource?.url && store.currentIssue.externalId)"
+                :href="store.currentIssue.gitHubIssueUrl ?? (store.currentIssue.externalSource!.url + '/issues/' + store.currentIssue.externalId)"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="text-xs text-brand-400 hover:text-brand-300 flex items-center gap-1"
