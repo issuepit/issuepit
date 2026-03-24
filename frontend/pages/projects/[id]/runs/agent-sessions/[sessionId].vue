@@ -668,6 +668,17 @@ const sessionStepGroups = computed<SessionStepGroup[]>(() => {
     if (log.line.includes('[ERROR]')) g.hasError = true
   }
 
+  // Also mark CI/CD run steps as failed when the linked run has a failed status.
+  const cicdRuns = store.currentSession?.ciCdRuns ?? []
+  for (const group of groups) {
+    if (group.section === 'CiCdRun') {
+      const run = cicdRuns[group.sectionIndex - 1]
+      if (run?.status === CiCdRunStatus.Failed) {
+        group.hasError = true
+      }
+    }
+  }
+
   return groups
 })
 
