@@ -51,6 +51,25 @@ public class Issue
 
     public string? GitHubIssueUrl { get; set; }
 
+    /// <summary>
+    /// The issue number from an external tracker (e.g. GitHub issue #69, Jira ticket number).
+    /// Used as the primary display ID when set.
+    /// </summary>
+    public int? ExternalId { get; set; }
+
+    /// <summary>
+    /// FK to the <see cref="IssueExternalSource"/> record that describes the external tracker
+    /// (type, slug, URL). Null when the issue has no external counterpart.
+    /// Display formatting is handled by <c>formatIssueId</c> in the frontend:
+    /// GitHub issues render as bare numbers (e.g. <c>#69</c>), Jira-style sources as
+    /// <c>#PROJ-42</c>.
+    /// </summary>
+    public Guid? ExternalSourceId { get; set; }
+
+    /// <summary>Navigation property — included on demand in API queries.</summary>
+    [ForeignKey(nameof(ExternalSourceId))]
+    public IssueExternalSource? ExternalSource { get; set; }
+
     public string? GitBranch { get; set; }
 
     public int KanbanRank { get; set; }
