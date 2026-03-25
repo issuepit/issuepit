@@ -419,33 +419,76 @@ public class HetznerCiCdRuntime(
 
     private string BuildCloudInit(string apiToken, string watchdogScript)
     {
-        // Determine act version to install
         var actVersion = configuration["Hetzner:ActVersion"] ?? "0.2.78";
+        var nodeMajor = configuration["Hetzner:NodeMajorVersion"] ?? "24";
+        var dotnetChannel = configuration["Hetzner:DotnetSdkChannel"] ?? "10.0";
+        var s5cmdVersion = configuration["Hetzner:S5cmdVersion"] ?? "2.3.0";
+        var goVersion = configuration["Hetzner:GoVersion"] ?? "1.24.2";
+        var actionlintVersion = configuration["Hetzner:ActionlintVersion"] ?? "1.7.11";
 
         var sb = new StringBuilder();
         sb.AppendLine("#cloud-config");
         sb.AppendLine("package_update: true");
         sb.AppendLine("package_upgrade: false");
         sb.AppendLine("packages:");
-        sb.AppendLine("  - docker.io");
+        // Base packages — docker.io is NOT included here; Docker CE is installed below via
+        // the official Docker apt repository (matching Dockerfile.helper-act / Dockerfile.helper-act-runner).
         sb.AppendLine("  - git");
         sb.AppendLine("  - curl");
         sb.AppendLine("  - wget");
+        sb.AppendLine("  - gnupg");
+        sb.AppendLine("  - ca-certificates");
+        sb.AppendLine("  - apt-transport-https");
         sb.AppendLine("  - jq");
+        sb.AppendLine("  - unzip");
+        sb.AppendLine("  - ffmpeg");
         sb.AppendLine("runcmd:");
+
+        // ── Docker CE (matching Dockerfile.helper-act) ──────────────────────
+        sb.AppendLine("  - install -m 0755 -d /etc/apt/keyrings");
+        sb.AppendLine("  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc");
+        sb.AppendLine("  - chmod a+r /etc/apt/keyrings/docker.asc");
+        sb.AppendLine("  - bash -c \". /etc/os-release && echo 'deb [arch='$(dpkg --print-architecture)' signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu '${VERSION_CODENAME}' stable' > /etc/apt/sources.list.d/docker.list\"");
+        sb.AppendLine("  - apt-get update -qq");
+        sb.AppendLine("  - apt-get install -y --no-install-recommends docker-ce docker-ce-cli containerd.io");
         sb.AppendLine("  - systemctl enable docker && systemctl start docker");
-        // Install act from a pinned GitHub release (avoids running an install script)
-        sb.AppendLine($"  - >-");
-        sb.AppendLine($"    curl -fsSL -o /usr/local/bin/act");
-        sb.AppendLine($"    https://github.com/nektos/act/releases/download/v{actVersion}/act_Linux_x86_64.tar.gz");
-        sb.AppendLine($"    | tar xz -C /usr/local/bin act || true");
-        sb.AppendLine("  - chmod +x /usr/local/bin/act || true");
-        // Write the Hetzner API token to a root-only readable tmpfs file so that it is
-        // never exposed in the cloud-init log, process command line, or /proc environment.
+
+        // ── Node.js + npm via NodeSource (matching Dockerfile.helper-base) ──
+        sb.AppendLine($"  - curl -fsSL https://deb.nodesource.com/setup_{nodeMajor}.x -o /tmp/nodesource-setup.sh");
+        sb.AppendLine("  - bash /tmp/nodesource-setup.sh");
+        sb.AppendLine("  - apt-get install -y --no-install-recommends nodejs");
+        sb.AppendLine("  - rm -f /tmp/nodesource-setup.sh");
+
+        // ── .NET SDK via dotnet-install.sh (matching Dockerfile.helper-base) ─
+        sb.AppendLine("  - curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh");
+        sb.AppendLine("  - chmod +x /tmp/dotnet-install.sh");
+        sb.AppendLine($"  - /tmp/dotnet-install.sh --channel {dotnetChannel} --install-dir /usr/share/dotnet");
+        sb.AppendLine("  - ln -sf /usr/share/dotnet/dotnet /usr/local/bin/dotnet");
+        sb.AppendLine("  - rm -f /tmp/dotnet-install.sh");
+
+        // ── Go (matching Dockerfile.helper-act-runner) ──────────────────────
+        sb.AppendLine($"  - curl -fsSL https://go.dev/dl/go{goVersion}.linux-amd64.tar.gz | tar -C /usr/local -xz");
+        sb.AppendLine("  - ln -sf /usr/local/go/bin/go /usr/local/bin/go");
+        sb.AppendLine("  - ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt");
+
+        // ── s5cmd — S3-compatible artifact upload (matching Dockerfile.helper-base) ──
+        sb.AppendLine($"  - curl --proto '=https' --tlsv1.2 -fsSL https://github.com/peak/s5cmd/releases/download/v{s5cmdVersion}/s5cmd_{s5cmdVersion}_Linux-64bit.tar.gz | tar -xz -C /usr/local/bin s5cmd");
+
+        // ── act binary from pinned GitHub release ────────────────────────────
+        sb.AppendLine($"  - curl -fsSL https://github.com/nektos/act/releases/download/v{actVersion}/act_Linux_x86_64.tar.gz | tar xz -C /usr/local/bin act");
+        sb.AppendLine("  - chmod +x /usr/local/bin/act");
+
+        // ── actionlint (matching Dockerfile.helper-act) ──────────────────────
+        sb.AppendLine($"  - curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash -o /tmp/download-actionlint.bash");
+        sb.AppendLine($"  - bash /tmp/download-actionlint.bash {actionlintVersion} /usr/local/bin");
+        sb.AppendLine("  - rm -f /tmp/download-actionlint.bash");
+
+        // ── Secure token file (tmpfs, never in process env or cloud-init log) ─
         sb.AppendLine("  - mkdir -p /run/issuepit && chmod 700 /run/issuepit");
         sb.AppendLine($"  - printf '%s' '{apiToken.Replace("'", "'\\''")}' > /run/issuepit/.hcloud_token");
         sb.AppendLine("  - chmod 600 /run/issuepit/.hcloud_token");
-        // Install watchdog
+
+        // ── Watchdog ─────────────────────────────────────────────────────────
         sb.AppendLine("  - |");
         sb.AppendLine("    cat > /usr/local/bin/issuepit-watchdog.sh << 'WATCHDOG_EOF'");
         sb.Append(watchdogScript);
