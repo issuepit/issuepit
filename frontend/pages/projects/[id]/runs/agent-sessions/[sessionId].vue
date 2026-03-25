@@ -596,12 +596,15 @@ const wordWrap = ref(false)
 /** Pattern that identifies noisy DNS-proxy lines emitted by dnsmasq inside the container. */
 const DNSMASQ_RE = /dnsmasq\[/
 
+/** Pattern that identifies exec command lines logged by the execution client (visible only in verbose mode). */
+const CMD_RE = /^\[CMD\] \$/
+
 const filteredLogs = computed(() => {
   let logs = store.currentSessionLogs
   if (activeStream.value !== null)
     logs = logs.filter(l => l.stream === activeStream.value)
   if (!verboseLogs.value)
-    logs = logs.filter(l => !DNSMASQ_RE.test(l.line))
+    logs = logs.filter(l => !DNSMASQ_RE.test(l.line) && !CMD_RE.test(l.line))
   if (logSearchQuery.value.trim())
     logs = logs.filter(l => stripAnsiCodes(l.line).toLowerCase().includes(logSearchQuery.value.toLowerCase()))
   return logs
@@ -679,6 +682,16 @@ const sessionStepGroups = computed<SessionStepGroup[]>(() => {
     }
   }
 
+  // Fallback: if the session overall failed but no individual step was marked as failed,
+  // mark the last step as having an error so users can see which step the failure occurred in.
+  // This covers cases where the failure produces a [WARN] or no explicit [ERROR] marker —
+  // the last executing step is the best approximation of where the failure happened.
+  if (store.currentSession?.status === AgentSessionStatus.Failed
+    && groups.length > 0
+    && !groups.some(g => g.hasError)) {
+    groups[groups.length - 1].hasError = true
+  }
+
   return groups
 })
 
@@ -691,7 +704,7 @@ const logsBySection = computed<SessionStepGroup[]>(() => {
   // Apply stream + verbose filter but NOT the search filter (search is applied at render time).
   const logs = store.currentSessionLogs.filter((l) => {
     if (activeStream.value !== null && l.stream !== activeStream.value) return false
-    if (!verboseLogs.value && DNSMASQ_RE.test(l.line)) return false
+    if (!verboseLogs.value && (DNSMASQ_RE.test(l.line) || CMD_RE.test(l.line))) return false
     return true
   })
   const groups: SessionStepGroup[] = []

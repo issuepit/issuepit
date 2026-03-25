@@ -734,7 +734,7 @@ public class DockerAgentRuntime(
             }
 
             // Step 7: Execute the agent tool via docker exec.
-            var agentExitCode = await ExecCommandAsync(container.ID, runnerArgs, onLogLine, cancellationToken);
+            var agentExitCode = await ExecCommandAsync(container.ID, runnerArgs, onLogLine, cancellationToken, logCommand: true);
 
             // Step 8: Capture the opencode session ID for --fork on subsequent fix runs.
             // NOTE: opencode run --fork <session-id> will continue from the same session and retain
@@ -819,7 +819,7 @@ public class DockerAgentRuntime(
             var shortId = containerId[..Math.Min(12, containerId.Length)];
             var forkInfo = openCodeSessionId is not null ? $" (--session {openCodeSessionId[..Math.Min(8, openCodeSessionId.Length)]} --fork)" : string.Empty;
             await onLogLine($"[INFO] Exec fix run in container {shortId}{forkInfo}…", LogStream.Stdout);
-            var exitCode = await ExecCommandAsync(containerId, runnerArgs, onFixLogLine, cancellationToken);
+            var exitCode = await ExecCommandAsync(containerId, runnerArgs, onFixLogLine, cancellationToken, logCommand: true);
             if (exitCode != 0)
                 await onLogLine($"[WARN] Fix agent exited with code {exitCode}", LogStream.Stderr);
         }

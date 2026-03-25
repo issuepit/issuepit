@@ -71,14 +71,27 @@ public abstract class DockerRuntimeBase
     /// </summary>
     /// <param name="env">Optional environment variables for this exec, in <c>KEY=VALUE</c> form.</param>
     /// <param name="workingDir">Working directory inside the container (default: <c>/workspace</c>).</param>
+    /// <param name="logCommand">
+    /// When <c>true</c>, emits a <c>[CMD] $ &lt;command&gt;</c> line via <paramref name="onLogLine"/> before
+    /// executing, so the full command (including arguments) is visible in the session logs in verbose mode.
+    /// Defaults to <c>false</c>. Pass <c>true</c> for any exec that does not contain sensitive values
+    /// (e.g. auth tokens in URLs) and whose command line is useful for diagnostics.
+    /// </param>
     protected async Task<long> ExecCommandAsync(
         string containerId,
         IReadOnlyList<string> cmd,
         Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken,
         IReadOnlyList<string>? env = null,
-        string workingDir = "/workspace")
+        string workingDir = "/workspace",
+        bool logCommand = false)
     {
+        if (logCommand)
+        {
+            var cmdLine = string.Join(' ', cmd.Select(a => a.Contains(' ') ? $"\"{a}\"" : a));
+            await onLogLine($"[CMD] $ {cmdLine}", LogStream.Stdout);
+        }
+
         var execCreate = await DockerClient.Exec.CreateContainerExecAsync(
             containerId,
             new ContainerExecCreateParameters

@@ -762,10 +762,10 @@ public class IssueWorker(
                 }
                 else if (cicdPrerequisitesMet && capturedGitPushFailed)
                 {
-                    // Push failed and CI/CD was otherwise ready to run — log a warning and fail the session
+                    // Push failed and CI/CD was otherwise ready to run — log an error and fail the session
                     // so the user is aware that the branch was never pushed to the remote.
                     await AppendLogAsync(session.Id,
-                        "[WARN] Git push failed — skipping CI/CD trigger because the branch does not exist on the remote.",
+                        "[ERROR] Git push failed — skipping CI/CD trigger because the branch does not exist on the remote.",
                         LogStream.Stderr, currentSection, currentSectionIndex, db, sessionCts.Token);
                     session.Status = AgentSessionStatus.Failed;
                 }
