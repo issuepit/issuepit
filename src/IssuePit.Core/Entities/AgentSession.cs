@@ -16,10 +16,20 @@ public class AgentSession
     [ForeignKey(nameof(AgentId))]
     public Agent Agent { get; set; } = null!;
 
-    public Guid IssueId { get; set; }
+    public Guid? IssueId { get; set; }
 
     [ForeignKey(nameof(IssueId))]
-    public Issue Issue { get; set; } = null!;
+    public Issue? Issue { get; set; }
+
+    /// <summary>
+    /// The project this session belongs to. Always set — derived from <see cref="Issue"/>
+    /// for issue-based sessions, or passed directly for issue-free manual sessions.
+    /// Stored directly so project-scoped queries do not require a join through <see cref="Issue"/>.
+    /// </summary>
+    public Guid ProjectId { get; set; }
+
+    [ForeignKey(nameof(ProjectId))]
+    public Project? Project { get; set; }
 
     public Guid? IssueTaskId { get; set; }
 

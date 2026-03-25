@@ -191,7 +191,7 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
         var sessions = await db.AgentSessions
             .Include(s => s.Agent)
             .Include(s => s.Issue)
-            .Where(s => s.Issue.ProjectId == id)
+            .Where(s => s.ProjectId == id)
             .OrderByDescending(s => s.StartedAt)
             .Take(100)
             .Select(s => new
@@ -200,8 +200,8 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
                 s.AgentId,
                 AgentName = s.Agent.Name,
                 s.IssueId,
-                IssueTitle = s.Issue.Title,
-                IssueNumber = s.Issue.Number,
+                IssueTitle = s.Issue != null ? s.Issue.Title : null,
+                IssueNumber = s.Issue != null ? (int?)s.Issue.Number : null,
                 s.CommitSha,
                 s.GitBranch,
                 s.Status,

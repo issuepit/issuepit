@@ -212,7 +212,7 @@ namespace IssuePit.Core.Migrations
                     b.Property<string>("GitRemoteCheckResultsJson")
                         .HasColumnType("text");
 
-                    b.Property<Guid>("IssueId")
+                    b.Property<Guid?>("IssueId")
                         .HasColumnType("uuid");
 
                     b.Property<Guid?>("IssueTaskId")
@@ -225,6 +225,9 @@ namespace IssuePit.Core.Migrations
                     b.Property<string>("OpenCodeSessionId")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid");
 
                     b.Property<Guid?>("RuntimeConfigId")
                         .HasColumnType("uuid");
@@ -249,6 +252,8 @@ namespace IssuePit.Core.Migrations
                     b.HasIndex("IssueId");
 
                     b.HasIndex("IssueTaskId");
+
+                    b.HasIndex("ProjectId");
 
                     b.HasIndex("RuntimeConfigId");
 
@@ -2854,13 +2859,17 @@ namespace IssuePit.Core.Migrations
 
                     b.HasOne("IssuePit.Core.Entities.Issue", "Issue")
                         .WithMany()
-                        .HasForeignKey("IssueId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .HasForeignKey("IssueId");
 
                     b.HasOne("IssuePit.Core.Entities.IssueTask", "IssueTask")
                         .WithMany()
                         .HasForeignKey("IssueTaskId");
+
+                    b.HasOne("IssuePit.Core.Entities.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.HasOne("IssuePit.Core.Entities.RuntimeConfiguration", "RuntimeConfig")
                         .WithMany()
@@ -2871,6 +2880,8 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("Issue");
 
                     b.Navigation("IssueTask");
+
+                    b.Navigation("Project");
 
                     b.Navigation("RuntimeConfig");
                 });

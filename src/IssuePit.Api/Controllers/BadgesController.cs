@@ -75,7 +75,7 @@ public class BadgesController(IssuePitDbContext db) : ControllerBase
     {
         var activeCount = await db.AgentSessions
             .AsNoTracking()
-            .CountAsync(s => s.Issue.ProjectId == projectId
+            .CountAsync(s => s.ProjectId == projectId
                           && s.Status == AgentSessionStatus.Running);
 
         var (value, color) = activeCount switch
@@ -92,7 +92,7 @@ public class BadgesController(IssuePitDbContext db) : ControllerBase
         var since = DateTime.UtcNow.AddHours(-24);
         var query = db.AgentSessions
             .AsNoTracking()
-            .Where(s => s.Issue.ProjectId == projectId && s.StartedAt >= since);
+            .Where(s => s.ProjectId == projectId && s.StartedAt >= since);
 
         if (!string.IsNullOrWhiteSpace(branch))
             query = query.Where(s => s.GitBranch == branch);
@@ -119,7 +119,7 @@ public class BadgesController(IssuePitDbContext db) : ControllerBase
         var since = DateTime.UtcNow.AddDays(-7);
         var sessions = await db.AgentSessions
             .AsNoTracking()
-            .Where(s => s.Issue.ProjectId == projectId && s.StartedAt >= since
+            .Where(s => s.ProjectId == projectId && s.StartedAt >= since
                      && (s.Status == AgentSessionStatus.Succeeded || s.Status == AgentSessionStatus.Failed))
             .Select(s => s.Status)
             .ToListAsync();

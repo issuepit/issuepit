@@ -22,9 +22,10 @@ public class AgentSessionsController(
     {
         var session = await db.AgentSessions
             .Include(s => s.Agent)
-            .Include(s => s.Issue).ThenInclude(i => i.Project)
+            .Include(s => s.Issue)
+            .Include(s => s.Project).ThenInclude(p => p!.Organization)
             .Include(s => s.CiCdRuns)
-            .Where(s => s.Id == id && s.Issue.Project!.Organization.TenantId == tenant.CurrentTenant!.Id)
+            .Where(s => s.Id == id && s.Project!.Organization.TenantId == tenant.CurrentTenant!.Id)
             .Select(s => new
             {
                 s.Id,
@@ -32,10 +33,10 @@ public class AgentSessionsController(
                 AgentName = s.Agent.Name,
                 IsManualMode = s.Agent.ManualMode,
                 s.IssueId,
-                IssueTitle = s.Issue.Title,
-                IssueNumber = s.Issue.Number,
-                ProjectId = s.Issue.ProjectId,
-                ProjectName = s.Issue.Project!.Name,
+                IssueTitle = s.Issue != null ? s.Issue.Title : null,
+                IssueNumber = s.Issue != null ? (int?)s.Issue.Number : null,
+                s.ProjectId,
+                ProjectName = s.Project!.Name,
                 s.CommitSha,
                 s.GitBranch,
                 s.Status,
@@ -71,7 +72,7 @@ public class AgentSessionsController(
     public async Task<IActionResult> GetSessionLogs(Guid id)
     {
         var sessionExists = await db.AgentSessions
-            .AnyAsync(s => s.Id == id && s.Issue.Project!.Organization.TenantId == tenant.CurrentTenant!.Id);
+            .AnyAsync(s => s.Id == id && s.Project!.Organization.TenantId == tenant.CurrentTenant!.Id);
 
         if (!sessionExists) return NotFound();
 
@@ -97,8 +98,8 @@ public class AgentSessionsController(
     public async Task<IActionResult> CancelSession(Guid id)
     {
         var session = await db.AgentSessions
-            .Include(s => s.Issue).ThenInclude(i => i.Project)
-            .FirstOrDefaultAsync(s => s.Id == id && s.Issue.Project!.Organization.TenantId == tenant.CurrentTenant!.Id);
+            .Include(s => s.Project).ThenInclude(p => p!.Organization)
+            .FirstOrDefaultAsync(s => s.Id == id && s.Project!.Organization.TenantId == tenant.CurrentTenant!.Id);
 
         if (session is null) return NotFound();
 
@@ -121,8 +122,9 @@ public class AgentSessionsController(
     {
         var session = await db.AgentSessions
             .Include(s => s.Agent)
-            .Include(s => s.Issue).ThenInclude(i => i.Project)
-            .FirstOrDefaultAsync(s => s.Id == id && s.Issue.Project!.Organization.TenantId == tenant.CurrentTenant!.Id);
+            .Include(s => s.Issue)
+            .Include(s => s.Project).ThenInclude(p => p!.Organization)
+            .FirstOrDefaultAsync(s => s.Id == id && s.Project!.Organization.TenantId == tenant.CurrentTenant!.Id);
 
         if (session is null) return NotFound();
 
@@ -138,6 +140,7 @@ public class AgentSessionsController(
             Id = Guid.NewGuid(),
             AgentId = retryAgentId,
             IssueId = session.IssueId,
+            ProjectId = session.ProjectId,
             Status = AgentSessionStatus.Pending,
         };
         db.AgentSessions.Add(queuedSession);
@@ -145,30 +148,55 @@ public class AgentSessionsController(
 
         // Re-publish issue-assigned so the ExecutionClient starts the actual agent run.
         // AgentIdOverride allows using a different agent for the retry.
-        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        object payload;
+        if (session.IssueId.HasValue)
         {
-            id = session.IssueId,
-            projectId = session.Issue.ProjectId,
-            title = session.Issue.Title,
-            agentId = retryAgentId,
-            sessionId = queuedSession.Id,
-            dockerImageOverride = body?.DockerImageOverride,
-            keepContainer = body?.KeepContainer ?? false,
-            dockerCmdOverride = body?.DockerCmdOverride,
-            modelOverride = body?.ModelOverride,
-            runnerTypeOverride = body?.RunnerTypeOverride != null ? (int?)body.RunnerTypeOverride.Value : null,
-            useHttpServerOverride = body?.UseHttpServerOverride,
-            runtimeTypeOverride = body?.RuntimeTypeOverride != null ? (int?)body.RuntimeTypeOverride.Value : null,
-            // When retrying with a different agent, bypass the assignee check so the run is queued.
-            forceAgentId = body?.AgentIdOverride.HasValue ?? false,
-        });
+            payload = new
+            {
+                id = session.IssueId,
+                projectId = session.ProjectId,
+                title = session.Issue?.Title ?? string.Empty,
+                agentId = retryAgentId,
+                sessionId = queuedSession.Id,
+                dockerImageOverride = body?.DockerImageOverride,
+                keepContainer = body?.KeepContainer ?? false,
+                dockerCmdOverride = body?.DockerCmdOverride,
+                modelOverride = body?.ModelOverride,
+                runnerTypeOverride = body?.RunnerTypeOverride != null ? (int?)body.RunnerTypeOverride.Value : null,
+                useHttpServerOverride = body?.UseHttpServerOverride,
+                runtimeTypeOverride = body?.RuntimeTypeOverride != null ? (int?)body.RuntimeTypeOverride.Value : null,
+                forceAgentId = body?.AgentIdOverride.HasValue ?? false,
+            };
+        }
+        else
+        {
+            // Manual direct-start session retry
+            payload = new
+            {
+                id = Guid.Empty,
+                projectId = session.ProjectId,
+                title = string.Empty,
+                agentId = retryAgentId,
+                sessionId = queuedSession.Id,
+                isManualDirectStart = true,
+                dockerImageOverride = body?.DockerImageOverride,
+                keepContainer = body?.KeepContainer ?? false,
+                dockerCmdOverride = body?.DockerCmdOverride,
+                modelOverride = body?.ModelOverride,
+                runnerTypeOverride = body?.RunnerTypeOverride != null ? (int?)body.RunnerTypeOverride.Value : null,
+                useHttpServerOverride = body?.UseHttpServerOverride,
+                runtimeTypeOverride = body?.RuntimeTypeOverride != null ? (int?)body.RuntimeTypeOverride.Value : null,
+                forceAgentId = true,
+                branch = session.GitBranch,
+            };
+        }
 
         try
         {
             await producer.ProduceAsync("issue-assigned", new Message<string, string>
             {
-                Key = session.IssueId.ToString(),
-                Value = payload,
+                Key = session.ProjectId.ToString(),
+                Value = System.Text.Json.JsonSerializer.Serialize(payload),
             });
         }
         catch (Exception ex)
@@ -193,26 +221,22 @@ public class AgentSessionsController(
     {
         var session = await db.AgentSessions
             .Include(s => s.Agent)
-            .Include(s => s.Issue).ThenInclude(i => i!.Project).ThenInclude(p => p!.Organization)
-            .Where(s => s.Id == id && s.Issue!.Project!.Organization.TenantId == tenant.CurrentTenant!.Id)
+            .Include(s => s.Project).ThenInclude(p => p!.Organization)
+            .Where(s => s.Id == id && s.Project!.Organization.TenantId == tenant.CurrentTenant!.Id)
             .FirstOrDefaultAsync(cancellationToken);
 
         if (session is null) return NotFound();
 
-        if (session.Issue?.ProjectId is null)
-            return BadRequest(new { error = "Session is not linked to a project." });
-
         if (!session.Agent.ManualMode)
             return BadRequest(new { error = "CI/CD trigger is only available for manual-mode sessions." });
 
-        var issue = session.Issue;
-        var branch = issue.GitBranch;
+        var branch = session.GitBranch;
 
         if (string.IsNullOrWhiteSpace(branch))
             return BadRequest(new { error = "No feature branch associated with this session. Push your branch first." });
 
         var repo = await db.GitRepositories
-            .Where(r => r.ProjectId == issue.ProjectId)
+            .Where(r => r.ProjectId == session.ProjectId)
             .FirstOrDefaultAsync(cancellationToken);
 
         var commitSha = repo is not null
@@ -220,7 +244,7 @@ public class AgentSessionsController(
             : branch;
 
         var run = await runQueue.EnqueueAsync(
-            projectId: issue.ProjectId,
+            projectId: session.ProjectId,
             commitSha: commitSha,
             branch: branch,
             workflow: null,
@@ -235,8 +259,8 @@ public class AgentSessionsController(
 
     /// <summary>
     /// Starts a manual-mode agent session without requiring an existing issue.
-    /// Creates a lightweight placeholder issue tied to the project so the session can be tracked,
-    /// then queues the agent run via the normal Kafka pipeline.
+    /// Creates only an <see cref="AgentSession"/> record (no placeholder issue) and queues the run
+    /// via the <c>issue-assigned</c> Kafka pipeline with <c>IsManualDirectStart=true</c>.
     /// </summary>
     [HttpPost("start-manual")]
     public async Task<IActionResult> StartManualSession([FromBody] StartManualSessionRequest request, CancellationToken cancellationToken)
@@ -258,51 +282,27 @@ public class AgentSessionsController(
 
         if (project is null) return NotFound(new { error = "Project not found." });
 
-        // Create a lightweight placeholder issue so the session has something to anchor to.
-        var maxNumber = await db.Issues
-            .Where(i => i.ProjectId == project.Id)
-            .MaxAsync(i => (int?)i.Number, cancellationToken) ?? 0;
-
-        var title = string.IsNullOrWhiteSpace(request.Description)
-            ? $"Manual session {DateTime.UtcNow:yyyy-MM-dd HH:mm}"
-            : request.Description;
-
-        var placeholderIssue = new Issue
-        {
-            Id = Guid.NewGuid(),
-            ProjectId = project.Id,
-            Title = title,
-            Body = $"Placeholder issue created automatically for a manual agent session.\nBranch: {request.Branch ?? "(default)"}",
-            Status = IssueStatus.InProgress,
-            Type = IssueType.Task,
-            Number = maxNumber + 1,
-            GitBranch = request.Branch,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-            LastActivityAt = DateTime.UtcNow,
-        };
-        db.Issues.Add(placeholderIssue);
-
-        // Pre-create the session record so the UI can navigate to it immediately.
+        // Pre-create the session record (no placeholder issue needed — IssueId will remain null).
         var session = new AgentSession
         {
             Id = Guid.NewGuid(),
             AgentId = agent.Id,
-            IssueId = placeholderIssue.Id,
+            ProjectId = project.Id,
+            IssueId = null,
             Status = AgentSessionStatus.Pending,
         };
         db.AgentSessions.Add(session);
         await db.SaveChangesAsync(cancellationToken);
 
-        // Publish issue-assigned event; ForceAgentId bypasses the assignee check.
+        // Publish a manual-direct-start message; the ExecutionClient skips issue lookup.
         var payload = System.Text.Json.JsonSerializer.Serialize(new
         {
-            id = placeholderIssue.Id,
+            id = Guid.Empty,
             projectId = project.Id,
-            title = placeholderIssue.Title,
+            title = string.Empty,
             agentId = agent.Id,
             sessionId = session.Id,
-            forceAgentId = true,
+            isManualDirectStart = true,
             branch = request.Branch,
         });
 
@@ -310,7 +310,7 @@ public class AgentSessionsController(
         {
             await producer.ProduceAsync("issue-assigned", new Message<string, string>
             {
-                Key = placeholderIssue.Id.ToString(),
+                Key = project.Id.ToString(),
                 Value = payload,
             });
         }
@@ -322,7 +322,7 @@ public class AgentSessionsController(
             await db.SaveChangesAsync(cancellationToken);
         }
 
-        return Accepted(new StartManualSessionResponse(session.Id, placeholderIssue.Id));
+        return Accepted(new StartManualSessionResponse(session.Id));
     }
 }
 
@@ -351,4 +351,4 @@ public record StartManualSessionRequest(
     string? Branch = null,
     string? Description = null);
 
-public record StartManualSessionResponse(Guid SessionId, Guid PlaceholderIssueId);
+public record StartManualSessionResponse(Guid SessionId);

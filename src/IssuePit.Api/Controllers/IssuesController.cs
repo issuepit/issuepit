@@ -841,7 +841,7 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
         var agentSessions = await db.AgentSessions
             .Include(s => s.Agent)
             .Include(s => s.CiCdRuns)
-            .Where(s => s.IssueId == id && s.Issue.Project!.Organization.TenantId == ctx.CurrentTenant.Id)
+            .Where(s => s.IssueId == id && s.Project!.Organization.TenantId == ctx.CurrentTenant.Id)
             .OrderByDescending(s => s.StartedAt)
             .Select(s => new
             {

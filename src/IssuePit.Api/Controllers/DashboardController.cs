@@ -61,8 +61,9 @@ public class DashboardController(IssuePitDbContext db, TenantContext ctx) : Cont
 
         var sessions = await db.AgentSessions
             .Include(s => s.Agent)
-            .Include(s => s.Issue).ThenInclude(i => i.Project)
-            .Where(s => s.Issue.Project!.Organization.TenantId == ctx.CurrentTenant.Id)
+            .Include(s => s.Issue)
+            .Include(s => s.Project).ThenInclude(p => p!.Organization)
+            .Where(s => s.Project!.Organization.TenantId == ctx.CurrentTenant.Id)
             .OrderByDescending(s => s.StartedAt)
             .Take(limit)
             .Select(s => new
@@ -71,10 +72,10 @@ public class DashboardController(IssuePitDbContext db, TenantContext ctx) : Cont
                 s.AgentId,
                 AgentName = s.Agent.Name,
                 s.IssueId,
-                IssueTitle = s.Issue.Title,
-                IssueNumber = s.Issue.Number,
-                ProjectId = s.Issue.ProjectId,
-                ProjectName = s.Issue.Project!.Name,
+                IssueTitle = s.Issue != null ? s.Issue.Title : null,
+                IssueNumber = s.Issue != null ? (int?)s.Issue.Number : null,
+                s.ProjectId,
+                ProjectName = s.Project!.Name,
                 s.CommitSha,
                 s.GitBranch,
                 s.Status,

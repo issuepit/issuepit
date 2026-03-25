@@ -44,8 +44,8 @@ public class TerminalController(
 
         var session = await db.AgentSessions
             .Include(s => s.Agent)
-            .Include(s => s.Issue).ThenInclude(i => i.Project)
-            .Where(s => s.Id == id && s.Issue.Project!.Organization.TenantId == tenant.CurrentTenant!.Id)
+            .Include(s => s.Project).ThenInclude(p => p!.Organization)
+            .Where(s => s.Id == id && s.Project!.Organization.TenantId == tenant.CurrentTenant!.Id)
             .Select(s => new { s.Id, s.Status, s.ContainerId, s.Agent.ManualMode })
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -351,8 +351,8 @@ public class TerminalController(
     {
         var session = await db.AgentSessions
             .Include(s => s.Agent)
-            .Include(s => s.Issue).ThenInclude(i => i!.Project).ThenInclude(p => p!.Organization)
-            .Where(s => s.Id == id && s.Issue!.Project!.Organization.TenantId == tenant.CurrentTenant!.Id)
+            .Include(s => s.Project).ThenInclude(p => p!.Organization)
+            .Where(s => s.Id == id && s.Project!.Organization.TenantId == tenant.CurrentTenant!.Id)
             .FirstOrDefaultAsync(cancellationToken);
 
         if (session is null) return NotFound();
@@ -391,7 +391,7 @@ public class TerminalController(
         if (string.IsNullOrWhiteSpace(authContent) || authContent.Length < 10)
             return NotFound(new { error = "auth.json is empty or does not exist. Authenticate first." });
 
-        var orgId = session.Issue!.Project!.OrgId;
+        var orgId = session.Project!.OrgId;
         var tenantId = tenant.CurrentTenant!.Id;
 
         var label = string.IsNullOrWhiteSpace(request.Label)
