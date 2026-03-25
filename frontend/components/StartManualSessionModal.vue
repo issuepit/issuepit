@@ -34,7 +34,7 @@
 
         <!-- Branch -->
         <div>
-          <label class="block text-xs font-medium text-gray-400 mb-1.5">Branch <span class="text-gray-600">(optional — uses project default if empty)</span></label>
+          <label class="block text-xs font-medium text-gray-400 mb-1.5">Branch <span class="text-gray-500">(optional — uses project default if empty)</span></label>
           <div class="flex gap-2">
             <input v-model="branch" type="text" placeholder="e.g. main or feature/my-branch"
               class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-brand-500" />
@@ -57,7 +57,7 @@
 
         <!-- Description (optional) -->
         <div>
-          <label class="block text-xs font-medium text-gray-400 mb-1.5">Description <span class="text-gray-600">(optional)</span></label>
+          <label class="block text-xs font-medium text-gray-400 mb-1.5">Description <span class="text-gray-500">(optional)</span></label>
           <input v-model="description" type="text" placeholder="e.g. Debug authentication flow"
             class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-brand-500" />
         </div>
