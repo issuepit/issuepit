@@ -1,5 +1,5 @@
 <template>
-  <div class="p-8">
+  <div class="p-8 h-screen flex flex-col overflow-hidden">
     <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
       <div>
         <PageBreadcrumb
@@ -73,9 +73,9 @@ stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
       {{ toolsError }}
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 flex-1 min-h-0">
       <!-- Tools list grouped by topic -->
-      <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 flex flex-col min-h-0">
         <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
           Available Tools
           <span v-if="filteredTools.length" class="ml-1 bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded-full">{{ filteredTools.length }}</span>
@@ -86,7 +86,7 @@ stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
         <div v-else-if="!filteredTools.length" data-testid="mcp-tools-empty" class="text-sm text-gray-600">
           No tools available. Make sure the MCP server is running.
         </div>
-        <div v-else data-testid="mcp-tools-list" class="space-y-4 max-h-[600px] overflow-y-auto">
+        <div v-else data-testid="mcp-tools-list" class="space-y-4 flex-1 min-h-0 overflow-y-auto">
           <div v-for="group in groupedTools" :key="group.topic">
             <div class="flex items-center gap-2 mb-1">
               <span class="text-xs font-semibold uppercase tracking-wider" :class="group.color">{{ group.label }}</span>
@@ -165,6 +165,44 @@ stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   <p v-if="paramValues[param.name]" class="text-xs text-gray-600 mt-0.5">Using ID: {{ paramValues[param.name] }}</p>
                 </div>
 
+                <!-- Issue autocomplete for issueId parameters -->
+                <div v-else-if="isIssueIdParam(param.name)" class="relative">
+                  <div class="flex gap-2">
+                    <div class="relative flex-1">
+                      <input
+                        v-model="issueSearch"
+                        type="text"
+                        placeholder="Search issues by title or number…"
+                        class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-500"
+                        @focus="issueDropdownOpen = true"
+                        @blur="onIssueSearchBlur"
+                        @input="issueDropdownOpen = true"
+                      >
+                      <div
+                        v-if="issueDropdownOpen && filteredIssueOptions.length"
+                        class="absolute z-10 top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-lg max-h-48 overflow-y-auto"
+                      >
+                        <button
+                          v-for="issue in filteredIssueOptions"
+                          :key="issue.id"
+                          class="w-full text-left px-3 py-2 text-sm hover:bg-gray-700 text-gray-200"
+                          @mousedown.prevent="selectIssue(issue, param.name)"
+                        >
+                          <span class="text-gray-500 text-xs mr-1.5">#{{ issue.number }}</span>
+                          <span class="font-medium">{{ issue.title }}</span>
+                        </button>
+                      </div>
+                    </div>
+                    <input
+                      v-model="paramValues[param.name]"
+                      type="text"
+                      placeholder="GUID"
+                      class="w-52 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-brand-500"
+                    >
+                  </div>
+                  <p v-if="paramValues[param.name]" class="text-xs text-gray-600 mt-0.5">Using ID: {{ paramValues[param.name] }}</p>
+                </div>
+
                 <select
                   v-else-if="param.type === 'boolean'"
                   v-model="paramValues[param.name]"
@@ -212,8 +250,17 @@ stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 
         <!-- Result -->
         <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Result</h3>
-          <pre class="bg-gray-950 border border-gray-800 rounded-lg p-4 text-xs font-mono text-green-300 min-h-32 overflow-x-auto whitespace-pre-wrap break-all">{{ resultText }}</pre>
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Result</h3>
+            <button
+              class="text-xs px-2 py-0.5 rounded border transition-colors"
+              :class="showPretty ? 'bg-brand-900/40 border-brand-700 text-brand-300' : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-gray-300'"
+              @click="showPretty = !showPretty"
+            >
+              {{ showPretty ? 'Pretty' : 'Raw' }}
+            </button>
+          </div>
+          <pre class="bg-gray-950 border border-gray-800 rounded-lg p-4 text-xs font-mono text-green-300 min-h-32 overflow-x-auto whitespace-pre-wrap break-all">{{ showPretty ? prettyResultText : resultText }}</pre>
         </div>
       </div>
     </div>
@@ -222,6 +269,7 @@ stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
 
 <script setup lang="ts">
 import { useProjectsStore } from '~/stores/projects'
+import type { Issue } from '~/types'
 
 interface McpTool {
   name: string
@@ -257,6 +305,7 @@ const TOOL_GROUPS: Array<{ topic: string; label: string; color: string; prefixes
 ]
 
 const config = useRuntimeConfig()
+const api = useApi()
 const mcpBase = config.public.mcpBase as string
 const mcpUrl = `${mcpBase}/mcp`
 
@@ -273,6 +322,11 @@ const showAdmin = ref(false)
 // Project autocomplete state
 const projectSearch = ref('')
 const projectDropdownOpen = ref(false)
+
+// Issue autocomplete state
+const issueSearch = ref('')
+const issueDropdownOpen = ref(false)
+const allIssues = ref<Pick<Issue, 'id' | 'title' | 'number'>[]>([])
 
 async function mcpInitialize() {
   const body = JSON.stringify({ jsonrpc: '2.0', id: reqId++, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'playground', version: '1.0' } } })
@@ -318,6 +372,7 @@ const paramValues = ref<Record<string, string>>({})
 const calling = ref(false)
 const callStatus = ref<{ ok: boolean; message: string } | null>(null)
 const resultText = ref('// result will appear here')
+const showPretty = ref(true)
 
 // Write tools: create, update, delete operations
 const WRITE_PREFIXES = ['create_', 'update_', 'delete_', 'todo_create', 'todo_update', 'todo_delete']
@@ -325,6 +380,35 @@ const WRITE_PREFIXES = ['create_', 'update_', 'delete_', 'todo_create', 'todo_up
 const ADMIN_TOOLS = new Set(['create_project', 'delete_project'])
 // Todo tools prefix
 const TODO_PREFIX = 'todo_'
+
+// --- Pretty-print result ---
+
+function deepParseJson(val: unknown, depth = 0): unknown {
+  if (depth > 5) return val
+  if (typeof val === 'string') {
+    const trimmed = val.trim()
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try { return deepParseJson(JSON.parse(trimmed), depth + 1) } catch { /* not JSON */ }
+    }
+  }
+  if (Array.isArray(val)) return val.map(v => deepParseJson(v, depth))
+  if (val !== null && typeof val === 'object') {
+    return Object.fromEntries(
+      Object.entries(val as Record<string, unknown>).map(([k, v]) => [k, deepParseJson(v, depth)]),
+    )
+  }
+  return val
+}
+
+const prettyResultText = computed(() => {
+  const text = resultText.value
+  if (!text || text === '// result will appear here') return text
+  try {
+    return JSON.stringify(deepParseJson(JSON.parse(text)), null, 2)
+  } catch {
+    return text
+  }
+})
 
 function isWriteTool(name: string): boolean {
   return WRITE_PREFIXES.some(p => name.startsWith(p))
@@ -343,25 +427,36 @@ const filteredTools = computed<McpTool[]>(() => {
   })
 })
 
-/** Tools grouped by topic for display */
+/** Tools grouped by topic for display; longest-prefix match wins so that e.g.
+ *  `create_issue_task` (matched by tasks prefix) beats `create_issue` (issues prefix). */
 const groupedTools = computed<ToolGroup[]>(() => {
-  const assigned = new Set<string>()
-  const groups: ToolGroup[] = []
+  const toolGroupIdx = new Map<string, number>()
 
-  for (const groupDef of TOOL_GROUPS) {
-    const toolsInGroup = filteredTools.value.filter(t => {
-      if (assigned.has(t.name)) return false
-      const matches = groupDef.prefixes.some(p => t.name.startsWith(p) || t.name === p)
-      if (matches) assigned.add(t.name)
-      return matches
-    })
+  for (const tool of filteredTools.value) {
+    let bestIdx = -1
+    let bestLen = -1
+    for (let i = 0; i < TOOL_GROUPS.length; i++) {
+      for (const prefix of TOOL_GROUPS[i].prefixes) {
+        if ((tool.name === prefix || tool.name.startsWith(prefix)) && prefix.length > bestLen) {
+          bestIdx = i
+          bestLen = prefix.length
+        }
+      }
+    }
+    if (bestIdx >= 0) toolGroupIdx.set(tool.name, bestIdx)
+  }
+
+  const groups: ToolGroup[] = []
+  for (let i = 0; i < TOOL_GROUPS.length; i++) {
+    const group = TOOL_GROUPS[i]
+    const toolsInGroup = filteredTools.value.filter(t => toolGroupIdx.get(t.name) === i)
     if (toolsInGroup.length > 0) {
-      groups.push({ topic: groupDef.topic, label: groupDef.label, color: groupDef.color, tools: toolsInGroup })
+      groups.push({ topic: group.topic, label: group.label, color: group.color, tools: toolsInGroup })
     }
   }
 
   // Catch-all for tools not matched by any group
-  const others = filteredTools.value.filter(t => !assigned.has(t.name))
+  const others = filteredTools.value.filter(t => !toolGroupIdx.has(t.name))
   if (others.length > 0) {
     groups.push({ topic: 'other', label: 'Other', color: 'text-gray-400', tools: others })
   }
@@ -393,8 +488,12 @@ const filteredProjectOptions = computed(() => {
     .slice(0, 20)
 })
 
-function isProjectIdParam(name: string): boolean {
-  return name === 'projectId'
+function isProjectIdParam(paramName: string): boolean {
+  if (paramName === 'projectId') return true
+  if (paramName === 'id' && selectedTool.value) {
+    return selectedTool.value.name.includes('project')
+  }
+  return false
 }
 
 function selectProject(proj: { id: string; name: string; slug: string }, paramName: string) {
@@ -406,6 +505,36 @@ function selectProject(proj: { id: string; name: string; slug: string }, paramNa
 function onProjectSearchBlur() {
   // Delay close to allow click on dropdown items
   setTimeout(() => { projectDropdownOpen.value = false }, 150)
+}
+
+// --- Issue autocomplete ---
+
+const filteredIssueOptions = computed(() => {
+  const q = issueSearch.value.trim().toLowerCase()
+  if (!q) return allIssues.value.slice(0, 20)
+  return allIssues.value
+    .filter(i => i.title.toLowerCase().includes(q) || String(i.number).includes(q))
+    .slice(0, 20)
+})
+
+function isIssueIdParam(paramName: string): boolean {
+  if (paramName === 'issueId') return true
+  if (paramName === 'id' && selectedTool.value) {
+    const name = selectedTool.value.name
+    return name.includes('issue') && !name.includes('project') && !name.includes('task')
+  }
+  return false
+}
+
+function selectIssue(issue: Pick<Issue, 'id' | 'title' | 'number'>, paramName: string) {
+  paramValues.value[paramName] = issue.id
+  issueSearch.value = `#${issue.number} ${issue.title}`
+  issueDropdownOpen.value = false
+}
+
+function onIssueSearchBlur() {
+  // Delay close to allow click on dropdown items
+  setTimeout(() => { issueDropdownOpen.value = false }, 150)
 }
 
 // --- Mode and permissions ---
@@ -452,8 +581,16 @@ function selectTool(tool: McpTool) {
   selectedTool.value = tool
   paramValues.value = {}
   projectSearch.value = ''
+  issueSearch.value = ''
   callStatus.value = null
   resultText.value = '// result will appear here'
+}
+
+async function loadIssues() {
+  try {
+    const data = await api.get<Pick<Issue, 'id' | 'title' | 'number'>[]>('/api/issues')
+    allIssues.value = data
+  } catch { /* ignore – issues search is a best-effort enhancement */ }
 }
 
 async function callTool() {
@@ -500,6 +637,7 @@ onMounted(async () => {
   await Promise.all([
     loadTools(),
     projectsStore.fetchProjects(),
+    loadIssues(),
   ])
 })
 </script>
