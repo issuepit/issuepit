@@ -1295,7 +1295,7 @@ public class DockerAgentRuntime(
                     // attempt to fetch those commits and rebase our local changes on top of them.
                     // C# drives this step because the agent's credentials were stripped from the
                     // container after cloning; the execution client still holds the push-target token.
-                    var retried = false;
+                    var specificFailureLogged = false;
                     if (gitRepository is not null && !string.IsNullOrEmpty(gitRepository.AuthToken))
                     {
                         await onLogLine("[INFO] Fetching remote changes from push target to rebase…", LogStream.Stdout);
@@ -1323,11 +1323,11 @@ public class DockerAgentRuntime(
                                 if (retryPushExit == 0)
                                 {
                                     pushSucceeded = true;
-                                    retried = true;
                                     await onLogLine("[INFO] Push succeeded after rebase.", LogStream.Stdout);
                                 }
                                 else
                                 {
+                                    specificFailureLogged = true;
                                     await onLogLine("[WARN] Push still failed after rebase.", LogStream.Stdout);
                                 }
                             }
@@ -1341,6 +1341,7 @@ public class DockerAgentRuntime(
                                     await onLogLine(
                                         $"[WARN] Rebase abort returned exit code {abortExit} — workspace may be in an inconsistent state.",
                                         LogStream.Stdout);
+                                specificFailureLogged = true;
                                 await onLogLine(
                                     "[WARN] Rebase failed with conflicts — aborting rebase. " +
                                     "Manual conflict resolution is required before pushing.",
@@ -1355,9 +1356,8 @@ public class DockerAgentRuntime(
 
                     if (!pushSucceeded)
                     {
-                        // When retried=true but pushSucceeded=false, the retry already logged
-                        // "Push still failed after rebase" above; skip the generic fallback message.
-                        if (!retried)
+                        // Only emit the generic failure message when no more specific reason was already logged.
+                        if (!specificFailureLogged)
                             await onLogLine(
                                 "[entrypoint] Push failed (allowed — credentials may not be configured or push was rejected)",
                                 LogStream.Stdout);
