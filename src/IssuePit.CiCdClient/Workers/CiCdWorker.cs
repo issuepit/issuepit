@@ -227,11 +227,36 @@ public class CiCdWorker(
         if (project is not null)
         {
             var orgSettings = project.Organization;
+            // Resolve ActRunnerImage and track its source for debug diagnostics.
+            string? resolvedActRunnerImage;
+            string? actRunnerImageSource;
+            if (!string.IsNullOrWhiteSpace(trigger.ActRunnerImage))
+            {
+                resolvedActRunnerImage = trigger.ActRunnerImage;
+                actRunnerImageSource = "trigger-override";
+            }
+            else if (!string.IsNullOrWhiteSpace(project.ActRunnerImage))
+            {
+                resolvedActRunnerImage = project.ActRunnerImage;
+                actRunnerImageSource = "project";
+            }
+            else if (!string.IsNullOrWhiteSpace(orgSettings?.ActRunnerImage))
+            {
+                resolvedActRunnerImage = orgSettings.ActRunnerImage;
+                actRunnerImageSource = "org";
+            }
+            else
+            {
+                resolvedActRunnerImage = null;
+                actRunnerImageSource = null;
+            }
+
             trigger = trigger with
             {
                 ActEnv = trigger.ActEnv ?? project.ActEnv ?? orgSettings?.ActEnv,
                 ActSecrets = trigger.ActSecrets ?? project.ActSecrets ?? orgSettings?.ActSecrets,
-                ActRunnerImage = trigger.ActRunnerImage ?? project.ActRunnerImage ?? orgSettings?.ActRunnerImage,
+                ActRunnerImage = resolvedActRunnerImage,
+                ActRunnerImageSource = actRunnerImageSource,
                 ConcurrentJobs = trigger.ConcurrentJobs ?? project.ConcurrentJobs ?? orgSettings?.ConcurrentJobs,
                 ActionCachePath = trigger.ActionCachePath ?? project.ActionCachePath ?? orgSettings?.ActionCachePath,
                 UseNewActionCache = trigger.UseNewActionCache ?? (project.UseNewActionCache ?? orgSettings?.UseNewActionCache),
