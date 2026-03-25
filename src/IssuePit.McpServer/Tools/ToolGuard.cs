@@ -31,6 +31,29 @@ internal static class ToolGuard
                 $"Tool '{toolName}' is not available in enhance mode.");
     }
 
+    /// <summary>
+    /// Blocks todo tools when the server is configured with <see cref="McpServerOptions.TodoEnabled"/> = false.
+    /// Todo tools are disabled in agent/auto contexts where they are not relevant.
+    /// </summary>
+    public static void EnforceTodoEnabled(McpServerOptions opts, string toolName)
+    {
+        if (!opts.TodoEnabled)
+            throw new InvalidOperationException(
+                $"Tool '{toolName}' is not available because todo tools are disabled (IssuePit:TodoEnabled = false).");
+    }
+
+    /// <summary>
+    /// Blocks admin-only tools such as create/delete project when
+    /// <see cref="McpServerOptions.AdminEnabled"/> is false (the default).
+    /// Admin tools require explicit opt-in and should not be available to automated agents.
+    /// </summary>
+    public static void EnforceAdminEnabled(McpServerOptions opts, string toolName)
+    {
+        if (!opts.AdminEnabled)
+            throw new InvalidOperationException(
+                $"Tool '{toolName}' is not available because admin tools are disabled (IssuePit:AdminEnabled = false).");
+    }
+
     public static void EnforceProjectScope(McpServerOptions opts, Guid projectId)
     {
         if (opts.ProjectId.HasValue && opts.ProjectId.Value != projectId)
