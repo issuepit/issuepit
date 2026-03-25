@@ -609,7 +609,7 @@ public class IssueWorker(
             session.PreviousOpenCodeSessionId = previousSession.OpenCodeSessionId;
             logger.LogInformation(
                 "Found previous opencode session {PrevSessionId} for issue {IssueId} — will continue from it",
-                previousSession.OpenCodeSessionId, issue!.Id);
+                previousSession.OpenCodeSessionId, issue?.Id);
 
             // If there is a preserved DB snapshot, download it for injection into the new container.
             if (!string.IsNullOrEmpty(previousSession.OpenCodeDbS3Url) && gitArtifactUploader.IsConfigured)
