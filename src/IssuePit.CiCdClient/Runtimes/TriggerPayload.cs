@@ -99,11 +99,18 @@ public record TriggerPayload(
     string? SkipSteps = null,
     /// <summary>
     /// Overrides the CI/CD runtime for this individual run. Accepted values are
-    /// <c>"Native"</c> (runs <c>act</c> directly on the host) and <c>"Docker"</c>
-    /// (runs <c>act</c> inside a Docker container). When <c>null</c> the global
+    /// <c>"Native"</c> (runs <c>act</c> directly on the host), <c>"Docker"</c>
+    /// (runs <c>act</c> inside a Docker container), and <c>"Hetzner"</c>
+    /// (provisions a Hetzner Cloud server and runs <c>act</c> over SSH). When <c>null</c> the global
     /// <c>CiCd:Runtime</c> configuration value is used.
     /// </summary>
     string? RuntimeOverride = null,
+    /// <summary>
+    /// Overrides the Hetzner server type (e.g. "cx22", "cx32") for this run.
+    /// Only used when <see cref="RuntimeOverride"/> is <c>"Hetzner"</c> or the global runtime is Hetzner.
+    /// <c>null</c> means use the <c>Hetzner:DefaultServerType</c> configuration value.
+    /// </summary>
+    string? HetznerServerType = null,
     /// <summary>
     /// Indicates where <see cref="ActRunnerImage"/> was resolved from.
     /// Populated by the worker when it merges project/org settings into the trigger.
