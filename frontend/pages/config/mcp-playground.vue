@@ -314,6 +314,15 @@ const projectsStore = useProjectsStore()
 let reqId = 1
 let sessionId: string | null = null
 
+// Shared constants
+const DROPDOWN_CLOSE_DELAY = 150
+const MAX_JSON_PARSE_DEPTH = 5
+
+// Tools whose `id` parameter is a project ID
+const PROJECT_ID_TOOLS = new Set(['get_project', 'create_project', 'update_project', 'delete_project'])
+// Tools whose `id` parameter is an issue ID
+const ISSUE_ID_TOOLS = new Set(['get_issue', 'update_issue', 'delete_issue'])
+
 // Mode and permission state
 const isReadonly = ref(false)
 const showTodo = ref(true)
@@ -384,7 +393,7 @@ const TODO_PREFIX = 'todo_'
 // --- Pretty-print result ---
 
 function deepParseJson(val: unknown, depth = 0): unknown {
-  if (depth > 5) return val
+  if (depth > MAX_JSON_PARSE_DEPTH) return val
   if (typeof val === 'string') {
     const trimmed = val.trim()
     if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
@@ -491,7 +500,7 @@ const filteredProjectOptions = computed(() => {
 function isProjectIdParam(paramName: string): boolean {
   if (paramName === 'projectId') return true
   if (paramName === 'id' && selectedTool.value) {
-    return selectedTool.value.name.includes('project')
+    return PROJECT_ID_TOOLS.has(selectedTool.value.name)
   }
   return false
 }
@@ -504,7 +513,7 @@ function selectProject(proj: { id: string; name: string; slug: string }, paramNa
 
 function onProjectSearchBlur() {
   // Delay close to allow click on dropdown items
-  setTimeout(() => { projectDropdownOpen.value = false }, 150)
+  setTimeout(() => { projectDropdownOpen.value = false }, DROPDOWN_CLOSE_DELAY)
 }
 
 // --- Issue autocomplete ---
@@ -520,8 +529,7 @@ const filteredIssueOptions = computed(() => {
 function isIssueIdParam(paramName: string): boolean {
   if (paramName === 'issueId') return true
   if (paramName === 'id' && selectedTool.value) {
-    const name = selectedTool.value.name
-    return name.includes('issue') && !name.includes('project') && !name.includes('task')
+    return ISSUE_ID_TOOLS.has(selectedTool.value.name)
   }
   return false
 }
@@ -534,7 +542,7 @@ function selectIssue(issue: Pick<Issue, 'id' | 'title' | 'number'>, paramName: s
 
 function onIssueSearchBlur() {
   // Delay close to allow click on dropdown items
-  setTimeout(() => { issueDropdownOpen.value = false }, 150)
+  setTimeout(() => { issueDropdownOpen.value = false }, DROPDOWN_CLOSE_DELAY)
 }
 
 // --- Mode and permissions ---
