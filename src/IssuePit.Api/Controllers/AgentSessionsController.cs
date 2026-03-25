@@ -86,6 +86,78 @@ public class AgentSessionsController(IssuePitDbContext db, TenantContext tenant,
         return Ok(logs);
     }
 
+    /// <summary>
+    /// Returns a compact step summary for the agent session, derived from log section data.
+    /// Each entry represents one distinct phase (section + sectionIndex) and indicates whether
+    /// any log line in that phase contained an [ERROR] marker.
+    /// </summary>
+    [HttpGet("{id:guid}/steps")]
+    public async Task<IActionResult> GetSessionSteps(Guid id)
+    {
+        var sessionExists = await db.AgentSessions
+            .AnyAsync(s => s.Id == id && s.Issue.Project!.Organization.TenantId == tenant.CurrentTenant!.Id);
+
+        if (!sessionExists) return NotFound();
+
+        var logs = await db.AgentSessionLogs
+            .Where(l => l.AgentSessionId == id && l.Section != null)
+            .OrderBy(l => l.Timestamp)
+            .Select(l => new
+            {
+                l.Section,
+                l.SectionIndex,
+                l.Line,
+                l.Timestamp,
+            })
+            .ToListAsync();
+
+        // Group logs by (section, sectionIndex) in order of first appearance.
+        // Track index in the groups list alongside the step so we can update in O(1).
+        var groups = new List<AgentSessionStepDto>();
+        var seen = new Dictionary<(string, int), (AgentSessionStepDto Step, int Index)>();
+
+        foreach (var log in logs)
+        {
+            var section = log.Section!.Value.ToString();
+            var key = (section, log.SectionIndex);
+            if (!seen.TryGetValue(key, out var entry))
+            {
+                var step = new AgentSessionStepDto(
+                    Section: section,
+                    SectionIndex: log.SectionIndex,
+                    Label: SectionLabel(log.Section!.Value, log.SectionIndex),
+                    HasError: false,
+                    StartedAt: log.Timestamp,
+                    EndedAt: log.Timestamp);
+                seen[key] = (step, groups.Count);
+                groups.Add(step);
+            }
+            else
+            {
+                // Update endedAt and propagate error flag in O(1) using the tracked index.
+                var updated = entry.Step with
+                {
+                    EndedAt = log.Timestamp,
+                    HasError = entry.Step.HasError || log.Line.Contains("[ERROR]"),
+                };
+                seen[key] = (updated, entry.Index);
+                groups[entry.Index] = updated;
+            }
+        }
+
+        return Ok(groups);
+    }
+
+    private static string SectionLabel(IssuePit.Core.Enums.AgentLogSection section, int index) => section switch
+    {
+        IssuePit.Core.Enums.AgentLogSection.InitialAgentRun => "Initial Agent Run",
+        IssuePit.Core.Enums.AgentLogSection.PostRun => "Post Run",
+        IssuePit.Core.Enums.AgentLogSection.UncommittedChangesFix => "Uncommitted Changes Fix",
+        IssuePit.Core.Enums.AgentLogSection.CiCdRun => $"CI/CD Run {index}",
+        IssuePit.Core.Enums.AgentLogSection.CiCdFixRun => $"CI/CD Fix Run {index}",
+        _ => section.ToString(),
+    };
+
     [HttpPost("{id:guid}/cancel")]
     public async Task<IActionResult> CancelSession(Guid id)
     {
@@ -193,3 +265,12 @@ public record RetrySessionRequest(
     bool? UseHttpServerOverride = null,
     /// <summary>Override the runtime type (Docker, Native, SSH…) for this retry. Null = use the org default.</summary>
     RuntimeType? RuntimeTypeOverride = null);
+
+/// <summary>A single workflow phase summary derived from agent session logs, returned by GET /api/agent-sessions/{id}/steps.</summary>
+public record AgentSessionStepDto(
+    string Section,
+    int SectionIndex,
+    string Label,
+    bool HasError,
+    DateTime StartedAt,
+    DateTime EndedAt);
