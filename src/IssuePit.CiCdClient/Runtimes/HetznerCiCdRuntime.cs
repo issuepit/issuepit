@@ -69,8 +69,7 @@ public class HetznerCiCdRuntime(
         var (privateKeyPem, sshKeyId) = await EnsureSshKeyAsync(apiToken, db, cancellationToken);
 
         // Unique server name for this run.
-        var serverName = $"issuepit-cicd-{run.Id:N[..12]}";
-        serverName = $"issuepit-cicd-{run.Id.ToString("N")[..12]}";
+        var serverName = $"issuepit-cicd-{run.Id.ToString("N")[..12]}";
 
         await onLogLine($"[HETZNER] Provisioning server '{serverName}' (type={serverType}, location={location})", LogStream.Stdout);
         var setupStart = DateTime.UtcNow;
@@ -378,8 +377,7 @@ final_message: ""IssuePit CI/CD bootstrap complete (act installed, Docker runnin
         var actRunnerImage = trigger.ActRunnerImage ?? "catthehacker/ubuntu:act-latest";
         var platformArgs = string.Join(" ", platformLabels.Select(l => $"-P {l}={actRunnerImage}"));
 
-        var containerSuffix = $"-{run.Id:N[..8]}";
-        containerSuffix = $"-{run.Id.ToString("N")[..8]}";
+        var containerSuffix = $"-{run.Id.ToString("N")[..8]}";
 
         // Touch heartbeat so the watchdog doesn't kill the server during the run.
         await RunSshCommandAsync(client,
@@ -505,12 +503,10 @@ final_message: ""IssuePit CI/CD bootstrap complete (act installed, Docker runnin
         }
 
         // A key with the same name already exists but we generated a new private key — it won't
-        // match.  Fall back to password-less SSH (the cloud-init script configures root access).
-        logger.LogWarning(
-            "SSH key '{KeyName}' already exists in Hetzner but no private key is stored locally. " +
-            "Set Hetzner__SshPrivateKey to reuse the existing key, or delete '{KeyName}' from Hetzner first.",
-            keyName, keyName);
-        return (privateKeyPem, null);
+        // match. Fail fast with a clear error so the operator knows what to fix.
+        throw new InvalidOperationException(
+            $"SSH key '{keyName}' already exists in Hetzner but no private key is stored locally. " +
+            $"Set Hetzner__SshPrivateKey to reuse the existing key, or delete '{keyName}' from Hetzner first.");
     }
 
     // ── Utilities ─────────────────────────────────────────────────────────────────

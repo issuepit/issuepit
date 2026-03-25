@@ -226,30 +226,27 @@ public class HetznerCloudService(ILogger<HetznerCloudService> logger, IHttpClien
 
     private static string ConvertRsaPublicKeyToOpenSshFormat(RSA rsa)
     {
-        // OpenSSH public key wire format: length-prefixed key-type, exponent, modulus
+        // OpenSSH public key wire format: length-prefixed key-type, exponent, modulus.
+        // Each field is encoded as a 4-byte big-endian length followed by the data bytes.
         var parameters = rsa.ExportParameters(false);
         using var ms = new MemoryStream();
-        using var writer = new BinaryWriter(ms);
 
-        static void WriteBlob(BinaryWriter w, byte[] data)
+        static void WriteBlob(Stream s, byte[] data)
         {
-            // If the high bit is set, prepend 0x00 to ensure positive big-endian integer
-            if (data[0] >= 0x80)
-            {
-                w.Write(new byte[] { 0, 0, 0, (byte)(data.Length + 1) });
-                w.Write((byte)0x00);
-            }
-            else
-            {
-                w.Write(new byte[] { 0, 0, 0, (byte)data.Length });
-            }
-            w.Write(data);
+            // If the high bit is set, prepend 0x00 to ensure a positive big-endian integer.
+            var hasLeadingZero = data[0] >= 0x80;
+            var len = data.Length + (hasLeadingZero ? 1 : 0);
+            // Write length as 4-byte big-endian (SSH wire format requires this).
+            s.Write(new byte[] { (byte)(len >> 24), (byte)(len >> 16), (byte)(len >> 8), (byte)len });
+            if (hasLeadingZero)
+                s.WriteByte(0x00);
+            s.Write(data);
         }
 
         var keyType = "ssh-rsa"u8.ToArray();
-        WriteBlob(writer, keyType);
-        WriteBlob(writer, parameters.Exponent!);
-        WriteBlob(writer, parameters.Modulus!);
+        WriteBlob(ms, keyType);
+        WriteBlob(ms, parameters.Exponent!);
+        WriteBlob(ms, parameters.Modulus!);
 
         var base64 = Convert.ToBase64String(ms.ToArray());
         return $"ssh-rsa {base64} issuepit-cicd";

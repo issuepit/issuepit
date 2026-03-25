@@ -235,6 +235,15 @@ interface HetznerSummary {
 
 const serverIcon = 'M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01'
 
+// Matches the backend HetznerServerStatus enum values.
+const STATUS_PROVISIONING = 0
+const STATUS_INITIALIZING = 1
+const STATUS_IDLE = 2
+const STATUS_RUNNING = 3
+const STATUS_DRAINING = 4
+const STATUS_DELETED = 5
+const STATUS_ERROR = 6
+
 const statusLabels: Record<string, string> = {
   Running: 'Running',
   Idle: 'Idle',
@@ -272,7 +281,7 @@ async function performAction(server: HetznerServer, action: string) {
   try {
     await post(`/api/admin/hetzner/servers/${server.id}/actions/${action}`, {})
     // Optimistic UI update
-    if (action === 'stop') server.status = 3 // Draining
+    if (action === 'stop') server.status = STATUS_DRAINING
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : String(e)
   }
@@ -296,36 +305,35 @@ async function deleteRecord() {
 }
 
 function canReboot(server: HetznerServer): boolean {
-  // 0=Provisioning, 1=Initializing, 2=Idle, 3=Running, 4=Draining, 5=Deleted, 6=Error
-  return server.status <= 4 && server.status !== 5
+  return server.status <= STATUS_DRAINING && server.status !== STATUS_DELETED
 }
 
 function canStop(server: HetznerServer): boolean {
-  return server.status <= 3 && server.status !== 5
+  return server.status <= STATUS_RUNNING && server.status !== STATUS_DELETED
 }
 
 function statusBadgeClass(status: number): string {
   switch (status) {
-    case 0: return 'bg-blue-900/30 text-blue-400 border border-blue-700/40'   // Provisioning
-    case 1: return 'bg-yellow-900/30 text-yellow-400 border border-yellow-700/40' // Initializing
-    case 2: return 'bg-green-900/30 text-green-400 border border-green-700/40' // Idle
-    case 3: return 'bg-brand-900/30 text-brand-400 border border-brand-700/40' // Running
-    case 4: return 'bg-orange-900/30 text-orange-400 border border-orange-700/40' // Draining
-    case 5: return 'bg-gray-800 text-gray-500 border border-gray-700'          // Deleted
-    case 6: return 'bg-red-900/30 text-red-400 border border-red-700/40'       // Error
+    case STATUS_PROVISIONING: return 'bg-blue-900/30 text-blue-400 border border-blue-700/40'
+    case STATUS_INITIALIZING: return 'bg-yellow-900/30 text-yellow-400 border border-yellow-700/40'
+    case STATUS_IDLE: return 'bg-green-900/30 text-green-400 border border-green-700/40'
+    case STATUS_RUNNING: return 'bg-brand-900/30 text-brand-400 border border-brand-700/40'
+    case STATUS_DRAINING: return 'bg-orange-900/30 text-orange-400 border border-orange-700/40'
+    case STATUS_DELETED: return 'bg-gray-800 text-gray-500 border border-gray-700'
+    case STATUS_ERROR: return 'bg-red-900/30 text-red-400 border border-red-700/40'
     default: return 'bg-gray-800 text-gray-400 border border-gray-700'
   }
 }
 
 function statusDotClass(status: number): string {
   switch (status) {
-    case 0: return 'bg-blue-400'
-    case 1: return 'bg-yellow-400 animate-pulse'
-    case 2: return 'bg-green-400'
-    case 3: return 'bg-brand-400 animate-pulse'
-    case 4: return 'bg-orange-400'
-    case 5: return 'bg-gray-600'
-    case 6: return 'bg-red-400'
+    case STATUS_PROVISIONING: return 'bg-blue-400'
+    case STATUS_INITIALIZING: return 'bg-yellow-400 animate-pulse'
+    case STATUS_IDLE: return 'bg-green-400'
+    case STATUS_RUNNING: return 'bg-brand-400 animate-pulse'
+    case STATUS_DRAINING: return 'bg-orange-400'
+    case STATUS_DELETED: return 'bg-gray-600'
+    case STATUS_ERROR: return 'bg-red-400'
     default: return 'bg-gray-500'
   }
 }
