@@ -83,9 +83,9 @@ public static class ServiceDefaultsExtensions
         builder.Services.AddSingleton<IProducer<string, string>>(_ =>
         {
             var config = new ProducerConfig { BootstrapServers = bootstrapServers };
-            //config.Set("log_level", "0");
+            config.Set("log_level", "0");
             return new ProducerBuilder<string, string>(config)
-            //    .SetLogHandler((_, _) => { })
+                .SetLogHandler((_, _) => { })
                 .Build();
         });
 
