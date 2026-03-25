@@ -10,8 +10,8 @@ public enum HetznerServerStatus
     Idle,
     /// <summary>Server is running one or more CI/CD jobs.</summary>
     Running,
-    /// <summary>Server is in the idle-timeout window and will be deleted soon if no new jobs arrive.</summary>
-    SpinningDown,
+    /// <summary>Server is finishing active jobs and will be deleted once all complete (idle-timeout window).</summary>
+    Draining,
     /// <summary>Deletion has been requested (API call made or self-destruct script triggered).</summary>
     Deleting,
     /// <summary>Server has been deleted from Hetzner Cloud.</summary>

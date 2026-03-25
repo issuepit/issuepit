@@ -93,6 +93,7 @@ public class HetznerServersAdminController(IssuePitDbContext db, TenantContext c
 
     /// <summary>
     /// Updates the status of a server to Deleted (admin reconcile action).
+    /// Also writes a runtime history record so the cost dashboard is accurate.
     /// Call this when a server is known to have been deleted externally.
     /// </summary>
     [HttpPost("{id:guid}/mark-deleted")]
@@ -107,10 +108,78 @@ public class HetznerServersAdminController(IssuePitDbContext db, TenantContext c
 
         if (server is null) return NotFound();
 
+        var now = DateTime.UtcNow;
         server.Status = HetznerServerStatus.Deleted;
-        server.DeletedAt ??= DateTime.UtcNow;
+        server.DeletedAt ??= now;
+
+        // Write a runtime history record if one does not already exist for this server
+        var historyExists = await db.HetznerServerRuntimeHistories
+            .AnyAsync(h => h.HetznerServerId == server.Id);
+
+        if (!historyExists)
+        {
+            var totalSeconds = (int)(now - server.CreatedAt).TotalSeconds;
+            db.HetznerServerRuntimeHistories.Add(new HetznerServerRuntimeHistory
+            {
+                Id = Guid.NewGuid(),
+                HetznerServerId = server.Id,
+                OrgId = server.OrgId,
+                ServerType = server.ServerType,
+                Location = server.Location,
+                ProvisionedAt = server.CreatedAt,
+                ReadyAt = server.ReadyAt,
+                DeletedAt = now,
+                TotalRuntimeSeconds = totalSeconds,
+                BillableSeconds = server.ReadyAt.HasValue
+                    ? (int)(now - server.ReadyAt.Value).TotalSeconds
+                    : totalSeconds,
+                TotalJobCount = server.TotalJobCount,
+                SetupDurationSeconds = server.SetupDurationSeconds,
+                PeakCpuLoadPercent = server.CpuLoadPercent,
+                PeakRamUsedMb = server.RamUsedMb,
+                RecordedAt = now,
+            });
+        }
+
         await db.SaveChangesAsync();
         return Ok(new { message = "Marked as deleted." });
+    }
+
+    /// <summary>
+    /// Returns server runtime history for the current tenant, ordered by most recent first.
+    /// Used to build a cost dashboard.
+    /// </summary>
+    [HttpGet("history")]
+    public async Task<IActionResult> GetHistory()
+    {
+        if (ctx.CurrentUser is null || !ctx.CurrentUser.IsAdmin)
+            return Forbid();
+
+        var history = await db.HetznerServerRuntimeHistories
+            .Include(h => h.Organization)
+            .Where(h => h.Organization.TenantId == ctx.CurrentTenant!.Id)
+            .OrderByDescending(h => h.RecordedAt)
+            .Select(h => new HetznerServerHistoryDto(
+                h.Id,
+                h.HetznerServerId,
+                h.OrgId,
+                h.Organization.Name,
+                h.ServerType,
+                h.Location,
+                h.ProvisionedAt,
+                h.ReadyAt,
+                h.DeletedAt,
+                h.TotalRuntimeSeconds,
+                h.BillableSeconds,
+                h.TotalJobCount,
+                h.SetupDurationSeconds,
+                h.EstimatedCostEuroCents,
+                h.PeakCpuLoadPercent,
+                h.PeakRamUsedMb,
+                h.RecordedAt))
+            .ToListAsync();
+
+        return Ok(history);
     }
 }
 
@@ -136,3 +205,23 @@ public record HetznerServerDto(
     int? RamTotalMb,
     int? SetupDurationSeconds,
     string? LastError);
+
+public record HetznerServerHistoryDto(
+    Guid Id,
+    Guid HetznerServerId,
+    Guid OrgId,
+    string OrgName,
+    string ServerType,
+    string Location,
+    DateTime ProvisionedAt,
+    DateTime? ReadyAt,
+    DateTime? DeletedAt,
+    int? TotalRuntimeSeconds,
+    int? BillableSeconds,
+    int TotalJobCount,
+    int? SetupDurationSeconds,
+    int? EstimatedCostEuroCents,
+    double? PeakCpuLoadPercent,
+    int? PeakRamUsedMb,
+    DateTime RecordedAt);
+

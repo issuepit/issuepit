@@ -194,8 +194,11 @@ public class HetznerCiCdRuntime(
             {
                 s.ActiveJobCount = 0;
                 s.LastJobEndedAt = DateTime.UtcNow;
-                s.Status = HetznerServerStatus.SpinningDown;
+                s.Status = HetznerServerStatus.Draining;
             }, cancellationToken);
+
+            // Persist runtime history for cost dashboard
+            await RecordRuntimeHistoryAsync(serverRecord, cancellationToken);
         }
         finally
         {
@@ -519,6 +522,57 @@ public class HetznerCiCdRuntime(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to update HetznerServer {ServerId} in DB", serverId);
+        }
+    }
+
+    /// <summary>
+    /// Writes a <see cref="HetznerServerRuntimeHistory"/> row so the cost dashboard
+    /// can aggregate billable time and job counts across all server lifetimes.
+    /// </summary>
+    private async Task RecordRuntimeHistoryAsync(HetznerServer serverRecord, CancellationToken ct)
+    {
+        try
+        {
+            await using var scope = services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+            // Reload the latest server state (metrics may have been updated)
+            var server = await db.HetznerServers.FindAsync([serverRecord.Id], ct);
+            if (server is null) return;
+
+            var now = DateTime.UtcNow;
+            var totalSeconds = (int)(now - server.CreatedAt).TotalSeconds;
+            var billableSeconds = server.ReadyAt.HasValue
+                ? (int)(now - server.ReadyAt.Value).TotalSeconds
+                : totalSeconds;
+
+            var history = new HetznerServerRuntimeHistory
+            {
+                Id = Guid.NewGuid(),
+                HetznerServerId = server.Id,
+                OrgId = server.OrgId,
+                ServerType = server.ServerType,
+                Location = server.Location,
+                ProvisionedAt = server.CreatedAt,
+                ReadyAt = server.ReadyAt,
+                DeletedAt = now,
+                TotalRuntimeSeconds = totalSeconds,
+                BillableSeconds = billableSeconds,
+                TotalJobCount = server.TotalJobCount,
+                SetupDurationSeconds = server.SetupDurationSeconds,
+                PeakCpuLoadPercent = server.CpuLoadPercent,
+                PeakRamUsedMb = server.RamUsedMb,
+                RecordedAt = now,
+            };
+
+            db.HetznerServerRuntimeHistories.Add(history);
+            await db.SaveChangesAsync(ct);
+            logger.LogDebug("Recorded runtime history for server {ServerId} ({TotalSeconds}s, {Jobs} jobs)",
+                server.Id, totalSeconds, server.TotalJobCount);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to record runtime history for server {ServerId}", serverRecord.Id);
         }
     }
 
