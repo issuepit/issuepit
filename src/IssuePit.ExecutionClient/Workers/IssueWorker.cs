@@ -613,6 +613,36 @@ public class IssueWorker(
                 // Update clone repository to the one selected after branch availability checks
                 // (may differ from initial selection if the top candidate's branch was not found).
                 cloneRepository = selectedCloneRepo;
+
+                // When the effective feature branch (from branchOverride or issue.GitBranch) differs
+                // from the base DefaultBranch and the push target (Working remote) already has that
+                // feature branch, prefer the Working remote as clone source. This guarantees we start
+                // from the newest version of the feature branch and prevents "fetch first" push failures
+                // that occur when the release/upstream remote is behind the push target.
+                string? effectiveFeatureBranch = null;
+                if (!string.IsNullOrWhiteSpace(issue.GitBranch)
+                    && cloneRepository is not null
+                    && !string.Equals(issue.GitBranch, cloneRepository.DefaultBranch, StringComparison.OrdinalIgnoreCase))
+                {
+                    effectiveFeatureBranch = issue.GitBranch;
+                }
+                if (effectiveFeatureBranch is not null
+                    && gitRepository is not null
+                    && cloneRepository is not null
+                    && gitRepository.Id != cloneRepository.Id)
+                {
+                    var workingHasFeatureBranch = await IsBranchOnRemoteAsync(
+                        gitRepository.RemoteUrl, gitRepository.AuthUsername, gitRepository.AuthToken,
+                        effectiveFeatureBranch, sessionCts.Token);
+                    if (workingHasFeatureBranch == true)
+                    {
+                        await onLogLine(
+                            $"[DEBUG] Push target has feature branch '{effectiveFeatureBranch}' — switching clone source to push target (newest version)",
+                            LogStream.Stdout);
+                        cloneRepository = gitRepository;
+                    }
+                }
+
                 session.GitRemoteCheckResultsJson = JsonSerializer.Serialize(checkResults);
                 await db.SaveChangesAsync(sessionCts.Token);
 

@@ -1288,30 +1288,102 @@ public class DockerAgentRuntime(
                 if (pushExit != 0)
                 {
                     await onLogLine(
-                        "[entrypoint] Push failed (allowed — credentials may not be configured or push was rejected)",
+                        "[entrypoint] Push failed — checking if remote has newer commits to integrate…",
                         LogStream.Stdout);
-                    // Log a diagnostic hint when pushing to a URL that differs from the in-container origin.
-                    // This is the cross-remote push scenario (Working ≠ clone source): the most common
-                    // failure mode is a shallow clone whose parent objects the working remote does not have.
-                    var inContainerOrigin = await ExecReadOutputAsync(
-                        containerId,
-                        ["/bin/sh", "-c", "git remote get-url origin 2>/dev/null || echo ''"],
-                        cancellationToken);
-                    var originUrl = inContainerOrigin.Trim().TrimEnd('/');
-                    var pushUrl = gitRepository?.RemoteUrl?.TrimEnd('/');
-                    if (!string.IsNullOrEmpty(pushUrl) && !string.IsNullOrEmpty(originUrl)
-                        && !originUrl.Equals(pushUrl, StringComparison.OrdinalIgnoreCase))
+
+                    // When push was rejected because the remote has newer commits ("fetch first"),
+                    // attempt to fetch those commits and rebase our local changes on top of them.
+                    // C# drives this step because the agent's credentials were stripped from the
+                    // container after cloning; the execution client still holds the push-target token.
+                    var retried = false;
+                    if (gitRepository is not null && !string.IsNullOrEmpty(gitRepository.AuthToken))
                     {
-                        await onLogLine(
-                            $"[DEBUG] Push target ({pushUrl}) differs from in-container origin ({originUrl}). " +
-                            "If the error above is 'remote: fatal: did not receive expected object', " +
-                            "this is a shallow-clone/cross-remote push failure. " +
-                            "Verify the working remote has a base branch in common with the clone source, " +
-                            "or ensure both remotes share the same git history.",
-                            LogStream.Stdout);
+                        await onLogLine("[INFO] Fetching remote changes from push target to rebase…", LogStream.Stdout);
+                        var fetchExit = await ExecCommandAsync(
+                            containerId,
+                            [realGit, "fetch", pushTarget, branchTrimmed],
+                            safeLogLine, cancellationToken,
+                            env: ["GIT_TERMINAL_PROMPT=0"]);
+
+                        if (fetchExit == 0)
+                        {
+                            var rebaseExit = await ExecCommandAsync(
+                                containerId,
+                                [realGit, "rebase", "FETCH_HEAD"],
+                                safeLogLine, cancellationToken);
+
+                            if (rebaseExit == 0)
+                            {
+                                await onLogLine("[INFO] Rebase succeeded — retrying push…", LogStream.Stdout);
+                                var retryPushExit = await ExecCommandAsync(
+                                    containerId,
+                                    [realGit, "push", pushTarget, branchTrimmed],
+                                    safeLogLine, cancellationToken,
+                                    env: ["GIT_TERMINAL_PROMPT=0"]);
+                                if (retryPushExit == 0)
+                                {
+                                    pushSucceeded = true;
+                                    retried = true;
+                                    await onLogLine("[INFO] Push succeeded after rebase.", LogStream.Stdout);
+                                }
+                                else
+                                {
+                                    await onLogLine("[WARN] Push still failed after rebase.", LogStream.Stdout);
+                                }
+                            }
+                            else
+                            {
+                                // Rebase hit conflicts — abort and fall through to the failure path.
+                                // The conflict markers are now in the workspace for a potential fix agent.
+                                var abortExit = await ExecCommandAsync(containerId, [realGit, "rebase", "--abort"],
+                                    safeLogLine, cancellationToken);
+                                if (abortExit != 0)
+                                    await onLogLine(
+                                        $"[WARN] Rebase abort returned exit code {abortExit} — workspace may be in an inconsistent state.",
+                                        LogStream.Stdout);
+                                await onLogLine(
+                                    "[WARN] Rebase failed with conflicts — aborting rebase. " +
+                                    "Manual conflict resolution is required before pushing.",
+                                    LogStream.Stdout);
+                            }
+                        }
+                        else
+                        {
+                            await onLogLine("[WARN] Fetch from push target failed — cannot rebase.", LogStream.Stdout);
+                        }
                     }
-                    // Emit a structured marker so IssueWorker can trigger a .git archive upload for recovery.
-                    await onLogLine(GitPushFailedMarker, LogStream.Stdout);
+
+                    if (!pushSucceeded)
+                    {
+                        // When retried=true but pushSucceeded=false, the retry already logged
+                        // "Push still failed after rebase" above; skip the generic fallback message.
+                        if (!retried)
+                            await onLogLine(
+                                "[entrypoint] Push failed (allowed — credentials may not be configured or push was rejected)",
+                                LogStream.Stdout);
+                        // Log a diagnostic hint when pushing to a URL that differs from the in-container origin.
+                        // This is the cross-remote push scenario (Working ≠ clone source): the most common
+                        // failure mode is a shallow clone whose parent objects the working remote does not have.
+                        var inContainerOrigin = await ExecReadOutputAsync(
+                            containerId,
+                            ["/bin/sh", "-c", "git remote get-url origin 2>/dev/null || echo ''"],
+                            cancellationToken);
+                        var originUrl = inContainerOrigin.Trim().TrimEnd('/');
+                        var pushUrl = gitRepository?.RemoteUrl?.TrimEnd('/');
+                        if (!string.IsNullOrEmpty(pushUrl) && !string.IsNullOrEmpty(originUrl)
+                            && !originUrl.Equals(pushUrl, StringComparison.OrdinalIgnoreCase))
+                        {
+                            await onLogLine(
+                                $"[DEBUG] Push target ({pushUrl}) differs from in-container origin ({originUrl}). " +
+                                "If the error above is 'remote: fatal: did not receive expected object', " +
+                                "this is a shallow-clone/cross-remote push failure. " +
+                                "Verify the working remote has a base branch in common with the clone source, " +
+                                "or ensure both remotes share the same git history.",
+                                LogStream.Stdout);
+                        }
+                        // Emit a structured marker so IssueWorker can trigger a .git archive upload for recovery.
+                        await onLogLine(GitPushFailedMarker, LogStream.Stdout);
+                    }
                 }
                 else
                     pushSucceeded = true;
