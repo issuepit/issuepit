@@ -17,12 +17,18 @@ builder.Services.AddSingleton(_ => new DockerClientBuilder().Build());
 // Register CI/CD runtime implementations
 builder.Services.AddSingleton<DockerCiCdRuntime>();
 builder.Services.AddSingleton<NativeCiCdRuntime>();
+builder.Services.AddSingleton<HetznerCiCdRuntime>();
 builder.Services.AddSingleton<CiCdRuntimeFactory>();
+
+// Hetzner Cloud service (HTTP client for the Hetzner Cloud REST API)
+builder.Services.AddHttpClient("hetzner");
+builder.Services.AddSingleton<HetznerCloudService>();
 
 // Artifact S3 upload (reuses ImageStorage__ config keys; skipped when not configured)
 builder.Services.AddSingleton<ArtifactStorageService>();
 
 builder.Services.AddHostedService<CiCdWorker>();
+builder.Services.AddHostedService<HetznerReconcilerWorker>();
 
 var app = builder.Build();
 app.MapDefaultEndpoints();
