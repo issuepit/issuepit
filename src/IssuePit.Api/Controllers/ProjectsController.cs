@@ -16,10 +16,16 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
     public async Task<IActionResult> GetProjects()
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
+        var userId = ctx.CurrentUser?.Id;
         var projects = await ProjectsQuery()
             .Where(p => p.Organization.TenantId == ctx.CurrentTenant.Id)
-            .OrderBy(p => p.CreatedAt)
-            .Select(ProjectDto.Selector(db))
+            .OrderByDescending(p => db.PinnedProjects.Any(pp => pp.ProjectId == p.Id && pp.UserId == userId))
+            .ThenByDescending(p => db.Issues
+                .Where(i => i.ProjectId == p.Id)
+                .OrderByDescending(i => i.UpdatedAt)
+                .Select(i => (DateTime?)i.UpdatedAt)
+                .FirstOrDefault() ?? p.CreatedAt)
+            .Select(ProjectDto.Selector(db, userId))
             .ToListAsync();
         return Ok(projects);
     }
@@ -28,9 +34,10 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
     public async Task<IActionResult> GetProject(Guid id)
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
+        var userId = ctx.CurrentUser?.Id;
         var project = await ProjectsQuery()
             .Where(p => p.Id == id && p.Organization.TenantId == ctx.CurrentTenant.Id)
-            .Select(ProjectDto.Selector(db))
+            .Select(ProjectDto.Selector(db, userId))
             .FirstOrDefaultAsync();
         return project is null ? NotFound() : Ok(project);
     }
@@ -39,15 +46,56 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
     public async Task<IActionResult> GetProjectBySlug(string slug)
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
+        var userId = ctx.CurrentUser?.Id;
         var project = await ProjectsQuery()
             .Where(p => p.Slug == slug && p.Organization.TenantId == ctx.CurrentTenant.Id)
-            .Select(ProjectDto.Selector(db))
+            .Select(ProjectDto.Selector(db, userId))
             .FirstOrDefaultAsync();
         return project is null ? NotFound() : Ok(project);
     }
 
     private IQueryable<Project> ProjectsQuery() =>
         db.Projects.Include(p => p.Organization);
+
+    [HttpPost("{id:guid}/pin")]
+    public async Task<IActionResult> PinProject(Guid id)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        if (ctx.CurrentUser is null) return Unauthorized();
+        var project = await db.Projects
+            .Include(p => p.Organization)
+            .FirstOrDefaultAsync(p => p.Id == id && p.Organization.TenantId == ctx.CurrentTenant.Id);
+        if (project is null) return NotFound();
+        var already = await db.PinnedProjects
+            .AnyAsync(pp => pp.ProjectId == id && pp.UserId == ctx.CurrentUser.Id);
+        if (!already)
+        {
+            db.PinnedProjects.Add(new PinnedProject
+            {
+                Id = Guid.NewGuid(),
+                UserId = ctx.CurrentUser.Id,
+                ProjectId = id,
+                CreatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+        return NoContent();
+    }
+
+    [HttpDelete("{id:guid}/pin")]
+    public async Task<IActionResult> UnpinProject(Guid id)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        if (ctx.CurrentUser is null) return Unauthorized();
+        var pinned = await db.PinnedProjects
+            .FirstOrDefaultAsync(pp => pp.ProjectId == id && pp.UserId == ctx.CurrentUser.Id);
+        if (pinned is not null)
+        {
+            db.PinnedProjects.Remove(pinned);
+            await db.SaveChangesAsync();
+        }
+        return NoContent();
+    }
 
     [HttpPost]
     public async Task<IActionResult> CreateProject([FromBody] Project project)
@@ -511,9 +559,10 @@ public record ProjectDto(
     int OpenMergeRequestCount,
     string? IssueKey,
     int IssueNumberOffset,
-    string? Color)
+    string? Color,
+    bool IsPinned)
 {
-    public static Expression<Func<Project, ProjectDto>> Selector(IssuePitDbContext db) =>
+    public static Expression<Func<Project, ProjectDto>> Selector(IssuePitDbContext db, Guid? userId = null) =>
         p => new ProjectDto(
             p.Id, p.OrgId, p.Name, p.Slug, p.Description, p.GitHubRepo, p.CreatedAt,
             db.Issues.Count(i => i.ProjectId == p.Id),
@@ -529,5 +578,6 @@ public record ProjectDto(
             db.MergeRequests.Count(mr => mr.ProjectId == p.Id && mr.Status == MergeRequestStatus.Open),
             p.IssueKey,
             p.IssueNumberOffset,
-            p.Color);
+            p.Color,
+            userId != null && db.PinnedProjects.Any(pp => pp.ProjectId == p.Id && pp.UserId == userId));
 }

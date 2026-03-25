@@ -45,14 +45,32 @@ stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
           <div class="h-3 bg-gray-800 rounded animate-pulse w-1/2"/>
         </div>
         <template v-else>
-          <SidebarNavLink
+          <div
             v-for="project in projects"
             :key="project.id"
-            :to="getProjectLink(project.id)"
-            icon="project-item"
-            :label="project.name"
-            :color="project.color"
-          />
+            class="group/proj flex items-center rounded-md transition-colors hover:bg-gray-800/60"
+          >
+            <NuxtLink
+              :to="getProjectLink(project.id)"
+              class="flex-1 flex items-center gap-2.5 px-2 py-1.5 text-sm min-w-0"
+              :class="$route.path.startsWith(`/projects/${project.id}`) ? 'text-white' : 'text-gray-400 hover:text-gray-200'"
+            >
+              <svg class="w-4 h-4 shrink-0" fill="none" :stroke="project.color || 'currentColor'" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="iconPaths['project-item']" />
+              </svg>
+              <span class="truncate" :style="project.color ? { color: project.color } : undefined">{{ project.name }}</span>
+            </NuxtLink>
+            <button
+              class="shrink-0 mr-1 p-0.5 rounded opacity-0 group-hover/proj:opacity-100 transition-opacity"
+              :class="project.isPinned ? 'text-yellow-400 opacity-100' : 'text-gray-600 hover:text-gray-300'"
+              :title="project.isPinned ? 'Unpin project' : 'Pin project'"
+              @click.prevent="togglePin(project)"
+            >
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" :fill="project.isPinned ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+              </svg>
+            </button>
+          </div>
           <div v-if="projects.length === 0" class="px-2 py-1 text-xs text-gray-600">No projects</div>
           <NuxtLink to="/projects" class="flex items-center gap-2 px-2 py-1 text-xs text-gray-500 hover:text-gray-400 rounded transition-colors">
             All projects →
@@ -240,7 +258,6 @@ function toggleSidebar() {
 }
 
 // Lazy-loaded data
-const projects = ref<Project[]>([])
 const orgs = ref<Organization[]>([])
 const agents = ref<Agent[]>([])
 const projectsLoading = ref(false)
@@ -254,15 +271,28 @@ const projectsStore = useProjectsStore()
 const orgsStore = useOrgsStore()
 const agentsStore = useAgentsStore()
 
+// Sidebar project list: pinned first, then by the order the API returns (activity)
+const projects = computed(() => {
+  const all = projectsStore.projects
+  return [...all.filter(p => p.isPinned), ...all.filter(p => !p.isPinned)]
+})
+
 async function loadProjects() {
   if (projectsLoaded.value) return
   projectsLoading.value = true
   try {
     await projectsStore.fetchProjects()
-    projects.value = projectsStore.projects
     projectsLoaded.value = true
   } finally {
     projectsLoading.value = false
+  }
+}
+
+async function togglePin(project: Project) {
+  if (project.isPinned) {
+    await projectsStore.unpinProject(project.id)
+  } else {
+    await projectsStore.pinProject(project.id)
   }
 }
 

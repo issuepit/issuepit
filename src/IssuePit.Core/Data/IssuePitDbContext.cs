@@ -77,6 +77,7 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<GitServerBranchProtection> GitServerBranchProtections => Set<GitServerBranchProtection>();
     public DbSet<GitPat> GitPats => Set<GitPat>();
     public DbSet<IssueExternalSource> IssueExternalSources => Set<IssueExternalSource>();
+    public DbSet<PinnedProject> PinnedProjects => Set<PinnedProject>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -338,5 +339,9 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
             .WithMany()
             .HasForeignKey(p => p.SimilarIssueId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<PinnedProject>()
+            .HasIndex(pp => new { pp.UserId, pp.ProjectId })
+            .IsUnique();
     }
 }
