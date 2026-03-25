@@ -232,6 +232,98 @@ public class AgentSessionsController(
 
         return Accepted(new TriggerCiCdResponse(run.Id, run.Status.ToString(), branch, commitSha));
     }
+
+    /// <summary>
+    /// Starts a manual-mode agent session without requiring an existing issue.
+    /// Creates a lightweight placeholder issue tied to the project so the session can be tracked,
+    /// then queues the agent run via the normal Kafka pipeline.
+    /// </summary>
+    [HttpPost("start-manual")]
+    public async Task<IActionResult> StartManualSession([FromBody] StartManualSessionRequest request, CancellationToken cancellationToken)
+    {
+        if (tenant.CurrentTenant is null) return Unauthorized();
+
+        var agent = await db.Agents
+            .FirstOrDefaultAsync(a => a.Id == request.AgentId && a.Organization.TenantId == tenant.CurrentTenant.Id, cancellationToken);
+
+        if (agent is null) return NotFound(new { error = "Agent not found." });
+
+        if (!agent.ManualMode)
+            return BadRequest(new { error = "Only manual-mode agents can be started via this endpoint." });
+
+        var project = await db.Projects
+            .Include(p => p.Organization)
+            .Where(p => p.Id == request.ProjectId && p.Organization.TenantId == tenant.CurrentTenant.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (project is null) return NotFound(new { error = "Project not found." });
+
+        // Create a lightweight placeholder issue so the session has something to anchor to.
+        var maxNumber = await db.Issues
+            .Where(i => i.ProjectId == project.Id)
+            .MaxAsync(i => (int?)i.Number, cancellationToken) ?? 0;
+
+        var title = string.IsNullOrWhiteSpace(request.Description)
+            ? $"Manual session {DateTime.UtcNow:yyyy-MM-dd HH:mm}"
+            : request.Description;
+
+        var placeholderIssue = new Issue
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = project.Id,
+            Title = title,
+            Body = $"Placeholder issue created automatically for a manual agent session.\nBranch: {request.Branch ?? "(default)"}",
+            Status = IssueStatus.InProgress,
+            Type = IssueType.Task,
+            Number = maxNumber + 1,
+            GitBranch = request.Branch,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            LastActivityAt = DateTime.UtcNow,
+        };
+        db.Issues.Add(placeholderIssue);
+
+        // Pre-create the session record so the UI can navigate to it immediately.
+        var session = new AgentSession
+        {
+            Id = Guid.NewGuid(),
+            AgentId = agent.Id,
+            IssueId = placeholderIssue.Id,
+            Status = AgentSessionStatus.Pending,
+        };
+        db.AgentSessions.Add(session);
+        await db.SaveChangesAsync(cancellationToken);
+
+        // Publish issue-assigned event; ForceAgentId bypasses the assignee check.
+        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            id = placeholderIssue.Id,
+            projectId = project.Id,
+            title = placeholderIssue.Title,
+            agentId = agent.Id,
+            sessionId = session.Id,
+            forceAgentId = true,
+            branch = request.Branch,
+        });
+
+        try
+        {
+            await producer.ProduceAsync("issue-assigned", new Message<string, string>
+            {
+                Key = placeholderIssue.Id.ToString(),
+                Value = payload,
+            });
+        }
+        catch (Exception ex)
+        {
+            session.Status = AgentSessionStatus.Failed;
+            session.EndedAt = DateTime.UtcNow;
+            session.Warnings = System.Text.Json.JsonSerializer.Serialize(new[] { $"Failed to queue agent run: {ex.Message}" });
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        return Accepted(new StartManualSessionResponse(session.Id, placeholderIssue.Id));
+    }
 }
 
 public record RetrySessionResponse(Guid RetriedSessionId);
@@ -252,3 +344,11 @@ public record RetrySessionRequest(
     bool? UseHttpServerOverride = null,
     /// <summary>Override the runtime type (Docker, Native, SSH…) for this retry. Null = use the org default.</summary>
     RuntimeType? RuntimeTypeOverride = null);
+
+public record StartManualSessionRequest(
+    Guid AgentId,
+    Guid ProjectId,
+    string? Branch = null,
+    string? Description = null);
+
+public record StartManualSessionResponse(Guid SessionId, Guid PlaceholderIssueId);

@@ -164,6 +164,16 @@
 
             <!-- Agent Runs -->
     <template v-else-if="activeTab === 'Agent Runs'">
+      <div class="flex justify-end mb-3">
+        <button @click="manualSessionModal = true"
+          class="flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          Start Manual Session
+        </button>
+      </div>
       <div v-if="store.agentSessions.length" class="rounded-xl border border-gray-800 overflow-hidden">
         <table class="w-full text-sm">
           <thead class="bg-gray-900">
@@ -240,6 +250,14 @@
       @close="triggerModal.open = false"
       @triggered="onRunTriggered"
     />
+
+    <!-- Start Manual Session modal -->
+    <StartManualSessionModal
+      v-if="manualSessionModal"
+      :project-id="id"
+      @close="manualSessionModal = false"
+      @started="onManualSessionStarted"
+    />
   </div>
 </template>
 
@@ -270,10 +288,17 @@ function clearCommitShaFilter() {
 }
 
 const triggerModal = reactive({ open: false, commitSha: '' })
+const manualSessionModal = ref(false)
 
 function onRunTriggered() {
   triggerModal.open = false
   store.fetchRuns(id)
+}
+
+async function onManualSessionStarted(sessionId: string) {
+  manualSessionModal.value = false
+  await store.fetchAgentSessions(id)
+  navigateTo(`/projects/${id}/runs/agent-sessions/${sessionId}`)
 }
 
 const { connection, isConnected, connect } = useSignalR('/hubs/project')
