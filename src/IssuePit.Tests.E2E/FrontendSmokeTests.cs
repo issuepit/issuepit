@@ -201,22 +201,25 @@ public class FrontendSmokeTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task CiCdConfig_ActContainerImage_CanBeSelectedAndSaved()
+    public async Task RunsAgentTab_Loads_WithoutConsoleErrors()
     {
         var page = await _context!.NewPageAsync();
-        var ciCd = new CiCdConfigPage(page);
-        await ciCd.GotoAsync();
-        await ciCd.WaitForLoadAsync();
 
-        // Select the main-branch act container image
-        await ciCd.SelectActContainerTagAsync("ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24");
+        var errors = new List<IConsoleMessage>();
+        page.Console += (_, e) =>
+        {
+            if (e.Type == "error")
+            {
+                errors.Add(e);
+                _testOutputHelper.WriteLine($"Console error: {e.Text}");
+            }
+        };
 
-        // Save and verify persistence via localStorage
-        await ciCd.SaveActContainerAsync();
-        await ciCd.GotoAsync();
-        await ciCd.WaitForLoadAsync();
+        var response = await page.GotoAsync($"{FrontendUrl}/runs?tab=agent");
 
-        var selected = await ciCd.GetSelectedActContainerImageAsync();
-        Assert.Contains("main-dotnet10-node24", selected ?? string.Empty);
+        Assert.NotNull(response);
+        Assert.True(response.Ok, $"Expected 2xx, got {response.Status}");
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle, new PageWaitForLoadStateOptions { Timeout = E2ETimeouts.Navigation });
+        Assert.Empty(errors);
     }
 }

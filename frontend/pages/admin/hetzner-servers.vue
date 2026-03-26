@@ -321,7 +321,7 @@ interface HetznerServerHistoryDto {
   recordedAt: string
 }
 
-const { $api } = useNuxtApp()
+const api = useApi()
 
 const activeTab = ref('Active Servers')
 const servers = ref<HetznerServerDto[]>([])
@@ -361,7 +361,7 @@ async function loadData() {
   loading.value = true
   error.value = null
   try {
-    const data = await $api<HetznerServerDto[]>('/api/admin/hetzner-servers')
+    const data = await api.get<HetznerServerDto[]>('/api/admin/hetzner-servers')
     servers.value = data ?? []
   }
   catch (e: unknown) {
@@ -375,7 +375,7 @@ async function loadData() {
 async function loadHistory() {
   historyLoading.value = true
   try {
-    const data = await $api<HetznerServerHistoryDto[]>('/api/admin/hetzner-servers/history')
+    const data = await api.get<HetznerServerHistoryDto[]>('/api/admin/hetzner-servers/history')
     history.value = data ?? []
   }
   catch (e: unknown) {
@@ -396,7 +396,7 @@ async function doMarkDeleted() {
   confirmDeleteServer.value = null
   actionLoading.value = server.id
   try {
-    await $api(`/api/admin/hetzner-servers/${server.id}/mark-deleted`, { method: 'POST' })
+    await api.post(`/api/admin/hetzner-servers/${server.id}/mark-deleted`, {})
     await loadData()
     // Reload history too since a new record may have been written
     if (history.value.length > 0) await loadHistory()

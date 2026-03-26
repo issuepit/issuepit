@@ -19,6 +19,16 @@
 
       <!-- Body -->
       <div class="px-5 py-4 space-y-4">
+        <!-- Project (only shown when not pre-scoped to a project) -->
+        <div v-if="!props.projectId">
+          <label class="block text-xs font-medium text-gray-400 mb-1.5">Project</label>
+          <select v-model="selectedProjectId"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500">
+            <option value="">— select a project —</option>
+            <option v-for="p in projectsStore.projects" :key="p.id" :value="p.id">{{ p.name }}</option>
+          </select>
+        </div>
+
         <!-- Agent -->
         <div>
           <label class="block text-xs font-medium text-gray-400 mb-1.5">Agent</label>
@@ -74,7 +84,7 @@
           class="text-sm text-gray-400 hover:text-gray-200 px-3 py-1.5 rounded-lg transition-colors">
           Cancel
         </button>
-        <button @click="start" :disabled="!selectedAgentId || starting"
+        <button @click="start" :disabled="!selectedAgentId || !selectedProjectId || starting"
           class="text-sm bg-brand-600 hover:bg-brand-700 text-white px-4 py-1.5 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2">
           <svg v-if="starting" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
@@ -91,16 +101,20 @@
 import type { GitBranch } from '~/types'
 
 const props = defineProps<{
-  projectId: string
+  projectId?: string
 }>()
 
 const emit = defineEmits<{
   close: []
-  started: [sessionId: string]
+  started: [sessionId: string, projectId: string]
 }>()
 
 const api = useApi()
 const agentsStore = useAgentsStore()
+const projectsStore = useProjectsStore()
+
+// When no projectId is passed in (global runs view), let user pick a project.
+const selectedProjectId = ref(props.projectId ?? '')
 
 const selectedAgentId = ref('')
 const branch = ref('')
@@ -129,26 +143,44 @@ onMounted(async () => {
     selectedAgentId.value = manualAgents.value[0].id
   }
 
-  // Load branches for the picker
-  try {
-    branches.value = await api.get<GitBranch[]>(`/api/projects/${props.projectId}/git/branches`)
-  } catch {
-    // Non-fatal: branch picker will be hidden
+  // Ensure project list is loaded for the optional project selector
+  if (!props.projectId && !projectsStore.projects.length) {
+    await projectsStore.fetchProjects()
+  }
+
+  // Load branches for the picker (only when project is already known)
+  if (selectedProjectId.value) {
+    await loadBranches(selectedProjectId.value)
   }
 })
 
+// When user picks a project, reload the branch list
+watch(selectedProjectId, async (id) => {
+  branches.value = []
+  branchPickerOpen.value = false
+  if (id) await loadBranches(id)
+})
+
+async function loadBranches(projectId: string) {
+  try {
+    branches.value = await api.get<GitBranch[]>(`/api/projects/${projectId}/git/branches`)
+  } catch {
+    // Non-fatal: branch picker will be hidden
+  }
+}
+
 async function start() {
-  if (!selectedAgentId.value) return
+  if (!selectedAgentId.value || !selectedProjectId.value) return
   starting.value = true
   error.value = null
   try {
     const result = await api.post<{ sessionId: string }>('/api/agent-sessions/start-manual', {
       agentId: selectedAgentId.value,
-      projectId: props.projectId,
+      projectId: selectedProjectId.value,
       branch: branch.value || null,
       description: description.value || null,
     })
-    emit('started', result.sessionId)
+    emit('started', result.sessionId, selectedProjectId.value)
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : 'Failed to start session'
   } finally {
