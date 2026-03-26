@@ -160,6 +160,51 @@ The **Conflicts** tab compares linked issues in both systems and lists any where
 
 ---
 
+## Jira Sync
+
+Each project can be configured to import issues from a Jira project. Navigate to **Project Settings → Jira Sync** to configure.
+
+Jira sync is **read-only** — IssuePit only imports from Jira and never writes back to it.
+
+### Required Permissions
+
+The Jira API token must belong to a user with the following project permissions:
+
+| Permission | Purpose |
+|------------|---------|
+| **Browse Projects** | Required to list and read issues. |
+| **View Read-Only Workflow** | Required to read issue status. |
+| **Service Desk Agent** | Only required when importing from a Jira Service Desk project. |
+
+Create your API token at [id.atlassian.com](https://id.atlassian.com/manage-profile/security/api-tokens).
+
+### Configuration
+
+| Field | Description |
+|-------|-------------|
+| **Jira Base URL** | Your Atlassian instance URL, e.g. `https://acme.atlassian.net`. |
+| **Jira Project Key** | The short key for the Jira project (e.g. `PROJ`, `ACME`). |
+| **Jira User Email** | The email address associated with the API token. |
+| **Jira API Token (Key)** | Select an API key with provider **Jira** from [Config → API Keys](/config/keys). |
+| **Only import issues with a parent** | When enabled, only sub-tasks and child issues (those with a parent set) are imported. Top-level issues without a parent are skipped. |
+| **Import issue comments** | When enabled, Jira comments are imported as IssuePit comments on the corresponding issue. |
+| **Trigger Mode** | `Off` (default) · `Manual` (trigger from this page) · `Auto` (periodic automatic import). |
+
+### Importing Issues from Jira
+
+1. Add a Jira API token in **Config → API Keys** (provider: **Jira**).
+2. Open **Project Settings → Jira Sync**.
+3. Fill in the Jira base URL, project key, user email, and select the API key.
+4. Click **Save Configuration**, then **Trigger Import Now**.
+
+Each Jira issue is imported only once (identified by its numeric Jira ID). A Jira-style issue key (e.g. `PROJ-123`) appears in the issue sidebar linking back to the original Jira issue.
+
+### Import Runs (Audit Log)
+
+Every manual or automatic import creates an **import run** record. Open the **Import Runs** tab to view status, summary, and detailed per-issue log output.
+
+---
+
 ## Managing Boards
 
 Each project has a **Kanban board** with the following columns by default:
