@@ -27,7 +27,7 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
             d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.362.362A3.001 3.001 0 0012 15a3 3 0 01-2.975-2.625l-.363-.363zM12 15v2" />
         </svg>
-        {{ showWizard ? 'Hide wizard' : disabled ? 'Browse available steps' : 'Use wizard (auto-complete from recent runs)' }}
+        {{ showWizard ? (disabled ? 'Hide steps' : 'Hide wizard') : (disabled ? 'Show steps' : 'Use wizard (auto-complete from recent runs)') }}
         <span v-if="loadingSuggestions" class="ml-1 w-3.5 h-3.5 border border-brand-400 border-t-transparent rounded-full animate-spin" />
       </button>
     </div>
@@ -44,10 +44,8 @@
 
       <template v-else>
         <div class="px-4 py-2 bg-gray-800/60 border-b border-gray-700 flex items-center justify-between">
-          <span class="text-xs font-medium text-gray-400">
-            {{ disabled ? 'Available steps from recent runs — copy to JSON config' : 'Select steps to skip from recent runs' }}
-          </span>
-          <div v-if="!disabled" class="flex items-center gap-3">
+          <span class="text-xs font-medium text-gray-400">Select steps to skip from recent runs</span>
+          <div class="flex items-center gap-3">
             <button
               type="button"
               class="text-xs text-brand-400 hover:text-brand-300 transition-colors"
@@ -58,7 +56,16 @@
               class="text-xs text-gray-400 hover:text-gray-200 transition-colors"
               @click="clearSelection"
             >Clear</button>
+            <!-- In disabled mode show "show as text" instead of Apply -->
             <button
+              v-if="disabled"
+              type="button"
+              class="text-xs bg-gray-700 hover:bg-gray-600 text-white px-2 py-0.5 rounded transition-colors"
+              :disabled="wizardSelected.size === 0"
+              @click="showTextOutput = !showTextOutput"
+            >{{ showTextOutput ? 'Hide text' : `Show as text (${wizardSelected.size})` }}</button>
+            <button
+              v-else
               type="button"
               class="text-xs bg-brand-600 hover:bg-brand-500 text-white px-2 py-0.5 rounded transition-colors"
               :disabled="wizardSelected.size === 0"
@@ -72,7 +79,6 @@
             <!-- Job row -->
             <div class="flex items-center gap-2 mb-1.5">
               <input
-                v-if="!disabled"
                 :ref="(el) => setJobCheckboxRef(job.jobId, el as HTMLInputElement | null)"
                 :id="`job-${job.jobId}`"
                 type="checkbox"
@@ -80,7 +86,7 @@
                 :checked="isJobChecked(job)"
                 @change="toggleJob(job)"
               />
-              <label :for="disabled ? undefined : `job-${job.jobId}`" class="text-xs font-semibold text-gray-200 font-mono" :class="disabled ? '' : 'cursor-pointer'">
+              <label :for="`job-${job.jobId}`" class="text-xs font-semibold text-gray-200 font-mono cursor-pointer">
                 {{ job.jobId }}
               </label>
             </div>
@@ -88,19 +94,30 @@
             <div class="ml-5 space-y-1">
               <div v-for="step in job.steps" :key="`${job.jobId}:${step}`" class="flex items-center gap-2">
                 <input
-                  v-if="!disabled"
                   :id="`step-${job.jobId}-${step}`"
                   type="checkbox"
                   class="w-3 h-3 rounded bg-gray-800 border-gray-600 text-brand-500 focus:ring-brand-500"
                   :checked="wizardSelected.has(`${job.jobId}:${step}`)"
                   @change="toggleStep(job.jobId, step)"
                 />
-                <label :for="disabled ? undefined : `step-${job.jobId}-${step}`" class="text-xs text-gray-400 font-mono" :class="disabled ? '' : 'cursor-pointer hover:text-gray-200'">
+                <label :for="`step-${job.jobId}-${step}`" class="text-xs text-gray-400 font-mono cursor-pointer hover:text-gray-200">
                   {{ step }}
                 </label>
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- Text output panel (disabled/read-only mode) -->
+        <div v-if="disabled && showTextOutput && wizardSelected.size > 0" class="border-t border-gray-700 px-4 py-3">
+          <p class="text-xs text-gray-500 mb-1.5">Copy the selected steps into your JSON5 config file:</p>
+          <textarea
+            :value="selectedAsText"
+            rows="4"
+            readonly
+            class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-xs text-gray-200 font-mono focus:outline-none resize-y select-all"
+            @click="($event.target as HTMLTextAreaElement).select()"
+          />
         </div>
       </template>
     </div>
@@ -123,9 +140,13 @@ const emit = defineEmits<{
 const api = useApi()
 
 const showWizard = ref(false)
+const showTextOutput = ref(false)
 const loadingSuggestions = ref(false)
 const suggestions = ref<StepSuggestionJob[]>([])
 const wizardSelected = ref<Set<string>>(new Set())
+
+/** Formats the current wizard selection as newline-separated step entries for copy-paste into JSON5 config. */
+const selectedAsText = computed(() => Array.from(wizardSelected.value).sort().join('\n'))
 
 // Map of jobId → checkbox element reference, used to set the indeterminate DOM property.
 const jobCheckboxRefs = new Map<string, HTMLInputElement>()
@@ -166,6 +187,8 @@ async function toggleWizard() {
     // Pre-check items already present in the textarea, including bare step names
     // (expanded to all matching job:step pairs across loaded suggestions).
     prePopulateFromTextarea()
+  } else {
+    showTextOutput.value = false
   }
 }
 
