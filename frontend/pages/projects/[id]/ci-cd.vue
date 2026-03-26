@@ -62,16 +62,25 @@
           <p class="text-sm text-gray-500 mb-4">
             Override the Docker runner image for this project. Leave unset to inherit from the organization or global default.
           </p>
-          <CiCdImageSelector v-model="ciCdForm.actRunnerImage" :inherited-value="inheritedRunnerImage" />
-          <p v-if="!ciCdForm.actRunnerImage" class="text-xs text-gray-500 mt-3">
-            <template v-if="inheritedRunnerImage">
-              No override set — inheriting: <code class="font-mono text-gray-300 bg-gray-800 px-1 rounded">{{ inheritedRunnerImage }}</code>
-            </template>
-            <template v-else>
-              No override set — inheriting from org or global default.
-            </template>
-          </p>
-          <p v-else class="text-xs text-gray-500 mt-3 font-mono">{{ ciCdForm.actRunnerImage }}</p>
+          <template v-if="isProjectFieldImported('actRunnerImage')">
+            <p class="text-sm font-mono text-gray-300">{{ ciCdForm.actRunnerImage || '(not set)' }}</p>
+            <span class="mt-2 inline-flex items-center gap-1 text-xs text-blue-400 bg-blue-900/20 border border-blue-700/40 px-1.5 py-0.5 rounded font-mono" :title="`Set by config file: ${projectFieldSourceFile('actRunnerImage')}`">
+              <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+              {{ projectFieldSourceFile('actRunnerImage') }}
+            </span>
+          </template>
+          <template v-else>
+            <CiCdImageSelector v-model="ciCdForm.actRunnerImage" :inherited-value="inheritedRunnerImage" />
+            <p v-if="!ciCdForm.actRunnerImage" class="text-xs text-gray-500 mt-3">
+              <template v-if="inheritedRunnerImage">
+                No override set — inheriting: <code class="font-mono text-gray-300 bg-gray-800 px-1 rounded">{{ inheritedRunnerImage }}</code>
+              </template>
+              <template v-else>
+                No override set — inheriting from org or global default.
+              </template>
+            </p>
+            <p v-else class="text-xs text-gray-500 mt-3 font-mono">{{ ciCdForm.actRunnerImage }}</p>
+          </template>
         </div>
 
         <!-- Runner Options -->
@@ -81,14 +90,21 @@
           <div class="space-y-4">
             <div class="flex items-center justify-between">
               <div>
-                <label class="block text-sm font-medium text-gray-300">Mount repository in Docker</label>
+                <label class="block text-sm font-medium text-gray-300">
+                  Mount repository in Docker
+                  <span v-if="isProjectFieldImported('mountRepositoryInDocker')" class="ml-2 inline-flex items-center gap-1 text-xs text-blue-400 bg-blue-900/20 border border-blue-700/40 px-1.5 py-0.5 rounded font-mono align-middle" :title="`Set by config file: ${projectFieldSourceFile('mountRepositoryInDocker')}`">
+                    <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                    {{ projectFieldSourceFile('mountRepositoryInDocker') }}
+                  </span>
+                </label>
                 <p class="text-xs text-gray-500 mt-0.5">Bind the workspace directory into the runner container</p>
               </div>
               <button
                 type="button"
+                :disabled="isProjectFieldImported('mountRepositoryInDocker')"
                 :class="ciCdForm.mountRepositoryInDocker ? 'bg-brand-600' : 'bg-gray-700'"
-                class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-gray-900"
-                @click="ciCdForm.mountRepositoryInDocker = !ciCdForm.mountRepositoryInDocker">
+                class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                @click="!isProjectFieldImported('mountRepositoryInDocker') && (ciCdForm.mountRepositoryInDocker = !ciCdForm.mountRepositoryInDocker)">
                 <span
                   :class="ciCdForm.mountRepositoryInDocker ? 'translate-x-6' : 'translate-x-1'"
                   class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" />
@@ -98,17 +114,27 @@
               <label class="block text-sm font-medium text-gray-300 mb-1.5">
                 Max concurrent runners
                 <span class="text-gray-500 font-normal">(0 = unlimited)</span>
+                <span v-if="isProjectFieldImported('maxConcurrentRunners')" class="ml-2 inline-flex items-center gap-1 text-xs text-blue-400 bg-blue-900/20 border border-blue-700/40 px-1.5 py-0.5 rounded font-mono align-middle" :title="`Set by config file: ${projectFieldSourceFile('maxConcurrentRunners')}`">
+                  <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                  {{ projectFieldSourceFile('maxConcurrentRunners') }}
+                </span>
               </label>
               <input v-model.number="ciCdForm.maxConcurrentRunners" type="number" min="0"
-                class="w-40 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                :disabled="isProjectFieldImported('maxConcurrentRunners')"
+                class="w-40 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed" />
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-300 mb-1.5">
                 Concurrent jobs per run
                 <span class="text-gray-500 font-normal">(0 = unlimited, blank = inherit from org / default 4)</span>
+                <span v-if="isProjectFieldImported('concurrentJobs')" class="ml-2 inline-flex items-center gap-1 text-xs text-blue-400 bg-blue-900/20 border border-blue-700/40 px-1.5 py-0.5 rounded font-mono align-middle" :title="`Set by config file: ${projectFieldSourceFile('concurrentJobs')}`">
+                  <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                  {{ projectFieldSourceFile('concurrentJobs') }}
+                </span>
               </label>
               <input v-model.number="ciCdForm.concurrentJobs" type="number" min="0" placeholder="inherit (org or default 4)"
-                class="w-40 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                :disabled="isProjectFieldImported('concurrentJobs')"
+                class="w-40 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed" />
               <p class="text-xs text-gray-500 mt-1">Overrides the organization setting for <code class="bg-gray-800 px-1 rounded">--concurrent-jobs</code>.</p>
             </div>
             <div class="flex items-center justify-between">
@@ -158,24 +184,34 @@
               <label class="block text-sm font-medium text-gray-300 mb-1.5">
                 Environment variables
                 <span class="text-gray-500 font-normal">(--env KEY=VALUE)</span>
+                <span v-if="isProjectFieldImported('actEnv')" class="ml-2 inline-flex items-center gap-1 text-xs text-blue-400 bg-blue-900/20 border border-blue-700/40 px-1.5 py-0.5 rounded font-mono align-middle" :title="`Set by config file: ${projectFieldSourceFile('actEnv')}`">
+                  <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                  {{ projectFieldSourceFile('actEnv') }}
+                </span>
               </label>
               <textarea
                 v-model="ciCdForm.actEnv"
                 rows="4"
                 placeholder="MY_VAR=my_value&#10;NODE_ENV=test"
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y"
+                :disabled="isProjectFieldImported('actEnv')"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y disabled:opacity-50 disabled:cursor-not-allowed"
               />
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-300 mb-1.5">
                 Secrets
                 <span class="text-gray-500 font-normal">(--secret KEY=VALUE)</span>
+                <span v-if="isProjectFieldImported('actSecrets')" class="ml-2 inline-flex items-center gap-1 text-xs text-blue-400 bg-blue-900/20 border border-blue-700/40 px-1.5 py-0.5 rounded font-mono align-middle" :title="`Set by config file: ${projectFieldSourceFile('actSecrets')}`">
+                  <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                  {{ projectFieldSourceFile('actSecrets') }}
+                </span>
               </label>
               <textarea
                 v-model="ciCdForm.actSecrets"
                 rows="4"
                 placeholder="MY_SECRET=value&#10;API_KEY=key"
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y"
+                :disabled="isProjectFieldImported('actSecrets')"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y disabled:opacity-50 disabled:cursor-not-allowed"
               />
               <p class="text-xs text-gray-500 mt-1">Secret values are stored as plain text — avoid committing sensitive credentials that can be rotated.</p>
             </div>
@@ -194,12 +230,17 @@
               <label class="block text-sm font-medium text-gray-300 mb-1.5">
                 Action cache path
                 <span class="text-gray-500 font-normal">(--action-cache-path)</span>
+                <span v-if="isProjectFieldImported('actionCachePath')" class="ml-2 inline-flex items-center gap-1 text-xs text-blue-400 bg-blue-900/20 border border-blue-700/40 px-1.5 py-0.5 rounded font-mono align-middle" :title="`Set by config file: ${projectFieldSourceFile('actionCachePath')}`">
+                  <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                  {{ projectFieldSourceFile('actionCachePath') }}
+                </span>
               </label>
               <input
                 v-model="ciCdForm.actionCachePath"
                 type="text"
                 placeholder="inherit from org (default: /var/lib/issuepit-action-cache)"
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
+                :disabled="isProjectFieldImported('actionCachePath')"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed"
               />
               <p class="text-xs text-gray-500 mt-1">Host directory for caching cloned actions. Leave blank to inherit from organization.</p>
             </div>
@@ -208,11 +249,16 @@
                 id="projectUseNewActionCache"
                 v-model="ciCdForm.useNewActionCache"
                 type="checkbox"
-                class="w-4 h-4 rounded bg-gray-800 border-gray-600 text-brand-500 focus:ring-brand-500"
+                :disabled="isProjectFieldImported('useNewActionCache')"
+                class="w-4 h-4 rounded bg-gray-800 border-gray-600 text-brand-500 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed"
               />
               <label for="projectUseNewActionCache" class="text-sm text-gray-300">
                 Use new action cache
                 <span class="text-gray-500 font-normal">(--use-new-action-cache)</span>
+                <span v-if="isProjectFieldImported('useNewActionCache')" class="ml-2 inline-flex items-center gap-1 text-xs text-blue-400 bg-blue-900/20 border border-blue-700/40 px-1.5 py-0.5 rounded font-mono align-middle" :title="`Set by config file: ${projectFieldSourceFile('useNewActionCache')}`">
+                  <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                  {{ projectFieldSourceFile('useNewActionCache') }}
+                </span>
               </label>
             </div>
             <div class="flex items-center gap-3">
@@ -220,11 +266,16 @@
                 id="projectActionOfflineMode"
                 v-model="ciCdForm.actionOfflineMode"
                 type="checkbox"
-                class="w-4 h-4 rounded bg-gray-800 border-gray-600 text-brand-500 focus:ring-brand-500"
+                :disabled="isProjectFieldImported('actionOfflineMode')"
+                class="w-4 h-4 rounded bg-gray-800 border-gray-600 text-brand-500 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed"
               />
               <label for="projectActionOfflineMode" class="text-sm text-gray-300">
                 Offline mode — use only cached actions, no network downloads
                 <span class="text-gray-500 font-normal">(--action-offline-mode)</span>
+                <span v-if="isProjectFieldImported('actionOfflineMode')" class="ml-2 inline-flex items-center gap-1 text-xs text-blue-400 bg-blue-900/20 border border-blue-700/40 px-1.5 py-0.5 rounded font-mono align-middle" :title="`Set by config file: ${projectFieldSourceFile('actionOfflineMode')}`">
+                  <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                  {{ projectFieldSourceFile('actionOfflineMode') }}
+                </span>
               </label>
             </div>
           </div>
@@ -241,11 +292,19 @@
             Overrides the organization setting.
           </p>
           <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">
+              Repository mappings
+              <span v-if="isProjectFieldImported('localRepositories')" class="ml-2 inline-flex items-center gap-1 text-xs text-blue-400 bg-blue-900/20 border border-blue-700/40 px-1.5 py-0.5 rounded font-mono align-middle" :title="`Set by config file: ${projectFieldSourceFile('localRepositories')}`">
+                <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                {{ projectFieldSourceFile('localRepositories') }}
+              </span>
+            </label>
             <textarea
               v-model="ciCdForm.localRepositories"
               rows="4"
               :placeholder="`myorg/private-actions@v1=/home/act/private-actions\nmyorg/shared-workflows@main=/home/act/workflows`"
-              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y"
+              :disabled="isProjectFieldImported('localRepositories')"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y disabled:opacity-50 disabled:cursor-not-allowed"
             />
             <p class="text-xs text-gray-500 mt-1">
               Each line is passed as a separate
@@ -257,13 +316,19 @@
 
         <!-- Skip Steps -->
         <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
-          <h2 class="font-semibold text-white mb-1">Skip Steps</h2>
+          <h2 class="font-semibold text-white mb-1">
+            Skip Steps
+            <span v-if="isProjectFieldImported('skipSteps')" class="ml-2 inline-flex items-center gap-1 text-xs text-blue-400 bg-blue-900/20 border border-blue-700/40 px-1.5 py-0.5 rounded font-mono align-middle" :title="`Set by config file: ${projectFieldSourceFile('skipSteps')}`">
+              <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+              {{ projectFieldSourceFile('skipSteps') }}
+            </span>
+          </h2>
           <p class="text-sm text-gray-500 mb-4">
             Skip specific workflow steps on every run without modifying the workflow file.
             Useful to disable push, deploy, or notification steps in non-production environments.
             Overrides the organization setting.
           </p>
-          <SkipStepsEditor v-model="ciCdForm.skipSteps" :project-id="id" />
+          <SkipStepsEditor v-model="ciCdForm.skipSteps" :project-id="id" :disabled="isProjectFieldImported('skipSteps')" />
         </div>
 
         <!-- Save button -->
@@ -316,6 +381,14 @@ const ciCdForm = reactive({
 const saving = ref(false)
 const saveError = ref<string | null>(null)
 const savedOk = ref(false)
+
+// --- Config field source helpers ---
+function isProjectFieldImported(fieldName: string): boolean {
+  return !!projectsStore.currentProject?.configFieldSources?.[fieldName]
+}
+function projectFieldSourceFile(fieldName: string): string {
+  return projectsStore.currentProject?.configFieldSources?.[fieldName] ?? ''
+}
 
 // The runner image inherited from the org (shown when no project-level override is set).
 const inheritedRunnerImage = computed<string | null>(() => {

@@ -1,5 +1,8 @@
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace IssuePit.Core.Entities;
 
@@ -32,6 +35,28 @@ public class Organization
     /// <summary>Filename of the JSON5 config file that last set <see cref="ActRunnerImage"/> via the config repo. Null when set manually.</summary>
     [MaxLength(500)]
     public string? ActRunnerImageSourceFile { get; set; }
+
+    /// <summary>
+    /// Raw JSON mapping of CI/CD field names (camelCase) to the config source file that set them.
+    /// Populated by <see cref="IssuePit.Api.Services.ConfigRepoApplier"/>. Null when no config file has set any CI/CD field.
+    /// Use <see cref="ConfigFieldSources"/> to access the parsed dictionary.
+    /// </summary>
+    [MaxLength(10000)]
+    [Column("config_field_sources")]
+    [JsonIgnore]
+    public string? ConfigFieldSourcesJson { get; set; }
+
+    /// <summary>
+    /// Per-field config source mapping parsed from <see cref="ConfigFieldSourcesJson"/>.
+    /// Keys are camelCase field names (e.g. "actRunnerImage", "actEnv"). Values are config file names.
+    /// Not persisted by EF Core — read-only computed from <see cref="ConfigFieldSourcesJson"/>.
+    /// </summary>
+    [NotMapped]
+    [JsonPropertyName("configFieldSources")]
+    public Dictionary<string, string>? ConfigFieldSources =>
+        ConfigFieldSourcesJson is null
+            ? null
+            : JsonSerializer.Deserialize<Dictionary<string, string>>(ConfigFieldSourcesJson);
 
     /// <summary>Newline-separated KEY=VALUE pairs passed as <c>--env</c> arguments to <c>act</c> on each run.</summary>
     public string? ActEnv { get; set; }

@@ -1,4 +1,7 @@
+using System.Collections.Generic;
 using System.Linq.Expressions;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
@@ -560,8 +563,16 @@ public record ProjectDto(
     string? IssueKey,
     int IssueNumberOffset,
     string? Color,
-    bool IsPinned)
+    bool IsPinned,
+    [property: JsonIgnore] string? ConfigFieldSourcesRaw)
 {
+    /// <summary>Per-field config source mapping parsed from <see cref="ConfigFieldSourcesRaw"/>.</summary>
+    [JsonPropertyName("configFieldSources")]
+    public Dictionary<string, string>? ConfigFieldSources =>
+        ConfigFieldSourcesRaw is null
+            ? null
+            : JsonSerializer.Deserialize<Dictionary<string, string>>(ConfigFieldSourcesRaw);
+
     public static Expression<Func<Project, ProjectDto>> Selector(IssuePitDbContext db, Guid? userId = null) =>
         p => new ProjectDto(
             p.Id, p.OrgId, p.Name, p.Slug, p.Description, p.GitHubRepo, p.CreatedAt,
@@ -579,5 +590,6 @@ public record ProjectDto(
             p.IssueKey,
             p.IssueNumberOffset,
             p.Color,
-            userId != null && db.PinnedProjects.Any(pp => pp.ProjectId == p.Id && pp.UserId == userId));
+            userId != null && db.PinnedProjects.Any(pp => pp.ProjectId == p.Id && pp.UserId == userId),
+            p.ConfigFieldSourcesJson);
 }

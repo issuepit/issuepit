@@ -5,7 +5,8 @@
       :value="modelValue"
       rows="4"
       placeholder="deploy&#10;build:upload-artifacts&#10;Notify Slack"
-      class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y"
+      :disabled="disabled"
+      class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y disabled:opacity-50 disabled:cursor-not-allowed"
       @input="$emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)"
     />
     <p class="text-xs text-gray-500 mt-1">
@@ -15,7 +16,7 @@
     </p>
 
     <!-- Wizard button -->
-    <div class="mt-3">
+    <div v-if="!disabled" class="mt-3">
       <button
         type="button"
         class="flex items-center gap-1.5 text-xs text-brand-400 hover:text-brand-300 transition-colors"
@@ -108,6 +109,7 @@ import type { StepSuggestionJob } from '~/types'
 const props = defineProps<{
   modelValue: string
   projectId?: string
+  disabled?: boolean
 }>()
 
 const emit = defineEmits<{
