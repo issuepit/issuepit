@@ -390,7 +390,7 @@ export interface Agent {
   name: string
   description?: string
   systemPrompt: string
-  dockerImage: string
+  dockerImage: string | null
   allowedTools: string | string[]
   mcpServers: string[]
   linkedMcpServers?: AgentLinkedMcpServer[]

@@ -137,9 +137,10 @@ public class SshDockerAgentRuntime(ILogger<SshDockerAgentRuntime> logger) : IAge
 
         // Append runner-specific CMD args (model, task) after the image name
         var runnerArgs = RunnerCommandBuilder.BuildArgs(agent, issue);
+        var effectiveImage = !string.IsNullOrWhiteSpace(agent.DockerImage) ? agent.DockerImage : DockerAgentRuntime.DefaultDockerImage;
         var imageAndArgs = string.IsNullOrEmpty(runnerArgs)
-            ? EscapeShell(agent.DockerImage)
-            : $"{EscapeShell(agent.DockerImage)} {runnerArgs}";
+            ? EscapeShell(effectiveImage)
+            : $"{EscapeShell(effectiveImage)} {runnerArgs}";
 
         // -d = detached; --rm = auto-remove on exit; --privileged = true DinD (in-container dockerd)
         return $"docker run -d --rm --privileged --name {EscapeShell(containerName)} {labels}{envArgs} {imageAndArgs}";

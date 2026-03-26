@@ -45,6 +45,10 @@ public class Project
     /// <summary>Docker runner image override for act. Null means use the org or global default.</summary>
     public string? ActRunnerImage { get; set; }
 
+    /// <summary>Filename of the JSON5 config file that last set <see cref="ActRunnerImage"/> via the config repo. Null when set manually.</summary>
+    [MaxLength(500)]
+    public string? ActRunnerImageSourceFile { get; set; }
+
     /// <summary>
     /// Host path for the act action/repo cache directory (passed as <c>--action-cache-path</c>).
     /// Null means inherit from the organization setting.

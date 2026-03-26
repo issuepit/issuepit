@@ -29,6 +29,10 @@ public class Organization
     /// <summary>Docker runner image override for act. Null means use the global default.</summary>
     public string? ActRunnerImage { get; set; }
 
+    /// <summary>Filename of the JSON5 config file that last set <see cref="ActRunnerImage"/> via the config repo. Null when set manually.</summary>
+    [MaxLength(500)]
+    public string? ActRunnerImageSourceFile { get; set; }
+
     /// <summary>Newline-separated KEY=VALUE pairs passed as <c>--env</c> arguments to <c>act</c> on each run.</summary>
     public string? ActEnv { get; set; }
 
