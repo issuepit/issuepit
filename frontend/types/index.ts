@@ -620,6 +620,8 @@ export interface ApiKey {
   name: string
   provider: ApiKeyProvider
   providerName: string
+  jiraBaseUrl?: string
+  jiraEmail?: string
   createdAt: string
   expiresAt?: string
 }
@@ -1465,12 +1467,10 @@ export const JiraSyncTriggerModeLabels: Record<JiraSyncTriggerMode, string> = {
 export interface JiraSyncConfig {
   id?: string
   projectId: string
-  jiraBaseUrl?: string
   jiraProjectKey?: string
-  jiraEmail?: string
   apiKeyId?: string
   triggerMode: JiraSyncTriggerMode
-  onlyImportWithParent: boolean
+  parentIssueKeys?: string
   importComments: boolean
   createdAt?: string
   updatedAt?: string

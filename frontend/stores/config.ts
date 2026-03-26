@@ -17,7 +17,7 @@ export const useConfigStore = defineStore('config', () => {
     }
   }
 
-  async function createApiKey(payload: { orgId: string; name: string; provider: ApiKeyProvider; value: string; expiresAt?: string }) {
+  async function createApiKey(payload: { orgId: string; name: string; provider: ApiKeyProvider; value: string; expiresAt?: string; jiraBaseUrl?: string; jiraEmail?: string }) {
     const created = await post<ApiKey>('/api/config/keys', payload)
     await fetchApiKeys()
     return created

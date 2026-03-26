@@ -35,20 +35,18 @@ public class JiraSyncController(
         if (config is null)
         {
             return Ok(new JiraSyncConfigResponse(
-                null, projectId, null, null, null, null,
-                JiraSyncTriggerMode.Off, false, true,
+                null, projectId, null, null,
+                JiraSyncTriggerMode.Off, null, true,
                 null, null));
         }
 
         return Ok(new JiraSyncConfigResponse(
             config.Id,
             config.ProjectId,
-            config.JiraBaseUrl,
             config.JiraProjectKey,
-            config.JiraEmail,
             config.ApiKeyId,
             config.TriggerMode,
-            config.OnlyImportWithParent,
+            config.ParentIssueKeys,
             config.ImportComments,
             config.CreatedAt,
             config.UpdatedAt));
@@ -83,12 +81,10 @@ public class JiraSyncController(
             db.JiraSyncConfigs.Add(config);
         }
 
-        config.JiraBaseUrl = string.IsNullOrWhiteSpace(req.JiraBaseUrl) ? null : req.JiraBaseUrl.Trim().TrimEnd('/');
         config.JiraProjectKey = string.IsNullOrWhiteSpace(req.JiraProjectKey) ? null : req.JiraProjectKey.Trim().ToUpperInvariant();
-        config.JiraEmail = string.IsNullOrWhiteSpace(req.JiraEmail) ? null : req.JiraEmail.Trim();
         config.ApiKeyId = req.ApiKeyId;
         config.TriggerMode = req.TriggerMode;
-        config.OnlyImportWithParent = req.OnlyImportWithParent;
+        config.ParentIssueKeys = string.IsNullOrWhiteSpace(req.ParentIssueKeys) ? null : req.ParentIssueKeys.Trim();
         config.ImportComments = req.ImportComments;
         config.UpdatedAt = DateTime.UtcNow;
 
@@ -96,12 +92,10 @@ public class JiraSyncController(
         return Ok(new JiraSyncConfigResponse(
             config.Id,
             config.ProjectId,
-            config.JiraBaseUrl,
             config.JiraProjectKey,
-            config.JiraEmail,
             config.ApiKeyId,
             config.TriggerMode,
-            config.OnlyImportWithParent,
+            config.ParentIssueKeys,
             config.ImportComments,
             config.CreatedAt,
             config.UpdatedAt));
@@ -196,23 +190,19 @@ public class JiraSyncController(
 }
 
 public record UpsertJiraSyncConfigRequest(
-    string? JiraBaseUrl,
     string? JiraProjectKey,
-    string? JiraEmail,
     Guid? ApiKeyId,
     JiraSyncTriggerMode TriggerMode,
-    bool OnlyImportWithParent = false,
+    string? ParentIssueKeys = null,
     bool ImportComments = true);
 
 public record JiraSyncConfigResponse(
     Guid? Id,
     Guid ProjectId,
-    string? JiraBaseUrl,
     string? JiraProjectKey,
-    string? JiraEmail,
     Guid? ApiKeyId,
     JiraSyncTriggerMode TriggerMode,
-    bool OnlyImportWithParent,
+    string? ParentIssueKeys,
     bool ImportComments,
     DateTime? CreatedAt,
     DateTime? UpdatedAt);

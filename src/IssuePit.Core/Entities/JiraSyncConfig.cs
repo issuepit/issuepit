@@ -20,26 +20,15 @@ public class JiraSyncConfig
     public Project Project { get; set; } = null!;
 
     /// <summary>
-    /// Jira base URL, e.g. <c>https://your-company.atlassian.net</c>.
-    /// </summary>
-    [MaxLength(500)]
-    public string? JiraBaseUrl { get; set; }
-
-    /// <summary>
     /// Jira project key (e.g. <c>PROJ</c>).
     /// </summary>
     [MaxLength(100)]
     public string? JiraProjectKey { get; set; }
 
     /// <summary>
-    /// Email address of the Jira user whose API token is used for authentication.
-    /// </summary>
-    [MaxLength(300)]
-    public string? JiraEmail { get; set; }
-
-    /// <summary>
     /// ID of the API key record (<see cref="ApiKey"/>) that holds the Jira API token.
-    /// The API key must have <see cref="ApiKeyProvider.Jira"/> as its provider.
+    /// The API key must have <see cref="ApiKeyProvider.Jira"/> as its provider and must carry
+    /// <c>JiraBaseUrl</c> and <c>JiraEmail</c> on the key itself.
     /// </summary>
     public Guid? ApiKeyId { get; set; }
 
@@ -50,10 +39,12 @@ public class JiraSyncConfig
     public JiraSyncTriggerMode TriggerMode { get; set; } = JiraSyncTriggerMode.Off;
 
     /// <summary>
-    /// When <c>true</c>, only issues that have a parent (epic, story, sub-task parent)
-    /// set in Jira will be imported. Issues without a parent are skipped.
+    /// Comma-separated list of Jira issue keys whose direct children (sub-tasks, child issues) should be imported.
+    /// When <c>null</c> or empty, all issues in the project are imported.
+    /// Example: <c>PROJ-1,PROJ-2</c>.
     /// </summary>
-    public bool OnlyImportWithParent { get; set; } = false;
+    [MaxLength(2000)]
+    public string? ParentIssueKeys { get; set; }
 
     /// <summary>
     /// When <c>true</c>, Jira issue comments are imported as IssuePit issue comments.

@@ -29,12 +29,10 @@ export const useJiraSyncStore = defineStore('jiraSync', () => {
   }
 
   async function saveConfig(projectId: string, req: {
-    jiraBaseUrl?: string | null
     jiraProjectKey?: string | null
-    jiraEmail?: string | null
     apiKeyId?: string | null
     triggerMode: number
-    onlyImportWithParent: boolean
+    parentIssueKeys?: string | null
     importComments: boolean
   }) {
     loading.value = true

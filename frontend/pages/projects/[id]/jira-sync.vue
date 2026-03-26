@@ -41,11 +41,11 @@
       </div>
 
       <!-- Inner tabs -->
-      <div class="flex gap-1 mb-6">
+      <div class="flex gap-1 border-b border-gray-800 mb-6">
         <button
           v-for="tab in tabs"
           :key="tab"
-          :class="['px-4 py-1.5 text-sm font-medium rounded-lg transition-colors', activeTab === tab ? 'bg-brand-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-200']"
+          :class="['px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px', activeTab === tab ? 'text-white border-brand-500' : 'text-gray-400 hover:text-gray-200 border-transparent']"
           @click="activeTab = tab"
         >
           {{ tab }}
@@ -86,15 +86,6 @@
           </p>
 
           <form class="space-y-4" @submit.prevent="saveConfig">
-            <!-- Jira Base URL -->
-            <div>
-              <label class="block text-sm font-medium text-gray-300 mb-1.5">Jira Base URL</label>
-              <input
-v-model="form.jiraBaseUrl" type="text" placeholder="https://your-company.atlassian.net"
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500">
-              <p class="text-xs text-gray-600 mt-1">Example: <span class="font-mono">https://acme.atlassian.net</span></p>
-            </div>
-
             <!-- Jira Project Key -->
             <div>
               <label class="block text-sm font-medium text-gray-300 mb-1.5">Jira Project Key</label>
@@ -102,15 +93,6 @@ v-model="form.jiraBaseUrl" type="text" placeholder="https://your-company.atlassi
 v-model="form.jiraProjectKey" type="text" placeholder="PROJ"
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500">
               <p class="text-xs text-gray-600 mt-1">The short key for your Jira project (e.g. <span class="font-mono">PROJ</span>, <span class="font-mono">ACME</span>).</p>
-            </div>
-
-            <!-- Jira User Email -->
-            <div>
-              <label class="block text-sm font-medium text-gray-300 mb-1.5">Jira User Email</label>
-              <input
-v-model="form.jiraEmail" type="email" placeholder="you@company.com"
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500">
-              <p class="text-xs text-gray-600 mt-1">The email address of the Jira account whose API token you are using.</p>
             </div>
 
             <!-- API Key -->
@@ -121,13 +103,31 @@ v-model="form.apiKeyId"
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500">
                 <option value="">— None —</option>
                 <option v-for="key in jiraApiKeys" :key="key.id" :value="key.id">
-                  {{ key.name }}
+                  {{ key.name }}{{ key.jiraBaseUrl ? ` (${key.jiraBaseUrl})` : '' }}
                 </option>
               </select>
               <p v-if="jiraApiKeys.length === 0" class="text-xs text-yellow-500 mt-1">
                 No Jira API keys found. Add one in
                 <NuxtLink to="/config/keys" class="text-brand-400 hover:text-brand-300">Config → API Keys</NuxtLink>
-                with provider <span class="font-mono">Jira</span>.
+                with provider <span class="font-mono">Jira</span>. When adding, also fill in the Jira Base URL and Jira User Email fields.
+              </p>
+              <p v-else-if="selectedKeyMissingJiraFields" class="text-xs text-yellow-500 mt-1">
+                The selected key is missing Jira Base URL or Email. Please delete it and re-create it via
+                <NuxtLink to="/config/keys" class="text-brand-400 hover:text-brand-300">Config → API Keys</NuxtLink>
+                with the Jira Base URL and Email filled in.
+              </p>
+              <p v-else class="text-xs text-gray-600 mt-1">The Jira Base URL and email are stored on the key in <NuxtLink to="/config/keys" class="text-brand-400 hover:text-brand-300">Config → API Keys</NuxtLink>.</p>
+            </div>
+
+            <!-- Parent Issue Keys -->
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">Parent Issue Keys (optional)</label>
+              <input
+v-model="form.parentIssueKeys" type="text" placeholder="e.g. PROJ-1, PROJ-2"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500">
+              <p class="text-xs text-gray-600 mt-1">
+                Comma-separated list of Jira issue keys (e.g. Epics) whose direct children should be imported.
+                Leave blank to import all issues in the project.
               </p>
             </div>
 
@@ -135,19 +135,6 @@ v-model="form.apiKeyId"
             <div>
               <label class="block text-sm font-medium text-gray-300 mb-2">Import Options</label>
               <div class="space-y-2">
-                <label class="flex items-start gap-3 p-3 rounded-lg border border-gray-700 cursor-pointer hover:border-gray-600 transition-colors">
-                  <input
-v-model="form.onlyImportWithParent" type="checkbox"
-                    class="mt-0.5 accent-brand-500 w-4 h-4 rounded">
-                  <div>
-                    <p class="text-sm font-medium text-gray-200">Only import issues with a parent</p>
-                    <p class="text-xs text-gray-500 mt-0.5">
-                      When enabled, only Jira issues that have a parent set (e.g. sub-tasks, child issues, issues under an epic)
-                      will be imported. Top-level issues without a parent are skipped.
-                    </p>
-                  </div>
-                </label>
-
                 <label class="flex items-start gap-3 p-3 rounded-lg border border-gray-700 cursor-pointer hover:border-gray-600 transition-colors">
                   <input
 v-model="form.importComments" type="checkbox"
@@ -249,12 +236,10 @@ const tabParam = route.query.tab as string | undefined
 const activeTab = ref<string>(tabParam && tabs.includes(tabParam) ? tabParam : 'Configuration')
 
 const form = reactive({
-  jiraBaseUrl: '',
   jiraProjectKey: '',
-  jiraEmail: '',
   apiKeyId: '',
   triggerMode: JiraSyncTriggerMode.Off as number,
-  onlyImportWithParent: false,
+  parentIssueKeys: '',
   importComments: true,
 })
 
@@ -268,16 +253,21 @@ const jiraApiKeys = computed(() =>
   (configStore.apiKeys ?? []).filter(k => k.provider === ApiKeyProvider.Jira),
 )
 
+// Warn when selected key is missing Jira-specific metadata (base URL or email).
+const selectedKeyMissingJiraFields = computed(() => {
+  if (!form.apiKeyId) return false
+  const key = jiraApiKeys.value.find(k => k.id === form.apiKeyId)
+  return key ? (!key.jiraBaseUrl || !key.jiraEmail) : false
+})
+
 // Populate form whenever the store config is (re)loaded.
 // Guard against stale config from a different project (store persists across navigation).
 watch(() => syncStore.config, (cfg) => {
   if (cfg && cfg.projectId === id) {
-    form.jiraBaseUrl = cfg.jiraBaseUrl ?? ''
     form.jiraProjectKey = cfg.jiraProjectKey ?? ''
-    form.jiraEmail = cfg.jiraEmail ?? ''
     form.apiKeyId = cfg.apiKeyId ?? ''
     form.triggerMode = cfg.triggerMode
-    form.onlyImportWithParent = cfg.onlyImportWithParent
+    form.parentIssueKeys = cfg.parentIssueKeys ?? ''
     form.importComments = cfg.importComments
   }
 }, { immediate: true })
@@ -293,12 +283,10 @@ async function saveConfig() {
   saveSuccess.value = false
   try {
     await syncStore.saveConfig(id, {
-      jiraBaseUrl: form.jiraBaseUrl || null,
       jiraProjectKey: form.jiraProjectKey || null,
-      jiraEmail: form.jiraEmail || null,
       apiKeyId: form.apiKeyId || null,
       triggerMode: form.triggerMode,
-      onlyImportWithParent: form.onlyImportWithParent,
+      parentIssueKeys: form.parentIssueKeys || null,
       importComments: form.importComments,
     })
     saveSuccess.value = true

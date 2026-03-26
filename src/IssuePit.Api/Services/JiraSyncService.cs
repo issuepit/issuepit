@@ -46,7 +46,7 @@ public class JiraSyncService(
             var resolved = await ResolveCredentialsAsync(projectId, run, ct);
             if (resolved is null)
             {
-                await FailRunAsync(run, "Jira sync configuration incomplete — set the Jira base URL, project key, email, and API token.", ct);
+                await FailRunAsync(run, "Jira sync configuration incomplete — set the Jira project key and API token (with Jira Base URL and email set on the key).", ct);
                 return run;
             }
 
@@ -96,13 +96,14 @@ public class JiraSyncService(
                 await db.SaveChangesAsync(ct);
             }
 
-            bool onlyWithParent = config?.OnlyImportWithParent ?? false;
+            // Parse parent issue keys filter (comma-separated, e.g. "PROJ-1,PROJ-2").
+            var parentIssueKeys = ParseParentIssueKeys(config?.ParentIssueKeys);
             bool importComments = config?.ImportComments ?? true;
 
             List<JiraIssueDto> jiraIssues;
             try
             {
-                jiraIssues = await FetchAllJiraIssuesAsync(baseUrl, projectKey, email, apiToken, onlyWithParent, run, ct);
+                jiraIssues = await FetchAllJiraIssuesAsync(baseUrl, projectKey, email, apiToken, parentIssueKeys, run, ct);
             }
             catch (JiraApiException ex)
             {
@@ -231,27 +232,29 @@ public class JiraSyncService(
             return null;
         }
 
-        if (string.IsNullOrWhiteSpace(config.JiraBaseUrl))
-        {
-            await AppendLogAsync(run, GitHubSyncLogLevel.Warn, "Jira base URL is not configured.", ct);
-            return null;
-        }
-
         if (string.IsNullOrWhiteSpace(config.JiraProjectKey))
         {
             await AppendLogAsync(run, GitHubSyncLogLevel.Warn, "Jira project key is not configured.", ct);
             return null;
         }
 
-        if (string.IsNullOrWhiteSpace(config.JiraEmail))
-        {
-            await AppendLogAsync(run, GitHubSyncLogLevel.Warn, "Jira user email is not configured.", ct);
-            return null;
-        }
-
         if (config.ApiKey is null)
         {
             await AppendLogAsync(run, GitHubSyncLogLevel.Warn, "No Jira API key linked to sync configuration.", ct);
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(config.ApiKey.JiraBaseUrl))
+        {
+            await AppendLogAsync(run, GitHubSyncLogLevel.Warn,
+                "Jira base URL is not set on the API key. Edit the key in Config → API Keys and add the Jira Base URL.", ct);
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(config.ApiKey.JiraEmail))
+        {
+            await AppendLogAsync(run, GitHubSyncLogLevel.Warn,
+                "Jira user email is not set on the API key. Edit the key in Config → API Keys and add the Jira Email.", ct);
             return null;
         }
 
@@ -262,8 +265,14 @@ public class JiraSyncService(
             return null;
         }
 
-        return (config.JiraBaseUrl.TrimEnd('/'), config.JiraProjectKey.Trim(), config.JiraEmail.Trim(), apiToken);
+        return (config.ApiKey.JiraBaseUrl.TrimEnd('/'), config.JiraProjectKey.Trim(), config.ApiKey.JiraEmail.Trim(), apiToken);
     }
+
+    private static List<string> ParseParentIssueKeys(string? raw) =>
+        string.IsNullOrWhiteSpace(raw)
+            ? []
+            : [.. raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                     .Where(k => !string.IsNullOrWhiteSpace(k))];
 
     private string? DecryptApiKeyValue(string encryptedValue)
     {
@@ -285,17 +294,26 @@ public class JiraSyncService(
 
     private async Task<List<JiraIssueDto>> FetchAllJiraIssuesAsync(
         string baseUrl, string projectKey, string email, string apiToken,
-        bool onlyWithParent, JiraSyncRun? run, CancellationToken ct)
+        List<string> parentIssueKeys, JiraSyncRun? run, CancellationToken ct)
     {
         var client = CreateHttpClient(baseUrl, email, apiToken);
         var allIssues = new List<JiraIssueDto>();
         var startAt = 0;
         const int maxResults = 100;
 
-        // Build JQL — optionally filter to only issues with a parent.
-        var jql = onlyWithParent
-            ? $"project = \"{projectKey}\" AND parent IS NOT EMPTY ORDER BY created ASC"
-            : $"project = \"{projectKey}\" ORDER BY created ASC";
+        // Build JQL — when parent issue keys are provided, filter to direct children only.
+        string jql;
+        if (parentIssueKeys.Count > 0)
+        {
+            var keyList = string.Join(",", parentIssueKeys.Select(k => $"\"{k}\""));
+            jql = $"project = \"{projectKey}\" AND parent IN ({keyList}) ORDER BY created ASC";
+            await AppendLogAsync(run, GitHubSyncLogLevel.Info,
+                $"Filtering to children of: {string.Join(", ", parentIssueKeys)}", ct);
+        }
+        else
+        {
+            jql = $"project = \"{projectKey}\" ORDER BY created ASC";
+        }
 
         while (true)
         {
