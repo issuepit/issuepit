@@ -564,6 +564,122 @@
         </div>
         <div v-else class="py-10 text-center text-sm text-gray-500">No CI/CD runs for this session</div>
       </div>
+
+      <!-- Message Queue -->
+      <div class="mt-6 bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <div class="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
+          <h2 class="text-sm font-medium text-white flex items-center gap-2">
+            <svg class="w-4 h-4 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            Messages
+            <span v-if="sessionMessages.length" class="text-xs font-normal text-gray-500">({{ sessionMessages.length }})</span>
+          </h2>
+          <span v-if="messagesLoading" class="text-xs text-gray-500">Loading…</span>
+        </div>
+
+        <!-- Queued messages list -->
+        <div v-if="sessionMessages.length" class="divide-y divide-gray-800">
+          <div v-for="msg in sessionMessages" :key="msg.id"
+            class="px-5 py-4 flex items-start gap-3">
+            <!-- Status badge -->
+            <span :class="[
+              'mt-0.5 shrink-0 inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full font-medium',
+              msg.status === 'Pending' ? 'bg-yellow-900/30 text-yellow-400' :
+              msg.status === 'Running' ? 'bg-blue-900/30 text-blue-400' :
+              msg.status === 'Done' ? 'bg-green-900/30 text-green-400' :
+              'bg-gray-800 text-gray-400'
+            ]">
+              <span :class="[
+                'w-1 h-1 rounded-full',
+                msg.status === 'Pending' ? 'bg-yellow-400' :
+                msg.status === 'Running' ? 'bg-blue-400 animate-pulse' :
+                msg.status === 'Done' ? 'bg-green-400' :
+                'bg-gray-500'
+              ]" />
+              {{ msg.status }}
+            </span>
+
+            <!-- Content -->
+            <div class="flex-1 min-w-0">
+              <p class="text-sm text-gray-300 whitespace-pre-wrap break-words">{{ msg.content }}</p>
+              <div class="flex items-center gap-3 mt-1 flex-wrap">
+                <span v-if="msg.modelOverride" class="text-xs text-gray-500 font-mono">model: {{ msg.modelOverride }}</span>
+                <span v-if="msg.agentOverrideName" class="text-xs text-gray-500">agent: {{ msg.agentOverrideName }}</span>
+                <DateDisplay :date="msg.createdAt" mode="relative" class="text-xs text-gray-600" />
+              </div>
+            </div>
+
+            <!-- Cancel button (pending only) -->
+            <button
+              v-if="msg.status === 'Pending'"
+              class="shrink-0 text-xs text-red-500 hover:text-red-400 transition-colors mt-0.5"
+              title="Cancel this message"
+              @click="cancelMessage(msg.id)">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div v-else-if="!messagesLoading" class="px-5 py-6 text-center text-sm text-gray-600">
+          No messages queued yet
+        </div>
+
+        <!-- New message input (only when session is active or for reference) -->
+        <div class="px-5 py-4 border-t border-gray-800">
+          <div class="mb-3 space-y-2">
+            <!-- Agent selector -->
+            <div class="flex items-center gap-2">
+              <label class="text-xs text-gray-500 w-16 shrink-0">Agent</label>
+              <select v-model="newMessageAgentId"
+                class="flex-1 bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-300 px-2 py-1 focus:outline-none focus:border-brand-500">
+                <option value="">— Session agent (default)</option>
+                <option v-for="agent in agentsStore.agents" :key="agent.id" :value="agent.id">
+                  {{ agent.name }}{{ agent.id === store.currentSession.agentId ? ' (current)' : '' }}
+                </option>
+              </select>
+            </div>
+            <!-- Model override -->
+            <div class="flex items-center gap-2">
+              <label class="text-xs text-gray-500 w-16 shrink-0">Model</label>
+              <input
+                v-model="newMessageModel"
+                type="text"
+                placeholder="Leave blank to use agent default"
+                class="flex-1 bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-300 px-2 py-1 placeholder-gray-600 focus:outline-none focus:border-brand-500" />
+            </div>
+          </div>
+
+          <!-- Textarea for message content -->
+          <div class="relative">
+            <textarea
+              v-model="newMessageContent"
+              rows="3"
+              placeholder="Type a follow-up message for the agent… (paste images to attach them)"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 px-3 py-2.5 placeholder-gray-600 focus:outline-none focus:border-brand-500 resize-none"
+              @paste="e => handleImagePaste(e, md => { newMessageContent += md })"
+              @keydown.ctrl.enter.prevent="submitMessage"
+              @keydown.meta.enter.prevent="submitMessage" />
+            <span v-if="uploadingImage" class="absolute bottom-2 right-2 text-xs text-blue-400">Uploading…</span>
+          </div>
+
+          <div class="flex items-center justify-between mt-2">
+            <span class="text-xs text-gray-600">Ctrl+Enter to send · Paste images to attach</span>
+            <button
+              :disabled="!newMessageContent.trim() || sendingMessage"
+              class="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-brand-600 hover:bg-brand-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-md transition-colors"
+              @click="submitMessage">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              </svg>
+              {{ sendingMessage ? 'Queuing…' : 'Queue Message' }}
+            </button>
+          </div>
+          <p v-if="messageError" class="mt-2 text-xs text-red-400">{{ messageError }}</p>
+        </div>
+      </div>
     </template>
 
     <div v-else-if="!store.loading" class="flex flex-col items-center justify-center py-16 text-center">
@@ -578,7 +694,7 @@
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useProjectsStore } from '~/stores/projects'
 import { useAgentsStore } from '~/stores/agents'
-import { CiCdRunStatus, AgentSessionStatus, RunnerType, RuntimeTypeLabels, type AgentSessionLog, type GitRemoteCheckResult } from '~/types'
+import { CiCdRunStatus, AgentSessionStatus, RunnerType, RuntimeTypeLabels, type AgentSessionLog, type AgentSessionMessage, type GitRemoteCheckResult } from '~/types'
 import { formatIssueId } from '~/composables/useIssueFormat'
 import { parseAnsiToHtml, stripAnsiCodes } from '~/composables/useAnsiParser'
 
@@ -712,6 +828,7 @@ function sectionLabel(section: string, index: number): string {
     case 'UncommittedChangesFix': return 'Uncommitted Changes Fix'
     case 'CiCdRun': return `CI/CD Run ${index}`
     case 'CiCdFixRun': return `CI/CD Fix Run ${index}`
+    case 'MessageRun': return `Message ${index}`
     default: return section
   }
 }
@@ -972,7 +1089,68 @@ onMounted(async () => {
       catch (e) { console.warn('Failed to parse agent LogLine payload', e) }
     })
   }
+
+  // Load messages and agents for the message queue
+  await loadMessages()
+  if (!agentsStore.agents.length) agentsStore.fetchAgents()
 })
+
+// ── Message Queue ────────────────────────────────────────────────────────────
+
+const sessionMessages = ref<AgentSessionMessage[]>([])
+const messagesLoading = ref(false)
+const newMessageContent = ref('')
+const newMessageModel = ref('')
+const newMessageAgentId = ref('')
+const sendingMessage = ref(false)
+const messageError = ref<string | null>(null)
+
+const { uploading: uploadingImage, handlePaste: handleImagePaste } = useImageUpload()
+
+async function loadMessages() {
+  messagesLoading.value = true
+  try {
+    sessionMessages.value = await store.fetchSessionMessages(sessionId)
+  }
+  catch (e: unknown) {
+    console.warn('Failed to load session messages', e)
+  }
+  finally {
+    messagesLoading.value = false
+  }
+}
+
+async function submitMessage() {
+  if (!newMessageContent.value.trim() || sendingMessage.value) return
+  sendingMessage.value = true
+  messageError.value = null
+  try {
+    const msg = await store.queueSessionMessage(sessionId, {
+      content: newMessageContent.value.trim(),
+      modelOverride: newMessageModel.value.trim() || undefined,
+      agentIdOverride: newMessageAgentId.value || undefined,
+    })
+    sessionMessages.value.push(msg)
+    newMessageContent.value = ''
+  }
+  catch (e: unknown) {
+    messageError.value = e instanceof Error ? e.message : 'Failed to queue message'
+  }
+  finally {
+    sendingMessage.value = false
+  }
+}
+
+async function cancelMessage(messageId: string) {
+  try {
+    await store.cancelSessionMessage(sessionId, messageId)
+    const idx = sessionMessages.value.findIndex(m => m.id === messageId)
+    if (idx !== -1) sessionMessages.value[idx].status = 'Cancelled'
+  }
+  catch (e: unknown) {
+    console.warn('Failed to cancel message', e)
+  }
+}
 
 const retrying = ref(false)
 const showRetryModal = ref(false)

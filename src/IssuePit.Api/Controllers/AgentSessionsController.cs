@@ -163,6 +163,7 @@ public class AgentSessionsController(
         IssuePit.Core.Enums.AgentLogSection.UncommittedChangesFix => "Uncommitted Changes Fix",
         IssuePit.Core.Enums.AgentLogSection.CiCdRun => $"CI/CD Run {index}",
         IssuePit.Core.Enums.AgentLogSection.CiCdFixRun => $"CI/CD Fix Run {index}",
+        IssuePit.Core.Enums.AgentLogSection.MessageRun => $"Message {index}",
         _ => section.ToString(),
     };
 
@@ -329,11 +330,6 @@ public class AgentSessionsController(
         return Accepted(new TriggerCiCdResponse(run.Id, run.Status.ToString(), branch, commitSha));
     }
 
-    /// <summary>
-    /// Starts a manual-mode agent session without requiring an existing issue.
-    /// Creates only an <see cref="AgentSession"/> record (no placeholder issue) and queues the run
-    /// via the <c>issue-assigned</c> Kafka pipeline with <c>IsManualDirectStart=true</c>.
-    /// </summary>
     [HttpPost("start-manual")]
     public async Task<IActionResult> StartManualSession([FromBody] StartManualSessionRequest request, CancellationToken cancellationToken)
     {
@@ -396,6 +392,96 @@ public class AgentSessionsController(
 
         return Accepted(new StartManualSessionResponse(session.Id));
     }
+
+    /// <summary>Returns the ordered list of messages queued for an agent session.</summary>
+    [HttpGet("{id:guid}/messages")]
+    public async Task<IActionResult> GetMessages(Guid id)
+    {
+        var sessionExists = await db.AgentSessions
+            .AnyAsync(s => s.Id == id && s.Project!.Organization.TenantId == tenant.CurrentTenant!.Id);
+
+        if (!sessionExists) return NotFound();
+
+        var messages = await db.AgentSessionMessages
+            .Where(m => m.AgentSessionId == id)
+            .OrderBy(m => m.CreatedAt)
+            .Select(m => new AgentSessionMessageDto(
+                m.Id,
+                m.Content,
+                m.Status.ToString(),
+                m.ModelOverride,
+                m.AgentIdOverride,
+                m.AgentOverride != null ? m.AgentOverride.Name : null,
+                m.CreatedAt,
+                m.ProcessedAt))
+            .ToListAsync();
+
+        return Ok(messages);
+    }
+
+    /// <summary>Queues a new message to be processed by the agent in this session.</summary>
+    [HttpPost("{id:guid}/messages")]
+    public async Task<IActionResult> QueueMessage(Guid id, [FromBody] QueueMessageRequest request, CancellationToken cancellationToken)
+    {
+        if (tenant.CurrentTenant is null) return Unauthorized();
+
+        var session = await db.AgentSessions
+            .Include(s => s.Project).ThenInclude(p => p!.Organization)
+            .FirstOrDefaultAsync(s => s.Id == id && s.Project!.Organization.TenantId == tenant.CurrentTenant.Id, cancellationToken);
+
+        if (session is null) return NotFound();
+
+        if (string.IsNullOrWhiteSpace(request.Content))
+            return BadRequest(new { error = "Message content cannot be empty." });
+
+        // Validate agent override if provided
+        if (request.AgentIdOverride.HasValue)
+        {
+            var agentExists = await db.Agents
+                .AnyAsync(a => a.Id == request.AgentIdOverride.Value && a.Organization.TenantId == tenant.CurrentTenant.Id, cancellationToken);
+            if (!agentExists)
+                return BadRequest(new { error = "Agent override not found." });
+        }
+
+        var message = new AgentSessionMessage
+        {
+            Id = Guid.NewGuid(),
+            AgentSessionId = id,
+            Content = request.Content.Trim(),
+            ModelOverride = string.IsNullOrWhiteSpace(request.ModelOverride) ? null : request.ModelOverride.Trim(),
+            AgentIdOverride = request.AgentIdOverride,
+            CreatedAt = DateTime.UtcNow,
+        };
+
+        db.AgentSessionMessages.Add(message);
+        await db.SaveChangesAsync(cancellationToken);
+
+        return Created($"/api/agent-sessions/{id}/messages/{message.Id}",
+            new AgentSessionMessageDto(message.Id, message.Content, message.Status.ToString(),
+                message.ModelOverride, message.AgentIdOverride, null, message.CreatedAt, message.ProcessedAt));
+    }
+
+    /// <summary>Cancels a pending message (cannot cancel running or done messages).</summary>
+    [HttpDelete("{id:guid}/messages/{messageId:guid}")]
+    public async Task<IActionResult> CancelMessage(Guid id, Guid messageId, CancellationToken cancellationToken)
+    {
+        if (tenant.CurrentTenant is null) return Unauthorized();
+
+        var message = await db.AgentSessionMessages
+            .Include(m => m.AgentSession).ThenInclude(s => s!.Project).ThenInclude(p => p!.Organization)
+            .FirstOrDefaultAsync(m => m.Id == messageId && m.AgentSessionId == id
+                && m.AgentSession!.Project!.Organization.TenantId == tenant.CurrentTenant.Id, cancellationToken);
+
+        if (message is null) return NotFound();
+
+        if (message.Status != AgentSessionMessageStatus.Pending)
+            return Conflict(new { error = "Only pending messages can be cancelled.", message.Status, StatusName = message.Status.ToString() });
+
+        message.Status = AgentSessionMessageStatus.Cancelled;
+        await db.SaveChangesAsync(cancellationToken);
+
+        return Ok(new { message.Id, Status = message.Status.ToString() });
+    }
 }
 
 public record RetrySessionResponse(Guid RetriedSessionId);
@@ -433,3 +519,18 @@ public record AgentSessionStepDto(
     bool HasError,
     DateTime StartedAt,
     DateTime EndedAt);
+
+public record QueueMessageRequest(
+    string Content,
+    string? ModelOverride = null,
+    Guid? AgentIdOverride = null);
+
+public record AgentSessionMessageDto(
+    Guid Id,
+    string Content,
+    string Status,
+    string? ModelOverride,
+    Guid? AgentIdOverride,
+    string? AgentOverrideName,
+    DateTime CreatedAt,
+    DateTime? ProcessedAt);
