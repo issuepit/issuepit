@@ -43,7 +43,7 @@ public class DockerAgentRuntime(
     // Docker image used to run agents. Uses the IssuePit helper-opencode-act image which includes
     // the opencode CLI, Docker Engine (DinD), act, .NET SDK, Node.js, and Playwright.
     // Overridden by agent.DockerImage when set.
-    private const string DefaultDockerImage = "ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24";
+    internal const string DefaultDockerImage = "ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24";
 
     // Default act runner image injected into /root/.config/act/actrc so that when the agent
     // invokes `act` to run CI workflows inside the container, the inner workflow job containers

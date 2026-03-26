@@ -371,7 +371,7 @@ function loadForm() {
   if (!agent) return
   form.name = agent.name
   form.systemPrompt = agent.systemPrompt
-  form.dockerImage = agent.dockerImage
+  form.dockerImage = agent.dockerImage ?? ''
   form.isActive = agent.isActive
   form.runnerType = toRunnerType(agent.runnerType)
   form.model = agent.model ?? ''

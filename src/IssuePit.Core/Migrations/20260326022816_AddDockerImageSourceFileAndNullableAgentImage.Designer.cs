@@ -3,6 +3,7 @@ using System;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace IssuePit.Core.Migrations
 {
     [DbContext(typeof(IssuePitDbContext))]
-    partial class IssuePitDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260326022816_AddDockerImageSourceFileAndNullableAgentImage")]
+    partial class AddDockerImageSourceFileAndNullableAgentImage
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1175,154 +1178,6 @@ namespace IssuePit.Core.Migrations
                     b.HasIndex("ProjectId");
 
                     b.ToTable("git_server_repos");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.HetznerServer", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("ActiveJobCount")
-                        .HasColumnType("integer");
-
-                    b.Property<double?>("CpuLoadPercent")
-                        .HasColumnType("double precision");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long>("HetznerServerId")
-                        .HasColumnType("bigint");
-
-                    b.Property<long?>("HetznerSshKeyId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Ipv4Address")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("Ipv6Address")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("LastError")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("LastJobEndedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Location")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<Guid>("OrgId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int?>("RamTotalMb")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("RamUsedMb")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("ReadyAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ServerType")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<int?>("SetupDurationSeconds")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("SshPrivateKey")
-                        .HasColumnType("text");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("TotalJobCount")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrgId");
-
-                    b.ToTable("hetzner_servers");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.HetznerServerRuntimeHistory", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int?>("BillableSeconds")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("EstimatedCostEuroCents")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("HetznerServerId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Location")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<Guid>("OrgId")
-                        .HasColumnType("uuid");
-
-                    b.Property<double?>("PeakCpuLoadPercent")
-                        .HasColumnType("double precision");
-
-                    b.Property<int?>("PeakRamUsedMb")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("ProvisionedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("ReadyAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("RecordedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ServerType")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<int?>("SetupDurationSeconds")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("TotalJobCount")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("TotalRuntimeSeconds")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("HetznerServerId");
-
-                    b.HasIndex("OrgId");
-
-                    b.ToTable("hetzner_server_runtime_histories");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.Issue", b =>
@@ -3378,36 +3233,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("Org");
 
                     b.Navigation("Project");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.HetznerServer", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrgId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Organization");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.HetznerServerRuntimeHistory", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.HetznerServer", "HetznerServer")
-                        .WithMany()
-                        .HasForeignKey("HetznerServerId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("IssuePit.Core.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrgId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("HetznerServer");
-
-                    b.Navigation("Organization");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.Issue", b =>

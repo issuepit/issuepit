@@ -18,12 +18,12 @@ public class DockerImagesAdminController(IssuePitDbContext db) : ControllerBase
 
         var orgs = await db.Organizations
             .OrderBy(o => o.Name)
-            .Select(o => new { o.Id, o.TenantId, o.Name, o.Slug, o.ActRunnerImage })
+            .Select(o => new { o.Id, o.TenantId, o.Name, o.Slug, o.ActRunnerImage, o.ActRunnerImageSourceFile })
             .ToListAsync();
 
         var projects = await db.Projects
             .OrderBy(p => p.Name)
-            .Select(p => new { p.Id, p.OrgId, p.Name, p.Slug, p.ActRunnerImage })
+            .Select(p => new { p.Id, p.OrgId, p.Name, p.Slug, p.ActRunnerImage, p.ActRunnerImageSourceFile })
             .ToListAsync();
 
         var agents = await db.Agents
@@ -41,8 +41,9 @@ public class DockerImagesAdminController(IssuePitDbContext db) : ControllerBase
                 o.Name,
                 o.Slug,
                 o.ActRunnerImage,
+                o.ActRunnerImageSourceFile,
                 projects.Where(p => p.OrgId == o.Id).Select(p => new ProjectDockerImageDto(
-                    p.Id, p.Name, p.Slug, p.ActRunnerImage)).ToList(),
+                    p.Id, p.Name, p.Slug, p.ActRunnerImage, p.ActRunnerImageSourceFile)).ToList(),
                 agents.Where(a => a.OrgId == o.Id).Select(a => new AgentDockerImageDto(
                     a.Id, a.Name, a.DockerImage)).ToList())).ToList()));
 
@@ -56,6 +57,7 @@ public class DockerImagesAdminController(IssuePitDbContext db) : ControllerBase
         var org = await db.Organizations.FindAsync(id);
         if (org is null) return NotFound();
         org.ActRunnerImage = string.IsNullOrWhiteSpace(req.Image) ? null : req.Image.Trim();
+        org.ActRunnerImageSourceFile = null; // manually set — clear any config-repo source tracking
         await db.SaveChangesAsync();
         return Ok(new { org.Id, org.ActRunnerImage });
     }
@@ -67,6 +69,7 @@ public class DockerImagesAdminController(IssuePitDbContext db) : ControllerBase
         var project = await db.Projects.FindAsync(id);
         if (project is null) return NotFound();
         project.ActRunnerImage = string.IsNullOrWhiteSpace(req.Image) ? null : req.Image.Trim();
+        project.ActRunnerImageSourceFile = null; // manually set — clear any config-repo source tracking
         await db.SaveChangesAsync();
         return Ok(new { project.Id, project.ActRunnerImage });
     }
@@ -77,9 +80,7 @@ public class DockerImagesAdminController(IssuePitDbContext db) : ControllerBase
     {
         var agent = await db.Agents.FindAsync(id);
         if (agent is null) return NotFound();
-        if (string.IsNullOrWhiteSpace(req.Image))
-            return BadRequest("Agent DockerImage cannot be empty.");
-        agent.DockerImage = req.Image.Trim();
+        agent.DockerImage = string.IsNullOrWhiteSpace(req.Image) ? null : req.Image.Trim();
         await db.SaveChangesAsync();
         return Ok(new { agent.Id, agent.DockerImage });
     }
@@ -97,6 +98,7 @@ public record OrgDockerImagesDto(
     string Name,
     string Slug,
     string? ActRunnerImage,
+    string? ActRunnerImageSourceFile,
     IReadOnlyList<ProjectDockerImageDto> Projects,
     IReadOnlyList<AgentDockerImageDto> Agents);
 
@@ -104,11 +106,12 @@ public record ProjectDockerImageDto(
     Guid Id,
     string Name,
     string Slug,
-    string? ActRunnerImage);
+    string? ActRunnerImage,
+    string? ActRunnerImageSourceFile);
 
 public record AgentDockerImageDto(
     Guid Id,
     string Name,
-    string DockerImage);
+    string? DockerImage);
 
 public record PatchDockerImageRequest(string? Image);

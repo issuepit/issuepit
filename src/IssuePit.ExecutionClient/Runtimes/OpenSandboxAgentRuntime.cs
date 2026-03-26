@@ -66,9 +66,11 @@ public class OpenSandboxAgentRuntime(
 
         var env = BuildEnvironment(session, agent, issue, credentials, gitRepository);
 
+        var effectiveImage = !string.IsNullOrWhiteSpace(agent.DockerImage) ? agent.DockerImage : DockerAgentRuntime.DefaultDockerImage;
+
         var requestBody = new
         {
-            image = agent.DockerImage,
+            image = effectiveImage,
             env,
             labels = new Dictionary<string, string>
             {
@@ -79,7 +81,7 @@ public class OpenSandboxAgentRuntime(
         };
 
         logger.LogInformation("Creating OpenSandbox sandbox from image {Image} for session {SessionId}",
-            agent.DockerImage, session.Id);
+            effectiveImage, session.Id);
 
         var sandboxesUrl = $"{config.Endpoint.TrimEnd('/')}/api/sandboxes";
         var response = await http.PostAsJsonAsync(sandboxesUrl, requestBody, cancellationToken);

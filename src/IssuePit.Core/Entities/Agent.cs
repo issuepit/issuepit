@@ -21,8 +21,9 @@ public class Agent
     [Required]
     public string SystemPrompt { get; set; } = string.Empty;
 
-    [Required, MaxLength(500)]
-    public string DockerImage { get; set; } = string.Empty;
+    /// <summary>Docker image for the agent container. Null or empty means use the runtime default image.</summary>
+    [MaxLength(500)]
+    public string? DockerImage { get; set; }
 
     [Required]
     public string AllowedTools { get; set; } = "[]";

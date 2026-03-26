@@ -111,7 +111,11 @@ public class ConfigRepoApplier(
         if (model.Name is not null) org.Name = model.Name;
         if (model.MaxConcurrentRunners.HasValue) org.MaxConcurrentRunners = model.MaxConcurrentRunners.Value;
         if (model.ConcurrentJobs.HasValue) org.ConcurrentJobs = model.ConcurrentJobs;
-        if (model.ActRunnerImage is not null) org.ActRunnerImage = model.ActRunnerImage;
+        if (model.ActRunnerImage is not null)
+        {
+            org.ActRunnerImage = model.ActRunnerImage;
+            org.ActRunnerImageSourceFile = Path.GetFileName(filePath);
+        }
         if (model.ActEnv is not null) org.ActEnv = model.ActEnv;
         if (model.ActSecrets is not null) org.ActSecrets = model.ActSecrets;
         if (model.ActionCachePath is not null) org.ActionCachePath = model.ActionCachePath;
@@ -242,7 +246,11 @@ public class ConfigRepoApplier(
         if (model.MountRepositoryInDocker.HasValue) project.MountRepositoryInDocker = model.MountRepositoryInDocker.Value;
         if (model.MaxConcurrentRunners.HasValue) project.MaxConcurrentRunners = model.MaxConcurrentRunners.Value;
         if (model.ConcurrentJobs.HasValue) project.ConcurrentJobs = model.ConcurrentJobs;
-        if (model.ActRunnerImage is not null) project.ActRunnerImage = model.ActRunnerImage;
+        if (model.ActRunnerImage is not null)
+        {
+            project.ActRunnerImage = model.ActRunnerImage;
+            project.ActRunnerImageSourceFile = Path.GetFileName(filePath);
+        }
         if (model.ActEnv is not null) project.ActEnv = model.ActEnv;
         if (model.ActSecrets is not null) project.ActSecrets = model.ActSecrets;
         if (model.ActionCachePath is not null) project.ActionCachePath = model.ActionCachePath;

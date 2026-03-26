@@ -67,6 +67,7 @@
                 placeholder="inherited from global default"
                 label="act runner image (inner)"
                 :has-config-repo="tenant.hasConfigRepo"
+                :config-source-file="org.actRunnerImageSourceFile"
                 @save="(v) => saveOrgImage(org.id, v)"
               />
               <div class="w-4" />
@@ -90,6 +91,7 @@
                 :placeholder="`inherit from org${org.actRunnerImage ? ` (${org.actRunnerImage})` : ' or global default'}`"
                 label="act runner image (inner)"
                 :has-config-repo="tenant.hasConfigRepo"
+                :config-source-file="project.actRunnerImageSourceFile"
                 @save="(v) => saveProjectImage(project.id, v)"
               />
               <div class="w-4" />
@@ -110,10 +112,9 @@
               </div>
               <ImageEditCell
                 :value="agent.dockerImage"
-                placeholder=""
+                placeholder="use runtime default"
                 label="Docker image (outer)"
                 :has-config-repo="false"
-                :required="true"
                 @save="(v) => saveAgentImage(agent.id, v)"
               />
               <div class="w-4" />
@@ -132,9 +133,9 @@
 </template>
 
 <script setup lang="ts">
-interface AgentImageEntry { id: string; name: string; dockerImage: string }
-interface ProjectImageEntry { id: string; name: string; slug: string; actRunnerImage: string | null }
-interface OrgImageEntry { id: string; name: string; slug: string; actRunnerImage: string | null; projects: ProjectImageEntry[]; agents: AgentImageEntry[] }
+interface AgentImageEntry { id: string; name: string; dockerImage: string | null }
+interface ProjectImageEntry { id: string; name: string; slug: string; actRunnerImage: string | null; actRunnerImageSourceFile: string | null }
+interface OrgImageEntry { id: string; name: string; slug: string; actRunnerImage: string | null; actRunnerImageSourceFile: string | null; projects: ProjectImageEntry[]; agents: AgentImageEntry[] }
 interface TenantImageEntry { id: string; name: string; hostname: string; hasConfigRepo: boolean; orgs: OrgImageEntry[] }
 
 const api = useApi()
@@ -159,7 +160,7 @@ async function saveOrgImage(orgId: string, image: string | null) {
   await api.patch(`/api/admin/docker-images/orgs/${orgId}`, { image })
   const tenant = tenants.value.find(t => t.orgs.some(o => o.id === orgId))
   const org = tenant?.orgs.find(o => o.id === orgId)
-  if (org) org.actRunnerImage = image
+  if (org) { org.actRunnerImage = image; org.actRunnerImageSourceFile = null }
 }
 
 async function saveProjectImage(projectId: string, image: string | null) {
@@ -167,13 +168,12 @@ async function saveProjectImage(projectId: string, image: string | null) {
   for (const tenant of tenants.value) {
     for (const org of tenant.orgs) {
       const project = org.projects.find(p => p.id === projectId)
-      if (project) { project.actRunnerImage = image; return }
+      if (project) { project.actRunnerImage = image; project.actRunnerImageSourceFile = null; return }
     }
   }
 }
 
 async function saveAgentImage(agentId: string, image: string | null) {
-  if (!image) return
   await api.patch(`/api/admin/docker-images/agents/${agentId}`, { image })
   for (const tenant of tenants.value) {
     for (const org of tenant.orgs) {
