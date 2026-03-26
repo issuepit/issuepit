@@ -234,7 +234,7 @@ jobs:
           cd /tmp/issuepit-act
           git checkout "$ACT_COMMIT"
           go build -ldflags "-X main.version=${ACT_COMMIT}" -o /tmp/act-bin main.go
-          sudo mv /tmp/act-bin /usr/local/bin/act
+          mv /tmp/act-bin /usr/local/bin/act
           rm -rf /tmp/issuepit-act
           act --version
 

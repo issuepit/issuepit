@@ -49,6 +49,7 @@ public class BadgeEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
             Id = Guid.NewGuid(),
             AgentId = agentId,
             IssueId = issueId,
+            ProjectId = projectId,
             Status = status,
             GitBranch = branch,
             StartedAt = DateTime.UtcNow,
