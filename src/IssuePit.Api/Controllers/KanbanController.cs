@@ -370,7 +370,8 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
         {
             var hasGreenRun = await db.CiCdRuns
                 .Include(r => r.AgentSession)
-                .AnyAsync(r => r.AgentSession != null &&
+                .AnyAsync(r => r.ProjectId == issue.ProjectId &&
+                    r.AgentSession != null &&
                     r.AgentSession.IssueId == req.IssueId &&
                     (r.Status == IssuePit.Core.Enums.CiCdRunStatus.Succeeded ||
                      r.Status == IssuePit.Core.Enums.CiCdRunStatus.SucceededWithWarnings));
@@ -389,7 +390,7 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
         if (transition.RequirePlanComment)
         {
             var hasPlan = await db.IssueComments
-                .AnyAsync(c => c.IssueId == req.IssueId && c.Body.ToLower().Contains("plan:"));
+                .AnyAsync(c => c.IssueId == req.IssueId && EF.Functions.ILike(c.Body, "%plan:%"));
             if (!hasPlan)
                 return BadRequest("Transition requires a plan comment (a comment mentioning \"plan:\").");
         }
@@ -397,9 +398,11 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
         if (transition.RequireTasksDone)
         {
             var hasIncompleteTask = await db.IssueTasks
-                .AnyAsync(t => t.IssueId == req.IssueId && t.Status != IssuePit.Core.Enums.IssueStatus.Done);
+                .AnyAsync(t => t.IssueId == req.IssueId &&
+                    t.Status != IssuePit.Core.Enums.IssueStatus.Done &&
+                    t.Status != IssuePit.Core.Enums.IssueStatus.Cancelled);
             if (hasIncompleteTask)
-                return BadRequest("Transition requires all issue tasks to be completed.");
+                return BadRequest("Transition requires all issue tasks to be completed or cancelled.");
         }
 
         if (transition.RequireSubIssuesDone)
