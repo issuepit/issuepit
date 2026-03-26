@@ -121,9 +121,10 @@ public class KanbanPage(IPage page)
     {
         await page.GotoAsync($"/projects/{projectId}/kanban/lanes");
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        // Wait for board content to load — the board selector and main content are only rendered
-        // after the async board fetch completes and activeBoardId is set.
-        await page.WaitForSelectorAsync("select",
+        // Wait for the "Lanes" heading which lives inside <template v-else-if="activeBoardId">.
+        // That block only renders once fetchBoards() resolves AND onMounted sets activeBoardId,
+        // so its presence guarantees the full content (incl. Orchestrator Schedule) is rendered.
+        await page.WaitForSelectorAsync("h2:has-text('Lanes')",
             new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
     }
 }
