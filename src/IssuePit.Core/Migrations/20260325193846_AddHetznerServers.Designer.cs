@@ -3,6 +3,7 @@ using System;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace IssuePit.Core.Migrations
 {
     [DbContext(typeof(IssuePitDbContext))]
-    partial class IssuePitDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260325193846_AddHetznerServers")]
+    partial class AddHetznerServers
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1260,70 +1263,6 @@ namespace IssuePit.Core.Migrations
                     b.HasIndex("OrgId");
 
                     b.ToTable("hetzner_servers");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.HetznerServerRuntimeHistory", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int?>("BillableSeconds")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("EstimatedCostEuroCents")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("HetznerServerId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Location")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<Guid>("OrgId")
-                        .HasColumnType("uuid");
-
-                    b.Property<double?>("PeakCpuLoadPercent")
-                        .HasColumnType("double precision");
-
-                    b.Property<int?>("PeakRamUsedMb")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("ProvisionedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("ReadyAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("RecordedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ServerType")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<int?>("SetupDurationSeconds")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("TotalJobCount")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("TotalRuntimeSeconds")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("HetznerServerId");
-
-                    b.HasIndex("OrgId");
-
-                    b.ToTable("hetzner_server_runtime_histories");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.Issue", b =>
@@ -3380,25 +3319,6 @@ namespace IssuePit.Core.Migrations
                         .HasForeignKey("OrgId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("Organization");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.HetznerServerRuntimeHistory", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.HetznerServer", "HetznerServer")
-                        .WithMany()
-                        .HasForeignKey("HetznerServerId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("IssuePit.Core.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrgId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("HetznerServer");
 
                     b.Navigation("Organization");
                 });

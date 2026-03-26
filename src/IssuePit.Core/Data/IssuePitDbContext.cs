@@ -78,6 +78,8 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<GitPat> GitPats => Set<GitPat>();
     public DbSet<IssueExternalSource> IssueExternalSources => Set<IssueExternalSource>();
     public DbSet<PinnedProject> PinnedProjects => Set<PinnedProject>();
+    public DbSet<HetznerServer> HetznerServers => Set<HetznerServer>();
+    public DbSet<HetznerServerRuntimeHistory> HetznerServerRuntimeHistories => Set<HetznerServerRuntimeHistory>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -148,6 +148,7 @@ stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
         <SidebarNavLink to="/admin/tenants" icon="tenants" label="Tenants" />
         <SidebarNavLink to="/admin/users" icon="users" label="Users" />
         <SidebarNavLink to="/admin/docker-images" icon="tenants" label="Docker Images" />
+        <SidebarNavLink to="/admin/hetzner-servers" icon="tenants" label="Hetzner Servers" />
       </SidebarSection>
     </nav>
 
