@@ -789,11 +789,11 @@ public class IssueWorker(
                 // remotes. The remote with the most commits is selected to ensure the agent starts from
                 // the newest version. This prevents "fetch first" rejections caused by cloning a remote
                 // that is behind the push target (or any other remote that has newer work).
-                if (!string.IsNullOrWhiteSpace(issue.GitBranch)
+                if (!string.IsNullOrWhiteSpace(issueForRuntime.GitBranch)
                     && cloneRepository is not null
-                    && !string.Equals(issue.GitBranch, cloneRepository.DefaultBranch, StringComparison.OrdinalIgnoreCase))
+                    && !string.Equals(issueForRuntime.GitBranch, cloneRepository.DefaultBranch, StringComparison.OrdinalIgnoreCase))
                 {
-                    var effectiveFeatureBranch = issue.GitBranch;
+                    var effectiveFeatureBranch = issueForRuntime.GitBranch;
                     GitRepository? bestSource = null;
                     int bestCount = -1;
 
