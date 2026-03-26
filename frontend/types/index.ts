@@ -409,6 +409,8 @@ export interface Agent {
   childAgents?: AgentChild[]
   createdAt: string
   updatedAt: string
+  /** Per-field config source mapping. Keys are camelCase field names; values are source file names. */
+  configFieldSources?: Record<string, string> | null
 }
 
 export interface AgentChild {

@@ -454,7 +454,7 @@ function onRunTriggered() {
   store.fetchRuns(id)
 }
 
-async function onManualSessionStarted(sessionId: string) {
+async function onManualSessionStarted(sessionId: string, _projectId: string) {
   manualSessionModal.value = false
   await store.fetchAgentSessions(id)
   navigateTo(`/projects/${id}/runs/agent-sessions/${sessionId}`)

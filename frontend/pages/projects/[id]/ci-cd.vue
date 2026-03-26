@@ -73,10 +73,7 @@
           </p>
           <template v-if="isProjectFieldImported('actRunnerImage')">
             <p class="text-sm font-mono text-gray-300">{{ ciCdForm.actRunnerImage || '(not set)' }}</p>
-            <span class="mt-2 inline-flex items-center gap-1 text-xs text-blue-400 bg-blue-900/20 border border-blue-700/40 px-1.5 py-0.5 rounded font-mono" :title="`Set by config file: ${projectFieldSourceFile('actRunnerImage')}`">
-              <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-              {{ projectFieldSourceFile('actRunnerImage') }}
-            </span>
+            <ImportedBadge :source-file="projectFieldSourceFile('actRunnerImage')" />
           </template>
           <template v-else>
             <CiCdImageSelector v-model="ciCdForm.actRunnerImage" :inherited-value="inheritedRunnerImage" />
@@ -101,10 +98,7 @@
               <div>
                 <label class="block text-sm font-medium text-gray-300">
                   Mount repository in Docker
-                  <span v-if="isProjectFieldImported('mountRepositoryInDocker')" class="ml-2 inline-flex items-center gap-1 text-xs text-blue-400 bg-blue-900/20 border border-blue-700/40 px-1.5 py-0.5 rounded font-mono align-middle" :title="`Set by config file: ${projectFieldSourceFile('mountRepositoryInDocker')}`">
-                    <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                    {{ projectFieldSourceFile('mountRepositoryInDocker') }}
-                  </span>
+                  <ImportedBadge v-if="isProjectFieldImported('mountRepositoryInDocker')" :source-file="projectFieldSourceFile('mountRepositoryInDocker')" />
                 </label>
                 <p class="text-xs text-gray-500 mt-0.5">Bind the workspace directory into the runner container</p>
               </div>
@@ -123,10 +117,7 @@
               <label class="block text-sm font-medium text-gray-300 mb-1.5">
                 Max concurrent runners
                 <span class="text-gray-500 font-normal">(0 = unlimited)</span>
-                <span v-if="isProjectFieldImported('maxConcurrentRunners')" class="ml-2 inline-flex items-center gap-1 text-xs text-blue-400 bg-blue-900/20 border border-blue-700/40 px-1.5 py-0.5 rounded font-mono align-middle" :title="`Set by config file: ${projectFieldSourceFile('maxConcurrentRunners')}`">
-                  <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                  {{ projectFieldSourceFile('maxConcurrentRunners') }}
-                </span>
+                <ImportedBadge v-if="isProjectFieldImported('maxConcurrentRunners')" :source-file="projectFieldSourceFile('maxConcurrentRunners')" />
               </label>
               <input v-model.number="ciCdForm.maxConcurrentRunners" type="number" min="0"
                 :disabled="isProjectFieldImported('maxConcurrentRunners')"
@@ -136,10 +127,7 @@
               <label class="block text-sm font-medium text-gray-300 mb-1.5">
                 Concurrent jobs per run
                 <span class="text-gray-500 font-normal">(0 = unlimited, blank = inherit from org / default 4)</span>
-                <span v-if="isProjectFieldImported('concurrentJobs')" class="ml-2 inline-flex items-center gap-1 text-xs text-blue-400 bg-blue-900/20 border border-blue-700/40 px-1.5 py-0.5 rounded font-mono align-middle" :title="`Set by config file: ${projectFieldSourceFile('concurrentJobs')}`">
-                  <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                  {{ projectFieldSourceFile('concurrentJobs') }}
-                </span>
+                <ImportedBadge v-if="isProjectFieldImported('concurrentJobs')" :source-file="projectFieldSourceFile('concurrentJobs')" />
               </label>
               <input v-model.number="ciCdForm.concurrentJobs" type="number" min="0" placeholder="inherit (org or default 4)"
                 :disabled="isProjectFieldImported('concurrentJobs')"
@@ -193,10 +181,7 @@
               <label class="block text-sm font-medium text-gray-300 mb-1.5">
                 Environment variables
                 <span class="text-gray-500 font-normal">(--env KEY=VALUE)</span>
-                <span v-if="isProjectFieldImported('actEnv')" class="ml-2 inline-flex items-center gap-1 text-xs text-blue-400 bg-blue-900/20 border border-blue-700/40 px-1.5 py-0.5 rounded font-mono align-middle" :title="`Set by config file: ${projectFieldSourceFile('actEnv')}`">
-                  <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                  {{ projectFieldSourceFile('actEnv') }}
-                </span>
+                <ImportedBadge v-if="isProjectFieldImported('actEnv')" :source-file="projectFieldSourceFile('actEnv')" />
               </label>
               <textarea
                 v-model="ciCdForm.actEnv"
@@ -210,10 +195,7 @@
               <label class="block text-sm font-medium text-gray-300 mb-1.5">
                 Secrets
                 <span class="text-gray-500 font-normal">(--secret KEY=VALUE)</span>
-                <span v-if="isProjectFieldImported('actSecrets')" class="ml-2 inline-flex items-center gap-1 text-xs text-blue-400 bg-blue-900/20 border border-blue-700/40 px-1.5 py-0.5 rounded font-mono align-middle" :title="`Set by config file: ${projectFieldSourceFile('actSecrets')}`">
-                  <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                  {{ projectFieldSourceFile('actSecrets') }}
-                </span>
+                <ImportedBadge v-if="isProjectFieldImported('actSecrets')" :source-file="projectFieldSourceFile('actSecrets')" />
               </label>
               <textarea
                 v-model="ciCdForm.actSecrets"
@@ -239,10 +221,7 @@
               <label class="block text-sm font-medium text-gray-300 mb-1.5">
                 Action cache path
                 <span class="text-gray-500 font-normal">(--action-cache-path)</span>
-                <span v-if="isProjectFieldImported('actionCachePath')" class="ml-2 inline-flex items-center gap-1 text-xs text-blue-400 bg-blue-900/20 border border-blue-700/40 px-1.5 py-0.5 rounded font-mono align-middle" :title="`Set by config file: ${projectFieldSourceFile('actionCachePath')}`">
-                  <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                  {{ projectFieldSourceFile('actionCachePath') }}
-                </span>
+                <ImportedBadge v-if="isProjectFieldImported('actionCachePath')" :source-file="projectFieldSourceFile('actionCachePath')" />
               </label>
               <input
                 v-model="ciCdForm.actionCachePath"
@@ -264,10 +243,7 @@
               <label for="projectUseNewActionCache" class="text-sm text-gray-300">
                 Use new action cache
                 <span class="text-gray-500 font-normal">(--use-new-action-cache)</span>
-                <span v-if="isProjectFieldImported('useNewActionCache')" class="ml-2 inline-flex items-center gap-1 text-xs text-blue-400 bg-blue-900/20 border border-blue-700/40 px-1.5 py-0.5 rounded font-mono align-middle" :title="`Set by config file: ${projectFieldSourceFile('useNewActionCache')}`">
-                  <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                  {{ projectFieldSourceFile('useNewActionCache') }}
-                </span>
+                <ImportedBadge v-if="isProjectFieldImported('useNewActionCache')" :source-file="projectFieldSourceFile('useNewActionCache')" />
               </label>
             </div>
             <div class="flex items-center gap-3">
@@ -281,10 +257,7 @@
               <label for="projectActionOfflineMode" class="text-sm text-gray-300">
                 Offline mode — use only cached actions, no network downloads
                 <span class="text-gray-500 font-normal">(--action-offline-mode)</span>
-                <span v-if="isProjectFieldImported('actionOfflineMode')" class="ml-2 inline-flex items-center gap-1 text-xs text-blue-400 bg-blue-900/20 border border-blue-700/40 px-1.5 py-0.5 rounded font-mono align-middle" :title="`Set by config file: ${projectFieldSourceFile('actionOfflineMode')}`">
-                  <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                  {{ projectFieldSourceFile('actionOfflineMode') }}
-                </span>
+                <ImportedBadge v-if="isProjectFieldImported('actionOfflineMode')" :source-file="projectFieldSourceFile('actionOfflineMode')" />
               </label>
             </div>
           </div>
@@ -303,10 +276,7 @@
           <div>
             <label class="block text-sm font-medium text-gray-300 mb-1.5">
               Repository mappings
-              <span v-if="isProjectFieldImported('localRepositories')" class="ml-2 inline-flex items-center gap-1 text-xs text-blue-400 bg-blue-900/20 border border-blue-700/40 px-1.5 py-0.5 rounded font-mono align-middle" :title="`Set by config file: ${projectFieldSourceFile('localRepositories')}`">
-                <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                {{ projectFieldSourceFile('localRepositories') }}
-              </span>
+              <ImportedBadge v-if="isProjectFieldImported('localRepositories')" :source-file="projectFieldSourceFile('localRepositories')" />
             </label>
             <textarea
               v-model="ciCdForm.localRepositories"
@@ -327,10 +297,7 @@
         <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
           <h2 class="font-semibold text-white mb-1">
             Skip Steps
-            <span v-if="isProjectFieldImported('skipSteps')" class="ml-2 inline-flex items-center gap-1 text-xs text-blue-400 bg-blue-900/20 border border-blue-700/40 px-1.5 py-0.5 rounded font-mono align-middle" :title="`Set by config file: ${projectFieldSourceFile('skipSteps')}`">
-              <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-              {{ projectFieldSourceFile('skipSteps') }}
-            </span>
+            <ImportedBadge v-if="isProjectFieldImported('skipSteps')" :source-file="projectFieldSourceFile('skipSteps')" />
           </h2>
           <p class="text-sm text-gray-500 mb-4">
             Skip specific workflow steps on every run without modifying the workflow file.

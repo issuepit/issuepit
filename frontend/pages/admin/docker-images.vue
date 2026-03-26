@@ -114,7 +114,8 @@
                 :value="agent.dockerImage"
                 placeholder="use runtime default"
                 label="Docker image (outer)"
-                :has-config-repo="false"
+                :has-config-repo="tenant.hasConfigRepo"
+                :config-source-file="agent.dockerImageSourceFile"
                 @save="(v) => saveAgentImage(agent.id, v)"
               />
               <div class="w-4" />
@@ -133,7 +134,7 @@
 </template>
 
 <script setup lang="ts">
-interface AgentImageEntry { id: string; name: string; dockerImage: string | null }
+interface AgentImageEntry { id: string; name: string; dockerImage: string | null; dockerImageSourceFile: string | null }
 interface ProjectImageEntry { id: string; name: string; slug: string; actRunnerImage: string | null; actRunnerImageSourceFile: string | null }
 interface OrgImageEntry { id: string; name: string; slug: string; actRunnerImage: string | null; actRunnerImageSourceFile: string | null; projects: ProjectImageEntry[]; agents: AgentImageEntry[] }
 interface TenantImageEntry { id: string; name: string; hostname: string; hasConfigRepo: boolean; orgs: OrgImageEntry[] }
@@ -178,7 +179,7 @@ async function saveAgentImage(agentId: string, image: string | null) {
   for (const tenant of tenants.value) {
     for (const org of tenant.orgs) {
       const agent = org.agents.find(a => a.id === agentId)
-      if (agent) { agent.dockerImage = image; return }
+      if (agent) { agent.dockerImage = image; agent.dockerImageSourceFile = null; return }
     }
   }
 }

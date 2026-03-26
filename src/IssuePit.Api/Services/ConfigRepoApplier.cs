@@ -60,6 +60,16 @@ public class ConfigRepoApplier(
             }
         }
 
+        var agentsDir = Path.Combine(configPath, "agents");
+        if (Directory.Exists(agentsDir))
+        {
+            foreach (var file in EnumerateConfigFiles(agentsDir))
+            {
+                await ApplyAgentConfigAsync(tenant, file, strictMode, result, ct);
+                result.FilesProcessed++;
+            }
+        }
+
         await db.SaveChangesAsync(ct);
         return result;
     }
@@ -487,6 +497,121 @@ public class ConfigRepoApplier(
                     ProjectId = project.Id,
                     UserId = userId,
                     Permissions = memberCfg.Permissions
+                });
+            }
+        }
+    }
+
+    private async Task ApplyAgentConfigAsync(Tenant tenant, string filePath, bool strictMode, ConfigSyncResult result, CancellationToken ct)
+    {
+        AgentConfigModel? model;
+        if (!TryParseJson5<AgentConfigModel>(filePath, result, out model) || model is null) return;
+
+        var validationErrors = ValidateModel(model);
+        if (validationErrors.Count > 0)
+        {
+            foreach (var err in validationErrors)
+                result.AddError(filePath, err);
+            return;
+        }
+
+        // Agent must be identified by name; a name is required to locate the agent in the DB.
+        var agentName = model.Name ?? Path.GetFileNameWithoutExtension(filePath);
+        if (string.IsNullOrWhiteSpace(agentName))
+        {
+            result.AddError(filePath, "Agent config must specify a 'name' field (or use the filename as the agent name).");
+            return;
+        }
+
+        var agent = await db.Agents
+            .Include(a => a.Organization)
+            .Where(a => a.Organization.TenantId == tenant.Id && a.Name == agentName)
+            .FirstOrDefaultAsync(ct);
+
+        if (agent is null)
+        {
+            var msg = $"Agent '{agentName}' not found in tenant; skipping.";
+            if (strictMode)
+            {
+                result.AddStrictModeError(filePath, msg);
+                logger.LogWarning("Agent '{Name}' not found for tenant {TenantId} (strict mode — error)", agentName, tenant.Id);
+            }
+            else
+            {
+                result.AddWarning(filePath, msg);
+                logger.LogWarning("Agent '{Name}' not found for tenant {TenantId}; skipping", agentName, tenant.Id);
+            }
+            return;
+        }
+
+        var sourceFileName = Path.GetFileName(filePath);
+        var configSources = agent.ConfigFieldSourcesJson is not null
+            ? System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(agent.ConfigFieldSourcesJson) ?? new Dictionary<string, string>()
+            : new Dictionary<string, string>();
+
+        if (model.DockerImage is not null)
+        {
+            agent.DockerImage = model.DockerImage;
+            agent.DockerImageSourceFile = sourceFileName;
+            configSources["dockerImage"] = sourceFileName;
+        }
+        if (model.Model is not null)
+        {
+            agent.Model = model.Model;
+            configSources["model"] = sourceFileName;
+        }
+        if (model.SystemPrompt is not null)
+        {
+            agent.SystemPrompt = model.SystemPrompt;
+            configSources["systemPrompt"] = sourceFileName;
+        }
+        if (model.Runner is not null)
+        {
+            if (Enum.TryParse<IssuePit.Core.Enums.RunnerType>(model.Runner, ignoreCase: true, out var runnerType))
+            {
+                agent.RunnerType = runnerType;
+                configSources["runnerType"] = sourceFileName;
+            }
+            else
+            {
+                result.AddWarning(filePath, $"Unknown runner type '{model.Runner}'; valid values: {string.Join(", ", Enum.GetNames<IssuePit.Core.Enums.RunnerType>())}.");
+            }
+        }
+
+        if (configSources.Count > 0)
+            agent.ConfigFieldSourcesJson = System.Text.Json.JsonSerializer.Serialize(configSources);
+
+        if (model.McpServers is not null && model.McpServers.Count > 0)
+            await ApplyAgentMcpServersAsync(agent, model.McpServers, result, filePath, ct);
+
+        logger.LogInformation("Applied agent config for '{Name}' (id={AgentId})", agentName, agent.Id);
+    }
+
+    private async Task ApplyAgentMcpServersAsync(
+        IssuePit.Core.Entities.Agent agent, List<string> mcpServerNames, ConfigSyncResult result, string filePath, CancellationToken ct)
+    {
+        var existing = await db.AgentMcpServers
+            .Where(am => am.AgentId == agent.Id)
+            .ToListAsync(ct);
+
+        foreach (var serverName in mcpServerNames)
+        {
+            var server = await db.McpServers
+                .FirstOrDefaultAsync(s => s.Name == serverName && s.OrgId == agent.OrgId, ct);
+
+            if (server is null)
+            {
+                result.AddWarning(filePath, $"MCP server '{serverName}' not found in org; skipping link for agent '{agent.Name}'.");
+                logger.LogWarning("MCP server '{ServerName}' not found for agent '{AgentName}' (orgId {OrgId}); skipping", serverName, agent.Name, agent.OrgId);
+                continue;
+            }
+
+            if (!existing.Any(am => am.McpServerId == server.Id))
+            {
+                db.AgentMcpServers.Add(new IssuePit.Core.Entities.AgentMcpServer
+                {
+                    AgentId = agent.Id,
+                    McpServerId = server.Id
                 });
             }
         }
