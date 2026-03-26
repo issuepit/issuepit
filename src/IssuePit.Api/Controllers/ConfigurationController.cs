@@ -40,6 +40,8 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
                 k.Name,
                 k.Provider,
                 ProviderName = k.Provider.ToString(),
+                k.JiraBaseUrl,
+                k.JiraEmail,
                 k.CreatedAt,
                 k.ExpiresAt,
                 // Never return the encrypted value
@@ -68,10 +70,12 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
             // In production, encrypt before storing. Placeholder prefix marks it as unencrypted for now.
             EncryptedValue = $"plain:{req.Value}",
             ExpiresAt = req.ExpiresAt,
+            JiraBaseUrl = string.IsNullOrWhiteSpace(req.JiraBaseUrl) ? null : req.JiraBaseUrl.Trim().TrimEnd('/'),
+            JiraEmail = string.IsNullOrWhiteSpace(req.JiraEmail) ? null : req.JiraEmail.Trim(),
         };
         db.ApiKeys.Add(key);
         await db.SaveChangesAsync();
-        return Created($"/api/config/keys/{key.Id}", new { key.Id, key.Name, key.Provider, key.ProjectId, key.TeamId, key.UserId, key.CreatedAt });
+        return Created($"/api/config/keys/{key.Id}", new { key.Id, key.Name, key.Provider, key.ProjectId, key.TeamId, key.UserId, key.JiraBaseUrl, key.JiraEmail, key.CreatedAt });
     }
 
     [HttpDelete("keys/{id:guid}")]
@@ -345,6 +349,6 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
     }
 }
 
-public record ApiKeyRequest(Guid? OrgId, string Name, ApiKeyProvider Provider, string Value, DateTime? ExpiresAt, Guid? ProjectId = null, Guid? TeamId = null, Guid? UserId = null);
+public record ApiKeyRequest(Guid? OrgId, string Name, ApiKeyProvider Provider, string Value, DateTime? ExpiresAt, Guid? ProjectId = null, Guid? TeamId = null, Guid? UserId = null, string? JiraBaseUrl = null, string? JiraEmail = null);
 public record RuntimeConfigRequest(Guid? OrgId, string Name, RuntimeType Type, string Configuration, bool IsDefault, int MaxConcurrentAgents = 0);
 public record TelegramBotRequest(string Name, string BotToken, string ChatId, int Events, bool IsSilent, DigestInterval DigestInterval, Guid? OrgId, Guid? ProjectId);

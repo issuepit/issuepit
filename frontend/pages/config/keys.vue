@@ -85,6 +85,21 @@
             <input v-model="form.expiresAt" type="date"
               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-500" />
           </div>
+          <!-- Jira-specific fields -->
+          <template v-if="form.provider === ApiKeyProvider.Jira">
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">Jira Base URL <span class="text-red-400">*</span></label>
+              <input v-model="form.jiraBaseUrl" type="text" required placeholder="https://your-company.atlassian.net"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-500" />
+              <p class="text-xs text-gray-600 mt-1">Example: <span class="font-mono">https://acme.atlassian.net</span></p>
+            </div>
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">Jira User Email <span class="text-red-400">*</span></label>
+              <input v-model="form.jiraEmail" type="email" required placeholder="you@company.com"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-500" />
+              <p class="text-xs text-gray-600 mt-1">Email of the Jira account whose API token this is.</p>
+            </div>
+          </template>
           <div class="flex gap-3 pt-2">
             <button type="submit" :disabled="saving"
               class="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors">
@@ -118,6 +133,8 @@ const form = reactive({
   provider: ApiKeyProvider.Custom,
   value: '',
   expiresAt: '',
+  jiraBaseUrl: '',
+  jiraEmail: '',
 })
 
 const providerOptions = computed(() =>
@@ -147,9 +164,11 @@ async function handleCreate() {
       provider: form.provider,
       value: form.value,
       expiresAt: form.expiresAt || undefined,
+      jiraBaseUrl: form.provider === ApiKeyProvider.Jira ? (form.jiraBaseUrl || undefined) : undefined,
+      jiraEmail: form.provider === ApiKeyProvider.Jira ? (form.jiraEmail || undefined) : undefined,
     })
     showCreate.value = false
-    Object.assign(form, { name: '', provider: ApiKeyProvider.Custom, value: '', expiresAt: '' })
+    Object.assign(form, { name: '', provider: ApiKeyProvider.Custom, value: '', expiresAt: '', jiraBaseUrl: '', jiraEmail: '' })
   } finally {
     saving.value = false
   }

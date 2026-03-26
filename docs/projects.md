@@ -178,24 +178,32 @@ The Jira API token must belong to a user with the following project permissions:
 
 Create your API token at [id.atlassian.com](https://id.atlassian.com/manage-profile/security/api-tokens).
 
+### API Key Setup
+
+Before configuring Jira Sync, add a Jira API key in **Config → API Keys**:
+
+1. Click **Add Key**.
+2. Set **Provider** to `Jira`.
+3. Fill in the **Jira Base URL** (e.g. `https://acme.atlassian.net`) and **Jira User Email** — these Jira-specific fields appear automatically when the Jira provider is selected.
+4. Paste your Jira API token as the key **Value**.
+
 ### Configuration
 
 | Field | Description |
 |-------|-------------|
-| **Jira Base URL** | Your Atlassian instance URL, e.g. `https://acme.atlassian.net`. |
 | **Jira Project Key** | The short key for the Jira project (e.g. `PROJ`, `ACME`). |
-| **Jira User Email** | The email address associated with the API token. |
-| **Jira API Token (Key)** | Select an API key with provider **Jira** from [Config → API Keys](/config/keys). |
-| **Only import issues with a parent** | When enabled, only sub-tasks and child issues (those with a parent set) are imported. Top-level issues without a parent are skipped. |
+| **Jira API Token (Key)** | Select an API key with provider **Jira** from [Config → API Keys](/config/keys). The key must have the Jira Base URL and user email set. |
+| **Parent Issue Keys** | Optional comma-separated list of Jira issue keys (e.g. `PROJ-1,PROJ-2`). When set, only direct child issues of those keys (e.g. sub-tasks under an Epic) are imported. Leave blank to import all issues in the project. |
 | **Import issue comments** | When enabled, Jira comments are imported as IssuePit comments on the corresponding issue. |
 | **Trigger Mode** | `Off` (default) · `Manual` (trigger from this page) · `Auto` (periodic automatic import). |
 
 ### Importing Issues from Jira
 
-1. Add a Jira API token in **Config → API Keys** (provider: **Jira**).
+1. Add a Jira API key in **Config → API Keys** (provider: **Jira**) with the Jira Base URL and email filled in.
 2. Open **Project Settings → Jira Sync**.
-3. Fill in the Jira base URL, project key, user email, and select the API key.
-4. Click **Save Configuration**, then **Trigger Import Now**.
+3. Fill in the Jira Project Key and select the API key.
+4. Optionally enter **Parent Issue Keys** to limit imports to children of specific issues (useful for Epics).
+5. Click **Save Configuration**, then **Trigger Import Now**.
 
 Each Jira issue is imported only once (identified by its numeric Jira ID). A Jira-style issue key (e.g. `PROJ-123`) appears in the issue sidebar linking back to the original Jira issue.
 

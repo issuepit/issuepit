@@ -42,6 +42,18 @@ public class ApiKey
     [Required]
     public string EncryptedValue { get; set; } = string.Empty;
 
+    /// <summary>
+    /// For Jira API keys: the Jira instance base URL, e.g. <c>https://your-company.atlassian.net</c>.
+    /// </summary>
+    [MaxLength(500)]
+    public string? JiraBaseUrl { get; set; }
+
+    /// <summary>
+    /// For Jira API keys: the email address of the Jira user whose token this is.
+    /// </summary>
+    [MaxLength(300)]
+    public string? JiraEmail { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime? ExpiresAt { get; set; }
