@@ -54,7 +54,8 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
                 am.McpServer.Description,
                 am.McpServer.AllowedTools)).ToList(),
             agent.ChildAgents.Select(c => new ChildAgentDto(
-                c.Id, c.Name, c.Model, c.SystemPrompt, c.AgentType, c.IsActive)).ToList()));
+                c.Id, c.Name, c.Model, c.SystemPrompt, c.AgentType, c.IsActive)).ToList(),
+            agent.ConfigFieldSources));
     }
 
     [HttpPost]
@@ -150,7 +151,8 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
         agent.AgentType,
         agent.UseHttpServer,
         agent.ManualMode,
-        agent.CreatedAt);
+        agent.CreatedAt,
+        agent.ConfigFieldSources);
 }
 
 public sealed record SetAgentActiveRequest(bool IsActive);
@@ -170,7 +172,8 @@ public sealed record AgentResponse(
     OpenCodeAgentType? AgentType,
     bool UseHttpServer,
     bool ManualMode,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    Dictionary<string, string>? ConfigFieldSources);
 
 /// <summary>Detailed agent response returned by GET /agents/{id}, including linked MCP servers and child agents.</summary>
 public sealed record AgentDetailResponse(
@@ -190,7 +193,8 @@ public sealed record AgentDetailResponse(
     bool ManualMode,
     DateTime CreatedAt,
     IReadOnlyList<LinkedMcpServerDto> LinkedMcpServers,
-    IReadOnlyList<ChildAgentDto> ChildAgents);
+    IReadOnlyList<ChildAgentDto> ChildAgents,
+    Dictionary<string, string>? ConfigFieldSources);
 
 /// <summary>MCP server link summary included in agent detail responses.</summary>
 public sealed record LinkedMcpServerDto(

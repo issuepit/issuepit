@@ -28,21 +28,33 @@
         <div class="space-y-4">
           <div class="grid grid-cols-2 gap-4">
             <div class="col-span-2">
-              <label class="block text-sm font-medium text-gray-300 mb-1.5">Name</label>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">
+                Name
+                <ImportedBadge v-if="isAgentFieldImported('name')" :source-file="agentFieldSourceFile('name')" />
+              </label>
               <input v-model="form.name" type="text" placeholder="Agent name"
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                :disabled="isAgentFieldImported('name')"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed" />
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-300 mb-1.5">Runner</label>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">
+                Runner
+                <ImportedBadge v-if="isAgentFieldImported('runnerType')" :source-file="agentFieldSourceFile('runnerType')" />
+              </label>
               <select v-model="form.runnerType"
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+                :disabled="isAgentFieldImported('runnerType')"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed">
                 <option v-for="opt in runnerOptions" :key="String(opt.value)" :value="opt.value">{{ opt.label }}</option>
               </select>
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-300 mb-1.5">Model</label>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">
+                Model
+                <ImportedBadge v-if="isAgentFieldImported('model')" :source-file="agentFieldSourceFile('model')" />
+              </label>
               <input v-model="form.model" type="text" placeholder="anthropic/claude-opus-4-5"
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                :disabled="isAgentFieldImported('model')"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed" />
             </div>
             <!-- Agent Type (opencode only): primary agents are directly interacted with; subagents are invoked by primary agents -->
             <div v-if="form.runnerType === RunnerTypeEnum.OpenCode" class="col-span-2">
@@ -102,14 +114,22 @@
               <p class="text-xs text-gray-500 mt-1">Passed to the container as <code class="text-gray-400">OPENCODE_PASSWORD</code>. Leave blank to keep any existing password.</p>
             </div>
             <div class="col-span-2">
-              <label class="block text-sm font-medium text-gray-300 mb-1.5">Docker Image</label>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">
+                Docker Image
+                <ImportedBadge v-if="isAgentFieldImported('dockerImage')" :source-file="agentFieldSourceFile('dockerImage')" />
+              </label>
               <input v-model="form.dockerImage" type="text" placeholder="ghcr.io/org/agent:latest"
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                :disabled="isAgentFieldImported('dockerImage')"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed" />
             </div>
             <div class="col-span-2">
-              <label class="block text-sm font-medium text-gray-300 mb-1.5">System Prompt</label>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">
+                System Prompt
+                <ImportedBadge v-if="isAgentFieldImported('systemPrompt')" :source-file="agentFieldSourceFile('systemPrompt')" />
+              </label>
               <textarea v-model="form.systemPrompt" rows="5" placeholder="You are a helpful agent that..."
-                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"></textarea>
+                :disabled="isAgentFieldImported('systemPrompt')"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none disabled:opacity-50 disabled:cursor-not-allowed"></textarea>
             </div>
           </div>
           <div class="flex justify-end pt-2">
@@ -378,6 +398,14 @@ function agentTypeBadge(agentType: unknown): { cls: string; label: string } {
   if (type === OpenCodeAgentTypeEnum.SubAgent) return { cls: 'bg-teal-900/40 text-teal-300', label: 'Subagent' }
   if (type === OpenCodeAgentTypeEnum.All) return { cls: 'bg-gray-700/40 text-gray-300', label: 'All' }
   return { cls: 'bg-gray-800 text-gray-500', label: String(agentType) }
+}
+
+// --- Config field source helpers ---
+function isAgentFieldImported(fieldName: string): boolean {
+  return !!store.currentAgent?.configFieldSources?.[fieldName]
+}
+function agentFieldSourceFile(fieldName: string): string {
+  return store.currentAgent?.configFieldSources?.[fieldName] ?? ''
 }
 
 function loadForm() {
