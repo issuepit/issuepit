@@ -933,13 +933,19 @@ public class DockerAgentRuntime(
             return false;
         }
 
-        // Build the token-to-redact value for safe log output.
-        var tokenToRedact = gitRepository.AuthToken;
+        // Collect ALL auth tokens from all configured remotes so every token can be redacted
+        // from git output, not just the push target's token. When fetching from non-Working
+        // remotes, git error messages may echo their authenticated URLs, leaking those tokens.
+        var allTokens = allGitRepositories
+            .Select(r => r.AuthToken)
+            .Where(t => !string.IsNullOrEmpty(t))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
         Task safeLog(string line, LogStream stream)
         {
-            var safeLine = !string.IsNullOrEmpty(tokenToRedact)
-                ? line.Replace(tokenToRedact, "***", StringComparison.Ordinal)
-                : line;
+            var safeLine = line;
+            foreach (var token in allTokens)
+                safeLine = safeLine.Replace(token!, "***", StringComparison.Ordinal);
             return onLogLine($"[entrypoint] {safeLine}", stream);
         }
 
