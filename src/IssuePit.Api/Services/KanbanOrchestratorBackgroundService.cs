@@ -20,8 +20,10 @@ namespace IssuePit.Api.Services;
 /// (preventing redundant no-op runs on a static board).
 /// </para>
 /// <para>
-/// The service runs every minute and checks whether each schedule's <c>IntervalMinutes</c> has
-/// elapsed since <c>LastRunAt</c>.
+/// The service wakes up every 5 minutes (configurable via <c>Kanban:OrchestratorCheckIntervalSeconds</c>)
+/// and checks whether each schedule's <c>IntervalMinutes</c> has elapsed since <c>LastRunAt</c>.
+/// Using a 5-minute poll interval avoids unnecessary CPU/DB work while still firing schedules
+/// within one poll window of their configured interval.
 /// </para>
 /// </remarks>
 public class KanbanOrchestratorBackgroundService(
@@ -30,8 +32,8 @@ public class KanbanOrchestratorBackgroundService(
     IConfiguration configuration)
     : PeriodicBackgroundService(
         logger,
-        TimeSpan.FromSeconds(configuration.GetValue("Kanban:OrchestratorCheckIntervalSeconds", 60)),
-        startupDelay: TimeSpan.FromSeconds(45))
+        TimeSpan.FromSeconds(configuration.GetValue("Kanban:OrchestratorCheckIntervalSeconds", 300)),
+        startupDelay: TimeSpan.FromSeconds(60))
 {
     protected override async Task ExecuteTickAsync(CancellationToken stoppingToken)
     {
