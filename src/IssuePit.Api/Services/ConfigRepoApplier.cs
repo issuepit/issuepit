@@ -110,57 +110,67 @@ public class ConfigRepoApplier(
         }
 
         if (model.Name is not null) org.Name = model.Name;
+
+        // Build the config-field-sources dictionary once and apply it at the end.
+        var sourceFileName = Path.GetFileName(filePath);
+        var configSources = org.ConfigFieldSourcesJson is not null
+            ? System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(org.ConfigFieldSourcesJson) ?? new Dictionary<string, string>()
+            : new Dictionary<string, string>();
+
         if (model.MaxConcurrentRunners.HasValue)
         {
             org.MaxConcurrentRunners = model.MaxConcurrentRunners.Value;
-            org.ConfigFieldSourcesJson = SetConfigFieldSource(org.ConfigFieldSourcesJson, "maxConcurrentRunners", filePath);
+            configSources["maxConcurrentRunners"] = sourceFileName;
         }
         if (model.ConcurrentJobs.HasValue)
         {
             org.ConcurrentJobs = model.ConcurrentJobs;
-            org.ConfigFieldSourcesJson = SetConfigFieldSource(org.ConfigFieldSourcesJson, "concurrentJobs", filePath);
+            configSources["concurrentJobs"] = sourceFileName;
         }
         if (model.ActRunnerImage is not null)
         {
             org.ActRunnerImage = model.ActRunnerImage;
-            org.ActRunnerImageSourceFile = Path.GetFileName(filePath);
-            org.ConfigFieldSourcesJson = SetConfigFieldSource(org.ConfigFieldSourcesJson, "actRunnerImage", filePath);
+            org.ActRunnerImageSourceFile = sourceFileName;
+            configSources["actRunnerImage"] = sourceFileName;
         }
         if (model.ActEnv is not null)
         {
             org.ActEnv = model.ActEnv;
-            org.ConfigFieldSourcesJson = SetConfigFieldSource(org.ConfigFieldSourcesJson, "actEnv", filePath);
+            configSources["actEnv"] = sourceFileName;
         }
         if (model.ActSecrets is not null)
         {
             org.ActSecrets = model.ActSecrets;
-            org.ConfigFieldSourcesJson = SetConfigFieldSource(org.ConfigFieldSourcesJson, "actSecrets", filePath);
+            configSources["actSecrets"] = sourceFileName;
         }
         if (model.ActionCachePath is not null)
         {
             org.ActionCachePath = model.ActionCachePath;
-            org.ConfigFieldSourcesJson = SetConfigFieldSource(org.ConfigFieldSourcesJson, "actionCachePath", filePath);
+            configSources["actionCachePath"] = sourceFileName;
         }
         if (model.UseNewActionCache.HasValue)
         {
             org.UseNewActionCache = model.UseNewActionCache.Value;
-            org.ConfigFieldSourcesJson = SetConfigFieldSource(org.ConfigFieldSourcesJson, "useNewActionCache", filePath);
+            configSources["useNewActionCache"] = sourceFileName;
         }
         if (model.ActionOfflineMode.HasValue)
         {
             org.ActionOfflineMode = model.ActionOfflineMode.Value;
-            org.ConfigFieldSourcesJson = SetConfigFieldSource(org.ConfigFieldSourcesJson, "actionOfflineMode", filePath);
+            configSources["actionOfflineMode"] = sourceFileName;
         }
         if (model.LocalRepositories is not null)
         {
             org.LocalRepositories = model.LocalRepositories;
-            org.ConfigFieldSourcesJson = SetConfigFieldSource(org.ConfigFieldSourcesJson, "localRepositories", filePath);
+            configSources["localRepositories"] = sourceFileName;
         }
         if (model.SkipSteps is not null)
         {
             org.SkipSteps = model.SkipSteps;
-            org.ConfigFieldSourcesJson = SetConfigFieldSource(org.ConfigFieldSourcesJson, "skipSteps", filePath);
+            configSources["skipSteps"] = sourceFileName;
         }
+
+        if (configSources.Count > 0)
+            org.ConfigFieldSourcesJson = System.Text.Json.JsonSerializer.Serialize(configSources);
 
         if (model.Members is not null)
             await ApplyOrgMembersAsync(tenant, org, model.Members, strictMode, result, filePath, ct);
@@ -281,62 +291,72 @@ public class ConfigRepoApplier(
 
         if (model.Name is not null) project.Name = model.Name;
         if (model.Description is not null) project.Description = model.Description;
+
+        // Build the config-field-sources dictionary once and apply it at the end.
+        var sourceFileName = Path.GetFileName(filePath);
+        var configSources = project.ConfigFieldSourcesJson is not null
+            ? System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(project.ConfigFieldSourcesJson) ?? new Dictionary<string, string>()
+            : new Dictionary<string, string>();
+
         if (model.MountRepositoryInDocker.HasValue)
         {
             project.MountRepositoryInDocker = model.MountRepositoryInDocker.Value;
-            project.ConfigFieldSourcesJson = SetConfigFieldSource(project.ConfigFieldSourcesJson, "mountRepositoryInDocker", filePath);
+            configSources["mountRepositoryInDocker"] = sourceFileName;
         }
         if (model.MaxConcurrentRunners.HasValue)
         {
             project.MaxConcurrentRunners = model.MaxConcurrentRunners.Value;
-            project.ConfigFieldSourcesJson = SetConfigFieldSource(project.ConfigFieldSourcesJson, "maxConcurrentRunners", filePath);
+            configSources["maxConcurrentRunners"] = sourceFileName;
         }
         if (model.ConcurrentJobs.HasValue)
         {
             project.ConcurrentJobs = model.ConcurrentJobs;
-            project.ConfigFieldSourcesJson = SetConfigFieldSource(project.ConfigFieldSourcesJson, "concurrentJobs", filePath);
+            configSources["concurrentJobs"] = sourceFileName;
         }
         if (model.ActRunnerImage is not null)
         {
             project.ActRunnerImage = model.ActRunnerImage;
-            project.ActRunnerImageSourceFile = Path.GetFileName(filePath);
-            project.ConfigFieldSourcesJson = SetConfigFieldSource(project.ConfigFieldSourcesJson, "actRunnerImage", filePath);
+            project.ActRunnerImageSourceFile = sourceFileName;
+            configSources["actRunnerImage"] = sourceFileName;
         }
         if (model.ActEnv is not null)
         {
             project.ActEnv = model.ActEnv;
-            project.ConfigFieldSourcesJson = SetConfigFieldSource(project.ConfigFieldSourcesJson, "actEnv", filePath);
+            configSources["actEnv"] = sourceFileName;
         }
         if (model.ActSecrets is not null)
         {
             project.ActSecrets = model.ActSecrets;
-            project.ConfigFieldSourcesJson = SetConfigFieldSource(project.ConfigFieldSourcesJson, "actSecrets", filePath);
+            configSources["actSecrets"] = sourceFileName;
         }
         if (model.ActionCachePath is not null)
         {
             project.ActionCachePath = model.ActionCachePath;
-            project.ConfigFieldSourcesJson = SetConfigFieldSource(project.ConfigFieldSourcesJson, "actionCachePath", filePath);
+            configSources["actionCachePath"] = sourceFileName;
         }
         if (model.UseNewActionCache.HasValue)
         {
             project.UseNewActionCache = model.UseNewActionCache;
-            project.ConfigFieldSourcesJson = SetConfigFieldSource(project.ConfigFieldSourcesJson, "useNewActionCache", filePath);
+            configSources["useNewActionCache"] = sourceFileName;
         }
         if (model.ActionOfflineMode.HasValue)
         {
             project.ActionOfflineMode = model.ActionOfflineMode;
-            project.ConfigFieldSourcesJson = SetConfigFieldSource(project.ConfigFieldSourcesJson, "actionOfflineMode", filePath);
+            configSources["actionOfflineMode"] = sourceFileName;
         }
         if (model.LocalRepositories is not null)
         {
             project.LocalRepositories = model.LocalRepositories;
-            project.ConfigFieldSourcesJson = SetConfigFieldSource(project.ConfigFieldSourcesJson, "localRepositories", filePath);
+            configSources["localRepositories"] = sourceFileName;
         }
         if (model.SkipSteps is not null)
         {
             project.SkipSteps = model.SkipSteps;
-            project.ConfigFieldSourcesJson = SetConfigFieldSource(project.ConfigFieldSourcesJson, "skipSteps", filePath);
+            configSources["skipSteps"] = sourceFileName;
         }
+
+        if (configSources.Count > 0)
+            project.ConfigFieldSourcesJson = System.Text.Json.JsonSerializer.Serialize(configSources);
 
         if (!string.IsNullOrEmpty(model.GitUrl))
             await ApplyProjectGitRepoAsync(project, model, ct);
@@ -567,20 +587,6 @@ public class ConfigRepoApplier(
         var errors = new List<ValidationResult>();
         Validator.TryValidateObject(model, ctx, errors, validateAllProperties: true);
         return errors.Select(e => e.ErrorMessage ?? "Validation error").ToList();
-    }
-
-    /// <summary>
-    /// Records that <paramref name="fieldName"/> (camelCase) was set by <paramref name="sourceFile"/>
-    /// in the entity's <see cref="Organization.ConfigFieldSourcesJson"/> (or the project equivalent).
-    /// Parses the existing JSON dictionary, adds or updates the entry, and re-serialises it.
-    /// </summary>
-    private static string SetConfigFieldSource(string? existingJson, string fieldName, string sourceFile)
-    {
-        var dict = existingJson is not null
-            ? System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(existingJson) ?? new Dictionary<string, string>()
-            : new Dictionary<string, string>();
-        dict[fieldName] = Path.GetFileName(sourceFile);
-        return System.Text.Json.JsonSerializer.Serialize(dict);
     }
 
     /// <summary>
