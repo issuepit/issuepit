@@ -699,6 +699,10 @@ public class IssueWorker(
             string? capturedServerWebUiUrl = null;
             string? capturedManualModeContainerId = null;
 
+            // Tracks the next message index across all drain checkpoints so messages are numbered
+            // consistently in the session log (Message 1, Message 2, …) regardless of when they run.
+            var msgCtx = new MessageIndexCounter();
+
             // Track the current phase of the workflow so every log line is tagged with its section.
             var currentSection = AgentLogSection.InitialAgentRun;
             var currentSectionIndex = 0;
@@ -991,6 +995,13 @@ public class IssueWorker(
                     }
                 }
 
+                // Drain any user-queued messages after the initial run completes, giving the user a
+                // chance to steer the agent before uncommitted-changes handling and CI/CD.
+                await DrainPendingMessagesAsync(session, agent, issueForRuntime, gitRepository, db,
+                    useExecForFixes ? execRuntime : null,
+                    useExecForFixes ? runtimeId : null,
+                    capturedOpenCodeSessionId, msgCtx, sessionCts.Token);
+
                 // If there are uncommitted changes, run opencode again to commit or .gitignore them.
                 if (capturedHasUncommittedChanges && gitRepository is not null && !string.IsNullOrEmpty(capturedBranchName))
                 {
@@ -1024,6 +1035,12 @@ public class IssueWorker(
                         capturedCommitSha = fixCommitSha;
                     if (!string.IsNullOrEmpty(fixBranchName))
                         capturedBranchName = fixBranchName;
+
+                    // Drain again after uncommitted-changes fix so user can adjust before CI/CD.
+                    await DrainPendingMessagesAsync(session, agent, issueForRuntime, gitRepository, db,
+                        useExecForFixes ? execRuntime : null,
+                        useExecForFixes ? runtimeId : null,
+                        capturedOpenCodeSessionId, msgCtx, sessionCts.Token);
                 }
 
                 // After the agent run completes, trigger the CI/CD pipeline and wait for results.
@@ -1042,6 +1059,7 @@ public class IssueWorker(
                         execRuntime: useExecForFixes ? execRuntime : null,
                         execContainerId: useExecForFixes ? runtimeId : null,
                         openCodeSessionId: capturedOpenCodeSessionId,
+                        msgCtx: msgCtx,
                         onLogLine: (line, stream, section, idx) =>
                             AppendLogAsync(session.Id, line, stream, section, idx, db, sessionCts.Token));
                     session.Status = cicdSucceeded ? AgentSessionStatus.Succeeded : AgentSessionStatus.Failed;
@@ -1060,14 +1078,8 @@ public class IssueWorker(
                     session.Status = AgentSessionStatus.Succeeded;
                 }
 
-                // Process any queued user messages in the same container (exec flow only).
-                // Messages allow users to send follow-up prompts to the agent after the initial run.
-                await ProcessSessionMessagesAsync(
-                    session, agent, issueForRuntime, gitRepository, db,
-                    useExecForFixes ? execRuntime : null,
-                    useExecForFixes ? runtimeId : null,
-                    capturedOpenCodeSessionId,
-                    sessionCts.Token);
+                // Post a summary comment on the issue with all messages processed during this session.
+                await PostSessionMessagesCommentAsync(session, db, sessionCts.Token);
             }
             finally
             {
@@ -1382,12 +1394,13 @@ public class IssueWorker(
     }
 
     /// <summary>
-    /// Processes any user-queued messages for this session after the initial agent run completes.
-    /// Each pending message is run as a forked opencode session in the same container.
-    /// After all messages are processed, a summary comment is posted on the issue.
-    /// Messages are only processed when exec-capable runtime is available (container still running).
+    /// Processes all currently-pending user messages for this session.
+    /// Called at every major workflow checkpoint (after initial run, after CI/CD fails, after fix run, etc.)
+    /// so users can steer the session mid-flight without waiting until the very end.
+    /// Messages are only run when an exec-capable runtime is available (container still alive).
+    /// Does NOT post the final summary comment — see <see cref="PostSessionMessagesCommentAsync"/>.
     /// </summary>
-    private async Task ProcessSessionMessagesAsync(
+    private async Task DrainPendingMessagesAsync(
         AgentSession session,
         Agent originalAgent,
         Issue issueForRuntime,
@@ -1396,6 +1409,7 @@ public class IssueWorker(
         IExecCapableRuntime? execRuntime,
         string? containerId,
         string? openCodeSessionId,
+        MessageIndexCounter counter,
         CancellationToken cancellationToken)
     {
         var messages = await db.AgentSessionMessages
@@ -1417,7 +1431,6 @@ public class IssueWorker(
             return;
         }
 
-        int messageIndex = 1;
         foreach (var message in messages)
         {
             if (cancellationToken.IsCancellationRequested)
@@ -1426,11 +1439,12 @@ public class IssueWorker(
                 continue;
             }
 
+            var messageIndex = counter.Next++;
             message.Status = AgentSessionMessageStatus.Running;
             await db.SaveChangesAsync(cancellationToken);
 
-            logger.LogInformation("Processing queued message {MessageId} ({Index}/{Total}) for session {SessionId}",
-                message.Id, messageIndex, messages.Count, session.Id);
+            logger.LogInformation("Processing queued message {MessageId} (index {Index}) for session {SessionId}",
+                message.Id, messageIndex, session.Id);
 
             try
             {
@@ -1489,33 +1503,46 @@ public class IssueWorker(
             }
 
             await db.SaveChangesAsync(cancellationToken);
-            messageIndex++;
         }
+    }
 
-        // Post a summary comment on the issue with all processed messages.
-        var processedMessages = messages.Where(m => m.Status == AgentSessionMessageStatus.Done).ToList();
-        if (processedMessages.Count > 0 && session.IssueId.HasValue)
+    /// <summary>
+    /// Posts a summary comment on the issue listing all messages that were processed (Done status)
+    /// during this session. Called once at the very end of the session.
+    /// </summary>
+    private async Task PostSessionMessagesCommentAsync(
+        AgentSession session,
+        IssuePitDbContext db,
+        CancellationToken cancellationToken)
+    {
+        if (!session.IssueId.HasValue) return;
+
+        var processedMessages = await db.AgentSessionMessages
+            .Where(m => m.AgentSessionId == session.Id && m.Status == AgentSessionMessageStatus.Done)
+            .OrderBy(m => m.ProcessedAt)
+            .ToListAsync(cancellationToken);
+
+        if (processedMessages.Count == 0) return;
+
+        try
         {
-            try
+            var commentBody = BuildSessionMessagesComment(processedMessages, session);
+            var comment = new IssueComment
             {
-                var commentBody = BuildSessionMessagesComment(processedMessages, session);
-                var comment = new IssueComment
-                {
-                    Id = Guid.NewGuid(),
-                    IssueId = session.IssueId.Value,
-                    Body = commentBody,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow,
-                };
-                db.IssueComments.Add(comment);
-                await db.SaveChangesAsync(cancellationToken);
-                logger.LogInformation("Posted session messages comment on issue {IssueId} for session {SessionId}",
-                    session.IssueId.Value, session.Id);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to post session messages comment for session {SessionId}", session.Id);
-            }
+                Id = Guid.NewGuid(),
+                IssueId = session.IssueId.Value,
+                Body = commentBody,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
+            db.IssueComments.Add(comment);
+            await db.SaveChangesAsync(cancellationToken);
+            logger.LogInformation("Posted session messages comment on issue {IssueId} for session {SessionId}",
+                session.IssueId.Value, session.Id);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to post session messages comment for session {SessionId}", session.Id);
         }
     }
 
@@ -1565,6 +1592,7 @@ public class IssueWorker(
         IExecCapableRuntime? execRuntime = null,
         string? execContainerId = null,
         string? openCodeSessionId = null,
+        MessageIndexCounter? msgCtx = null,
         Func<string, LogStream, AgentLogSection, int, Task>? onLogLine = null)
     {
         for (var attempt = 0; attempt < MaxCiCdFixAttempts; attempt++)
@@ -1608,6 +1636,12 @@ public class IssueWorker(
                     LogStream.Stderr);
                 return false;
             }
+
+            // Drain any queued user messages after the CI/CD failure so the user can steer the
+            // fix agent — e.g. point at the correct error or prevent a wasteful fix run.
+            if (msgCtx is not null)
+                await DrainPendingMessagesAsync(session, agent, issue, gitRepository, db,
+                    execRuntime, execContainerId, openCodeSessionId, msgCtx, cancellationToken);
 
             // Collect CI/CD failure logs to give opencode the context it needs for fixing.
             var failureLogs = await GetCiCdFailureLogsAsync(cicdRun.Id, db, cancellationToken);
@@ -1655,6 +1689,12 @@ public class IssueWorker(
             commitSha = fixCommitSha;
             if (!string.IsNullOrEmpty(fixBranchName))
                 branchName = fixBranchName;
+
+            // Drain queued messages after the fix run so the user can review the changes
+            // and optionally give additional instructions before the next CI/CD attempt.
+            if (msgCtx is not null)
+                await DrainPendingMessagesAsync(session, agent, issue, gitRepository, db,
+                    execRuntime, execContainerId, openCodeSessionId, msgCtx, cancellationToken);
         }
 
         return false;
@@ -2154,6 +2194,16 @@ public class IssueWorker(
 
     private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, Guid? SessionId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? DockerCmdOverride = null, string? ModelOverride = null, int? RunnerTypeOverride = null, bool? UseHttpServerOverride = null, int? RuntimeTypeOverride = null, bool ForceAgentId = false, Guid? TriggeringCommentId = null, string? Branch = null, bool IsManualDirectStart = false);
 
+    /// <summary>
+    /// A simple mutable counter shared across all <see cref="DrainPendingMessagesAsync"/> calls
+    /// within a single agent session so each message receives a unique, monotonically increasing
+    /// index regardless of which checkpoint it is processed at.
+    /// </summary>
+    private sealed class MessageIndexCounter
+    {
+        /// <summary>The index to assign to the next message. Incremented after each processed message.</summary>
+        public int Next { get; set; } = 1;
+    }
     /// <summary>
     /// Checks whether the base branch (<see cref="GitRepository.DefaultBranch"/>) of each
     /// configured git remote exists by running <c>git ls-remote --heads</c> against each URL.
