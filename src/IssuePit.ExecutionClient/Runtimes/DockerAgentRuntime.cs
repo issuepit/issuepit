@@ -806,11 +806,14 @@ public class DockerAgentRuntime(
             // Prefer runnerArgs (set when RunnerType is configured), fall back to session.CustomCmd
             // (DockerCmdOverride for diagnostic/test runs). When neither is set the agent has no
             // RunnerType and no override — skip execution and treat the run as a no-op.
+            // Working directory: use /workspace only when a repo was actually cloned; otherwise
+            // fall back to / so the exec doesn't fail on images that don't have /workspace.
             IReadOnlyList<string>? effectiveCmd = runnerArgs.Count > 0 ? runnerArgs
                 : (session.CustomCmd is { Length: > 0 } ? session.CustomCmd : null);
+            var agentWorkingDir = cloneRepo is not null ? "/workspace" : "/";
             var agentExitCode = 0L;
             if (effectiveCmd is not null)
-                agentExitCode = await ExecCommandAsync(container.ID, effectiveCmd, onLogLine, cancellationToken, logCommand: true);
+                agentExitCode = await ExecCommandAsync(container.ID, effectiveCmd, onLogLine, cancellationToken, logCommand: true, workingDir: agentWorkingDir);
 
             // Step 8: Capture the opencode session ID for --fork on subsequent fix runs.
             // NOTE: opencode run --fork <session-id> will continue from the same session and retain
