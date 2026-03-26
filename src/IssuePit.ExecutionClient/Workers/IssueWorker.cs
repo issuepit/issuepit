@@ -1059,6 +1059,15 @@ public class IssueWorker(
                 {
                     session.Status = AgentSessionStatus.Succeeded;
                 }
+
+                // Process any queued user messages in the same container (exec flow only).
+                // Messages allow users to send follow-up prompts to the agent after the initial run.
+                await ProcessSessionMessagesAsync(
+                    session, agent, issueForRuntime, gitRepository, db,
+                    useExecForFixes ? execRuntime : null,
+                    useExecForFixes ? runtimeId : null,
+                    capturedOpenCodeSessionId,
+                    sessionCts.Token);
             }
             finally
             {
@@ -1372,7 +1381,168 @@ public class IssueWorker(
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Processes any user-queued messages for this session after the initial agent run completes.
+    /// Each pending message is run as a forked opencode session in the same container.
+    /// After all messages are processed, a summary comment is posted on the issue.
+    /// Messages are only processed when exec-capable runtime is available (container still running).
+    /// </summary>
+    private async Task ProcessSessionMessagesAsync(
+        AgentSession session,
+        Agent originalAgent,
+        Issue issueForRuntime,
+        GitRepository? gitRepository,
+        IssuePitDbContext db,
+        IExecCapableRuntime? execRuntime,
+        string? containerId,
+        string? openCodeSessionId,
+        CancellationToken cancellationToken)
+    {
+        var messages = await db.AgentSessionMessages
+            .Where(m => m.AgentSessionId == session.Id && m.Status == AgentSessionMessageStatus.Pending)
+            .OrderBy(m => m.CreatedAt)
+            .ToListAsync(cancellationToken);
 
+        if (messages.Count == 0) return;
+
+        if (execRuntime is null || string.IsNullOrEmpty(containerId))
+        {
+            // Not an exec-capable runtime — cancel all pending messages.
+            foreach (var m in messages)
+            {
+                m.Status = AgentSessionMessageStatus.Cancelled;
+                logger.LogInformation("Cancelled message {MessageId} for session {SessionId}: exec runtime not available", m.Id, session.Id);
+            }
+            await db.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        int messageIndex = 1;
+        foreach (var message in messages)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                message.Status = AgentSessionMessageStatus.Cancelled;
+                continue;
+            }
+
+            message.Status = AgentSessionMessageStatus.Running;
+            await db.SaveChangesAsync(cancellationToken);
+
+            logger.LogInformation("Processing queued message {MessageId} ({Index}/{Total}) for session {SessionId}",
+                message.Id, messageIndex, messages.Count, session.Id);
+
+            try
+            {
+                // Apply agent/model overrides — create a transient copy so DB entity is not modified.
+                Agent effectiveAgent = originalAgent;
+                if (!string.IsNullOrEmpty(message.ModelOverride) || message.AgentIdOverride.HasValue)
+                {
+                    Agent baseAgent = originalAgent;
+                    if (message.AgentIdOverride.HasValue && message.AgentIdOverride.Value != originalAgent.Id)
+                    {
+                        var overrideAgent = await db.Agents.AsNoTracking()
+                            .FirstOrDefaultAsync(a => a.Id == message.AgentIdOverride.Value, cancellationToken);
+                        if (overrideAgent is not null)
+                            baseAgent = overrideAgent;
+                    }
+
+                    // Build a transient copy with the model override applied (never persisted).
+                    effectiveAgent = new Agent
+                    {
+                        Id = baseAgent.Id,
+                        Name = baseAgent.Name,
+                        RunnerType = baseAgent.RunnerType,
+                        Model = !string.IsNullOrEmpty(message.ModelOverride) ? message.ModelOverride : baseAgent.Model,
+                        SystemPrompt = baseAgent.SystemPrompt,
+                    };
+                }
+
+                // Build a stub issue where the body is the message content.
+                var messageIssue = new Issue
+                {
+                    Id = issueForRuntime.Id,
+                    ProjectId = issueForRuntime.ProjectId,
+                    Number = issueForRuntime.Number,
+                    Title = issueForRuntime.Title,
+                    Body = message.Content,
+                    GitBranch = issueForRuntime.GitBranch,
+                };
+
+                var section = AgentLogSection.MessageRun;
+                var msgIdx = messageIndex;
+                await execRuntime.ExecFixInContainerAsync(
+                    containerId, openCodeSessionId, session, effectiveAgent, messageIssue, gitRepository,
+                    (line, stream) => AppendLogAsync(session.Id, line, stream, section, msgIdx, db, cancellationToken),
+                    cancellationToken);
+
+                message.Status = AgentSessionMessageStatus.Done;
+                message.ProcessedAt = DateTime.UtcNow;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Failed to process message {MessageId} for session {SessionId}", message.Id, session.Id);
+                await AppendLogAsync(session.Id,
+                    $"[WARN] Message processing failed: {ex.Message}",
+                    LogStream.Stderr, AgentLogSection.MessageRun, messageIndex, db, CancellationToken.None);
+                message.Status = AgentSessionMessageStatus.Cancelled;
+            }
+
+            await db.SaveChangesAsync(cancellationToken);
+            messageIndex++;
+        }
+
+        // Post a summary comment on the issue with all processed messages.
+        var processedMessages = messages.Where(m => m.Status == AgentSessionMessageStatus.Done).ToList();
+        if (processedMessages.Count > 0 && session.IssueId.HasValue)
+        {
+            try
+            {
+                var commentBody = BuildSessionMessagesComment(processedMessages, session);
+                var comment = new IssueComment
+                {
+                    Id = Guid.NewGuid(),
+                    IssueId = session.IssueId.Value,
+                    Body = commentBody,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                };
+                db.IssueComments.Add(comment);
+                await db.SaveChangesAsync(cancellationToken);
+                logger.LogInformation("Posted session messages comment on issue {IssueId} for session {SessionId}",
+                    session.IssueId.Value, session.Id);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to post session messages comment for session {SessionId}", session.Id);
+            }
+        }
+    }
+
+    /// <summary>Builds a Markdown comment body summarising all messages processed during the session.</summary>
+    private static string BuildSessionMessagesComment(
+        IReadOnlyList<AgentSessionMessage> processedMessages,
+        AgentSession session)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"## 🤖 Agent Session Messages");
+        sb.AppendLine();
+        sb.AppendLine($"The following {processedMessages.Count} message(s) were processed during agent session `{session.Id}`:");
+        sb.AppendLine();
+
+        for (int i = 0; i < processedMessages.Count; i++)
+        {
+            var msg = processedMessages[i];
+            sb.AppendLine($"### Message {i + 1}");
+            if (!string.IsNullOrEmpty(msg.ModelOverride))
+                sb.AppendLine($"*Model: {msg.ModelOverride}*");
+            sb.AppendLine();
+            sb.AppendLine(msg.Content);
+            sb.AppendLine();
+        }
+
+        return sb.ToString().TrimEnd();
+    }
 
     /// <summary>
     /// Runs up to <see cref="MaxCiCdFixAttempts"/> CI/CD → opencode-fix cycles.

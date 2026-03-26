@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { CiCdRun, CiCdRunStatus, CiCdRunLog, CiCdTestSuite, CiCdArtifact, AgentSession, AgentSessionDetail, AgentSessionLog, DashboardAgentSession, WorkflowGraph, WorkflowInfo, LinkedCiCdRun } from '~/types'
+import type { CiCdRun, CiCdRunStatus, CiCdRunLog, CiCdTestSuite, CiCdArtifact, AgentSession, AgentSessionDetail, AgentSessionLog, DashboardAgentSession, WorkflowGraph, WorkflowInfo, LinkedCiCdRun, AgentSessionMessage } from '~/types'
 
 export const useCiCdRunsStore = defineStore('cicdRuns', () => {
   const runs = ref<CiCdRun[]>([])
@@ -147,6 +147,21 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     await api.post(`/api/agent-sessions/${sessionId}/cancel`, {})
   }
 
+  async function fetchSessionMessages(sessionId: string): Promise<AgentSessionMessage[]> {
+    return await api.get<AgentSessionMessage[]>(`/api/agent-sessions/${sessionId}/messages`)
+  }
+
+  async function queueSessionMessage(sessionId: string, message: {
+    content: string
+    modelOverride?: string
+    agentIdOverride?: string
+  }): Promise<AgentSessionMessage> {
+    return await api.post<AgentSessionMessage>(`/api/agent-sessions/${sessionId}/messages`, message)
+  }
+
+  async function cancelSessionMessage(sessionId: string, messageId: string) {
+    await api.del(`/api/agent-sessions/${sessionId}/messages/${messageId}`)
+  }
   async function retryRun(runId: string, options?: {
     keepContainerOnFailure?: boolean
     forceRetryWithActiveRunIds?: string[]
@@ -254,6 +269,9 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     fetchAgentSessionOnly,
     retrySession,
     cancelSession,
+    fetchSessionMessages,
+    queueSessionMessage,
+    cancelSessionMessage,
     retryRun,
     cancelRun,
     approveRun,
