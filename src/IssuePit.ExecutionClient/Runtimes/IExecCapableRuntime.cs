@@ -44,4 +44,22 @@ public interface IExecCapableRuntime : IAgentRuntime
     /// is stopped but left on disk for developer inspection.
     /// </summary>
     Task StopContainerAsync(string containerId, bool remove, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// After a failed push, loops through <paramref name="allGitRepositories"/> in order, fetching
+    /// and rebasing the local branch on top of each remote's version of the branch. Once all remotes
+    /// are integrated, retries the push to <paramref name="gitRepository"/> (the Working push target).
+    /// Emits an updated <c>[ISSUEPIT:GIT_COMMIT_SHA]</c> marker when the retry succeeds.
+    /// </summary>
+    /// <returns>
+    /// <c>true</c> if the retry push succeeded after integrating all reachable remotes;
+    /// <c>false</c> if any fetch failed (non-fatal — branch not on remote), any rebase produced
+    /// conflicts (fatal — abort is attempted), or the retry push itself failed.
+    /// </returns>
+    Task<bool> TryIntegrateRemotesAndRetryPushAsync(
+        string containerId,
+        GitRepository gitRepository,
+        IReadOnlyList<GitRepository> allGitRepositories,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken);
 }

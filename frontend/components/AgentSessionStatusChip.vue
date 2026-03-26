@@ -16,12 +16,14 @@
         @mouseenter="keepOpen"
         @mouseleave="scheduleClose">
         <p class="text-xs text-gray-500 mb-2 font-medium uppercase tracking-wide">Agent Session</p>
-        <!-- Session info - clickable if projectId available -->
+        <!-- Session info - clickable if projectId available; hovering shows step mini graph -->
         <component
           :is="session.projectId ? 'button' : 'div'"
           class="flex items-start gap-2 w-full text-left rounded-lg px-2 py-1.5 transition-colors"
           :class="session.projectId ? 'hover:bg-gray-800 cursor-pointer' : ''"
-          @click.stop="session.projectId && navigateTo(`/projects/${session.projectId}/runs/agent-sessions/${session.id}`)">
+          @click.stop="session.projectId && navigateTo(`/projects/${session.projectId}/runs/agent-sessions/${session.id}`)"
+          @mouseenter="onSessionInfoEnter($event)"
+          @mouseleave="scheduleClose">
           <span :class="dotClass" class="w-2 h-2 rounded-full shrink-0 mt-1" />
           <div class="flex-1 min-w-0">
             <p v-if="session.issueTitle" class="text-xs text-gray-200 font-medium truncate">{{ session.issueTitle }}</p>
@@ -53,6 +55,19 @@
             </button>
           </div>
         </template>
+      </div>
+
+      <!-- Sub-tooltip: mini agent step graph shown when hovering the session info row -->
+      <div
+        v-if="stepSubTooltipVisible"
+        :style="stepSubTooltipStyle"
+        class="fixed z-[60] bg-gray-900 border border-gray-700 rounded-xl shadow-2xl shadow-black/60"
+        @mouseenter="keepOpen"
+        @mouseleave="scheduleClose">
+        <p class="text-xs text-gray-500 px-3 pt-3 pb-1 font-medium uppercase tracking-wide">Step Graph</p>
+        <div class="px-3 pb-3">
+          <MiniAgentStepGraph :session-id="session.id" />
+        </div>
       </div>
 
       <!-- Sub-tooltip: mini job graph shown when hovering a CI/CD run item -->
@@ -197,6 +212,7 @@ const subTooltipStyle = ref<Record<string, string>>({})
 function onRunItemEnter(run: CiCdRun, e: MouseEvent) {
   keepOpen()
   hoveredCiCdRunId.value = run.id
+  stepSubTooltipVisible.value = false
   positionSubTooltip(e)
   subTooltipVisible.value = true
 }
@@ -246,6 +262,52 @@ function positionSubTooltip(e: MouseEvent) {
   }
 }
 
+// ── Sub-tooltip: mini agent step graph shown when hovering the session info row ───────────────
+
+const stepSubTooltipVisible = ref(false)
+const stepSubTooltipStyle = ref<Record<string, string>>({})
+
+function onSessionInfoEnter(e: MouseEvent) {
+  keepOpen()
+  subTooltipVisible.value = false
+  hoveredCiCdRunId.value = null
+  positionStepSubTooltip(e)
+  stepSubTooltipVisible.value = true
+}
+
+function positionStepSubTooltip(e: MouseEvent) {
+  const item = e.currentTarget as HTMLElement
+  const rect = item.getBoundingClientRect()
+  const vpW = window.innerWidth
+  const vpH = window.innerHeight
+  const subW = 360
+  const subH = 120
+
+  const mainLeft = parseFloat(tooltipStyle.value.left ?? '0')
+  const mainW = tooltipEl.value?.offsetWidth ?? 260
+  let left: number
+
+  if (tooltipPlacedLeft.value) {
+    left = mainLeft - subW
+    if (left < 8) left = mainLeft + mainW
+  }
+  else {
+    left = mainLeft + mainW
+    if (left + subW > vpW - 8) left = mainLeft - subW
+  }
+  if (left + subW > vpW - 8) left = vpW - subW - 8
+  if (left < 8) left = 8
+
+  let top = rect.top
+  if (top + subH > vpH - 8) top = vpH - subH - 8
+  if (top < 8) top = 8
+
+  stepSubTooltipStyle.value = {
+    left: `${left}px`,
+    top: `${top}px`,
+  }
+}
+
 // ── Shared hover management ───────────────────────────────────────────────────
 // A single shared timer closes both tooltips. Any tooltip element entering resets the timer,
 // ensuring tooltips stay open as the cursor moves between chip → main tooltip → sub-tooltip.
@@ -264,6 +326,7 @@ function scheduleClose() {
   hideTimer = setTimeout(() => {
     tooltipVisible.value = false
     subTooltipVisible.value = false
+    stepSubTooltipVisible.value = false
     hoveredCiCdRunId.value = null
   }, 200)
 }

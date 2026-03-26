@@ -256,7 +256,7 @@
                     class="hover:bg-gray-900/50 transition-colors cursor-pointer"
                     @click="navigateTo(`/projects/${agendaProject.id}/issues/${issue.number}`)"
                   >
-                    <td class="px-4 py-3 text-gray-500 text-xs font-mono">{{ formatIssueId(issue.number, agendaProject) }}</td>
+                    <td class="px-4 py-3 text-gray-500 text-xs font-mono">{{ formatIssueId(issue.number, agendaProject, issue.externalId, issue.externalSource) }}</td>
                     <td class="px-4 py-3 text-white">{{ issue.title }}</td>
                     <td class="px-4 py-3">
                       <span :class="issueStatusClass(issue.status)" class="text-xs px-2 py-0.5 rounded-full">{{ issue.status }}</span>

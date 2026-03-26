@@ -36,6 +36,7 @@ public class ProjectTools(IssuePitApiClient api, IOptions<McpServerOptions> opti
     {
         ToolGuard.EnforceNotReadOnly(Opts, requestContext, "CreateProject");
         ToolGuard.EnforceNotAgentMode(Opts, "CreateProject");
+        ToolGuard.EnforceAdminEnabled(Opts, "CreateProject");
         var body = new { orgId, name, slug, description };
         var result = await api.PostAsync<object>("/api/projects", body, ct);
         return Serialize(result);
@@ -62,6 +63,7 @@ public class ProjectTools(IssuePitApiClient api, IOptions<McpServerOptions> opti
     {
         ToolGuard.EnforceNotReadOnly(Opts, requestContext, "DeleteProject");
         ToolGuard.EnforceNotAgentMode(Opts, "DeleteProject");
+        ToolGuard.EnforceAdminEnabled(Opts, "DeleteProject");
         ToolGuard.EnforceDestructive(Opts, "DeleteProject");
         await api.DeleteAsync($"/api/projects/{id}", ct);
         return "Project deleted successfully.";

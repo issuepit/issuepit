@@ -767,6 +767,55 @@ public class IssueWorker(
                 // Update clone repository to the one selected after branch availability checks
                 // (may differ from initial selection if the top candidate's branch was not found).
                 cloneRepository = selectedCloneRepo;
+
+                // When a specific feature branch differs from the DefaultBranch, determine the best
+                // clone source by comparing commit counts on that feature branch across ALL configured
+                // remotes. The remote with the most commits is selected to ensure the agent starts from
+                // the newest version. This prevents "fetch first" rejections caused by cloning a remote
+                // that is behind the push target (or any other remote that has newer work).
+                if (!string.IsNullOrWhiteSpace(issue.GitBranch)
+                    && cloneRepository is not null
+                    && !string.Equals(issue.GitBranch, cloneRepository.DefaultBranch, StringComparison.OrdinalIgnoreCase))
+                {
+                    var effectiveFeatureBranch = issue.GitBranch;
+                    GitRepository? bestSource = null;
+                    int bestCount = -1;
+
+                    foreach (var repo in allGitRepositories)
+                    {
+                        var commitCount = await CountBranchCommitsOnRemoteAsync(
+                            repo.RemoteUrl, repo.AuthUsername, repo.AuthToken,
+                            effectiveFeatureBranch, sessionCts.Token);
+
+                        if (commitCount.HasValue)
+                        {
+                            var safeUrl = !string.IsNullOrEmpty(repo.AuthToken)
+                                ? repo.RemoteUrl.Replace(repo.AuthToken, "***", StringComparison.Ordinal)
+                                : repo.RemoteUrl;
+                            await onLogLine(
+                                $"[DEBUG] Feature branch '{effectiveFeatureBranch}' on {repo.Mode} remote ({safeUrl}): {commitCount} commits",
+                                LogStream.Stdout);
+
+                            if (commitCount.Value > bestCount)
+                            {
+                                bestCount = commitCount.Value;
+                                bestSource = repo;
+                            }
+                        }
+                    }
+
+                    if (bestSource is not null && bestSource.Id != cloneRepository.Id)
+                    {
+                        var safeUrl = !string.IsNullOrEmpty(bestSource.AuthToken)
+                            ? bestSource.RemoteUrl.Replace(bestSource.AuthToken, "***", StringComparison.Ordinal)
+                            : bestSource.RemoteUrl;
+                        await onLogLine(
+                            $"[DEBUG] Switching clone source to {bestSource.Mode} remote — most commits on feature branch '{effectiveFeatureBranch}' ({bestCount} commits): {safeUrl}",
+                            LogStream.Stdout);
+                        cloneRepository = bestSource;
+                    }
+                }
+
                 session.GitRemoteCheckResultsJson = JsonSerializer.Serialize(checkResults);
                 await db.SaveChangesAsync(sessionCts.Token);
 
@@ -861,9 +910,44 @@ public class IssueWorker(
                     throw new OperationCanceledException(sessionCts.Token); // re-throw so catch sets Cancelled status
                 }
 
-                // When git push failed, attempt to upload the .git folder as a recovery artifact
-                // so the agent's committed work is not lost. Only attempted for the exec flow
-                // (container still running) when artifact storage is configured.
+                // When git push failed, attempt multi-remote integration recovery before giving up.
+                // The exec container is still alive at this point (stopped in the finally block below).
+                // C# loops through all configured remotes — fetching and rebasing local agent commits
+                // on top of each one in turn — then retries the push. This handles the case where
+                // multiple remotes (e.g. Release and Working) each have commits the local branch lacks.
+                if (capturedGitPushFailed && runtimeId is not null
+                    && execRuntime is IExecCapableRuntime execCapable
+                    && gitRepository is not null)
+                {
+                    await AppendLogAsync(session.Id,
+                        $"[INFO] Push failed — attempting multi-remote integration recovery ({allGitRepositories.Count} remote(s))…",
+                        LogStream.Stdout, currentSection, currentSectionIndex, db, sessionCts.Token);
+                    try
+                    {
+                        var pushRecovered = await execCapable.TryIntegrateRemotesAndRetryPushAsync(
+                            runtimeId, gitRepository, allGitRepositories,
+                            (line, stream) => AppendLogAsync(session.Id, line, stream, currentSection, currentSectionIndex, db, sessionCts.Token),
+                            sessionCts.Token);
+                        if (pushRecovered)
+                        {
+                            capturedGitPushFailed = false;
+                            // capturedCommitSha was updated by the marker emitted inside TryIntegrateRemotesAndRetryPushAsync.
+                            if (!string.IsNullOrEmpty(capturedCommitSha))
+                                session.CommitSha = capturedCommitSha;
+                        }
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        logger.LogWarning(ex, "Multi-remote push recovery threw an exception for session {SessionId}", session.Id);
+                        await AppendLogAsync(session.Id,
+                            $"[WARN] Multi-remote push recovery failed with exception: {ex.Message}",
+                            LogStream.Stderr, currentSection, currentSectionIndex, db, sessionCts.Token);
+                    }
+                }
+
+                // When git push failed (and recovery did not succeed), attempt to upload the .git
+                // folder as a recovery artifact so the agent's committed work is not lost.
+                // Only attempted for the exec flow (container still running) when artifact storage is configured.
                 if (capturedGitPushFailed && runtimeId is not null && execRuntime is DockerAgentRuntime dockerRuntime
                     && gitArtifactUploader.IsConfigured)
                 {
@@ -952,10 +1036,10 @@ public class IssueWorker(
                 }
                 else if (cicdPrerequisitesMet && capturedGitPushFailed)
                 {
-                    // Push failed and CI/CD was otherwise ready to run — log a warning and fail the session
+                    // Push failed and CI/CD was otherwise ready to run — log an error and fail the session
                     // so the user is aware that the branch was never pushed to the remote.
                     await AppendLogAsync(session.Id,
-                        "[WARN] Git push failed — skipping CI/CD trigger because the branch does not exist on the remote.",
+                        "[ERROR] Git push failed — skipping CI/CD trigger because the branch does not exist on the remote.",
                         LogStream.Stderr, currentSection, currentSectionIndex, db, sessionCts.Token);
                     session.Status = AgentSessionStatus.Failed;
                 }
@@ -2084,6 +2168,100 @@ public class IssueWorker(
             // Unexpected error (e.g. network failure) — treat as indeterminate and skip.
             // git availability is verified in CheckBranchOnRemotesAsync before this is called.
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Counts the number of commits reachable from the tip of <paramref name="branch"/> on a remote
+    /// by performing a blobless partial clone (downloads commit and tree objects only; no file blobs).
+    /// Returns <c>null</c> if the branch does not exist on the remote, the clone fails, or the count
+    /// cannot be determined (e.g. timeout, network error).
+    /// </summary>
+    /// <remarks>
+    /// Used when selecting the best clone source for a feature branch that exists on multiple remotes:
+    /// the remote with the highest commit count is the newest and should be preferred.
+    /// </remarks>
+    private static async Task<int?> CountBranchCommitsOnRemoteAsync(
+        string remoteUrl, string? authUsername, string? authToken, string branch,
+        CancellationToken cancellationToken)
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), $"issuepit-branchcount-{Guid.NewGuid():N}");
+        try
+        {
+            var url = BuildAuthenticatedCloneUrl(remoteUrl, authUsername, authToken);
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            // Blobless clones can be slow for large repos; 120 s is a reasonable upper bound.
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(120));
+
+            Directory.CreateDirectory(tmpDir);
+
+            // Blobless partial clone: only commit and tree objects are fetched — no file blobs.
+            // --single-branch and --no-tags keep the fetch minimal.
+            using var cloneProcess = new Process();
+            cloneProcess.StartInfo = new ProcessStartInfo
+            {
+                FileName = "git",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            cloneProcess.StartInfo.ArgumentList.Add("clone");
+            cloneProcess.StartInfo.ArgumentList.Add("--filter=blob:none");
+            cloneProcess.StartInfo.ArgumentList.Add("--single-branch");
+            cloneProcess.StartInfo.ArgumentList.Add("--branch");
+            cloneProcess.StartInfo.ArgumentList.Add(branch);
+            cloneProcess.StartInfo.ArgumentList.Add("--bare");
+            cloneProcess.StartInfo.ArgumentList.Add("--no-tags");
+            cloneProcess.StartInfo.ArgumentList.Add("--quiet");
+            cloneProcess.StartInfo.ArgumentList.Add(url);
+            cloneProcess.StartInfo.ArgumentList.Add(tmpDir);
+            cloneProcess.Start();
+            // Drain both streams before waiting — if buffers fill and nothing reads them the
+            // process will deadlock waiting for the buffer to drain. Await after WaitForExitAsync.
+            var cloneStderrTask = cloneProcess.StandardError.ReadToEndAsync(timeoutCts.Token);
+            var cloneStdoutTask = cloneProcess.StandardOutput.ReadToEndAsync(timeoutCts.Token);
+            await cloneProcess.WaitForExitAsync(timeoutCts.Token);
+            await Task.WhenAll(cloneStdoutTask, cloneStderrTask);
+            if (cloneProcess.ExitCode != 0) return null;
+
+            // Count all commits reachable from HEAD (i.e. total depth of the branch).
+            using var countProcess = new Process();
+            countProcess.StartInfo = new ProcessStartInfo
+            {
+                FileName = "git",
+                WorkingDirectory = tmpDir,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            countProcess.StartInfo.ArgumentList.Add("rev-list");
+            countProcess.StartInfo.ArgumentList.Add("--count");
+            countProcess.StartInfo.ArgumentList.Add("HEAD");
+            countProcess.Start();
+            // Read stdout and drain stderr concurrently to prevent buffer deadlock.
+            var countStderrTask = countProcess.StandardError.ReadToEndAsync(timeoutCts.Token);
+            var countOutput = await countProcess.StandardOutput.ReadToEndAsync(timeoutCts.Token);
+            await countProcess.WaitForExitAsync(timeoutCts.Token);
+            await countStderrTask;
+
+            if (countProcess.ExitCode == 0 && int.TryParse(countOutput.Trim(), out var count))
+                return count;
+            return null;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw; // Propagate outer cancellation.
+        }
+        catch
+        {
+            // Network error, timeout, or branch not found — treat as indeterminate, skip this remote.
+            return null;
+        }
+        finally
+        {
+            try { Directory.Delete(tmpDir, recursive: true); } catch { /* best-effort cleanup */ }
         }
     }
 

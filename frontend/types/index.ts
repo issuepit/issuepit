@@ -197,6 +197,7 @@ export interface Project {
   localRepositories?: string | null
   skipSteps?: string | null
   requiresRunApproval: boolean
+  unwrapSingleFileArtifacts: boolean
   openMergeRequestCount: number
   /** Short project key used as prefix for issue IDs in the UI (e.g. "IP" yields "IP-123"). */
   issueKey?: string | null
@@ -204,6 +205,8 @@ export interface Project {
   issueNumberOffset: number
   createdAt: string
   updatedAt: string
+  /** Whether the current user has pinned this project. */
+  isPinned?: boolean
 }
 
 export interface IssueAssignee {
@@ -295,6 +298,22 @@ export interface CodeReviewComment {
   createdAt: string
 }
 
+/**
+ * Describes an external issue-tracking system linked to an IssuePit project.
+ * Stored as a separate entity so the tracker's type, slug, and URL are
+ * available for deep-linking and display formatting.
+ */
+export interface IssueExternalSource {
+  id: string
+  /** Tracker type: "github", "jira", etc. */
+  type: string
+  /** Project key / slug used as a display prefix (e.g. "PROJ" for Jira). Null for GitHub. */
+  slug?: string | null
+  /** Base URL of the external repository or project. */
+  url?: string | null
+  projectId: string
+}
+
 export interface Issue {
   id: string
   projectId: string
@@ -314,6 +333,11 @@ export interface Issue {
   kanbanRank: number
   gitHubIssueNumber?: number
   gitHubIssueUrl?: string
+  /** External issue number from an external tracker (e.g. GitHub #69). Used as primary display ID. */
+  externalId?: number | null
+  /** External source record describing the tracker (type, slug, URL). Null when no external counterpart. */
+  externalSourceId?: string | null
+  externalSource?: IssueExternalSource | null
   gitBranch?: string
   createdAt: string
   updatedAt: string

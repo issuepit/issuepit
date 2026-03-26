@@ -9,22 +9,24 @@ public class TodoTools(IssuePitApiClient api, IOptions<McpServerOptions> options
 {
     private McpServerOptions Opts => options.Value;
 
-    [McpServerTool, Description("List all todo boards for the current tenant.")]
+    [McpServerTool(Name = "todo_list_boards"), Description("List all todo boards for the current tenant.")]
     public async Task<string> ListTodoBoards(CancellationToken ct = default)
     {
-        ToolGuard.EnforceNotEnhanceMode(Opts, "ListTodoBoards");
+        ToolGuard.EnforceTodoEnabled(Opts, "todo_list_boards");
+        ToolGuard.EnforceNotEnhanceMode(Opts, "todo_list_boards");
         var result = await api.GetAsync<object>("/api/todos/boards", ct);
         return ToolSerializer.Serialize(result);
     }
 
-    [McpServerTool, Description("List todos, optionally filtered by board, category, or completion status.")]
+    [McpServerTool(Name = "todo_list"), Description("List todos, optionally filtered by board, category, or completion status.")]
     public async Task<string> ListTodos(
         [Description("Optional board ID (GUID) to filter todos.")] Guid? boardId = null,
         [Description("Optional category ID (GUID) to filter todos.")] Guid? categoryId = null,
         [Description("Optional filter: true for completed todos, false for incomplete.")] bool? completed = null,
         CancellationToken ct = default)
     {
-        ToolGuard.EnforceNotEnhanceMode(Opts, "ListTodos");
+        ToolGuard.EnforceTodoEnabled(Opts, "todo_list");
+        ToolGuard.EnforceNotEnhanceMode(Opts, "todo_list");
         var qs = new List<string>();
         if (boardId.HasValue) qs.Add($"boardId={boardId.Value}");
         if (categoryId.HasValue) qs.Add($"categoryId={categoryId.Value}");
@@ -34,17 +36,18 @@ public class TodoTools(IssuePitApiClient api, IOptions<McpServerOptions> options
         return ToolSerializer.Serialize(result);
     }
 
-    [McpServerTool, Description("Get details of a specific todo by its ID.")]
+    [McpServerTool(Name = "todo_get"), Description("Get details of a specific todo by its ID.")]
     public async Task<string> GetTodo(
         [Description("The todo ID (GUID).")] Guid id,
         CancellationToken ct = default)
     {
-        ToolGuard.EnforceNotEnhanceMode(Opts, "GetTodo");
+        ToolGuard.EnforceTodoEnabled(Opts, "todo_get");
+        ToolGuard.EnforceNotEnhanceMode(Opts, "todo_get");
         var result = await api.GetAsync<object>($"/api/todos/{id}", ct);
         return ToolSerializer.Serialize(result);
     }
 
-    [McpServerTool, Description("Create a new todo item.")]
+    [McpServerTool(Name = "todo_create"), Description("Create a new todo item.")]
     public async Task<string> CreateTodo(
         [Description("Todo title.")] string title,
         [Description("Optional description (Markdown).")] string? body = null,
@@ -56,8 +59,9 @@ public class TodoTools(IssuePitApiClient api, IOptions<McpServerOptions> options
         [Description("Optional list of category IDs (GUID) to assign the todo to.")] IEnumerable<Guid>? categoryIds = null,
         CancellationToken ct = default)
     {
-        ToolGuard.EnforceNotReadOnly(Opts, requestContext, "CreateTodo");
-        ToolGuard.EnforceNotEnhanceMode(Opts, "CreateTodo");
+        ToolGuard.EnforceNotReadOnly(Opts, requestContext, "todo_create");
+        ToolGuard.EnforceTodoEnabled(Opts, "todo_create");
+        ToolGuard.EnforceNotEnhanceMode(Opts, "todo_create");
         var payload = new
         {
             title,
@@ -73,7 +77,7 @@ public class TodoTools(IssuePitApiClient api, IOptions<McpServerOptions> options
         return ToolSerializer.Serialize(result);
     }
 
-    [McpServerTool, Description("Update an existing todo item.")]
+    [McpServerTool(Name = "todo_update"), Description("Update an existing todo item.")]
     public async Task<string> UpdateTodo(
         [Description("The todo ID (GUID).")] Guid id,
         [Description("New title.")] string title,
@@ -87,8 +91,9 @@ public class TodoTools(IssuePitApiClient api, IOptions<McpServerOptions> options
         [Description("Category IDs (GUID) to assign the todo to.")] IEnumerable<Guid>? categoryIds = null,
         CancellationToken ct = default)
     {
-        ToolGuard.EnforceNotReadOnly(Opts, requestContext, "UpdateTodo");
-        ToolGuard.EnforceNotEnhanceMode(Opts, "UpdateTodo");
+        ToolGuard.EnforceNotReadOnly(Opts, requestContext, "todo_update");
+        ToolGuard.EnforceTodoEnabled(Opts, "todo_update");
+        ToolGuard.EnforceNotEnhanceMode(Opts, "todo_update");
         var payload = new
         {
             title,
@@ -105,13 +110,14 @@ public class TodoTools(IssuePitApiClient api, IOptions<McpServerOptions> options
         return ToolSerializer.Serialize(result);
     }
 
-    [McpServerTool, Description("Delete a todo by its ID.")]
+    [McpServerTool(Name = "todo_delete"), Description("Delete a todo by its ID.")]
     public async Task<string> DeleteTodo(
         [Description("The todo ID (GUID).")] Guid id,
         CancellationToken ct = default)
     {
-        ToolGuard.EnforceNotReadOnly(Opts, requestContext, "DeleteTodo");
-        ToolGuard.EnforceDestructive(Opts, "DeleteTodo");
+        ToolGuard.EnforceNotReadOnly(Opts, requestContext, "todo_delete");
+        ToolGuard.EnforceTodoEnabled(Opts, "todo_delete");
+        ToolGuard.EnforceDestructive(Opts, "todo_delete");
         await api.DeleteAsync($"/api/todos/{id}", ct);
         return "Todo deleted successfully.";
     }

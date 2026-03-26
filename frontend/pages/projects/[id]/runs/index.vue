@@ -27,7 +27,7 @@
             ? 'text-white border-brand-500'
             : 'text-gray-500 border-transparent hover:text-gray-300'
         ]"
-        @click="activeTab = tab">
+        @click="setTab(tab)">
         {{ tab }}
       </button>
       <NuxtLink
@@ -54,6 +54,55 @@
     <div v-if="store.loading" class="flex items-center justify-center py-16">
       <div class="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
     </div>
+
+    <!-- All Runs (mixed) -->
+    <template v-else-if="activeTab === 'All Runs'">
+      <div v-if="allRunsMixed.length" class="rounded-xl border border-gray-800 overflow-hidden">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-900">
+            <tr>
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Status</th>
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Type</th>
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Description</th>
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Branch</th>
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Commit</th>
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Started</th>
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Duration</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-800">
+            <tr v-for="item in allRunsMixed" :key="item.id"
+              class="hover:bg-gray-900/50 transition-colors cursor-pointer"
+              @click="navigateTo(item.href)">
+              <td class="px-4 py-3">
+                <CiCdStatusChip v-if="item.cicdRun" :runs="[item.cicdRun]" :run-link="false" />
+                <AgentSessionStatusChip v-else-if="item.agentSession" :session="item.agentSession" />
+              </td>
+              <td class="px-4 py-3">
+                <span :class="item.type === 'cicd' ? 'bg-sky-900/30 text-sky-400' : 'bg-fuchsia-900/30 text-fuchsia-400'"
+                  class="text-xs px-1.5 py-0.5 rounded font-medium">
+                  {{ item.type === 'cicd' ? 'CI/CD' : 'Agent' }}
+                </span>
+              </td>
+              <td class="px-4 py-3 text-gray-300 max-w-xs truncate">{{ item.description }}</td>
+              <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ item.branch || '—' }}</td>
+              <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ item.commitSha?.slice(0, 7) || '—' }}</td>
+              <td class="px-4 py-3 text-gray-400 text-xs"><DateDisplay :date="item.startedAt" mode="auto" /></td>
+              <td class="px-4 py-3 text-gray-400 text-xs">{{ duration(item.startedAt, item.endedAt) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div v-else class="flex flex-col items-center justify-center py-16 text-center">
+        <div class="w-12 h-12 bg-gray-800 rounded-full flex items-center justify-center mb-3">
+          <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+        </div>
+        <p class="text-gray-400 font-medium">No runs yet</p>
+        <p class="text-gray-600 text-sm mt-1">Runs will appear here once started</p>
+      </div>
+    </template>
 
     <!-- CI/CD Runs -->
     <template v-else-if="activeTab === 'CI/CD Runs'">
@@ -264,7 +313,7 @@
 <script setup lang="ts">
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useProjectsStore } from '~/stores/projects'
-import { CiCdRunStatus, AgentSessionStatus } from '~/types'
+import { CiCdRunStatus, AgentSessionStatus, type CiCdRun, type AgentSession } from '~/types'
 import { formatIssueId } from '~/composables/useIssueFormat'
 
 const route = useRoute()
@@ -273,8 +322,71 @@ const id = route.params.id as string
 
 const store = useCiCdRunsStore()
 const projectsStore = useProjectsStore()
-const tabs = ['CI/CD Runs', 'Agent Runs'] as const
-const activeTab = ref<typeof tabs[number]>(route.query.tab === 'agent' ? 'Agent Runs' : 'CI/CD Runs')
+const tabs = ['All Runs', 'CI/CD Runs', 'Agent Runs'] as const
+type TabName = typeof tabs[number]
+
+const TAB_QUERY: Record<TabName, string> = {
+  'All Runs': 'all',
+  'CI/CD Runs': 'cicd',
+  'Agent Runs': 'agent',
+}
+
+function getTabFromQuery(q: unknown): TabName {
+  if (q === 'cicd') return 'CI/CD Runs'
+  if (q === 'agent') return 'Agent Runs'
+  return 'All Runs'
+}
+
+const activeTab = ref<TabName>(getTabFromQuery(route.query.tab))
+
+function setTab(tab: TabName) {
+  activeTab.value = tab
+  router.replace({ query: { ...route.query, tab: TAB_QUERY[tab] } })
+}
+
+// Mixed runs for "All Runs" tab
+interface MixedRunItem {
+  id: string
+  type: 'cicd' | 'agent'
+  description: string
+  branch?: string
+  commitSha?: string
+  startedAt: string
+  endedAt?: string
+  href: string
+  cicdRun?: CiCdRun
+  agentSession?: AgentSession
+}
+
+const allRunsMixed = computed((): MixedRunItem[] => {
+  const cicdItems: MixedRunItem[] = store.runs.map(run => ({
+    id: run.id,
+    type: 'cicd',
+    description: run.workflow || run.branch || '—',
+    branch: run.branch,
+    commitSha: run.commitSha,
+    startedAt: run.startedAt,
+    endedAt: run.endedAt,
+    href: `/projects/${id}/runs/cicd/${run.id}`,
+    cicdRun: run,
+  }))
+
+  const agentItems: MixedRunItem[] = store.agentSessions.map(session => ({
+    id: session.id,
+    type: 'agent',
+    description: `#${formatIssueId(session.issueNumber, projectsStore.currentProject)} ${session.issueTitle}`,
+    branch: session.gitBranch,
+    commitSha: session.commitSha,
+    startedAt: session.startedAt,
+    endedAt: session.endedAt,
+    href: `/projects/${id}/runs/agent-sessions/${session.id}`,
+    agentSession: session,
+  }))
+
+  return [...cicdItems, ...agentItems].sort(
+    (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
+  )
+})
 
 const commitShaFilter = computed(() => route.query.commitSha as string | undefined)
 const filteredRuns = computed(() =>

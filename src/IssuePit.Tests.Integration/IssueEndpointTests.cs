@@ -173,6 +173,44 @@ public class IssueAssigneeKafkaTests(TrackingApiFactory factory) : IClassFixture
     }
 
     [Fact]
+    public async Task AddAgentAssignee_CreatesPendingAgentSession()
+    {
+        var (tenantId, projectId, orgId) = await SeedProjectAsync();
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+        var issue = new Issue { Id = Guid.NewGuid(), ProjectId = projectId, Title = "Pending Session Issue", Number = 3 };
+        db.Issues.Add(issue);
+        var agent = new Agent { Id = Guid.NewGuid(), OrgId = orgId, Name = "Bot2", SystemPrompt = "sys", DockerImage = "img", AllowedTools = "[]", CreatedAt = DateTime.UtcNow };
+        db.Agents.Add(agent);
+        await db.SaveChangesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var response = await _client.PostAsJsonAsync($"/api/issues/{issue.Id}/assignees", new { agentId = agent.Id });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        // Verify a pending AgentSession was created immediately.
+        using var verifyScope = factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+        var session = await verifyDb.AgentSessions
+            .FirstOrDefaultAsync(s => s.IssueId == issue.Id && s.AgentId == agent.Id);
+
+        Assert.NotNull(session);
+        Assert.Equal(AgentSessionStatus.Pending, session.Status);
+
+        // Verify the Kafka message includes the pre-created session ID.
+        var published = factory.Producer.Produced;
+        var message = published.Single(m => m.Topic == "issue-assigned" && m.Message.Key == issue.Id.ToString());
+        var payload = JsonSerializer.Deserialize<JsonElement>(message.Message.Value);
+        Assert.Equal(session.Id.ToString(), payload.GetProperty("sessionId").GetString());
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
     public async Task AddUserAssignee_DoesNotPublishKafkaEvent()
     {
         var (tenantId, projectId, _) = await SeedProjectAsync();

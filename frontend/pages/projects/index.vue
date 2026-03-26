@@ -27,31 +27,46 @@
 
     <!-- Grid -->
     <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      <NuxtLink v-for="project in store.projects" :key="project.id"
-        :to="`/projects/${project.id}`"
-        class="bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors group">
-        <div class="flex items-start gap-3 mb-3">
-          <div :style="{ background: project.color || '#4c6ef5' }"
-            class="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-lg shrink-0">
-            {{ project.name.charAt(0).toUpperCase() }}
+      <div v-for="project in store.projects" :key="project.id" class="relative group">
+        <NuxtLink
+          :to="`/projects/${project.id}`"
+          class="block bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors">
+          <div class="flex items-start gap-3 mb-3">
+            <div :style="{ background: project.color || '#4c6ef5' }"
+              class="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-lg shrink-0">
+              {{ project.name.charAt(0).toUpperCase() }}
+            </div>
+            <div class="flex-1 min-w-0">
+              <h3 class="font-semibold text-white group-hover:text-brand-300 transition-colors truncate">
+                {{ project.name }}
+              </h3>
+              <p class="text-xs text-gray-500">/{{ project.slug }}</p>
+            </div>
+            <span v-if="project.isPrivate"
+              class="text-xs bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">Private</span>
           </div>
-          <div class="flex-1 min-w-0">
-            <h3 class="font-semibold text-white group-hover:text-brand-300 transition-colors truncate">
-              {{ project.name }}
-            </h3>
-            <p class="text-xs text-gray-500">/{{ project.slug }}</p>
+          <p v-if="project.description" class="text-sm text-gray-400 mb-4 line-clamp-2">
+            {{ project.description }}
+          </p>
+          <div class="flex items-center gap-4 text-xs text-gray-500">
+            <span>{{ project.issueCount }} issues</span>
+            <span>{{ project.memberCount }} members</span>
           </div>
-          <span v-if="project.isPrivate"
-            class="text-xs bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">Private</span>
-        </div>
-        <p v-if="project.description" class="text-sm text-gray-400 mb-4 line-clamp-2">
-          {{ project.description }}
-        </p>
-        <div class="flex items-center gap-4 text-xs text-gray-500">
-          <span>{{ project.issueCount }} issues</span>
-          <span>{{ project.memberCount }} members</span>
-        </div>
-      </NuxtLink>
+        </NuxtLink>
+        <!-- Pin button -->
+        <button
+          class="absolute top-3 right-3 p-1 rounded-md transition-all"
+          :class="project.isPinned
+            ? 'text-yellow-400'
+            : 'text-gray-600 opacity-0 group-hover:opacity-100 hover:text-gray-300'"
+          :title="project.isPinned ? 'Unpin project' : 'Pin project'"
+          @click.prevent="togglePin(project)"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" :fill="project.isPinned ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+          </svg>
+        </button>
+      </div>
 
       <!-- Empty state -->
       <div v-if="!store.loading && store.projects.length === 0"
@@ -122,6 +137,7 @@
 </template>
 
 <script setup lang="ts">
+import type { Project } from '~/types'
 import { useProjectsStore } from '~/stores/projects'
 import { useOrgsStore } from '~/stores/orgs'
 
@@ -146,6 +162,14 @@ watch(() => form.name, (val) => {
 onMounted(async () => {
   await Promise.all([store.fetchProjects(), orgsStore.fetchOrgs()])
 })
+
+async function togglePin(project: Project) {
+  if (project.isPinned) {
+    await store.unpinProject(project.id)
+  } else {
+    await store.pinProject(project.id)
+  }
+}
 
 async function submitCreate() {
   if (!form.name || !form.orgId) return

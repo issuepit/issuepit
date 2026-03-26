@@ -315,7 +315,9 @@ public class CiCdRunsController(
     }
 
     /// <summary>
-    /// Downloads the artifact ZIP by proxying the S3 object through the backend.
+    /// Downloads the artifact by proxying the S3 object through the backend.
+    /// When the artifact was stored as an unwrapped file (single-file artifact with a supported type),
+    /// it is returned with the appropriate MIME type. Otherwise the ZIP archive is returned.
     /// Returns 503 when artifact storage is not configured.
     /// </summary>
     [HttpGet("{id:guid}/artifacts/{artifactId:guid}/download")]
@@ -328,7 +330,7 @@ public class CiCdRunsController(
             .Where(a => a.Id == artifactId
                         && a.CiCdRunId == id
                         && a.CiCdRun.Project.Organization.TenantId == tenant.CurrentTenant!.Id)
-            .Select(a => new { a.Name, a.StorageKey })
+            .Select(a => new { a.Name, a.StorageKey, a.UnwrappedContentType })
             .FirstOrDefaultAsync(ct);
 
         if (artifact is null) return NotFound();
@@ -338,8 +340,20 @@ public class CiCdRunsController(
         try
         {
             var (stream, contentType) = await imageStorage.OpenDownloadStreamAsync(artifact.StorageKey, ct);
-            var fileName = $"{artifact.Name}.zip";
-            return File(stream, contentType, fileName);
+
+            if (!string.IsNullOrEmpty(artifact.UnwrappedContentType))
+            {
+                // Artifact was unwrapped at save time — derive the file extension from the content type.
+                var ext = artifact.UnwrappedContentType switch
+                {
+                    "application/pdf" => ".pdf",
+                    "image/png" => ".png",
+                    _ => string.Empty,
+                };
+                return File(stream, artifact.UnwrappedContentType, $"{artifact.Name}{ext}");
+            }
+
+            return File(stream, contentType, $"{artifact.Name}.zip");
         }
         catch (FileNotFoundException)
         {

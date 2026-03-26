@@ -119,7 +119,7 @@
               </td>
               <td class="px-4 py-3">
                 <div class="flex items-center gap-2">
-                  <span class="text-xs text-gray-600">{{ formatIssueId(issue.number, projectsStore.currentProject) }}</span>
+                  <span class="text-xs text-gray-600">{{ formatIssueId(issue.number, projectsStore.currentProject, issue.externalId, issue.externalSource) }}</span>
                   <span class="text-sm text-gray-200">{{ issue.title }}</span>
                 </div>
               </td>

@@ -128,6 +128,11 @@ public partial class DockerCiCdRuntime(
         var image = !string.IsNullOrWhiteSpace(trigger.CustomImage)
             ? trigger.CustomImage
             : configuration["CiCd__Docker__Image"] ?? DefaultImage;
+        var outerImageSource = !string.IsNullOrWhiteSpace(trigger.CustomImage)
+            ? "run-override"
+            : configuration["CiCd__Docker__Image"] is { Length: > 0 }
+                ? "server-config"
+                : "global-default";
         var actBin = configuration["CiCd__ActBinaryPath"] ?? "act";
         var workspacePath = trigger.WorkspacePath ?? configuration["CiCd__DefaultWorkspacePath"];
 
@@ -274,9 +279,11 @@ public partial class DockerCiCdRuntime(
         // first-run prompt ("Please choose the default image") that causes EOF in non-interactive containers.
         // Default is the Medium runner image (~500 MB, compatible with most actions).
         // Priority: trigger (project/org override) → CiCd__ActImage config → hardcoded default.
-        var actRunnerImage = !string.IsNullOrWhiteSpace(trigger.ActRunnerImage)
-            ? trigger.ActRunnerImage
-            : configuration["CiCd__ActImage"] ?? "catthehacker/ubuntu:act-latest";
+        var (actRunnerImage, actRunnerImageSource) = !string.IsNullOrWhiteSpace(trigger.ActRunnerImage)
+            ? (trigger.ActRunnerImage, trigger.ActRunnerImageSource ?? "trigger-override")
+            : configuration["CiCd__ActImage"] is { Length: > 0 } cfgActImage
+                ? (cfgActImage, "server-config")
+                : ("catthehacker/ubuntu:act-latest", "global-default");
 
         // Build -P platform flags appended to the act command so the prompt is suppressed
         // even if the actrc isn't read (stale image layer, wrong XDG_CONFIG_HOME, etc.).
@@ -289,7 +296,9 @@ public partial class DockerCiCdRuntime(
         await onLogLine($"[DEBUG] Runtime        : Docker (exec model)", LogStream.Stdout);
         await onLogLine($"[DEBUG] IssuePit ver   : {AppVersion}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Docker image   : {image}", LogStream.Stdout);
+        await onLogLine($"[DEBUG] Docker img src : {outerImageSource}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Act runner img : {actRunnerImage}", LogStream.Stdout);
+        await onLogLine($"[DEBUG] Runner img src : {actRunnerImageSource}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Container name : {containerName}", LogStream.Stdout);
         await onLogLine($"[DEBUG] Command        : {string.Join(' ', actCmd)}", LogStream.Stdout);
         if (hasGitRepo)

@@ -805,7 +805,7 @@ public class DockerAgentRuntime(
             }
 
             // Step 7: Execute the agent tool via docker exec.
-            var agentExitCode = await ExecCommandAsync(container.ID, runnerArgs, onLogLine, cancellationToken);
+            var agentExitCode = await ExecCommandAsync(container.ID, runnerArgs, onLogLine, cancellationToken, logCommand: true);
 
             // Step 8: Capture the opencode session ID for --fork on subsequent fix runs.
             // NOTE: opencode run --fork <session-id> will continue from the same session and retain
@@ -890,7 +890,7 @@ public class DockerAgentRuntime(
             var shortId = containerId[..Math.Min(12, containerId.Length)];
             var forkInfo = openCodeSessionId is not null ? $" (--session {openCodeSessionId[..Math.Min(8, openCodeSessionId.Length)]} --fork)" : string.Empty;
             await onLogLine($"[INFO] Exec fix run in container {shortId}{forkInfo}…", LogStream.Stdout);
-            var exitCode = await ExecCommandAsync(containerId, runnerArgs, onFixLogLine, cancellationToken);
+            var exitCode = await ExecCommandAsync(containerId, runnerArgs, onFixLogLine, cancellationToken, logCommand: true);
             if (exitCode != 0)
                 await onLogLine($"[WARN] Fix agent exited with code {exitCode}", LogStream.Stderr);
         }
@@ -975,6 +975,124 @@ public class DockerAgentRuntime(
         {
             logger.LogWarning(ex, "Failed to remove container {ContainerId}", containerId);
         }
+    }
+
+    /// <summary>
+    /// After a failed push, loops through <paramref name="allGitRepositories"/> in order, fetching
+    /// the current branch from each remote and rebasing local commits on top. Once all reachable
+    /// remotes are integrated, retries the push to <paramref name="gitRepository"/> (push target).
+    /// Emits an updated <c>[ISSUEPIT:GIT_COMMIT_SHA]</c> marker when the retry succeeds.
+    /// </summary>
+    public async Task<bool> TryIntegrateRemotesAndRetryPushAsync(
+        string containerId,
+        GitRepository gitRepository,
+        IReadOnlyList<GitRepository> allGitRepositories,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        var realGit = (await ExecReadOutputAsync(
+            containerId,
+            ["/bin/sh", "-c", "cat /tmp/.issuepit-real-git 2>/dev/null || echo /usr/bin/git"],
+            cancellationToken)).Trim();
+
+        var branch = (await ExecReadOutputAsync(
+            containerId, [realGit, "branch", "--show-current"], cancellationToken)).Trim();
+
+        if (string.IsNullOrWhiteSpace(branch))
+        {
+            await onLogLine("[WARN] Multi-remote recovery: could not determine current branch.", LogStream.Stdout);
+            return false;
+        }
+
+        // Collect ALL auth tokens from all configured remotes so every token can be redacted
+        // from git output, not just the push target's token. When fetching from non-Working
+        // remotes, git error messages may echo their authenticated URLs, leaking those tokens.
+        var allTokens = allGitRepositories
+            .Select(r => r.AuthToken)
+            .Where(t => !string.IsNullOrEmpty(t))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        Task safeLog(string line, LogStream stream)
+        {
+            var safeLine = line;
+            foreach (var token in allTokens)
+                safeLine = safeLine.Replace(token!, "***", StringComparison.Ordinal);
+            return onLogLine($"[entrypoint] {safeLine}", stream);
+        }
+
+        // Loop through every configured remote. For each remote that has the branch,
+        // fetch it and rebase local commits on top. Skip remotes whose fetch fails
+        // (e.g. branch not yet on that remote) but abort on rebase conflicts.
+        foreach (var repo in allGitRepositories)
+        {
+            var remoteUrl = BuildAuthenticatedCloneUrl(repo.RemoteUrl, repo.AuthUsername, repo.AuthToken);
+            var safeModeLabel = repo.Mode.ToString();
+
+            await onLogLine(
+                $"[INFO] Fetching '{branch}' from {safeModeLabel} remote to integrate…",
+                LogStream.Stdout);
+
+            var fetchExit = await ExecCommandAsync(
+                containerId,
+                [realGit, "fetch", remoteUrl, branch],
+                safeLog, cancellationToken,
+                env: ["GIT_TERMINAL_PROMPT=0"]);
+
+            if (fetchExit != 0)
+            {
+                // Branch not on this remote yet — not a fatal error, skip and continue.
+                await onLogLine(
+                    $"[DEBUG] Fetch from {safeModeLabel} failed (branch may not exist there) — skipping.",
+                    LogStream.Stdout);
+                continue;
+            }
+
+            var rebaseExit = await ExecCommandAsync(
+                containerId,
+                [realGit, "rebase", "FETCH_HEAD"],
+                safeLog, cancellationToken);
+
+            if (rebaseExit != 0)
+            {
+                // Rebase conflict — abort and surface as a failure so the user is aware.
+                var abortExit = await ExecCommandAsync(containerId, [realGit, "rebase", "--abort"],
+                    safeLog, cancellationToken);
+                if (abortExit != 0)
+                    await onLogLine(
+                        $"[WARN] Rebase --abort returned exit code {abortExit} — workspace may be in an inconsistent state.",
+                        LogStream.Stdout);
+                await onLogLine(
+                    $"[WARN] Rebase against {safeModeLabel} remote failed with conflicts — " +
+                    "manual conflict resolution is required before pushing.",
+                    LogStream.Stdout);
+                return false;
+            }
+
+            await onLogLine($"[INFO] Rebase against {safeModeLabel} remote succeeded.", LogStream.Stdout);
+        }
+
+        // All remotes integrated — retry the push to the Working remote.
+        var pushTarget = BuildAuthenticatedCloneUrl(gitRepository.RemoteUrl, gitRepository.AuthUsername, gitRepository.AuthToken);
+        await onLogLine("[INFO] All remotes integrated — retrying push…", LogStream.Stdout);
+
+        var retryPushExit = await ExecCommandAsync(
+            containerId,
+            [realGit, "push", pushTarget, branch],
+            safeLog, cancellationToken,
+            env: ["GIT_TERMINAL_PROMPT=0"]);
+
+        if (retryPushExit == 0)
+        {
+            await onLogLine("[INFO] Push succeeded after multi-remote integration.", LogStream.Stdout);
+            // Emit an updated SHA marker so IssueWorker captures the final commit (may differ after rebase).
+            var newSha = (await ExecReadOutputAsync(containerId, [realGit, "rev-parse", "HEAD"], cancellationToken)).Trim();
+            if (!string.IsNullOrWhiteSpace(newSha))
+                await onLogLine($"{GitCommitShaMarker}{newSha}", LogStream.Stdout);
+            return true;
+        }
+
+        await onLogLine("[WARN] Push still failed after multi-remote integration.", LogStream.Stdout);
+        return false;
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -1394,7 +1512,7 @@ public class DockerAgentRuntime(
     }
 
     /// <summary>
-    /// Runs <c>opencode agent</c> inside the container and emits the output as log lines.
+    /// Runs <c>opencode agent list</c> inside the container and emits the output as log lines.
     /// Best-effort: failure is non-fatal and only logs a warning.
     /// </summary>
     private async Task LogOpenCodeAgentsAsync(
@@ -1402,10 +1520,10 @@ public class DockerAgentRuntime(
         Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {
-        await onLogLine("[INFO] opencode agents (opencode agent):", LogStream.Stdout);
+        await onLogLine("[INFO] opencode agents (opencode agent list):", LogStream.Stdout);
         try
         {
-            await ExecCommandAsync(containerId, ["opencode", "agent"],
+            await ExecCommandAsync(containerId, ["opencode", "agent", "list"],
                 async (line, stream) => await onLogLine($"[INFO]   {line}", stream),
                 cancellationToken, workingDir: "/");
         }
@@ -1564,7 +1682,8 @@ public class DockerAgentRuntime(
                             "or ensure both remotes share the same git history.",
                             LogStream.Stdout);
                     }
-                    // Emit a structured marker so IssueWorker can trigger a .git archive upload for recovery.
+                    // Emit a structured marker so IssueWorker can trigger multi-remote recovery and,
+                    // if recovery fails, a .git archive upload.
                     await onLogLine(GitPushFailedMarker, LogStream.Stdout);
                 }
                 else

@@ -1,5 +1,57 @@
 # Changelog
 
+## [1.9.0](https://github.com/issuepit/issuepit/compare/v1.8.0...v1.9.0) (2026-03-24)
+
+
+### Features
+
+* act --skip-step support with wizard UI ([#766](https://github.com/issuepit/issuepit/issues/766)) ([6107cc7](https://github.com/issuepit/issuepit/commit/6107cc72f01c5dbfcc13bb2b84a47678687bdb5b))
+* Add Analytics tab to Test History page ([#744](https://github.com/issuepit/issuepit/issues/744)) ([bdcd4ea](https://github.com/issuepit/issuepit/commit/bdcd4eafc2faba24d0799707998eed8ce37619fc))
+* add coverage reports for unit and e2e tests ([#699](https://github.com/issuepit/issuepit/issues/699)) ([3cf7a4c](https://github.com/issuepit/issuepit/commit/3cf7a4cb533c21259dcc4f87c767def670a3a9c7))
+* allow branch selection when triggering an agent run ([#784](https://github.com/issuepit/issuepit/issues/784)) ([d561017](https://github.com/issuepit/issuepit/commit/d5610179a41e0561fc21683ee75898bcf9f7ba6e))
+* allow force-triggering CI/CD runs when another run is in progress ([#795](https://github.com/issuepit/issuepit/issues/795)) ([511f88e](https://github.com/issuepit/issuepit/commit/511f88ea98c5d04674f9c46e6671bb6e4a3c8795))
+* find similar issues + fix API key saving bug ([#721](https://github.com/issuepit/issuepit/issues/721)) ([68961ec](https://github.com/issuepit/issuepit/commit/68961ec732274f8415bd0f1c1ee0ec195e97722d))
+* fix feature branch creation and extend agent task prompt ([#752](https://github.com/issuepit/issuepit/issues/752)) ([5732af8](https://github.com/issuepit/issuepit/commit/5732af85aab48fa98f74c3ed0e8eb611a215ac94))
+* Implement IssuePit Git Server with smart HTTP, auth, PAT tokens, UI, origin injection, and real git E2E tests ([#762](https://github.com/issuepit/issuepit/issues/762)) ([f72a86b](https://github.com/issuepit/issuepit/commit/f72a86b39e71a40fd2e57a9061036ffaadeffc95))
+* log opencode agents after config injection ([#801](https://github.com/issuepit/issuepit/issues/801)) ([d68dc9d](https://github.com/issuepit/issuepit/commit/d68dc9d1070c7e8191393b49fd394ff9732d841f))
+* per-repo agent push policy (Forbidden/WorkingOriginOnly/Allowed/Yolo) ([#706](https://github.com/issuepit/issuepit/issues/706)) ([1e9ac20](https://github.com/issuepit/issuepit/commit/1e9ac20e3dd50a48423a81b806823ccb3f642e77))
+* rework global dashboard ([#788](https://github.com/issuepit/issuepit/issues/788)) ([a47f8ae](https://github.com/issuepit/issuepit/commit/a47f8ae10ccb8612e16b327d50d2f2badda29758))
+* skip stale clone-source remotes and log candidate selection reasoning ([#790](https://github.com/issuepit/issuepit/issues/790)) ([74c8807](https://github.com/issuepit/issuepit/commit/74c8807ddc6c01d11f95ab0e907e5acc3b447a8c))
+* sort issues by last activity by default, add filter and sort options ([#750](https://github.com/issuepit/issuepit/issues/750)) ([8d85752](https://github.com/issuepit/issuepit/commit/8d85752b2aad7bf04ba546955050646c0274c9c8))
+* support double/multiple ID numbering for issues (GitHub + native) ([#808](https://github.com/issuepit/issuepit/issues/808)) ([9dbcce1](https://github.com/issuepit/issuepit/commit/9dbcce1a61909dda26daeaf2f1aae5a63051a78a))
+* trigger agents via [@mention](https://github.com/mention) in issue comments and code reviews ([#753](https://github.com/issuepit/issuepit/issues/753)) ([9e900ed](https://github.com/issuepit/issuepit/commit/9e900ede05b1d395dab36a91db70a6f1df60233f))
+* trigger agents with issue comments via [@mention](https://github.com/mention) ([#769](https://github.com/issuepit/issuepit/issues/769)) ([8f405a1](https://github.com/issuepit/issuepit/commit/8f405a1e323b7e0be008a423f2369712f64149d7))
+* update issuepit/act to a471da1 with stage-aware skip-step logging ([#796](https://github.com/issuepit/issuepit/issues/796)) ([6ad5ab5](https://github.com/issuepit/issuepit/commit/6ad5ab50bc3d6b45708c0639f6363d84fcc45b50))
+* use JUnit XML test results for CI/CD fix agent with per-job split ([#778](https://github.com/issuepit/issuepit/issues/778)) ([1e10109](https://github.com/issuepit/issuepit/commit/1e10109a5b2724516ad38d61090eae4721ffc113))
+
+
+### Bug Fixes
+
+* [@mention](https://github.com/mention) dropdown clipped by overflow-hidden, add BranchSelect to agent trigger modal ([#789](https://github.com/issuepit/issuepit/issues/789)) ([678922b](https://github.com/issuepit/issuepit/commit/678922baa7108ab7857984de9bbbd1c4800af368))
+* agent PostRun section missing in HTTP flow; CI/CD step grouping via JSON `step` field ([#747](https://github.com/issuepit/issuepit/issues/747)) ([4340447](https://github.com/issuepit/issuepit/commit/4340447f6861657d49837f34245ec5f875162e60))
+* agent push fails when Working and Release remotes are configured separately ([#798](https://github.com/issuepit/issuepit/issues/798)) ([15ce7c2](https://github.com/issuepit/issuepit/commit/15ce7c2a37d81bc1be3fcc9de2b5fd2555a5554f))
+* agent run pushes to wrong remote when multiple origins are configured ([#763](https://github.com/issuepit/issuepit/issues/763)) ([0f54183](https://github.com/issuepit/issuepit/commit/0f541837d427276ee225648c886f45e60ff425cf))
+* agent runs UX — project runs tab, smart sidebar nav, dashboard stat filters ([#807](https://github.com/issuepit/issuepit/issues/807)) ([8428323](https://github.com/issuepit/issuepit/commit/842832323e8626a1e03204792080701210feefce))
+* cicd skip-steps — settings lost on reload, wizard pre-populate, execution order, e2e tests, act version bump ([#771](https://github.com/issuepit/issuepit/issues/771)) ([9e6600f](https://github.com/issuepit/issuepit/commit/9e6600faad6a4ce60ef8a2367a3ef8d704147799))
+* correct allowedTools serialization on agent save and list display ([#791](https://github.com/issuepit/issuepit/issues/791)) ([b6e1e2f](https://github.com/issuepit/issuepit/commit/b6e1e2fc1adf571de9fc4c95ed60f2872fdccdb0))
+* docker helper image and agent execution ([#759](https://github.com/issuepit/issuepit/issues/759)) ([c3dce69](https://github.com/issuepit/issuepit/commit/c3dce698ec5949a75b66dc9debb831836b4b907c))
+* improve agent runs page and tooltip fixes ([#720](https://github.com/issuepit/issuepit/issues/720)) ([4ca7ab2](https://github.com/issuepit/issuepit/commit/4ca7ab22094d897dee3d691fedfbe1d28ff91c14))
+* mini job graph links to logs ([#755](https://github.com/issuepit/issuepit/issues/755)) ([9d131ed](https://github.com/issuepit/issuepit/commit/9d131ed0cef9549de874c7ea4d02bba7690f9f24))
+* opencode session restore into fresh container ([#768](https://github.com/issuepit/issuepit/issues/768)) ([e1c2c68](https://github.com/issuepit/issuepit/commit/e1c2c68414fde7cc4d5e6f222bdd33a7d89b6075))
+* persist skip steps on CI/CD runs, mark ignored steps in logs, allow retriggering any run, fix settings data loss on save ([#780](https://github.com/issuepit/issuepit/issues/780)) ([b17e543](https://github.com/issuepit/issuepit/commit/b17e5433d91638514f88dd30ad51361d4b8f3303))
+* proper log grouping for agent post-run ops and CI/CD per-step sections ([#724](https://github.com/issuepit/issuepit/issues/724)) ([8b6ceba](https://github.com/issuepit/issuepit/commit/8b6cebaa54678c646ffe42b4c448b4de15077704))
+* reliable screenshots for mention dropdown, branch selector, and test history chart ([#805](https://github.com/issuepit/issuepit/issues/805)) ([0dc465e](https://github.com/issuepit/issuepit/commit/0dc465e5d080264f4a06c12cd9d9165494ddb4ea))
+* remove pre-filled [@agent](https://github.com/agent) from assignment modal; add E2E tests for [@mention](https://github.com/mention) autocomplete ([#776](https://github.com/issuepit/issuepit/issues/776)) ([fa882f2](https://github.com/issuepit/issuepit/commit/fa882f29c965ceb3fc0e4710f4f8033ad049d9fd))
+* resolve IQueryable projection error in GET /api/github-identities and add E2E tests ([#748](https://github.com/issuepit/issuepit/issues/748)) ([b59f841](https://github.com/issuepit/issuepit/commit/b59f8419fdcf69c8a90a510a2bcf5aebc4d6160a))
+* scheduled tasks page – layout, view logs for all types, type navigation, meaningful C# logs ([#745](https://github.com/issuepit/issuepit/issues/745)) ([4ff7f58](https://github.com/issuepit/issuepit/commit/4ff7f58adf2a946aeb192504b2ca65ae33538f01))
+* scroll position and issue status seeding in take-screenshots.js ([#727](https://github.com/issuepit/issuepit/issues/727)) ([3d3e4a5](https://github.com/issuepit/issuepit/commit/3d3e4a58d929946dce8101f2a530844fd61bb865))
+* show git setup warnings on project dashboard ([#738](https://github.com/issuepit/issuepit/issues/738)) ([b8e3454](https://github.com/issuepit/issuepit/commit/b8e3454943edcedf5d99570517d11e0daa10f0a4))
+* similar issues — status case mismatch breaks polling, add named response types and integration tests ([#754](https://github.com/issuepit/issuepit/issues/754)) ([86c4e27](https://github.com/issuepit/issuepit/commit/86c4e2734172ac566b12d8e8282a8e18fdbe18ca))
+* strip clone credentials, fix DNS for-loop syntax error, enforce strict remote configuration ([#781](https://github.com/issuepit/issuepit/issues/781)) ([c604e10](https://github.com/issuepit/issuepit/commit/c604e109a3b94a0e1b3c2a4b7c7f3d2f8d507988))
+* use `opencode agent list` to log configured agents ([#812](https://github.com/issuepit/issuepit/issues/812)) ([491677e](https://github.com/issuepit/issuepit/commit/491677e04e457b1b474870f46f63a9507cf210f3))
+* use authenticated URL for git push to avoid credential prompts with multiple remotes ([#757](https://github.com/issuepit/issuepit/issues/757)) ([ada2cd2](https://github.com/issuepit/issuepit/commit/ada2cd2b8e44cbf933387b4b53332ddb6d714478))
+* write actrc in agent containers so `act` uses .NET 10 runner image ([#737](https://github.com/issuepit/issuepit/issues/737)) ([3a77078](https://github.com/issuepit/issuepit/commit/3a77078e4d331c77e0582f5b9f95973c13204475))
+
 ## [1.8.0](https://github.com/issuepit/issuepit/compare/v1.7.0...v1.8.0) (2026-03-20)
 
 

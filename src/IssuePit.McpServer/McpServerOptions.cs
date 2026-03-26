@@ -37,4 +37,18 @@ public class McpServerOptions
     /// Useful for read-only deployments.
     /// </summary>
     public bool ReadOnly { get; set; } = false;
+
+    /// <summary>
+    /// When true, todo-related tools (todo_list, todo_get, todo_create, …) are enabled.
+    /// Set to false in agent/auto contexts where todo tools are not relevant.
+    /// Defaults to true so that external/playground usage exposes all tools by default.
+    /// </summary>
+    public bool TodoEnabled { get; set; } = true;
+
+    /// <summary>
+    /// When true, admin-only tools such as CreateProject and DeleteProject are enabled.
+    /// These operations require elevated permissions and should not be available to automated
+    /// agents. Defaults to false — opt-in required for admin operations.
+    /// </summary>
+    public bool AdminEnabled { get; set; } = false;
 }

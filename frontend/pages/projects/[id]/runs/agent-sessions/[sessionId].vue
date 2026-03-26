@@ -207,7 +207,7 @@
                   v-if="retryDockerImage === 'custom'"
                   v-model="retryCustomDockerImage"
                   type="text"
-                  placeholder="e.g. ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24"
+                  :placeholder="`e.g. ${agentImageOptions[0].value}`"
                   class="w-full bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-300 px-2.5 py-1.5 placeholder-gray-600 focus:outline-none focus:border-brand-500" />
               </div>
             </div>
@@ -636,12 +636,15 @@ const wordWrap = ref(false)
 /** Pattern that identifies noisy DNS-proxy lines emitted by dnsmasq inside the container. */
 const DNSMASQ_RE = /dnsmasq\[/
 
+/** Pattern that identifies exec command lines logged by the execution client (visible only in verbose mode). */
+const CMD_RE = /^\[CMD\] \$/
+
 const filteredLogs = computed(() => {
   let logs = store.currentSessionLogs
   if (activeStream.value !== null)
     logs = logs.filter(l => l.stream === activeStream.value)
   if (!verboseLogs.value)
-    logs = logs.filter(l => !DNSMASQ_RE.test(l.line))
+    logs = logs.filter(l => !DNSMASQ_RE.test(l.line) && !CMD_RE.test(l.line))
   if (logSearchQuery.value.trim())
     logs = logs.filter(l => stripAnsiCodes(l.line).toLowerCase().includes(logSearchQuery.value.toLowerCase()))
   return logs
@@ -708,6 +711,27 @@ const sessionStepGroups = computed<SessionStepGroup[]>(() => {
     if (log.line.includes('[ERROR]')) g.hasError = true
   }
 
+  // Also mark CI/CD run steps as failed when the linked run has a failed status.
+  const cicdRuns = store.currentSession?.ciCdRuns ?? []
+  for (const group of groups) {
+    if (group.section === 'CiCdRun') {
+      const run = cicdRuns[group.sectionIndex - 1]
+      if (run?.status === CiCdRunStatus.Failed) {
+        group.hasError = true
+      }
+    }
+  }
+
+  // Fallback: if the session overall failed but no individual step was marked as failed,
+  // mark the last step as having an error so users can see which step the failure occurred in.
+  // This covers cases where the failure produces a [WARN] or no explicit [ERROR] marker —
+  // the last executing step is the best approximation of where the failure happened.
+  if (store.currentSession?.status === AgentSessionStatus.Failed
+    && groups.length > 0
+    && !groups.some(g => g.hasError)) {
+    groups[groups.length - 1].hasError = true
+  }
+
   return groups
 })
 
@@ -720,7 +744,7 @@ const logsBySection = computed<SessionStepGroup[]>(() => {
   // Apply stream + verbose filter but NOT the search filter (search is applied at render time).
   const logs = store.currentSessionLogs.filter((l) => {
     if (activeStream.value !== null && l.stream !== activeStream.value) return false
-    if (!verboseLogs.value && DNSMASQ_RE.test(l.line)) return false
+    if (!verboseLogs.value && (DNSMASQ_RE.test(l.line) || CMD_RE.test(l.line))) return false
     return true
   })
   const groups: SessionStepGroup[] = []
@@ -942,16 +966,39 @@ async function cancelSession() {
   }
 }
 
-const agentImageOptions = [
-  {
-    value: 'ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24',
-    description: 'Latest build from the main branch — recommended.',
-    isDefault: true,
-  },
-]
+// Docker image selection for retry: dynamically built from current agent's image.
+// Falls back to the known default when no agent is loaded yet.
+const DEFAULT_AGENT_IMAGE = 'ghcr.io/issuepit/issuepit-helper-opencode-act:main-dotnet10-node24'
+
+const agentImageOptions = computed(() => {
+  const currentAgent = agentsStore.agents.find(a => a.id === retryAgentId.value)
+  const agentImage = currentAgent?.dockerImage ?? DEFAULT_AGENT_IMAGE
+  // Deduplicate: if the agent image matches the known default, show only one option.
+  if (agentImage === DEFAULT_AGENT_IMAGE) {
+    return [
+      {
+        value: DEFAULT_AGENT_IMAGE,
+        description: 'Latest build from the main branch — recommended.',
+        isDefault: true,
+      },
+    ]
+  }
+  return [
+    {
+      value: agentImage,
+      description: 'Current agent image.',
+      isDefault: true,
+    },
+    {
+      value: DEFAULT_AGENT_IMAGE,
+      description: 'Latest build from the main branch.',
+      isDefault: false,
+    },
+  ]
+})
 
 // Default to the first (stable/latest) option
-const retryDockerImage = ref(agentImageOptions[0].value)
+const retryDockerImage = ref(DEFAULT_AGENT_IMAGE)
 const retryCustomDockerImage = ref('')
 const retryKeepContainer = ref(false)
 
@@ -987,7 +1034,7 @@ async function openRetryModal() {
   retryModel.value = ''
   retryCli.value = ''
   retryRuntimeType.value = ''
-  retryDockerImage.value = agentImageOptions[0].value
+  retryDockerImage.value = agentImageOptions.value[0].value
   retryCustomDockerImage.value = ''
   retryKeepContainer.value = false
   showRetryModal.value = true
@@ -1000,7 +1047,7 @@ async function retrySession() {
     let imageOverride: string | undefined
     if (retryDockerImage.value === 'custom') {
       imageOverride = retryCustomDockerImage.value.trim() || undefined
-    } else if (retryDockerImage.value !== agentImageOptions[0].value) {
+    } else if (retryDockerImage.value !== agentImageOptions.value[0].value) {
       imageOverride = retryDockerImage.value
     }
 

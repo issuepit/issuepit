@@ -227,11 +227,36 @@ public class CiCdWorker(
         if (project is not null)
         {
             var orgSettings = project.Organization;
+            // Resolve ActRunnerImage and track its source for debug diagnostics.
+            string? resolvedActRunnerImage;
+            string? actRunnerImageSource;
+            if (!string.IsNullOrWhiteSpace(trigger.ActRunnerImage))
+            {
+                resolvedActRunnerImage = trigger.ActRunnerImage;
+                actRunnerImageSource = "trigger-override";
+            }
+            else if (!string.IsNullOrWhiteSpace(project.ActRunnerImage))
+            {
+                resolvedActRunnerImage = project.ActRunnerImage;
+                actRunnerImageSource = "project";
+            }
+            else if (!string.IsNullOrWhiteSpace(orgSettings?.ActRunnerImage))
+            {
+                resolvedActRunnerImage = orgSettings.ActRunnerImage;
+                actRunnerImageSource = "org";
+            }
+            else
+            {
+                resolvedActRunnerImage = null;
+                actRunnerImageSource = null;
+            }
+
             trigger = trigger with
             {
                 ActEnv = trigger.ActEnv ?? project.ActEnv ?? orgSettings?.ActEnv,
                 ActSecrets = trigger.ActSecrets ?? project.ActSecrets ?? orgSettings?.ActSecrets,
-                ActRunnerImage = trigger.ActRunnerImage ?? project.ActRunnerImage ?? orgSettings?.ActRunnerImage,
+                ActRunnerImage = resolvedActRunnerImage,
+                ActRunnerImageSource = actRunnerImageSource,
                 ConcurrentJobs = trigger.ConcurrentJobs ?? project.ConcurrentJobs ?? orgSettings?.ConcurrentJobs,
                 ActionCachePath = trigger.ActionCachePath ?? project.ActionCachePath ?? orgSettings?.ActionCachePath,
                 UseNewActionCache = trigger.UseNewActionCache ?? (project.UseNewActionCache ?? orgSettings?.UseNewActionCache),
@@ -468,7 +493,7 @@ public class CiCdWorker(
             await ParseAndStoreCoverageReportsAsync(run.Id, artifactDir, db, stoppingToken);
 
             // Record artifact metadata before cleanup so the UI can display what was produced.
-            await ParseAndStoreArtifactsAsync(run.Id, artifactDir, db, stoppingToken);
+            await ParseAndStoreArtifactsAsync(run.Id, artifactDir, db, project?.UnwrapSingleFileArtifacts ?? false, stoppingToken);
 
             // Parse workflow graph from workflow files copied during the clone step.
             await ParseAndStoreWorkflowGraphAsync(run.Id, artifactDir, db, stoppingToken);
@@ -925,6 +950,7 @@ public class CiCdWorker(
         Guid runId,
         string artifactDir,
         IssuePitDbContext db,
+        bool unwrapSingleFileArtifacts,
         CancellationToken cancellationToken)
     {
         try
@@ -955,14 +981,18 @@ public class CiCdWorker(
             {
                 var (fileCount, sizeBytes) = ArtifactStorageService.CountArtifactFiles(dir);
 
-                // Upload artifact as a ZIP to S3 and store the download URL (best-effort).
+                // Upload artifact to S3 and store the download URL (best-effort).
+                // When unwrapping is enabled and the artifact contains a single supported file
+                // (pdf, png), the raw file is stored directly instead of a ZIP.
                 string? downloadUrl = null;
                 string? storageKey = null;
+                string? unwrappedContentType = null;
                 if (artifactStorage.IsConfigured)
                 {
                     try
                     {
-                        (downloadUrl, storageKey) = await artifactStorage.UploadArtifactAsync(dir, name, runId, cancellationToken);
+                        (downloadUrl, storageKey, unwrappedContentType) = await artifactStorage.UploadArtifactAsync(
+                            dir, name, runId, unwrapSingleFileArtifacts, cancellationToken);
                     }
                     catch (Exception ex)
                     {
@@ -988,6 +1018,7 @@ public class CiCdWorker(
                     DownloadUrl = downloadUrl,
                     StorageKey = storageKey,
                     IsTestResultArtifact = isTestResultArtifact,
+                    UnwrappedContentType = unwrappedContentType,
                     CreatedAt = DateTime.UtcNow,
                 });
             }
