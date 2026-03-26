@@ -1145,7 +1145,7 @@ async function cancelMessage(messageId: string) {
   try {
     await store.cancelSessionMessage(sessionId, messageId)
     const idx = sessionMessages.value.findIndex(m => m.id === messageId)
-    if (idx !== -1) sessionMessages.value[idx] = { ...sessionMessages.value[idx], status: 'Cancelled' }
+    if (idx !== -1) sessionMessages.value[idx].status = 'Cancelled'
   }
   catch (e: unknown) {
     console.warn('Failed to cancel message', e)
