@@ -585,16 +585,16 @@ function parseOpenCodeStats(line: string): OpenCodeStats | null {
 function renderOpenCodeStatsHtml(stats: OpenCodeStats): string {
   const parts: string[] = []
   if (stats.inputTokens != null)
-    parts.push(`<span class="text-gray-400">in:</span> <span class="text-green-400">${stats.inputTokens.toLocaleString()}</span>`)
+    parts.push(`<span class="text-gray-400">input tokens:</span> <span class="text-green-400">${stats.inputTokens.toLocaleString()}</span>`)
   if (stats.outputTokens != null)
-    parts.push(`<span class="text-gray-400">out:</span> <span class="text-green-400">${stats.outputTokens.toLocaleString()}</span>`)
+    parts.push(`<span class="text-gray-400">output tokens:</span> <span class="text-green-400">${stats.outputTokens.toLocaleString()}</span>`)
   const cacheTokens = (stats.cacheReadTokens ?? 0) + (stats.cacheWriteTokens ?? 0)
   if (cacheTokens > 0)
-    parts.push(`<span class="text-gray-400">cache:</span> <span class="text-blue-400">${cacheTokens.toLocaleString()}</span>`)
+    parts.push(`<span class="text-gray-400">cached tokens:</span> <span class="text-blue-400">${cacheTokens.toLocaleString()}</span>`)
   if (stats.cost != null)
     parts.push(`<span class="text-gray-400">cost:</span> <span class="text-yellow-400">$${stats.cost.toFixed(4)}</span>`)
   if (stats.model)
-    parts.push(`<span class="text-gray-500">${stats.model}</span>`)
+    parts.push(`<span class="text-gray-500">model: ${stats.model}</span>`)
 
   const badge = '<span class="text-green-500 font-semibold mr-2">✓ Session complete</span>'
   return `${badge}${parts.join('<span class="text-gray-700 mx-1.5">·</span>')}`

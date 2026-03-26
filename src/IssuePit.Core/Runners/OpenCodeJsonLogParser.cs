@@ -51,7 +51,7 @@ public static class OpenCodeJsonLogParser
                 "text" => ParseTextEvent(root),
                 "tool" => ParseToolEvent(root),
                 "session" => ParseSessionEvent(root),
-                // Unrecognised type — fall back to raw line.
+                // Unrecognized type — fall back to raw line.
                 _ => rawLine,
             };
         }
