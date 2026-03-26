@@ -466,7 +466,7 @@ public class DockerAgentRuntime(
         if (!string.IsNullOrWhiteSpace(session.PreviousOpenCodeSessionId))
             await onLogLine($"[INFO] Continuing from previous opencode session: {session.PreviousOpenCodeSessionId}", LogStream.Stdout);
 
-        if (!useExecFlow && !useHttpServerMode)
+        if (!useExecFlow && !useHttpServerMode && !useManualMode)
         {
             // ── Legacy flow ──────────────────────────────────────────────────────
             // Stream logs and wait for the container to exit naturally.
