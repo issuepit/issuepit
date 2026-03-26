@@ -549,7 +549,10 @@ export enum ApiKeyProvider {
   GitLab = 4,
   AzureOpenAi = 5,
   Google = 6,
-  Custom = 7,
+  OpenRouter = 7,
+  Custom = 8,
+  DeepSeek = 9,
+  Jira = 10,
 }
 
 export const ApiKeyProviderLabels: Record<ApiKeyProvider, string> = {
@@ -560,7 +563,10 @@ export const ApiKeyProviderLabels: Record<ApiKeyProvider, string> = {
   [ApiKeyProvider.GitLab]: 'GitLab',
   [ApiKeyProvider.AzureOpenAi]: 'Azure OpenAI',
   [ApiKeyProvider.Google]: 'Google',
+  [ApiKeyProvider.OpenRouter]: 'OpenRouter',
   [ApiKeyProvider.Custom]: 'Custom',
+  [ApiKeyProvider.DeepSeek]: 'DeepSeek',
+  [ApiKeyProvider.Jira]: 'Jira',
 }
 
 export enum RuntimeType {
@@ -1411,6 +1417,36 @@ export interface GitHubConflict {
   gitHubUrl: string
   titleDiffers: boolean
   bodyDiffers: boolean
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Jira Sync
+// ──────────────────────────────────────────────────────────────────────────────
+
+export enum JiraSyncTriggerMode {
+  Off = 0,
+  Manual = 1,
+  Auto = 2,
+}
+
+export const JiraSyncTriggerModeLabels: Record<JiraSyncTriggerMode, string> = {
+  [JiraSyncTriggerMode.Off]: 'Off',
+  [JiraSyncTriggerMode.Manual]: 'Manual',
+  [JiraSyncTriggerMode.Auto]: 'Auto',
+}
+
+export interface JiraSyncConfig {
+  id?: string
+  projectId: string
+  jiraBaseUrl?: string
+  jiraProjectKey?: string
+  jiraEmail?: string
+  apiKeyId?: string
+  triggerMode: JiraSyncTriggerMode
+  onlyImportWithParent: boolean
+  importComments: boolean
+  createdAt?: string
+  updatedAt?: string
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

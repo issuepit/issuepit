@@ -25,6 +25,7 @@ API keys let IssuePit authenticate with external services such as GitHub, AI pro
    |----------|----------|
    | **GitHub** | Importing issues, creating branches/PRs |
    | **GitLab** | Same as GitHub, but for GitLab |
+   | **Jira** | Importing issues from a Jira project (see [Jira Sync](/projects#jira-sync)) |
    | **OpenAI** | AI agent completions (GPT-4, o3, etc.) |
    | **Anthropic** | AI agent completions (Claude models) |
    | **Azure OpenAI** | Azure-hosted OpenAI models |

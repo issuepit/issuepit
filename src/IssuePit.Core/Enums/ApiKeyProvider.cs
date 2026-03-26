@@ -12,4 +12,5 @@ public enum ApiKeyProvider
     OpenRouter,
     Custom,
     DeepSeek,
+    Jira,
 }

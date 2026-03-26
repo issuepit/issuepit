@@ -34,6 +34,10 @@
           :to="`/projects/${id}/github-sync`"
           :class="['px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px', $route.path === `/projects/${id}/github-sync` ? 'text-white border-brand-500' : 'text-gray-400 hover:text-gray-200 border-transparent']"
         >GitHub Sync</NuxtLink>
+        <NuxtLink
+          :to="`/projects/${id}/jira-sync`"
+          :class="['px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px', $route.path === `/projects/${id}/jira-sync` ? 'text-white border-brand-500' : 'text-gray-400 hover:text-gray-200 border-transparent']"
+        >Jira Sync</NuxtLink>
       </div>
 
       <!-- Inner tabs -->
@@ -337,8 +341,9 @@ const triggering = ref(false)
 const runsComponent = ref<InstanceType<typeof import('~/components/ScheduledTaskRuns.vue').default> | null>(null)
 
 // Populate form whenever the store config is (re)loaded.
+// Guard against stale config from a different project (store persists across navigation).
 watch(() => syncStore.config, (cfg) => {
-  if (cfg) {
+  if (cfg && cfg.projectId === id) {
     form.gitHubIdentityId = cfg.gitHubIdentityId ?? ''
     form.gitHubRepo = cfg.gitHubRepo ?? ''
     form.triggerMode = cfg.triggerMode

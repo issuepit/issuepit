@@ -60,6 +60,9 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<GitHubSyncConfig> GitHubSyncConfigs => Set<GitHubSyncConfig>();
     public DbSet<GitHubSyncRun> GitHubSyncRuns => Set<GitHubSyncRun>();
     public DbSet<GitHubSyncRunLog> GitHubSyncRunLogs => Set<GitHubSyncRunLog>();
+    public DbSet<JiraSyncConfig> JiraSyncConfigs => Set<JiraSyncConfig>();
+    public DbSet<JiraSyncRun> JiraSyncRuns => Set<JiraSyncRun>();
+    public DbSet<JiraSyncRunLog> JiraSyncRunLogs => Set<JiraSyncRunLog>();
     public DbSet<IssueGitMapping> IssueGitMappings => Set<IssueGitMapping>();
     public DbSet<BranchDetectionRun> BranchDetectionRuns => Set<BranchDetectionRun>();
     public DbSet<BranchDetectionRunLog> BranchDetectionRunLogs => Set<BranchDetectionRunLog>();

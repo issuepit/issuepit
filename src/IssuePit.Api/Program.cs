@@ -55,6 +55,7 @@ builder.Services.AddScoped<IssueEnhancementService>();
 builder.Services.AddScoped<CiCdRunQueueService>();
 builder.Services.AddScoped<ConfigRepoApplier>();
 builder.Services.AddScoped<GitHubSyncService>();
+builder.Services.AddScoped<JiraSyncService>();
 builder.Services.AddScoped<BranchDetectionService>();
 builder.Services.AddScoped<SimilarIssueService>();
 builder.Services.Configure<IssuePit.Api.Services.ImageStorageOptions>(
