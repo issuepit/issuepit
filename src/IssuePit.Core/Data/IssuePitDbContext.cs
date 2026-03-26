@@ -349,5 +349,11 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
         modelBuilder.Entity<PinnedProject>()
             .HasIndex(pp => new { pp.UserId, pp.ProjectId })
             .IsUnique();
+
+        modelBuilder.Entity<KanbanColumn>()
+            .HasOne(c => c.DefaultAgent)
+            .WithMany()
+            .HasForeignKey(c => c.DefaultAgentId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }
