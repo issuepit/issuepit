@@ -85,9 +85,11 @@ public class Issue
     public bool HideFromAgents { get; set; }
 
     /// <summary>
-    /// Number of consecutive times an orchestrator evaluated this issue and was blocked from moving it.
-    /// Reset to 0 when the issue is successfully moved via a kanban transition.
-    /// Used by the orchestration loop limiter to detect stalled issues.
+    /// Number of times the orchestrator has interacted with this issue (both moves and skips).
+    /// Incremented on every AI-driven orchestration action: each skip (<see cref="IssueEventType.KanbanOrchestrationSkipped"/>)
+    /// and each AI-triggered transition (<see cref="IssueEventType.KanbanMoved"/> via TriggerTransition).
+    /// Reset to 0 only on direct human moves (via the MoveIssue endpoint).
+    /// Used by the orchestration loop limiter to prevent the AI from cycling an issue between states indefinitely.
     /// </summary>
     public int OrchestrationAttempts { get; set; }
 

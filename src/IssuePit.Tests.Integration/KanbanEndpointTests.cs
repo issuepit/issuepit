@@ -689,7 +689,7 @@ public class KanbanEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
-    public async Task TriggerTransition_ResetsOrchestrationAttempts()
+    public async Task TriggerTransition_IncrementsOrchestrationAttempts_NotResets()
     {
         var (tenantId, projectId) = await SeedProjectAsync();
         var boardId = await SeedBoardAsync(projectId);
@@ -701,7 +701,7 @@ public class KanbanEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
         var issue = new Issue
         {
-            Id = Guid.NewGuid(), ProjectId = projectId, Title = "Reset issue", Number = 23,
+            Id = Guid.NewGuid(), ProjectId = projectId, Title = "Loop issue", Number = 23,
             Status = IssueStatus.Todo, OrchestrationAttempts = 3
         };
         db.Issues.Add(issue);
@@ -717,12 +717,49 @@ public class KanbanEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
         _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
 
-        var req = new { issueId = issue.Id, reason = "All done" };
+        var req = new { issueId = issue.Id, reason = "AI moved this" };
         var response = await _client.PostAsJsonAsync(
             $"/api/kanban/boards/{boardId}/transitions/{transition.Id}/trigger", req);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        // Verify OrchestrationAttempts was reset to 0
+        // AI move should INCREMENT the counter — NOT reset it.
+        // This prevents the AI from cycling an issue between states indefinitely.
+        using var scope2 = factory.Services.CreateScope();
+        var db2 = scope2.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+        var updatedIssue = await db2.Issues.FindAsync(issue.Id);
+        Assert.Equal(4, updatedIssue!.OrchestrationAttempts); // 3 + 1
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
+    public async Task MoveIssue_HumanMove_ResetsOrchestrationAttempts()
+    {
+        var (tenantId, projectId) = await SeedProjectAsync();
+        var boardId = await SeedBoardAsync(projectId);
+        var fromId = await SeedColumnAsync(boardId, "Todo", 0, IssueStatus.Todo);
+        var toId = await SeedColumnAsync(boardId, "Done", 1, IssueStatus.Done);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+        var issue = new Issue
+        {
+            Id = Guid.NewGuid(), ProjectId = projectId, Title = "Human move issue", Number = 24,
+            Status = IssueStatus.Todo, OrchestrationAttempts = 7
+        };
+        db.Issues.Add(issue);
+        await db.SaveChangesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        // Human direct move (drag-and-drop equivalent)
+        var req = new { issueId = issue.Id, columnId = toId };
+        var response = await _client.PostAsJsonAsync($"/api/kanban/boards/{boardId}/move-issue", req);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        // Human move should RESET the counter to 0 — so the AI can start fresh
         using var scope2 = factory.Services.CreateScope();
         var db2 = scope2.ServiceProvider.GetRequiredService<IssuePitDbContext>();
         var updatedIssue = await db2.Issues.FindAsync(issue.Id);

@@ -240,6 +240,10 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
 
         issue.UpdatedAt = DateTime.UtcNow;
 
+        // A human directly moved this issue — reset the orchestration loop counter so the
+        // AI can start fresh on this issue rather than being blocked by the previous loop count.
+        issue.OrchestrationAttempts = 0;
+
         // Reorder issues within the target column if a position is specified (only for status boards)
         if (req.Position.HasValue && board.LaneProperty == KanbanLaneProperty.Status)
         {
@@ -440,7 +444,8 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
     /// Records that an orchestrator evaluated an issue and decided NOT to move it (blocked by requirements or policy).
     /// Creates a <see cref="IssueEventType.KanbanOrchestrationSkipped"/> event for audit trail and increments the
     /// <see cref="Issue.OrchestrationAttempts"/> loop-limiter counter.
-    /// The counter is automatically reset to 0 when the issue is successfully moved via <see cref="TriggerTransition"/>.
+    /// The counter only resets when a human directly moves the issue via the MoveIssue endpoint — NOT when the AI moves it.
+    /// This prevents the AI from cycling an issue through the same states indefinitely.
     /// </summary>
     [HttpPost("boards/{boardId:guid}/orchestration/skip")]
     public async Task<IActionResult> RecordOrchestrationSkip(Guid boardId, [FromBody] RecordSkipRequest req)
@@ -553,7 +558,9 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
 
         issue.Status = transition.ToColumn.IssueStatus;
         issue.UpdatedAt = DateTime.UtcNow;
-        issue.OrchestrationAttempts = 0; // Reset counter on successful move
+        // Every AI-triggered move counts toward the loop limiter — the counter only resets on human moves.
+        // This prevents the AI from cycling an issue through the same states indefinitely.
+        issue.OrchestrationAttempts++;
 
         var newValue = req.Reason != null
             ? $"{transition.ToColumn.Name}: {req.Reason}"

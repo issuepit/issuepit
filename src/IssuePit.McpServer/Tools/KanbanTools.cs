@@ -73,7 +73,7 @@ public class KanbanTools(IssuePitApiClient api, IOptions<McpServerOptions> optio
         return Serialize(result);
     }
 
-    [McpServerTool, Description("Trigger a named kanban transition for an issue, moving it from one column to another. PreventAgentMove checks are enforced by the backend API. A reason can be provided to explain the move. Requires OrchestratorMode. Automatically resets the orchestration loop counter for the issue.")]
+    [McpServerTool, Description("Trigger a named kanban transition for an issue, moving it from one column to another. PreventAgentMove checks are enforced by the backend API. A reason can be provided to explain the move. Requires OrchestratorMode. Each AI-triggered move increments the orchestration loop counter — the counter only resets on human direct moves, preventing the AI from cycling an issue between states indefinitely.")]
     public async Task<string> TriggerKanbanTransition(
         [Description("The board ID (GUID).")] Guid boardId,
         [Description("The transition ID (GUID).")] Guid transitionId,
