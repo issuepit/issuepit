@@ -220,6 +220,17 @@
 
     <!-- Agent Runs -->
     <template v-else-if="activeTab === 'Agent Runs'">
+      <div class="flex justify-end mb-3">
+        <button
+          class="flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white text-sm px-3 py-1.5 rounded-lg transition-colors"
+          @click="manualSessionModal = true">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          Start Manual Session
+        </button>
+      </div>
       <div v-if="filteredAgentSessions.length" class="rounded-xl border border-gray-800 overflow-hidden">
         <table class="w-full text-sm">
           <thead class="bg-gray-900">
@@ -277,6 +288,13 @@
     </template>
 
     <ErrorBox :error="store.error" />
+
+    <!-- Start Manual Session modal (no project pre-selected: user picks one) -->
+    <StartManualSessionModal
+      v-if="manualSessionModal"
+      @close="manualSessionModal = false"
+      @started="onManualSessionStarted"
+    />
   </div>
 </template>
 
@@ -482,6 +500,14 @@ const allRunsMixed = computed((): MixedRunItem[] => {
     (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
   )
 })
+
+const manualSessionModal = ref(false)
+
+async function onManualSessionStarted(sessionId: string, projectId: string) {
+  manualSessionModal.value = false
+  await store.fetchDashboardSessions(true)
+  navigateTo(`/projects/${projectId}/runs/agent-sessions/${sessionId}`)
+}
 
 onMounted(async () => {
   await Promise.all([

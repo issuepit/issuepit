@@ -35,7 +35,7 @@ export const useGitServerStore = defineStore('gitServer', () => {
   }
 
   async function deleteRepo(orgId: string, repoId: string) {
-    await api.delete(`/api/orgs/${orgId}/git-server/repos/${repoId}`)
+    await api.del(`/api/orgs/${orgId}/git-server/repos/${repoId}`)
     repos.value = repos.value.filter(r => r.id !== repoId)
   }
 
@@ -52,7 +52,7 @@ export const useGitServerStore = defineStore('gitServer', () => {
   }
 
   async function revokePermission(orgId: string, repoId: string, permId: string) {
-    await api.delete(`/api/orgs/${orgId}/git-server/repos/${repoId}/permissions/${permId}`)
+    await api.del(`/api/orgs/${orgId}/git-server/repos/${repoId}/permissions/${permId}`)
   }
 
   async function fetchBranchProtections(orgId: string, repoId: string) {
@@ -69,7 +69,7 @@ export const useGitServerStore = defineStore('gitServer', () => {
   }
 
   async function deleteBranchProtection(orgId: string, repoId: string, ruleId: string) {
-    await api.delete(`/api/orgs/${orgId}/git-server/repos/${repoId}/branch-protections/${ruleId}`)
+    await api.del(`/api/orgs/${orgId}/git-server/repos/${repoId}/branch-protections/${ruleId}`)
   }
 
   return {

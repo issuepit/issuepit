@@ -407,6 +407,16 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
 
         foreach (var agent in matchedAgents)
         {
+            // Manual-mode agents are started explicitly by the user and must not be
+            // triggered automatically via comment mentions.
+            if (agent.ManualMode)
+            {
+                logger.LogInformation(
+                    "Skipping agent {AgentName} ({AgentId}) for issue {IssueId} — manual mode agents are not triggered automatically",
+                    agent.Name, agent.Id, issue.Id);
+                continue;
+            }
+
             // Auto-assign the agent if not already assigned.
             var isAssigned = issue.Assignees.Any(a => a.AgentId == agent.Id);
             if (!isAssigned)
@@ -612,7 +622,7 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
         db.IssueEvents.Add(MakeEvent(id, IssueEventType.AssigneeAdded, newValue: assigneeName));
         await db.SaveChangesAsync();
 
-        if (req.AgentId.HasValue)
+        if (req.AgentId.HasValue && assignee.Agent?.ManualMode != true)
         {
             // Create a pending session immediately so the UI can show a queued run before
             // the ExecutionClient picks up the Kafka message.

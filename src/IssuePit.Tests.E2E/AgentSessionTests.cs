@@ -670,20 +670,18 @@ public class AgentSessionTests(AspireFixture fixture)
         Assert.True(agent.GetProperty("manualMode").GetBoolean(),
             "Agent create response must include manualMode=true");
 
-        var issueResp = await client.PostAsJsonAsync("/api/issues",
-            new { title = "Manual Mode E2E Issue", projectId = Guid.Parse(projectId) });
-        Assert.Equal(HttpStatusCode.Created, issueResp.StatusCode);
-        var issue = await issueResp.Content.ReadFromJsonAsync<JsonElement>();
-        var issueId = issue.GetProperty("id").GetString()!;
-
-        var assignResp = await client.PostAsJsonAsync($"/api/issues/{issueId}/assignees",
-            new { agentId = Guid.Parse(agentId) });
-        Assert.Equal(HttpStatusCode.Created, assignResp.StatusCode);
+        // Manual-mode sessions must be started explicitly via the start-manual endpoint;
+        // assigning a manual-mode agent to an issue must NOT auto-trigger a session.
+        var startResp = await client.PostAsJsonAsync("/api/agent-sessions/start-manual",
+            new { agentId = Guid.Parse(agentId), projectId = Guid.Parse(projectId) });
+        Assert.Equal(HttpStatusCode.Accepted, startResp.StatusCode);
+        var startBody = await startResp.Content.ReadFromJsonAsync<JsonElement>();
+        var sessionId = startBody.GetProperty("sessionId").GetString()!;
 
         // Manual-mode sessions stay in Running state — wait for Running (not a terminal state).
         // DinD startup in busybox waits up to 60 s then warns and continues; total workspace
         // setup takes slightly over 1 minute.
-        var sessionId = await WaitForManualModeSessionRunningAsync(client, issueId, TimeSpan.FromMinutes(3));
+        await WaitForManualModeSessionRunningByIdAsync(client, sessionId, TimeSpan.FromMinutes(3));
 
         // Fetch full session detail and verify the manual-mode flag.
         var sessionResp = await client.GetAsync($"/api/agent-sessions/{sessionId}");
@@ -718,7 +716,61 @@ public class AgentSessionTests(AspireFixture fixture)
             $"Expected cancel to succeed (200/202), got {cancelResp.StatusCode}");
 
         // Wait for the session to reach Cancelled state (confirms the worker handled the signal).
-        await WaitForAgentSessionAsync(client, issueId, TimeSpan.FromMinutes(2));
+        await WaitForAgentSessionByIdAsync(client, sessionId, TimeSpan.FromMinutes(2));
+    }
+
+    /// <summary>
+    /// Polls <c>GET /api/agent-sessions/{id}</c> until the session reaches <c>Running</c> state.
+    /// Used for manual-mode sessions started explicitly via the start-manual endpoint.
+    /// </summary>
+    private static async Task WaitForManualModeSessionRunningByIdAsync(
+        HttpClient client,
+        string sessionId,
+        TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            var resp = await client.GetAsync($"/api/agent-sessions/{sessionId}");
+            if (resp.IsSuccessStatusCode)
+            {
+                var body = await resp.Content.ReadFromJsonAsync<JsonElement>();
+                var statusName = body.GetProperty("statusName").GetString();
+                if (statusName is "Running" or "Failed" or "Cancelled")
+                    return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+        }
+
+        throw new TimeoutException($"Manual-mode agent session {sessionId} did not reach Running state within {timeout}.");
+    }
+
+    /// <summary>
+    /// Polls <c>GET /api/agent-sessions/{id}</c> until the session reaches a terminal state
+    /// (Succeeded, Failed, or Cancelled).
+    /// </summary>
+    private static async Task WaitForAgentSessionByIdAsync(
+        HttpClient client,
+        string sessionId,
+        TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            var resp = await client.GetAsync($"/api/agent-sessions/{sessionId}");
+            if (resp.IsSuccessStatusCode)
+            {
+                var body = await resp.Content.ReadFromJsonAsync<JsonElement>();
+                var statusName = body.GetProperty("statusName").GetString();
+                if (statusName is "Succeeded" or "Failed" or "Cancelled")
+                    return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+        }
+
+        throw new TimeoutException($"Agent session {sessionId} did not reach a terminal state within {timeout}.");
     }
 
     /// <summary>

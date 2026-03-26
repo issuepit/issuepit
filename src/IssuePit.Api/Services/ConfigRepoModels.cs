@@ -195,3 +195,35 @@ public class ProjectMemberConfigModel
 
     public ProjectPermission Permissions { get; set; } = ProjectPermission.Read;
 }
+
+/// <summary>JSON5 model for an agent config file in the config repository (agents/*.json5).</summary>
+public class AgentConfigModel
+{
+    /// <summary>Display name of the agent. Used as the key to match an existing agent by name within the tenant.</summary>
+    [MaxLength(200)]
+    public string? Name { get; set; }
+
+    /// <summary>
+    /// Runner type for the agent (e.g. "opencode", "codex", "githubcopilotcli").
+    /// Maps to <see cref="RunnerType"/> enum values (case-insensitive).
+    /// </summary>
+    [MaxLength(100)]
+    public string? Runner { get; set; }
+
+    /// <summary>AI model identifier passed to the CLI runner (e.g. "anthropic/claude-opus-4-5").</summary>
+    [MaxLength(200)]
+    public string? Model { get; set; }
+
+    /// <summary>System prompt (instructions for the AI work agent).</summary>
+    public string? SystemPrompt { get; set; }
+
+    /// <summary>
+    /// Docker image for the agent container.
+    /// Null or omitted means the field will not be changed by the config file.
+    /// </summary>
+    [MaxLength(500)]
+    public string? DockerImage { get; set; }
+
+    /// <summary>MCP server names to link to this agent. Must already exist in the MCP servers table.</summary>
+    public List<string>? McpServers { get; set; }
+}

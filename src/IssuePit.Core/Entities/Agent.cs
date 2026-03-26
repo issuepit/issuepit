@@ -1,5 +1,8 @@
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using IssuePit.Core.Enums;
 
 namespace IssuePit.Core.Entities;
@@ -24,6 +27,32 @@ public class Agent
     /// <summary>Docker image for the agent container. Null or empty means use the runtime default image.</summary>
     [MaxLength(500)]
     public string? DockerImage { get; set; }
+
+    /// <summary>Filename of the JSON5 config file that last set <see cref="DockerImage"/> via the config repo. Null when set manually.</summary>
+    [MaxLength(500)]
+    public string? DockerImageSourceFile { get; set; }
+
+    /// <summary>
+    /// Raw JSON mapping of agent field names (camelCase) to the config source file that set them.
+    /// Populated by <see cref="IssuePit.Api.Services.ConfigRepoApplier"/>. Null when no config file has set any field.
+    /// Use <see cref="ConfigFieldSources"/> to access the parsed dictionary.
+    /// </summary>
+    [MaxLength(10000)]
+    [Column("config_field_sources")]
+    [JsonIgnore]
+    public string? ConfigFieldSourcesJson { get; set; }
+
+    /// <summary>
+    /// Per-field config source mapping parsed from <see cref="ConfigFieldSourcesJson"/>.
+    /// Keys are camelCase field names (e.g. "dockerImage", "model", "systemPrompt"). Values are config file names.
+    /// Not persisted by EF Core — read-only computed from <see cref="ConfigFieldSourcesJson"/>.
+    /// </summary>
+    [NotMapped]
+    [JsonPropertyName("configFieldSources")]
+    public Dictionary<string, string>? ConfigFieldSources =>
+        ConfigFieldSourcesJson is null
+            ? null
+            : JsonSerializer.Deserialize<Dictionary<string, string>>(ConfigFieldSourcesJson);
 
     [Required]
     public string AllowedTools { get; set; } = "[]";
