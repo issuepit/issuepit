@@ -372,6 +372,28 @@ public class IssueWorker(
             return;
         }
 
+        // Non-manual-mode agents always require a linked issue.
+        // Fail explicitly instead of silently falling back to a stub.
+        if (!issueId.HasValue && !agent.ManualMode)
+        {
+            logger.LogError(
+                "Agent {AgentId} ({AgentName}) is not a manual-mode agent but was launched without an issue ID — aborting",
+                agentId, agent.Name);
+            if (existingSessionId.HasValue)
+            {
+                var orphan = await db.AgentSessions.FindAsync([existingSessionId.Value], cancellationToken);
+                if (orphan is not null)
+                {
+                    orphan.Status = AgentSessionStatus.Failed;
+                    orphan.EndedAt = DateTime.UtcNow;
+                    orphan.Warnings = System.Text.Json.JsonSerializer.Serialize(
+                        new[] { $"Agent '{agent.Name}' is not in manual mode but was launched without an issue ID." });
+                    await db.SaveChangesAsync(cancellationToken);
+                }
+            }
+            return;
+        }
+
         // Apply overrides that change agent properties. Detach the entity so the changes are never saved to the database.
         bool needsDetach = !string.IsNullOrWhiteSpace(dockerImageOverride)
             || !string.IsNullOrWhiteSpace(modelOverride)
