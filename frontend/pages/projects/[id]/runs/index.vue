@@ -51,7 +51,7 @@
     </div>
 
     <!-- Loading -->
-    <div v-if="store.loading" class="flex items-center justify-center py-16">
+    <div v-if="pageLoading" class="flex items-center justify-center py-16">
       <div class="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
     </div>
 
@@ -63,6 +63,8 @@
             <tr>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Status</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Type</th>
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Trigger</th>
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Source</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Description</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Branch</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Commit</th>
@@ -83,6 +85,20 @@
                   class="text-xs px-1.5 py-0.5 rounded font-medium">
                   {{ item.type === 'cicd' ? 'CI/CD' : 'Agent' }}
                 </span>
+              </td>
+              <td class="px-4 py-3">
+                <span v-if="item.trigger" class="text-xs bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded font-mono">
+                  {{ item.trigger }}
+                </span>
+                <span v-else class="text-gray-600 text-xs">—</span>
+              </td>
+              <td class="px-4 py-3">
+                <span v-if="item.source && item.source !== 'local'"
+                  class="text-xs bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">
+                  {{ item.source }}
+                </span>
+                <span v-else-if="item.source === 'local'" class="text-gray-600 text-xs">local</span>
+                <span v-else class="text-gray-600 text-xs">—</span>
               </td>
               <td class="px-4 py-3 text-gray-300 max-w-xs truncate">{{ item.description }}</td>
               <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ item.branch || '—' }}</td>
@@ -106,7 +122,20 @@
 
     <!-- CI/CD Runs -->
     <template v-else-if="activeTab === 'CI/CD Runs'">
-      <div class="flex justify-end mb-3">
+      <div class="flex items-center justify-between mb-3 gap-3 flex-wrap">
+        <div class="flex items-center gap-3">
+          <MultiSelect
+            v-model="filterSource"
+            :options="sourceOptions"
+            placeholder="All Sources"
+            :show-search="false"
+          />
+          <button v-if="filterSource.length"
+            class="text-xs text-gray-500 hover:text-gray-300 transition-colors px-2 py-1.5"
+            @click="filterSource = []">
+            Clear ×
+          </button>
+        </div>
         <button @click="triggerModal.open = true"
           class="flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -130,10 +159,10 @@
             <tr>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Status</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Trigger</th>
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Source</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Workflow</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Branch</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Commit</th>
-              <th class="text-left px-4 py-3 text-gray-400 font-medium">Source</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Started</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Duration</th>
               <th class="px-4 py-3" />
@@ -152,9 +181,6 @@
                 </span>
                 <span v-else class="text-gray-600 text-xs">—</span>
               </td>
-              <td class="px-4 py-3 text-gray-300">{{ run.workflow || '—' }}</td>
-              <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ run.branch || '—' }}</td>
-              <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ run.commitSha?.slice(0, 7) || '—' }}</td>
               <td class="px-4 py-3">
                 <span v-if="run.externalSource"
                   class="text-xs bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">
@@ -162,6 +188,9 @@
                 </span>
                 <span v-else class="text-gray-600 text-xs">local</span>
               </td>
+              <td class="px-4 py-3 text-gray-300">{{ run.workflow || '—' }}</td>
+              <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ run.branch || '—' }}</td>
+              <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ run.commitSha?.slice(0, 7) || '—' }}</td>
               <td class="px-4 py-3 text-gray-400 text-xs"><DateDisplay :date="run.startedAt" mode="auto" /></td>
               <td class="px-4 py-3 text-gray-400 text-xs">{{ run.status === CiCdRunStatus.WaitingForApproval ? '—' : duration(run.startedAt, run.endedAt) }}</td>
               <td class="px-4 py-3 text-right">
@@ -207,7 +236,7 @@
           </svg>
         </div>
         <p class="text-gray-400 font-medium">No CI/CD runs yet</p>
-        <p class="text-gray-600 text-sm mt-1">Runs will appear here once triggered</p>
+        <p class="text-gray-600 text-sm mt-1">{{ filterSource.length ? 'Try adjusting your filters' : 'Runs will appear here once triggered' }}</p>
       </div>
     </template>
 
@@ -314,6 +343,7 @@
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useProjectsStore } from '~/stores/projects'
 import { CiCdRunStatus, AgentSessionStatus, type CiCdRun, type AgentSession } from '~/types'
+import type { MultiSelectOption } from '~/components/MultiSelect.vue'
 import { formatIssueId } from '~/composables/useIssueFormat'
 
 const route = useRoute()
@@ -338,16 +368,27 @@ function getTabFromQuery(q: unknown): TabName {
 }
 
 const activeTab = ref<TabName>(getTabFromQuery(route.query.tab))
+const filterSource = ref<string[]>([])
 
 function setTab(tab: TabName) {
   activeTab.value = tab
   router.replace({ query: { ...route.query, tab: TAB_QUERY[tab] } })
 }
 
+const sourceOptions = computed<MultiSelectOption[]>(() => {
+  const sources = new Set<string>(['local'])
+  for (const run of store.runs) {
+    if (run.externalSource) sources.add(run.externalSource)
+  }
+  return [...sources].map(s => ({ value: s, label: s }))
+})
+
 // Mixed runs for "All Runs" tab
 interface MixedRunItem {
   id: string
   type: 'cicd' | 'agent'
+  trigger?: string
+  source?: string
   description: string
   branch?: string
   commitSha?: string
@@ -362,7 +403,9 @@ const allRunsMixed = computed((): MixedRunItem[] => {
   const cicdItems: MixedRunItem[] = store.runs.map(run => ({
     id: run.id,
     type: 'cicd',
-    description: run.workflow || run.branch || '—',
+    trigger: run.eventName,
+    source: run.externalSource || 'local',
+    description: run.workflow || '—',
     branch: run.branch,
     commitSha: run.commitSha,
     startedAt: run.startedAt,
@@ -389,11 +432,15 @@ const allRunsMixed = computed((): MixedRunItem[] => {
 })
 
 const commitShaFilter = computed(() => route.query.commitSha as string | undefined)
-const filteredRuns = computed(() =>
-  commitShaFilter.value
+const filteredRuns = computed(() => {
+  let runs = commitShaFilter.value
     ? store.runs.filter(r => r.commitSha === commitShaFilter.value)
-    : store.runs,
-)
+    : store.runs
+  if (filterSource.value.length) {
+    runs = runs.filter(r => filterSource.value.includes(r.externalSource || 'local'))
+  }
+  return runs
+})
 
 function clearCommitShaFilter() {
   router.push({ query: { ...route.query, commitSha: undefined } })
@@ -417,13 +464,17 @@ const { connection, isConnected, connect } = useSignalR('/hubs/project')
 
 // `now` is updated on each server push so the duration column stays live without a client-side timer
 const now = ref(Date.now())
+// pageLoading is used for the initial load indicator to avoid flicker from shared store.loading
+const pageLoading = ref(false)
 
 async function refreshRunsData() {
+  pageLoading.value = true
   await Promise.all([
-    store.fetchRuns(id),
-    store.fetchAgentSessions(id),
+    store.fetchRuns(id, true),
+    store.fetchAgentSessions(id, true),
   ])
   now.value = Date.now()
+  pageLoading.value = false
 }
 
 async function refreshRunsDataSilent() {
