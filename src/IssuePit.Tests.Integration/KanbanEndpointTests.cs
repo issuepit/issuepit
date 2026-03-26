@@ -336,4 +336,212 @@ public class KanbanEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
             new { issueId = issue.Id, columnId = inProgressColId });
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
+
+    // ── Agent orchestrate: PreventAgentMove ───────────────────────────────────
+
+    [Fact]
+    public async Task TriggerTransition_PreventAgentMove_Returns403()
+    {
+        var (_, projectId) = await SeedProjectAsync();
+        var boardId = await SeedBoardAsync(projectId);
+        var fromId = await SeedColumnAsync(boardId, "Todo", 0, IssueStatus.Todo);
+        var toId = await SeedColumnAsync(boardId, "In Progress", 1, IssueStatus.InProgress);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+        var issue = new Issue
+        {
+            Id = Guid.NewGuid(), ProjectId = projectId, Title = "Protected issue", Number = 10,
+            Status = IssueStatus.Todo, PreventAgentMove = true
+        };
+        db.Issues.Add(issue);
+
+        var t = new KanbanTransition
+        {
+            Id = Guid.NewGuid(), BoardId = boardId, FromColumnId = fromId, ToColumnId = toId,
+            Name = "Start", IsAuto = true
+        };
+        db.KanbanTransitions.Add(t);
+        await db.SaveChangesAsync();
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/kanban/boards/{boardId}/transitions/{t.Id}/trigger",
+            new { issueId = issue.Id });
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task TriggerTransition_WithReason_CreatesKanbanMovedEvent()
+    {
+        var (_, projectId) = await SeedProjectAsync();
+        var boardId = await SeedBoardAsync(projectId);
+        var fromId = await SeedColumnAsync(boardId, "Todo", 0, IssueStatus.Todo);
+        var toId = await SeedColumnAsync(boardId, "In Progress", 1, IssueStatus.InProgress);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+        var issue = new Issue
+        {
+            Id = Guid.NewGuid(), ProjectId = projectId, Title = "Issue with reason", Number = 11,
+            Status = IssueStatus.Todo
+        };
+        db.Issues.Add(issue);
+
+        var t = new KanbanTransition
+        {
+            Id = Guid.NewGuid(), BoardId = boardId, FromColumnId = fromId, ToColumnId = toId,
+            Name = "Start", IsAuto = true
+        };
+        db.KanbanTransitions.Add(t);
+        await db.SaveChangesAsync();
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/kanban/boards/{boardId}/transitions/{t.Id}/trigger",
+            new { issueId = issue.Id, reason = "All tasks completed, moving forward" });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var scope2 = factory.Services.CreateScope();
+        var db2 = scope2.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+        var evt = await db2.IssueEvents
+            .FirstOrDefaultAsync(e => e.IssueId == issue.Id && e.EventType == IssuePit.Core.Enums.IssueEventType.KanbanMoved);
+        Assert.NotNull(evt);
+        Assert.Equal("Todo", evt.OldValue);
+        Assert.Contains("All tasks completed", evt.NewValue);
+    }
+
+    [Fact]
+    public async Task TriggerTransition_RequireGreenCiCd_ByBranch_Returns400_WhenNoBranchRun()
+    {
+        var (_, projectId) = await SeedProjectAsync();
+        var boardId = await SeedBoardAsync(projectId);
+        var fromId = await SeedColumnAsync(boardId, "Todo", 0, IssueStatus.Todo);
+        var toId = await SeedColumnAsync(boardId, "In Progress", 1, IssueStatus.InProgress);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+        var issue = new Issue
+        {
+            Id = Guid.NewGuid(), ProjectId = projectId, Title = "Branch issue", Number = 12,
+            Status = IssueStatus.Todo, GitBranch = "feat/branch-issue-12"
+        };
+        db.Issues.Add(issue);
+
+        var t = new KanbanTransition
+        {
+            Id = Guid.NewGuid(), BoardId = boardId, FromColumnId = fromId, ToColumnId = toId,
+            Name = "Start", IsAuto = true, RequireGreenCiCd = true
+        };
+        db.KanbanTransitions.Add(t);
+        await db.SaveChangesAsync();
+
+        // No CI/CD run for this branch — should be rejected
+        var response = await _client.PostAsJsonAsync(
+            $"/api/kanban/boards/{boardId}/transitions/{t.Id}/trigger",
+            new { issueId = issue.Id });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task TriggerTransition_RequireGreenCiCd_ByBranch_Succeeds_WhenBranchRunPassing()
+    {
+        var (_, projectId) = await SeedProjectAsync();
+        var boardId = await SeedBoardAsync(projectId);
+        var fromId = await SeedColumnAsync(boardId, "Todo", 0, IssueStatus.Todo);
+        var toId = await SeedColumnAsync(boardId, "In Progress", 1, IssueStatus.InProgress);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+        var issue = new Issue
+        {
+            Id = Guid.NewGuid(), ProjectId = projectId, Title = "Green branch issue", Number = 13,
+            Status = IssueStatus.Todo, GitBranch = "feat/green-branch-13"
+        };
+        db.Issues.Add(issue);
+
+        // Seed a passing CI/CD run on the issue's branch
+        db.CiCdRuns.Add(new CiCdRun
+        {
+            Id = Guid.NewGuid(), ProjectId = projectId,
+            Branch = "feat/green-branch-13",
+            CommitSha = "abc123",
+            Status = CiCdRunStatus.Succeeded
+        });
+
+        var t = new KanbanTransition
+        {
+            Id = Guid.NewGuid(), BoardId = boardId, FromColumnId = fromId, ToColumnId = toId,
+            Name = "Start", IsAuto = true, RequireGreenCiCd = true
+        };
+        db.KanbanTransitions.Add(t);
+        await db.SaveChangesAsync();
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/kanban/boards/{boardId}/transitions/{t.Id}/trigger",
+            new { issueId = issue.Id });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task TriggerTransition_RequireTasksDone_Returns400_WhenOpenTask()
+    {
+        var (_, projectId) = await SeedProjectAsync();
+        var boardId = await SeedBoardAsync(projectId);
+        var fromId = await SeedColumnAsync(boardId, "Todo", 0, IssueStatus.Todo);
+        var toId = await SeedColumnAsync(boardId, "In Progress", 1, IssueStatus.InProgress);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+        var issue = new Issue
+        {
+            Id = Guid.NewGuid(), ProjectId = projectId, Title = "Task issue", Number = 14,
+            Status = IssueStatus.Todo
+        };
+        db.Issues.Add(issue);
+        await db.SaveChangesAsync();
+
+        db.IssueTasks.Add(new IssueTask { Id = Guid.NewGuid(), IssueId = issue.Id, Title = "Open task", Status = IssueStatus.Todo });
+
+        var t = new KanbanTransition
+        {
+            Id = Guid.NewGuid(), BoardId = boardId, FromColumnId = fromId, ToColumnId = toId,
+            Name = "Start", IsAuto = true, RequireTasksDone = true
+        };
+        db.KanbanTransitions.Add(t);
+        await db.SaveChangesAsync();
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/kanban/boards/{boardId}/transitions/{t.Id}/trigger",
+            new { issueId = issue.Id });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CreateTransition_WithRequirements_PersistsFlags()
+    {
+        var (_, projectId) = await SeedProjectAsync();
+        var boardId = await SeedBoardAsync(projectId);
+        var fromId = await SeedColumnAsync(boardId, "Todo", 0, IssueStatus.Todo);
+        var toId = await SeedColumnAsync(boardId, "Done", 1, IssueStatus.Done);
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/kanban/boards/{boardId}/transitions",
+            new
+            {
+                boardId, fromColumnId = fromId, toColumnId = toId, name = "Finish",
+                isAuto = false,
+                requireGreenCiCd = true, requireTasksDone = true,
+                requireCodeReview = false, requirePlanComment = false, requireSubIssuesDone = false
+            });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.True(body.GetProperty("requireGreenCiCd").GetBoolean());
+        Assert.True(body.GetProperty("requireTasksDone").GetBoolean());
+        Assert.False(body.GetProperty("requireCodeReview").GetBoolean());
+    }
 }

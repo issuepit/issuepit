@@ -218,4 +218,29 @@ public class KanbanBoardTests : IAsyncLifetime
             await context.CloseAsync();
         }
     }
+
+    [Fact]
+    public async Task Kanban_ManageLanesPage_Loads()
+    {
+        var (context, page, projectId, _, _) = await SetUpAsync();
+        try
+        {
+            var kanbanPage = new KanbanPage(page);
+            await kanbanPage.GotoAsync(projectId);
+            await kanbanPage.CreateBoardAsync("Sprint 1");
+
+            // Navigate to the dedicated Manage Lanes page via the link in the kanban header
+            await kanbanPage.GotoManageLanesPageAsync(projectId);
+
+            await page.WaitForSelectorAsync("text=Manage Lanes",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
+            Assert.True(
+                await page.Locator("a:has-text('Kanban')").CountAsync() > 0,
+                "Breadcrumb 'Kanban' link should be visible on the Manage Lanes page");
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
 }

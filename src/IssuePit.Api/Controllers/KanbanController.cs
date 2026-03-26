@@ -368,15 +368,26 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
         // Check transition requirements
         if (transition.RequireGreenCiCd)
         {
-            var hasGreenRun = await db.CiCdRuns
-                .Include(r => r.AgentSession)
-                .AnyAsync(r => r.ProjectId == issue.ProjectId &&
-                    r.AgentSession != null &&
-                    r.AgentSession.IssueId == req.IssueId &&
-                    (r.Status == IssuePit.Core.Enums.CiCdRunStatus.Succeeded ||
-                     r.Status == IssuePit.Core.Enums.CiCdRunStatus.SucceededWithWarnings));
+            // Prefer checking by the issue's git branch for precision; fall back to AgentSession link.
+            bool hasGreenRun;
+            if (!string.IsNullOrEmpty(issue.GitBranch))
+            {
+                hasGreenRun = await db.CiCdRuns
+                    .AnyAsync(r => r.Branch == issue.GitBranch &&
+                        (r.Status == IssuePit.Core.Enums.CiCdRunStatus.Succeeded ||
+                         r.Status == IssuePit.Core.Enums.CiCdRunStatus.SucceededWithWarnings));
+            }
+            else
+            {
+                hasGreenRun = await db.CiCdRuns
+                    .Include(r => r.AgentSession)
+                    .AnyAsync(r => r.AgentSession != null &&
+                        r.AgentSession.IssueId == req.IssueId &&
+                        (r.Status == IssuePit.Core.Enums.CiCdRunStatus.Succeeded ||
+                         r.Status == IssuePit.Core.Enums.CiCdRunStatus.SucceededWithWarnings));
+            }
             if (!hasGreenRun)
-                return BadRequest("Transition requires at least one passing CI/CD run.");
+                return BadRequest("Transition requires at least one passing CI/CD run on the issue's branch.");
         }
 
         if (transition.RequireCodeReview)
