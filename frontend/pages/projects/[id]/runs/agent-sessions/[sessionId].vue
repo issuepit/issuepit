@@ -389,7 +389,7 @@
                   <div v-for="log in selectedStepLogs" :key="log.id" class="flex gap-3 leading-5">
                     <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
                     <!-- eslint-disable-next-line vue/no-v-html -->
-                    <span :class="[log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300', wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
+                    <span :class="[isOpenCodeStats(log.line) ? 'text-gray-300' : (log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'), wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
                   </div>
                 </div>
                 <div v-else class="text-gray-500 text-center py-4">{{ logSearchQuery ? 'No matching log lines' : 'No logs for this step' }}</div>
@@ -418,7 +418,7 @@
                   <div v-for="log in group.logs.filter(l => !logSearchQuery.trim() || stripAnsiCodes(l.line).toLowerCase().includes(logSearchQuery.toLowerCase()))" :key="log.id" class="flex gap-3 leading-5">
                     <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
                     <!-- eslint-disable-next-line vue/no-v-html -->
-                    <span :class="[log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300', wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
+                    <span :class="[isOpenCodeStats(log.line) ? 'text-gray-300' : (log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'), wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
                   </div>
                 </template>
               </template>
@@ -428,7 +428,7 @@
               <div v-for="log in filteredLogs" :key="log.id" class="flex gap-3 leading-5">
                 <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
                 <!-- eslint-disable-next-line vue/no-v-html -->
-                <span :class="[log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300', wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
+                <span :class="[isOpenCodeStats(log.line) ? 'text-gray-300' : (log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'), wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
               </div>
             </template>
           </div>
@@ -554,7 +554,59 @@ const projectsStore = useProjectsStore()
 const agentsStore = useAgentsStore()
 const { prefs } = useUserPreferences()
 
+/** Prefix used by the backend to mark opencode session stats lines (see OpenCodeJsonLogParser.cs). */
+const OPENCODE_STATS_PREFIX = '[opencode:stats] '
+
+interface OpenCodeStats {
+  inputTokens?: number | null
+  outputTokens?: number | null
+  cacheReadTokens?: number | null
+  cacheWriteTokens?: number | null
+  cost?: number | null
+  model?: string | null
+}
+
+/** Returns true when the log line carries opencode session stats. */
+function isOpenCodeStats(line: string): boolean {
+  return line.startsWith(OPENCODE_STATS_PREFIX)
+}
+
+/** Parses the JSON payload from an opencode stats log line. Returns null when parsing fails. */
+function parseOpenCodeStats(line: string): OpenCodeStats | null {
+  try {
+    return JSON.parse(line.slice(OPENCODE_STATS_PREFIX.length)) as OpenCodeStats
+  }
+  catch {
+    return null
+  }
+}
+
+/** Renders an opencode stats payload as a styled HTML summary card. */
+function renderOpenCodeStatsHtml(stats: OpenCodeStats): string {
+  const parts: string[] = []
+  if (stats.inputTokens != null)
+    parts.push(`<span class="text-gray-400">in:</span> <span class="text-green-400">${stats.inputTokens.toLocaleString()}</span>`)
+  if (stats.outputTokens != null)
+    parts.push(`<span class="text-gray-400">out:</span> <span class="text-green-400">${stats.outputTokens.toLocaleString()}</span>`)
+  const cacheTokens = (stats.cacheReadTokens ?? 0) + (stats.cacheWriteTokens ?? 0)
+  if (cacheTokens > 0)
+    parts.push(`<span class="text-gray-400">cache:</span> <span class="text-blue-400">${cacheTokens.toLocaleString()}</span>`)
+  if (stats.cost != null)
+    parts.push(`<span class="text-gray-400">cost:</span> <span class="text-yellow-400">$${stats.cost.toFixed(4)}</span>`)
+  if (stats.model)
+    parts.push(`<span class="text-gray-500">${stats.model}</span>`)
+
+  const badge = '<span class="text-green-500 font-semibold mr-2">✓ Session complete</span>'
+  return `${badge}${parts.join('<span class="text-gray-700 mx-1.5">·</span>')}`
+}
+
 function renderLogLine(line: string, highlight?: string): string {
+  // Render opencode session stats as a styled summary instead of raw text.
+  if (isOpenCodeStats(line)) {
+    const stats = parseOpenCodeStats(line)
+    return stats ? renderOpenCodeStatsHtml(stats) : line
+  }
+
   let html = prefs.value.ansiColors ? parseAnsiToHtml(line) : stripAnsiCodes(line)
 
   // Highlight search query hits — replace occurrences in text content only (not inside HTML tags).

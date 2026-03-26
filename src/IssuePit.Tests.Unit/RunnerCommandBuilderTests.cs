@@ -41,6 +41,15 @@ public class RunnerCommandBuilderTests
     }
 
     [Fact]
+    public void BuildArgs_OpenCode_ContainsFormatJsonFlag()
+    {
+        var agent = MakeAgent(RunnerType.OpenCode);
+        var issue = MakeIssue();
+        var args = RunnerCommandBuilder.BuildArgs(agent, issue);
+        Assert.Contains("--format json", args);
+    }
+
+    [Fact]
     public void BuildArgs_OpenCode_WithModel_ContainsModelFlag()
     {
         var agent = MakeAgent(RunnerType.OpenCode, model: "anthropic/claude-opus-4-5");
@@ -105,6 +114,17 @@ public class RunnerCommandBuilderTests
         var args = RunnerCommandBuilder.BuildArgsList(agent, issue);
         Assert.Equal("opencode", args[0]);
         Assert.Equal("run", args[1]);
+    }
+
+    [Fact]
+    public void BuildArgsList_OpenCode_ContainsFormatJsonFlag()
+    {
+        var agent = MakeAgent(RunnerType.OpenCode);
+        var issue = MakeIssue();
+        var args = RunnerCommandBuilder.BuildArgsList(agent, issue);
+        Assert.Contains("--format", args);
+        var formatIdx = args.ToList().IndexOf("--format");
+        Assert.Equal("json", args[formatIdx + 1]);
     }
 
     [Fact]

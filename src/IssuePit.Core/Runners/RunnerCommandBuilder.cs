@@ -95,7 +95,7 @@ public static class RunnerCommandBuilder
 
     /// <summary>
     /// Build shell-escaped args for the opencode CLI.
-    /// Usage: opencode run [--session ID --fork] [--model MODEL] TASK
+    /// Usage: opencode run [--session ID --fork] [--model MODEL] --format json TASK
     /// https://opencode.ai/docs/cli/#run-1
     /// </summary>
     private static string BuildOpenCodeArgs(Agent agent, string task)
@@ -103,6 +103,7 @@ public static class RunnerCommandBuilder
         var args = new StringBuilder("run");
         if (!string.IsNullOrWhiteSpace(agent.Model))
             args.Append($" --model {EscapeShellArg(agent.Model)}");
+        args.Append(" --format json");
         args.Append($" {EscapeShellArg(task)}");
         return args.ToString();
     }
@@ -131,6 +132,8 @@ public static class RunnerCommandBuilder
             args.Add("--model");
             args.Add(agent.Model);
         }
+        args.Add("--format");
+        args.Add("json");
         args.Add(task);
         return args;
     }

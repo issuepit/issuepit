@@ -574,7 +574,19 @@ public class IssueWorker(
                     // The marker itself is a control line — don't persist it to the database.
                     return Task.CompletedTask;
                 }
-                return AppendLogAsync(session.Id, line, stream, currentSection, currentSectionIndex, db, sessionCts.Token);
+
+                // When using the opencode runner, each output line is a JSON event emitted by
+                // `opencode run --format json`. Parse it into a human-readable display string so
+                // the logs stored in the database and shown in the UI remain readable.
+                // Empty strings (e.g. "start" tool events) are silently dropped.
+                var displayLine = agent.RunnerType == RunnerType.OpenCode
+                    ? OpenCodeJsonLogParser.ParseLine(line)
+                    : line;
+
+                if (displayLine.Length == 0)
+                    return Task.CompletedTask;
+
+                return AppendLogAsync(session.Id, displayLine, stream, currentSection, currentSectionIndex, db, sessionCts.Token);
             }
 
             // Start a periodic heartbeat so connected clients can keep the duration display live
@@ -1705,7 +1717,16 @@ public class IssueWorker(
                 fixCommitSha = line[GitCommitShaMarker.Length..].Trim();
             else if (line.StartsWith(GitBranchMarker, StringComparison.Ordinal))
                 fixBranchName = line[GitBranchMarker.Length..].Trim();
-            return AppendLogAsync(parentSession.Id, $"[fix] {line}", stream, section, sectionIndex, db, cancellationToken);
+
+            // Parse opencode JSON events into human-readable display text (same as the primary run).
+            var displayLine = agent.RunnerType == RunnerType.OpenCode
+                ? OpenCodeJsonLogParser.ParseLine(line)
+                : line;
+
+            if (displayLine.Length == 0)
+                return Task.CompletedTask;
+
+            return AppendLogAsync(parentSession.Id, $"[fix] {displayLine}", stream, section, sectionIndex, db, cancellationToken);
         }
 
         try
