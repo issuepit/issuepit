@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { KanbanBoard, KanbanColumn, KanbanTransition, IssueStatus } from '~/types'
+import type { KanbanBoard, KanbanColumn, KanbanTransition, TransitionCheckResult, IssueStatus } from '~/types'
 
 export const useKanbanStore = defineStore('kanban', () => {
   const boards = ref<KanbanBoard[]>([])
@@ -218,6 +218,17 @@ export const useKanbanStore = defineStore('kanban', () => {
     }
   }
 
+  async function checkTransitions(boardId: string, issueId: string): Promise<TransitionCheckResult[]> {
+    try {
+      return await api.get<TransitionCheckResult[]>(
+        `/api/kanban/boards/${boardId}/transitions/check`,
+        { params: { issueId } },
+      )
+    } catch {
+      return []
+    }
+  }
+
   async function moveIssue(boardId: string, issueId: string, columnId: string, position?: number) {
     try {
       return await api.post<import('~/types').Issue>(`/api/kanban/boards/${boardId}/move-issue`, { issueId, columnId, position })
@@ -246,6 +257,7 @@ export const useKanbanStore = defineStore('kanban', () => {
     updateTransition,
     deleteTransition,
     triggerTransition,
+    checkTransitions,
     moveIssue,
   }
 })

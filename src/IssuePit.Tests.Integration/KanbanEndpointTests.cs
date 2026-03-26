@@ -544,4 +544,99 @@ public class KanbanEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.True(body.GetProperty("requireTasksDone").GetBoolean());
         Assert.False(body.GetProperty("requireCodeReview").GetBoolean());
     }
+
+    [Fact]
+    public async Task TriggerTransition_RequireGreenCiCd_NoBranch_Returns400_NoFallback()
+    {
+        // Verifies no hidden fallback: if the issue has no GitBranch, the RequireGreenCiCd
+        // requirement fails immediately even if passing CI/CD runs exist on the project.
+        var (_, projectId) = await SeedProjectAsync();
+        var boardId = await SeedBoardAsync(projectId);
+        var fromId = await SeedColumnAsync(boardId, "Todo", 0, IssueStatus.Todo);
+        var toId = await SeedColumnAsync(boardId, "In Progress", 1, IssueStatus.InProgress);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+        // Issue with no GitBranch
+        var issue = new Issue
+        {
+            Id = Guid.NewGuid(), ProjectId = projectId, Title = "No-branch issue", Number = 20,
+            Status = IssueStatus.Todo, GitBranch = null
+        };
+        db.Issues.Add(issue);
+
+        // Seed a passing CI/CD run on the project (with no branch) — this must NOT count as the issue has no branch
+        db.CiCdRuns.Add(new CiCdRun
+        {
+            Id = Guid.NewGuid(), ProjectId = projectId,
+            CommitSha = "def456",
+            Branch = null,
+            Status = CiCdRunStatus.Succeeded
+        });
+
+        var t = new KanbanTransition
+        {
+            Id = Guid.NewGuid(), BoardId = boardId, FromColumnId = fromId, ToColumnId = toId,
+            Name = "Start", IsAuto = true, RequireGreenCiCd = true
+        };
+        db.KanbanTransitions.Add(t);
+        await db.SaveChangesAsync();
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/kanban/boards/{boardId}/transitions/{t.Id}/trigger",
+            new { issueId = issue.Id });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("no git branch", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CheckTransitions_Returns_BlockedAndAllowedStates()
+    {
+        var (tenantId, projectId) = await SeedProjectAsync();
+        var boardId = await SeedBoardAsync(projectId);
+        var fromId = await SeedColumnAsync(boardId, "Todo", 0, IssueStatus.Todo);
+        var toId = await SeedColumnAsync(boardId, "In Progress", 1, IssueStatus.InProgress);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+        // Issue with no branch — RequireGreenCiCd will block
+        var issue = new Issue
+        {
+            Id = Guid.NewGuid(), ProjectId = projectId, Title = "Check issue", Number = 21,
+            Status = IssueStatus.Todo, GitBranch = null
+        };
+        db.Issues.Add(issue);
+
+        // Transition with RequireGreenCiCd
+        var t = new KanbanTransition
+        {
+            Id = Guid.NewGuid(), BoardId = boardId, FromColumnId = fromId, ToColumnId = toId,
+            Name = "Move", IsAuto = true, RequireGreenCiCd = true
+        };
+        db.KanbanTransitions.Add(t);
+        await db.SaveChangesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var response = await _client.GetAsync(
+            $"/api/kanban/boards/{boardId}/transitions/check?issueId={issue.Id}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var results = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var arr = results.EnumerateArray().ToList();
+        Assert.Single(arr);
+
+        var result = arr[0];
+        Assert.Equal(t.Id.ToString(), result.GetProperty("transitionId").GetString());
+        Assert.False(result.GetProperty("isAllowed").GetBoolean());
+        var reasons = result.GetProperty("blockReasons").EnumerateArray().ToList();
+        Assert.NotEmpty(reasons);
+        Assert.Contains("git branch", reasons[0].GetString()!, StringComparison.OrdinalIgnoreCase);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
 }

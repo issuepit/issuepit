@@ -338,6 +338,102 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
     }
 
     /// <summary>
+    /// Checks which transitions are available or blocked for a given issue on a board.
+    /// Returns a list of transition results including block reasons so agents and the UI can surface
+    /// why an issue cannot move forward.
+    /// </summary>
+    [HttpGet("boards/{boardId:guid}/transitions/check")]
+    public async Task<IActionResult> CheckTransitions(Guid boardId, [FromQuery] Guid issueId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var board = await db.KanbanBoards
+            .Include(b => b.Project)
+            .ThenInclude(p => p.Organization)
+            .FirstOrDefaultAsync(b => b.Id == boardId && b.Project.Organization.TenantId == ctx.CurrentTenant.Id);
+        if (board is null) return NotFound();
+
+        var issue = await db.Issues
+            .Include(i => i.SubIssues)
+            .FirstOrDefaultAsync(i => i.Id == issueId && i.ProjectId == board.ProjectId);
+        if (issue is null) return NotFound();
+
+        var transitions = await db.KanbanTransitions
+            .Include(t => t.FromColumn)
+            .Include(t => t.ToColumn)
+            .Where(t => t.BoardId == boardId)
+            .ToListAsync();
+
+        var results = new List<TransitionCheckResult>();
+        foreach (var t in transitions)
+        {
+            var blockReasons = new List<string>();
+
+            if (issue.PreventAgentMove)
+                blockReasons.Add("Issue is protected from agent moves.");
+
+            if (t.RequireGreenCiCd)
+            {
+                if (string.IsNullOrEmpty(issue.GitBranch))
+                {
+                    blockReasons.Add("No git branch set on the issue — CI/CD requirement cannot be evaluated.");
+                }
+                else
+                {
+                    var hasGreenRun = await db.CiCdRuns
+                        .AnyAsync(r => r.Branch == issue.GitBranch &&
+                            (r.Status == IssuePit.Core.Enums.CiCdRunStatus.Succeeded ||
+                             r.Status == IssuePit.Core.Enums.CiCdRunStatus.SucceededWithWarnings));
+                    if (!hasGreenRun)
+                        blockReasons.Add($"No passing CI/CD run on branch '{issue.GitBranch}'.");
+                }
+            }
+
+            if (t.RequireCodeReview)
+            {
+                var hasReview = await db.CodeReviewComments.AnyAsync(c => c.IssueId == issueId);
+                if (!hasReview)
+                    blockReasons.Add("No code review comment on the issue.");
+            }
+
+            if (t.RequirePlanComment)
+            {
+                var hasPlan = await db.IssueComments
+                    .AnyAsync(c => c.IssueId == issueId && EF.Functions.ILike(c.Body, "%plan:%"));
+                if (!hasPlan)
+                    blockReasons.Add("No plan comment found (comment containing \"plan:\").");
+            }
+
+            if (t.RequireTasksDone)
+            {
+                var hasIncompleteTask = await db.IssueTasks
+                    .AnyAsync(task => task.IssueId == issueId &&
+                        task.Status != IssuePit.Core.Enums.IssueStatus.Done &&
+                        task.Status != IssuePit.Core.Enums.IssueStatus.Cancelled);
+                if (hasIncompleteTask)
+                    blockReasons.Add("Not all issue tasks are completed or cancelled.");
+            }
+
+            if (t.RequireSubIssuesDone)
+            {
+                var hasOpenSubIssue = issue.SubIssues.Any(s =>
+                    s.Status != IssuePit.Core.Enums.IssueStatus.Done &&
+                    s.Status != IssuePit.Core.Enums.IssueStatus.Cancelled);
+                if (hasOpenSubIssue)
+                    blockReasons.Add("Not all sub-issues are in Done or Cancelled status.");
+            }
+
+            results.Add(new TransitionCheckResult(
+                t.Id, t.Name,
+                t.FromColumn?.Name ?? string.Empty,
+                t.ToColumn?.Name ?? string.Empty,
+                t.IsAuto,
+                blockReasons));
+        }
+
+        return Ok(results);
+    }
+
+    /// <summary>
     /// Trigger a named transition for a specific issue.
     /// Agents can call this to programmatically move an issue between columns.
     /// </summary>
@@ -368,24 +464,15 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
         // Check transition requirements
         if (transition.RequireGreenCiCd)
         {
-            // Prefer checking by the issue's git branch for precision; fall back to AgentSession link.
-            bool hasGreenRun;
-            if (!string.IsNullOrEmpty(issue.GitBranch))
-            {
-                hasGreenRun = await db.CiCdRuns
-                    .AnyAsync(r => r.Branch == issue.GitBranch &&
-                        (r.Status == IssuePit.Core.Enums.CiCdRunStatus.Succeeded ||
-                         r.Status == IssuePit.Core.Enums.CiCdRunStatus.SucceededWithWarnings));
-            }
-            else
-            {
-                hasGreenRun = await db.CiCdRuns
-                    .Include(r => r.AgentSession)
-                    .AnyAsync(r => r.AgentSession != null &&
-                        r.AgentSession.IssueId == req.IssueId &&
-                        (r.Status == IssuePit.Core.Enums.CiCdRunStatus.Succeeded ||
-                         r.Status == IssuePit.Core.Enums.CiCdRunStatus.SucceededWithWarnings));
-            }
+            // Requires at least one passing CI/CD run on the issue's git branch.
+            // If the issue has no branch set the requirement is not met — no hidden fallback.
+            if (string.IsNullOrEmpty(issue.GitBranch))
+                return BadRequest("Transition requires a passing CI/CD run on the issue's branch, but the issue has no git branch set.");
+
+            var hasGreenRun = await db.CiCdRuns
+                .AnyAsync(r => r.Branch == issue.GitBranch &&
+                    (r.Status == IssuePit.Core.Enums.CiCdRunStatus.Succeeded ||
+                     r.Status == IssuePit.Core.Enums.CiCdRunStatus.SucceededWithWarnings));
             if (!hasGreenRun)
                 return BadRequest("Transition requires at least one passing CI/CD run on the issue's branch.");
         }
@@ -456,3 +543,23 @@ public record UpdateBoardRequest(string Name, KanbanLaneProperty? LaneProperty =
 public record UpdateColumnRequest(string Name, int Position, IssuePit.Core.Enums.IssueStatus IssueStatus, string? LaneValue = null);
 public record UpdateTransitionRequest(string Name, Guid FromColumnId, Guid ToColumnId, bool IsAuto, Guid? AgentId, bool RequireGreenCiCd = false, bool RequireCodeReview = false, bool RequirePlanComment = false, bool RequireTasksDone = false, bool RequireSubIssuesDone = false);
 public record TriggerTransitionRequest(Guid IssueId, string? Reason = null);
+
+/// <summary>Result of evaluating a single transition's requirements for a given issue.</summary>
+/// <param name="TransitionId">ID of the transition.</param>
+/// <param name="TransitionName">Human-readable transition name.</param>
+/// <param name="FromColumn">Name of the source column.</param>
+/// <param name="ToColumn">Name of the target column.</param>
+/// <param name="IsAuto">Whether this is an agent auto-trigger transition.</param>
+/// <param name="BlockReasons">Non-empty list of reasons the transition is blocked; empty means the transition is allowed.</param>
+public record TransitionCheckResult(
+    Guid TransitionId,
+    string TransitionName,
+    string FromColumn,
+    string ToColumn,
+    bool IsAuto,
+    IReadOnlyList<string> BlockReasons)
+{
+    /// <summary>True when there are no block reasons and the transition can proceed.</summary>
+    public bool IsAllowed => BlockReasons.Count == 0;
+}
+

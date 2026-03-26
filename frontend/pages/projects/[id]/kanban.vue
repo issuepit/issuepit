@@ -127,9 +127,16 @@
               @click="openPreview(issue)">
               <div class="flex items-start justify-between gap-2 mb-2">
                 <span class="text-xs text-gray-600">{{ formatIssueId(issue.number, projectsStore.currentProject, issue.externalId, issue.externalSource) }}</span>
-                <span :class="priorityColor(issue.priority)" class="text-xs shrink-0">
-                  {{ priorityIcon(issue.priority) }}
-                </span>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <!-- Agent protection indicators -->
+                  <span v-if="issue.preventAgentMove" title="Protected from agent moves"
+                    aria-label="Protected from agent moves" role="img" class="text-xs text-amber-500">🔒</span>
+                  <span v-if="issue.hideFromAgents" title="Hidden from agents"
+                    aria-label="Hidden from agents" role="img" class="text-xs text-gray-500">👁</span>
+                  <span :class="priorityColor(issue.priority)" class="text-xs">
+                    {{ priorityIcon(issue.priority) }}
+                  </span>
+                </div>
               </div>
               <p class="text-sm text-gray-200 leading-snug mb-3 group-hover:text-white transition-colors line-clamp-3">
                 {{ issue.title }}
@@ -263,6 +270,31 @@
               </div>
             </div>
           </template>
+
+          <!-- Transition status -->
+          <div v-if="previewTransitionChecks.length" class="border-t border-gray-800 pt-3">
+            <p class="text-xs text-gray-500 mb-2">Transitions</p>
+            <div class="space-y-2">
+              <div v-for="tc in previewTransitionChecks" :key="tc.transitionId"
+                :class="[
+                  'rounded-lg px-3 py-2 text-xs',
+                  tc.isAllowed ? 'bg-green-900/20 border border-green-800/40' : 'bg-amber-900/20 border border-amber-800/40',
+                ]">
+                <div class="flex items-center gap-2 mb-1">
+                  <span :class="tc.isAllowed ? 'text-green-400' : 'text-amber-400'"
+                    :aria-label="tc.isAllowed ? 'Transition allowed' : 'Transition blocked'"
+                    role="img" class="shrink-0">
+                    {{ tc.isAllowed ? '✓' : '⚠' }}
+                  </span>
+                  <span class="font-medium text-gray-200 truncate">{{ tc.transitionName }}</span>
+                  <span class="text-gray-500 shrink-0">{{ tc.fromColumn }} → {{ tc.toColumn }}</span>
+                </div>
+                <ul v-if="tc.blockReasons.length" class="space-y-0.5 mt-1 ml-4 list-disc">
+                  <li v-for="(reason, i) in tc.blockReasons" :key="i" class="text-amber-300/80 leading-snug">{{ reason }}</li>
+                </ul>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Sidebar footer -->
@@ -592,7 +624,7 @@
 
 <script setup lang="ts">
 import { IssueStatus, IssuePriority, IssueType, KanbanLaneProperty } from '~/types'
-import type { Issue, KanbanColumn, IssuePropertyValue } from '~/types'
+import type { Issue, KanbanColumn, IssuePropertyValue, TransitionCheckResult } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
 import { useKanbanStore } from '~/stores/kanban'
 import { useMilestonesStore } from '~/stores/milestones'
@@ -616,6 +648,7 @@ const { priorityIcon, priorityColor } = usePriority()
 // ── Issue preview sidebar ─────────────────────────────────────────────────
 const previewIssue = ref<Issue | null>(null)
 const previewPropertyValues = ref<IssuePropertyValue[]>([])
+const previewTransitionChecks = ref<TransitionCheckResult[]>([])
 
 function getPreviewPropertyValue(propertyId: string): string {
   return previewPropertyValues.value.find(v => v.propertyId === propertyId)?.value ?? ''
@@ -624,6 +657,7 @@ function getPreviewPropertyValue(propertyId: string): string {
 async function openPreview(issue: Issue) {
   previewIssue.value = issue
   previewPropertyValues.value = []
+  previewTransitionChecks.value = []
   if (propsStore.properties.length) {
     try {
       previewPropertyValues.value = await propsStore.fetchIssuePropertyValues(id, issue.id) ?? []
@@ -631,11 +665,15 @@ async function openPreview(issue: Issue) {
       console.error('Failed to load property values for issue preview', e)
     }
   }
+  if (activeBoardId.value && kanban.transitions.length) {
+    previewTransitionChecks.value = await kanban.checkTransitions(activeBoardId.value, issue.id)
+  }
 }
 
 function closePreview() {
   previewIssue.value = null
   previewPropertyValues.value = []
+  previewTransitionChecks.value = []
 }
 
 // ── Issue create state ────────────────────────────────────────────────────

@@ -485,6 +485,16 @@ export interface KanbanTransition {
   createdAt: string
 }
 
+export interface TransitionCheckResult {
+  transitionId: string
+  transitionName: string
+  fromColumn: string
+  toColumn: string
+  isAuto: boolean
+  blockReasons: string[]
+  isAllowed: boolean
+}
+
 export enum KanbanLaneProperty {
   Status = 'status',
   Priority = 'priority',
