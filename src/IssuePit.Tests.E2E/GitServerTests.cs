@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using IssuePit.Tests.E2E.Pages;
+using Microsoft.Playwright;
 
 namespace IssuePit.Tests.E2E;
 
@@ -9,11 +11,32 @@ namespace IssuePit.Tests.E2E;
 /// </summary>
 [Collection("E2E")]
 [Trait("Category", "E2E")]
-public class GitServerTests
+public class GitServerTests : IAsyncLifetime
 {
     private readonly AspireFixture _fixture;
+    private IPlaywright? _playwright;
+    private IBrowser? _browser;
+
+    private string? FrontendUrl => _fixture.FrontendUrl
+        ?? Environment.GetEnvironmentVariable("FRONTEND_URL");
 
     public GitServerTests(AspireFixture fixture) => _fixture = fixture;
+
+    public async Task InitializeAsync()
+    {
+        _playwright = await Playwright.CreateAsync();
+        _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+        {
+            Headless = true,
+            Channel = "chrome",
+        });
+    }
+
+    public async Task DisposeAsync()
+    {
+        if (_browser is not null) await _browser.CloseAsync();
+        _playwright?.Dispose();
+    }
 
     private HttpClient CreateCookieClient()
     {
@@ -204,4 +227,53 @@ public class GitServerTests
             new { isReadOnly = true });
         Assert.Equal(HttpStatusCode.NoContent, setResp.StatusCode);
     }
+
+    /// <summary>
+    /// UI happy path: register → navigate to /config/git-server → create a repo →
+    /// verify it appears in the list → delete it via the confirm modal → verify it's removed.
+    /// </summary>
+    [Fact]
+    public async Task Ui_GitServerRepo_CreateAndDelete()
+    {
+        var tenantId = await GetDefaultTenantIdAsync();
+        using var apiClient = CreateCookieClient();
+        apiClient.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"ui{Guid.NewGuid():N}"[..12];
+        const string password = "TestPass1!";
+        await apiClient.PostAsJsonAsync("/api/auth/register", new { username, password });
+
+        // Create org via API so the git server page has an org context.
+        var orgSlug = $"ui-gs-{Guid.NewGuid():N}"[..14];
+        var orgResp = await apiClient.PostAsJsonAsync("/api/orgs", new { name = "UI Git Server Org", slug = orgSlug });
+        Assert.Equal(HttpStatusCode.Created, orgResp.StatusCode);
+
+        var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
+        context.SetDefaultTimeout(E2ETimeouts.Default);
+        var page = await context.NewPageAsync();
+
+        try
+        {
+            await new LoginPage(page).LoginAsync(username, password);
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
+
+            var gitServerPage = new GitServerPage(page);
+            await gitServerPage.GotoAsync();
+
+            var repoSlug = $"ui-repo-{Guid.NewGuid():N}"[..16];
+            await gitServerPage.CreateRepoAsync(repoSlug);
+
+            Assert.True(await gitServerPage.RepoExistsAsync(repoSlug));
+
+            await gitServerPage.DeleteRepoAsync(repoSlug);
+
+            Assert.False(await gitServerPage.RepoExistsAsync(repoSlug));
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────────
 }

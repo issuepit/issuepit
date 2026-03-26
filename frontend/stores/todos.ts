@@ -142,7 +142,7 @@ export const useTodosStore = defineStore('todos', () => {
   }
 
   async function deleteTodo(id: string) {
-    await api.delete(`/api/todos/${id}`)
+    await api.del(`/api/todos/${id}`)
     todos.value = todos.value.filter(t => t.id !== id)
   }
 
