@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Confluent.Kafka;
+using Docker.DotNet;
 using IssuePit.Core;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
@@ -56,6 +57,8 @@ public class IssueWorker(
     // Emitted by DockerAgentRuntime just before post-agent ops (session capture, git push).
     // Must stay in sync with DockerAgentRuntime.PostRunStartMarker.
     private const string PostRunStartMarker = "[ISSUEPIT:POST_RUN_START]";
+    // Emitted by DockerAgentRuntime in manual mode with the full container ID.
+    private const string ManualModeContainerIdMarker = "[ISSUEPIT:MANUAL_MODE_CONTAINER_ID]=";
 
     /// <summary>
     /// Maximum total character count for comments included in the task prompt.
@@ -69,6 +72,10 @@ public class IssueWorker(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // On startup, clean up any manual-mode sessions that were left in Running state
+        // but whose containers are no longer alive (e.g. after a service restart).
+        await CleanUpStaleManualSessionsAsync(stoppingToken);
+
         // Run the cancel-signal consumer in parallel with the trigger consumer.
         var cancelConsumerTask = RunCancelConsumerAsync(stoppingToken);
 
@@ -105,6 +112,76 @@ public class IssueWorker(
 
         consumer.Close();
         await cancelConsumerTask;
+    }
+
+    /// <summary>
+    /// On service startup, marks any manual-mode <see cref="AgentSession"/> records that are still
+    /// in <c>Running</c> state but whose containers are no longer alive as <c>Cancelled</c>.
+    /// This prevents orphaned "Running" sessions in the UI after a service restart.
+    /// </summary>
+    private async Task CleanUpStaleManualSessionsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var scope = services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+            var stale = await db.AgentSessions
+                .Include(s => s.Agent)
+                .Where(s => s.Agent.ManualMode
+                    && (s.Status == AgentSessionStatus.Running || s.Status == AgentSessionStatus.Pending)
+                    && s.ContainerId != null)
+                .ToListAsync(cancellationToken);
+
+            if (stale.Count == 0) return;
+
+            logger.LogInformation("Found {Count} stale manual-mode session(s) to clean up on startup", stale.Count);
+
+            // Build a Docker client to check container liveness.
+            // Use a scoped client factory when available; fall back to a direct builder.
+            DockerClient? dockerClient = null;
+            try
+            {
+                dockerClient = new DockerClientBuilder().Build();
+
+                foreach (var session in stale)
+                {
+                    var alive = false;
+                    try
+                    {
+                        var inspect = await dockerClient.Containers.InspectContainerAsync(session.ContainerId!, cancellationToken);
+                        alive = inspect?.State?.Running == true;
+                    }
+                    catch (Exception)
+                    {
+                        // Container not found or Docker daemon unreachable — treat as dead.
+                        alive = false;
+                    }
+
+                    if (!alive)
+                    {
+                        logger.LogInformation(
+                            "Manual session {SessionId} (container {ContainerId}) is no longer running — marking as Cancelled",
+                            session.Id, session.ContainerId?[..Math.Min(12, session.ContainerId.Length)]);
+
+                        session.Status = AgentSessionStatus.Cancelled;
+                        session.EndedAt = DateTime.UtcNow;
+                        session.ContainerId = null;
+                    }
+                }
+            }
+            finally
+            {
+                dockerClient?.Dispose();
+            }
+
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Non-fatal: startup cleanup failure should not prevent the worker from starting.
+            logger.LogWarning(ex, "Failed to clean up stale manual-mode sessions on startup");
+        }
     }
 
     /// <summary>Subscribes to 'agent-cancel' and cancels any in-flight agent launch matching the session id.</summary>
@@ -166,7 +243,28 @@ public class IssueWorker(
             return;
         }
 
-        if (message is null || message.Id == Guid.Empty) return;
+        if (message is null) return;
+
+        // For manual direct-start sessions (no issue), bypass the issue lookup entirely.
+        if (message.IsManualDirectStart)
+        {
+            if (!message.AgentId.HasValue)
+            {
+                logger.LogWarning("IsManualDirectStart=true but AgentId is missing, skipping");
+                return;
+            }
+
+            logger.LogInformation("Launching manual direct-start session for project {ProjectId}, agent {AgentId}",
+                message.ProjectId, message.AgentId.Value);
+
+            await LaunchAgentAsync(message.AgentId.Value, null, message.ProjectId, message.DockerImageOverride,
+                message.KeepContainer, message.DockerCmdOverride, message.ModelOverride, message.RunnerTypeOverride,
+                message.UseHttpServerOverride, message.RuntimeTypeOverride,
+                message.SessionId, null, message.Branch, cancellationToken);
+            return;
+        }
+
+        if (message.Id == Guid.Empty) return;
 
         List<Guid> agentIds;
         using (var scope = services.CreateScope())
@@ -220,7 +318,7 @@ public class IssueWorker(
 
         // Launch all assigned agents in parallel; each task manages its own DB scope
         await Task.WhenAll(agentIds.Select(agentId =>
-            LaunchAgentAsync(agentId, message.Id, message.DockerImageOverride, message.KeepContainer, message.DockerCmdOverride,
+            LaunchAgentAsync(agentId, message.Id, message.ProjectId, message.DockerImageOverride, message.KeepContainer, message.DockerCmdOverride,
                 message.ModelOverride, message.RunnerTypeOverride, message.UseHttpServerOverride, message.RuntimeTypeOverride,
                 // Only pass the pre-created session ID when exactly one agent is being launched (retry case).
                 agentIds.Count == 1 ? message.SessionId : null,
@@ -236,7 +334,8 @@ public class IssueWorker(
     //   RunCiCdFixAgentAsync — CI/CD fix loop container launch
     private async Task LaunchAgentAsync(
         Guid agentId,
-        Guid issueId,
+        Guid? issueId,
+        Guid projectId,
         string? dockerImageOverride,
         bool keepContainer,
         string[]? dockerCmdOverride,
@@ -258,9 +357,16 @@ public class IssueWorker(
                 .ThenInclude(ams => ams.McpServer)
                 .ThenInclude(s => s.Secrets)
             .FirstOrDefaultAsync(a => a.Id == agentId, cancellationToken);
-        var issue = await db.Issues.FindAsync([issueId], cancellationToken);
 
-        if (agent is null || issue is null)
+        Issue? issue = issueId.HasValue ? await db.Issues.FindAsync([issueId.Value], cancellationToken) : null;
+
+        if (agent is null)
+        {
+            logger.LogWarning("Agent {AgentId} not found, skipping launch", agentId);
+            return;
+        }
+
+        if (issueId.HasValue && issue is null)
         {
             logger.LogWarning("Agent {AgentId} or Issue {IssueId} not found, skipping launch", agentId, issueId);
             return;
@@ -284,61 +390,64 @@ public class IssueWorker(
         if (useHttpServerOverride.HasValue)
             agent.UseHttpServer = useHttpServerOverride.Value;
 
-        // Apply branch override: detach issue so the change is never persisted.
-        if (!string.IsNullOrWhiteSpace(branchOverride))
-        {
-            db.Entry(issue).State = EntityState.Detached;
-            issue.GitBranch = branchOverride;
-        }
-
-        // Load issue comments for context. Truncate old comments if the total size would be too large
-        // to avoid exceeding LLM context limits. Newest comments are kept; a warning is stored when any
-        // comments are dropped.
         string? commentsWarning = null;
-        var rawComments = await db.IssueComments
-            .Include(c => c.User)
-            .Where(c => c.IssueId == issue.Id)
-            .OrderBy(c => c.CreatedAt)
-            .ToListAsync(cancellationToken);
 
-        var comments = TrimCommentsToLimit(rawComments, MaxCommentsChars, out commentsWarning);
-        issue.Comments = comments;
-
-        // Load additional prompt context: sub-issues, tasks, linked issues, attachments.
-        issue.PromptSubIssues = await db.Issues
-            .Where(i => i.ParentIssueId == issue.Id)
-            .ToListAsync(cancellationToken);
-
-        issue.PromptTasks = await db.IssueTasks
-            .Where(t => t.IssueId == issue.Id)
-            .ToListAsync(cancellationToken);
-
-        issue.PromptLinks = await db.IssueLinks
-            .Include(l => l.TargetIssue)
-            .Where(l => l.IssueId == issue.Id)
-            .ToListAsync(cancellationToken);
-
-        issue.PromptAttachments = await db.IssueAttachments
-            .Where(a => a.IssueId == issue.Id && a.IsPublic)
-            .ToListAsync(cancellationToken);
-
-        issue.TriggeringCommentId = triggeringCommentId;
-
-        // When the triggering comment contains #similar or #runs, load the relevant context
-        // so it can be included in the agent prompt.
-        if (triggeringCommentId.HasValue)
+        if (issue is not null)
         {
-            var triggeringComment = rawComments.FirstOrDefault(c => c.Id == triggeringCommentId.Value);
-            if (triggeringComment is not null)
+            // Apply branch override: detach issue so the change is never persisted.
+            if (!string.IsNullOrWhiteSpace(branchOverride))
             {
-                if (triggeringComment.Body.Contains("#similar", StringComparison.OrdinalIgnoreCase))
+                db.Entry(issue).State = EntityState.Detached;
+                issue.GitBranch = branchOverride;
+            }
+
+            // Load issue comments for context. Truncate old comments if the total size would be too large
+            // to avoid exceeding LLM context limits. Newest comments are kept; a warning is stored when any
+            // comments are dropped.
+            var rawComments = await db.IssueComments
+                .Include(c => c.User)
+                .Where(c => c.IssueId == issue.Id)
+                .OrderBy(c => c.CreatedAt)
+                .ToListAsync(cancellationToken);
+
+            var comments = TrimCommentsToLimit(rawComments, MaxCommentsChars, out commentsWarning);
+            issue.Comments = comments;
+
+            // Load additional prompt context: sub-issues, tasks, linked issues, attachments.
+            issue.PromptSubIssues = await db.Issues
+                .Where(i => i.ParentIssueId == issue.Id)
+                .ToListAsync(cancellationToken);
+
+            issue.PromptTasks = await db.IssueTasks
+                .Where(t => t.IssueId == issue.Id)
+                .ToListAsync(cancellationToken);
+
+            issue.PromptLinks = await db.IssueLinks
+                .Include(l => l.TargetIssue)
+                .Where(l => l.IssueId == issue.Id)
+                .ToListAsync(cancellationToken);
+
+            issue.PromptAttachments = await db.IssueAttachments
+                .Where(a => a.IssueId == issue.Id && a.IsPublic)
+                .ToListAsync(cancellationToken);
+
+            issue.TriggeringCommentId = triggeringCommentId;
+
+            // When the triggering comment contains #similar or #runs, load the relevant context
+            // so it can be included in the agent prompt.
+            if (triggeringCommentId.HasValue)
+            {
+                var triggeringComment = rawComments.FirstOrDefault(c => c.Id == triggeringCommentId.Value);
+                if (triggeringComment is not null)
                 {
-                    issue.PromptSimilarIssues = await db.SimilarIssuePairs
-                        .Where(p => p.IssueId == issue.Id)
-                        .Include(p => p.SimilarIssue)
-                        .OrderByDescending(p => p.Score)
-                        .Take(5)
-                        .ToListAsync(cancellationToken);
+                    if (triggeringComment.Body.Contains("#similar", StringComparison.OrdinalIgnoreCase))
+                    {
+                        issue.PromptSimilarIssues = await db.SimilarIssuePairs
+                            .Where(p => p.IssueId == issue.Id)
+                            .Include(p => p.SimilarIssue)
+                            .OrderByDescending(p => p.Score)
+                            .Take(5)
+                            .ToListAsync(cancellationToken);
                 }
 
                 if (triggeringComment.Body.Contains("#runs", StringComparison.OrdinalIgnoreCase))
@@ -350,6 +459,12 @@ public class IssueWorker(
                         .ToListAsync(cancellationToken);
                 }
             }
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(branchOverride))
+        {
+            // For issue-free manual sessions, branch is set via the session's GitBranch field after creation.
+            // We hold it here so it can be passed to the runtime workspace setup.
         }
 
         // Resolve runtime: use the org's default configuration or fall back to Docker
@@ -366,7 +481,7 @@ public class IssueWorker(
         // Load all git repositories for the project so the pre-flight check can verify branch
         // availability across every configured remote.
         var allGitRepositories = await db.GitRepositories
-            .Where(r => r.ProjectId == issue.ProjectId)
+            .Where(r => r.ProjectId == projectId)
             .OrderByDescending(r => r.Mode == GitOriginMode.Working)
             .ToListAsync(cancellationToken);
 
@@ -405,7 +520,7 @@ public class IssueWorker(
         // Load the per-project push policy for this agent. Falls back to Forbidden when no
         // explicit AgentProject row exists (e.g. org-level links without a project override).
         var agentProjectLink = await db.AgentProjects
-            .FirstOrDefaultAsync(ap => ap.AgentId == agentId && ap.ProjectId == issue.ProjectId, cancellationToken);
+            .FirstOrDefaultAsync(ap => ap.AgentId == agentId && ap.ProjectId == projectId, cancellationToken);
         var pushPolicy = agentProjectLink?.PushPolicy ?? AgentPushPolicy.Forbidden;
 
         AgentSession session;
@@ -418,11 +533,12 @@ public class IssueWorker(
                 logger.LogWarning(
                     "Pre-created session {SessionId} not found — creating a new session instead",
                     existingSessionId.Value);
-                preCreated = new AgentSession { Id = Guid.NewGuid(), IssueId = issue.Id, Status = AgentSessionStatus.Pending };
+                preCreated = new AgentSession { Id = Guid.NewGuid(), IssueId = issue?.Id, ProjectId = projectId, Status = AgentSessionStatus.Pending };
                 db.AgentSessions.Add(preCreated);
             }
 
             preCreated.AgentId = agent.Id;
+            preCreated.ProjectId = projectId;
             preCreated.RuntimeConfigId = runtimeConfig?.Id;
             preCreated.KeepContainer = keepContainer;
             preCreated.CustomCmd = dockerCmdOverride;
@@ -442,7 +558,8 @@ public class IssueWorker(
             {
                 Id = Guid.NewGuid(),
                 AgentId = agent.Id,
-                IssueId = issue.Id,
+                IssueId = issue?.Id,
+                ProjectId = projectId,
                 RuntimeConfigId = runtimeConfig?.Id,
                 Status = AgentSessionStatus.Running,
                 StartedAt = DateTime.UtcNow,
@@ -462,10 +579,21 @@ public class IssueWorker(
             await db.SaveChangesAsync(cancellationToken);
         }
 
+        // For manual direct-start sessions (no issue), create a transient stub so the runtime
+        // has a valid object to read GitBranch from. The stub is never persisted.
+        var issueForRuntime = issue ?? new IssuePit.Core.Entities.Issue
+        {
+            Id = Guid.Empty,
+            Number = 0,
+            Title = "Manual Session",
+            GitBranch = branchOverride,
+        };
+
         // Look up the most recent completed opencode session for this issue+agent so the new run
         // can continue from the preserved conversation. Only applies when artifact storage is
         // configured (S3 URL is available) or when the session ID alone is useful.
-        var previousSession = await db.AgentSessions
+        // Only relevant for issue-based sessions (manual direct-start sessions always start fresh).
+        var previousSession = issue is not null ? await db.AgentSessions
             .Where(s => s.IssueId == issue.Id
                 && s.AgentId == agent.Id
                 && s.Id != session.Id
@@ -474,14 +602,14 @@ public class IssueWorker(
                 && (s.Status == AgentSessionStatus.Succeeded || s.Status == AgentSessionStatus.Failed))
             .OrderByDescending(s => s.EndedAt)
             .Select(s => new { s.OpenCodeSessionId, s.OpenCodeDbS3Url })
-            .FirstOrDefaultAsync(cancellationToken);
+            .FirstOrDefaultAsync(cancellationToken) : null;
 
         if (previousSession is not null)
         {
             session.PreviousOpenCodeSessionId = previousSession.OpenCodeSessionId;
             logger.LogInformation(
                 "Found previous opencode session {PrevSessionId} for issue {IssueId} — will continue from it",
-                previousSession.OpenCodeSessionId, issue.Id);
+                previousSession.OpenCodeSessionId, issue?.Id);
 
             // If there is a preserved DB snapshot, download it for injection into the new container.
             if (!string.IsNullOrEmpty(previousSession.OpenCodeDbS3Url) && gitArtifactUploader.IsConfigured)
@@ -532,7 +660,7 @@ public class IssueWorker(
             // Create an ephemeral MCP token for this agent session and inject it into the environment
             // so the container authenticates to the IssuePit MCP server.
             var ephemeralMcpToken = await CreateEphemeralMcpTokenAsync(
-                session.Id, agent.OrgId, issue.ProjectId, db, logger, sessionCts.Token);
+                session.Id, agent.OrgId, projectId, db, logger, sessionCts.Token);
             if (ephemeralMcpToken is not null)
             {
                 var credentialsWithToken = new Dictionary<string, string>(credentials)
@@ -542,10 +670,34 @@ public class IssueWorker(
                 credentials = credentialsWithToken;
             }
 
+            // Inject a backed-up opencode auth.json if one is marked RestoreOnAgentRuns for this org.
+            // This allows users to authenticate once in a manual terminal session and reuse those
+            // credentials in subsequent autonomous runs without having to re-authenticate.
+            if (!agent.ManualMode)
+            {
+                var activeAuth = await db.AgentAuths
+                    .Where(a => a.OrgId == agent.OrgId && a.RestoreOnAgentRuns)
+                    .OrderByDescending(a => a.CapturedAt)
+                    .FirstOrDefaultAsync(sessionCts.Token);
+
+                if (activeAuth is not null)
+                {
+                    var authCredentials = new Dictionary<string, string>(credentials)
+                    {
+                        ["ISSUEPIT_AUTH_JSON_CONTENT"] = activeAuth.AuthJsonContent
+                    };
+                    credentials = authCredentials;
+                    activeAuth.LastUsedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync(sessionCts.Token);
+                    logger.LogInformation("Injecting auth.json from backup {AuthId} into session {SessionId}", activeAuth.Id, session.Id);
+                }
+            }
+
             string? capturedOpenCodeSessionId = null;
             var capturedHasUncommittedChanges = false;
             var capturedGitPushFailed = false;
             string? capturedServerWebUiUrl = null;
+            string? capturedManualModeContainerId = null;
 
             // Track the current phase of the workflow so every log line is tagged with its section.
             var currentSection = AgentLogSection.InitialAgentRun;
@@ -566,6 +718,8 @@ public class IssueWorker(
                     capturedGitPushFailed = true;
                 else if (line.StartsWith(ServerWebUiUrlMarker, StringComparison.Ordinal))
                     capturedServerWebUiUrl = line[ServerWebUiUrlMarker.Length..].Trim();
+                else if (line.StartsWith(ManualModeContainerIdMarker, StringComparison.Ordinal))
+                    capturedManualModeContainerId = line[ManualModeContainerIdMarker.Length..].Trim();
                 else if (line == PostRunStartMarker)
                 {
                     // Transition to the PostRun section for git push and related post-agent operations.
@@ -708,7 +862,7 @@ public class IssueWorker(
 
             try
             {
-                runtimeId = await runtime.LaunchAsync(session, agent, issue, credentials, runtimeConfig, gitRepository, cloneRepository, onLogLine, sessionCts.Token);
+                runtimeId = await runtime.LaunchAsync(session, agent, issueForRuntime, credentials, runtimeConfig, gitRepository, cloneRepository, onLogLine, sessionCts.Token);
 
                 logger.LogInformation(
                     "Agent {AgentId} launched via {RuntimeType} with id '{RuntimeId}' for session {SessionId}",
@@ -731,6 +885,42 @@ public class IssueWorker(
                 // Persist the opencode session ID so future runs for the same issue can continue from it.
                 if (!string.IsNullOrEmpty(capturedOpenCodeSessionId))
                     session.OpenCodeSessionId = capturedOpenCodeSessionId;
+                // Persist the container ID for manual mode so the terminal endpoint can attach to it.
+                if (!string.IsNullOrEmpty(capturedManualModeContainerId))
+                    session.ContainerId = capturedManualModeContainerId;
+
+                // In manual mode LaunchAsync returns immediately after workspace setup;
+                // the container is kept alive for the user's terminal session. Persist the
+                // session state and wait for cancellation (user explicitly cancels the session).
+                // Skip all autonomous agent logic (CI/CD, fix loops, etc.).
+                if (agent.ManualMode && !string.IsNullOrEmpty(capturedManualModeContainerId))
+                {
+                    await db.SaveChangesAsync(sessionCts.Token);
+                    // Publish an event so connected clients know the workspace is ready.
+                    await PublishSessionEventAsync(session.Id.ToString(),
+                        JsonSerializer.Serialize(new { @event = "manual-mode-ready", containerId = capturedManualModeContainerId[..Math.Min(12, capturedManualModeContainerId.Length)] }));
+                    // Block until the user cancels the session.
+                    try
+                    {
+                        await Task.Delay(Timeout.Infinite, sessionCts.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Session was cancelled by the user — proceed to cleanup below.
+                    }
+                    // Stop and remove the container on session end.
+                    if (execRuntime is not null && capturedManualModeContainerId is not null)
+                    {
+                        if (session.KeepContainer)
+                            await AppendLogAsync(session.Id,
+                                $"[DEBUG] Container kept alive for inspection (KeepContainer=true). ID: {capturedManualModeContainerId[..Math.Min(12, capturedManualModeContainerId.Length)]}",
+                                LogStream.Stdout, section: null, sectionIndex: 0, db, CancellationToken.None);
+                        else
+                            await execRuntime.StopContainerAsync(capturedManualModeContainerId, remove: true, CancellationToken.None);
+                    }
+                    session.ContainerId = null; // clear — container is gone
+                    throw new OperationCanceledException(sessionCts.Token); // re-throw so catch sets Cancelled status
+                }
 
                 // When git push failed, attempt multi-remote integration recovery before giving up.
                 // The exec container is still alive at this point (stopped in the finally block below).
@@ -811,7 +1001,7 @@ public class IssueWorker(
                         "[INFO] Uncommitted changes detected — re-running opencode to commit or .gitignore them…",
                         LogStream.Stdout, currentSection, currentSectionIndex, db, sessionCts.Token);
 
-                    var fixUncommittedIssue = BuildUncommittedChangesFixIssue(issue, capturedBranchName);
+                    var fixUncommittedIssue = BuildUncommittedChangesFixIssue(issueForRuntime, capturedBranchName);
                     string? fixCommitSha, fixBranchName;
 
                     if (useExecForFixes)
@@ -847,7 +1037,7 @@ public class IssueWorker(
                 if (cicdPrerequisitesMet && !capturedGitPushFailed)
                 {
                     var cicdSucceeded = await RunCiCdFixLoopAsync(
-                        session, agent, issue, gitRepository!, cloneRepository, credentials, runtimeConfig,
+                        session, agent, issueForRuntime, gitRepository!, cloneRepository, credentials, runtimeConfig,
                         capturedCommitSha!, capturedBranchName!, db, sessionCts.Token,
                         execRuntime: useExecForFixes ? execRuntime : null,
                         execContainerId: useExecForFixes ? runtimeId : null,
@@ -1792,7 +1982,7 @@ public class IssueWorker(
         GitBranch = branchName,
     };
 
-    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, Guid? SessionId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? DockerCmdOverride = null, string? ModelOverride = null, int? RunnerTypeOverride = null, bool? UseHttpServerOverride = null, int? RuntimeTypeOverride = null, bool ForceAgentId = false, Guid? TriggeringCommentId = null, string? Branch = null);
+    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, Guid? SessionId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? DockerCmdOverride = null, string? ModelOverride = null, int? RunnerTypeOverride = null, bool? UseHttpServerOverride = null, int? RuntimeTypeOverride = null, bool ForceAgentId = false, Guid? TriggeringCommentId = null, string? Branch = null, bool IsManualDirectStart = false);
 
     /// <summary>
     /// Checks whether the base branch (<see cref="GitRepository.DefaultBranch"/>) of each

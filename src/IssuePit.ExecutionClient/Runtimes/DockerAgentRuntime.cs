@@ -71,6 +71,12 @@ public class DockerAgentRuntime(
     /// IssueWorker captures this and persists it on <see cref="AgentSession.ServerWebUiUrl"/>.
     /// </summary>
     internal const string ServerWebUiUrlMarker = "[ISSUEPIT:SERVER_WEB_UI_URL]=";
+    /// <summary>
+    /// Emitted when the agent is in manual mode. Carries the full Docker container ID so
+    /// IssueWorker can persist it on <see cref="AgentSession.ContainerId"/>, enabling the
+    /// API terminal endpoint to attach to the container for live terminal I/O.
+    /// </summary>
+    internal const string ManualModeContainerIdMarker = "[ISSUEPIT:MANUAL_MODE_CONTAINER_ID]=";
 
     private static string AppVersion =>
         Assembly.GetEntryAssembly()
@@ -136,6 +142,8 @@ public class DockerAgentRuntime(
             await onLogLine($"[DEBUG] Model          : {agent.Model}", LogStream.Stdout);
         if (agent.UseHttpServer)
             await onLogLine($"[DEBUG] Server mode    : HTTP (opencode server API)", LogStream.Stdout);
+        if (agent.ManualMode)
+            await onLogLine($"[DEBUG] Agent mode     : Manual (live terminal session)", LogStream.Stdout);
         await onLogLine($"[DEBUG] DinD           : isolated (Privileged=true, in-container dockerd)", LogStream.Stdout);
         if (agent.DisableInternet)
             await onLogLine($"[DEBUG] Internet       : restricted", LogStream.Stdout);
@@ -235,11 +243,15 @@ public class DockerAgentRuntime(
         // ToDockerHostUrl converts localhost → host.docker.internal so the container reaches T
         // via 172.17.0.1:{T}. The MCP server binds to 0.0.0.0:{T} via ListenAnyIP in Program.cs.
         var issuePitMcpUrl = ToDockerHostUrl(configuration["McpServer:BaseUrl"]);
+        var issuePitApiUrl = ToDockerHostUrl(configuration["ApiServer:BaseUrl"]);
         var env = AgentEnvironmentBuilder.Build(session, agent, issue, credentials, gitRepository,
             cloneRepository: cloneRepo != gitRepository ? cloneRepo : null,
-            issuePitMcpUrl: issuePitMcpUrl);
+            issuePitMcpUrl: issuePitMcpUrl,
+            issuePitApiUrl: issuePitApiUrl);
         if (!string.IsNullOrWhiteSpace(issuePitMcpUrl))
             await onLogLine($"[DEBUG] IssuePit MCP   : {issuePitMcpUrl}", LogStream.Stdout);
+        if (!string.IsNullOrWhiteSpace(issuePitApiUrl))
+            await onLogLine($"[DEBUG] IssuePit API   : {issuePitApiUrl}", LogStream.Stdout);
 
         // Inject the HTTP server password so opencode can use it for authentication when UseHttpServer=true.
         if (agent.UseHttpServer && !string.IsNullOrWhiteSpace(agent.HttpServerPassword))
@@ -257,23 +269,29 @@ public class DockerAgentRuntime(
         //                    API to create sessions, send tasks, and poll for results. Supports
         //                    parallel tasks on the same server. The server's web UI URL is emitted
         //                    as a [ISSUEPIT:SERVER_WEB_UI_URL]= marker for IssueWorker.
+        // Manual mode      — container CMD = "sleep infinity"; C# drives all workspace setup via
+        //                    docker exec (git clone, credentials, opencode config) but does NOT
+        //                    run the runner CLI. A live terminal session is opened in the web UI
+        //                    so the user can type commands interactively. The container ID is emitted
+        //                    as a [ISSUEPIT:MANUAL_MODE_CONTAINER_ID]= marker for IssueWorker.
         // Exec flow        — container CMD = "sleep infinity"; C# drives all agent commands via
         //                    docker exec. Keeps the same opencode session files across fix runs.
         // Legacy flow      — container CMD from entrypoint default; wait for container to exit.
         var useHttpServerMode = agent.UseHttpServer && agent.RunnerType == RunnerType.OpenCode;
+        var useManualMode = agent.ManualMode;
 
         var comments = issue.Comments.Count > 0 ? (IReadOnlyList<IssueComment>)issue.Comments : null;
         if (comments is not null)
             await onLogLine($"[DEBUG] Comments       : {comments.Count} comment(s) included in prompt", LogStream.Stdout);
 
-        // Build CLI args for exec flow (not used in HTTP server mode).
+        // Build CLI args for exec flow (not used in HTTP server mode or manual mode).
         // Only pass --session <id> when a DB snapshot was actually loaded; without the restored
         // DB the session does not exist in the fresh container and opencode would throw NotFoundError.
-        var runnerArgs = useHttpServerMode ? [] : RunnerCommandBuilder.BuildArgsList(
+        var runnerArgs = (useHttpServerMode || useManualMode) ? [] : RunnerCommandBuilder.BuildArgsList(
             agent, issue,
             continueSessionId: session.PreviousOpenCodeDbTar is { Length: > 0 } ? session.PreviousOpenCodeSessionId : null,
             comments: comments);
-        var useExecFlow = !useHttpServerMode && runnerArgs.Count > 0;
+        var useExecFlow = !useHttpServerMode && !useManualMode && runnerArgs.Count > 0;
 
         if (useExecFlow)
         {
@@ -282,18 +300,24 @@ public class DockerAgentRuntime(
             await onLogLine($"[DEBUG] Runner cmd     : {cmdDisplay}", LogStream.Stdout);
         }
 
+        // Build the task prompt (used for the exec flow and HTTP server mode).
+        // In manual mode the user drives the agent interactively, so skip building/logging it.
+        var taskPrompt = useManualMode ? string.Empty : RunnerCommandBuilder.BuildTaskPrompt(issue, comments);
+
         // Log the task prompt that will be passed to the agent so it is always visible in the logs.
-        var taskPrompt = RunnerCommandBuilder.BuildTaskPrompt(issue, comments);
-        await onLogLine($"[DEBUG] Task prompt    :", LogStream.Stdout);
-        foreach (var promptLine in taskPrompt.Split('\n'))
-            await onLogLine($"[DEBUG]   {promptLine}", LogStream.Stdout);
+        if (!useManualMode)
+        {
+            await onLogLine($"[DEBUG] Task prompt    :", LogStream.Stdout);
+            foreach (var promptLine in taskPrompt.Split('\n'))
+                await onLogLine($"[DEBUG]   {promptLine}", LogStream.Stdout);
+        }
 
         // Step 4: Configure DNS-based firewall when internet access should be restricted.
         var dns = agent.DisableInternet ? GetRestrictedDns() : null;
 
         logger.LogInformation(
-            "Creating Docker container from image {Image} for agent {AgentId} (DisableInternet={DisableInternet}, ExecFlow={UseExecFlow}, HttpServer={UseHttpServer})",
-            image, agent.Id, agent.DisableInternet, useExecFlow, useHttpServerMode);
+            "Creating Docker container from image {Image} for agent {AgentId} (DisableInternet={DisableInternet}, ExecFlow={UseExecFlow}, HttpServer={UseHttpServer}, Manual={UseManualMode})",
+            image, agent.Id, agent.DisableInternet, useExecFlow, useHttpServerMode, useManualMode);
 
         var hostConfig = new HostConfig
         {
@@ -327,14 +351,14 @@ public class DockerAgentRuntime(
         }
 
         // Container CMD and Entrypoint:
-        //   - Exec flow / HTTP server mode: bypass the image's ENTRYPOINT entirely by overriding
+        //   - Exec flow / HTTP server mode / Manual mode: bypass the image's ENTRYPOINT entirely by overriding
         //     Entrypoint=["/bin/sh","-c"] and Cmd=["tail -f /dev/null"]. This keeps the container
         //     alive immediately without running entrypoint.sh. All workspace setup (git clone,
         //     DinD, DNS, opencode config) is then driven via docker exec from C# so every log line
         //     flows through onLogLine → UI and git clone failures surface as clear errors in the UI.
         //   - Legacy flow: null → use image's default CMD (or session.CustomCmd if set); the baked
         //     entrypoint.sh is injected and runs as PID 1, then execs the CMD.
-        IList<string>? containerCmd = (useExecFlow || useHttpServerMode)
+        IList<string>? containerCmd = (useExecFlow || useHttpServerMode || useManualMode)
             ? ["tail -f /dev/null"]
             : (session.CustomCmd?.Length > 0 ? session.CustomCmd : null);
 
@@ -351,11 +375,11 @@ public class DockerAgentRuntime(
             Cmd = containerCmd,
             ExposedPorts = containerExposedPorts,
             HostConfig = hostConfig,
-            // For exec flow and HTTP server mode: override the image's Entrypoint so that
+            // For exec flow and HTTP server mode and manual mode: override the image's Entrypoint so that
             // entrypoint.sh does NOT run as PID 1. The container starts immediately with
             // "tail -f /dev/null" and is kept alive for docker exec. All setup is done in C#.
             // For legacy flow: leave Entrypoint null so the image's baked Entrypoint is used.
-            Entrypoint = (useExecFlow || useHttpServerMode) ? ["/bin/sh", "-c"] : null,
+            Entrypoint = (useExecFlow || useHttpServerMode || useManualMode) ? ["/bin/sh", "-c"] : null,
             Labels = new Dictionary<string, string>
             {
                 ["issuepit.session-id"] = session.Id.ToString(),
@@ -373,7 +397,7 @@ public class DockerAgentRuntime(
 
         try
         {
-            if (!useExecFlow && !useHttpServerMode)
+            if (!useExecFlow && !useHttpServerMode && !useManualMode)
             {
                 await InjectEntrypointAsync(container.ID, cancellationToken);
                 await onLogLine("[DEBUG] Entrypoint     : injected from execution client binary", LogStream.Stdout);
@@ -456,12 +480,12 @@ public class DockerAgentRuntime(
             return container.ID;
         }
 
-        // For exec flow and HTTP server mode the container stays alive (tail -f /dev/null).
+        // For exec flow, HTTP server mode, and manual mode the container stays alive (tail -f /dev/null).
         // Verify the container is running, then drive all workspace setup via docker exec
         // so every log line flows through onLogLine → UI.
         await EnsureContainerRunningAsync(container.ID, onLogLine, cancellationToken);
 
-        if (useExecFlow || useHttpServerMode)
+        if (useExecFlow || useHttpServerMode || useManualMode)
         {
             // ── Workspace setup (formerly entrypoint.sh) ──────────────────────────
             // All steps are executed via docker exec so that:
@@ -569,7 +593,54 @@ public class DockerAgentRuntime(
                 }
             }
 
+            // Step G: Inject backed-up auth.json if provided via the ISSUEPIT_AUTH_JSON_CONTENT credential.
+            // This allows users to authenticate once in a manual terminal session and reuse those
+            // credentials in subsequent autonomous runs.
+            var authJsonEntry = env.FirstOrDefault(e => e.StartsWith("ISSUEPIT_AUTH_JSON_CONTENT=", StringComparison.Ordinal));
+            if (authJsonEntry is not null)
+            {
+                var authJsonContent = authJsonEntry["ISSUEPIT_AUTH_JSON_CONTENT=".Length..];
+                {
+                    try
+                    {
+                        await InjectAuthJsonAsync(container.ID, authJsonContent, onLogLine, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        await onLogLine($"[WARN] Failed to inject auth.json: {ex.Message} — proceeding without auth restore", LogStream.Stderr);
+                        logger.LogWarning(ex, "Failed to inject auth.json into container {ContainerId}", container.ID);
+                    }
+                }
+            }
+
             await onLogLine("[INFO] Workspace setup complete", LogStream.Stdout);
+        }
+
+        if (useManualMode)
+        {
+            // ── Manual mode ───────────────────────────────────────────────────────
+            // Workspace is fully set up (git clone, credentials, opencode config, DinD).
+            // The container stays alive for the user to interact with via a live terminal.
+            // Emit the container ID as a marker so IssueWorker can persist it on the session.
+            try
+            {
+                // Inject the CI/CD trigger script so the user can push and trigger a CI/CD run
+                // with a single command from the terminal.
+                await InjectCiCdTriggerScriptAsync(container.ID, onLogLine, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                await onLogLine($"[WARN] Failed to inject CI/CD trigger script: {ex.Message}", LogStream.Stderr);
+                logger.LogWarning(ex, "Failed to inject CI/CD trigger script in container {ContainerId}", container.ID);
+            }
+
+            // Emit the container ID marker so IssueWorker can persist it on AgentSession.ContainerId.
+            await onLogLine($"{ManualModeContainerIdMarker}{container.ID}", LogStream.Stdout);
+            await onLogLine("[INFO] Manual mode: container ready — connect via the terminal in the web UI", LogStream.Stdout);
+
+            // Return the container ID. The container stays running; IssueWorker will keep the session
+            // in Running state until the user explicitly cancels it.
+            return container.ID;
         }
 
         if (useHttpServerMode)
@@ -1127,6 +1198,189 @@ public class DockerAgentRuntime(
             await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
         }
         return false;
+    }
+
+    /// <summary>
+    /// Injects a backed-up opencode <c>auth.json</c> file into the container at
+    /// <c>/root/.local/share/opencode/auth.json</c>.
+    /// Called when <c>ISSUEPIT_AUTH_JSON_CONTENT</c> is set in the container environment,
+    /// meaning a previously captured auth backup should be restored for this run.
+    /// </summary>
+    private async Task InjectAuthJsonAsync(
+        string containerId,
+        string authJsonContent,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        const string AuthJsonPath = "/root/.local/share/opencode";
+        const string AuthJsonFileName = "auth.json";
+
+        // Normalise line endings for the JSON file.
+        var authBytes = System.Text.Encoding.UTF8.GetBytes(authJsonContent.Replace("\r\n", "\n").Replace("\r", "\n"));
+
+        // Ensure the target directory exists inside the container.
+        await ExecCommandAsync(containerId, ["/bin/sh", "-c", $"mkdir -p {AuthJsonPath}"],
+            (_, _) => Task.CompletedTask, cancellationToken, workingDir: "/");
+
+        using var tarBuffer = new MemoryStream();
+        await using (var tarWriter = new TarWriter(tarBuffer, TarEntryFormat.Ustar, leaveOpen: true))
+        {
+            var entry = new UstarTarEntry(TarEntryType.RegularFile, AuthJsonFileName)
+            {
+                Mode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
+                DataStream = new MemoryStream(authBytes),
+            };
+            await tarWriter.WriteEntryAsync(entry, cancellationToken);
+        }
+
+        tarBuffer.Seek(0, SeekOrigin.Begin);
+        await dockerClient.Containers.ExtractArchiveToContainerAsync(
+            containerId,
+            new CopyToContainerParameters { Path = AuthJsonPath },
+            tarBuffer,
+            cancellationToken);
+
+        await onLogLine("[INFO] auth.json restored from backup — GitHub authentication available", LogStream.Stdout);
+    }
+
+    /// <summary>
+    /// Injects the <c>issuepit-trigger-cicd</c> script into the container at
+    /// <c>/usr/local/bin/issuepit-trigger-cicd</c>.
+    /// The script allows the user in a manual terminal session to push the current feature
+    /// branch and trigger a CI/CD run with a single command, then waits for the result.
+    ///
+    /// Prerequisites in the container environment:
+    ///   - <c>ISSUEPIT_API_URL</c>: base URL of the IssuePit API (e.g. http://host.docker.internal:5000)
+    ///   - <c>ISSUEPIT_MCP_TOKEN</c>: ephemeral token accepted by the API via <c>X-Mcp-Token</c>
+    ///   - <c>ISSUEPIT_SESSION_ID</c>: the agent session ID used to look up project/branch server-side
+    /// </summary>
+    private async Task InjectCiCdTriggerScriptAsync(
+        string containerId,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        const string scriptContent = """
+            #!/bin/sh
+            # issuepit-trigger-cicd — commit (optional), push the current branch, trigger a
+            # CI/CD run in IssuePit, wait for it to finish, and exit with the CI/CD result.
+            #
+            # Usage:
+            #   issuepit-trigger-cicd              # push + trigger (requires clean working tree)
+            #   issuepit-trigger-cicd --commit      # auto-commit all changes, then push + trigger
+            #
+            # Environment variables (injected by IssuePit on container startup):
+            #   ISSUEPIT_API_URL      Base URL of the IssuePit API
+            #   ISSUEPIT_MCP_TOKEN    Ephemeral auth token accepted by the API
+            #   ISSUEPIT_SESSION_ID   Agent session ID used to resolve project / branch
+            set -e
+            cd /workspace 2>/dev/null || true
+
+            AUTO_COMMIT=0
+            if [ "$1" = "--commit" ]; then
+              AUTO_COMMIT=1
+            fi
+
+            # 1. Fail if there are uncommitted changes (unless --commit was given).
+            if [ "$AUTO_COMMIT" = "1" ]; then
+              echo "[INFO] Staging all changes..."
+              git add -A
+              if ! git diff --cached --quiet; then
+                git commit -m "chore: auto-commit before CI/CD trigger"
+                echo "[INFO] Changes committed."
+              else
+                echo "[INFO] Nothing to commit."
+              fi
+            elif ! git diff --quiet || ! git diff --cached --quiet; then
+              echo "[ERROR] Uncommitted changes detected. Commit or stash your changes first, or run with --commit."
+              exit 1
+            fi
+
+            # 2. Push the current feature branch.
+            echo "[INFO] Pushing branch '$(git branch --show-current)' to origin..."
+            git push --set-upstream origin "$(git branch --show-current)"
+            echo "[OK] Branch pushed."
+
+            # 3. Trigger a CI/CD run via the IssuePit API.
+            if [ -z "$ISSUEPIT_API_URL" ] || [ -z "$ISSUEPIT_MCP_TOKEN" ] || [ -z "$ISSUEPIT_SESSION_ID" ]; then
+              echo "[WARN] ISSUEPIT_API_URL / ISSUEPIT_MCP_TOKEN / ISSUEPIT_SESSION_ID not set — skipping IssuePit CI/CD trigger."
+              exit 0
+            fi
+
+            echo "[INFO] Triggering CI/CD run via IssuePit API..."
+            TRIGGER_RESPONSE=$(curl -s -X POST \
+              "$ISSUEPIT_API_URL/api/agent-sessions/$ISSUEPIT_SESSION_ID/trigger-cicd" \
+              -H "X-Mcp-Token: $ISSUEPIT_MCP_TOKEN" \
+              -H "Content-Type: application/json")
+
+            RUN_ID=$(echo "$TRIGGER_RESPONSE" | grep -o '"runId":"[^"]*"' | cut -d'"' -f4)
+            if [ -z "$RUN_ID" ]; then
+              echo "[ERROR] Failed to trigger CI/CD run. API response:"
+              echo "$TRIGGER_RESPONSE"
+              exit 1
+            fi
+
+            echo "[INFO] CI/CD run queued: $RUN_ID"
+            echo "[INFO] Tracking run at: $ISSUEPIT_API_URL/../projects/runs/cicd/$RUN_ID"
+
+            # 4. Poll for completion (max 30 minutes, every 10 seconds).
+            POLL_MAX=180
+            POLL_COUNT=0
+            while [ "$POLL_COUNT" -lt "$POLL_MAX" ]; do
+              STATUS_RESPONSE=$(curl -s \
+                "$ISSUEPIT_API_URL/api/cicd-runs/$RUN_ID" \
+                -H "X-Mcp-Token: $ISSUEPIT_MCP_TOKEN")
+
+              STATUS=$(echo "$STATUS_RESPONSE" | grep -o '"statusName":"[^"]*"' | cut -d'"' -f4)
+
+              case "$STATUS" in
+                Succeeded|SucceededWithWarnings)
+                  echo "[OK] CI/CD run completed successfully (status: $STATUS)."
+                  exit 0
+                  ;;
+                Failed|Cancelled|TimedOut)
+                  echo "[FAIL] CI/CD run finished with status: $STATUS."
+                  exit 1
+                  ;;
+                Pending|Running|WaitingForApproval)
+                  printf "."
+                  ;;
+                *)
+                  echo "[WARN] Unknown CI/CD status '$STATUS' — continuing to poll..."
+                  ;;
+              esac
+
+              POLL_COUNT=$((POLL_COUNT + 1))
+              sleep 10
+            done
+
+            echo ""
+            echo "[WARN] Timed out waiting for CI/CD run $RUN_ID after 30 minutes."
+            exit 1
+            """;
+
+        var scriptBytes = System.Text.Encoding.UTF8.GetBytes(scriptContent.Replace("\r\n", "\n").Replace("\r", "\n"));
+
+        using var tarBuffer = new MemoryStream();
+        await using (var tarWriter = new TarWriter(tarBuffer, TarEntryFormat.Ustar, leaveOpen: true))
+        {
+            var entry = new UstarTarEntry(TarEntryType.RegularFile, "issuepit-trigger-cicd")
+            {
+                Mode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                       | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
+                       | UnixFileMode.OtherRead | UnixFileMode.OtherExecute,
+                DataStream = new MemoryStream(scriptBytes),
+            };
+            await tarWriter.WriteEntryAsync(entry, cancellationToken);
+        }
+
+        tarBuffer.Seek(0, SeekOrigin.Begin);
+        await dockerClient.Containers.ExtractArchiveToContainerAsync(
+            containerId,
+            new CopyToContainerParameters { Path = "/usr/local/bin" },
+            tarBuffer,
+            cancellationToken);
+
+        await onLogLine("[INFO] CI/CD trigger script installed at /usr/local/bin/issuepit-trigger-cicd", LogStream.Stdout);
     }
 
     /// <summary>

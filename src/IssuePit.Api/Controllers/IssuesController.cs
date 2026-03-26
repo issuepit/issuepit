@@ -418,7 +418,7 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
 
             // Create a pending session immediately so the UI can show a queued run before
             // the ExecutionClient picks up the Kafka message.
-            var queuedSession = await CreatePendingAgentSessionAsync(agent.Id, issue.Id);
+            var queuedSession = await CreatePendingAgentSessionAsync(agent.Id, issue.Id, issue.ProjectId);
 
             try
             {
@@ -453,13 +453,14 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
     /// Creates and persists a <see cref="AgentSession"/> with <see cref="AgentSessionStatus.Pending"/> status
     /// so the UI can show a queued run immediately, before the ExecutionClient picks up the Kafka message.
     /// </summary>
-    private async Task<AgentSession> CreatePendingAgentSessionAsync(Guid agentId, Guid issueId)
+    private async Task<AgentSession> CreatePendingAgentSessionAsync(Guid agentId, Guid issueId, Guid projectId)
     {
         var session = new AgentSession
         {
             Id = Guid.NewGuid(),
             AgentId = agentId,
             IssueId = issueId,
+            ProjectId = projectId,
             Status = AgentSessionStatus.Pending,
         };
         db.AgentSessions.Add(session);
@@ -609,7 +610,7 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
         {
             // Create a pending session immediately so the UI can show a queued run before
             // the ExecutionClient picks up the Kafka message.
-            var queuedSession = await CreatePendingAgentSessionAsync(req.AgentId.Value, id);
+            var queuedSession = await CreatePendingAgentSessionAsync(req.AgentId.Value, id, issue.ProjectId);
 
             try
             {
@@ -899,7 +900,7 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
         var agentSessions = await db.AgentSessions
             .Include(s => s.Agent)
             .Include(s => s.CiCdRuns)
-            .Where(s => s.IssueId == id && s.Issue.Project!.Organization.TenantId == ctx.CurrentTenant.Id)
+            .Where(s => s.IssueId == id && s.Project!.Organization.TenantId == ctx.CurrentTenant.Id)
             .OrderByDescending(s => s.StartedAt)
             .Select(s => new
             {

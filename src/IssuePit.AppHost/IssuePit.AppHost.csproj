@@ -21,6 +21,7 @@
     <ProjectReference Include="..\IssuePit.ExecutionClient\IssuePit.ExecutionClient.csproj" />
     <ProjectReference Include="..\IssuePit.CiCdClient\IssuePit.CiCdClient.csproj" />
     <ProjectReference Include="..\IssuePit.VoskModelDownloader\IssuePit.VoskModelDownloader.csproj" />
+    <ProjectReference Include="..\IssuePit.TerminalServer\IssuePit.TerminalServer.csproj" />
     <ProjectReference Include="..\IssuePit.GitServer\IssuePit.GitServer.csproj" />
   </ItemGroup>
 </Project>

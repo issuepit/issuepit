@@ -16,10 +16,20 @@ public class AgentSession
     [ForeignKey(nameof(AgentId))]
     public Agent Agent { get; set; } = null!;
 
-    public Guid IssueId { get; set; }
+    public Guid? IssueId { get; set; }
 
     [ForeignKey(nameof(IssueId))]
-    public Issue Issue { get; set; } = null!;
+    public Issue? Issue { get; set; }
+
+    /// <summary>
+    /// The project this session belongs to. Always set — derived from <see cref="Issue"/>
+    /// for issue-based sessions, or passed directly for issue-free manual sessions.
+    /// Stored directly so project-scoped queries do not require a join through <see cref="Issue"/>.
+    /// </summary>
+    public Guid ProjectId { get; set; }
+
+    [ForeignKey(nameof(ProjectId))]
+    public Project? Project { get; set; }
 
     public Guid? IssueTaskId { get; set; }
 
@@ -136,4 +146,14 @@ public class AgentSession
     /// </summary>
     [NotMapped]
     public AgentPushPolicy PushPolicy { get; set; } = AgentPushPolicy.Forbidden;
+
+    /// <summary>
+    /// The ID of the running Docker container for this session.
+    /// Set when the session is in manual mode (<see cref="Agent.ManualMode"/>) so the API
+    /// terminal endpoint can attach to the container and relay PTY I/O to the browser.
+    /// Also set for autonomous runs while the container is alive.
+    /// Cleared when the container is removed.
+    /// </summary>
+    [MaxLength(200)]
+    public string? ContainerId { get; set; }
 }

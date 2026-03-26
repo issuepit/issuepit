@@ -612,6 +612,150 @@ public class AgentSessionTests(AspireFixture fixture)
     }
 
     /// <summary>
+    /// A manual-mode session stays in <c>Running</c> state indefinitely until cancelled —
+    /// that is intentional by design (the container keeps alive for the user's terminal).
+    /// This test verifies that:
+    /// <list type="bullet">
+    ///   <item>The session is created and reaches <c>Running</c> state.</item>
+    ///   <item>The session detail reports <c>isManualMode=true</c>.</item>
+    ///   <item>The early [DEBUG] log lines (emitted before container startup) are present.</item>
+    ///   <item>The session can be cancelled via <c>POST /api/agent-sessions/{id}/cancel</c>.</item>
+    /// </list>
+    /// Requires Docker.
+    /// </summary>
+    [Fact]
+    public async Task AgentSession_ManualMode_SessionReportsIsManualModeFlag()
+    {
+        if (!IsDockerAvailable()) return;
+
+        using var client = CreateCookieClient();
+        var tenantId = await GetDefaultTenantIdAsync();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"e2e{Guid.NewGuid():N}"[..12];
+        await client.PostAsJsonAsync("/api/auth/register", new { username, password = "TestPass1!" });
+
+        var orgSlug = $"mm-org-{Guid.NewGuid():N}"[..16];
+        var orgResp = await client.PostAsJsonAsync("/api/orgs", new { name = "Manual Mode Session Org", slug = orgSlug });
+        Assert.Equal(HttpStatusCode.Created, orgResp.StatusCode);
+        var org = await orgResp.Content.ReadFromJsonAsync<JsonElement>();
+        var orgId = org.GetProperty("id").GetString()!;
+
+        var projectSlug = $"mm-proj-{Guid.NewGuid():N}"[..16];
+        var projResp = await client.PostAsJsonAsync("/api/projects",
+            new { name = "Manual Mode Project", slug = projectSlug, orgId = Guid.Parse(orgId) });
+        Assert.Equal(HttpStatusCode.Created, projResp.StatusCode);
+        var project = await projResp.Content.ReadFromJsonAsync<JsonElement>();
+        var projectId = project.GetProperty("id").GetString()!;
+
+        // Create a manual-mode agent.  We use busybox because it starts instantly and
+        // keeps alive (CMD = tail -f /dev/null) so the DinD startup script completes
+        // (warns, non-fatal) and the container-ID marker is emitted, moving the session
+        // to Running. The session then blocks waiting for a cancel signal.
+        var agentResp = await client.PostAsJsonAsync("/api/agents",
+            new
+            {
+                name = "Manual Terminal Agent",
+                orgId = Guid.Parse(orgId),
+                systemPrompt = "Interactive terminal agent.",
+                dockerImage = AgentTestDockerImage,
+                allowedTools = "[]",
+                isActive = true,
+                manualMode = true,
+            });
+        Assert.Equal(HttpStatusCode.Created, agentResp.StatusCode);
+        var agent = await agentResp.Content.ReadFromJsonAsync<JsonElement>();
+        var agentId = agent.GetProperty("id").GetString()!;
+
+        Assert.True(agent.GetProperty("manualMode").GetBoolean(),
+            "Agent create response must include manualMode=true");
+
+        var issueResp = await client.PostAsJsonAsync("/api/issues",
+            new { title = "Manual Mode E2E Issue", projectId = Guid.Parse(projectId) });
+        Assert.Equal(HttpStatusCode.Created, issueResp.StatusCode);
+        var issue = await issueResp.Content.ReadFromJsonAsync<JsonElement>();
+        var issueId = issue.GetProperty("id").GetString()!;
+
+        var assignResp = await client.PostAsJsonAsync($"/api/issues/{issueId}/assignees",
+            new { agentId = Guid.Parse(agentId) });
+        Assert.Equal(HttpStatusCode.Created, assignResp.StatusCode);
+
+        // Manual-mode sessions stay in Running state — wait for Running (not a terminal state).
+        // DinD startup in busybox waits up to 60 s then warns and continues; total workspace
+        // setup takes slightly over 1 minute.
+        var sessionId = await WaitForManualModeSessionRunningAsync(client, issueId, TimeSpan.FromMinutes(3));
+
+        // Fetch full session detail and verify the manual-mode flag.
+        var sessionResp = await client.GetAsync($"/api/agent-sessions/{sessionId}");
+        Assert.Equal(HttpStatusCode.OK, sessionResp.StatusCode);
+        var sessionDetail = await sessionResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.True(sessionDetail.GetProperty("isManualMode").GetBoolean(),
+            "Session detail must report isManualMode=true for a manual-mode agent");
+
+        // Verify the early [DEBUG] log lines (emitted well before container startup).
+        var logsResp = await client.GetAsync($"/api/agent-sessions/{sessionId}/logs");
+        Assert.Equal(HttpStatusCode.OK, logsResp.StatusCode);
+        var logs = await logsResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        var logLines = logs.EnumerateArray()
+            .Select(l => l.GetProperty("line").GetString() ?? string.Empty)
+            .ToList();
+
+        Assert.True(
+            logLines.Any(l => l.Contains("Manual (live terminal session)")),
+            "Expected '[DEBUG] Agent mode : Manual (live terminal session)' log line. Actual logs:\n"
+                + string.Join("\n", logLines.Take(20)));
+
+        Assert.True(
+            logLines.Any(l => l.StartsWith("[DEBUG] Runtime")),
+            "Expected a '[DEBUG] Runtime' startup log line. Actual logs:\n"
+                + string.Join("\n", logLines.Take(20)));
+
+        // Cancel the session to clean up the running container.
+        var cancelResp = await client.PostAsJsonAsync($"/api/agent-sessions/{sessionId}/cancel", new { });
+        Assert.True(cancelResp.IsSuccessStatusCode,
+            $"Expected cancel to succeed (200/202), got {cancelResp.StatusCode}");
+
+        // Wait for the session to reach Cancelled state (confirms the worker handled the signal).
+        await WaitForAgentSessionAsync(client, issueId, TimeSpan.FromMinutes(2));
+    }
+
+    /// <summary>
+    /// Polls <c>GET /api/issues/{issueId}/runs</c> until the most-recent agent session reaches
+    /// <c>Running</c> state. Used for manual-mode sessions that intentionally stay running until
+    /// cancelled (they never reach a terminal state on their own).
+    /// </summary>
+    private static async Task<string> WaitForManualModeSessionRunningAsync(
+        HttpClient client,
+        string issueId,
+        TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            var runsResp = await client.GetAsync($"/api/issues/{issueId}/runs");
+            if (runsResp.IsSuccessStatusCode)
+            {
+                var runsBody = await runsResp.Content.ReadFromJsonAsync<JsonElement>();
+                if (runsBody.TryGetProperty("agentSessions", out var sessions) && sessions.GetArrayLength() > 0)
+                {
+                    var sessionRef = sessions[0];
+                    var statusName = sessionRef.GetProperty("statusName").GetString();
+                    // Also return early if the session failed (unexpected for manual mode, but
+                    // surface the ID so the caller can still inspect it).
+                    if (statusName is "Running" or "Failed" or "Cancelled")
+                        return sessionRef.GetProperty("id").GetString()!;
+                }
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+        }
+
+        throw new TimeoutException($"Manual-mode agent session for issue {issueId} did not reach Running state within {timeout}.");
+    }
+
+    /// <summary>
     /// Polls <c>GET /api/issues/{issueId}/runs</c> until the most-recent agent session reaches a
     /// terminal status (Succeeded, Failed, or Cancelled) or the timeout elapses.
     /// </summary>

@@ -76,6 +76,19 @@
                 </div>
               </div>
             </div>
+            <!-- Manual mode: skip opencode CLI, keep container alive for interactive terminal -->
+            <div v-if="form.runnerType === RunnerTypeEnum.OpenCode" class="col-span-2">
+              <div class="flex items-center gap-3">
+                <input id="manualMode" v-model="form.manualMode" type="checkbox"
+                  class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-brand-500 focus:ring-brand-500 focus:ring-offset-gray-900" />
+                <div>
+                  <label for="manualMode" class="text-sm font-medium text-gray-300 cursor-pointer">Manual Mode</label>
+                  <p class="text-xs text-gray-500">
+                    Skip automatic opencode CLI invocations. The container stays alive and you interact via a live web terminal.
+                  </p>
+                </div>
+              </div>
+            </div>
             <!-- HTTP Server Password (opencode server mode only) -->
             <div v-if="form.runnerType === RunnerTypeEnum.OpenCode && form.useHttpServer" class="col-span-2">
               <div class="flex items-center justify-between mb-1.5">
@@ -274,6 +287,7 @@ const form = reactive({
   model: '',
   agentType: null as OpenCodeAgentType | null,
   useHttpServer: false,
+  manualMode: false,
   httpServerPassword: '',
 })
 
@@ -377,6 +391,7 @@ function loadForm() {
   form.model = agent.model ?? ''
   form.agentType = toAgentType(agent.agentType)
   form.useHttpServer = agent.useHttpServer ?? false
+  form.manualMode = agent.manualMode ?? false
   form.httpServerPassword = ''
   toolsInput.value = parseTools(agent.allowedTools).join(', ')
 }
@@ -391,6 +406,7 @@ function buildPayload(allowedTools: string[]) {
     model: form.model || undefined,
     agentType: form.agentType ?? undefined,
     useHttpServer: form.useHttpServer,
+    manualMode: form.manualMode,
     httpServerPassword: form.httpServerPassword || undefined,
     allowedTools: JSON.stringify(allowedTools),
   }

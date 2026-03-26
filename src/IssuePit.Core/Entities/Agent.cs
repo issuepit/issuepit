@@ -76,6 +76,14 @@ public class Agent
     [ForeignKey(nameof(ParentAgentId))]
     public Agent? ParentAgent { get; set; }
 
+    /// <summary>
+    /// When true, this agent runs in manual mode: the container is set up identically to an
+    /// autonomous run (git clone, credentials, opencode config) but instead of executing the
+    /// runner CLI automatically, a live terminal session is opened so the user can drive the
+    /// agent interactively from the web UI.
+    /// </summary>
+    public bool ManualMode { get; set; }
+
     public ICollection<Agent> ChildAgents { get; set; } = [];
 
     public ICollection<AgentMcpServer> AgentMcpServers { get; set; } = [];

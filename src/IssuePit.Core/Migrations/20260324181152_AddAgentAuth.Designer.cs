@@ -3,6 +3,7 @@ using System;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace IssuePit.Core.Migrations
 {
     [DbContext(typeof(IssuePitDbContext))]
-    partial class IssuePitDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260324181152_AddAgentAuth")]
+    partial class AddAgentAuth
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -42,6 +45,7 @@ namespace IssuePit.Core.Migrations
                         .HasColumnType("boolean");
 
                     b.Property<string>("DockerImage")
+                        .IsRequired()
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
@@ -211,7 +215,7 @@ namespace IssuePit.Core.Migrations
                     b.Property<string>("GitRemoteCheckResultsJson")
                         .HasColumnType("text");
 
-                    b.Property<Guid?>("IssueId")
+                    b.Property<Guid>("IssueId")
                         .HasColumnType("uuid");
 
                     b.Property<Guid?>("IssueTaskId")
@@ -224,9 +228,6 @@ namespace IssuePit.Core.Migrations
                     b.Property<string>("OpenCodeSessionId")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uuid");
 
                     b.Property<Guid?>("RuntimeConfigId")
                         .HasColumnType("uuid");
@@ -251,8 +252,6 @@ namespace IssuePit.Core.Migrations
                     b.HasIndex("IssueId");
 
                     b.HasIndex("IssueTaskId");
-
-                    b.HasIndex("ProjectId");
 
                     b.HasIndex("RuntimeConfigId");
 
@@ -428,10 +427,6 @@ namespace IssuePit.Core.Migrations
                     b.Property<string>("StorageKey")
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
-
-                    b.Property<string>("UnwrappedContentType")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
 
                     b.HasKey("Id");
 
@@ -1233,154 +1228,6 @@ namespace IssuePit.Core.Migrations
                     b.ToTable("git_server_repos");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.HetznerServer", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("ActiveJobCount")
-                        .HasColumnType("integer");
-
-                    b.Property<double?>("CpuLoadPercent")
-                        .HasColumnType("double precision");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long>("HetznerServerId")
-                        .HasColumnType("bigint");
-
-                    b.Property<long?>("HetznerSshKeyId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Ipv4Address")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("Ipv6Address")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("LastError")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("LastJobEndedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Location")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<Guid>("OrgId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int?>("RamTotalMb")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("RamUsedMb")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("ReadyAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ServerType")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<int?>("SetupDurationSeconds")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("SshPrivateKey")
-                        .HasColumnType("text");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("TotalJobCount")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrgId");
-
-                    b.ToTable("hetzner_servers");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.HetznerServerRuntimeHistory", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int?>("BillableSeconds")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("EstimatedCostEuroCents")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("HetznerServerId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Location")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<Guid>("OrgId")
-                        .HasColumnType("uuid");
-
-                    b.Property<double?>("PeakCpuLoadPercent")
-                        .HasColumnType("double precision");
-
-                    b.Property<int?>("PeakRamUsedMb")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("ProvisionedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("ReadyAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("RecordedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ServerType")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<int?>("SetupDurationSeconds")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("TotalJobCount")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("TotalRuntimeSeconds")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("HetznerServerId");
-
-                    b.HasIndex("OrgId");
-
-                    b.ToTable("hetzner_server_runtime_histories");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.Issue", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1392,12 +1239,6 @@ namespace IssuePit.Core.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("ExternalId")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid?>("ExternalSourceId")
-                        .HasColumnType("uuid");
 
                     b.Property<string>("GitBranch")
                         .HasColumnType("text");
@@ -1444,8 +1285,6 @@ namespace IssuePit.Core.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("ExternalSourceId");
 
                     b.HasIndex("MilestoneId");
 
@@ -1601,35 +1440,6 @@ namespace IssuePit.Core.Migrations
                     b.ToTable("issue_events");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.IssueExternalSource", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Slug")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("Type")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("Url")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProjectId");
-
-                    b.ToTable("issue_external_sources");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.IssueGitMapping", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1762,109 +1572,6 @@ namespace IssuePit.Core.Migrations
                     b.HasIndex("IssueId");
 
                     b.ToTable("issue_tasks");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.JiraSyncConfig", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("ApiKeyId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("ImportComments")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("JiraBaseUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("JiraEmail")
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)");
-
-                    b.Property<string>("JiraProjectKey")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<bool>("OnlyImportWithParent")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("TriggerMode")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ApiKeyId");
-
-                    b.HasIndex("ProjectId");
-
-                    b.ToTable("jira_sync_configs");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.JiraSyncRun", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("StartedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Summary")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProjectId");
-
-                    b.ToTable("jira_sync_runs");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.JiraSyncRunLog", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Level")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Message")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("SyncRunId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("Timestamp")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SyncRunId");
-
-                    b.ToTable("jira_sync_run_logs");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.KanbanBoard", b =>
@@ -2282,10 +1989,6 @@ namespace IssuePit.Core.Migrations
                     b.Property<string>("ActRunnerImage")
                         .HasColumnType("text");
 
-                    b.Property<string>("ActRunnerImageSourceFile")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
                     b.Property<string>("ActSecrets")
                         .HasColumnType("text");
 
@@ -2297,11 +2000,6 @@ namespace IssuePit.Core.Migrations
 
                     b.Property<int?>("ConcurrentJobs")
                         .HasColumnType("integer");
-
-                    b.Property<string>("ConfigFieldSourcesJson")
-                        .HasMaxLength(10000)
-                        .HasColumnType("character varying(10000)")
-                        .HasColumnName("config_field_sources");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -2356,31 +2054,6 @@ namespace IssuePit.Core.Migrations
                     b.ToTable("org_members");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.PinnedProject", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProjectId");
-
-                    b.HasIndex("UserId", "ProjectId")
-                        .IsUnique();
-
-                    b.ToTable("pinned_projects");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.Project", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2392,10 +2065,6 @@ namespace IssuePit.Core.Migrations
 
                     b.Property<string>("ActRunnerImage")
                         .HasColumnType("text");
-
-                    b.Property<string>("ActRunnerImageSourceFile")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
 
                     b.Property<string>("ActSecrets")
                         .HasColumnType("text");
@@ -2412,11 +2081,6 @@ namespace IssuePit.Core.Migrations
 
                     b.Property<int?>("ConcurrentJobs")
                         .HasColumnType("integer");
-
-                    b.Property<string>("ConfigFieldSourcesJson")
-                        .HasMaxLength(10000)
-                        .HasColumnType("character varying(10000)")
-                        .HasColumnName("config_field_sources");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -2464,9 +2128,6 @@ namespace IssuePit.Core.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
-
-                    b.Property<bool>("UnwrapSingleFileArtifacts")
-                        .HasColumnType("boolean");
 
                     b.Property<bool?>("UseNewActionCache")
                         .HasColumnType("boolean");
@@ -3196,17 +2857,13 @@ namespace IssuePit.Core.Migrations
 
                     b.HasOne("IssuePit.Core.Entities.Issue", "Issue")
                         .WithMany()
-                        .HasForeignKey("IssueId");
+                        .HasForeignKey("IssueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.HasOne("IssuePit.Core.Entities.IssueTask", "IssueTask")
                         .WithMany()
                         .HasForeignKey("IssueTaskId");
-
-                    b.HasOne("IssuePit.Core.Entities.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
 
                     b.HasOne("IssuePit.Core.Entities.RuntimeConfiguration", "RuntimeConfig")
                         .WithMany()
@@ -3217,8 +2874,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("Issue");
 
                     b.Navigation("IssueTask");
-
-                    b.Navigation("Project");
 
                     b.Navigation("RuntimeConfig");
                 });
@@ -3580,42 +3235,8 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("Project");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.HetznerServer", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrgId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Organization");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.HetznerServerRuntimeHistory", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.HetznerServer", "HetznerServer")
-                        .WithMany()
-                        .HasForeignKey("HetznerServerId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("IssuePit.Core.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrgId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("HetznerServer");
-
-                    b.Navigation("Organization");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.Issue", b =>
                 {
-                    b.HasOne("IssuePit.Core.Entities.IssueExternalSource", "ExternalSource")
-                        .WithMany()
-                        .HasForeignKey("ExternalSourceId");
-
                     b.HasOne("IssuePit.Core.Entities.Milestone", "Milestone")
                         .WithMany()
                         .HasForeignKey("MilestoneId");
@@ -3629,8 +3250,6 @@ namespace IssuePit.Core.Migrations
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("ExternalSource");
 
                     b.Navigation("Milestone");
 
@@ -3719,17 +3338,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("Issue");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.IssueExternalSource", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Project");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.IssueGitMapping", b =>
                 {
                     b.HasOne("IssuePit.Core.Entities.Issue", "Issue")
@@ -3802,45 +3410,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("Assignee");
 
                     b.Navigation("Issue");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.JiraSyncConfig", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.ApiKey", "ApiKey")
-                        .WithMany()
-                        .HasForeignKey("ApiKeyId");
-
-                    b.HasOne("IssuePit.Core.Entities.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ApiKey");
-
-                    b.Navigation("Project");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.JiraSyncRun", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Project");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.JiraSyncRunLog", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.JiraSyncRun", "SyncRun")
-                        .WithMany("Logs")
-                        .HasForeignKey("SyncRunId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("SyncRun");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.KanbanBoard", b =>
@@ -4047,25 +3616,6 @@ namespace IssuePit.Core.Migrations
                         .IsRequired();
 
                     b.Navigation("Organization");
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.PinnedProject", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("IssuePit.Core.Entities.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Project");
 
                     b.Navigation("User");
                 });
@@ -4395,11 +3945,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("Links");
 
                     b.Navigation("SubIssues");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.JiraSyncRun", b =>
-                {
-                    b.Navigation("Logs");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.KanbanBoard", b =>

@@ -10,9 +10,9 @@ public sealed class KafkaHealthCheck : IHealthCheck, IDisposable
     public KafkaHealthCheck(string bootstrapServers)
     {
         var config = new AdminClientConfig { BootstrapServers = bootstrapServers };
-        //config.Set("log_level", "0");
+        config.Set("log_level", "0");
         _adminClient = new AdminClientBuilder(config)
-        //    .SetLogHandler((_, _) => { })
+            .SetLogHandler((_, _) => { })
             .Build();
     }
 

@@ -404,6 +404,7 @@ export interface Agent {
   agentType?: OpenCodeAgentType
   useHttpServer?: boolean
   hasHttpServerPassword?: boolean
+  manualMode?: boolean
   parentAgentId?: string
   childAgents?: AgentChild[]
   createdAt: string
@@ -886,6 +887,10 @@ export interface AgentSession {
   openCodeDbS3Url?: string | null
   /** CI/CD runs triggered by this agent session. */
   cicdRuns?: CiCdRun[]
+  /** Whether this session was started by a manual-mode agent. */
+  isManualMode?: boolean
+  /** Running Docker container ID (set for active manual-mode sessions). */
+  containerId?: string | null
 }
 
 export interface DashboardAgentSession extends AgentSession {
@@ -1559,4 +1564,17 @@ export interface GitPat {
   createdAt: string
   expiresAt?: string
   lastUsedAt?: string
+}
+
+export interface AgentAuth {
+  id: string
+  label: string
+  capturedAt: string
+  lastUsedAt?: string
+  restoreOnAgentRuns: boolean
+  agentSessionId?: string
+}
+
+export interface AgentAuthDetail extends AgentAuth {
+  authJsonContent: string
 }

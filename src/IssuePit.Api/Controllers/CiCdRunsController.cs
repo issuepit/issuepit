@@ -166,8 +166,8 @@ public class CiCdRunsController(
                 {
                     s.Id,
                     ProjectId = run.ProjectId,
-                    IssueTitle = s.Issue.Title,
-                    IssueNumber = s.Issue.Number,
+                    IssueTitle = s.Issue != null ? s.Issue.Title : null,
+                    IssueNumber = s.Issue != null ? (int?)s.Issue.Number : null,
                     s.CommitSha,
                     GitBranch = s.GitBranch,
                     s.Status,

@@ -27,6 +27,7 @@ var topics = new[]
 };
 
 using var adminClient = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = bootstrapServers })
+    .SetLogHandler((_, _) => { })
     .Build();
 
 var metadata = adminClient.GetMetadata(TimeSpan.FromSeconds(30));
