@@ -37,6 +37,12 @@
           Lanes
         </button>
 
+        <!-- Manage lanes page -->
+        <NuxtLink v-if="activeBoard" :to="`/projects/${id}/kanban/lanes`"
+          class="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">
+          Manage Lanes
+        </NuxtLink>
+
         <!-- Manage transitions -->
         <button v-if="activeBoard" @click="openTransitions"
           :class="[
@@ -543,6 +549,31 @@
               <input v-model="newTransIsAuto" type="checkbox" class="accent-brand-500" />
               Auto-trigger (by agent)
             </label>
+            <div class="border-t border-gray-800 pt-2 mt-1">
+              <p class="text-xs text-gray-500 mb-1.5">Requirements</p>
+              <div class="space-y-1">
+                <label class="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+                  <input v-model="newTransRequireGreenCiCd" type="checkbox" class="accent-brand-500" />
+                  Require passing CI/CD run
+                </label>
+                <label class="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+                  <input v-model="newTransRequireCodeReview" type="checkbox" class="accent-brand-500" />
+                  Require code review comment
+                </label>
+                <label class="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+                  <input v-model="newTransRequirePlanComment" type="checkbox" class="accent-brand-500" />
+                  Require plan comment
+                </label>
+                <label class="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+                  <input v-model="newTransRequireTasksDone" type="checkbox" class="accent-brand-500" />
+                  Require all tasks done
+                </label>
+                <label class="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+                  <input v-model="newTransRequireSubIssuesDone" type="checkbox" class="accent-brand-500" />
+                  Require all sub-issues done
+                </label>
+              </div>
+            </div>
           </div>
           <button @click="submitAddTransition"
             class="mt-3 w-full bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
@@ -666,6 +697,11 @@ const newTransName = ref('')
 const newTransFrom = ref('')
 const newTransTo = ref('')
 const newTransIsAuto = ref(false)
+const newTransRequireGreenCiCd = ref(false)
+const newTransRequireCodeReview = ref(false)
+const newTransRequirePlanComment = ref(false)
+const newTransRequireTasksDone = ref(false)
+const newTransRequireSubIssuesDone = ref(false)
 
 // ── Lane-property-aware issue grouping ───────────────────────────────────
 // Returns a map of columnId → Issue[] based on the active board's LaneProperty.
@@ -1024,11 +1060,21 @@ async function submitAddTransition() {
     fromColumnId: newTransFrom.value,
     toColumnId: newTransTo.value,
     isAuto: newTransIsAuto.value,
+    requireGreenCiCd: newTransRequireGreenCiCd.value,
+    requireCodeReview: newTransRequireCodeReview.value,
+    requirePlanComment: newTransRequirePlanComment.value,
+    requireTasksDone: newTransRequireTasksDone.value,
+    requireSubIssuesDone: newTransRequireSubIssuesDone.value,
   })
   newTransName.value = ''
   newTransFrom.value = ''
   newTransTo.value = ''
   newTransIsAuto.value = false
+  newTransRequireGreenCiCd.value = false
+  newTransRequireCodeReview.value = false
+  newTransRequirePlanComment.value = false
+  newTransRequireTasksDone.value = false
+  newTransRequireSubIssuesDone.value = false
 }
 
 async function deleteTransition(transitionId: string) {

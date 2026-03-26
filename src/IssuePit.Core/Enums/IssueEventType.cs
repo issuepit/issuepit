@@ -31,4 +31,6 @@ public enum IssueEventType
     MilestoneCleared,
     [JsonStringEnumMemberName("property_changed")]
     PropertyChanged,
+    [JsonStringEnumMemberName("kanban_moved")]
+    KanbanMoved,
 }

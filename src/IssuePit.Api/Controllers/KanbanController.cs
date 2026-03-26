@@ -280,6 +280,11 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
             Name = req.Name,
             IsAuto = req.IsAuto,
             AgentId = req.AgentId,
+            RequireGreenCiCd = req.RequireGreenCiCd,
+            RequireCodeReview = req.RequireCodeReview,
+            RequirePlanComment = req.RequirePlanComment,
+            RequireTasksDone = req.RequireTasksDone,
+            RequireSubIssuesDone = req.RequireSubIssuesDone,
             CreatedAt = DateTime.UtcNow
         };
         db.KanbanTransitions.Add(transition);
@@ -307,6 +312,11 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
         transition.ToColumnId = req.ToColumnId;
         transition.IsAuto = req.IsAuto;
         transition.AgentId = req.AgentId;
+        transition.RequireGreenCiCd = req.RequireGreenCiCd;
+        transition.RequireCodeReview = req.RequireCodeReview;
+        transition.RequirePlanComment = req.RequirePlanComment;
+        transition.RequireTasksDone = req.RequireTasksDone;
+        transition.RequireSubIssuesDone = req.RequireSubIssuesDone;
         await db.SaveChangesAsync();
         return Ok(transition);
     }
@@ -335,6 +345,7 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
     public async Task<IActionResult> TriggerTransition(Guid boardId, Guid id, [FromBody] TriggerTransitionRequest req)
     {
         var transition = await db.KanbanTransitions
+            .Include(t => t.FromColumn)
             .Include(t => t.ToColumn)
             .FirstOrDefaultAsync(t => t.Id == id && t.BoardId == boardId);
         if (transition is null) return NotFound();
@@ -342,14 +353,81 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
         var board = await db.KanbanBoards.FindAsync(boardId);
         if (board is null) return NotFound();
 
-        var issue = await db.Issues.FindAsync(req.IssueId);
+        var issue = await db.Issues
+            .Include(i => i.SubIssues)
+            .FirstOrDefaultAsync(i => i.Id == req.IssueId);
         if (issue is null) return NotFound();
 
         // Ensure the issue belongs to the same project as the board
         if (issue.ProjectId != board.ProjectId) return BadRequest();
 
+        // Check agent-move protection
+        if (issue.PreventAgentMove)
+            return StatusCode(403, "Issue is protected from agent moves.");
+
+        // Check transition requirements
+        if (transition.RequireGreenCiCd)
+        {
+            var hasGreenRun = await db.CiCdRuns
+                .Include(r => r.AgentSession)
+                .AnyAsync(r => r.AgentSession != null &&
+                    r.AgentSession.IssueId == req.IssueId &&
+                    (r.Status == IssuePit.Core.Enums.CiCdRunStatus.Succeeded ||
+                     r.Status == IssuePit.Core.Enums.CiCdRunStatus.SucceededWithWarnings));
+            if (!hasGreenRun)
+                return BadRequest("Transition requires at least one passing CI/CD run.");
+        }
+
+        if (transition.RequireCodeReview)
+        {
+            var hasReview = await db.CodeReviewComments
+                .AnyAsync(c => c.IssueId == req.IssueId);
+            if (!hasReview)
+                return BadRequest("Transition requires at least one code review comment.");
+        }
+
+        if (transition.RequirePlanComment)
+        {
+            var hasPlan = await db.IssueComments
+                .AnyAsync(c => c.IssueId == req.IssueId && c.Body.Contains("plan:"));
+            if (!hasPlan)
+                return BadRequest("Transition requires a plan comment (a comment mentioning \"plan:\").");
+        }
+
+        if (transition.RequireTasksDone)
+        {
+            var hasIncompleteTask = await db.IssueTasks
+                .AnyAsync(t => t.IssueId == req.IssueId && t.Status != IssuePit.Core.Enums.IssueStatus.Done);
+            if (hasIncompleteTask)
+                return BadRequest("Transition requires all issue tasks to be completed.");
+        }
+
+        if (transition.RequireSubIssuesDone)
+        {
+            var hasOpenSubIssue = issue.SubIssues.Any(s =>
+                s.Status != IssuePit.Core.Enums.IssueStatus.Done &&
+                s.Status != IssuePit.Core.Enums.IssueStatus.Cancelled);
+            if (hasOpenSubIssue)
+                return BadRequest("Transition requires all sub-issues to be in Done or Cancelled status.");
+        }
+
         issue.Status = transition.ToColumn.IssueStatus;
         issue.UpdatedAt = DateTime.UtcNow;
+
+        var newValue = req.Reason != null
+            ? $"{transition.ToColumn.Name}: {req.Reason}"
+            : transition.ToColumn.Name;
+
+        db.IssueEvents.Add(new IssueEvent
+        {
+            Id = Guid.NewGuid(),
+            IssueId = req.IssueId,
+            EventType = IssueEventType.KanbanMoved,
+            OldValue = transition.FromColumn?.Name,
+            NewValue = newValue,
+            CreatedAt = DateTime.UtcNow
+        });
+
         await db.SaveChangesAsync();
         return Ok(issue);
     }
@@ -357,10 +435,10 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
 
 public record CreateBoardRequest(Guid ProjectId, string Name, KanbanLaneProperty? LaneProperty = null);
 public record CreateColumnRequest(string Name, int Position, IssuePit.Core.Enums.IssueStatus IssueStatus, string? LaneValue = null);
-public record CreateTransitionRequest(string Name, Guid FromColumnId, Guid ToColumnId, bool IsAuto, Guid? AgentId);
+public record CreateTransitionRequest(string Name, Guid FromColumnId, Guid ToColumnId, bool IsAuto, Guid? AgentId, bool RequireGreenCiCd = false, bool RequireCodeReview = false, bool RequirePlanComment = false, bool RequireTasksDone = false, bool RequireSubIssuesDone = false);
 public record MoveIssueRequest(Guid IssueId, Guid ColumnId, int? Position = null);
 public record ReorderColumnsRequest(List<Guid> ColumnIds);
 public record UpdateBoardRequest(string Name, KanbanLaneProperty? LaneProperty = null);
 public record UpdateColumnRequest(string Name, int Position, IssuePit.Core.Enums.IssueStatus IssueStatus, string? LaneValue = null);
-public record UpdateTransitionRequest(string Name, Guid FromColumnId, Guid ToColumnId, bool IsAuto, Guid? AgentId);
-public record TriggerTransitionRequest(Guid IssueId);
+public record UpdateTransitionRequest(string Name, Guid FromColumnId, Guid ToColumnId, bool IsAuto, Guid? AgentId, bool RequireGreenCiCd = false, bool RequireCodeReview = false, bool RequirePlanComment = false, bool RequireTasksDone = false, bool RequireSubIssuesDone = false);
+public record TriggerTransitionRequest(Guid IssueId, string? Reason = null);

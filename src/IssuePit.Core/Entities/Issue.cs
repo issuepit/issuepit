@@ -74,6 +74,16 @@ public class Issue
 
     public int KanbanRank { get; set; }
 
+    /// <summary>
+    /// When true, agents and MCP tools are not allowed to move this issue between kanban columns.
+    /// </summary>
+    public bool PreventAgentMove { get; set; }
+
+    /// <summary>
+    /// When true, this issue is hidden from agents and MCP tools (excluded from list/get results in agent context).
+    /// </summary>
+    public bool HideFromAgents { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

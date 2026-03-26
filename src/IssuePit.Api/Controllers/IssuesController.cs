@@ -20,7 +20,8 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
         [FromQuery] string? status,
         [FromQuery] string? priority,
         [FromQuery] string sortBy = "lastActivity",
-        [FromQuery] string sortDir = "desc")
+        [FromQuery] string sortDir = "desc",
+        [FromQuery] bool excludeHidden = false)
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
         var tenantId = ctx.CurrentTenant.Id;
@@ -32,6 +33,9 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
             query = query.Where(i => i.ProjectId == projectId.Value);
         else if (orgId.HasValue)
             query = query.Where(i => i.Project!.OrgId == orgId.Value);
+
+        if (excludeHidden)
+            query = query.Where(i => !i.HideFromAgents);
 
         if (!string.IsNullOrEmpty(status))
         {
@@ -257,6 +261,8 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
                 return BadRequest("An issue cannot be its own parent.");
             issue.ParentIssueId = req.ParentIssueId.Value;
         }
+        if (req.PreventAgentMove.HasValue) issue.PreventAgentMove = req.PreventAgentMove.Value;
+        if (req.HideFromAgents.HasValue) issue.HideFromAgents = req.HideFromAgents.Value;
         issue.UpdatedAt = DateTime.UtcNow;
         issue.LastActivityAt = DateTime.UtcNow;
         if (events.Count > 0) db.IssueEvents.AddRange(events);
@@ -987,6 +993,8 @@ public record UpdateIssueRequest(
     Guid? MilestoneId,
     bool ClearMilestoneId = false,
     Guid? ParentIssueId = null,
-    bool ClearParentIssueId = false);
+    bool ClearParentIssueId = false,
+    bool? PreventAgentMove = null,
+    bool? HideFromAgents = null);
 public record UpdateAttachmentRequest(bool? IsPublic);
 
