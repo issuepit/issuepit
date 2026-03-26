@@ -277,8 +277,65 @@ public class TestHistoryTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Sets up a project with a user via the API and returns (client, projectId, username, password).
+    /// Minimal JUnit XML file content used for seeding test data in UI tests.
+    /// Contains a single passing test (DummyTest_Passes) from DummyProject.DummyTests.
     /// </summary>
+    private const string MinimalJUnit = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <testsuites name="DummyRun" tests="1" failures="0" errors="0" skipped="0" time="0.1">
+          <testsuite name="DummyProject.DummyTests" tests="1" failures="0" errors="0" skipped="0" time="0.1" timestamp="2024-01-01T10:00:00">
+            <testcase classname="DummyProject.DummyTests" name="DummyTest_Passes" time="0.1" />
+          </testsuite>
+        </testsuites>
+        """;
+
+    /// <summary>
+    /// Imports a JUnit XML file for the given project and returns the synthetic run ID.
+    /// </summary>
+    private async Task<string> ImportJUnitAsync(HttpClient client, string projectId)
+    {
+        using var form = new MultipartFormDataContent();
+        var fileBytes = Encoding.UTF8.GetBytes(MinimalJUnit);
+        var fileContent = new ByteArrayContent(fileBytes);
+        fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/xml");
+        form.Add(fileContent, "file", "junit-results.xml");
+
+        var resp = await client.PostAsync($"/api/projects/{projectId}/test-history/import", form);
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        var body = await resp.Content.ReadFromJsonAsync<JsonElement>();
+        return body.GetProperty("runId").GetString()!;
+    }
+
+    /// <summary>
+    /// Verifies that the JUnit XML import API endpoint stores the test data and that it
+    /// is then returned by the test results endpoint.
+    /// </summary>
+    [Fact]
+    public async Task Api_JUnitImport_StoresTestData()
+    {
+        var (apiClient, projectId, _, _) = await SetupProjectAsync();
+        using var _ = apiClient;
+
+        // Import a JUnit XML file.
+        var runId = await ImportJUnitAsync(apiClient, projectId);
+        Assert.False(string.IsNullOrEmpty(runId), "JUnit import should return a run ID");
+
+        // Verify test results are returned by the test results endpoint.
+        var testResultsResp = await apiClient.GetAsync($"/api/cicd-runs/{runId}/test-results");
+        Assert.Equal(HttpStatusCode.OK, testResultsResp.StatusCode);
+        var suites = await testResultsResp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(JsonValueKind.Array, suites.ValueKind);
+        Assert.True(suites.GetArrayLength() > 0,
+            "Test suites endpoint should return at least one row after JUnit import");
+
+        var first = suites.EnumerateArray().First();
+        Assert.Equal(1, first.GetProperty("totalTests").GetInt32());
+        Assert.Equal(1, first.GetProperty("passedTests").GetInt32());
+        Assert.Equal(0, first.GetProperty("failedTests").GetInt32());
+    }
+
+    
     private async Task<(HttpClient client, string projectId, string username, string password)> SetupProjectAsync()
     {
         var client = CreateCookieClient();

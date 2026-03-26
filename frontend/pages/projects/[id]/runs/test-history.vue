@@ -929,20 +929,20 @@
       </div>
     </Teleport>
 
-    <!-- Import TRX modal -->
+    <!-- Import TRX / JUnit modal -->
     <Teleport to="body">
       <div v-if="showImportModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @mousedown.self="showImportModal = false">
         <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-xl p-6 w-full max-w-md">
-          <h3 class="text-base font-semibold text-white mb-4">Import TRX File</h3>
-          <p class="text-xs text-gray-500 mb-4">Import a Visual Studio test results file (<code>.trx</code>) directly. Optionally provide the commit SHA and branch so the results integrate with your history.</p>
+          <h3 class="text-base font-semibold text-white mb-4">Import Test Results</h3>
+          <p class="text-xs text-gray-500 mb-4">Import a Visual Studio test results file (<code>.trx</code>) or a JUnit XML file (<code>.xml</code>) directly. Optionally provide the commit SHA and branch so the results integrate with your history.</p>
 
           <div class="space-y-3 mb-4">
             <div>
-              <label class="block text-xs text-gray-400 mb-1">TRX File</label>
+              <label class="block text-xs text-gray-400 mb-1">Test Results File (.trx or .xml)</label>
               <input
                 ref="fileInputRef"
                 type="file"
-                accept=".trx"
+                accept=".trx,.xml"
                 class="w-full text-xs text-gray-300 bg-gray-800 border border-gray-700 rounded-md px-2 py-1.5 file:mr-3 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-brand-600 file:text-white hover:file:bg-brand-700 file:cursor-pointer"
                 @change="onFileChange" />
             </div>
@@ -1322,7 +1322,7 @@ async function importTrx() {
     await reload()
   }
   catch (e: unknown) {
-    importError.value = (e as { data?: { title?: string } })?.data?.title ?? 'Failed to import TRX file.'
+    importError.value = (e as { data?: { title?: string } })?.data?.title ?? 'Failed to import test results file.'
   }
   finally {
     importing.value = false
