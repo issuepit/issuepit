@@ -49,8 +49,13 @@ public static class RunnerCommandBuilder
     /// session without forking (<c>--session &lt;id&gt;</c> only). Use this for the initial run
     /// of a new agent session that should continue a preserved previous session.
     /// </para>
+    /// <para>
+    /// When <paramref name="filePaths"/> is provided (opencode only), each path is appended as a
+    /// <c>--file &lt;path&gt;</c> argument so the agent has direct access to the file contents.
+    /// https://opencode.ai/docs/cli/#run-1
+    /// </para>
     /// </summary>
-    public static IReadOnlyList<string> BuildArgsList(Agent agent, Issue issue, string? forkSessionId = null, string? continueSessionId = null, IReadOnlyList<IssueComment>? comments = null)
+    public static IReadOnlyList<string> BuildArgsList(Agent agent, Issue issue, string? forkSessionId = null, string? continueSessionId = null, IReadOnlyList<IssueComment>? comments = null, IReadOnlyList<string>? filePaths = null)
     {
         if (agent.RunnerType is null)
             return [];
@@ -59,7 +64,7 @@ public static class RunnerCommandBuilder
 
         return agent.RunnerType switch
         {
-            RunnerType.OpenCode => BuildOpenCodeArgsList(agent, task, forkSessionId, continueSessionId),
+            RunnerType.OpenCode => BuildOpenCodeArgsList(agent, task, forkSessionId, continueSessionId, filePaths),
             RunnerType.Codex => BuildCodexArgsList(agent, task),
             RunnerType.GitHubCopilotCli => BuildCopilotArgsList(task),
             _ => [],
@@ -108,7 +113,7 @@ public static class RunnerCommandBuilder
         return args.ToString();
     }
 
-    private static IReadOnlyList<string> BuildOpenCodeArgsList(Agent agent, string task, string? forkSessionId = null, string? continueSessionId = null)
+    private static IReadOnlyList<string> BuildOpenCodeArgsList(Agent agent, string task, string? forkSessionId = null, string? continueSessionId = null, IReadOnlyList<string>? filePaths = null)
     {
         var args = new List<string> { "opencode", "run" };
         if (!string.IsNullOrWhiteSpace(forkSessionId))
@@ -131,6 +136,16 @@ public static class RunnerCommandBuilder
         {
             args.Add("--model");
             args.Add(agent.Model);
+        }
+        // Attach downloaded issue files so the agent has direct access to their contents.
+        // https://opencode.ai/docs/cli/#run-1
+        if (filePaths is { Count: > 0 })
+        {
+            foreach (var path in filePaths)
+            {
+                args.Add("--file");
+                args.Add(path);
+            }
         }
         args.Add("--format");
         args.Add("json");

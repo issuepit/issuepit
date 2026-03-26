@@ -36,7 +36,8 @@ public class DockerAgentRuntime(
     ILogger<DockerAgentRuntime> logger,
     DockerClient dockerClient,
     IConfiguration configuration,
-    IAgentHttpApi agentHttpApi)
+    IAgentHttpApi agentHttpApi,
+    IHttpClientFactory httpClientFactory)
     : DockerRuntimeBase(logger, dockerClient), IExecCapableRuntime
 #pragma warning restore CS9107
 {
@@ -287,11 +288,17 @@ public class DockerAgentRuntime(
         // Build CLI args for exec flow (not used in HTTP server mode or manual mode).
         // Only pass --session <id> when a DB snapshot was actually loaded; without the restored
         // DB the session does not exist in the fresh container and opencode would throw NotFoundError.
+        // File paths (--file) are not included here — they are appended after attachments are
+        // downloaded to the container in Step D.5.
         var runnerArgs = (useHttpServerMode || useManualMode) ? [] : RunnerCommandBuilder.BuildArgsList(
             agent, issue,
             continueSessionId: session.PreviousOpenCodeDbTar is { Length: > 0 } ? session.PreviousOpenCodeSessionId : null,
             comments: comments);
         var useExecFlow = !useHttpServerMode && !useManualMode && runnerArgs.Count > 0;
+
+        // Tracks container paths of downloaded issue attachments; populated in Step D.5 and
+        // used when rebuilding runnerArgs (including in fallback cases).
+        var downloadedAttachmentPaths = new List<string>();
 
         if (useExecFlow)
         {
@@ -559,6 +566,39 @@ public class DockerAgentRuntime(
 
                 // Step D2: Log which agents are configured in opencode for diagnostics.
                 await LogOpenCodeAgentsAsync(container.ID, onLogLine, cancellationToken);
+
+                // Step D2.5: Log which MCP servers are configured in opencode for diagnostics.
+                await LogOpenCodeMcpServersAsync(container.ID, onLogLine, cancellationToken);
+
+                // Step D.5 (exec flow only): Download issue attachments into the container and
+                // append --file <path> for each one so the agent has direct access to the files.
+                // https://opencode.ai/docs/cli/#run-1
+                if (useExecFlow && issue.PromptAttachments.Count > 0)
+                {
+                    try
+                    {
+                        var paths = await DownloadAttachmentsToContainerAsync(
+                            container.ID, issue.PromptAttachments, onLogLine, cancellationToken);
+                        downloadedAttachmentPaths.AddRange(paths);
+
+                        if (downloadedAttachmentPaths.Count > 0)
+                        {
+                            // Rebuild runnerArgs to include --file flags for each downloaded attachment.
+                            runnerArgs = RunnerCommandBuilder.BuildArgsList(
+                                agent, issue,
+                                continueSessionId: session.PreviousOpenCodeDbTar is { Length: > 0 } ? session.PreviousOpenCodeSessionId : null,
+                                comments: comments,
+                                filePaths: downloadedAttachmentPaths);
+                            var updatedCmdDisplay = string.Join(" ", runnerArgs.Take(runnerArgs.Count - 1));
+                            await onLogLine($"[DEBUG] Runner cmd     : {updatedCmdDisplay}", LogStream.Stdout);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        await onLogLine($"[WARN] Failed to download issue attachments: {ex.Message} — continuing without attached files", LogStream.Stderr);
+                        logger.LogWarning(ex, "Failed to download issue attachments into container {ContainerId}", container.ID);
+                    }
+                }
             }
 
             // Step E (HTTP server mode only): Start opencode as a background process via exec.
@@ -587,7 +627,8 @@ public class DockerAgentRuntime(
                         $"[WARN] Previous opencode session {session.PreviousOpenCodeSessionId} not found in restored DB — starting fresh session",
                         LogStream.Stderr);
                     session.PreviousOpenCodeSessionId = null;
-                    runnerArgs = RunnerCommandBuilder.BuildArgsList(agent, issue, comments: comments);
+                    runnerArgs = RunnerCommandBuilder.BuildArgsList(agent, issue, comments: comments,
+                        filePaths: downloadedAttachmentPaths.Count > 0 ? downloadedAttachmentPaths : null);
                     var newCmdDisplay = string.Join(" ", runnerArgs.Take(runnerArgs.Count - 1));
                     await onLogLine($"[DEBUG] Runner cmd     : {newCmdDisplay}", LogStream.Stdout);
                 }
@@ -1535,6 +1576,113 @@ public class DockerAgentRuntime(
         {
             await onLogLine($"[WARN] Could not list opencode agents: {ex.Message}", LogStream.Stderr);
         }
+    }
+
+    /// <summary>
+    /// Runs <c>opencode mcp list</c> inside the container and emits the output as log lines.
+    /// Best-effort: failure is non-fatal and only logs a warning.
+    /// </summary>
+    private async Task LogOpenCodeMcpServersAsync(
+        string containerId,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        await onLogLine("[INFO] opencode MCP servers (opencode mcp list):", LogStream.Stdout);
+        try
+        {
+            await ExecCommandAsync(containerId, ["opencode", "mcp", "list"],
+                async (line, stream) => await onLogLine($"[INFO]   {line}", stream),
+                cancellationToken, workingDir: "/");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            await onLogLine($"[WARN] Could not list opencode MCP servers: {ex.Message}", LogStream.Stderr);
+        }
+    }
+
+    /// <summary>
+    /// Downloads each public issue attachment from its URL and injects the file content into the
+    /// container at <c>/tmp/issuepit-attachments/&lt;filename&gt;</c>.
+    /// Returns the list of container file paths that were successfully injected.
+    /// Best-effort: individual download failures are logged and skipped.
+    /// </summary>
+    private async Task<IReadOnlyList<string>> DownloadAttachmentsToContainerAsync(
+        string containerId,
+        IList<IssueAttachment> attachments,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        const string attachmentDir = "/tmp/issuepit-attachments";
+
+        await ExecCommandAsync(containerId, ["mkdir", "-p", attachmentDir],
+            (_, _) => Task.CompletedTask, cancellationToken, workingDir: "/");
+
+        var httpClient = httpClientFactory.CreateClient();
+        var filePaths = new List<string>();
+
+        foreach (var attachment in attachments)
+        {
+            if (string.IsNullOrWhiteSpace(attachment.FileUrl))
+                continue;
+
+            try
+            {
+                var content = await httpClient.GetByteArrayAsync(attachment.FileUrl, cancellationToken);
+
+                // Sanitise the filename so it is safe to use as a container path component.
+                var safeFileName = SanitizeAttachmentFileName(attachment.FileName);
+                await InjectFileAsync(
+                    containerId,
+                    attachmentDir,
+                    safeFileName,
+                    content,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead,
+                    cancellationToken);
+
+                var containerPath = $"{attachmentDir}/{safeFileName}";
+                filePaths.Add(containerPath);
+                var sizeKb = content.Length / 1024.0;
+                await onLogLine($"[INFO] Attachment injected: {safeFileName} ({sizeKb:F1} KB) → {containerPath}", LogStream.Stdout);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                await onLogLine($"[WARN] Could not download attachment '{attachment.FileName}': {ex.Message}", LogStream.Stderr);
+                logger.LogWarning(ex, "Failed to download attachment {FileName} from {Url} into container {ContainerId}",
+                    attachment.FileName, attachment.FileUrl, containerId);
+            }
+        }
+
+        if (filePaths.Count > 0)
+            await onLogLine($"[INFO] {filePaths.Count} attachment(s) injected into {attachmentDir}", LogStream.Stdout);
+
+        return filePaths;
+    }
+
+    /// <summary>
+    /// Returns a sanitised version of an attachment filename that is safe to use as a container
+    /// path component. Strips all characters invalid in filenames (including path separators and
+    /// null bytes), guards against directory traversal sequences, and falls back to "attachment"
+    /// when the name is empty after sanitisation.
+    /// </summary>
+    private static string SanitizeAttachmentFileName(string fileName)
+    {
+        // Remove all characters that are invalid in Unix filenames.
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var safe = new string(fileName.Where(c => !invalidChars.Contains(c)).ToArray()).Trim();
+
+        // Guard against directory traversal sequences (e.g. ".." or "...").
+        if (safe == ".." || safe == ".")
+            safe = string.Empty;
+
+        return string.IsNullOrEmpty(safe) ? "attachment" : safe;
     }
 
     /// <summary>

@@ -418,4 +418,57 @@ public class RunnerCommandBuilderTests
         Assert.Contains("--fork", args);
         Assert.DoesNotContain("ses_cont", args);
     }
+
+    // --- File attachment (--file) ---
+
+    [Fact]
+    public void BuildArgsList_OpenCode_WithFilePaths_IncludesFileFlags()
+    {
+        var agent = MakeAgent(RunnerType.OpenCode);
+        var issue = MakeIssue("Fix with attachment");
+        var paths = new List<string> { "/tmp/issuepit-attachments/diagram.png", "/tmp/issuepit-attachments/spec.pdf" };
+        var args = RunnerCommandBuilder.BuildArgsList(agent, issue, filePaths: paths);
+        var argsList = args.ToList();
+        Assert.Contains("--file", argsList);
+        Assert.Contains("/tmp/issuepit-attachments/diagram.png", argsList);
+        Assert.Contains("/tmp/issuepit-attachments/spec.pdf", argsList);
+        // Each --file flag should be followed immediately by its path.
+        var firstFileIdx = argsList.IndexOf("--file");
+        Assert.Equal("/tmp/issuepit-attachments/diagram.png", argsList[firstFileIdx + 1]);
+        var secondFileIdx = argsList.LastIndexOf("--file");
+        Assert.Equal("/tmp/issuepit-attachments/spec.pdf", argsList[secondFileIdx + 1]);
+    }
+
+    [Fact]
+    public void BuildArgsList_OpenCode_WithFilePaths_FilesFlagBeforeTask()
+    {
+        var agent = MakeAgent(RunnerType.OpenCode);
+        var issue = MakeIssue("Fix with attachment");
+        var paths = new List<string> { "/tmp/issuepit-attachments/notes.txt" };
+        var args = RunnerCommandBuilder.BuildArgsList(agent, issue, filePaths: paths);
+        var argsList = args.ToList();
+        var fileIdx = argsList.IndexOf("--file");
+        // The task string is always the last element.
+        Assert.True(fileIdx < argsList.Count - 1, "--file should appear before the task");
+    }
+
+    [Fact]
+    public void BuildArgsList_OpenCode_NoFilePaths_NoFileFlag()
+    {
+        var agent = MakeAgent(RunnerType.OpenCode);
+        var issue = MakeIssue("Fix without attachment");
+        var args = RunnerCommandBuilder.BuildArgsList(agent, issue);
+        Assert.DoesNotContain("--file", args);
+    }
+
+    [Fact]
+    public void BuildArgsList_Codex_WithFilePaths_IgnoresFilePaths()
+    {
+        // --file is opencode-specific; Codex should not include it even when paths are provided.
+        var agent = MakeAgent(RunnerType.Codex);
+        var issue = MakeIssue("Fix");
+        var paths = new List<string> { "/tmp/issuepit-attachments/diagram.png" };
+        var args = RunnerCommandBuilder.BuildArgsList(agent, issue, filePaths: paths);
+        Assert.DoesNotContain("--file", args);
+    }
 }
