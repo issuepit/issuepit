@@ -699,6 +699,10 @@ public class IssueWorker(
             string? capturedServerWebUiUrl = null;
             string? capturedManualModeContainerId = null;
 
+            // Tracks the next message index across all drain checkpoints so messages are numbered
+            // consistently in the session log (Message 1, Message 2, …) regardless of when they run.
+            var msgCtx = new MessageIndexCounter();
+
             // Track the current phase of the workflow so every log line is tagged with its section.
             var currentSection = AgentLogSection.InitialAgentRun;
             var currentSectionIndex = 0;
@@ -991,6 +995,13 @@ public class IssueWorker(
                     }
                 }
 
+                // Drain any user-queued messages after the initial run completes, giving the user a
+                // chance to steer the agent before uncommitted-changes handling and CI/CD.
+                await DrainPendingMessagesAsync(session, agent, issueForRuntime, gitRepository, db,
+                    useExecForFixes ? execRuntime : null,
+                    useExecForFixes ? runtimeId : null,
+                    capturedOpenCodeSessionId, msgCtx, sessionCts.Token);
+
                 // If there are uncommitted changes, run opencode again to commit or .gitignore them.
                 if (capturedHasUncommittedChanges && gitRepository is not null && !string.IsNullOrEmpty(capturedBranchName))
                 {
@@ -1024,6 +1035,12 @@ public class IssueWorker(
                         capturedCommitSha = fixCommitSha;
                     if (!string.IsNullOrEmpty(fixBranchName))
                         capturedBranchName = fixBranchName;
+
+                    // Drain again after uncommitted-changes fix so user can adjust before CI/CD.
+                    await DrainPendingMessagesAsync(session, agent, issueForRuntime, gitRepository, db,
+                        useExecForFixes ? execRuntime : null,
+                        useExecForFixes ? runtimeId : null,
+                        capturedOpenCodeSessionId, msgCtx, sessionCts.Token);
                 }
 
                 // After the agent run completes, trigger the CI/CD pipeline and wait for results.
@@ -1042,6 +1059,7 @@ public class IssueWorker(
                         execRuntime: useExecForFixes ? execRuntime : null,
                         execContainerId: useExecForFixes ? runtimeId : null,
                         openCodeSessionId: capturedOpenCodeSessionId,
+                        msgCtx: msgCtx,
                         onLogLine: (line, stream, section, idx) =>
                             AppendLogAsync(session.Id, line, stream, section, idx, db, sessionCts.Token));
                     session.Status = cicdSucceeded ? AgentSessionStatus.Succeeded : AgentSessionStatus.Failed;
@@ -1059,6 +1077,9 @@ public class IssueWorker(
                 {
                     session.Status = AgentSessionStatus.Succeeded;
                 }
+
+                // Post a summary comment on the issue with all messages processed during this session.
+                await PostSessionMessagesCommentAsync(session, db, sessionCts.Token);
             }
             finally
             {
@@ -1372,7 +1393,183 @@ public class IssueWorker(
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Processes all currently-pending user messages for this session.
+    /// Called at every major workflow checkpoint (after initial run, after CI/CD fails, after fix run, etc.)
+    /// so users can steer the session mid-flight without waiting until the very end.
+    /// Messages are only run when an exec-capable runtime is available (container still alive).
+    /// Does NOT post the final summary comment — see <see cref="PostSessionMessagesCommentAsync"/>.
+    /// </summary>
+    private async Task DrainPendingMessagesAsync(
+        AgentSession session,
+        Agent originalAgent,
+        Issue issueForRuntime,
+        GitRepository? gitRepository,
+        IssuePitDbContext db,
+        IExecCapableRuntime? execRuntime,
+        string? containerId,
+        string? openCodeSessionId,
+        MessageIndexCounter counter,
+        CancellationToken cancellationToken)
+    {
+        var messages = await db.AgentSessionMessages
+            .Where(m => m.AgentSessionId == session.Id && m.Status == AgentSessionMessageStatus.Pending)
+            .OrderBy(m => m.CreatedAt)
+            .ToListAsync(cancellationToken);
 
+        if (messages.Count == 0) return;
+
+        if (execRuntime is null || string.IsNullOrEmpty(containerId))
+        {
+            // Not an exec-capable runtime — cancel all pending messages.
+            foreach (var m in messages)
+            {
+                m.Status = AgentSessionMessageStatus.Cancelled;
+                logger.LogInformation("Cancelled message {MessageId} for session {SessionId}: exec runtime not available", m.Id, session.Id);
+            }
+            await db.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        foreach (var message in messages)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                message.Status = AgentSessionMessageStatus.Cancelled;
+                continue;
+            }
+
+            var messageIndex = counter.Next++;
+            message.Status = AgentSessionMessageStatus.Running;
+            await db.SaveChangesAsync(cancellationToken);
+
+            logger.LogInformation("Processing queued message {MessageId} (index {Index}) for session {SessionId}",
+                message.Id, messageIndex, session.Id);
+
+            try
+            {
+                // Apply agent/model overrides — create a transient copy so DB entity is not modified.
+                Agent effectiveAgent = originalAgent;
+                if (!string.IsNullOrEmpty(message.ModelOverride) || message.AgentIdOverride.HasValue)
+                {
+                    Agent baseAgent = originalAgent;
+                    if (message.AgentIdOverride.HasValue && message.AgentIdOverride.Value != originalAgent.Id)
+                    {
+                        var overrideAgent = await db.Agents.AsNoTracking()
+                            .FirstOrDefaultAsync(a => a.Id == message.AgentIdOverride.Value, cancellationToken);
+                        if (overrideAgent is not null)
+                            baseAgent = overrideAgent;
+                    }
+
+                    // Build a transient copy with the model override applied (never persisted).
+                    effectiveAgent = new Agent
+                    {
+                        Id = baseAgent.Id,
+                        Name = baseAgent.Name,
+                        RunnerType = baseAgent.RunnerType,
+                        Model = !string.IsNullOrEmpty(message.ModelOverride) ? message.ModelOverride : baseAgent.Model,
+                        SystemPrompt = baseAgent.SystemPrompt,
+                    };
+                }
+
+                // Build a stub issue where the body is the message content.
+                var messageIssue = new Issue
+                {
+                    Id = issueForRuntime.Id,
+                    ProjectId = issueForRuntime.ProjectId,
+                    Number = issueForRuntime.Number,
+                    Title = issueForRuntime.Title,
+                    Body = message.Content,
+                    GitBranch = issueForRuntime.GitBranch,
+                };
+
+                var section = AgentLogSection.MessageRun;
+                var msgIdx = messageIndex;
+                await execRuntime.ExecFixInContainerAsync(
+                    containerId, openCodeSessionId, session, effectiveAgent, messageIssue, gitRepository,
+                    (line, stream) => AppendLogAsync(session.Id, line, stream, section, msgIdx, db, cancellationToken),
+                    cancellationToken);
+
+                message.Status = AgentSessionMessageStatus.Done;
+                message.ProcessedAt = DateTime.UtcNow;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Failed to process message {MessageId} for session {SessionId}", message.Id, session.Id);
+                await AppendLogAsync(session.Id,
+                    $"[WARN] Message processing failed: {ex.Message}",
+                    LogStream.Stderr, AgentLogSection.MessageRun, messageIndex, db, CancellationToken.None);
+                message.Status = AgentSessionMessageStatus.Cancelled;
+            }
+
+            await db.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Posts a summary comment on the issue listing all messages that were processed (Done status)
+    /// during this session. Called once at the very end of the session.
+    /// </summary>
+    private async Task PostSessionMessagesCommentAsync(
+        AgentSession session,
+        IssuePitDbContext db,
+        CancellationToken cancellationToken)
+    {
+        if (!session.IssueId.HasValue) return;
+
+        var processedMessages = await db.AgentSessionMessages
+            .Where(m => m.AgentSessionId == session.Id && m.Status == AgentSessionMessageStatus.Done)
+            .OrderBy(m => m.ProcessedAt)
+            .ToListAsync(cancellationToken);
+
+        if (processedMessages.Count == 0) return;
+
+        try
+        {
+            var commentBody = BuildSessionMessagesComment(processedMessages, session);
+            var comment = new IssueComment
+            {
+                Id = Guid.NewGuid(),
+                IssueId = session.IssueId.Value,
+                Body = commentBody,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
+            db.IssueComments.Add(comment);
+            await db.SaveChangesAsync(cancellationToken);
+            logger.LogInformation("Posted session messages comment on issue {IssueId} for session {SessionId}",
+                session.IssueId.Value, session.Id);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to post session messages comment for session {SessionId}", session.Id);
+        }
+    }
+
+    /// <summary>Builds a Markdown comment body summarising all messages processed during the session.</summary>
+    private static string BuildSessionMessagesComment(
+        IReadOnlyList<AgentSessionMessage> processedMessages,
+        AgentSession session)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"## 🤖 Agent Session Messages");
+        sb.AppendLine();
+        sb.AppendLine($"The following {processedMessages.Count} message(s) were processed during agent session `{session.Id}`:");
+        sb.AppendLine();
+
+        for (int i = 0; i < processedMessages.Count; i++)
+        {
+            var msg = processedMessages[i];
+            sb.AppendLine($"### Message {i + 1}");
+            if (!string.IsNullOrEmpty(msg.ModelOverride))
+                sb.AppendLine($"*Model: {msg.ModelOverride}*");
+            sb.AppendLine();
+            sb.AppendLine(msg.Content);
+            sb.AppendLine();
+        }
+
+        return sb.ToString().TrimEnd();
+    }
 
     /// <summary>
     /// Runs up to <see cref="MaxCiCdFixAttempts"/> CI/CD → opencode-fix cycles.
@@ -1395,6 +1592,7 @@ public class IssueWorker(
         IExecCapableRuntime? execRuntime = null,
         string? execContainerId = null,
         string? openCodeSessionId = null,
+        MessageIndexCounter? msgCtx = null,
         Func<string, LogStream, AgentLogSection, int, Task>? onLogLine = null)
     {
         for (var attempt = 0; attempt < MaxCiCdFixAttempts; attempt++)
@@ -1438,6 +1636,12 @@ public class IssueWorker(
                     LogStream.Stderr);
                 return false;
             }
+
+            // Drain any queued user messages after the CI/CD failure so the user can steer the
+            // fix agent — e.g. point at the correct error or prevent a wasteful fix run.
+            if (msgCtx is not null)
+                await DrainPendingMessagesAsync(session, agent, issue, gitRepository, db,
+                    execRuntime, execContainerId, openCodeSessionId, msgCtx, cancellationToken);
 
             // Collect CI/CD failure logs to give opencode the context it needs for fixing.
             var failureLogs = await GetCiCdFailureLogsAsync(cicdRun.Id, db, cancellationToken);
@@ -1485,6 +1689,12 @@ public class IssueWorker(
             commitSha = fixCommitSha;
             if (!string.IsNullOrEmpty(fixBranchName))
                 branchName = fixBranchName;
+
+            // Drain queued messages after the fix run so the user can review the changes
+            // and optionally give additional instructions before the next CI/CD attempt.
+            if (msgCtx is not null)
+                await DrainPendingMessagesAsync(session, agent, issue, gitRepository, db,
+                    execRuntime, execContainerId, openCodeSessionId, msgCtx, cancellationToken);
         }
 
         return false;
@@ -1984,6 +2194,16 @@ public class IssueWorker(
 
     private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, Guid? SessionId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? DockerCmdOverride = null, string? ModelOverride = null, int? RunnerTypeOverride = null, bool? UseHttpServerOverride = null, int? RuntimeTypeOverride = null, bool ForceAgentId = false, Guid? TriggeringCommentId = null, string? Branch = null, bool IsManualDirectStart = false);
 
+    /// <summary>
+    /// A simple mutable counter shared across all <see cref="DrainPendingMessagesAsync"/> calls
+    /// within a single agent session so each message receives a unique, monotonically increasing
+    /// index regardless of which checkpoint it is processed at.
+    /// </summary>
+    private sealed class MessageIndexCounter
+    {
+        /// <summary>The index to assign to the next message. Incremented after each processed message.</summary>
+        public int Next { get; set; } = 1;
+    }
     /// <summary>
     /// Checks whether the base branch (<see cref="GitRepository.DefaultBranch"/>) of each
     /// configured git remote exists by running <c>git ls-remote --heads</c> against each URL.
