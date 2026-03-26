@@ -798,4 +798,267 @@ public class KanbanEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
     }
+
+    // ── A/B Implementations ───────────────────────────────────────────────────
+
+    [Fact]
+    public async Task CreateAbImplementations_CreatesGroupAndVariantIssues()
+    {
+        var (tenantId, projectId) = await SeedProjectAsync();
+        var boardId = await SeedBoardAsync(projectId);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+        // Seed original issue
+        var issue = new Issue { Id = Guid.NewGuid(), ProjectId = projectId, Title = "Feature X", Number = 1, Status = IssueStatus.InProgress };
+        db.Issues.Add(issue);
+        await db.SaveChangesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var req = new
+        {
+            originalIssueId = issue.Id,
+            variants = new[]
+            {
+                new { instructions = "Approach A: use pattern X", agentId = (Guid?)null, modelOverride = (string?)null },
+                new { instructions = "Approach B: use pattern Y", agentId = (Guid?)null, modelOverride = (string?)null },
+            }
+        };
+
+        var response = await _client.PostAsJsonAsync($"/api/kanban/boards/{boardId}/ab-implementations", req);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        // Group should have 2 variants
+        var variants = body.GetProperty("variants");
+        Assert.Equal(2, variants.GetArrayLength());
+
+        // Each variant should have a sub-issue
+        var variantIds = Enumerable.Range(0, 2)
+            .Select(i => variants[i].GetProperty("issueId").GetGuid())
+            .ToList();
+        Assert.Equal(2, variantIds.Distinct().Count());
+
+        // Verify sub-issues exist in DB with parentIssueId set
+        using var scope2 = factory.Services.CreateScope();
+        var db2 = scope2.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+        foreach (var variantIssueId in variantIds)
+        {
+            var variantIssue = await db2.Issues.FindAsync(variantIssueId);
+            Assert.NotNull(variantIssue);
+            Assert.Equal(issue.Id, variantIssue.ParentIssueId);
+        }
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
+    public async Task CreateAbImplementations_FailsWithLessThanTwoVariants()
+    {
+        var (tenantId, projectId) = await SeedProjectAsync();
+        var boardId = await SeedBoardAsync(projectId);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+        var issue = new Issue { Id = Guid.NewGuid(), ProjectId = projectId, Title = "X", Number = 1 };
+        db.Issues.Add(issue);
+        await db.SaveChangesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var req = new
+        {
+            originalIssueId = issue.Id,
+            variants = new[] { new { instructions = "Only one", agentId = (Guid?)null, modelOverride = (string?)null } }
+        };
+        var response = await _client.PostAsJsonAsync($"/api/kanban/boards/{boardId}/ab-implementations", req);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
+    public async Task GetAbImplementations_ReturnsCreatedGroups()
+    {
+        var (tenantId, projectId) = await SeedProjectAsync();
+        var boardId = await SeedBoardAsync(projectId);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+        var issue = new Issue { Id = Guid.NewGuid(), ProjectId = projectId, Title = "AB Issue", Number = 1 };
+        db.Issues.Add(issue);
+        await db.SaveChangesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        // Create A/B group
+        var req = new
+        {
+            originalIssueId = issue.Id,
+            variants = new[]
+            {
+                new { instructions = "A", agentId = (Guid?)null, modelOverride = (string?)null },
+                new { instructions = "B", agentId = (Guid?)null, modelOverride = (string?)null },
+            }
+        };
+        await _client.PostAsJsonAsync($"/api/kanban/boards/{boardId}/ab-implementations", req);
+
+        var listResponse = await _client.GetAsync($"/api/kanban/boards/{boardId}/ab-implementations");
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        var list = await listResponse.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.True(list.GetArrayLength() >= 1);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    // ── Orchestrator Schedule ─────────────────────────────────────────────────
+
+    [Fact]
+    public async Task UpsertOrchestratorSchedule_CreatesSchedule()
+    {
+        var (tenantId, projectId) = await SeedProjectAsync();
+        var boardId = await SeedBoardAsync(projectId);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+        var agent = new IssuePit.Core.Entities.Agent
+        {
+            Id = Guid.NewGuid(), Name = "Orchestrator Agent",
+            OrgId = db.Projects.Where(p => p.Id == projectId).Select(p => p.OrgId).First()
+        };
+        db.Agents.Add(agent);
+        await db.SaveChangesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var req = new { agentId = agent.Id, isEnabled = true, intervalMinutes = 30 };
+        var response = await _client.PutAsJsonAsync($"/api/kanban/boards/{boardId}/orchestrator-schedule", req);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal(agent.Id.ToString(), body.GetProperty("agentId").GetString());
+        Assert.Equal(30, body.GetProperty("intervalMinutes").GetInt32());
+        Assert.True(body.GetProperty("isEnabled").GetBoolean());
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
+    public async Task GetOrchestratorSchedule_ReturnsConfiguredSchedule()
+    {
+        var (tenantId, projectId) = await SeedProjectAsync();
+        var boardId = await SeedBoardAsync(projectId);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+        var agent = new IssuePit.Core.Entities.Agent
+        {
+            Id = Guid.NewGuid(), Name = "Orchestrator",
+            OrgId = db.Projects.Where(p => p.Id == projectId).Select(p => p.OrgId).First()
+        };
+        db.Agents.Add(agent);
+        await db.SaveChangesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        await _client.PutAsJsonAsync($"/api/kanban/boards/{boardId}/orchestrator-schedule",
+            new { agentId = agent.Id, isEnabled = true, intervalMinutes = 60 });
+
+        var response = await _client.GetAsync($"/api/kanban/boards/{boardId}/orchestrator-schedule");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal(agent.Id.ToString(), body.GetProperty("agentId").GetString());
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
+    public async Task ComputeBoardStateHash_ReturnsSameHashWhenUnchanged()
+    {
+        // Test via the orchestrator trigger endpoint: triggering twice without changes
+        // should report "board unchanged" on the second trigger
+        var (tenantId, projectId) = await SeedProjectAsync();
+        var boardId = await SeedBoardAsync(projectId);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+        var agent = new IssuePit.Core.Entities.Agent
+        {
+            Id = Guid.NewGuid(), Name = "Orchestrator",
+            OrgId = db.Projects.Where(p => p.Id == projectId).Select(p => p.OrgId).First()
+        };
+        db.Agents.Add(agent);
+        await db.SaveChangesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        // Create schedule
+        await _client.PutAsJsonAsync($"/api/kanban/boards/{boardId}/orchestrator-schedule",
+            new { agentId = agent.Id, isEnabled = true, intervalMinutes = 60 });
+
+        // First trigger (forced) — should trigger
+        var r1 = await _client.PostAsJsonAsync($"/api/kanban/boards/{boardId}/orchestrator-schedule/trigger", new { });
+        Assert.Equal(HttpStatusCode.OK, r1.StatusCode);
+        var body1 = await r1.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.True(body1.GetProperty("triggered").GetBoolean());
+        var hash1 = body1.GetProperty("boardStateHash").GetString();
+        Assert.NotNull(hash1);
+
+        // Second trigger right after — board unchanged, but force still triggers it
+        // (manual trigger is forced, so always triggers regardless of hash)
+        var r2 = await _client.PostAsJsonAsync($"/api/kanban/boards/{boardId}/orchestrator-schedule/trigger", new { });
+        Assert.Equal(HttpStatusCode.OK, r2.StatusCode);
+        var body2 = await r2.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        // The hash should be the same since nothing changed
+        var hash2 = body2.GetProperty("boardStateHash").GetString();
+        Assert.Equal(hash1, hash2);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
+    public async Task OrchestratorSchedule_TriggerReturnsHashInResponse()
+    {
+        var (tenantId, projectId) = await SeedProjectAsync();
+        var boardId = await SeedBoardAsync(projectId);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+        var agent = new IssuePit.Core.Entities.Agent
+        {
+            Id = Guid.NewGuid(), Name = "Orchestrator",
+            OrgId = db.Projects.Where(p => p.Id == projectId).Select(p => p.OrgId).First()
+        };
+        db.Agents.Add(agent);
+        // Seed an issue
+        var issue = new Issue { Id = Guid.NewGuid(), ProjectId = projectId, Title = "I1", Number = 1, Status = IssueStatus.Backlog };
+        db.Issues.Add(issue);
+        await db.SaveChangesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        await _client.PutAsJsonAsync($"/api/kanban/boards/{boardId}/orchestrator-schedule",
+            new { agentId = agent.Id, isEnabled = true, intervalMinutes = 60 });
+
+        var r = await _client.PostAsJsonAsync($"/api/kanban/boards/{boardId}/orchestrator-schedule/trigger", new { });
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        var body = await r.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.True(body.GetProperty("triggered").GetBoolean());
+        var hash = body.GetProperty("boardStateHash").GetString();
+        // Hash should be a non-empty 64-character hex string (SHA-256)
+        Assert.NotNull(hash);
+        Assert.Equal(64, hash.Length);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
 }

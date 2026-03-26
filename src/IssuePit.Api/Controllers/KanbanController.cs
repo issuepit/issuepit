@@ -1,4 +1,7 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using Confluent.Kafka;
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
@@ -10,7 +13,7 @@ namespace IssuePit.Api.Controllers;
 
 [ApiController]
 [Route("api/kanban")]
-public class KanbanController(IssuePitDbContext db, TenantContext ctx) : ControllerBase
+public class KanbanController(IssuePitDbContext db, TenantContext ctx, IProducer<string, string> producer) : ControllerBase
 {
     // Helper: parse a JsonStringEnumMemberName-annotated enum from a lane value string
     private static T? TryParseJsonEnum<T>(string? value) where T : struct, Enum
@@ -579,6 +582,388 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
         await db.SaveChangesAsync();
         return Ok(issue);
     }
+
+    // ── A/B Implementations ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Creates N variant sub-issues from the original issue, optionally starts agent sessions for each
+    /// variant, and returns the created A/B group with variant details.
+    /// Each variant gets a child issue with the variant-specific instructions appended to the original body.
+    /// </summary>
+    [HttpPost("boards/{boardId:guid}/ab-implementations")]
+    public async Task<IActionResult> CreateAbImplementations(Guid boardId, [FromBody] CreateAbImplementationsRequest req)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var board = await db.KanbanBoards
+            .Include(b => b.Project).ThenInclude(p => p.Organization)
+            .FirstOrDefaultAsync(b => b.Id == boardId && b.Project.Organization.TenantId == ctx.CurrentTenant.Id);
+        if (board is null) return NotFound();
+
+        var original = await db.Issues.FindAsync(req.OriginalIssueId);
+        if (original is null || original.ProjectId != board.ProjectId) return NotFound();
+        if (req.Variants.Count < 2)
+            return BadRequest("At least 2 variants are required for an A/B implementation.");
+
+        var maxNumber = await db.Issues
+            .Where(i => i.ProjectId == board.ProjectId)
+            .MaxAsync(i => (int?)i.Number) ?? 0;
+
+        var group = new KanbanAbGroup
+        {
+            Id = Guid.NewGuid(),
+            BoardId = boardId,
+            OriginalIssueId = req.OriginalIssueId,
+            ScoringAgentId = req.ScoringAgentId,
+            CreatedAt = DateTime.UtcNow,
+        };
+        db.KanbanAbGroups.Add(group);
+
+        var createdVariants = new List<KanbanAbVariant>();
+        var sessionsToStart = new List<(AgentSession Session, Issue Issue)>();
+
+        for (var i = 0; i < req.Variants.Count; i++)
+        {
+            var variantReq = req.Variants[i];
+            maxNumber++;
+            var variantIssue = new Issue
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = board.ProjectId,
+                Title = $"{original.Title} — Variant {(char)('A' + i)}",
+                Body = string.IsNullOrWhiteSpace(variantReq.Instructions)
+                    ? original.Body
+                    : $"{original.Body}\n\n---\n**Variant {(char)('A' + i)} instructions:**\n{variantReq.Instructions}",
+                Status = original.Status,
+                Priority = original.Priority,
+                Type = original.Type,
+                Number = maxNumber,
+                ParentIssueId = req.OriginalIssueId,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+                LastActivityAt = DateTime.UtcNow,
+            };
+            db.Issues.Add(variantIssue);
+
+            var variant = new KanbanAbVariant
+            {
+                Id = Guid.NewGuid(),
+                GroupId = group.Id,
+                IssueId = variantIssue.Id,
+                VariantIndex = i,
+                AgentId = variantReq.AgentId,
+                ModelOverride = variantReq.ModelOverride,
+            };
+            createdVariants.Add(variant);
+            db.KanbanAbVariants.Add(variant);
+
+            if (variantReq.AgentId.HasValue)
+            {
+                var session = new AgentSession
+                {
+                    Id = Guid.NewGuid(),
+                    AgentId = variantReq.AgentId.Value,
+                    IssueId = variantIssue.Id,
+                    ProjectId = board.ProjectId,
+                    Status = AgentSessionStatus.Pending,
+                };
+                variant.SessionId = session.Id;
+                db.AgentSessions.Add(session);
+                sessionsToStart.Add((session, variantIssue));
+            }
+        }
+
+        await db.SaveChangesAsync();
+
+        // Publish Kafka messages after DB commit to ensure consistency
+        foreach (var (session, variantIssue) in sessionsToStart)
+        {
+            try
+            {
+                await producer.ProduceAsync("issue-assigned", new Message<string, string>
+                {
+                    Key = variantIssue.ProjectId.ToString(),
+                    Value = JsonSerializer.Serialize(new
+                    {
+                        variantIssue.Id,
+                        variantIssue.ProjectId,
+                        variantIssue.Title,
+                        SessionId = session.Id,
+                        ModelOverride = createdVariants.FirstOrDefault(v => v.SessionId == session.Id)?.ModelOverride,
+                    })
+                });
+            }
+            catch (Exception)
+            {
+                session.Status = AgentSessionStatus.Failed;
+                session.EndedAt = DateTime.UtcNow;
+            }
+        }
+        await db.SaveChangesAsync();
+
+        var result = await db.KanbanAbGroups
+            .Include(g => g.Variants).ThenInclude(v => v.Issue)
+            .Include(g => g.Variants).ThenInclude(v => v.Session)
+            .FirstOrDefaultAsync(g => g.Id == group.Id);
+        return Created($"/api/kanban/boards/{boardId}/ab-implementations/{group.Id}", result);
+    }
+
+    [HttpGet("boards/{boardId:guid}/ab-implementations")]
+    public async Task<IActionResult> GetAbImplementations(Guid boardId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var board = await db.KanbanBoards
+            .Include(b => b.Project).ThenInclude(p => p.Organization)
+            .FirstOrDefaultAsync(b => b.Id == boardId && b.Project.Organization.TenantId == ctx.CurrentTenant.Id);
+        if (board is null) return NotFound();
+
+        var groups = await db.KanbanAbGroups
+            .Include(g => g.Variants).ThenInclude(v => v.Issue)
+            .Include(g => g.Variants).ThenInclude(v => v.Session)
+            .Include(g => g.ScoringSession)
+            .Where(g => g.BoardId == boardId)
+            .OrderByDescending(g => g.CreatedAt)
+            .ToListAsync();
+
+        return Ok(groups);
+    }
+
+    [HttpGet("boards/{boardId:guid}/ab-implementations/{groupId:guid}")]
+    public async Task<IActionResult> GetAbImplementation(Guid boardId, Guid groupId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var group = await db.KanbanAbGroups
+            .Include(g => g.Board).ThenInclude(b => b.Project).ThenInclude(p => p.Organization)
+            .Include(g => g.Variants).ThenInclude(v => v.Issue)
+            .Include(g => g.Variants).ThenInclude(v => v.Agent)
+            .Include(g => g.Variants).ThenInclude(v => v.Session)
+            .Include(g => g.ScoringAgent)
+            .Include(g => g.ScoringSession)
+            .FirstOrDefaultAsync(g => g.Id == groupId && g.BoardId == boardId &&
+                g.Board.Project.Organization.TenantId == ctx.CurrentTenant.Id);
+        return group is null ? NotFound() : Ok(group);
+    }
+
+    /// <summary>
+    /// Starts the scoring agent session for an A/B group.
+    /// The scoring agent will compare all variant implementations and assign scores.
+    /// </summary>
+    [HttpPost("boards/{boardId:guid}/ab-implementations/{groupId:guid}/score")]
+    public async Task<IActionResult> TriggerAbScoring(Guid boardId, Guid groupId, [FromBody] TriggerAbScoringRequest? req = null)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var group = await db.KanbanAbGroups
+            .Include(g => g.Board).ThenInclude(b => b.Project).ThenInclude(p => p.Organization)
+            .Include(g => g.Variants).ThenInclude(v => v.Issue)
+            .FirstOrDefaultAsync(g => g.Id == groupId && g.BoardId == boardId &&
+                g.Board.Project.Organization.TenantId == ctx.CurrentTenant.Id);
+        if (group is null) return NotFound();
+
+        var scoringAgentId = req?.AgentId ?? group.ScoringAgentId;
+        if (scoringAgentId is null)
+            return BadRequest("No scoring agent configured. Provide agentId in the request or set ScoringAgentId on the A/B group.");
+
+        var session = new AgentSession
+        {
+            Id = Guid.NewGuid(),
+            AgentId = scoringAgentId.Value,
+            IssueId = group.OriginalIssueId,
+            ProjectId = group.Board.ProjectId,
+            Status = AgentSessionStatus.Pending,
+        };
+        db.AgentSessions.Add(session);
+        group.ScoringSessionId = session.Id;
+        await db.SaveChangesAsync();
+
+        try
+        {
+            await producer.ProduceAsync("issue-assigned", new Message<string, string>
+            {
+                Key = group.Board.ProjectId.ToString(),
+                Value = JsonSerializer.Serialize(new
+                {
+                    Id = group.OriginalIssueId,
+                    group.Board.ProjectId,
+                    SessionId = session.Id,
+                    // Inject A/B group info for the scoring agent's context
+                    AbGroupId = group.Id,
+                    AbVariantCount = group.Variants.Count,
+                })
+            });
+        }
+        catch (Exception)
+        {
+            session.Status = AgentSessionStatus.Failed;
+            session.EndedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+
+        return Ok(new { ScoringSessionId = session.Id, SessionStatus = session.Status.ToString() });
+    }
+
+    // ── Orchestrator Schedule ────────────────────────────────────────────
+
+    [HttpGet("boards/{boardId:guid}/orchestrator-schedule")]
+    public async Task<IActionResult> GetOrchestratorSchedule(Guid boardId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var schedule = await db.KanbanOrchestratorSchedules
+            .Include(s => s.Agent)
+            .Include(s => s.LastSession)
+            .Include(s => s.Board).ThenInclude(b => b.Project).ThenInclude(p => p.Organization)
+            .FirstOrDefaultAsync(s => s.BoardId == boardId &&
+                s.Board.Project.Organization.TenantId == ctx.CurrentTenant.Id);
+        return schedule is null ? NotFound() : Ok(schedule);
+    }
+
+    [HttpPut("boards/{boardId:guid}/orchestrator-schedule")]
+    public async Task<IActionResult> UpsertOrchestratorSchedule(Guid boardId, [FromBody] UpsertOrchestratorScheduleRequest req)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var board = await db.KanbanBoards
+            .Include(b => b.Project).ThenInclude(p => p.Organization)
+            .FirstOrDefaultAsync(b => b.Id == boardId && b.Project.Organization.TenantId == ctx.CurrentTenant.Id);
+        if (board is null) return NotFound();
+
+        var schedule = await db.KanbanOrchestratorSchedules
+            .FirstOrDefaultAsync(s => s.BoardId == boardId);
+
+        if (schedule is null)
+        {
+            schedule = new KanbanOrchestratorSchedule
+            {
+                Id = Guid.NewGuid(),
+                BoardId = boardId,
+                AgentId = req.AgentId,
+                IsEnabled = req.IsEnabled,
+                IntervalMinutes = req.IntervalMinutes > 0 ? req.IntervalMinutes : 60,
+                CreatedAt = DateTime.UtcNow,
+            };
+            db.KanbanOrchestratorSchedules.Add(schedule);
+        }
+        else
+        {
+            schedule.AgentId = req.AgentId;
+            schedule.IsEnabled = req.IsEnabled;
+            schedule.IntervalMinutes = req.IntervalMinutes > 0 ? req.IntervalMinutes : schedule.IntervalMinutes;
+        }
+
+        await db.SaveChangesAsync();
+        return Ok(schedule);
+    }
+
+    [HttpDelete("boards/{boardId:guid}/orchestrator-schedule")]
+    public async Task<IActionResult> DeleteOrchestratorSchedule(Guid boardId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var schedule = await db.KanbanOrchestratorSchedules
+            .Include(s => s.Board).ThenInclude(b => b.Project).ThenInclude(p => p.Organization)
+            .FirstOrDefaultAsync(s => s.BoardId == boardId &&
+                s.Board.Project.Organization.TenantId == ctx.CurrentTenant.Id);
+        if (schedule is null) return NotFound();
+        db.KanbanOrchestratorSchedules.Remove(schedule);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Manually triggers the orchestrator for a board immediately, regardless of schedule timing.
+    /// Computes the current board state hash; if the board is unchanged since the last run the trigger is still allowed
+    /// (manual overrides the change-detection gate).
+    /// </summary>
+    [HttpPost("boards/{boardId:guid}/orchestrator-schedule/trigger")]
+    public async Task<IActionResult> TriggerOrchestratorNow(Guid boardId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var schedule = await db.KanbanOrchestratorSchedules
+            .Include(s => s.Board).ThenInclude(b => b.Project).ThenInclude(p => p.Organization)
+            .FirstOrDefaultAsync(s => s.BoardId == boardId &&
+                s.Board.Project.Organization.TenantId == ctx.CurrentTenant.Id);
+        if (schedule is null) return NotFound("No orchestrator schedule configured for this board.");
+
+        return await LaunchOrchestratorSessionAsync(schedule, force: true);
+    }
+
+    /// <summary>
+    /// Computes a SHA-256 hash of the board's current state (all issues: id, status, kanban rank).
+    /// Used to detect whether the board has changed since the last orchestration run.
+    /// </summary>
+    internal static async Task<string> ComputeBoardStateHashAsync(IssuePitDbContext db, Guid boardId)
+    {
+        var board = await db.KanbanBoards
+            .Include(b => b.Columns)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(b => b.Id == boardId);
+        if (board is null) return string.Empty;
+
+        // Collect all issues in the project sorted deterministically
+        var issueStates = await db.Issues
+            .Where(i => i.ProjectId == board.ProjectId)
+            .OrderBy(i => i.Id)
+            .Select(i => $"{i.Id}:{(int)i.Status}:{i.KanbanRank}")
+            .ToListAsync();
+
+        var raw = string.Join("|", issueStates);
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
+        return Convert.ToHexString(bytes);
+    }
+
+    private async Task<IActionResult> LaunchOrchestratorSessionAsync(KanbanOrchestratorSchedule schedule, bool force = false)
+    {
+        var currentHash = await ComputeBoardStateHashAsync(db, schedule.BoardId);
+
+        if (!force && currentHash == schedule.LastBoardStateHash)
+        {
+            return Ok(new OrchestratorTriggerResponse(
+                Triggered: false,
+                Reason: "Board state unchanged since last run — skipping.",
+                LastRunAt: schedule.LastRunAt,
+                BoardStateHash: currentHash));
+        }
+
+        var session = new AgentSession
+        {
+            Id = Guid.NewGuid(),
+            AgentId = schedule.AgentId,
+            IssueId = null,
+            ProjectId = schedule.Board.ProjectId,
+            Status = AgentSessionStatus.Pending,
+        };
+        db.AgentSessions.Add(session);
+        schedule.LastRunAt = DateTime.UtcNow;
+        schedule.LastBoardStateHash = currentHash;
+        schedule.LastSessionId = session.Id;
+        await db.SaveChangesAsync();
+
+        try
+        {
+            await producer.ProduceAsync("issue-assigned", new Message<string, string>
+            {
+                Key = schedule.Board.ProjectId.ToString(),
+                Value = JsonSerializer.Serialize(new
+                {
+                    Id = Guid.Empty,  // no specific issue — board-level orchestration
+                    schedule.Board.ProjectId,
+                    SessionId = session.Id,
+                    OrchestratorMode = true,
+                    BoardId = schedule.BoardId,
+                })
+            });
+        }
+        catch (Exception)
+        {
+            session.Status = AgentSessionStatus.Failed;
+            session.EndedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+            return StatusCode(500, "Failed to queue orchestrator session.");
+        }
+
+        return Ok(new OrchestratorTriggerResponse(
+            Triggered: true,
+            Reason: force ? "Manual trigger." : "Board state changed since last run.",
+            LastRunAt: schedule.LastRunAt,
+            BoardStateHash: currentHash,
+            SessionId: session.Id));
+    }
 }
 
 public record CreateBoardRequest(Guid ProjectId, string Name, KanbanLaneProperty? LaneProperty = null);
@@ -624,3 +1009,32 @@ public record TransitionCheckResult(
     public bool IsAllowed => BlockReasons.Count == 0;
 }
 
+
+/// <summary>Request to create A/B implementation variants for an issue.</summary>
+public record CreateAbImplementationsRequest(
+    Guid OriginalIssueId,
+    List<AbVariantRequest> Variants,
+    Guid? ScoringAgentId = null);
+
+/// <summary>Specification for one A/B variant.</summary>
+public record AbVariantRequest(
+    string? Instructions = null,
+    Guid? AgentId = null,
+    string? ModelOverride = null);
+
+/// <summary>Request to trigger A/B scoring, with an optional agent override.</summary>
+public record TriggerAbScoringRequest(Guid? AgentId = null);
+
+/// <summary>Request to create or update an orchestrator schedule for a kanban board.</summary>
+public record UpsertOrchestratorScheduleRequest(
+    Guid AgentId,
+    bool IsEnabled = true,
+    int IntervalMinutes = 60);
+
+/// <summary>Result of a manual or scheduled orchestrator trigger.</summary>
+public record OrchestratorTriggerResponse(
+    bool Triggered,
+    string Reason,
+    DateTime? LastRunAt = null,
+    string? BoardStateHash = null,
+    Guid? SessionId = null);

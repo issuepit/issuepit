@@ -275,4 +275,32 @@ public class KanbanBoardTests : IAsyncLifetime
             await context.CloseAsync();
         }
     }
+
+    [Fact]
+    public async Task Kanban_ManageLanesPage_ShowsOrchestratorScheduleSection()
+    {
+        var (context, page, projectId, _, _) = await SetUpAsync();
+        try
+        {
+            var kanbanPage = new KanbanPage(page);
+            await kanbanPage.GotoAsync(projectId);
+            await kanbanPage.CreateBoardAsync("Sprint 3");
+
+            await kanbanPage.GotoManageLanesPageAsync(projectId);
+
+            await page.WaitForSelectorAsync("text=Manage Lanes",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
+
+            // Orchestrator Schedule section should be visible
+            await page.WaitForSelectorAsync("text=Orchestrator Schedule",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+            Assert.True(
+                await page.Locator("h2:has-text('Orchestrator Schedule')").CountAsync() > 0,
+                "Orchestrator Schedule section heading should be visible on the Manage Lanes page");
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
 }

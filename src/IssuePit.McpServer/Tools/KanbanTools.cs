@@ -121,5 +121,89 @@ public class KanbanTools(IssuePitApiClient api, IOptions<McpServerOptions> optio
         return json;
     }
 
+    /// <summary>
+    /// Creates A/B implementation variants for an issue: N child issues are created with different
+    /// instructions/agents/models so multiple approaches can be implemented in parallel.
+    /// Optionally starts agent sessions for each variant immediately.
+    /// A scoring agent can later compare implementations via <see cref="TriggerAbScoring"/>.
+    /// Requires OrchestratorMode.
+    /// </summary>
+    [McpServerTool, Description("Create A/B implementation variants for an issue. Spawns N sub-issues (each with its own instructions) and optionally starts parallel agent sessions with different models. The scoring agent will later compare results. Requires OrchestratorMode.")]
+    public async Task<string> CreateAbImplementations(
+        [Description("The board ID (GUID).")] Guid boardId,
+        [Description("The original issue ID to create variants from.")] Guid originalIssueId,
+        [Description("JSON array of variant specs: [{\"instructions\":\"...\",\"agentId\":\"...\",\"modelOverride\":\"...\"}]. At least 2 required.")] string variantsJson,
+        [Description("Optional scoring agent ID. Will be used to score and rank variants after implementation.")] Guid? scoringAgentId = null,
+        CancellationToken ct = default)
+    {
+        ToolGuard.EnforceOrchestratorMode(Opts, "CreateAbImplementations");
+        ToolGuard.EnforceNotReadOnly(Opts, requestContext, "CreateAbImplementations");
+        var variants = System.Text.Json.JsonSerializer.Deserialize<List<object>>(variantsJson) ?? [];
+        var payload = new { originalIssueId, variants, scoringAgentId };
+        var result = await api.PostAsync<object>($"/api/kanban/boards/{boardId}/ab-implementations", payload, ct);
+        return Serialize(result);
+    }
+
+    /// <summary>
+    /// Lists all A/B implementation groups for a board.
+    /// Requires OrchestratorMode.
+    /// </summary>
+    [McpServerTool, Description("List all A/B implementation groups for a kanban board. Requires OrchestratorMode.")]
+    public async Task<string> ListAbImplementations(
+        [Description("The board ID (GUID).")] Guid boardId,
+        CancellationToken ct = default)
+    {
+        ToolGuard.EnforceOrchestratorMode(Opts, "ListAbImplementations");
+        var result = await api.GetAsync<object>($"/api/kanban/boards/{boardId}/ab-implementations", ct);
+        return Serialize(result);
+    }
+
+    /// <summary>
+    /// Triggers the scoring agent for an A/B group to compare and rank all variant implementations.
+    /// Requires OrchestratorMode.
+    /// </summary>
+    [McpServerTool, Description("Start the scoring agent for an A/B group to compare variant implementations and rank their quality. Requires OrchestratorMode.")]
+    public async Task<string> TriggerAbScoring(
+        [Description("The board ID (GUID).")] Guid boardId,
+        [Description("The A/B group ID (GUID).")] Guid groupId,
+        [Description("Optional agent ID override for scoring. Falls back to the group's configured scoring agent.")] Guid? agentId = null,
+        CancellationToken ct = default)
+    {
+        ToolGuard.EnforceOrchestratorMode(Opts, "TriggerAbScoring");
+        ToolGuard.EnforceNotReadOnly(Opts, requestContext, "TriggerAbScoring");
+        var payload = agentId.HasValue ? new { agentId } : (object)new { };
+        var result = await api.PostAsync<object>($"/api/kanban/boards/{boardId}/ab-implementations/{groupId}/score", payload, ct);
+        return Serialize(result);
+    }
+
+    /// <summary>
+    /// Returns the orchestrator schedule for a board (interval, enabled state, last run, board state hash).
+    /// Requires OrchestratorMode.
+    /// </summary>
+    [McpServerTool, Description("Get the orchestrator schedule for a board: interval, enabled flag, last run time, and whether the board has changed since the last run. Requires OrchestratorMode.")]
+    public async Task<string> GetOrchestratorSchedule(
+        [Description("The board ID (GUID).")] Guid boardId,
+        CancellationToken ct = default)
+    {
+        ToolGuard.EnforceOrchestratorMode(Opts, "GetOrchestratorSchedule");
+        var result = await api.GetAsync<object>($"/api/kanban/boards/{boardId}/orchestrator-schedule", ct);
+        return Serialize(result);
+    }
+
+    /// <summary>
+    /// Manually triggers the board orchestrator right now, regardless of schedule timing or board-change detection.
+    /// Requires OrchestratorMode.
+    /// </summary>
+    [McpServerTool, Description("Manually trigger the board orchestrator immediately (bypasses schedule interval and board-change gate). Requires OrchestratorMode.")]
+    public async Task<string> TriggerBoardOrchestration(
+        [Description("The board ID (GUID).")] Guid boardId,
+        CancellationToken ct = default)
+    {
+        ToolGuard.EnforceOrchestratorMode(Opts, "TriggerBoardOrchestration");
+        ToolGuard.EnforceNotReadOnly(Opts, requestContext, "TriggerBoardOrchestration");
+        var result = await api.PostAsync<object>($"/api/kanban/boards/{boardId}/orchestrator-schedule/trigger", new { }, ct);
+        return Serialize(result);
+    }
+
     private static string Serialize(object? value) => ToolSerializer.Serialize(value);
 }

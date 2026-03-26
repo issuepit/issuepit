@@ -155,6 +155,92 @@
           </div>
         </div>
       </div>
+
+      <!-- Orchestrator Schedule -->
+      <div class="mt-8">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-semibold text-gray-200">Orchestrator Schedule</h2>
+          <span v-if="schedule?.isEnabled" class="text-xs bg-green-900/30 text-green-400 px-2 py-0.5 rounded-full">enabled</span>
+          <span v-else-if="schedule" class="text-xs bg-gray-800 text-gray-500 px-2 py-0.5 rounded-full">disabled</span>
+        </div>
+
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-4">
+          <p class="text-xs text-gray-500">
+            Configure an agent to automatically orchestrate this board on a schedule.
+            The agent will only run if the board state has changed since the last run.
+          </p>
+
+          <!-- Current schedule info -->
+          <div v-if="schedule && !editingSchedule" class="space-y-2">
+            <div class="flex items-center gap-3 text-sm">
+              <span class="text-gray-400 w-24 shrink-0">Agent:</span>
+              <span class="text-gray-200">{{ agentName(schedule.agentId) ?? schedule.agentId }}</span>
+            </div>
+            <div class="flex items-center gap-3 text-sm">
+              <span class="text-gray-400 w-24 shrink-0">Interval:</span>
+              <span class="text-gray-200">Every {{ schedule.intervalMinutes }} min</span>
+            </div>
+            <div class="flex items-center gap-3 text-sm">
+              <span class="text-gray-400 w-24 shrink-0">Last run:</span>
+              <span class="text-gray-200">
+                <DateDisplay v-if="schedule.lastRunAt" :date="schedule.lastRunAt" mode="relative" />
+                <span v-else class="text-gray-600">Never</span>
+              </span>
+            </div>
+            <div class="flex gap-2 pt-2">
+              <button @click="editingSchedule = true"
+                class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">
+                Edit
+              </button>
+              <button @click="triggerOrchestratorNow" :disabled="triggeringOrchestrator"
+                class="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                {{ triggeringOrchestrator ? 'Triggering…' : 'Run now' }}
+              </button>
+              <button @click="deleteSchedule"
+                class="text-xs bg-gray-800 hover:bg-red-900 text-gray-400 hover:text-red-300 px-3 py-1.5 rounded-lg transition-colors">
+                Remove
+              </button>
+            </div>
+            <div v-if="scheduleMessage" class="text-xs mt-2" :class="scheduleMessageIsError ? 'text-red-400' : 'text-green-400'">
+              {{ scheduleMessage }}
+            </div>
+          </div>
+
+          <!-- Edit / create schedule form -->
+          <div v-else class="space-y-3">
+            <div class="flex items-center gap-3">
+              <label class="text-xs text-gray-500 w-24 shrink-0">Agent:</label>
+              <select v-model="scheduleAgentId"
+                class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option value="">Select agent…</option>
+                <option v-for="agent in agentsStore.agents" :key="agent.id" :value="agent.id">{{ agent.name }}</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-3">
+              <label class="text-xs text-gray-500 w-24 shrink-0">Interval (min):</label>
+              <input v-model.number="scheduleIntervalMinutes" type="number" min="5" max="1440"
+                class="w-24 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+            <div class="flex items-center gap-3">
+              <label class="text-xs text-gray-500 w-24 shrink-0">Enabled:</label>
+              <input v-model="scheduleEnabled" type="checkbox" class="rounded" />
+            </div>
+            <div class="flex gap-2 pt-1">
+              <button @click="saveSchedule" :disabled="!scheduleAgentId"
+                class="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                Save
+              </button>
+              <button @click="cancelEditSchedule"
+                class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">
+                Cancel
+              </button>
+            </div>
+            <div v-if="scheduleMessage" class="text-xs mt-1" :class="scheduleMessageIsError ? 'text-red-400' : 'text-green-400'">
+              {{ scheduleMessage }}
+            </div>
+          </div>
+        </div>
+      </div>
     </template>
 
     <!-- Delete column confirmation -->
@@ -185,6 +271,7 @@ import { useProjectsStore } from '~/stores/projects'
 import { useAgentsStore } from '~/stores/agents'
 import { IssueStatus } from '~/types'
 import type { KanbanColumn } from '~/types'
+import DateDisplay from '~/components/DateDisplay.vue'
 
 const route = useRoute()
 const id = route.params.id as string
@@ -199,6 +286,26 @@ const editColumnName = ref('')
 const editColumnAgentId = ref<string | null>(null)
 const newColName = ref('')
 const deletingColumnId = ref<string | null>(null)
+
+// Orchestrator schedule state
+interface OrchestratorSchedule {
+  id: string
+  boardId: string
+  agentId: string
+  isEnabled: boolean
+  intervalMinutes: number
+  lastRunAt: string | null
+  lastBoardStateHash: string | null
+  lastSessionId: string | null
+}
+const schedule = ref<OrchestratorSchedule | null>(null)
+const editingSchedule = ref(false)
+const scheduleAgentId = ref('')
+const scheduleIntervalMinutes = ref(60)
+const scheduleEnabled = ref(true)
+const scheduleMessage = ref('')
+const scheduleMessageIsError = ref(false)
+const triggeringOrchestrator = ref(false)
 
 const activeBoard = computed(() => kanban.boards.find(b => b.id === activeBoardId.value) ?? null)
 const boardColumns = computed(() =>
@@ -263,10 +370,101 @@ async function addColumn() {
   newColName.value = ''
 }
 
+// ── Orchestrator Schedule ────────────────────────────────────────────────────
+
+async function fetchSchedule(boardId: string) {
+  schedule.value = null
+  try {
+    const api = useApi()
+    const res = await api.get<OrchestratorSchedule>(`/api/kanban/boards/${boardId}/orchestrator-schedule`)
+    schedule.value = res
+    editingSchedule.value = false
+  } catch {
+    // 404 means no schedule configured yet — that's fine
+    schedule.value = null
+    editingSchedule.value = false
+  }
+}
+
+function cancelEditSchedule() {
+  editingSchedule.value = false
+  scheduleMessage.value = ''
+  if (schedule.value) {
+    scheduleAgentId.value = schedule.value.agentId
+    scheduleIntervalMinutes.value = schedule.value.intervalMinutes
+    scheduleEnabled.value = schedule.value.isEnabled
+  }
+}
+
+async function saveSchedule() {
+  if (!scheduleAgentId.value || !activeBoardId.value) return
+  scheduleMessage.value = ''
+  scheduleMessageIsError.value = false
+  try {
+    const api = useApi()
+    const res = await api.put<OrchestratorSchedule>(`/api/kanban/boards/${activeBoardId.value}/orchestrator-schedule`, {
+      agentId: scheduleAgentId.value,
+      intervalMinutes: scheduleIntervalMinutes.value,
+      isEnabled: scheduleEnabled.value,
+    })
+    schedule.value = res
+    editingSchedule.value = false
+    scheduleMessage.value = 'Schedule saved.'
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'Failed to save schedule'
+    scheduleMessage.value = msg
+    scheduleMessageIsError.value = true
+  }
+}
+
+async function deleteSchedule() {
+  if (!activeBoardId.value) return
+  scheduleMessage.value = ''
+  scheduleMessageIsError.value = false
+  try {
+    const api = useApi()
+    await api.del(`/api/kanban/boards/${activeBoardId.value}/orchestrator-schedule`)
+    schedule.value = null
+    editingSchedule.value = false
+    scheduleMessage.value = 'Schedule removed.'
+    scheduleMessageIsError.value = false
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'Failed to remove schedule'
+    scheduleMessage.value = msg
+    scheduleMessageIsError.value = true
+  }
+}
+
+async function triggerOrchestratorNow() {
+  if (!activeBoardId.value) return
+  triggeringOrchestrator.value = true
+  scheduleMessage.value = ''
+  scheduleMessageIsError.value = false
+  try {
+    const api = useApi()
+    const res = await api.post<{ triggered: boolean; reason: string; sessionId?: string }>(
+      `/api/kanban/boards/${activeBoardId.value}/orchestrator-schedule/trigger`, {})
+    if (res?.triggered) {
+      scheduleMessage.value = `Orchestrator triggered. Session: ${res.sessionId}`
+    } else {
+      scheduleMessage.value = res?.reason ?? 'Not triggered (board unchanged).'
+    }
+    scheduleMessageIsError.value = false
+    await fetchSchedule(activeBoardId.value)
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'Failed to trigger'
+    scheduleMessage.value = msg
+    scheduleMessageIsError.value = true
+  } finally {
+    triggeringOrchestrator.value = false
+  }
+}
+
 watch(activeBoardId, (bid) => {
   if (bid) {
     kanban.selectBoard(kanban.boards.find(b => b.id === bid)!)
     kanban.fetchTransitions(bid)
+    fetchSchedule(bid)
   }
 })
 
@@ -279,5 +477,8 @@ onMounted(async () => {
   if (kanban.boards.length) {
     activeBoardId.value = kanban.boards[0].id
   }
+  // Initialize schedule form defaults
+  scheduleIntervalMinutes.value = 60
+  scheduleEnabled.value = true
 })
 </script>
