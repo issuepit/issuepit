@@ -88,7 +88,7 @@ When working as a coding agent on this repository, follow these conventions:
 
 - **No hidden fallbacks when configuration is incomplete or ambiguous.** This applies broadly: git remote selection, runtime resolution, credential lookup, and any other place where the system cannot determine the correct value unambiguously. When the required configuration is absent or incorrect, fail immediately with an error that tells the user exactly what to fix. Silent fallbacks let runs proceed in an unexpected state, making failures far harder to diagnose. Examples of what NOT to do: falling back to the first available remote when no Working remote is configured; falling back to a default org when the target org is missing; silently ignoring a missing credential and proceeding unauthenticated.
 
-- **Never auto-create work that was not explicitly requested.** Agent sessions, runs, and other work items must only be created when the user explicitly triggers them (e.g. assignment of a non-manual agent, or pressing the "Start Manual Session" button for a manual-mode agent). Do not invent hidden triggers or surrogate inputs (e.g. stub issues, fallback project IDs) to bypass missing required data — instead, fail with a clear error. Manual-mode agents in particular must only start via an explicit user action; they must never be auto-started on issue assignment, @mention, or any other implicit event.
+- **Never silently do things that were not explicitly requested.** Do not invent hidden triggers or surrogate inputs (e.g. stub issues, fallback project IDs) to bypass missing required data — instead, fail with a clear error.
 
 ## Date Formats
 
