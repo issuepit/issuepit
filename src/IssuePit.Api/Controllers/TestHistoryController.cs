@@ -404,11 +404,12 @@ public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : Co
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // Import TRX file directly
+    // Import TRX or JUnit XML file directly
     // ──────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Imports a <c>.trx</c> file directly into the test history for the given project.
+    /// Imports a <c>.trx</c> (Visual Studio) or JUnit XML (<c>.xml</c>) test results file
+    /// directly into the test history for the given project.
     /// A synthetic <see cref="CiCdRun"/> row is created with the supplied metadata so the
     /// imported results integrate seamlessly with the rest of the test history.
     /// </summary>
@@ -425,20 +426,27 @@ public class TestHistoryController(IssuePitDbContext db, TenantContext ctx) : Co
         if (!await ProjectExistsInTenantAsync(projectId)) return NotFound();
 
         if (file is null || file.Length == 0)
-            return BadRequest("A .trx file is required.");
+            return BadRequest("A test results file is required.");
 
-        if (!file.FileName.EndsWith(".trx", StringComparison.OrdinalIgnoreCase))
-            return BadRequest("Only .trx files are supported.");
+        var isTrx = file.FileName.EndsWith(".trx", StringComparison.OrdinalIgnoreCase);
+        var isXml = file.FileName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase);
+
+        if (!isTrx && !isXml)
+            return BadRequest("Only .trx (Visual Studio) and .xml (JUnit) test results files are supported.");
 
         CiCdTestSuite? suite;
         await using (var stream = file.OpenReadStream())
         {
             var name = artifactName ?? Path.GetFileNameWithoutExtension(file.FileName);
-            suite = TrxParser.Parse(stream, name);
+            suite = isTrx
+                ? TrxParser.Parse(stream, name)
+                : JUnitParser.Parse(stream, name);
         }
 
         if (suite is null)
-            return BadRequest("Failed to parse the uploaded .trx file. Make sure it is a valid Visual Studio test results file.");
+            return BadRequest(isTrx
+                ? "Failed to parse the uploaded .trx file. Make sure it is a valid Visual Studio test results file."
+                : "Failed to parse the uploaded .xml file. Make sure it is a valid JUnit test results file.");
 
         // Create a synthetic run to anchor the imported results.
         var now = DateTime.UtcNow;

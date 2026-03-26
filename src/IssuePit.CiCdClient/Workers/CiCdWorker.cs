@@ -624,12 +624,29 @@ public class CiCdWorker(
                 suiteCount++;
             }
 
-            // 2. .trx files packed inside .zip archives under the act artifact server layout:
-            //    artifactDir/<runNumber>/<artifactName>/<file>.zip  (contains <file>.trx)
+            // 1b. Bare .xml JUnit files on disk (produced by Vitest/Jest/pytest etc.).
+            var bareJUnitFiles = JUnitParser.FindJUnitFiles(artifactDir).ToList();
+            foreach (var xmlFile in bareJUnitFiles)
+            {
+                var suite = JUnitParser.Parse(xmlFile);
+                if (suite is null)
+                {
+                    logger.LogDebug("Skipping .xml file {XmlFile} for run {RunId} — not valid JUnit XML", xmlFile, runId);
+                    continue;
+                }
+
+                suite.CiCdRunId = runId;
+                // No artifact name context for bare JUnit files; JobId stays null.
+                db.CiCdTestSuites.Add(suite);
+                suiteCount++;
+            }
+
+            // 2. .trx/.xml files packed inside .zip archives under the act artifact server layout:
+            //    artifactDir/<runNumber>/<artifactName>/<file>.zip  (contains <file>.trx or <file>.xml)
             // 3. Files without .zip extension stored by act v7+ direct-upload:
             //    artifactDir/<runNumber>/<artifactName>/<artifactName>  (raw content)
-            //    These are tried first as a zip archive (containing .trx entries) and then as
-            //    raw TRX XML — the same artifact name (directory name) is used for both cases.
+            //    These are tried first as a zip archive (containing .trx/.xml entries) and then as
+            //    raw TRX or JUnit XML — the same artifact name (directory name) is used for both cases.
             foreach (var runDir in Directory.GetDirectories(artifactDir))
             {
                 var runDirName = Path.GetFileName(runDir);
@@ -652,7 +669,11 @@ public class CiCdWorker(
                         if (string.Equals(ext, ".trx", StringComparison.OrdinalIgnoreCase))
                             continue;
 
-                        // Try to open the file as a zip archive and look for .trx entries inside.
+                        // Already handled by case 1b (bare .xml JUnit files via FindJUnitFiles).
+                        if (string.Equals(ext, ".xml", StringComparison.OrdinalIgnoreCase))
+                            continue;
+
+                        // Try to open the file as a zip archive and look for .trx/.xml entries inside.
                         // This covers both .zip files (act archive mode) and extensionless files
                         // stored by act v7+ that are still zip archives (archive=true, no extension).
                         var foundInZip = false;
@@ -661,17 +682,32 @@ public class CiCdWorker(
                             using var zip = ZipFile.OpenRead(artifactFile);
                             foreach (var entry in zip.Entries)
                             {
-                                if (!entry.FullName.EndsWith(".trx", StringComparison.OrdinalIgnoreCase))
+                                var entryExt = Path.GetExtension(entry.FullName);
+                                var isTrxEntry = entry.FullName.EndsWith(".trx", StringComparison.OrdinalIgnoreCase);
+                                var isXmlEntry = entry.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase);
+
+                                if (!isTrxEntry && !isXmlEntry)
                                     continue;
 
                                 using var stream = entry.Open();
-                                var suite = TrxParser.Parse(stream, artifactName);
-                                if (suite is null)
+                                CiCdTestSuite? suite;
+                                if (isTrxEntry)
                                 {
-                                    logger.LogWarning("Failed to parse TRX entry {Entry} in {ArtifactFile} for run {RunId}",
-                                        entry.FullName, artifactFile, runId);
-                                    continue;
+                                    suite = TrxParser.Parse(stream, artifactName);
+                                    if (suite is null)
+                                        logger.LogWarning("Failed to parse TRX entry {Entry} in {ArtifactFile} for run {RunId}",
+                                            entry.FullName, artifactFile, runId);
                                 }
+                                else
+                                {
+                                    suite = JUnitParser.Parse(stream, artifactName);
+                                    if (suite is null)
+                                        logger.LogDebug("Skipping .xml entry {Entry} in {ArtifactFile} for run {RunId} — not valid JUnit XML",
+                                            entry.FullName, artifactFile, runId);
+                                }
+
+                                if (suite is null)
+                                    continue;
 
                                 suite.CiCdRunId = runId;
                                 suite.JobId = inferredJobId;
@@ -682,8 +718,8 @@ public class CiCdWorker(
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException)
                         {
-                            // Not a valid zip — fall through and try as raw TRX XML below.
-                            logger.LogDebug("File {ArtifactFile} is not a valid zip for run {RunId} ({Message}); will try as raw TRX", artifactFile, runId, ex.Message);
+                            // Not a valid zip — fall through and try as raw TRX or JUnit XML below.
+                            logger.LogDebug("File {ArtifactFile} is not a valid zip for run {RunId} ({Message}); will try as raw TRX/JUnit", artifactFile, runId, ex.Message);
                         }
 
                         if (foundInZip)
@@ -691,15 +727,23 @@ public class CiCdWorker(
 
                         // Skip files with extensions other than the ones we know how to handle
                         // (e.g. .txt, .json) to avoid noisy parse-attempt failures.
-                        // Only try extensionless files (act v7 direct-upload of a single TRX).
+                        // Only try extensionless files (act v7 direct-upload of a single file).
                         if (!string.IsNullOrEmpty(ext))
                             continue;
 
-                        // Try the extensionless file as raw TRX XML (act v7 direct upload with archive=false).
+                        // Try the extensionless file as raw TRX XML first, then JUnit XML
+                        // (act v7 direct upload with archive=false).
                         try
                         {
                             using var stream = File.OpenRead(artifactFile);
                             var suite = TrxParser.Parse(stream, artifactName);
+                            if (suite is null)
+                            {
+                                // Reset stream and try JUnit XML.
+                                stream.Position = 0;
+                                suite = JUnitParser.Parse(stream, artifactName);
+                            }
+
                             if (suite is not null)
                             {
                                 suite.CiCdRunId = runId;
@@ -710,7 +754,7 @@ public class CiCdWorker(
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException)
                         {
-                            logger.LogDebug("File {ArtifactFile} is not a valid TRX for run {RunId} ({Message})", artifactFile, runId, ex.Message);
+                            logger.LogDebug("File {ArtifactFile} is not a valid TRX or JUnit XML for run {RunId} ({Message})", artifactFile, runId, ex.Message);
                         }
                     }
                 }
@@ -718,11 +762,11 @@ public class CiCdWorker(
 
             if (suiteCount == 0)
             {
-                logger.LogInformation("No TRX file(s) found for run {RunId}", runId);
+                logger.LogInformation("No TRX or JUnit XML file(s) found for run {RunId}", runId);
                 return;
             }
 
-            logger.LogInformation("Parsed {Count} TRX file(s) for run {RunId}; storing test results", suiteCount, runId);
+            logger.LogInformation("Parsed {Count} test result file(s) for run {RunId}; storing test results", suiteCount, runId);
             await db.SaveChangesAsync(cancellationToken);
             logger.LogInformation("Stored test results for run {RunId}", runId);
         }
@@ -1033,9 +1077,10 @@ public class CiCdWorker(
     }
 
     /// <summary>
-    /// Returns <c>true</c> when <paramref name="artifactDir"/> contains at least one <c>.trx</c> file —
-    /// either directly on disk or packed inside a <c>.zip</c> or extensionless archive. Used to flag
-    /// test-result artifacts so the frontend can group or hide them behind a toggle.
+    /// Returns <c>true</c> when <paramref name="artifactDir"/> contains at least one <c>.trx</c>
+    /// or JUnit XML (<c>.xml</c>) file — either directly on disk or packed inside a <c>.zip</c>
+    /// or extensionless archive. Used to flag test-result artifacts so the frontend can group or
+    /// hide them behind a toggle.
     /// </summary>
     private static bool ArtifactContainsTrxFiles(string artifactDir)
     {
@@ -1050,13 +1095,33 @@ public class CiCdWorker(
             if (string.Equals(ext, ".trx", StringComparison.OrdinalIgnoreCase))
                 return true;
 
-            // .trx entry packed inside a .zip or extensionless archive (act artifact layout).
+            // Bare .xml JUnit file on disk.
+            if (string.Equals(ext, ".xml", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    using var stream = File.OpenRead(file);
+                    var doc = new System.Xml.XmlDocument();
+                    doc.Load(stream);
+                    if (JUnitParser.IsJUnitDocument(doc))
+                        return true;
+                }
+                catch
+                {
+                    // Not parseable — silently skip.
+                }
+                continue;
+            }
+
+            // .trx or JUnit .xml entry packed inside a .zip or extensionless archive (act artifact layout).
             if (string.Equals(ext, ".zip", StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(ext))
             {
                 try
                 {
                     using var zip = ZipFile.OpenRead(file);
-                    if (zip.Entries.Any(e => e.FullName.EndsWith(".trx", StringComparison.OrdinalIgnoreCase)))
+                    if (zip.Entries.Any(e =>
+                            e.FullName.EndsWith(".trx", StringComparison.OrdinalIgnoreCase) ||
+                            e.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)))
                         return true;
                 }
                 catch
