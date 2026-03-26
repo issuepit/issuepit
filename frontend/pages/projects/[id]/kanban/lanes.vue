@@ -203,7 +203,9 @@ async function moveColumnUp(columnId: string) {
   const cols = boardColumns.value.slice()
   const idx = cols.findIndex(c => c.id === columnId)
   if (idx <= 0) return
-  ;[cols[idx - 1], cols[idx]] = [cols[idx], cols[idx - 1]]
+  const temp = cols[idx - 1]
+  cols[idx - 1] = cols[idx]
+  cols[idx] = temp
   await kanban.reorderColumns(activeBoardId.value, cols.map(c => c.id))
 }
 
@@ -211,7 +213,9 @@ async function moveColumnDown(columnId: string) {
   const cols = boardColumns.value.slice()
   const idx = cols.findIndex(c => c.id === columnId)
   if (idx < 0 || idx >= cols.length - 1) return
-  ;[cols[idx], cols[idx + 1]] = [cols[idx + 1], cols[idx]]
+  const temp = cols[idx]
+  cols[idx] = cols[idx + 1]
+  cols[idx + 1] = temp
   await kanban.reorderColumns(activeBoardId.value, cols.map(c => c.id))
 }
 

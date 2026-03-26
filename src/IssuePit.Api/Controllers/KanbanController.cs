@@ -389,7 +389,7 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
         if (transition.RequirePlanComment)
         {
             var hasPlan = await db.IssueComments
-                .AnyAsync(c => c.IssueId == req.IssueId && c.Body.Contains("plan:"));
+                .AnyAsync(c => c.IssueId == req.IssueId && c.Body.ToLower().Contains("plan:"));
             if (!hasPlan)
                 return BadRequest("Transition requires a plan comment (a comment mentioning \"plan:\").");
         }

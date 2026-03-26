@@ -37,7 +37,7 @@ public class KanbanTools(IssuePitApiClient api, IOptions<McpServerOptions> optio
         return Serialize(result);
     }
 
-    [McpServerTool, Description("Move an issue to a specific kanban column. Respects PreventAgentMove and HideFromAgents issue flags.")]
+    [McpServerTool, Description("Move an issue to a specific kanban column. PreventAgentMove and HideFromAgents checks are enforced by the backend API.")]
     public async Task<string> MoveIssueOnBoard(
         [Description("The board ID (GUID).")] Guid boardId,
         [Description("The issue ID (GUID).")] Guid issueId,
@@ -50,7 +50,7 @@ public class KanbanTools(IssuePitApiClient api, IOptions<McpServerOptions> optio
         return Serialize(result);
     }
 
-    [McpServerTool, Description("Trigger a named kanban transition for an issue, moving it from one column to another. Respects PreventAgentMove and HideFromAgents issue flags. A reason can be provided to explain the move.")]
+    [McpServerTool, Description("Trigger a named kanban transition for an issue, moving it from one column to another. PreventAgentMove and HideFromAgents checks are enforced by the backend API. A reason can be provided to explain the move.")]
     public async Task<string> TriggerKanbanTransition(
         [Description("The board ID (GUID).")] Guid boardId,
         [Description("The transition ID (GUID).")] Guid transitionId,
