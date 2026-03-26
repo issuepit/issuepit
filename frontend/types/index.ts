@@ -51,6 +51,8 @@ export interface Organization {
   actionOfflineMode?: boolean
   localRepositories?: string | null
   skipSteps?: string | null
+  /** Per-field config source mapping. Keys are camelCase field names; values are source file names. */
+  configFieldSources?: Record<string, string> | null
   createdAt: string
   updatedAt: string
 }
@@ -203,6 +205,8 @@ export interface Project {
   issueKey?: string | null
   /** Offset added to issue numbers when displayed in the UI. Defaults to 0. */
   issueNumberOffset: number
+  /** Per-field config source mapping. Keys are camelCase field names; values are source file names. */
+  configFieldSources?: Record<string, string> | null
   createdAt: string
   updatedAt: string
   /** Whether the current user has pinned this project. */

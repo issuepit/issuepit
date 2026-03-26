@@ -3,6 +3,7 @@ using System;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace IssuePit.Core.Migrations
 {
     [DbContext(typeof(IssuePitDbContext))]
-    partial class IssuePitDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260326034928_AddConfigFieldSources")]
+    partial class AddConfigFieldSources
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1706,109 +1709,6 @@ namespace IssuePit.Core.Migrations
                     b.HasIndex("IssueId");
 
                     b.ToTable("issue_tasks");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.JiraSyncConfig", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("ApiKeyId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("ImportComments")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("JiraBaseUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("JiraEmail")
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)");
-
-                    b.Property<string>("JiraProjectKey")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<bool>("OnlyImportWithParent")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("TriggerMode")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ApiKeyId");
-
-                    b.HasIndex("ProjectId");
-
-                    b.ToTable("jira_sync_configs");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.JiraSyncRun", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("StartedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Summary")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProjectId");
-
-                    b.ToTable("jira_sync_runs");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.JiraSyncRunLog", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Level")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Message")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("SyncRunId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("Timestamp")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SyncRunId");
-
-                    b.ToTable("jira_sync_run_logs");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.KanbanBoard", b =>
@@ -3717,45 +3617,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("Issue");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.JiraSyncConfig", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.ApiKey", "ApiKey")
-                        .WithMany()
-                        .HasForeignKey("ApiKeyId");
-
-                    b.HasOne("IssuePit.Core.Entities.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ApiKey");
-
-                    b.Navigation("Project");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.JiraSyncRun", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Project");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.JiraSyncRunLog", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.JiraSyncRun", "SyncRun")
-                        .WithMany("Logs")
-                        .HasForeignKey("SyncRunId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("SyncRun");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.KanbanBoard", b =>
                 {
                     b.HasOne("IssuePit.Core.Entities.Project", "Project")
@@ -4308,11 +4169,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("Links");
 
                     b.Navigation("SubIssues");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.JiraSyncRun", b =>
-                {
-                    b.Navigation("Logs");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.KanbanBoard", b =>

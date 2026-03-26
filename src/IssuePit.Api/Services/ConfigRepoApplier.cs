@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
@@ -109,20 +110,67 @@ public class ConfigRepoApplier(
         }
 
         if (model.Name is not null) org.Name = model.Name;
-        if (model.MaxConcurrentRunners.HasValue) org.MaxConcurrentRunners = model.MaxConcurrentRunners.Value;
-        if (model.ConcurrentJobs.HasValue) org.ConcurrentJobs = model.ConcurrentJobs;
+
+        // Build the config-field-sources dictionary once and apply it at the end.
+        var sourceFileName = Path.GetFileName(filePath);
+        var configSources = org.ConfigFieldSourcesJson is not null
+            ? System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(org.ConfigFieldSourcesJson) ?? new Dictionary<string, string>()
+            : new Dictionary<string, string>();
+
+        if (model.MaxConcurrentRunners.HasValue)
+        {
+            org.MaxConcurrentRunners = model.MaxConcurrentRunners.Value;
+            configSources["maxConcurrentRunners"] = sourceFileName;
+        }
+        if (model.ConcurrentJobs.HasValue)
+        {
+            org.ConcurrentJobs = model.ConcurrentJobs;
+            configSources["concurrentJobs"] = sourceFileName;
+        }
         if (model.ActRunnerImage is not null)
         {
             org.ActRunnerImage = model.ActRunnerImage;
-            org.ActRunnerImageSourceFile = Path.GetFileName(filePath);
+            org.ActRunnerImageSourceFile = sourceFileName;
+            configSources["actRunnerImage"] = sourceFileName;
         }
-        if (model.ActEnv is not null) org.ActEnv = model.ActEnv;
-        if (model.ActSecrets is not null) org.ActSecrets = model.ActSecrets;
-        if (model.ActionCachePath is not null) org.ActionCachePath = model.ActionCachePath;
-        if (model.UseNewActionCache.HasValue) org.UseNewActionCache = model.UseNewActionCache.Value;
-        if (model.ActionOfflineMode.HasValue) org.ActionOfflineMode = model.ActionOfflineMode.Value;
-        if (model.LocalRepositories is not null) org.LocalRepositories = model.LocalRepositories;
-        if (model.SkipSteps is not null) org.SkipSteps = model.SkipSteps;
+        if (model.ActEnv is not null)
+        {
+            org.ActEnv = model.ActEnv;
+            configSources["actEnv"] = sourceFileName;
+        }
+        if (model.ActSecrets is not null)
+        {
+            org.ActSecrets = model.ActSecrets;
+            configSources["actSecrets"] = sourceFileName;
+        }
+        if (model.ActionCachePath is not null)
+        {
+            org.ActionCachePath = model.ActionCachePath;
+            configSources["actionCachePath"] = sourceFileName;
+        }
+        if (model.UseNewActionCache.HasValue)
+        {
+            org.UseNewActionCache = model.UseNewActionCache.Value;
+            configSources["useNewActionCache"] = sourceFileName;
+        }
+        if (model.ActionOfflineMode.HasValue)
+        {
+            org.ActionOfflineMode = model.ActionOfflineMode.Value;
+            configSources["actionOfflineMode"] = sourceFileName;
+        }
+        if (model.LocalRepositories is not null)
+        {
+            org.LocalRepositories = model.LocalRepositories;
+            configSources["localRepositories"] = sourceFileName;
+        }
+        if (model.SkipSteps is not null)
+        {
+            org.SkipSteps = model.SkipSteps;
+            configSources["skipSteps"] = sourceFileName;
+        }
+
+        if (configSources.Count > 0)
+            org.ConfigFieldSourcesJson = System.Text.Json.JsonSerializer.Serialize(configSources);
 
         if (model.Members is not null)
             await ApplyOrgMembersAsync(tenant, org, model.Members, strictMode, result, filePath, ct);
@@ -243,21 +291,72 @@ public class ConfigRepoApplier(
 
         if (model.Name is not null) project.Name = model.Name;
         if (model.Description is not null) project.Description = model.Description;
-        if (model.MountRepositoryInDocker.HasValue) project.MountRepositoryInDocker = model.MountRepositoryInDocker.Value;
-        if (model.MaxConcurrentRunners.HasValue) project.MaxConcurrentRunners = model.MaxConcurrentRunners.Value;
-        if (model.ConcurrentJobs.HasValue) project.ConcurrentJobs = model.ConcurrentJobs;
+
+        // Build the config-field-sources dictionary once and apply it at the end.
+        var sourceFileName = Path.GetFileName(filePath);
+        var configSources = project.ConfigFieldSourcesJson is not null
+            ? System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(project.ConfigFieldSourcesJson) ?? new Dictionary<string, string>()
+            : new Dictionary<string, string>();
+
+        if (model.MountRepositoryInDocker.HasValue)
+        {
+            project.MountRepositoryInDocker = model.MountRepositoryInDocker.Value;
+            configSources["mountRepositoryInDocker"] = sourceFileName;
+        }
+        if (model.MaxConcurrentRunners.HasValue)
+        {
+            project.MaxConcurrentRunners = model.MaxConcurrentRunners.Value;
+            configSources["maxConcurrentRunners"] = sourceFileName;
+        }
+        if (model.ConcurrentJobs.HasValue)
+        {
+            project.ConcurrentJobs = model.ConcurrentJobs;
+            configSources["concurrentJobs"] = sourceFileName;
+        }
         if (model.ActRunnerImage is not null)
         {
             project.ActRunnerImage = model.ActRunnerImage;
-            project.ActRunnerImageSourceFile = Path.GetFileName(filePath);
+            project.ActRunnerImageSourceFile = sourceFileName;
+            configSources["actRunnerImage"] = sourceFileName;
         }
-        if (model.ActEnv is not null) project.ActEnv = model.ActEnv;
-        if (model.ActSecrets is not null) project.ActSecrets = model.ActSecrets;
-        if (model.ActionCachePath is not null) project.ActionCachePath = model.ActionCachePath;
-        if (model.UseNewActionCache.HasValue) project.UseNewActionCache = model.UseNewActionCache;
-        if (model.ActionOfflineMode.HasValue) project.ActionOfflineMode = model.ActionOfflineMode;
-        if (model.LocalRepositories is not null) project.LocalRepositories = model.LocalRepositories;
-        if (model.SkipSteps is not null) project.SkipSteps = model.SkipSteps;
+        if (model.ActEnv is not null)
+        {
+            project.ActEnv = model.ActEnv;
+            configSources["actEnv"] = sourceFileName;
+        }
+        if (model.ActSecrets is not null)
+        {
+            project.ActSecrets = model.ActSecrets;
+            configSources["actSecrets"] = sourceFileName;
+        }
+        if (model.ActionCachePath is not null)
+        {
+            project.ActionCachePath = model.ActionCachePath;
+            configSources["actionCachePath"] = sourceFileName;
+        }
+        if (model.UseNewActionCache.HasValue)
+        {
+            project.UseNewActionCache = model.UseNewActionCache;
+            configSources["useNewActionCache"] = sourceFileName;
+        }
+        if (model.ActionOfflineMode.HasValue)
+        {
+            project.ActionOfflineMode = model.ActionOfflineMode;
+            configSources["actionOfflineMode"] = sourceFileName;
+        }
+        if (model.LocalRepositories is not null)
+        {
+            project.LocalRepositories = model.LocalRepositories;
+            configSources["localRepositories"] = sourceFileName;
+        }
+        if (model.SkipSteps is not null)
+        {
+            project.SkipSteps = model.SkipSteps;
+            configSources["skipSteps"] = sourceFileName;
+        }
+
+        if (configSources.Count > 0)
+            project.ConfigFieldSourcesJson = System.Text.Json.JsonSerializer.Serialize(configSources);
 
         if (!string.IsNullOrEmpty(model.GitUrl))
             await ApplyProjectGitRepoAsync(project, model, ct);

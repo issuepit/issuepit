@@ -5,7 +5,8 @@
       :value="modelValue"
       rows="4"
       placeholder="deploy&#10;build:upload-artifacts&#10;Notify Slack"
-      class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y"
+      :disabled="disabled"
+      class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y disabled:opacity-50 disabled:cursor-not-allowed"
       @input="$emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)"
     />
     <p class="text-xs text-gray-500 mt-1">
@@ -26,7 +27,7 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
             d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.362.362A3.001 3.001 0 0012 15a3 3 0 01-2.975-2.625l-.363-.363zM12 15v2" />
         </svg>
-        {{ showWizard ? 'Hide wizard' : 'Use wizard (auto-complete from recent runs)' }}
+        {{ showWizard ? (disabled ? 'Hide steps' : 'Hide wizard') : (disabled ? 'Show steps' : 'Use wizard (auto-complete from recent runs)') }}
         <span v-if="loadingSuggestions" class="ml-1 w-3.5 h-3.5 border border-brand-400 border-t-transparent rounded-full animate-spin" />
       </button>
     </div>
@@ -55,7 +56,16 @@
               class="text-xs text-gray-400 hover:text-gray-200 transition-colors"
               @click="clearSelection"
             >Clear</button>
+            <!-- In disabled mode show "show as text" instead of Apply -->
             <button
+              v-if="disabled"
+              type="button"
+              class="text-xs bg-gray-700 hover:bg-gray-600 text-white px-2 py-0.5 rounded transition-colors"
+              :disabled="wizardSelected.size === 0"
+              @click="showTextOutput = !showTextOutput"
+            >{{ showTextOutput ? 'Hide text' : `Show as text (${wizardSelected.size})` }}</button>
+            <button
+              v-else
               type="button"
               class="text-xs bg-brand-600 hover:bg-brand-500 text-white px-2 py-0.5 rounded transition-colors"
               :disabled="wizardSelected.size === 0"
@@ -97,6 +107,18 @@
             </div>
           </div>
         </div>
+
+        <!-- Text output panel (disabled/read-only mode) -->
+        <div v-if="disabled && showTextOutput && wizardSelected.size > 0" class="border-t border-gray-700 px-4 py-3">
+          <p class="text-xs text-gray-500 mb-1.5">Copy the selected steps into your JSON5 config file:</p>
+          <textarea
+            :value="selectedAsText"
+            rows="4"
+            readonly
+            class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-xs text-gray-200 font-mono focus:outline-none resize-y select-all"
+            @click="($event.target as HTMLTextAreaElement).select()"
+          />
+        </div>
       </template>
     </div>
   </div>
@@ -108,6 +130,7 @@ import type { StepSuggestionJob } from '~/types'
 const props = defineProps<{
   modelValue: string
   projectId?: string
+  disabled?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -117,9 +140,13 @@ const emit = defineEmits<{
 const api = useApi()
 
 const showWizard = ref(false)
+const showTextOutput = ref(false)
 const loadingSuggestions = ref(false)
 const suggestions = ref<StepSuggestionJob[]>([])
 const wizardSelected = ref<Set<string>>(new Set())
+
+/** Formats the current wizard selection as newline-separated step entries for copy-paste into JSON5 config. */
+const selectedAsText = computed(() => Array.from(wizardSelected.value).sort().join('\n'))
 
 // Map of jobId → checkbox element reference, used to set the indeterminate DOM property.
 const jobCheckboxRefs = new Map<string, HTMLInputElement>()
@@ -160,6 +187,8 @@ async function toggleWizard() {
     // Pre-check items already present in the textarea, including bare step names
     // (expanded to all matching job:step pairs across loaded suggestions).
     prePopulateFromTextarea()
+  } else {
+    showTextOutput.value = false
   }
 }
 
