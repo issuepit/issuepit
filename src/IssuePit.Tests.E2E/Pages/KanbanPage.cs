@@ -121,5 +121,9 @@ public class KanbanPage(IPage page)
     {
         await page.GotoAsync($"/projects/{projectId}/kanban/lanes");
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        // Wait for board content to load — the board selector and main content are only rendered
+        // after the async board fetch completes and activeBoardId is set.
+        await page.WaitForSelectorAsync("select",
+            new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
     }
 }

@@ -256,9 +256,6 @@ public class KanbanBoardTests : IAsyncLifetime
 
             await kanbanPage.GotoManageLanesPageAsync(projectId);
 
-            await page.WaitForSelectorAsync("text=Manage Lanes",
-                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
-
             // Click the edit (pencil) button on the first column that was created
             var rowEditBtn = page.Locator(".bg-gray-900.border.border-gray-800 button").First;
             await rowEditBtn.ClickAsync();
@@ -288,12 +285,12 @@ public class KanbanBoardTests : IAsyncLifetime
 
             await kanbanPage.GotoManageLanesPageAsync(projectId);
 
-            await page.WaitForSelectorAsync("text=Manage Lanes",
-                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
+            // GotoManageLanesPageAsync already waits for the board selector,
+            // confirming activeBoardId is set and main content (incl. Orchestrator Schedule) is rendered.
 
             // Orchestrator Schedule section should be visible
-            await page.WaitForSelectorAsync("text=Orchestrator Schedule",
-                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+            await page.WaitForSelectorAsync("h2:has-text('Orchestrator Schedule')",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
             Assert.True(
                 await page.Locator("h2:has-text('Orchestrator Schedule')").CountAsync() > 0,
                 "Orchestrator Schedule section heading should be visible on the Manage Lanes page");
