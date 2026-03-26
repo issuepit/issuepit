@@ -40,4 +40,10 @@ public enum AgentLogSection
     /// and pushing the branch to the remote.
     /// </summary>
     PostRun = 5,
+
+    /// <summary>
+    /// A user-queued message run processed after the initial agent run (and CI/CD loop).
+    /// <see cref="AgentSessionLog.SectionIndex"/> holds the message number (1-based).
+    /// </summary>
+    MessageRun = 6,
 }

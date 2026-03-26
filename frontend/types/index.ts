@@ -866,6 +866,24 @@ export const AgentSessionStatusLabels: Record<AgentSessionStatus, string> = {
   [AgentSessionStatus.Cancelled]: 'Cancelled',
 }
 
+export enum AgentSessionMessageStatus {
+  Pending = 'Pending',
+  Running = 'Running',
+  Done = 'Done',
+  Cancelled = 'Cancelled',
+}
+
+export interface AgentSessionMessage {
+  id: string
+  content: string
+  status: string
+  modelOverride?: string | null
+  agentIdOverride?: string | null
+  agentOverrideName?: string | null
+  createdAt: string
+  processedAt?: string | null
+}
+
 export interface AgentSession {
   id: string
   agentId: string

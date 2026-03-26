@@ -76,6 +76,8 @@ public class AgentSession
 
     public ICollection<AgentSessionLog> Logs { get; set; } = [];
 
+    public ICollection<AgentSessionMessage> Messages { get; set; } = [];
+
     /// <summary>JSON array of warning strings accumulated during the session (e.g. truncated issue comments).
     /// Null when no warnings were emitted.</summary>
     public string? Warnings { get; set; }
