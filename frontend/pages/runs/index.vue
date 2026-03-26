@@ -39,6 +39,12 @@
         placeholder="All Statuses"
         :show-search="false"
       />
+      <MultiSelect
+        v-model="filterSource"
+        :options="sourceOptions"
+        placeholder="All Sources"
+        :show-search="false"
+      />
       <input v-model="filterBranch" type="text" placeholder="Filter by branch…"
         class="bg-gray-900 border border-gray-700 text-sm text-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:border-brand-500 w-44">
       <button v-if="hasActiveFilters"
@@ -62,6 +68,8 @@
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Status</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Type</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Project</th>
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Trigger</th>
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Source</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Description</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Branch</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Commit</th>
@@ -94,6 +102,20 @@
                   {{ item.projectName || '—' }}
                 </NuxtLink>
               </td>
+              <td class="px-4 py-3">
+                <span v-if="item.trigger" class="text-xs bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded font-mono">
+                  {{ item.trigger }}
+                </span>
+                <span v-else class="text-gray-600 text-xs">—</span>
+              </td>
+              <td class="px-4 py-3">
+                <span v-if="item.source && item.source !== 'local'"
+                  class="text-xs bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">
+                  {{ item.source }}
+                </span>
+                <span v-else-if="item.source === 'local'" class="text-gray-600 text-xs">local</span>
+                <span v-else class="text-gray-600 text-xs">—</span>
+              </td>
               <td class="px-4 py-3 text-gray-300 max-w-xs truncate">{{ item.description }}</td>
               <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ item.branch || '—' }}</td>
               <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ item.commitSha?.slice(0, 7) || '—' }}</td>
@@ -123,10 +145,10 @@
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Status</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Project</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Trigger</th>
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Source</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Workflow</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Branch</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Commit</th>
-              <th class="text-left px-4 py-3 text-gray-400 font-medium">Source</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Started</th>
               <th class="text-left px-4 py-3 text-gray-400 font-medium">Duration</th>
               <th class="px-4 py-3" />
@@ -152,9 +174,6 @@
                 </span>
                 <span v-else class="text-gray-600 text-xs">—</span>
               </td>
-              <td class="px-4 py-3 text-gray-300">{{ run.workflow || '—' }}</td>
-              <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ run.branch || '—' }}</td>
-              <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ run.commitSha?.slice(0, 7) || '—' }}</td>
               <td class="px-4 py-3">
                 <span v-if="run.externalSource"
                   class="text-xs bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">
@@ -162,6 +181,9 @@
                 </span>
                 <span v-else class="text-gray-600 text-xs">local</span>
               </td>
+              <td class="px-4 py-3 text-gray-300">{{ run.workflow || '—' }}</td>
+              <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ run.branch || '—' }}</td>
+              <td class="px-4 py-3 text-gray-300 font-mono text-xs">{{ run.commitSha?.slice(0, 7) || '—' }}</td>
               <td class="px-4 py-3 text-gray-400 text-xs"><DateDisplay :date="run.startedAt" mode="auto" /></td>
               <td class="px-4 py-3 text-gray-400 text-xs">{{ isNotStarted(run.status) ? '—' : duration(run.startedAt, run.endedAt) }}</td>
               <td class="px-4 py-3 text-right">
@@ -296,6 +318,7 @@ const filterOrg = ref<string[]>((route.query.org as string)?.split(',').filter(B
 const filterProject = ref<string[]>((route.query.project as string)?.split(',').filter(Boolean) ?? [])
 const filterStatus = ref<string[]>((route.query.status as string)?.split(',').filter(Boolean) ?? [])
 const filterBranch = ref((route.query.branch as string) || '')
+const filterSource = ref<string[]>((route.query.source as string)?.split(',').filter(Boolean) ?? [])
 
 function getQueryParamFromTab(tab: typeof tabs[number]): string {
   return TAB_QUERY[tab]
@@ -305,7 +328,7 @@ function setTab(tab: typeof tabs[number]) {
   activeTab.value = tab
 }
 
-watch([activeTab, filterOrg, filterProject, filterStatus, filterBranch], () => {
+watch([activeTab, filterOrg, filterProject, filterStatus, filterBranch, filterSource], () => {
   router.replace({
     query: {
       tab: getQueryParamFromTab(activeTab.value),
@@ -313,12 +336,13 @@ watch([activeTab, filterOrg, filterProject, filterStatus, filterBranch], () => {
       ...(filterProject.value.length ? { project: filterProject.value.join(',') } : {}),
       ...(filterStatus.value.length ? { status: filterStatus.value.join(',') } : {}),
       ...(filterBranch.value ? { branch: filterBranch.value } : {}),
+      ...(filterSource.value.length ? { source: filterSource.value.join(',') } : {}),
     },
   })
 }, { deep: true })
 
 const hasActiveFilters = computed(() =>
-  !!(filterOrg.value.length || filterProject.value.length || filterStatus.value.length || filterBranch.value)
+  !!(filterOrg.value.length || filterProject.value.length || filterStatus.value.length || filterBranch.value || filterSource.value.length)
 )
 
 function clearFilters() {
@@ -326,6 +350,7 @@ function clearFilters() {
   filterProject.value = []
   filterStatus.value = []
   filterBranch.value = ''
+  filterSource.value = []
 }
 
 // Projects filtered by selected orgs
@@ -357,6 +382,14 @@ const statusOptions: MultiSelectOption[] = [
   { value: 'WaitingForApproval', label: 'Waiting for Approval', dotClass: 'bg-purple-400' },
 ]
 
+const sourceOptions = computed<MultiSelectOption[]>(() => {
+  const sources = new Set<string>(['local'])
+  for (const run of store.runs) {
+    if (run.externalSource) sources.add(run.externalSource)
+  }
+  return [...sources].map(s => ({ value: s, label: s }))
+})
+
 // Case-insensitive status label matching
 function statusLabelMatches(statusName: string, filter: string): boolean {
   return statusName.toLowerCase() === filter.toLowerCase()
@@ -373,6 +406,10 @@ const filteredCiCdRuns = computed(() => {
     if (filterProject.value.length && !filterProject.value.includes(run.projectId)) return false
     if (filterStatus.value.length && !filterStatus.value.some(s => statusLabelMatches(run.statusName, s))) return false
     if (filterBranch.value && !(run.branch || '').toLowerCase().includes(filterBranch.value.toLowerCase())) return false
+    if (filterSource.value.length) {
+      const runSource = run.externalSource || 'local'
+      if (!filterSource.value.includes(runSource)) return false
+    }
     return true
   })
 })
@@ -394,6 +431,8 @@ interface MixedRunItem {
   statusName: string
   projectId: string
   projectName?: string
+  trigger?: string
+  source?: string
   description: string
   branch?: string
   commitSha?: string
@@ -412,7 +451,9 @@ const allRunsMixed = computed((): MixedRunItem[] => {
     statusName: run.statusName,
     projectId: run.projectId,
     projectName: run.projectName,
-    description: run.workflow || run.branch || '—',
+    trigger: run.eventName,
+    source: run.externalSource || 'local',
+    description: run.workflow || '—',
     branch: run.branch,
     commitSha: run.commitSha,
     startedAt: run.startedAt,
