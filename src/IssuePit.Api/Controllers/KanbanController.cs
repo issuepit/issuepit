@@ -101,7 +101,8 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
             Name = req.Name,
             Position = req.Position,
             IssueStatus = req.IssueStatus,
-            LaneValue = req.LaneValue
+            LaneValue = req.LaneValue,
+            DefaultAgentId = req.DefaultAgentId
         };
         db.KanbanColumns.Add(column);
         await db.SaveChangesAsync();
@@ -123,6 +124,7 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
         column.Position = req.Position;
         column.IssueStatus = req.IssueStatus;
         column.LaneValue = req.LaneValue;
+        column.DefaultAgentId = req.DefaultAgentId;
         await db.SaveChangesAsync();
         return Ok(column);
     }
@@ -427,10 +429,47 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
                 t.FromColumn?.Name ?? string.Empty,
                 t.ToColumn?.Name ?? string.Empty,
                 t.IsAuto,
-                blockReasons));
+                blockReasons,
+                issue.OrchestrationAttempts));
         }
 
         return Ok(results);
+    }
+
+    /// <summary>
+    /// Records that an orchestrator evaluated an issue and decided NOT to move it (blocked by requirements or policy).
+    /// Creates a <see cref="IssueEventType.KanbanOrchestrationSkipped"/> event for audit trail and increments the
+    /// <see cref="Issue.OrchestrationAttempts"/> loop-limiter counter.
+    /// The counter is automatically reset to 0 when the issue is successfully moved via <see cref="TriggerTransition"/>.
+    /// </summary>
+    [HttpPost("boards/{boardId:guid}/orchestration/skip")]
+    public async Task<IActionResult> RecordOrchestrationSkip(Guid boardId, [FromBody] RecordSkipRequest req)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var board = await db.KanbanBoards
+            .Include(b => b.Project)
+            .ThenInclude(p => p.Organization)
+            .FirstOrDefaultAsync(b => b.Id == boardId && b.Project.Organization.TenantId == ctx.CurrentTenant.Id);
+        if (board is null) return NotFound();
+
+        var issue = await db.Issues.FirstOrDefaultAsync(i => i.Id == req.IssueId && i.ProjectId == board.ProjectId);
+        if (issue is null) return NotFound();
+
+        issue.OrchestrationAttempts++;
+        issue.UpdatedAt = DateTime.UtcNow;
+
+        db.IssueEvents.Add(new IssueEvent
+        {
+            Id = Guid.NewGuid(),
+            IssueId = req.IssueId,
+            EventType = IssueEventType.KanbanOrchestrationSkipped,
+            OldValue = req.CurrentColumn,
+            NewValue = req.Reason,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        await db.SaveChangesAsync();
+        return Ok(new OrchestrationSkipResponse(issue.OrchestrationAttempts));
     }
 
     /// <summary>
@@ -514,6 +553,7 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
 
         issue.Status = transition.ToColumn.IssueStatus;
         issue.UpdatedAt = DateTime.UtcNow;
+        issue.OrchestrationAttempts = 0; // Reset counter on successful move
 
         var newValue = req.Reason != null
             ? $"{transition.ToColumn.Name}: {req.Reason}"
@@ -535,14 +575,26 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx) : Control
 }
 
 public record CreateBoardRequest(Guid ProjectId, string Name, KanbanLaneProperty? LaneProperty = null);
-public record CreateColumnRequest(string Name, int Position, IssuePit.Core.Enums.IssueStatus IssueStatus, string? LaneValue = null);
+public record CreateColumnRequest(string Name, int Position, IssuePit.Core.Enums.IssueStatus IssueStatus, string? LaneValue = null, Guid? DefaultAgentId = null);
 public record CreateTransitionRequest(string Name, Guid FromColumnId, Guid ToColumnId, bool IsAuto, Guid? AgentId, bool RequireGreenCiCd = false, bool RequireCodeReview = false, bool RequirePlanComment = false, bool RequireTasksDone = false, bool RequireSubIssuesDone = false);
 public record MoveIssueRequest(Guid IssueId, Guid ColumnId, int? Position = null);
 public record ReorderColumnsRequest(List<Guid> ColumnIds);
 public record UpdateBoardRequest(string Name, KanbanLaneProperty? LaneProperty = null);
-public record UpdateColumnRequest(string Name, int Position, IssuePit.Core.Enums.IssueStatus IssueStatus, string? LaneValue = null);
+public record UpdateColumnRequest(string Name, int Position, IssuePit.Core.Enums.IssueStatus IssueStatus, string? LaneValue = null, Guid? DefaultAgentId = null);
 public record UpdateTransitionRequest(string Name, Guid FromColumnId, Guid ToColumnId, bool IsAuto, Guid? AgentId, bool RequireGreenCiCd = false, bool RequireCodeReview = false, bool RequirePlanComment = false, bool RequireTasksDone = false, bool RequireSubIssuesDone = false);
 public record TriggerTransitionRequest(Guid IssueId, string? Reason = null);
+
+/// <summary>
+/// Request to record an orchestration skip decision — when the orchestrator evaluated an issue but could not move it.
+/// </summary>
+/// <param name="IssueId">The issue that was evaluated.</param>
+/// <param name="Reason">Human-readable reason or summary of why the issue was not moved (e.g. block reasons).</param>
+/// <param name="CurrentColumn">Name of the column the issue is currently in (for audit trail).</param>
+public record RecordSkipRequest(Guid IssueId, string? Reason = null, string? CurrentColumn = null);
+
+/// <summary>Response from RecordOrchestrationSkip — includes the updated attempt counter.</summary>
+/// <param name="OrchestrationAttempts">Updated consecutive skip count for the issue.</param>
+public record OrchestrationSkipResponse(int OrchestrationAttempts);
 
 /// <summary>Result of evaluating a single transition's requirements for a given issue.</summary>
 /// <param name="TransitionId">ID of the transition.</param>
@@ -551,13 +603,15 @@ public record TriggerTransitionRequest(Guid IssueId, string? Reason = null);
 /// <param name="ToColumn">Name of the target column.</param>
 /// <param name="IsAuto">Whether this is an agent auto-trigger transition.</param>
 /// <param name="BlockReasons">Non-empty list of reasons the transition is blocked; empty means the transition is allowed.</param>
+/// <param name="OrchestrationAttempts">Number of consecutive times an orchestrator was blocked on this issue without moving it.</param>
 public record TransitionCheckResult(
     Guid TransitionId,
     string TransitionName,
     string FromColumn,
     string ToColumn,
     bool IsAuto,
-    IReadOnlyList<string> BlockReasons)
+    IReadOnlyList<string> BlockReasons,
+    int OrchestrationAttempts = 0)
 {
     /// <summary>True when there are no block reasons and the transition can proceed.</summary>
     public bool IsAllowed => BlockReasons.Count == 0;

@@ -493,6 +493,7 @@ export interface TransitionCheckResult {
   isAuto: boolean
   blockReasons: string[]
   isAllowed: boolean
+  orchestrationAttempts: number
 }
 
 export enum KanbanLaneProperty {
@@ -512,6 +513,8 @@ export interface KanbanColumn {
   position: number
   /** Value identifying which issues belong to this column for non-Status lane properties. */
   laneValue?: string | null
+  /** Optional agent assigned to handle issues that enter this lane. */
+  defaultAgentId?: string | null
 }
 
 export interface KanbanBoard {

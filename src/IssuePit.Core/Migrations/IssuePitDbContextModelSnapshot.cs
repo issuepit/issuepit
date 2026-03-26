@@ -1429,6 +1429,9 @@ namespace IssuePit.Core.Migrations
                     b.Property<bool>("PreventAgentMove")
                         .HasColumnType("boolean");
 
+                    b.Property<int>("OrchestrationAttempts")
+                        .HasColumnType("integer");
+
                     b.Property<int>("Priority")
                         .HasColumnType("integer");
 
@@ -1924,9 +1927,14 @@ namespace IssuePit.Core.Migrations
                     b.Property<int>("Position")
                         .HasColumnType("integer");
 
+                    b.Property<Guid?>("DefaultAgentId")
+                        .HasColumnType("uuid");
+
                     b.HasKey("Id");
 
                     b.HasIndex("BoardId");
+
+                    b.HasIndex("DefaultAgentId");
 
                     b.ToTable("kanban_columns");
                 });
@@ -3882,6 +3890,13 @@ namespace IssuePit.Core.Migrations
                         .HasForeignKey("BoardId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.HasOne("IssuePit.Core.Entities.Agent", "DefaultAgent")
+                        .WithMany()
+                        .HasForeignKey("DefaultAgentId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("DefaultAgent");
 
                     b.Navigation("KanbanBoard");
                 });

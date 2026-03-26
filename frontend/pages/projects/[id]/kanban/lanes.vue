@@ -41,19 +41,37 @@
               </svg>
 
               <!-- Name edit -->
-              <div v-if="editingColumnId === col.id" class="flex-1 flex items-center gap-2">
-                <input v-model="editColumnName" type="text"
-                  class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  @keyup.enter="saveColumnName(col)"
-                  @keyup.escape="editingColumnId = null" />
-                <button @click="saveColumnName(col)"
-                  class="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg transition-colors">Save</button>
-                <button @click="editingColumnId = null"
-                  class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">Cancel</button>
+              <div v-if="editingColumnId === col.id" class="flex-1 flex flex-col gap-2">
+                <div class="flex items-center gap-2">
+                  <input v-model="editColumnName" type="text"
+                    class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    @keyup.enter="saveColumnName(col)"
+                    @keyup.escape="editingColumnId = null" />
+                </div>
+                <div class="flex items-center gap-2">
+                  <label class="text-xs text-gray-500 shrink-0">Agent:</label>
+                  <select v-model="editColumnAgentId"
+                    class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-xs text-gray-300 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                    <option :value="null">None</option>
+                    <option v-for="agent in agentsStore.agents" :key="agent.id" :value="agent.id">{{ agent.name }}</option>
+                  </select>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button @click="saveColumnName(col)"
+                    class="text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg transition-colors">Save</button>
+                  <button @click="editingColumnId = null"
+                    class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">Cancel</button>
+                </div>
               </div>
               <div v-else class="flex-1 flex items-center gap-2">
                 <span class="text-sm text-gray-200 font-medium">{{ col.name }}</span>
                 <span v-if="col.issueStatus" class="text-xs text-gray-500 bg-gray-800 px-1.5 py-0.5 rounded">{{ col.issueStatus }}</span>
+                <span v-if="agentName(col.defaultAgentId)" class="text-xs text-blue-400 bg-blue-900/30 px-1.5 py-0.5 rounded flex items-center gap-1">
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2" />
+                  </svg>
+                  {{ agentName(col.defaultAgentId) }}
+                </span>
                 <button @click="startEditColumn(col)"
                   class="text-gray-600 hover:text-gray-300 transition-colors ml-1">
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -164,6 +182,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useKanbanStore } from '~/stores/kanban'
 import { useProjectsStore } from '~/stores/projects'
+import { useAgentsStore } from '~/stores/agents'
 import { IssueStatus } from '~/types'
 import type { KanbanColumn } from '~/types'
 
@@ -172,10 +191,12 @@ const id = route.params.id as string
 
 const kanban = useKanbanStore()
 const projectsStore = useProjectsStore()
+const agentsStore = useAgentsStore()
 
 const activeBoardId = ref<string>('')
 const editingColumnId = ref<string | null>(null)
 const editColumnName = ref('')
+const editColumnAgentId = ref<string | null>(null)
 const newColName = ref('')
 const deletingColumnId = ref<string | null>(null)
 
@@ -188,14 +209,20 @@ function columnName(columnId: string) {
   return boardColumns.value.find(c => c.id === columnId)?.name ?? columnId
 }
 
+function agentName(agentId?: string | null) {
+  if (!agentId) return null
+  return agentsStore.agents.find(a => a.id === agentId)?.name ?? agentId
+}
+
 function startEditColumn(col: KanbanColumn) {
   editingColumnId.value = col.id
   editColumnName.value = col.name
+  editColumnAgentId.value = col.defaultAgentId ?? null
 }
 
 async function saveColumnName(col: KanbanColumn) {
   if (!editColumnName.value.trim()) return
-  await kanban.updateColumn(activeBoardId.value, col.id, editColumnName.value.trim(), col.position, col.issueStatus, col.laneValue)
+  await kanban.updateColumn(activeBoardId.value, col.id, editColumnName.value.trim(), col.position, col.issueStatus, col.laneValue, editColumnAgentId.value)
   editingColumnId.value = null
 }
 
@@ -247,6 +274,7 @@ onMounted(async () => {
   await Promise.all([
     kanban.fetchBoards(id),
     projectsStore.fetchProject(id),
+    agentsStore.fetchAgents(),
   ])
   if (kanban.boards.length) {
     activeBoardId.value = kanban.boards[0].id

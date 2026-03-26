@@ -58,4 +58,12 @@ public class McpServerOptions
     /// from list results, and issues with PreventAgentMove=true cannot be moved.
     /// </summary>
     public bool OrchestratorMode { get; set; } = false;
+
+    /// <summary>
+    /// Maximum number of consecutive times the orchestrator is allowed to skip (not move) the same issue
+    /// before it stops attempting and surfaces it as stalled. Defaults to 5.
+    /// When an issue's OrchestrationAttempts counter reaches this value, the MCP tool will include a
+    /// warning in the response so the orchestrator knows to stop retrying.
+    /// </summary>
+    public int MaxOrchestrationAttempts { get; set; } = 5;
 }

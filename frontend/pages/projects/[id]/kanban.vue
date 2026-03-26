@@ -293,6 +293,15 @@
                   <li v-for="(reason, i) in tc.blockReasons" :key="i" class="text-amber-300/80 leading-snug">{{ reason }}</li>
                 </ul>
               </div>
+              <!-- Orchestration loop counter — shown if the issue has been skipped at least once -->
+              <div v-if="previewTransitionChecks[0]?.orchestrationAttempts > 0"
+                class="rounded-lg px-3 py-2 text-xs bg-gray-800/60 border border-gray-700/50">
+                <span class="text-gray-400">Orchestration skips: </span>
+                <span :class="previewTransitionChecks[0].orchestrationAttempts >= MAX_ORCHESTRATION_ATTEMPTS ? 'text-red-400 font-semibold' : 'text-yellow-400'">
+                  {{ previewTransitionChecks[0].orchestrationAttempts }}
+                </span>
+                <span v-if="previewTransitionChecks[0].orchestrationAttempts >= MAX_ORCHESTRATION_ATTEMPTS" class="text-red-400 ml-1">— stalled</span>
+              </div>
             </div>
           </div>
         </div>
@@ -644,6 +653,9 @@ const agentsStore = useAgentsStore()
 const propsStore = useProjectPropertiesStore()
 const labelsStore = useLabelsStore()
 const { priorityIcon, priorityColor } = usePriority()
+
+/** Maximum orchestration skips before an issue is considered stalled — mirrors McpServerOptions.MaxOrchestrationAttempts */
+const MAX_ORCHESTRATION_ATTEMPTS = 5
 
 // ── Issue preview sidebar ─────────────────────────────────────────────────
 const previewIssue = ref<Issue | null>(null)

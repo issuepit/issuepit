@@ -84,6 +84,13 @@ public class Issue
     /// </summary>
     public bool HideFromAgents { get; set; }
 
+    /// <summary>
+    /// Number of consecutive times an orchestrator evaluated this issue and was blocked from moving it.
+    /// Reset to 0 when the issue is successfully moved via a kanban transition.
+    /// Used by the orchestration loop limiter to detect stalled issues.
+    /// </summary>
+    public int OrchestrationAttempts { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

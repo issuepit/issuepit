@@ -33,4 +33,6 @@ public enum IssueEventType
     PropertyChanged,
     [JsonStringEnumMemberName("kanban_moved")]
     KanbanMoved,
+    [JsonStringEnumMemberName("kanban_orchestration_skipped")]
+    KanbanOrchestrationSkipped,
 }

@@ -636,6 +636,128 @@ public class KanbanEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var reasons = result.GetProperty("blockReasons").EnumerateArray().ToList();
         Assert.NotEmpty(reasons);
         Assert.Contains("git branch", reasons[0].GetString()!, StringComparison.OrdinalIgnoreCase);
+        // Loop counter defaults to 0
+        Assert.Equal(0, result.GetProperty("orchestrationAttempts").GetInt32());
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
+    public async Task RecordOrchestrationSkip_IncrementsCounter_And_CreatesEvent()
+    {
+        var (tenantId, projectId) = await SeedProjectAsync();
+        var boardId = await SeedBoardAsync(projectId);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+        var issue = new Issue
+        {
+            Id = Guid.NewGuid(), ProjectId = projectId, Title = "Skip issue", Number = 22,
+            Status = IssueStatus.Todo
+        };
+        db.Issues.Add(issue);
+        await db.SaveChangesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        // Record two skips
+        var req1 = new { issueId = issue.Id, reason = "CI not green", currentColumn = "Todo" };
+        var resp1 = await _client.PostAsJsonAsync($"/api/kanban/boards/{boardId}/orchestration/skip", req1);
+        Assert.Equal(HttpStatusCode.OK, resp1.StatusCode);
+        var body1 = await resp1.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal(1, body1.GetProperty("orchestrationAttempts").GetInt32());
+
+        var req2 = new { issueId = issue.Id, reason = "Tasks not done", currentColumn = "Todo" };
+        var resp2 = await _client.PostAsJsonAsync($"/api/kanban/boards/{boardId}/orchestration/skip", req2);
+        Assert.Equal(HttpStatusCode.OK, resp2.StatusCode);
+        var body2 = await resp2.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal(2, body2.GetProperty("orchestrationAttempts").GetInt32());
+
+        // Verify events were created
+        using var scope2 = factory.Services.CreateScope();
+        var db2 = scope2.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+        var events = await db2.IssueEvents
+            .Where(e => e.IssueId == issue.Id && e.EventType == IssueEventType.KanbanOrchestrationSkipped)
+            .ToListAsync();
+        Assert.Equal(2, events.Count);
+        Assert.Contains(events, e => e.NewValue == "CI not green");
+        Assert.Contains(events, e => e.NewValue == "Tasks not done");
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
+    public async Task TriggerTransition_ResetsOrchestrationAttempts()
+    {
+        var (tenantId, projectId) = await SeedProjectAsync();
+        var boardId = await SeedBoardAsync(projectId);
+        var fromId = await SeedColumnAsync(boardId, "Todo", 0, IssueStatus.Todo);
+        var toId = await SeedColumnAsync(boardId, "Done", 1, IssueStatus.Done);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+        var issue = new Issue
+        {
+            Id = Guid.NewGuid(), ProjectId = projectId, Title = "Reset issue", Number = 23,
+            Status = IssueStatus.Todo, OrchestrationAttempts = 3
+        };
+        db.Issues.Add(issue);
+
+        var transition = new KanbanTransition
+        {
+            Id = Guid.NewGuid(), BoardId = boardId, FromColumnId = fromId, ToColumnId = toId,
+            Name = "Complete", IsAuto = false
+        };
+        db.KanbanTransitions.Add(transition);
+        await db.SaveChangesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var req = new { issueId = issue.Id, reason = "All done" };
+        var response = await _client.PostAsJsonAsync(
+            $"/api/kanban/boards/{boardId}/transitions/{transition.Id}/trigger", req);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        // Verify OrchestrationAttempts was reset to 0
+        using var scope2 = factory.Services.CreateScope();
+        var db2 = scope2.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+        var updatedIssue = await db2.Issues.FindAsync(issue.Id);
+        Assert.Equal(0, updatedIssue!.OrchestrationAttempts);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
+    public async Task CreateColumn_WithDefaultAgent_PersistsAgentId()
+    {
+        var (tenantId, projectId) = await SeedProjectAsync();
+        var boardId = await SeedBoardAsync(projectId);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
+
+        // Seed an agent
+        var agent = new IssuePit.Core.Entities.Agent
+        {
+            Id = Guid.NewGuid(), Name = "Coder Agent",
+            OrgId = db.Projects.Where(p => p.Id == projectId).Select(p => p.OrgId).First()
+        };
+        db.Agents.Add(agent);
+        await db.SaveChangesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var req = new { name = "Coding", position = 2, issueStatus = "in_progress", defaultAgentId = agent.Id };
+        var response = await _client.PostAsJsonAsync($"/api/kanban/boards/{boardId}/columns", req);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var col = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal(agent.Id.ToString(), col.GetProperty("defaultAgentId").GetString());
 
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
     }

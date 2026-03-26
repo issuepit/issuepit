@@ -243,4 +243,36 @@ public class KanbanBoardTests : IAsyncLifetime
             await context.CloseAsync();
         }
     }
+
+    [Fact]
+    public async Task Kanban_ManageLanesPage_ShowsAgentDropdownInEditMode()
+    {
+        var (context, page, projectId, _, _) = await SetUpAsync();
+        try
+        {
+            var kanbanPage = new KanbanPage(page);
+            await kanbanPage.GotoAsync(projectId);
+            await kanbanPage.CreateBoardAsync("Sprint 2");
+
+            await kanbanPage.GotoManageLanesPageAsync(projectId);
+
+            await page.WaitForSelectorAsync("text=Manage Lanes",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
+
+            // Click the edit (pencil) button on the first column that was created
+            var rowEditBtn = page.Locator(".bg-gray-900.border.border-gray-800 button").First;
+            await rowEditBtn.ClickAsync();
+
+            // In edit mode, the Agent: label and a <select> for agents should appear
+            await page.WaitForSelectorAsync("label:has-text('Agent:')",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+            Assert.True(
+                await page.Locator("label:has-text('Agent:')").CountAsync() > 0,
+                "Agent assignment label should appear in lane edit mode");
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
 }

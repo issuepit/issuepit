@@ -33,4 +33,13 @@ public class KanbanColumn
     /// </summary>
     [MaxLength(500)]
     public string? LaneValue { get; set; }
+
+    /// <summary>
+    /// Optional agent assigned to handle issues that enter this lane.
+    /// The orchestrator can use this to automatically assign the right agent when an issue moves into this column.
+    /// </summary>
+    public Guid? DefaultAgentId { get; set; }
+
+    [ForeignKey(nameof(DefaultAgentId))]
+    public Agent? DefaultAgent { get; set; }
 }
