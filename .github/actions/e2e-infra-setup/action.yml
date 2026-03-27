@@ -41,30 +41,30 @@ runs:
         username: ${{ inputs.github-actor }}
         password: ${{ inputs.github-token }}
 
-    # All docker pull commands and the act clone+build are launched as background
-    # processes so that network I/O and compilation overlap instead of running
-    # one after another.  Each network operation is wrapped with `timeout` to avoid
-    # hanging indefinitely; the job-level timeout-minutes provides the outer bound.
+    # Cache Docker images as tar files so subsequent runs skip the pull entirely.
+    # Separate cache keys per run mode so issuepit-runner and GitHub-hosted runner
+    # do not share an entry that was built without the private GHCR image.
+    - name: Cache Docker images
+      id: cache-docker
+      uses: actions/cache@v4
+      with:
+        path: /tmp/docker-images
+        key: docker-v1-${{ inputs.issuepit-run }}-postgres17.6-valkey9.0-kafka3.9.0-node20slim-localstack4.3-helperact-main-dotnet10-node24
+
+    # All docker pull/load commands and the act clone+build are launched as
+    # background processes so that network I/O and compilation overlap.
+    # On a cache hit the images are loaded from local tar files (fast); on a cache
+    # miss they are pulled from the registry and saved for the next run.
+    # Each network operation is wrapped with `timeout` to avoid hanging indefinitely.
     - name: Pull Docker images and build act (parallel)
       shell: bash
       env:
         ISSUEPIT_RUN: ${{ inputs.issuepit-run }}
+        DOCKER_CACHE_HIT: ${{ steps.cache-docker.outputs.cache-hit }}
       run: |
         ACT_COMMIT=a471da174034e4d6db6fc89b0ea7bfcd38b9236a
 
-        # Pull public Docker images in parallel (10-minute per-image timeout)
-        timeout 10m docker pull postgres:17.6 &
-        timeout 10m docker pull valkey/valkey:9.0 &
-        timeout 10m docker pull apache/kafka:3.9.0 &
-        timeout 10m docker pull node:20-slim &
-        timeout 10m docker pull localstack/localstack:4.3 &
-
-        # Pull private GHCR image in parallel (login already completed above)
-        if [ "$ISSUEPIT_RUN" != 'true' ]; then
-          timeout 10m docker pull ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24 &
-        fi
-
-        # Clone and build the issuepit/act fork in parallel.
+        # Clone and build the issuepit/act fork in parallel (independent of Docker cache).
         # Uses a shallow fetch of the exact commit for speed; the fork adds
         # --container-name-suffix which is required by NativeCiCdRuntime.
         (
@@ -77,7 +77,49 @@ runs:
           rm -rf /tmp/issuepit-act
         ) &
 
-        # Wait for every background job; any non-zero exit propagates here
+        # Handle Docker images in a subshell (runs concurrently with act build)
+        (
+          if [ "$DOCKER_CACHE_HIT" = 'true' ]; then
+            # Load public images from cache in parallel
+            docker load -i /tmp/docker-images/postgres-17.6.tar &
+            docker load -i /tmp/docker-images/valkey-9.0.tar &
+            docker load -i /tmp/docker-images/kafka-3.9.0.tar &
+            docker load -i /tmp/docker-images/node-20-slim.tar &
+            docker load -i /tmp/docker-images/localstack-4.3.tar &
+            # Load private image from cache only when present (absent on issuepit runner)
+            if [ -f /tmp/docker-images/helper-act.tar ]; then
+              docker load -i /tmp/docker-images/helper-act.tar &
+            fi
+            wait
+          else
+            # Pull public Docker images in parallel (10-minute per-image timeout)
+            timeout 10m docker pull postgres:17.6 &
+            timeout 10m docker pull valkey/valkey:9.0 &
+            timeout 10m docker pull apache/kafka:3.9.0 &
+            timeout 10m docker pull node:20-slim &
+            timeout 10m docker pull localstack/localstack:4.3 &
+            # Pull private GHCR image in parallel (login already completed above)
+            if [ "$ISSUEPIT_RUN" != 'true' ]; then
+              timeout 10m docker pull ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24 &
+            fi
+            wait  # Wait for all pulls before saving
+
+            # Save images to cache in parallel
+            mkdir -p /tmp/docker-images
+            docker save postgres:17.6 -o /tmp/docker-images/postgres-17.6.tar &
+            docker save valkey/valkey:9.0 -o /tmp/docker-images/valkey-9.0.tar &
+            docker save apache/kafka:3.9.0 -o /tmp/docker-images/kafka-3.9.0.tar &
+            docker save node:20-slim -o /tmp/docker-images/node-20-slim.tar &
+            docker save localstack/localstack:4.3 -o /tmp/docker-images/localstack-4.3.tar &
+            if [ "$ISSUEPIT_RUN" != 'true' ]; then
+              docker save ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24 \
+                -o /tmp/docker-images/helper-act.tar &
+            fi
+            wait  # Wait for all saves
+          fi
+        ) &
+
+        # Wait for both act build and Docker image handling to complete
         wait
         act --version
 

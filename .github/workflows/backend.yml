@@ -146,7 +146,7 @@ jobs:
             # to a different value OR is absent entirely, so chaining all known
             # categories picks up only the truly uncategorized ones.
             project: src/IssuePit.slnx
-            filter: Category!=Unit&Category!=Integration&Category!=E2E&Category!=CiCd&Category!=Smoke&Category!=Voice&Category!=PoC
+            filter: Category!=Unit&Category!=Integration&Category!=E2E&Category!=CiCd&Category!=Smoke&Category!=Voice&Category!=PoC&Category!=Agent
             artifact: uncategorized
             needs_infra: false
             skip_build: false
@@ -166,7 +166,7 @@ jobs:
             skip_build: true
             extra_args: '--blame-hang-timeout 4min'
 
-          - name: E2E CiCd
+          - name: E2E Tests CiCd
             project: src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj
             filter: Category=CiCd
             artifact: e2e-cicd
@@ -174,7 +174,7 @@ jobs:
             skip_build: true
             extra_args: '--blame-hang-timeout 4min'
 
-          - name: E2E Smoke
+          - name: E2E Tests Smoke
             project: src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj
             filter: Category=Smoke
             artifact: e2e-smoke
@@ -182,7 +182,7 @@ jobs:
             skip_build: true
             extra_args: '--blame-hang-timeout 4min'
 
-          - name: E2E Voice
+          - name: E2E Tests Voice
             project: src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj
             filter: Category=Voice
             artifact: e2e-voice
@@ -190,10 +190,18 @@ jobs:
             skip_build: true
             extra_args: '--blame-hang-timeout 4min'
 
-          - name: E2E PoC
+          - name: E2E Tests PoC
             project: src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj
             filter: Category=PoC
             artifact: e2e-poc
+            needs_infra: true
+            skip_build: true
+            extra_args: '--blame-hang-timeout 4min'
+
+          - name: E2E Tests Agent
+            project: src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj
+            filter: Category=Agent
+            artifact: e2e-agent
             needs_infra: true
             skip_build: true
             extra_args: '--blame-hang-timeout 4min'

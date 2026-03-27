@@ -21,7 +21,7 @@ namespace IssuePit.Tests.E2E;
 /// </list>
 /// </summary>
 [Collection("E2E")]
-[Trait("Category", "E2E")]
+[Trait("Category", "Agent")]
 public class AgentSessionTests(AspireFixture fixture)
 {
     /// <summary>Docker image used for agent E2E tests. Defaults to <c>busybox:latest</c> if the env var is not set.</summary>
