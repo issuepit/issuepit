@@ -687,6 +687,10 @@ public abstract class DockerRuntimeBase
     {
         var lines = new[]
         {
+            // Fast-exit for minimal images (e.g. busybox used in E2E tests) that have neither
+            // dockerd nor apt-get.  Without this guard the script would spin for up to 60 s
+            // waiting for a dockerd that can never start, making agent tests unnecessarily slow.
+            "command -v dockerd > /dev/null 2>&1 || command -v apt-get > /dev/null 2>&1 || { echo '[WARN] dockerd not available and no package manager found; skipping DinD setup' >&2; exit 0; }",
             // Install dockerd if not present (fallback for older images with docker-ce-cli only).
             "command -v dockerd > /dev/null 2>&1 || (apt-get update -qq 2>/dev/null && apt-get install -y --no-install-recommends docker.io 2>/dev/null)",
             "dockerd > /tmp/dockerd.log 2>&1 &",
