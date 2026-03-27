@@ -254,9 +254,14 @@ public class KanbanBoardTests : IAsyncLifetime
             await kanbanPage.GotoAsync(projectId);
             await kanbanPage.CreateBoardAsync("Sprint 2");
 
+            // Add a lane via the modal so there is a lane row to edit on the manage lanes page
+            await kanbanPage.OpenLanesModalAsync();
+            await kanbanPage.AddLaneAsync("Edit Me");
+            await kanbanPage.CloseLanesModalAsync();
+
             await kanbanPage.GotoManageLanesPageAsync(projectId);
 
-            // Click the edit (pencil) button on the first column that was created
+            // Click the edit (pencil) button on the first lane row
             var rowEditBtn = page.Locator(".bg-gray-900.border.border-gray-800 button").First;
             await rowEditBtn.ClickAsync();
 
