@@ -132,10 +132,10 @@
             class="w-full flex items-center justify-between bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500 hover:border-gray-600 transition-colors">
             <span class="flex items-center gap-2 min-w-0">
               <template v-if="selectedRepo">
+                <span class="font-mono text-gray-200 truncate">{{ remoteDisplayUrl(selectedRepo.remoteUrl) }}</span>
                 <span :class="['text-xs px-1.5 py-0.5 rounded font-medium shrink-0', modeChipClass[selectedRepo.mode]]">
                   {{ selectedRepo.mode }}
                 </span>
-                <span class="font-mono text-gray-200 truncate">{{ remoteDisplayUrl(selectedRepo.remoteUrl) }}</span>
               </template>
               <span v-else class="text-gray-400">Auto (detect from branch)</span>
             </span>
@@ -156,8 +156,8 @@
                   ? 'bg-brand-800/30 text-brand-300'
                   : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200',
               ]">
-              <span class="text-xs px-1.5 py-0.5 rounded font-medium bg-gray-700/60 text-gray-400 border border-gray-600/50">Auto</span>
               <span>Detect from branch</span>
+              <span class="text-xs px-1.5 py-0.5 rounded font-medium bg-gray-700/60 text-gray-400 border border-gray-600/50">Auto</span>
             </button>
             <!-- Repo options -->
             <button
@@ -171,8 +171,8 @@
                   ? 'bg-brand-800/30 text-brand-200'
                   : 'text-gray-300 hover:bg-gray-800',
               ]">
-              <span :class="['text-xs px-1.5 py-0.5 rounded font-medium shrink-0', modeChipClass[repo.mode]]">{{ repo.mode }}</span>
               <span class="font-mono truncate">{{ remoteDisplayUrl(repo.remoteUrl) }}</span>
+              <span :class="['text-xs px-1.5 py-0.5 rounded font-medium shrink-0', modeChipClass[repo.mode]]">{{ repo.mode }}</span>
             </button>
           </div>
         </div>
