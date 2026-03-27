@@ -211,6 +211,39 @@ describe('resolveLogJobId', () => {
       expect(resolve('CI/Build (version 2)-2', jobsNested)).toBe('reusable/build')
     })
   })
+
+  describe('pure-template last name segment (${{ matrix.suite.name }})', () => {
+    // The ENTIRE last name part is a template expression. act resolves it at runtime to a
+    // human-readable value (e.g. "E2E Tests"), so the log ID ends with that value, not the template.
+    // Example from the real CI: job name "Backend / ${{ matrix.suite.name }}", log ID
+    // "Backend/Backend CI/E2E Tests-4" — the resolver must fall back to the workflow file stem.
+    const jobs = [
+      job('backend/build', 'Backend / Build', 'backend.yml', 'ci.yml'),
+      job('backend/tests', 'Backend / ${{ matrix.suite.name }}', 'backend.yml', 'ci.yml'),
+      job('pages/build', 'Build', 'pages.yml'),
+    ]
+
+    it('resolves "Backend/Backend CI/E2E Tests-4" to backend/tests', () => {
+      expect(resolve('Backend/Backend CI/E2E Tests-4', jobs)).toBe('backend/tests')
+    })
+
+    it('resolves "Backend/Backend CI/Unit Tests-1" to backend/tests', () => {
+      expect(resolve('Backend/Backend CI/Unit Tests-1', jobs)).toBe('backend/tests')
+    })
+
+    it('resolves "CI/Backend CI/E2E Tests-4" (callerWorkflowFile stem) to backend/tests', () => {
+      expect(resolve('CI/Backend CI/E2E Tests-4', jobs)).toBe('backend/tests')
+    })
+
+    it('still resolves "Backend/Backend CI/Build" correctly to backend/build (not backend/tests)', () => {
+      // The normal named job should still take priority over the template-prefix fallback.
+      expect(resolve('Backend/Backend CI/Build', jobs)).toBe('backend/build')
+    })
+
+    it('still resolves "Build" to pages/build', () => {
+      expect(resolve('Build', jobs)).toBe('pages/build')
+    })
+  })
 })
 
 // ── matrixLabel ────────────────────────────────────────────────────────────────

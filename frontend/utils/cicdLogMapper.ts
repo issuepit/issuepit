@@ -15,6 +15,8 @@ import type { WorkflowJobNode } from '~/types'
 export interface GraphJobIndexes {
   byId: Map<string, string>   // lowercase_id → graph_id
   byName: Map<string, string> // lowercase_name/alias → graph_id
+  /** workflowFileStem or callerFileStem → graph_id, for jobs whose last name segment is a pure ${{...}} template. */
+  byTemplatePrefix: Map<string, string>
 }
 
 /**
@@ -28,6 +30,7 @@ export interface GraphJobIndexes {
 export function buildGraphJobIndexes(graphJobs: WorkflowJobNode[]): GraphJobIndexes {
   const byId = new Map<string, string>()
   const byName = new Map<string, string>()
+  const byTemplatePrefix = new Map<string, string>()
 
   // Collect last-segment candidates to detect ambiguous names (same last segment across multiple nodes).
   const lastSegCandidates = new Map<string, string[]>()
@@ -46,6 +49,10 @@ export function buildGraphJobIndexes(graphJobs: WorkflowJobNode[]): GraphJobInde
     // log IDs like "CI/Build (version 1)-1" (where the resolved value replaces the template).
     const lastJobNamePartBase = lastJobNamePart.replace(/\s*\([^)]*\)\s*$/, '').trim()
     const hasTemplateSuffix = lastJobNamePartBase !== lastJobNamePart && lastJobNamePart.includes('${{')
+    // Detect when the ENTIRE last name segment is a template expression (e.g. "${{ matrix.suite.name }}").
+    // act resolves this at runtime so the log ID will contain the resolved value, not the template text.
+    // We can't index by the last segment in this case — only by the workflow/caller file stem.
+    const isPureTemplateName = /^\$\{\{[^}]*\}\}$/.test(lastJobNamePart.trim())
 
     // Index by workflowFileStem/lastJobNamePart so act's "stem/callee" format can resolve correctly
     if (j.workflowFile) {
@@ -57,6 +64,9 @@ export function buildGraphJobIndexes(graphJobs: WorkflowJobNode[]): GraphJobInde
         const workflowKeyBase = `${stem}/${lastJobNamePartBase}`
         if (!byName.has(workflowKeyBase)) byName.set(workflowKeyBase, j.id)
       }
+      // For pure-template last segments, index by stem alone so the resolver can fall back to it
+      // when the last log-ID segment is the resolved value (e.g. "E2E Tests-4" for "${{ matrix.suite.name }}").
+      if (isPureTemplateName && !byTemplatePrefix.has(stem)) byTemplatePrefix.set(stem, j.id)
     }
     // Index by callerWorkflowFileStem/lastJobNamePart so act's "<callerWorkflow>/.../job" format resolves.
     // e.g. for "CI/Backend CI/Build" → segments[0]="ci" matches ci.yml stem → "ci/build" → backend/build
@@ -69,6 +79,8 @@ export function buildGraphJobIndexes(graphJobs: WorkflowJobNode[]): GraphJobInde
         const callerKeyBase = `${callerStem}/${lastJobNamePartBase}`
         if (!byName.has(callerKeyBase)) byName.set(callerKeyBase, j.id)
       }
+      // For pure-template last segments, also index by callerStem for caller-prefixed log IDs
+      if (isPureTemplateName && !byTemplatePrefix.has(callerStem)) byTemplatePrefix.set(callerStem, j.id)
     }
     // Collect last-segment candidates (used below to prevent ambiguous single-segment matching)
     const nameParts = j.name.split(/\s*\/\s*/)
@@ -87,7 +99,7 @@ export function buildGraphJobIndexes(graphJobs: WorkflowJobNode[]): GraphJobInde
       byName.set(lastSeg, candidates[0])
   }
 
-  return { byId, byName }
+  return { byId, byName, byTemplatePrefix }
 }
 
 /**
@@ -116,7 +128,7 @@ function stripMatrixSuffix(s: string): string {
  *  6. No match → return original log ID (shown as standalone box).
  */
 export function resolveLogJobId(logId: string, indexes: GraphJobIndexes): string {
-  const { byId, byName } = indexes
+  const { byId, byName, byTemplatePrefix } = indexes
   // Normalise backslashes (Windows paths emitted by act on Windows hosts) so matching works.
   const norm = logId.trim().toLowerCase().replace(/\\/g, '/')
 
@@ -145,6 +157,12 @@ export function resolveLogJobId(logId: string, indexes: GraphJobIndexes): string
     // Also try bare last segment (covers unambiguous direct-name matches like pages/build → "build")
     if (byName.has(lastSeg)) return byName.get(lastSeg)!
     if (byId.has(lastSeg)) return byId.get(lastSeg)!
+    // Last resort: match prefix segments against jobs whose last name part is a pure ${{...}} template.
+    // act resolves the template at runtime so the last log-ID segment is the resolved value (e.g. "E2E Tests-4").
+    // The job can only be identified by its workflow/caller file stem, which appears as an earlier segment.
+    for (let i = segments.length - 2; i >= 0; i--) {
+      if (byTemplatePrefix.has(segments[i])) return byTemplatePrefix.get(segments[i])!
+    }
   }
 
   return logId // No match — use as-is
