@@ -9,7 +9,77 @@
       <!-- Appearance -->
       <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
         <h2 class="font-semibold text-white mb-4">Appearance</h2>
-        <p class="text-sm text-gray-500">Dark mode is the only theme currently supported.</p>
+
+        <!-- Theme selector -->
+        <div class="mb-5">
+          <h3 class="text-sm font-medium text-gray-300 mb-1">Theme</h3>
+          <p class="text-xs text-gray-500 mb-3">
+            Choose your preferred colour scheme. Changes marked <span class="italic">browser only</span>
+            apply just to this device and are not saved to your profile.
+          </p>
+
+          <!-- Theme cards -->
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
+            <button
+              v-for="t in THEMES"
+              :key="t.id"
+              :class="[
+                'flex flex-col items-start gap-1 rounded-lg border px-3 py-2.5 text-left transition-colors',
+                activeTheme === t.id
+                  ? 'border-brand-500 bg-brand-600/10'
+                  : 'border-gray-700 hover:border-gray-600 bg-gray-800',
+              ]"
+              @click="selectTheme(t.id)"
+            >
+              <!-- Colour preview swatches -->
+              <span class="flex gap-1 mb-1">
+                <span :style="swatchStyle(t.id, 'bg')"   class="w-3 h-3 rounded-full border border-black/20" />
+                <span :style="swatchStyle(t.id, 'card')" class="w-3 h-3 rounded-full border border-black/20" />
+                <span :style="swatchStyle(t.id, 'text')" class="w-3 h-3 rounded-full border border-black/20" />
+                <span :style="swatchStyle(t.id, 'accent')" class="w-3 h-3 rounded-full border border-black/20" />
+              </span>
+              <span class="text-xs font-medium text-gray-200">{{ t.label }}</span>
+              <span class="text-xs text-gray-500">{{ t.description }}</span>
+            </button>
+          </div>
+
+          <!-- Browser-local override note -->
+          <div v-if="browserOverride" class="flex items-center justify-between bg-gray-800 rounded-lg px-3 py-2 text-xs">
+            <span class="text-gray-400">
+              Browser override active: <strong class="text-gray-200">{{ browserOverride }}</strong>
+            </span>
+            <button class="text-brand-400 hover:text-brand-300 transition-colors" @click="clearBrowserOverride">
+              Clear override
+            </button>
+          </div>
+          <div v-else-if="auth.user?.theme" class="text-xs text-gray-500 mt-1">
+            Profile theme: <strong class="text-gray-400">{{ auth.user.theme }}</strong> — saved to your account.
+          </div>
+          <div v-else class="text-xs text-gray-500 mt-1">
+            Using system default. Select a theme above to save it to your profile.
+          </div>
+        </div>
+
+        <!-- Save-to-profile vs browser-only toggle -->
+        <div class="flex items-center justify-between border-t border-gray-800 pt-4">
+          <div>
+            <span class="text-sm font-medium text-gray-300">Save to profile</span>
+            <p class="text-xs text-gray-500 mt-0.5">When on, the selected theme is saved to your account and applied on all devices.</p>
+          </div>
+          <button
+            :class="saveToProfile ? 'bg-brand-600' : 'bg-gray-700'"
+            class="relative inline-flex w-10 h-6 shrink-0 rounded-full transition-colors focus:outline-none ml-4"
+            role="switch"
+            :aria-checked="saveToProfile"
+            @click="saveToProfile = !saveToProfile">
+            <span
+              :class="saveToProfile ? 'translate-x-4' : 'translate-x-0'"
+              class="inline-block w-5 h-5 mt-0.5 ml-0.5 rounded-full bg-white shadow transform transition-transform" />
+          </button>
+        </div>
+
+        <p v-if="themeSavedMsg" class="text-xs text-green-400 mt-2">{{ themeSavedMsg }}</p>
+        <p v-if="themeError" class="text-xs text-red-400 mt-2">{{ themeError }}</p>
       </div>
 
       <!-- Log Display -->
@@ -110,6 +180,53 @@
 </template>
 
 <script setup lang="ts">
+import type { ThemeId } from '~/composables/useTheme'
+import { useAuthStore } from '~/stores/auth'
+
+const auth = useAuthStore()
+const { activeTheme, browserOverride, setBrowserTheme, saveProfileTheme, THEMES } = useTheme()
+
+// --- Theme selection ---
+const saveToProfile = ref(true)
+const themeSavedMsg = ref('')
+const themeError = ref('')
+
+async function selectTheme(id: ThemeId) {
+  themeError.value = ''
+  themeSavedMsg.value = ''
+  if (saveToProfile.value) {
+    try {
+      await saveProfileTheme(id)
+      themeSavedMsg.value = 'Theme saved to your profile.'
+    } catch {
+      themeError.value = 'Failed to save theme. The change was applied locally only.'
+      setBrowserTheme(id)
+    }
+  } else {
+    setBrowserTheme(id)
+  }
+}
+
+function clearBrowserOverride() {
+  setBrowserTheme(null)
+}
+
+/** Hardcoded preview swatches so they don't depend on the active theme's CSS variables. */
+const SWATCH_COLORS: Record<string, { bg: string; card: string; text: string; accent: string }> = {
+  dark:         { bg: '#030712', card: '#111827', text: '#d1d5db', accent: '#4c6ef5' },
+  dim:          { bg: '#0b0b0f', card: '#161b22', text: '#adb5bd', accent: '#4c6ef5' },
+  'dark-accent':{ bg: '#030712', card: '#111827', text: '#d1d5db', accent: '#9333ea' },
+  'dark-square':{ bg: '#030712', card: '#111827', text: '#d1d5db', accent: '#4c6ef5' },
+  light:        { bg: '#ffffff', card: '#f8fafc', text: '#334155', accent: '#2563eb' },
+}
+
+function swatchStyle(themeId: string, part: 'bg' | 'card' | 'text' | 'accent') {
+  const c = SWATCH_COLORS[themeId]
+  if (!c) return {}
+  return { background: c[part] }
+}
+
+// --- Log Display ---
 const { prefs, setAnsiColors, addLogColorRule, removeLogColorRule } = useUserPreferences()
 
 // --- Add rule form ---

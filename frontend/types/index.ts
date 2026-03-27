@@ -87,6 +87,7 @@ export interface AuthUser {
   email: string
   isAdmin: boolean
   createdAt: string
+  theme?: string
 }
 
 export enum OrgRole {

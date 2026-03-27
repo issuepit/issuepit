@@ -14,9 +14,12 @@
 import { useAuthStore } from '~/stores/auth'
 
 const auth = useAuthStore()
+const { resolveAndApply } = useTheme()
 
 // Fetch the current user on initial load so the sidebar reflects the logged-in state.
 onMounted(async () => {
   await auth.fetchMe()
+  // Apply the user's saved theme (falls back to localStorage → system default).
+  resolveAndApply(auth.user?.theme)
 })
 </script>
