@@ -266,15 +266,41 @@ public class CiCdWorker(
             };
         }
 
-        // When the trigger contains a git repo URL, load the repository record so we can
-        // inject auth credentials into the clone step. Auth is never carried in the Kafka
-        // message itself — it is always resolved fresh from the DB by the worker.
+        // When the trigger carries a git repo URL, resolve credentials and (when no specific
+        // remote ID is given) check all project remotes to find the one that actually has the
+        // branch. Auth is never carried in the Kafka message itself — always resolved fresh.
         if (!string.IsNullOrWhiteSpace(trigger.GitRepoUrl) &&
             string.IsNullOrWhiteSpace(trigger.GitAuthToken) && string.IsNullOrWhiteSpace(trigger.GitAuthUsername))
         {
-            var gitRepo = await db.GitRepositories
+            var allRepos = await db.GitRepositories
                 .Where(r => r.ProjectId == trigger.ProjectId)
-                .FirstOrDefaultAsync(stoppingToken);
+                .ToListAsync(stoppingToken);
+
+            // Prefer the explicitly-requested repo (by ID), then fall back to matching by URL,
+            // then to the first repo in the list.
+            var gitRepo = (trigger.GitRepoId.HasValue
+                    ? allRepos.FirstOrDefault(r => r.Id == trigger.GitRepoId.Value)
+                    : null)
+                ?? allRepos.FirstOrDefault(r => string.Equals(r.RemoteUrl, trigger.GitRepoUrl, StringComparison.OrdinalIgnoreCase))
+                ?? allRepos.FirstOrDefault();
+
+            // When multiple remotes are configured and a branch is specified, check which remote
+            // actually has the branch so the clone uses the correct URL. This mirrors the
+            // agent-run logic in IssueWorker.CheckBranchOnRemotesAsync.
+            if (allRepos.Count > 1 && !string.IsNullOrWhiteSpace(trigger.Branch))
+            {
+                var branch = StripOriginPrefixForClone(trigger.Branch);
+                var repoWithBranch = await FindRepoWithBranchAsync(allRepos, branch, stoppingToken);
+                if (repoWithBranch is not null && repoWithBranch.Id != gitRepo?.Id)
+                {
+                    logger.LogInformation(
+                        "Branch '{Branch}' not found on primary remote '{PrimaryUrl}'; switching to '{FallbackUrl}'",
+                        branch, trigger.GitRepoUrl, repoWithBranch.RemoteUrl);
+                    gitRepo = repoWithBranch;
+                    trigger = trigger with { GitRepoUrl = repoWithBranch.RemoteUrl };
+                }
+            }
+
             if (gitRepo is not null &&
                 (!string.IsNullOrEmpty(gitRepo.AuthToken) || !string.IsNullOrEmpty(gitRepo.AuthUsername)))
             {
@@ -1393,6 +1419,105 @@ public class CiCdWorker(
             logger.LogWarning(ex, "Could not serialize run inputs; inputs will not be stored");
             return null;
         }
+    }
+
+    /// <summary>
+    /// Strips the leading <c>origin/</c> prefix from a branch name when present.
+    /// git clone -b expects a plain branch name (e.g. <c>main</c>), not a
+    /// remote-tracking ref (e.g. <c>origin/main</c>).
+    /// </summary>
+    private static string StripOriginPrefixForClone(string branch) =>
+        branch.StartsWith("origin/", StringComparison.OrdinalIgnoreCase)
+            ? branch["origin/".Length..]
+            : branch;
+
+    /// <summary>
+    /// Checks each repository in <paramref name="repos"/> for the presence of
+    /// <paramref name="branch"/> using <c>git ls-remote</c> and returns the first one that has it.
+    /// Returns <c>null</c> when no remote has the branch or when the check cannot be completed
+    /// (network error, git unavailable, timeout).
+    /// </summary>
+    private async Task<GitRepository?> FindRepoWithBranchAsync(
+        IList<GitRepository> repos,
+        string branch,
+        CancellationToken cancellationToken)
+    {
+        foreach (var repo in repos)
+        {
+            var found = await IsBranchOnRemoteAsync(repo.RemoteUrl, repo.AuthUsername, repo.AuthToken, branch, cancellationToken);
+            if (found == true)
+                return repo;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> when <paramref name="branch"/> exists on the remote at
+    /// <paramref name="remoteUrl"/>, <c>false</c> when it does not, and <c>null</c> when the
+    /// check could not be completed (network error, timeout, git unavailable).
+    /// </summary>
+    private static async Task<bool?> IsBranchOnRemoteAsync(
+        string remoteUrl, string? authUsername, string? authToken, string branch,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var url = BuildAuthenticatedUrlForCheck(remoteUrl, authUsername, authToken);
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(10));
+
+            using var process = new System.Diagnostics.Process();
+            process.StartInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "git",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            process.StartInfo.ArgumentList.Add("ls-remote");
+            process.StartInfo.ArgumentList.Add("--heads");
+            process.StartInfo.ArgumentList.Add(url);
+            process.StartInfo.ArgumentList.Add(branch);
+
+            process.Start();
+            var output = await process.StandardOutput.ReadToEndAsync(timeoutCts.Token);
+            await process.WaitForExitAsync(timeoutCts.Token);
+
+            if (process.ExitCode != 0) return null;
+            return !string.IsNullOrWhiteSpace(output);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            // Per-check timeout — treat as indeterminate.
+            return null;
+        }
+        catch
+        {
+            // Network failure or git unavailable — treat as indeterminate.
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Builds an authenticated HTTPS clone URL by embedding username and token as
+    /// HTTP Basic Auth credentials. Non-HTTPS URLs are returned unchanged.
+    /// </summary>
+    private static string BuildAuthenticatedUrlForCheck(string url, string? username, string? token)
+    {
+        if (string.IsNullOrEmpty(token) || !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            return url;
+
+        var builder = new UriBuilder(url)
+        {
+            UserName = Uri.EscapeDataString(string.IsNullOrEmpty(username) ? "git" : username),
+            Password = Uri.EscapeDataString(token),
+        };
+        return builder.Uri.AbsoluteUri;
     }
     
     /// <summary>

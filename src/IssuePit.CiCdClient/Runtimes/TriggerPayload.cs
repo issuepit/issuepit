@@ -116,4 +116,10 @@ public record TriggerPayload(
     /// Populated by the worker when it merges project/org settings into the trigger.
     /// Values: <c>"trigger-override"</c>, <c>"project"</c>, <c>"org"</c>, or <c>null</c> (global default).
     /// </summary>
-    string? ActRunnerImageSource = null);
+    string? ActRunnerImageSource = null,
+    /// <summary>
+    /// ID of the <c>GitRepository</c> record that should be used as the clone source.
+    /// When set the worker loads credentials from that specific remote instead of using
+    /// <see cref="GitRepoUrl"/>-based lookup or falling back to <c>FirstOrDefault</c>.
+    /// </summary>
+    Guid? GitRepoId = null);

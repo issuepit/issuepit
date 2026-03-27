@@ -820,8 +820,12 @@ public class CiCdRunsController(
         if (project is null) return NotFound();
 
         // Look up the remote URL from the linked git repository (if any).
+        // When a specific GitRepoId is provided use that remote; otherwise fall back to the first.
         // The container clones the repo inside itself — no host workspace path is needed.
-        var repo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == request.ProjectId);
+        var repo = request.GitRepoId.HasValue
+            ? await db.GitRepositories.FirstOrDefaultAsync(r => r.Id == request.GitRepoId.Value && r.ProjectId == request.ProjectId)
+              ?? await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == request.ProjectId)
+            : await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == request.ProjectId);
 
         // When only a branch is given (no commit SHA), resolve the branch tip SHA from the local
         // clone so the run record has a meaningful commit identifier. Fall back to the branch name
@@ -863,6 +867,7 @@ public class CiCdRunsController(
             eventName: request.EventName,
             inputs: request.Inputs,
             gitRepoUrl: repo?.RemoteUrl,
+            gitRepoId: repo?.Id,
             extraPayload: string.IsNullOrWhiteSpace(request.CustomImage) ? null : new { customImage = request.CustomImage },
             userTriggered: true);
 
@@ -1007,7 +1012,13 @@ public record TriggerRunRequest(
     /// proceeds even if those runs are still in progress. If any new active runs have appeared
     /// since the conflict was surfaced, a fresh 409 is returned.
     /// </summary>
-    IReadOnlyList<Guid>? ForceWithActiveRunIds = null);
+    IReadOnlyList<Guid>? ForceWithActiveRunIds = null,
+    /// <summary>
+    /// Optional ID of the git remote (GitRepository) to clone from. When provided the worker
+    /// uses that remote's URL and credentials instead of auto-detecting the right remote.
+    /// When omitted the worker checks all project remotes and selects the one that has the branch.
+    /// </summary>
+    Guid? GitRepoId = null);
 
 /// <summary>Conflict response returned when another run is already active for the project and the caller has not acknowledged all active run IDs.</summary>
 public record ActiveRunConflictResponse(

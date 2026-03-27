@@ -121,6 +121,22 @@
           <p v-if="loadingWorkflows" class="text-xs text-gray-500 mt-1">Loading workflows…</p>
         </div>
 
+        <!-- Remote selector -->
+        <div v-if="remotes.length > 0">
+          <label class="block text-sm font-medium text-gray-300 mb-1">
+            Remote <span class="text-gray-500">(clone source)</span>
+          </label>
+          <select v-model="selectedRepoId"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+            <option v-for="r in remotes" :key="r.id" :value="r.id">
+              {{ r.remoteUrl }} — {{ r.mode }} · {{ r.status }}
+            </option>
+          </select>
+          <p v-if="remotes.length > 1" class="text-xs text-gray-500 mt-1">
+            Select which remote to clone from. When the branch exists on only one remote the worker will use that one automatically.
+          </p>
+        </div>
+
         <!-- workflow_dispatch inputs -->
         <div v-if="selectedEvent === 'workflow_dispatch' && dispatchInputs.length > 0" class="space-y-3">
           <p class="text-xs font-medium text-gray-400 uppercase tracking-wide">Workflow Inputs</p>
@@ -176,8 +192,10 @@
 <script setup lang="ts">
 import type { WorkflowInfo, WorkflowInput } from '~/types'
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
+import { useApi } from '~/composables/useApi'
 
 interface TriggerConflictResponse { error?: string; canForce?: boolean; activeRunIds?: string[] }
+interface GitRepoDto { id: string; remoteUrl: string; defaultBranch: string; mode: string; status: string }
 
 const props = defineProps<{
   projectId: string
@@ -194,6 +212,7 @@ const emit = defineEmits<{
 const ACT_CONTAINER_STORAGE_KEY = 'cicd-act-container-image'
 
 const cicdStore = useCiCdRunsStore()
+const api = useApi()
 
 const eventOptions = [
   { value: 'push', label: 'push' },
@@ -223,6 +242,8 @@ const triggerError = ref<string | null>(null)
 const triggerConflict = ref<{ message: string; activeRunIds: string[] } | null>(null)
 const loadingWorkflows = ref(false)
 const workflows = ref<WorkflowInfo[]>([])
+const remotes = ref<GitRepoDto[]>([])
+const selectedRepoId = ref<string | undefined>(undefined)
 
 // Workflows that support the currently selected event (or all if none match)
 const filteredWorkflows = computed(() => {
@@ -256,11 +277,21 @@ watch([selectedWorkflow, selectedEvent], () => {
   }
 })
 
-// Load workflows on mount
+// Load workflows and remotes on mount
 onMounted(async () => {
   loadingWorkflows.value = true
-  workflows.value = await cicdStore.fetchWorkflows(props.projectId)
+  const [wf, repos] = await Promise.all([
+    cicdStore.fetchWorkflows(props.projectId),
+    api.get<GitRepoDto[]>(`/api/projects/${props.projectId}/git/repos`).catch(() => [] as GitRepoDto[]),
+  ])
+  workflows.value = wf
+  remotes.value = repos
   loadingWorkflows.value = false
+
+  // Prefill: prefer the Working-mode active remote, then any active remote, then first
+  const working = repos.find(r => r.mode === 'Working' && r.status === 'Active')
+  const anyActive = repos.find(r => r.status === 'Active')
+  selectedRepoId.value = (working ?? anyActive ?? repos[0])?.id
 })
 
 async function triggerRun(forceWithActiveRunIds?: string[]) {
@@ -296,6 +327,7 @@ async function triggerRun(forceWithActiveRunIds?: string[]) {
       inputs,
       customImage: import.meta.client ? (localStorage.getItem(ACT_CONTAINER_STORAGE_KEY) ?? undefined) : undefined,
       forceWithActiveRunIds,
+      gitRepoId: selectedRepoId.value,
     })
     emit('triggered')
   } catch (e: unknown) {

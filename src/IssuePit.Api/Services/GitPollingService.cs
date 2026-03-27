@@ -88,6 +88,7 @@ public class GitPollingService(
                         eventName: "push",
                         inputs: null,
                         gitRepoUrl: repo.RemoteUrl,
+                        gitRepoId: repo.Id,
                         cancellationToken: cancellationToken);
 
                     repo.LastKnownCommitSha = sha;
@@ -159,6 +160,7 @@ public class GitPollingService(
                     eventName: "pull_request",
                     inputs: null,
                     gitRepoUrl: repo.RemoteUrl,
+                    gitRepoId: repo.Id,
                     extraPayload: new { mergeRequestId = mr.Id },
                     cancellationToken: cancellationToken);
 

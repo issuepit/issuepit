@@ -46,6 +46,7 @@ public sealed class CiCdRunQueueService(
         Guid? retryOfRunId = null,
         object? extraPayload = null,
         bool userTriggered = false,
+        Guid? gitRepoId = null,
         CancellationToken cancellationToken = default)
     {
         var requiresApproval = userTriggered
@@ -104,6 +105,7 @@ public sealed class CiCdRunQueueService(
             ["workflow"] = workflow,
             ["agentSessionId"] = agentSessionId,
             ["gitRepoUrl"] = gitRepoUrl,
+            ["gitRepoId"] = gitRepoId,
             ["eventName"] = eventName ?? "push",
             ["inputs"] = inputs,
         };

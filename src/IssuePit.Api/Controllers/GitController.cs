@@ -523,7 +523,8 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
                 workflow: null,
                 eventName: "push",
                 inputs: null,
-                gitRepoUrl: repo.RemoteUrl);
+                gitRepoUrl: repo.RemoteUrl,
+                gitRepoId: repo.Id);
 
             // Record the last known SHA so the poller doesn't re-trigger immediately.
             var repoRecord = await dbCtx.GitRepositories.FindAsync(repo.Id);
