@@ -21,11 +21,14 @@ public class TestHistoryPage(IPage page)
     public async Task GotoCoverageAsync(string projectId)
     {
         await page.GotoAsync($"/projects/{projectId}/runs/test-history?tab=Coverage");
-        // Wait for either coverage data cards or the empty-state placeholder.
-        // Because loading starts as true, neither text appears until the API fetch completes.
+        // Wait for all initial API calls (runs, tests, coverage, branches) to complete before
+        // checking for content. Without this, the 20 s locator timeout races against the Vue
+        // onMounted + reload() cycle and can expire under CI load.
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle,
+            new PageWaitForLoadStateOptions { Timeout = E2ETimeouts.NavigationLong });
         // Use p:has-text to match only the summary-card <p> label, not the table column <th>.
         await page.Locator("p:has-text('Line Coverage')").Or(page.Locator("text=No coverage data yet"))
-            .WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.NavigationLong });
+            .WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Default });
     }
 
     public async Task WaitForLoadAsync()
@@ -68,9 +71,11 @@ public class TestHistoryPage(IPage page)
     public async Task GotoAnalyticsAsync(string projectId)
     {
         await page.GotoAsync($"/projects/{projectId}/runs/test-history?tab=Analytics");
-        // Wait for either the slowest-tests heading or the empty state message.
+        // Wait for all initial API calls to complete before checking for content.
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle,
+            new PageWaitForLoadStateOptions { Timeout = E2ETimeouts.NavigationLong });
         await page.Locator("text=Duration Analytics").Or(page.Locator("text=No analytics data yet"))
-            .WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.NavigationLong });
+            .WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Default });
     }
 
     /// <summary>Clicks the Analytics tab and waits for its content to appear.</summary>
