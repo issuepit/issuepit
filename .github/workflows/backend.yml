@@ -23,7 +23,7 @@ jobs:
 
       - name: Publish to combined output
         # Publish all deployable services into a single flat directory so that shared
-        # native libraries (libvosk.so, Kafka JARs, …) are written only once instead
+        # native libraries (libvosk.so, Kafka JARs, ...) are written only once instead
         # of once per project.  obj/ directories are never included in publish output.
         run: |
           DIST=dist
@@ -75,7 +75,7 @@ jobs:
 
           # Check for migrations missing their .Designer.cs file.
           # EF Core requires the [Migration] attribute (in the designer file) to discover a
-          # migration at runtime — a migration without a designer file is silently skipped by
+          # migration at runtime -- a migration without a designer file is silently skipped by
           # MigrateAsync(), causing schema drift that is invisible to has-pending-model-changes.
           MISSING_DESIGNER=0
           while IFS= read -r migration_file; do
@@ -111,6 +111,8 @@ jobs:
     name: Unit Tests
     runs-on: ubuntu-latest
     needs: build
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -119,22 +121,15 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Unit Tests
-        run: >
-          dotnet test src/IssuePit.Tests.Unit/IssuePit.Tests.Unit.csproj
-          --configuration Release
-          --filter "Category!=Integration&Category!=E2E"
-          --verbosity normal
-          --logger "trx;LogFileName=unit-results.trx"
-          --collect "XPlat Code Coverage"
-          --results-directory TestResults/unit
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
+      - name: Run unit tests
+        uses: ./.github/actions/run-dotnet-tests
         with:
-          name: unit-test-results
-          path: '**/*.trx'
+          project: src/IssuePit.Tests.Unit/IssuePit.Tests.Unit.csproj
+          filter: Category!=Integration&Category!=E2E
+          artifact-name: unit
+          extra-args: >-
+            --collect "XPlat Code Coverage"
+            --results-directory TestResults/unit
 
       - name: Upload coverage report
         if: always()
@@ -143,44 +138,34 @@ jobs:
           name: unit-coverage-report
           path: TestResults/unit/**/coverage.cobertura.xml
 
-  integration-tests:
-    name: Integration Tests
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Build Integration Tests
-        run: >
-          dotnet build src/IssuePit.Tests.Integration/IssuePit.Tests.Integration.csproj
-          --configuration Release
-
-      - name: Integration Tests
-        run: >
-          dotnet test src/IssuePit.Tests.Integration/IssuePit.Tests.Integration.csproj
-          --no-build
-          --configuration Release
-          --filter "Category=Integration"
-          --verbosity normal
-          --logger "trx;LogFileName=integration-results.trx"
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: integration-test-results
-          path: '**/*.trx'
-
-  e2e-tests:
-    name: E2E Tests
+  # Matrix job combining integration tests (no infrastructure) and E2E tests
+  # (full infrastructure stack).  Adding a new shard later is a one-liner in
+  # the matrix -- no new top-level job required.
+  tests:
+    name: Tests / ${{ matrix.suite.name }}
     runs-on: ubuntu-latest
     needs: build
     timeout-minutes: 22
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - name: integration
+            project: src/IssuePit.Tests.Integration/IssuePit.Tests.Integration.csproj
+            filter: Category=Integration
+            artifact: integration
+            needs_infra: false
+            skip_build: false
+          - name: e2e
+            project: src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj
+            filter: "Category=E2E|Category=PoC"
+            artifact: e2e
+            needs_infra: true
+            skip_build: true
+            extra_args: '--blame-hang-timeout 5min'
+
     steps:
       - uses: actions/checkout@v4
 
@@ -189,7 +174,10 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      # -- E2E-only: frontend -----------------------------------------------
+
       - name: Setup Node.js
+        if: matrix.suite.needs_infra
         uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -197,48 +185,64 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend dependencies
+        if: matrix.suite.needs_infra
         working-directory: frontend
         run: npm ci
 
-      # Authenticate to GHCR so that 'docker pull ghcr.io/issuepit/...' below succeeds.
-      # The helper-act image is published to the issuepit org registry, which is not
-      # publicly accessible without authentication.
+      # -- E2E-only: authenticate to GHCR before parallel pulls -------------
+
       - name: Login to GitHub Container Registry
-        if: vars.ISSUEPIT_RUN != 'true'
+        if: matrix.suite.needs_infra && vars.ISSUEPIT_RUN != 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pre-pull Docker images
-        run: |
-          docker pull postgres:17.6
-          docker pull valkey/valkey:9.0
-          docker pull apache/kafka:3.9.0
-          docker pull node:20-slim
-          docker pull localstack/localstack:4.3
+      # -- E2E-only: pull all Docker images and build act concurrently -------
+      #
+      # All docker pull commands and the act clone+build are launched as
+      # background processes so that network I/O and compilation overlap
+      # instead of running one after another.
 
-      - name: Pre-pull GHCR Docker image
-        if: vars.ISSUEPIT_RUN != 'true'
+      - name: Pull Docker images and build act (parallel)
+        if: matrix.suite.needs_infra
         run: |
-          docker pull ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24
-
-      - name: Build act from issuepit/act fork
-        run: |
-          # Build from the same issuepit/act commit used in Dockerfile.helper-act.
-          # The issuepit/act fork adds --container-name-suffix (used by NativeCiCdRuntime)
-          # which is not present in the official nektos/act releases.
           ACT_COMMIT=a471da174034e4d6db6fc89b0ea7bfcd38b9236a
-          git clone https://github.com/issuepit/act.git /tmp/issuepit-act
-          cd /tmp/issuepit-act
-          git checkout "$ACT_COMMIT"
-          go build -ldflags "-X main.version=${ACT_COMMIT}" -o /tmp/act-bin main.go
-          mv /tmp/act-bin /usr/local/bin/act
-          rm -rf /tmp/issuepit-act
+
+          # Pull public Docker images in parallel
+          docker pull postgres:17.6 &
+          docker pull valkey/valkey:9.0 &
+          docker pull apache/kafka:3.9.0 &
+          docker pull node:20-slim &
+          docker pull localstack/localstack:4.3 &
+
+          # Pull private GHCR image in parallel (login already completed above)
+          if [ "${{ vars.ISSUEPIT_RUN }}" != 'true' ]; then
+            docker pull ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24 &
+          fi
+
+          # Clone and build the issuepit/act fork in parallel.
+          # Uses a shallow fetch of the exact commit for speed; the fork adds
+          # --container-name-suffix which is required by NativeCiCdRuntime.
+          (
+            git init /tmp/issuepit-act
+            cd /tmp/issuepit-act
+            git remote add origin https://github.com/issuepit/act.git
+            git fetch --depth 1 origin "$ACT_COMMIT"
+            git checkout FETCH_HEAD
+            go build -ldflags "-X main.version=${ACT_COMMIT}" -o /usr/local/bin/act main.go
+            rm -rf /tmp/issuepit-act
+          ) &
+
+          # Wait for every background job before continuing
+          wait
           act --version
 
+      # -- E2E-only: Vosk speech model --------------------------------------
+
       - name: Cache Vosk model
+        if: matrix.suite.needs_infra
         id: cache-vosk
         uses: actions/cache@v4
         with:
@@ -246,7 +250,7 @@ jobs:
           key: vosk-model-small-en-us-0.15
 
       - name: Download Vosk model
-        if: steps.cache-vosk.outputs.cache-hit != 'true'
+        if: matrix.suite.needs_infra && steps.cache-vosk.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/.vosk
           curl -L https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip -o /tmp/vosk-model.zip
@@ -254,9 +258,13 @@ jobs:
           rm /tmp/vosk-model.zip
 
       - name: Set Vosk model path
+        if: matrix.suite.needs_infra
         run: echo "VoiceTranscription__ModelPath=$HOME/.vosk/vosk-model-small-en-us-0.15" >> $GITHUB_ENV
 
+      # -- E2E-only: ffmpeg -------------------------------------------------
+
       - name: Cache ffmpeg apt packages
+        if: matrix.suite.needs_infra
         id: cache-ffmpeg
         uses: actions/cache@v4
         with:
@@ -264,6 +272,7 @@ jobs:
           key: apt-ffmpeg-noble-amd64
 
       - name: Install ffmpeg
+        if: matrix.suite.needs_infra
         # https://github.com/orgs/community/discussions/145882
         # apt-get update is needed to fix 404s from stale package lists on the runner.
         # On cache hit we skip it entirely: copy cached .deb files and install with
@@ -273,7 +282,7 @@ jobs:
           if [ "${{ steps.cache-ffmpeg.outputs.cache-hit }}" = "true" ]; then
             sudo cp /tmp/apt-ffmpeg/*.deb /var/cache/apt/archives/
             sudo apt-get install -y --no-download ffmpeg && exit 0 || true
-            # Cached packages are stale — fall through to full update+install below
+            # Cached packages are stale -- fall through to full update+install below
           fi
           sudo apt-get -y update
           # Download packages first so we can cache only the ffmpeg-related debs
@@ -283,31 +292,36 @@ jobs:
           sudo apt-get install -y ffmpeg
 
       - name: Disable ffmpeg auto-download (use system ffmpeg)
+        if: matrix.suite.needs_infra
         run: echo "VoiceTranscription__DownloadFfmpeg=false" >> $GITHUB_ENV
 
-      - name: Build E2E test project
+      # -- E2E-only: build test project + install Playwright ----------------
+      #
+      # Build must happen before Playwright browser install (the install
+      # script is generated into the build output directory), so this step
+      # cannot be moved into the composite action.
+
+      - name: Build E2E tests
+        if: matrix.suite.needs_infra
         run: dotnet build src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj --configuration Release
 
       - name: Install Playwright browsers
+        if: matrix.suite.needs_infra
         run: |
           PLAYWRIGHT_SCRIPT=$(find src/IssuePit.Tests.E2E/bin/Release -name 'playwright.ps1' | head -1)
           pwsh "$PLAYWRIGHT_SCRIPT" install --with-deps chromium
 
-      - name: E2E Tests
-        env:
-          CICD_E2E_HELPER_ACT_IMAGE: ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24
-        run: >
-          dotnet test src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj
-          --no-build
-          --configuration Release
-          --filter "Category=E2E|Category=PoC"
-          --verbosity normal
-          --logger "trx;LogFileName=e2e-results.trx"
-          --blame-hang-timeout 5min
+      - name: Set E2E helper-act image
+        if: matrix.suite.needs_infra
+        run: echo "CICD_E2E_HELPER_ACT_IMAGE=ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24" >> $GITHUB_ENV
 
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
+      # -- Run tests (shared composite action) ------------------------------
+
+      - name: Run ${{ matrix.suite.name }} tests
+        uses: ./.github/actions/run-dotnet-tests
         with:
-          name: e2e-test-results
-          path: '**/*.trx'
+          project: ${{ matrix.suite.project }}
+          filter: ${{ matrix.suite.filter }}
+          artifact-name: ${{ matrix.suite.artifact }}
+          skip-build: ${{ matrix.suite.skip_build }}
+          extra-args: ${{ matrix.suite.extra_args }}
