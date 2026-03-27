@@ -492,10 +492,12 @@ public class AgentSessionTests(AspireFixture fixture)
             $"from inside the agent container.\n" +
             $"Actual logs:\n{string.Join('\n', logLines.Take(60))}");
 
-        // Assert list_projects returned at least 1 project
-        var countLine = logLines.FirstOrDefault(l => l.Contains("[ISSUEPIT:MCP_PROJECT_COUNT]="));
+        // Assert list_projects returned at least 1 project.
+        // Use StartsWith to match only actual container output lines (e.g. "[ISSUEPIT:MCP_PROJECT_COUNT]=1"),
+        // not the CMD log entry which embeds the echo statement inside the full script text.
+        var countLine = logLines.FirstOrDefault(l => l.StartsWith("[ISSUEPIT:MCP_PROJECT_COUNT]="));
         Assert.NotNull(countLine);
-        var countStr = countLine!.Split('=').Last().Trim();
+        var countStr = countLine!["[ISSUEPIT:MCP_PROJECT_COUNT]=".Length..].Trim();
         Assert.True(
             int.TryParse(countStr, out var projCount) && projCount >= 1,
             $"Expected project count >= 1, got '{countStr}'.\n" +

@@ -245,4 +245,30 @@ public class IssueDetailPage(IPage page)
         // The BranchSelect trigger button shows the selected value in its inner span
         return (await page.Locator(".fixed button[aria-expanded] > span.flex-1").InnerTextAsync()).Trim();
     }
+
+    // ── Agent Protection toggles ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns true if the "Agent Protection" section is visible in the issue sidebar.
+    /// </summary>
+    public async Task<bool> IsAgentProtectionSectionVisibleAsync()
+    {
+        return await page.Locator("text=Agent Protection").IsVisibleAsync();
+    }
+
+    /// <summary>
+    /// Returns true if the "Prevent agent move" toggle is visible.
+    /// </summary>
+    public async Task<bool> IsPreventAgentMoveToggleVisibleAsync()
+    {
+        return await page.Locator("text=Prevent agent move").IsVisibleAsync();
+    }
+
+    /// <summary>
+    /// Returns true if the "Hide from agents" toggle is visible.
+    /// </summary>
+    public async Task<bool> IsHideFromAgentsToggleVisibleAsync()
+    {
+        return await page.Locator("text=Hide from agents").IsVisibleAsync();
+    }
 }

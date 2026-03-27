@@ -651,6 +651,45 @@
               </select>
             </div>
 
+            <!-- Agent Protection -->
+            <div>
+              <p class="text-xs text-gray-500 uppercase tracking-wide mb-2">Agent Protection</p>
+              <div class="space-y-2">
+                <label class="flex items-center justify-between gap-2 cursor-pointer group">
+                  <span class="text-xs text-gray-400 group-hover:text-gray-300 leading-tight">Prevent agent move</span>
+                  <button
+                    type="button"
+                    :class="[
+                      'relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-gray-900',
+                      store.currentIssue.preventAgentMove ? 'bg-brand-600' : 'bg-gray-700'
+                    ]"
+                    @click="togglePreventAgentMove">
+                    <span
+                      :class="[
+                        'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition-transform',
+                        store.currentIssue.preventAgentMove ? 'translate-x-4' : 'translate-x-0'
+                      ]" />
+                  </button>
+                </label>
+                <label class="flex items-center justify-between gap-2 cursor-pointer group">
+                  <span class="text-xs text-gray-400 group-hover:text-gray-300 leading-tight">Hide from agents</span>
+                  <button
+                    type="button"
+                    :class="[
+                      'relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-gray-900',
+                      store.currentIssue.hideFromAgents ? 'bg-brand-600' : 'bg-gray-700'
+                    ]"
+                    @click="toggleHideFromAgents">
+                    <span
+                      :class="[
+                        'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition-transform',
+                        store.currentIssue.hideFromAgents ? 'translate-x-4' : 'translate-x-0'
+                      ]" />
+                  </button>
+                </label>
+              </div>
+            </div>
+
             <!-- Milestone -->
             <div>
               <p class="text-xs text-gray-500 uppercase tracking-wide mb-1.5">Milestone</p>
@@ -1577,6 +1616,16 @@ async function updatePriority(e: Event) {
 async function updateType(e: Event) {
   const val = (e.target as HTMLSelectElement).value as IssueType
   await store.updateIssue(id, resolvedIssueId.value, { type: val })
+}
+
+async function togglePreventAgentMove() {
+  if (!store.currentIssue) return
+  await store.updateIssue(id, resolvedIssueId.value, { preventAgentMove: !store.currentIssue.preventAgentMove })
+}
+
+async function toggleHideFromAgents() {
+  if (!store.currentIssue) return
+  await store.updateIssue(id, resolvedIssueId.value, { hideFromAgents: !store.currentIssue.hideFromAgents })
 }
 
 async function updateMilestone(milestoneId: string | null) {

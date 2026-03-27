@@ -218,4 +218,91 @@ public class KanbanBoardTests : IAsyncLifetime
             await context.CloseAsync();
         }
     }
+
+    [Fact]
+    public async Task Kanban_ManageLanesPage_Loads()
+    {
+        var (context, page, projectId, _, _) = await SetUpAsync();
+        try
+        {
+            var kanbanPage = new KanbanPage(page);
+            await kanbanPage.GotoAsync(projectId);
+            await kanbanPage.CreateBoardAsync("Sprint 1");
+
+            // Navigate to the dedicated Manage Lanes page via the link in the kanban header
+            await kanbanPage.GotoManageLanesPageAsync(projectId);
+
+            await page.WaitForSelectorAsync("text=Manage Lanes",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
+            Assert.True(
+                await page.Locator("a:has-text('Kanban')").CountAsync() > 0,
+                "Breadcrumb 'Kanban' link should be visible on the Manage Lanes page");
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Kanban_ManageLanesPage_ShowsAgentDropdownInEditMode()
+    {
+        var (context, page, projectId, _, _) = await SetUpAsync();
+        try
+        {
+            var kanbanPage = new KanbanPage(page);
+            await kanbanPage.GotoAsync(projectId);
+            await kanbanPage.CreateBoardAsync("Sprint 2");
+
+            // Add a lane via the modal so there is a lane row to edit on the manage lanes page
+            await kanbanPage.OpenLanesModalAsync();
+            await kanbanPage.AddLaneAsync("Edit Me");
+            await kanbanPage.CloseLanesModalAsync();
+
+            await kanbanPage.GotoManageLanesPageAsync(projectId);
+
+            // Click the edit (pencil) button on the first lane row
+            var rowEditBtn = page.Locator(".bg-gray-900.border.border-gray-800 button").First;
+            await rowEditBtn.ClickAsync();
+
+            // In edit mode, the Agent: label and a <select> for agents should appear
+            await page.WaitForSelectorAsync("label:has-text('Agent:')",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+            Assert.True(
+                await page.Locator("label:has-text('Agent:')").CountAsync() > 0,
+                "Agent assignment label should appear in lane edit mode");
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Kanban_ManageLanesPage_ShowsOrchestratorScheduleSection()
+    {
+        var (context, page, projectId, _, _) = await SetUpAsync();
+        try
+        {
+            var kanbanPage = new KanbanPage(page);
+            await kanbanPage.GotoAsync(projectId);
+            await kanbanPage.CreateBoardAsync("Sprint 3");
+
+            await kanbanPage.GotoManageLanesPageAsync(projectId);
+
+            // GotoManageLanesPageAsync already waits for the board selector,
+            // confirming activeBoardId is set and main content (incl. Orchestrator Schedule) is rendered.
+
+            // Orchestrator Schedule section should be visible
+            await page.WaitForSelectorAsync("h2:has-text('Orchestrator Schedule')",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
+            Assert.True(
+                await page.Locator("h2:has-text('Orchestrator Schedule')").CountAsync() > 0,
+                "Orchestrator Schedule section heading should be visible on the Manage Lanes page");
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
 }

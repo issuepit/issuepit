@@ -275,9 +275,8 @@ public class DockerAgentRuntime(
         //                    run the runner CLI. A live terminal session is opened in the web UI
         //                    so the user can type commands interactively. The container ID is emitted
         //                    as a [ISSUEPIT:MANUAL_MODE_CONTAINER_ID]= marker for IssueWorker.
-        // Exec flow        — container CMD = "sleep infinity"; C# drives all agent commands via
+        // Exec flow        — container CMD = "tail -f /dev/null"; C# drives all agent commands via
         //                    docker exec. Keeps the same opencode session files across fix runs.
-        // Legacy flow      — container CMD from entrypoint default; wait for container to exit.
         var useHttpServerMode = agent.UseHttpServer && agent.RunnerType == RunnerType.OpenCode;
         var useManualMode = agent.ManualMode;
 
@@ -294,17 +293,26 @@ public class DockerAgentRuntime(
             agent, issue,
             continueSessionId: session.PreviousOpenCodeDbTar is { Length: > 0 } ? session.PreviousOpenCodeSessionId : null,
             comments: comments);
-        var useExecFlow = !useHttpServerMode && !useManualMode && runnerArgs.Count > 0;
+        // Exec flow is the only path for autonomous agent runs (non-HTTP-server, non-manual).
+        // Previously there was a "legacy flow" (agent.RunnerType == null) that ran the container's
+        // default CMD and waited for it to exit — that path has been removed. All agent runs now
+        // use docker exec for workspace setup and agent execution, keeping the container alive
+        // and surfacing every log line through onLogLine → UI.
+        var useExecFlow = !useHttpServerMode && !useManualMode;
 
         // Tracks container paths of downloaded issue attachments; populated in Step D.5 and
         // used when rebuilding runnerArgs (including in fallback cases).
         var downloadedAttachmentPaths = new List<string>();
 
-        if (useExecFlow)
+        if (runnerArgs.Count > 0)
         {
             // Log the CLI command (e.g. "opencode run --model ...") without the task text.
             var cmdDisplay = string.Join(" ", runnerArgs.Take(runnerArgs.Count - 1));
             await onLogLine($"[DEBUG] Runner cmd     : {cmdDisplay}", LogStream.Stdout);
+        }
+        else if (session.CustomCmd is { Length: > 0 })
+        {
+            await onLogLine($"[DEBUG] Runner cmd     : {string.Join(" ", session.CustomCmd)}", LogStream.Stdout);
         }
 
         // Build the task prompt (used for the exec flow and HTTP server mode).
@@ -329,10 +337,9 @@ public class DockerAgentRuntime(
         var hostConfig = new HostConfig
         {
             Privileged = true,
-            // Never auto-remove: both exec flow and legacy flow manage container lifetime explicitly.
-            // AutoRemove races with WaitContainerAsync / StreamContainerLogsAsync — the container can
-            // be removed before logs are fully streamed, producing NotFound errors. Instead, we always
-            // remove the container ourselves after all log capture is complete (see below).
+            // Never auto-remove: the container's lifetime is managed explicitly.
+            // AutoRemove races with log capture — the container can be removed before logs are fully
+            // streamed, producing NotFound errors. We always remove the container after all work is done.
             AutoRemove = false,
             // Make host.docker.internal resolve to the Docker host gateway so containers can call
             // the IssuePit MCP server and other host services. "host-gateway" is the Docker-native
@@ -358,16 +365,12 @@ public class DockerAgentRuntime(
         }
 
         // Container CMD and Entrypoint:
-        //   - Exec flow / HTTP server mode / Manual mode: bypass the image's ENTRYPOINT entirely by overriding
-        //     Entrypoint=["/bin/sh","-c"] and Cmd=["tail -f /dev/null"]. This keeps the container
-        //     alive immediately without running entrypoint.sh. All workspace setup (git clone,
-        //     DinD, DNS, opencode config) is then driven via docker exec from C# so every log line
-        //     flows through onLogLine → UI and git clone failures surface as clear errors in the UI.
-        //   - Legacy flow: null → use image's default CMD (or session.CustomCmd if set); the baked
-        //     entrypoint.sh is injected and runs as PID 1, then execs the CMD.
-        IList<string>? containerCmd = (useExecFlow || useHttpServerMode || useManualMode)
-            ? ["tail -f /dev/null"]
-            : (session.CustomCmd?.Length > 0 ? session.CustomCmd : null);
+        // All agent runs (exec flow, HTTP server mode, manual mode) bypass the image's ENTRYPOINT
+        // by overriding Entrypoint=["/bin/sh","-c"] and Cmd=["tail -f /dev/null"]. This keeps the
+        // container alive immediately without running any baked-in entrypoint. All workspace setup
+        // (git clone, DinD, DNS, opencode config) and agent execution are driven via docker exec
+        // from C# so every log line flows through onLogLine → UI.
+        IList<string> containerCmd = ["tail -f /dev/null"];
 
         // Generate a unique container name from the session ID, similar to how CI/CD runner
         // uses --container-name-suffix. This makes agent containers identifiable by session
@@ -382,11 +385,10 @@ public class DockerAgentRuntime(
             Cmd = containerCmd,
             ExposedPorts = containerExposedPorts,
             HostConfig = hostConfig,
-            // For exec flow and HTTP server mode and manual mode: override the image's Entrypoint so that
-            // entrypoint.sh does NOT run as PID 1. The container starts immediately with
-            // "tail -f /dev/null" and is kept alive for docker exec. All setup is done in C#.
-            // For legacy flow: leave Entrypoint null so the image's baked Entrypoint is used.
-            Entrypoint = (useExecFlow || useHttpServerMode || useManualMode) ? ["/bin/sh", "-c"] : null,
+            // Override the image's Entrypoint so it does NOT run as PID 1. The container starts
+            // immediately with "tail -f /dev/null" and is kept alive for docker exec. All setup is
+            // done in C#.
+            Entrypoint = ["/bin/sh", "-c"],
             Labels = new Dictionary<string, string>
             {
                 ["issuepit.session-id"] = session.Id.ToString(),
@@ -396,30 +398,10 @@ public class DockerAgentRuntime(
         };
 
         // Step 5: Create the container.
-        // For exec/HTTP flows: Entrypoint is overridden above so entrypoint.sh is NOT injected.
-        // For legacy flow: inject the latest entrypoint.sh so the container uses the execution
-        // client's version even when the Docker image was built with an older entrypoint.
         var container = await dockerClient.Containers.CreateContainerAsync(
             createParams, cancellationToken);
 
-        try
-        {
-            if (!useExecFlow && !useHttpServerMode && !useManualMode)
-            {
-                await InjectEntrypointAsync(container.ID, cancellationToken);
-                await onLogLine("[DEBUG] Entrypoint     : injected from execution client binary", LogStream.Stdout);
-            }
-            else
-            {
-                await onLogLine("[DEBUG] Entrypoint     : bypassed — workspace setup via docker exec", LogStream.Stdout);
-            }
-        }
-        catch (Exception ex)
-        {
-            // Injection failure is non-fatal — the container's baked-in entrypoint will be used.
-            logger.LogWarning(ex, "Failed to inject entrypoint into container {ContainerId}; using baked-in version", container.ID);
-            await onLogLine($"[WARN] Entrypoint injection failed: {ex.Message} (using baked-in version)", LogStream.Stderr);
-        }
+        await onLogLine("[DEBUG] Entrypoint     : bypassed — workspace setup via docker exec", LogStream.Stdout);
 
         await dockerClient.Containers.StartContainerAsync(
             container.ID, new ContainerStartParameters(), cancellationToken);
@@ -466,196 +448,171 @@ public class DockerAgentRuntime(
         if (!string.IsNullOrWhiteSpace(session.PreviousOpenCodeSessionId))
             await onLogLine($"[INFO] Continuing from previous opencode session: {session.PreviousOpenCodeSessionId}", LogStream.Stdout);
 
-        if (!useExecFlow && !useHttpServerMode)
-        {
-            // ── Legacy flow ──────────────────────────────────────────────────────
-            // Stream logs and wait for the container to exit naturally.
-            var logStreamTask = StreamContainerLogsAsync(container.ID, onLogLine, cancellationToken);
-            var waitResponse = await dockerClient.Containers.WaitContainerAsync(container.ID, cancellationToken);
-            await logStreamTask;
-
-            // Explicit cleanup after all logs have been captured. AutoRemove is always disabled to
-            // prevent the race where a fast-exiting container is removed before log streaming completes.
-            if (!session.KeepContainer)
-                await TryStopAndRemoveContainerAsync(container.ID);
-
-            if (waitResponse.StatusCode != 0)
-                throw new Exception(
-                    $"Agent container exited with code {waitResponse.StatusCode} " +
-                    $"(image: {image}, session: {session.Id})");
-
-            return container.ID;
-        }
-
-        // For exec flow, HTTP server mode, and manual mode the container stays alive (tail -f /dev/null).
-        // Verify the container is running, then drive all workspace setup via docker exec
-        // so every log line flows through onLogLine → UI.
+        // The container stays alive (tail -f /dev/null). Verify it is running, then drive all
+        // workspace setup via docker exec so every log line flows through onLogLine → UI.
         await EnsureContainerRunningAsync(container.ID, onLogLine, cancellationToken);
 
-        if (useExecFlow || useHttpServerMode || useManualMode)
+        // ── Workspace setup ────────────────────────────────────────────────────
+        // All steps are executed via docker exec so that:
+        //   1. Every log line (including git clone progress/errors) is visible in the UI.
+        //   2. Failures (wrong credentials, missing branch) throw with clear error messages.
+        //   3. The container stays alive throughout setup — no more "container is not running" conflicts.
+        await onLogLine("[INFO] Starting workspace setup via docker exec…", LogStream.Stdout);
+
+        // Step A: Clone the workspace (if a git repository is configured).
+        if (cloneRepo is not null)
         {
-            // ── Workspace setup (formerly entrypoint.sh) ──────────────────────────
-            // All steps are executed via docker exec so that:
-            //   1. Every log line (including git clone progress/errors) is visible in the UI.
-            //   2. Failures (wrong credentials, missing branch) throw with clear error messages.
-            //   3. The container stays alive throughout setup — no more "container is not running" conflicts.
-            await onLogLine("[INFO] Starting workspace setup via docker exec…", LogStream.Stdout);
+            // Use issue.GitBranch only when it is set AND differs from the base branch —
+            // meaning a dedicated feature branch was already created for this issue in a
+            // prior run. When issue.GitBranch equals the default branch (or is empty) we
+            // generate a fresh feature branch name so we never work directly on main/master.
+            var featureBranch = !string.IsNullOrWhiteSpace(issue.GitBranch)
+            && !string.Equals(issue.GitBranch, cloneRepo.DefaultBranch, StringComparison.OrdinalIgnoreCase)
+            ? issue.GitBranch
+            : GenerateFeatureBranchName(issue.Number, issue.Title ?? string.Empty);
+            // Full-history clone is required when the push target (Working remote) differs from the
+            // clone source (e.g. Release/upstream remote with the most commits). Without it git push
+            // fails with "remote: fatal: did not receive expected object" because a shallow clone's
+            // parent commit is not present in the working remote's object store.
+            var fullHistory = gitRepository is not null && gitRepository.Id != cloneRepo.Id;
+            await CloneWorkspaceAsync(
+            container.ID,
+            cloneRepo.RemoteUrl,
+            cloneRepo.DefaultBranch,
+            featureBranch,
+            cloneRepo.AuthUsername,
+            cloneRepo.AuthToken,
+            onLogLine,
+            cancellationToken,
+            fullHistory: fullHistory);
 
-            // Step A: Clone the workspace (if a git repository is configured).
-            if (cloneRepo is not null)
-            {
-                // Use issue.GitBranch only when it is set AND differs from the base branch —
-                // meaning a dedicated feature branch was already created for this issue in a
-                // prior run. When issue.GitBranch equals the default branch (or is empty) we
-                // generate a fresh feature branch name so we never work directly on main/master.
-                var featureBranch = !string.IsNullOrWhiteSpace(issue.GitBranch)
-                    && !string.Equals(issue.GitBranch, cloneRepo.DefaultBranch, StringComparison.OrdinalIgnoreCase)
-                    ? issue.GitBranch
-                    : GenerateFeatureBranchName(issue.Number, issue.Title ?? string.Empty);
-                // Full-history clone is required when the push target (Working remote) differs from the
-                // clone source (e.g. Release/upstream remote with the most commits). Without it git push
-                // fails with "remote: fatal: did not receive expected object" because a shallow clone's
-                // parent commit is not present in the working remote's object store.
-                var fullHistory = gitRepository is not null && gitRepository.Id != cloneRepo.Id;
-                await CloneWorkspaceAsync(
-                    container.ID,
-                    cloneRepo.RemoteUrl,
-                    cloneRepo.DefaultBranch,
-                    featureBranch,
-                    cloneRepo.AuthUsername,
-                    cloneRepo.AuthToken,
-                    onLogLine,
-                    cancellationToken,
-                    fullHistory: fullHistory);
-
-                await SetupGitIdentityAndBranchAsync(container.ID, featureBranch, onLogLine, cancellationToken);
-                await InstallGitPushWrapperAsync(container.ID, onLogLine, cancellationToken);
-                await SetupWorkspaceToolsAsync(container.ID, onLogLine, cancellationToken);
-            }
-
-            // Step B: Start Docker-in-Docker (needed for act and any docker commands by the agent).
-            await StartDindAsync(container.ID, onLogLine, cancellationToken);
-
-            // Step B2: Write actrc so that when the agent invokes `act` to run CI workflows,
-            // the inner workflow job containers use the issuepit-act-runner image (which has
-            // .NET 10, Node.js, Playwright, and the same toolchain as the outer helper image)
-            // instead of the default catthehacker/ubuntu image (which only ships .NET 8).
-            // Best-effort: failure is non-fatal and only logs a warning — the agent will still
-            // start, but CI workflow steps that rely on .NET 10 may fail if act is invoked.
-            var actRunnerImage = configuration["Agent__ActRunnerImage"] ?? DefaultActRunnerImage;
-            await SetupActrcAsync(container.ID, actRunnerImage, onLogLine, cancellationToken);
-
-            // Step C: Start DNS logging/firewall proxy.
-            await SetupDnsProxyAsync(container.ID, agent.DisableInternet, onLogLine, cancellationToken);
-
-            // Step D: Write opencode config (replaces the Python script that ran inside entrypoint.sh).
-            if (agent.RunnerType == RunnerType.OpenCode)
-            {
-                var agentsJson = AgentEnvironmentBuilder.BuildAgentsJson(agent);
-                var extraMcpJson = AgentEnvironmentBuilder.BuildExtraMcpJson(agent);
-                await WriteOpencodeConfigAsync(
-                    container.ID,
-                    mcpUrl: issuePitMcpUrl,
-                    agentsJson: string.IsNullOrEmpty(agentsJson) ? null : agentsJson,
-                    extraMcpJson: string.IsNullOrEmpty(extraMcpJson) ? null : extraMcpJson,
-                    port: useHttpServerMode ? OpenCodeHttpApi.DefaultPort : null,
-                    password: useHttpServerMode ? agent.HttpServerPassword : null,
-                    pluginsJson: null,
-                    onLogLine: onLogLine,
-                    cancellationToken: cancellationToken);
-
-                // Step D2: Log which agents are configured in opencode for diagnostics.
-                await LogOpenCodeAgentsAsync(container.ID, onLogLine, cancellationToken);
-
-                // Step D2.5: Log which MCP servers are configured in opencode for diagnostics.
-                await LogOpenCodeMcpServersAsync(container.ID, onLogLine, cancellationToken);
-
-                // Step D.5 (exec flow only): Download issue attachments into the container and
-                // append --file <path> for each one so the agent has direct access to the files.
-                // https://opencode.ai/docs/cli/#run-1
-                if (useExecFlow && issue.PromptAttachments.Count > 0)
-                {
-                    try
-                    {
-                        var paths = await DownloadAttachmentsToContainerAsync(
-                            container.ID, issue.PromptAttachments, onLogLine, cancellationToken);
-                        downloadedAttachmentPaths.AddRange(paths);
-
-                        if (downloadedAttachmentPaths.Count > 0)
-                        {
-                            // Rebuild runnerArgs to include --file flags for each downloaded attachment.
-                            runnerArgs = RunnerCommandBuilder.BuildArgsList(
-                                agent, issue,
-                                continueSessionId: session.PreviousOpenCodeDbTar is { Length: > 0 } ? session.PreviousOpenCodeSessionId : null,
-                                comments: comments,
-                                filePaths: downloadedAttachmentPaths);
-                            var updatedCmdDisplay = string.Join(" ", runnerArgs.Take(runnerArgs.Count - 1));
-                            await onLogLine($"[DEBUG] Runner cmd     : {updatedCmdDisplay}", LogStream.Stdout);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        await onLogLine($"[WARN] Failed to download issue attachments: {ex.Message} — continuing without attached files", LogStream.Stderr);
-                        logger.LogWarning(ex, "Failed to download issue attachments into container {ContainerId}", container.ID);
-                    }
-                }
-            }
-
-            // Step E (HTTP server mode only): Start opencode as a background process via exec.
-            // With the entrypoint bypassed, opencode is no longer the container CMD — we must
-            // start it explicitly. Running it as a background process (nohup … &) returns
-            // immediately so we can wait for HTTP readiness in the next step.
-            if (useHttpServerMode)
-            {
-                await onLogLine("[INFO] Starting opencode HTTP server via exec…", LogStream.Stdout);
-                var startScript = "cd /workspace && nohup opencode > /tmp/opencode-server.log 2>&1 &";
-                await ExecCommandAsync(container.ID, ["/bin/sh", "-c", startScript],
-                    (_, _) => Task.CompletedTask, cancellationToken, workingDir: "/");
-            }
-
-            // Step F (exec flow only): Verify the previous opencode session exists in the restored DB.
-            // Even when the DB injection succeeded the session may be missing after a schema migration
-            // or if the tar was extracted to the wrong path. Fall back to a fresh session in that case
-            // to avoid a "Session not found" crash when opencode runs with --session <id>.
-            if (useExecFlow && !string.IsNullOrEmpty(session.PreviousOpenCodeSessionId) && agent.RunnerType == RunnerType.OpenCode)
-            {
-                var sessionVerified = await VerifyOpenCodeSessionExistsAsync(
-                    container.ID, session.PreviousOpenCodeSessionId, onLogLine, cancellationToken);
-                if (!sessionVerified)
-                {
-                    await onLogLine(
-                        $"[WARN] Previous opencode session {session.PreviousOpenCodeSessionId} not found in restored DB — starting fresh session",
-                        LogStream.Stderr);
-                    session.PreviousOpenCodeSessionId = null;
-                    runnerArgs = RunnerCommandBuilder.BuildArgsList(agent, issue, comments: comments,
-                        filePaths: downloadedAttachmentPaths.Count > 0 ? downloadedAttachmentPaths : null);
-                    var newCmdDisplay = string.Join(" ", runnerArgs.Take(runnerArgs.Count - 1));
-                    await onLogLine($"[DEBUG] Runner cmd     : {newCmdDisplay}", LogStream.Stdout);
-                }
-            }
-
-            // Step G: Inject backed-up auth.json if provided via the ISSUEPIT_AUTH_JSON_CONTENT credential.
-            // This allows users to authenticate once in a manual terminal session and reuse those
-            // credentials in subsequent autonomous runs.
-            var authJsonEntry = env.FirstOrDefault(e => e.StartsWith("ISSUEPIT_AUTH_JSON_CONTENT=", StringComparison.Ordinal));
-            if (authJsonEntry is not null)
-            {
-                var authJsonContent = authJsonEntry["ISSUEPIT_AUTH_JSON_CONTENT=".Length..];
-                {
-                    try
-                    {
-                        await InjectAuthJsonAsync(container.ID, authJsonContent, onLogLine, cancellationToken);
-                    }
-                    catch (Exception ex)
-                    {
-                        await onLogLine($"[WARN] Failed to inject auth.json: {ex.Message} — proceeding without auth restore", LogStream.Stderr);
-                        logger.LogWarning(ex, "Failed to inject auth.json into container {ContainerId}", container.ID);
-                    }
-                }
-            }
-
-            await onLogLine("[INFO] Workspace setup complete", LogStream.Stdout);
+            await SetupGitIdentityAndBranchAsync(container.ID, featureBranch, onLogLine, cancellationToken);
+            await InstallGitPushWrapperAsync(container.ID, onLogLine, cancellationToken);
+            await SetupWorkspaceToolsAsync(container.ID, onLogLine, cancellationToken);
         }
+
+        // Step B: Start Docker-in-Docker (needed for act and any docker commands by the agent).
+        await StartDindAsync(container.ID, onLogLine, cancellationToken);
+
+        // Step B2: Write actrc so that when the agent invokes `act` to run CI workflows,
+        // the inner workflow job containers use the issuepit-act-runner image (which has
+        // .NET 10, Node.js, Playwright, and the same toolchain as the outer helper image)
+        // instead of the default catthehacker/ubuntu image (which only ships .NET 8).
+        // Best-effort: failure is non-fatal and only logs a warning — the agent will still
+        // start, but CI workflow steps that rely on .NET 10 may fail if act is invoked.
+        var actRunnerImage = configuration["Agent__ActRunnerImage"] ?? DefaultActRunnerImage;
+        await SetupActrcAsync(container.ID, actRunnerImage, onLogLine, cancellationToken);
+
+        // Step C: Start DNS logging/firewall proxy.
+        await SetupDnsProxyAsync(container.ID, agent.DisableInternet, onLogLine, cancellationToken);
+
+        // Step D: Write opencode config (replaces the Python script that ran inside entrypoint.sh).
+        if (agent.RunnerType == RunnerType.OpenCode)
+        {
+            var agentsJson = AgentEnvironmentBuilder.BuildAgentsJson(agent);
+            var extraMcpJson = AgentEnvironmentBuilder.BuildExtraMcpJson(agent);
+            await WriteOpencodeConfigAsync(
+            container.ID,
+            mcpUrl: issuePitMcpUrl,
+            agentsJson: string.IsNullOrEmpty(agentsJson) ? null : agentsJson,
+            extraMcpJson: string.IsNullOrEmpty(extraMcpJson) ? null : extraMcpJson,
+            port: useHttpServerMode ? OpenCodeHttpApi.DefaultPort : null,
+            password: useHttpServerMode ? agent.HttpServerPassword : null,
+            pluginsJson: null,
+            onLogLine: onLogLine,
+            cancellationToken: cancellationToken);
+
+            // Step D2: Log which agents are configured in opencode for diagnostics.
+            await LogOpenCodeAgentsAsync(container.ID, onLogLine, cancellationToken);
+
+            // Step D2.5: Log which MCP servers are configured in opencode for diagnostics.
+            await LogOpenCodeMcpServersAsync(container.ID, onLogLine, cancellationToken);
+
+            // Step D.5: Download issue attachments into the container and
+            // append --file <path> for each one so the agent has direct access to the files.
+            // https://opencode.ai/docs/cli/#run-1
+            if (issue.PromptAttachments.Count > 0)
+            {
+            try
+            {
+                var paths = await DownloadAttachmentsToContainerAsync(
+                container.ID, issue.PromptAttachments, onLogLine, cancellationToken);
+                downloadedAttachmentPaths.AddRange(paths);
+
+                if (downloadedAttachmentPaths.Count > 0)
+                {
+                // Rebuild runnerArgs to include --file flags for each downloaded attachment.
+                runnerArgs = RunnerCommandBuilder.BuildArgsList(
+                    agent, issue,
+                    continueSessionId: session.PreviousOpenCodeDbTar is { Length: > 0 } ? session.PreviousOpenCodeSessionId : null,
+                    comments: comments,
+                    filePaths: downloadedAttachmentPaths);
+                var updatedCmdDisplay = string.Join(" ", runnerArgs.Take(runnerArgs.Count - 1));
+                await onLogLine($"[DEBUG] Runner cmd     : {updatedCmdDisplay}", LogStream.Stdout);
+                }
+            }
+            catch (Exception ex)
+            {
+                await onLogLine($"[WARN] Failed to download issue attachments: {ex.Message} — continuing without attached files", LogStream.Stderr);
+                logger.LogWarning(ex, "Failed to download issue attachments into container {ContainerId}", container.ID);
+            }
+            }
+        }
+
+        // Step E (HTTP server mode only): Start opencode as a background process via exec.
+        // With the entrypoint bypassed, opencode is no longer the container CMD — we must
+        // start it explicitly. Running it as a background process (nohup … &) returns
+        // immediately so we can wait for HTTP readiness in the next step.
+        if (useHttpServerMode)
+        {
+            await onLogLine("[INFO] Starting opencode HTTP server via exec…", LogStream.Stdout);
+            var startScript = "cd /workspace && nohup opencode > /tmp/opencode-server.log 2>&1 &";
+            await ExecCommandAsync(container.ID, ["/bin/sh", "-c", startScript],
+            (_, _) => Task.CompletedTask, cancellationToken, workingDir: "/");
+        }
+
+        // Step F: Verify the previous opencode session exists in the restored DB.
+        // Even when the DB injection succeeded the session may be missing after a schema migration
+        // or if the tar was extracted to the wrong path. Fall back to a fresh session in that case
+        // to avoid a "Session not found" crash when opencode runs with --session <id>.
+        if (!string.IsNullOrEmpty(session.PreviousOpenCodeSessionId) && agent.RunnerType == RunnerType.OpenCode)
+        {
+            var sessionVerified = await VerifyOpenCodeSessionExistsAsync(
+            container.ID, session.PreviousOpenCodeSessionId, onLogLine, cancellationToken);
+            if (!sessionVerified)
+            {
+            await onLogLine(
+                $"[WARN] Previous opencode session {session.PreviousOpenCodeSessionId} not found in restored DB — starting fresh session",
+                LogStream.Stderr);
+            session.PreviousOpenCodeSessionId = null;
+            runnerArgs = RunnerCommandBuilder.BuildArgsList(agent, issue, comments: comments,
+                filePaths: downloadedAttachmentPaths.Count > 0 ? downloadedAttachmentPaths : null);
+            var newCmdDisplay = string.Join(" ", runnerArgs.Take(runnerArgs.Count - 1));
+            await onLogLine($"[DEBUG] Runner cmd     : {newCmdDisplay}", LogStream.Stdout);
+            }
+        }
+
+        // Step G: Inject backed-up auth.json if provided via the ISSUEPIT_AUTH_JSON_CONTENT credential.
+        // This allows users to authenticate once in a manual terminal session and reuse those
+        // credentials in subsequent autonomous runs.
+        var authJsonEntry = env.FirstOrDefault(e => e.StartsWith("ISSUEPIT_AUTH_JSON_CONTENT=", StringComparison.Ordinal));
+        if (authJsonEntry is not null)
+        {
+            var authJsonContent = authJsonEntry["ISSUEPIT_AUTH_JSON_CONTENT=".Length..];
+            {
+            try
+            {
+                await InjectAuthJsonAsync(container.ID, authJsonContent, onLogLine, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                await onLogLine($"[WARN] Failed to inject auth.json: {ex.Message} — proceeding without auth restore", LogStream.Stderr);
+                logger.LogWarning(ex, "Failed to inject auth.json into container {ContainerId}", container.ID);
+            }
+            }
+        }
+
+        await onLogLine("[INFO] Workspace setup complete", LogStream.Stdout);
 
         if (useManualMode)
         {
@@ -846,7 +803,17 @@ public class DockerAgentRuntime(
             }
 
             // Step 7: Execute the agent tool via docker exec.
-            var agentExitCode = await ExecCommandAsync(container.ID, runnerArgs, onLogLine, cancellationToken, logCommand: true);
+            // Prefer runnerArgs (set when RunnerType is configured), fall back to session.CustomCmd
+            // (DockerCmdOverride for diagnostic/test runs). When neither is set the agent has no
+            // RunnerType and no override — skip execution and treat the run as a no-op.
+            // Working directory: use /workspace only when a repo was actually cloned; otherwise
+            // fall back to / so the exec doesn't fail on images that don't have /workspace.
+            IReadOnlyList<string>? effectiveCmd = runnerArgs.Count > 0 ? runnerArgs
+                : (session.CustomCmd is { Length: > 0 } ? session.CustomCmd : null);
+            var agentWorkingDir = cloneRepo is not null ? "/workspace" : "/";
+            var agentExitCode = 0L;
+            if (effectiveCmd is not null)
+                agentExitCode = await ExecCommandAsync(container.ID, effectiveCmd, onLogLine, cancellationToken, logCommand: true, workingDir: agentWorkingDir);
 
             // Step 8: Capture the opencode session ID for --fork on subsequent fix runs.
             // NOTE: opencode run --fork <session-id> will continue from the same session and retain
@@ -1153,8 +1120,8 @@ public class DockerAgentRuntime(
         CancellationToken cancellationToken)
     {
         // Poll until the container is confirmed running or the deadline is reached.
-        // For exec/HTTP flows the container starts immediately (tail -f /dev/null) so
-        // this should return on the first poll. For legacy flow the entrypoint runs first.
+        // The container starts immediately with `tail -f /dev/null` so this should
+        // return on the first poll.
         const int pollIntervalMs = 500;
         const int maxPollSeconds = 5;
         var deadline = DateTimeOffset.UtcNow.AddSeconds(maxPollSeconds);
@@ -1422,60 +1389,6 @@ public class DockerAgentRuntime(
             cancellationToken);
 
         await onLogLine("[INFO] CI/CD trigger script installed at /usr/local/bin/issuepit-trigger-cicd", LogStream.Stdout);
-    }
-
-    /// <summary>
-    /// Reads the <c>entrypoint.sh</c> embedded resource compiled into this assembly and
-    /// copies it into a (not-yet-started) container at <c>/usr/local/bin/entrypoint.sh</c>
-    /// with executable permissions (0755).
-    ///
-    /// This keeps the container entrypoint in sync with the execution client binary so that
-    /// updates to the script (new env var handling, tool setup, etc.) take effect without
-    /// requiring a new Docker image build.
-    /// </summary>
-    private async Task InjectEntrypointAsync(string containerId, CancellationToken cancellationToken)
-    {
-        var assembly = Assembly.GetExecutingAssembly();
-        // The resource name is the <LogicalName> from the .csproj, which overrides the default
-        // namespace-qualified name. The .fsi/reflection test confirms it resolves to "entrypoint.sh".
-        var resourceName = "entrypoint.sh";
-        await using var resourceStream = assembly.GetManifestResourceStream(resourceName)
-            ?? throw new InvalidOperationException(
-                $"Embedded resource '{resourceName}' not found in assembly '{assembly.GetName().Name}'. " +
-                "Ensure the file is included as an EmbeddedResource in the project.");
-
-        // Normalise to Unix LF line endings so the shebang (#!/usr/bin/env bash) is interpreted
-        // correctly on Linux containers. The embedded resource may contain CRLF if the build ran
-        // on Windows or if git.autocrlf converted the line endings at checkout time.
-        // Without this the first line becomes "#!/usr/bin/env bash\r" and the kernel reports
-        // "/usr/bin/env: 'bash\r': No such file or directory", killing the container on startup.
-        var rawContent = await new System.IO.StreamReader(resourceStream, leaveOpen: false).ReadToEndAsync(cancellationToken);
-        var normalised = rawContent.Replace("\r\n", "\n").Replace("\r", "\n");
-        var normalisedBytes = System.Text.Encoding.UTF8.GetBytes(normalised);
-        var normalisedStream = new MemoryStream(normalisedBytes);
-
-        // Build a tar archive containing entrypoint.sh at the root (target path: /usr/local/bin/).
-        using var tarBuffer = new MemoryStream();
-        await using (var tarWriter = new TarWriter(tarBuffer, TarEntryFormat.Ustar, leaveOpen: true))
-        {
-            var entry = new UstarTarEntry(TarEntryType.RegularFile, "entrypoint.sh")
-            {
-                // Octal 0755: owner rwx, group r-x, other r-x
-                Mode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
-                       | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
-                       | UnixFileMode.OtherRead | UnixFileMode.OtherExecute,
-                DataStream = normalisedStream,
-            };
-            await tarWriter.WriteEntryAsync(entry, cancellationToken);
-        }
-
-        tarBuffer.Seek(0, SeekOrigin.Begin);
-
-        await dockerClient.Containers.ExtractArchiveToContainerAsync(
-            containerId,
-            new CopyToContainerParameters { Path = "/usr/local/bin" },
-            tarBuffer,
-            cancellationToken);
     }
 
     // ──────────────────────────────────────────────────────────────────────────

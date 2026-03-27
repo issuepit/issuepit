@@ -335,6 +335,8 @@ export interface Issue {
   dueDate?: string
   estimate?: number
   kanbanRank: number
+  preventAgentMove: boolean
+  hideFromAgents: boolean
   gitHubIssueNumber?: number
   gitHubIssueUrl?: string
   /** External issue number from an external tracker (e.g. GitHub #69). Used as primary display ID. */
@@ -477,7 +479,23 @@ export interface KanbanTransition {
   name: string
   isAuto: boolean
   agentId?: string
+  requireGreenCiCd: boolean
+  requireCodeReview: boolean
+  requirePlanComment: boolean
+  requireTasksDone: boolean
+  requireSubIssuesDone: boolean
   createdAt: string
+}
+
+export interface TransitionCheckResult {
+  transitionId: string
+  transitionName: string
+  fromColumn: string
+  toColumn: string
+  isAuto: boolean
+  blockReasons: string[]
+  isAllowed: boolean
+  orchestrationAttempts: number
 }
 
 export enum KanbanLaneProperty {
@@ -497,6 +515,8 @@ export interface KanbanColumn {
   position: number
   /** Value identifying which issues belong to this column for non-Status lane properties. */
   laneValue?: string | null
+  /** Optional agent assigned to handle issues that enter this lane. */
+  defaultAgentId?: string | null
 }
 
 export interface KanbanBoard {
@@ -1177,6 +1197,7 @@ export enum IssueEventType {
   MilestoneSet = 'milestone_set',
   MilestoneCleared = 'milestone_cleared',
   PropertyChanged = 'property_changed',
+  KanbanMoved = 'kanban_moved',
 }
 
 export const IssueEventTypeLabels: Record<IssueEventType, string> = {
@@ -1193,6 +1214,7 @@ export const IssueEventTypeLabels: Record<IssueEventType, string> = {
   [IssueEventType.MilestoneSet]: 'set milestone',
   [IssueEventType.MilestoneCleared]: 'cleared milestone',
   [IssueEventType.PropertyChanged]: 'changed property',
+  [IssueEventType.KanbanMoved]: 'moved on board',
 }
 
 export interface IssueEvent {

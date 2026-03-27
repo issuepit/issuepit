@@ -63,6 +63,19 @@ internal static class ToolGuard
     }
 
     /// <summary>
+    /// Requires the server to be configured with <see cref="McpServerOptions.OrchestratorMode"/> = true.
+    /// Kanban orchestration tools are only available in orchestrator mode to prevent accidental use
+    /// in non-orchestration contexts.
+    /// </summary>
+    public static void EnforceOrchestratorMode(McpServerOptions opts, string toolName)
+    {
+        if (!opts.OrchestratorMode)
+            throw new InvalidOperationException(
+                $"Tool '{toolName}' is only available in orchestrator mode. " +
+                "Set IssuePit:OrchestratorMode to true to enable kanban orchestration tools.");
+    }
+
+    /// <summary>
     /// Blocks write/mutating tools when the server is configured as read-only globally
     /// (<see cref="McpServerOptions.ReadOnly"/>) OR when the current request's MCP token is read-only.
     /// </summary>
