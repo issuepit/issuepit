@@ -45,6 +45,7 @@ builder.Services.AddHostedService<ConfigRepoSyncService>();
 builder.Services.AddHostedService<GitHubAutoSyncBackgroundService>();
 builder.Services.AddHostedService<BranchDetectionBackgroundService>();
 builder.Services.AddHostedService<SimilarIssueBackgroundService>();
+builder.Services.AddHostedService<KanbanOrchestratorBackgroundService>();
 
 builder.Services.AddScoped<TenantContext>();
 builder.Services.AddScoped<TenantDatabaseService>();

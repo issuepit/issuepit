@@ -175,3 +175,25 @@ Name test **methods** with the quality level and action:
 - **Log noise**: resource logging is disabled in `AspireFixture` and Kafka log handlers are suppressed. Do not re-enable them in tests.
 - **New features**: every new UI feature must include at least one positive E2E test covering create, list, and interact flows.
 - **Never call `page.ReloadAsync()`**: this is an SPA — a full browser reload breaks the Vue router state and circumvents client-side navigation. To re-visit a page after resetting state (e.g. clearing localStorage), use the page object's `GotoAsync()` instead. This triggers a proper Playwright navigation that the Vue app handles correctly.
+
+---
+
+## Agent Orchestration — Transition Requirements
+
+When implementing or modifying kanban transition requirement checks, follow these rules:
+
+### `RequireGreenCiCd`
+
+- **Always check by `issue.GitBranch`** — no fallback.
+- If the issue has no `GitBranch` set, the requirement is **not met** and the transition is **blocked** with the reason `"No git branch set on the issue — CI/CD requirement cannot be evaluated."`.
+- Never fall back to `AgentSession.IssueId` or project-scope CI/CD runs. Using a fallback would hide the real misconfiguration (the issue not having a branch) and allow the transition to proceed in an unexpected state.
+
+### General principle
+
+> **No hidden fallbacks when configuration is incomplete.** If a required piece of configuration (e.g. `GitBranch`) is missing, fail fast with a clear, actionable error message. Do not silently use an alternative source that produces a less precise result.
+
+This applies to all transition requirements. Any new requirement added in the future must:
+1. Clearly document what configuration it requires.
+2. Return a specific error message identifying the missing configuration when it cannot be evaluated.
+3. Never silently pass or fall back to an approximation.
+
