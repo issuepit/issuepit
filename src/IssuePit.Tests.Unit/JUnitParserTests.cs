@@ -3,6 +3,7 @@ using IssuePit.Core.Services;
 
 namespace IssuePit.Tests.Unit;
 
+[Trait("Category", "Unit")]
 public class JUnitParserTests
 {
     private const string SimpleJUnit = """

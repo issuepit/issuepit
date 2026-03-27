@@ -2,6 +2,7 @@ using IssuePit.McpServer;
 
 namespace IssuePit.Tests.Unit;
 
+[Trait("Category", "Unit")]
 public class McpServerOptionsTests
 {
     [Fact]

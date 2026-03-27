@@ -14,7 +14,7 @@ namespace IssuePit.Tests.E2E;
 /// <c>~/.vosk/vosk-model-small-en-us-0.15</c> and download the model automatically from
 /// alphacephei.com when it is absent.  Tests are never silently skipped.
 /// </summary>
-[Trait("Category", "Voice")]
+[Trait("Category", "PoC")]
 public class VoskPocTests
 {
     private const string ModelDownloadUrl =

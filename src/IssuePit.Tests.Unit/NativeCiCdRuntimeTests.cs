@@ -2,6 +2,7 @@ using IssuePit.CiCdClient.Runtimes;
 
 namespace IssuePit.Tests.Unit;
 
+[Trait("Category", "Unit")]
 public class NativeCiCdRuntimeTests
 {
     private static TriggerPayload Trigger(

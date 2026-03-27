@@ -3,6 +3,7 @@ using IssuePit.Core.Enums;
 
 namespace IssuePit.Tests.Unit;
 
+[Trait("Category", "Unit")]
 public class CiCdRunEntityTests
 {
     [Fact]

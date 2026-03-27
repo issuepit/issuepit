@@ -4,6 +4,7 @@ using IssuePit.Core.Runners;
 
 namespace IssuePit.Tests.Unit;
 
+[Trait("Category", "Unit")]
 public class RunnerCommandBuilderTests
 {
     private static Agent MakeAgent(RunnerType? runnerType = null, string? model = null, string systemPrompt = "Be helpful") =>

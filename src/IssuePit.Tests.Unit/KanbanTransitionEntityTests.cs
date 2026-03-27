@@ -2,6 +2,7 @@ using IssuePit.Core.Entities;
 
 namespace IssuePit.Tests.Unit;
 
+[Trait("Category", "Unit")]
 public class KanbanTransitionEntityTests
 {
     [Fact]

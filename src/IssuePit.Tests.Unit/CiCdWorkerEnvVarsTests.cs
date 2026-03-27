@@ -4,6 +4,7 @@ using IssuePit.Core.Enums;
 
 namespace IssuePit.Tests.Unit;
 
+[Trait("Category", "Unit")]
 public class CiCdWorkerEnvVarsTests
 {
     private static CiCdRun BuildRun(Guid? projectId = null, Guid? runId = null) =>

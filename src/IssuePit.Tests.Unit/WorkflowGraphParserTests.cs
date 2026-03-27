@@ -2,6 +2,7 @@ using IssuePit.Core.Services;
 
 namespace IssuePit.Tests.Unit;
 
+[Trait("Category", "Unit")]
 public class WorkflowGraphParserTests
 {
     [Fact]

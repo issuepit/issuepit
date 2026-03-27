@@ -6,6 +6,7 @@ namespace IssuePit.Tests.Unit;
 /// Unit tests for <see cref="OpenCodeJsonLogParser"/> which converts
 /// <c>opencode run --format json</c> event lines to human-readable display text.
 /// </summary>
+[Trait("Category", "Unit")]
 public class OpenCodeJsonLogParserTests
 {
     // ──────────────────────────────────────────────────────────────────────────
