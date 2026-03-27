@@ -10,8 +10,21 @@ public class OrgsPage(IPage page)
 
     public async Task GotoAsync()
     {
-        await page.GotoAsync("/orgs");
-        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        // Retry once in case a post-login redirect is still in-flight, which can cause
+        // ERR_ABORTED on the first navigation attempt.
+        try
+        {
+            await page.GotoAsync("/orgs");
+        }
+        catch (PlaywrightException)
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.GotoAsync("/orgs");
+        }
+        // Wait for the "New Organization" button rather than NetworkIdle to avoid
+        // timing out when background requests are still in-flight.
+        await page.WaitForSelectorAsync("button:has-text('New Organization')",
+            new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
     }
 
     /// <summary>

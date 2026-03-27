@@ -28,7 +28,7 @@ public class TestHistoryPage(IPage page)
             new PageWaitForLoadStateOptions { Timeout = E2ETimeouts.NavigationLong });
         // Use p:has-text to match only the summary-card <p> label, not the table column <th>.
         await page.Locator("p:has-text('Line Coverage')").Or(page.Locator("text=No coverage data yet"))
-            .WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Default });
+            .WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Navigation });
     }
 
     public async Task WaitForLoadAsync()
