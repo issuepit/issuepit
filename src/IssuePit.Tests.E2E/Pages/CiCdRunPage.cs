@@ -7,14 +7,77 @@ namespace IssuePit.Tests.E2E.Pages;
 /// </summary>
 public class CiCdRunPage(IPage page)
 {
-    public async Task<IResponse?> GotoAsync(string projectId, string runId) =>
-        await page.GotoAsync($"/projects/{projectId}/runs/cicd/{runId}");
+    /// <summary>
+    /// Navigates to the CI/CD run detail page and waits for the page heading to load.
+    /// Retries once on ERR_ABORTED (Nuxt SPA router race) or TimeoutException (slow first render).
+    /// </summary>
+    public async Task GotoAsync(string projectId, string runId)
+    {
+        var url = $"/projects/{projectId}/runs/cicd/{runId}";
+        try
+        {
+            await page.GotoAsync(url);
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForSelectorAsync("text=CI/CD Run",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (Exception ex) when (ex is TimeoutException || (ex is PlaywrightException pe && pe.Message.Contains("ERR_ABORTED")))
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.GotoAsync(url);
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForSelectorAsync("text=CI/CD Run",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
+        }
+    }
 
-    public async Task GotoTestsTabAsync(string projectId, string runId) =>
-        await page.GotoAsync($"/projects/{projectId}/runs/cicd/{runId}?tab=tests");
+    /// <summary>
+    /// Navigates directly to the Tests tab of the CI/CD run detail page.
+    /// Retries once on ERR_ABORTED (Nuxt SPA router race) or TimeoutException.
+    /// </summary>
+    public async Task GotoTestsTabAsync(string projectId, string runId)
+    {
+        var url = $"/projects/{projectId}/runs/cicd/{runId}?tab=tests";
+        try
+        {
+            await page.GotoAsync(url);
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForSelectorAsync("text=CI/CD Run",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (Exception ex) when (ex is TimeoutException || (ex is PlaywrightException pe && pe.Message.Contains("ERR_ABORTED")))
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.GotoAsync(url);
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForSelectorAsync("text=CI/CD Run",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
+        }
+    }
 
-    public async Task GotoArtifactsTabAsync(string projectId, string runId) =>
-        await page.GotoAsync($"/projects/{projectId}/runs/cicd/{runId}?tab=artifacts");
+    /// <summary>
+    /// Navigates directly to the Artifacts tab of the CI/CD run detail page.
+    /// Retries once on ERR_ABORTED (Nuxt SPA router race) or TimeoutException.
+    /// </summary>
+    public async Task GotoArtifactsTabAsync(string projectId, string runId)
+    {
+        var url = $"/projects/{projectId}/runs/cicd/{runId}?tab=artifacts";
+        try
+        {
+            await page.GotoAsync(url);
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForSelectorAsync("text=CI/CD Run",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (Exception ex) when (ex is TimeoutException || (ex is PlaywrightException pe && pe.Message.Contains("ERR_ABORTED")))
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.GotoAsync(url);
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForSelectorAsync("text=CI/CD Run",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
+        }
+    }
 
     public async Task WaitForLoadAsync() =>
         await page.WaitForSelectorAsync("text=CI/CD Run", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
