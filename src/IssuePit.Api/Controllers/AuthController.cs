@@ -107,14 +107,30 @@ public class AuthController(
         if (ctx.CurrentUser is null)
             return Unauthorized();
 
-        return Ok(new
-        {
+        return Ok(new MeResponse(
             ctx.CurrentUser.Id,
             ctx.CurrentUser.Username,
             ctx.CurrentUser.Email,
             ctx.CurrentUser.IsAdmin,
             ctx.CurrentUser.CreatedAt,
-        });
+            ctx.CurrentUser.Theme));
+    }
+
+    /// <summary>Updates the UI theme preference for the currently authenticated user.</summary>
+    [HttpPatch("me/theme")]
+    public async Task<IActionResult> UpdateTheme([FromBody] UpdateThemeRequest req)
+    {
+        if (ctx.CurrentUser is null)
+            return Unauthorized();
+
+        var user = await db.Users.FindAsync(ctx.CurrentUser.Id);
+        if (user is null)
+            return Unauthorized();
+
+        user.Theme = req.Theme;
+        await db.SaveChangesAsync();
+
+        return NoContent();
     }
 
     /// <summary>
@@ -252,14 +268,13 @@ public class AuthController(
 
         await SignInUserAsync(user);
 
-        return Ok(new
-        {
+        return Ok(new MeResponse(
             user.Id,
             user.Username,
             user.Email,
             user.IsAdmin,
             user.CreatedAt,
-        });
+            user.Theme));
     }
 
     /// <summary>
@@ -293,14 +308,13 @@ public class AuthController(
 
         await SignInUserAsync(user);
 
-        return Created($"/api/auth/me", new
-        {
+        return Created($"/api/auth/me", new MeResponse(
             user.Id,
             user.Username,
             user.Email,
             user.IsAdmin,
             user.CreatedAt,
-        });
+            user.Theme));
     }
 
     // -------------------------------------------------------------------------
@@ -446,3 +460,5 @@ public class AuthController(
 public record LocalLoginRequest(string Username, string Password);
 public record RegisterRequest(string Username, string Password, string? Email = null);
 public record ChangePasswordRequest(string? CurrentPassword, string NewPassword);
+public record UpdateThemeRequest(string? Theme);
+public record MeResponse(Guid Id, string Username, string Email, bool IsAdmin, DateTime CreatedAt, string? Theme);

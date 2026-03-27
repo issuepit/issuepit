@@ -1,4 +1,4 @@
 {
   ".": "1.9.0",
-  "docker/helper-containers": "1.7.0"
+  "docker/helper-containers": "1.7.1"
 }

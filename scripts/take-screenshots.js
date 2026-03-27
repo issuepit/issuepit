@@ -429,6 +429,17 @@ async function main() {
     }
   }
 
+  // --- Settings / Appearance (theme picker) ---
+  await page.goto(`${FRONTEND_URL}/settings`);
+  await screenshot(page, 'settings-appearance');
+
+  // Take screenshots of each theme for docs
+  const THEMES = ['dark', 'dim', 'dark-accent', 'dark-square', 'light'];
+  for (const theme of THEMES) {
+    await page.goto(`${FRONTEND_URL}?theme=${theme}`);
+    await screenshot(page, `theme-${theme}`);
+  }
+
   // --- Demo component pages ---
   console.log('Taking demo page screenshots…');
   try {

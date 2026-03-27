@@ -11,7 +11,7 @@ namespace IssuePit.Tests.E2E;
 /// - UI: the Voice button on the issues page opens the recording modal.
 /// </summary>
 [Collection("E2E")]
-[Trait("Category", "E2E")]
+[Trait("Category", "Voice")]
 public class VoiceIssueTests : IAsyncLifetime
 {
     private readonly AspireFixture _fixture;

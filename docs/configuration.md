@@ -111,4 +111,38 @@ Download a Vosk model from [alphacephei.com/vosk/models](https://alphacephei.com
 The **Settings** page (gear icon at the bottom of the sidebar) shows:
 
 - **Backend API URL** — the URL the frontend uses to reach the API. Set via the `NUXT_PUBLIC_API_BASE` environment variable.
-- **Appearance** — dark mode is the only supported theme.
+- **Appearance** — theme picker (see below).
+
+---
+
+## Themes
+
+IssuePit ships with five built-in themes that can be selected on the **Settings → Appearance** page.
+
+| Theme | Description |
+|-------|-------------|
+| **Dark** | Classic dark theme (default) |
+| **Dim** | Softer, cooler dark theme inspired by GitHub's dim mode |
+| **Dark Accent** | Dark background with a vibrant purple accent colour |
+| **Dark Square** | Same dark palette but with sharp, square edges throughout the UI |
+| **Light** | Light theme for bright environments |
+
+### Priority chain
+
+The active theme is resolved in this order (highest priority first):
+
+1. **`?theme=` query-string parameter** — e.g. `https://app.example.com/?theme=light`.
+   Useful for screenshot automation and shareable links.
+2. **Browser-local override** — stored in `localStorage` under the key `issuepit-theme`.
+   Applies only to the current device/browser without touching your profile.
+3. **Profile preference** — saved to your account in the database.
+   Applied on all devices where you log in.
+4. **OS / system default** — `prefers-color-scheme` media query (light or dark).
+
+### Changing your theme
+
+1. Open **Settings** (gear icon in the sidebar).
+2. Under **Appearance**, click any theme card to preview and activate it.
+3. Toggle **Save to profile** to decide whether the choice is persisted to your account
+   or kept as a browser-only override.
+4. To clear a browser override, click **Clear override** below the theme cards.

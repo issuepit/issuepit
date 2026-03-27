@@ -1,8 +1,6 @@
-/* Scrollbar styling to match dark theme (gray-950 background) */
+/* Scrollbar styling — colours set per-theme in themes.css */
 * {
-  /* thumb: gray-700, track: gray-950 */
   scrollbar-width: thin;
-  scrollbar-color: #374151 #030712;
 }
 
 *::-webkit-scrollbar {
@@ -11,15 +9,15 @@
 }
 
 *::-webkit-scrollbar-track {
-  background: #030712; /* gray-950 */
+  background: rgb(var(--gray-950));
 }
 
 *::-webkit-scrollbar-thumb {
-  background-color: #374151; /* gray-700 */
+  background-color: rgb(var(--gray-700));
   border-radius: 4px;
-  border: 2px solid #030712; /* gray-950 */
+  border: 2px solid rgb(var(--gray-950));
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background-color: #4b5563; /* gray-600 */
+  background-color: rgb(var(--gray-600));
 }

@@ -30,5 +30,9 @@ public class User
     [MaxLength(500)]
     public string? Description { get; set; }
 
+    /// <summary>Preferred UI theme (e.g. "dark", "dim", "light", "dark-accent", "dark-square"). Null means system default.</summary>
+    [MaxLength(50)]
+    public string? Theme { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

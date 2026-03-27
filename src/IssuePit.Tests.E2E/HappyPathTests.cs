@@ -10,7 +10,7 @@ namespace IssuePit.Tests.E2E;
 /// Uses the real Aspire stack (postgres, kafka, redis) started by <see cref="AspireFixture"/>.
 /// </summary>
 [Collection("E2E")]
-[Trait("Category", "E2E")]
+[Trait("Category", "Smoke")]
 public class HappyPathTests : IAsyncLifetime
 {
     private readonly AspireFixture _fixture;
