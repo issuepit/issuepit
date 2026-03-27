@@ -49,7 +49,10 @@ public class LoginPage(IPage page)
     public async Task LoginAsync(string username, string password)
     {
         await GotoAsync();
-        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        // Wait for the username input to be ready rather than NetworkIdle, which can be
+        // flaky if background requests are still in-flight after the page loads.
+        await page.WaitForSelectorAsync("input[autocomplete='username']",
+            new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
         await page.FillAsync("input[autocomplete='username']", username);
         await page.FillAsync("input[autocomplete='current-password']", password);
         await page.ClickAsync("button[type='submit']");

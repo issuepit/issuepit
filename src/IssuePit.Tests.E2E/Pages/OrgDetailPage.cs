@@ -25,7 +25,7 @@ public class OrgDetailPage(IPage page)
     public async Task OpenMembersTabAsync()
     {
         await page.ClickAsync("button:has-text('Members')");
-        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await page.WaitForSelectorAsync("button:has-text('Add Member')", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
     }
 
     /// <summary>

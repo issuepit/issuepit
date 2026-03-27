@@ -80,7 +80,20 @@ public class CiCdConfigPage(IPage page)
     public async Task SetCustomImageAsync(string imageString)
     {
         await page.ClickAsync("div.cursor-pointer:has-text('Custom image')");
-        await page.WaitForSelectorAsync("input[placeholder*='ghcr.io']", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+
+        // Retry the click once in case it was lost to a Vue SSR hydration race condition.
+        try
+        {
+            await page.WaitForSelectorAsync("input[placeholder*='ghcr.io']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (TimeoutException)
+        {
+            await page.ClickAsync("div.cursor-pointer:has-text('Custom image')");
+            await page.WaitForSelectorAsync("input[placeholder*='ghcr.io']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        }
+
         await page.FillAsync("input[placeholder*='ghcr.io']", imageString);
     }
 
