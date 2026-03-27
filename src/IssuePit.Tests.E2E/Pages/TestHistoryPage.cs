@@ -21,14 +21,10 @@ public class TestHistoryPage(IPage page)
     public async Task GotoCoverageAsync(string projectId)
     {
         await page.GotoAsync($"/projects/{projectId}/runs/test-history?tab=Coverage");
-        // Wait for all initial API calls (runs, tests, coverage, branches) to complete before
-        // checking for content. Without this, the 20 s locator timeout races against the Vue
-        // onMounted + reload() cycle and can expire under CI load.
-        await page.WaitForLoadStateAsync(LoadState.NetworkIdle,
-            new PageWaitForLoadStateOptions { Timeout = E2ETimeouts.NavigationLong });
         // Use p:has-text to match only the summary-card <p> label, not the table column <th>.
+        // Use NavigationLong (20 s) to accommodate the Vue onMounted + API cycle under CI load.
         await page.Locator("p:has-text('Line Coverage')").Or(page.Locator("text=No coverage data yet"))
-            .WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Navigation });
+            .WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.NavigationLong });
     }
 
     public async Task WaitForLoadAsync()
@@ -71,11 +67,8 @@ public class TestHistoryPage(IPage page)
     public async Task GotoAnalyticsAsync(string projectId)
     {
         await page.GotoAsync($"/projects/{projectId}/runs/test-history?tab=Analytics");
-        // Wait for all initial API calls to complete before checking for content.
-        await page.WaitForLoadStateAsync(LoadState.NetworkIdle,
-            new PageWaitForLoadStateOptions { Timeout = E2ETimeouts.NavigationLong });
         await page.Locator("text=Duration Analytics").Or(page.Locator("text=No analytics data yet"))
-            .WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Default });
+            .WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.NavigationLong });
     }
 
     /// <summary>Clicks the Analytics tab and waits for its content to appear.</summary>

@@ -10,16 +10,20 @@ public class OrgsPage(IPage page)
 
     public async Task GotoAsync()
     {
+        // Use an explicit navigation timeout so the GotoAsync call is not bounded
+        // by the shorter context.SetDefaultTimeout value.
+        var gotoOptions = new PageGotoOptions { Timeout = E2ETimeouts.Navigation };
+
         // Retry once in case a post-login redirect is still in-flight, which can cause
-        // ERR_ABORTED on the first navigation attempt.
+        // ERR_ABORTED or a timeout on the first navigation attempt.
         try
         {
-            await page.GotoAsync("/orgs");
+            await page.GotoAsync("/orgs", gotoOptions);
         }
         catch (PlaywrightException)
         {
             await Task.Delay(E2ETimeouts.RetryDelay);
-            await page.GotoAsync("/orgs");
+            await page.GotoAsync("/orgs", gotoOptions);
         }
         // Wait for the "New Organization" button rather than NetworkIdle to avoid
         // timing out when background requests are still in-flight.
@@ -76,6 +80,7 @@ public class OrgsPage(IPage page)
         await page.WaitForSelectorAsync($"a[href*='{orgId}']", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.NavigationLong });
         await page.ClickAsync($"a[href*='{orgId}']");
         await page.WaitForURLAsync($"**/orgs/{orgId}", new PageWaitForURLOptions { Timeout = E2ETimeouts.NavigationLong, WaitUntil = WaitUntilState.Commit });
-        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        // Wait for the page content to render (New Team button is always present on the org detail page).
+        await page.WaitForSelectorAsync("button:has-text('New Team')", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
     }
 }
