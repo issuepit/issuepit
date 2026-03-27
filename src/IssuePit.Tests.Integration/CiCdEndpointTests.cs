@@ -316,6 +316,61 @@ public class CiCdEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
     }
 
+    /// <summary>
+    /// Regression test for: triggering from the Branches tab (branch only, no commitSha) must return 202.
+    /// Previously the frontend passed a MouseEvent as forceWithActiveRunIds (due to @click="triggerRun"
+    /// instead of @click="() => triggerRun()"), resulting in a 400 Bad Request.
+    /// This integration test verifies that a branch-only trigger (no commitSha) is accepted by the API.
+    /// </summary>
+    [Fact]
+    public async Task Trigger_WithBranchOnly_NoCommitSha_Returns_Accepted()
+    {
+        var (tenantId, _, projectId) = await SeedProjectAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var response = await _client.PostAsJsonAsync("/api/cicd-runs/trigger", new
+        {
+            projectId,
+            eventName = "push",
+            branch = "main",
+        });
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    /// <summary>
+    /// Regression test: sending forceWithActiveRunIds as a non-array JSON value (e.g. an object {})
+    /// must be rejected with 400 Bad Request, matching the ASP.NET Core model binding error observed
+    /// when the frontend mistakenly forwarded a MouseEvent as that field.
+    /// </summary>
+    [Fact]
+    public async Task Trigger_WithInvalidForceWithActiveRunIds_Returns_BadRequest()
+    {
+        var (tenantId, _, projectId) = await SeedProjectAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        // Simulate what happened when the frontend sent MouseEvent serialized as {} instead of an array.
+        var json = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            projectId,
+            eventName = "push",
+            branch = "main",
+            forceWithActiveRunIds = new { },   // object instead of array
+        });
+        var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+        var response = await _client.PostAsync("/api/cicd-runs/trigger", content);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
     [Fact]
     public async Task Trigger_MissingCommitSha_Returns_BadRequest()
     {
