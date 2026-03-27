@@ -161,7 +161,7 @@ public class TestHistoryTests : IAsyncLifetime
         try
         {
             await new LoginPage(page).LoginAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation, WaitUntil = WaitUntilState.Commit });
 
             var historyPage = new TestHistoryPage(page);
             // Navigate directly to the Coverage tab URL to avoid the router.replace() race that
@@ -391,7 +391,7 @@ public class TestHistoryTests : IAsyncLifetime
         try
         {
             await new LoginPage(page).LoginAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation, WaitUntil = WaitUntilState.Commit });
 
             var runPage = new CiCdRunPage(page);
             await runPage.GotoTestsTabAsync(projectId, runId);
@@ -431,7 +431,7 @@ public class TestHistoryTests : IAsyncLifetime
         try
         {
             await new LoginPage(page).LoginAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation, WaitUntil = WaitUntilState.Commit });
 
             // Navigate to the project dashboard.
             await page.GotoAsync($"/projects/{projectId}");
@@ -477,7 +477,7 @@ public class TestHistoryTests : IAsyncLifetime
         try
         {
             await new LoginPage(page).LoginAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation, WaitUntil = WaitUntilState.Commit });
 
             var historyPage = new TestHistoryPage(page);
             await historyPage.GotoAsync(projectId);
@@ -555,7 +555,7 @@ public class TestHistoryTests : IAsyncLifetime
         try
         {
             await new LoginPage(page).LoginAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation, WaitUntil = WaitUntilState.Commit });
 
             var runPage = new CiCdRunPage(page);
 
@@ -616,7 +616,7 @@ public class TestHistoryTests : IAsyncLifetime
         try
         {
             await new LoginPage(page).LoginAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation, WaitUntil = WaitUntilState.Commit });
 
             var historyPage = new TestHistoryPage(page);
             await historyPage.GotoAnalyticsAsync(projectId);
