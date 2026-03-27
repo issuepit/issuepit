@@ -121,19 +121,39 @@
           <p v-if="loadingWorkflows" class="text-xs text-gray-500 mt-1">Loading workflows…</p>
         </div>
 
-        <!-- Remote selector -->
+        <!-- Remote selector (chips) -->
         <div v-if="remotes.length > 0">
-          <label class="block text-sm font-medium text-gray-300 mb-1">
+          <label class="block text-sm font-medium text-gray-300 mb-1.5">
             Remote <span class="text-gray-500">(clone source)</span>
           </label>
-          <select v-model="selectedRepoId"
-            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
-            <option v-for="r in remotes" :key="r.id" :value="r.id">
-              {{ r.remoteUrl }} — {{ r.mode }} · {{ r.status }}
-            </option>
-          </select>
-          <p v-if="remotes.length > 1" class="text-xs text-gray-500 mt-1">
-            Select which remote to clone from. When the branch exists on only one remote the worker will use that one automatically.
+          <div class="flex flex-wrap gap-2">
+            <!-- Auto chip (default, no specific remote) -->
+            <button
+              type="button"
+              :class="selectedRepoId === undefined
+                ? 'bg-brand-600 border-brand-500 text-white'
+                : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-500'"
+              class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors"
+              @click="selectedRepoId = undefined">
+              Auto
+            </button>
+            <!-- One chip per remote -->
+            <button
+              v-for="r in remotes"
+              :key="r.id"
+              type="button"
+              :class="selectedRepoId === r.id
+                ? 'bg-gray-700 border-brand-500 text-white'
+                : 'bg-gray-800 border-gray-700 text-gray-300 hover:text-gray-100 hover:border-gray-500'"
+              class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors max-w-full"
+              :title="r.remoteUrl"
+              @click="selectedRepoId = r.id">
+              <span class="truncate max-w-[180px] font-mono">{{ r.remoteUrl }}</span>
+              <span :class="modeChipClass(r.mode)" class="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-semibold">{{ r.mode }}</span>
+            </button>
+          </div>
+          <p class="text-xs text-gray-600 mt-1.5">
+            Auto lets the worker detect which remote has the branch. Select a specific remote to override.
           </p>
         </div>
 
@@ -245,6 +265,14 @@ const workflows = ref<WorkflowInfo[]>([])
 const remotes = ref<GitRepoDto[]>([])
 const selectedRepoId = ref<string | undefined>(undefined)
 
+function modeChipClass(mode: string): string {
+  switch (mode) {
+    case 'Working': return 'bg-green-900/50 text-green-300'
+    case 'Release': return 'bg-purple-900/50 text-purple-300'
+    default: return 'bg-gray-700 text-gray-400'
+  }
+}
+
 // Workflows that support the currently selected event (or all if none match)
 const filteredWorkflows = computed(() => {
   if (!selectedEvent.value) return workflows.value
@@ -287,11 +315,7 @@ onMounted(async () => {
   workflows.value = wf
   remotes.value = repos
   loadingWorkflows.value = false
-
-  // Prefill: prefer the Working-mode active remote, then any active remote, then first
-  const working = repos.find(r => r.mode === 'Working' && r.status === 'Active')
-  const anyActive = repos.find(r => r.status === 'Active')
-  selectedRepoId.value = (working ?? anyActive ?? repos[0])?.id
+  // selectedRepoId stays undefined (Auto) — the worker detects the correct remote automatically
 })
 
 async function triggerRun(forceWithActiveRunIds?: string[]) {
