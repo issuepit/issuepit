@@ -1,0 +1,204 @@
+/* ============================================================
+ * IssuePit UI Themes
+ * Defined as CSS custom properties on the <html> element.
+ * The active theme is set via the data-theme attribute:
+ *   <html data-theme="dark">
+ *
+ * Each theme sets:
+ *   --gray-50 … --gray-950   (background / border / text palette)
+ *   --brand-50 … --brand-900 (accent / interactive color palette)
+ * Values are bare RGB triplets (e.g. "3 7 18") so Tailwind's
+ * opacity modifier works: bg-gray-950/50 → rgba(3,7,18,0.5)
+ * ============================================================ */
+
+/* ─── Dark (default) ──────────────────────────────────────── */
+:root,
+[data-theme="dark"] {
+  --gray-50:  249 250 251;
+  --gray-100: 243 244 246;
+  --gray-200: 229 231 235;
+  --gray-300: 209 213 219;
+  --gray-400: 156 163 175;
+  --gray-500: 107 114 128;
+  --gray-600: 75 85 99;
+  --gray-700: 55 65 81;
+  --gray-750: 45 55 70;
+  --gray-800: 31 41 55;
+  --gray-850: 22 31 44;
+  --gray-900: 17 24 39;
+  --gray-950: 3 7 18;
+
+  /* Brand: indigo-blue */
+  --brand-50:  240 244 255;
+  --brand-100: 219 228 255;
+  --brand-200: 186 200 255;
+  --brand-300: 145 167 255;
+  --brand-400: 116 143 252;
+  --brand-500: 92 124 250;
+  --brand-600: 76 110 245;
+  --brand-700: 66 99 235;
+  --brand-800: 59 91 219;
+  --brand-900: 54 79 199;
+
+  color-scheme: dark;
+}
+
+/* ─── Dim (softer dark, GitHub-inspired) ─────────────────── */
+[data-theme="dim"] {
+  --gray-50:  199 209 220;
+  --gray-100: 173 186 199;
+  --gray-200: 139 148 158;
+  --gray-300: 110 118 129;
+  --gray-400: 81 90 102;
+  --gray-500: 61 68 77;
+  --gray-600: 47 54 61;
+  --gray-700: 36 41 47;
+  --gray-750: 31 36 42;
+  --gray-800: 22 27 34;
+  --gray-850: 18 22 28;
+  --gray-900: 13 17 23;
+  --gray-950: 11 11 15;
+
+  /* Brand: same blue */
+  --brand-50:  240 244 255;
+  --brand-100: 219 228 255;
+  --brand-200: 186 200 255;
+  --brand-300: 145 167 255;
+  --brand-400: 116 143 252;
+  --brand-500: 92 124 250;
+  --brand-600: 76 110 245;
+  --brand-700: 66 99 235;
+  --brand-800: 59 91 219;
+  --brand-900: 54 79 199;
+
+  color-scheme: dark;
+}
+
+/* ─── Dark Accent (dark with purple accent) ──────────────── */
+[data-theme="dark-accent"] {
+  /* Same grays as dark */
+  --gray-50:  249 250 251;
+  --gray-100: 243 244 246;
+  --gray-200: 229 231 235;
+  --gray-300: 209 213 219;
+  --gray-400: 156 163 175;
+  --gray-500: 107 114 128;
+  --gray-600: 75 85 99;
+  --gray-700: 55 65 81;
+  --gray-750: 45 55 70;
+  --gray-800: 31 41 55;
+  --gray-850: 22 31 44;
+  --gray-900: 17 24 39;
+  --gray-950: 3 7 18;
+
+  /* Brand: vibrant purple */
+  --brand-50:  250 245 255;
+  --brand-100: 243 232 255;
+  --brand-200: 233 213 255;
+  --brand-300: 216 180 254;
+  --brand-400: 192 132 252;
+  --brand-500: 168 85 247;
+  --brand-600: 147 51 234;
+  --brand-700: 126 34 206;
+  --brand-800: 107 33 168;
+  --brand-900: 88 28 135;
+
+  color-scheme: dark;
+}
+
+/* ─── Dark Square (dark with no rounded corners) ─────────── */
+[data-theme="dark-square"] {
+  /* Same palette as dark */
+  --gray-50:  249 250 251;
+  --gray-100: 243 244 246;
+  --gray-200: 229 231 235;
+  --gray-300: 209 213 219;
+  --gray-400: 156 163 175;
+  --gray-500: 107 114 128;
+  --gray-600: 75 85 99;
+  --gray-700: 55 65 81;
+  --gray-750: 45 55 70;
+  --gray-800: 31 41 55;
+  --gray-850: 22 31 44;
+  --gray-900: 17 24 39;
+  --gray-950: 3 7 18;
+
+  /* Brand: same blue */
+  --brand-50:  240 244 255;
+  --brand-100: 219 228 255;
+  --brand-200: 186 200 255;
+  --brand-300: 145 167 255;
+  --brand-400: 116 143 252;
+  --brand-500: 92 124 250;
+  --brand-600: 76 110 245;
+  --brand-700: 66 99 235;
+  --brand-800: 59 91 219;
+  --brand-900: 54 79 199;
+
+  /* Square: all border-radius tokens set to 0 */
+  --radius-sm:  0px;
+  --radius:     0px;
+  --radius-md:  0px;
+  --radius-lg:  0px;
+  --radius-xl:  0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-full: 0px;
+
+  color-scheme: dark;
+}
+
+/* ─── Light ───────────────────────────────────────────────── */
+[data-theme="light"] {
+  /* Gray scale is inverted: 950 = white, low numbers = dark */
+  --gray-50:  2 6 23;
+  --gray-100: 15 23 42;
+  --gray-200: 30 41 59;
+  --gray-300: 51 65 85;
+  --gray-400: 100 116 139;
+  --gray-500: 148 163 184;
+  --gray-600: 203 213 225;
+  --gray-700: 226 232 240;
+  --gray-750: 232 237 243;
+  --gray-800: 241 245 249;
+  --gray-850: 244 246 249;
+  --gray-900: 248 250 252;
+  --gray-950: 255 255 255;
+
+  /* Brand: slightly richer blue for light bg */
+  --brand-50:  239 246 255;
+  --brand-100: 219 234 254;
+  --brand-200: 191 219 254;
+  --brand-300: 147 197 253;
+  --brand-400: 96 165 250;
+  --brand-500: 59 130 246;
+  --brand-600: 37 99 235;
+  --brand-700: 29 78 216;
+  --brand-800: 30 64 175;
+  --brand-900: 30 58 138;
+
+  color-scheme: light;
+}
+
+/* In light theme, text-white becomes near-black */
+[data-theme="light"] .text-white {
+  color: rgb(15 23 42) !important;
+}
+
+/* Scrollbar colours per theme */
+[data-theme="dark"] *,
+:root * {
+  scrollbar-color: rgb(55 65 81) rgb(3 7 18);
+}
+[data-theme="dim"] * {
+  scrollbar-color: rgb(36 41 47) rgb(11 11 15);
+}
+[data-theme="dark-accent"] * {
+  scrollbar-color: rgb(55 65 81) rgb(3 7 18);
+}
+[data-theme="dark-square"] * {
+  scrollbar-color: rgb(55 65 81) rgb(3 7 18);
+}
+[data-theme="light"] * {
+  scrollbar-color: rgb(203 213 225) rgb(255 255 255);
+}
