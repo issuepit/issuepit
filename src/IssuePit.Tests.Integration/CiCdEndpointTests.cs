@@ -355,7 +355,7 @@ public class CiCdEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
         _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
 
-        // Simulate what happened when the frontend sent MouseEvent serialised as {} instead of an array.
+        // Simulate what happened when the frontend sent MouseEvent serialized as {} instead of an array.
         var json = System.Text.Json.JsonSerializer.Serialize(new
         {
             projectId,

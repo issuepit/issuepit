@@ -151,7 +151,7 @@
           </div>
         </div>
 
-        <p v-if="triggerError" class="text-sm text-red-400">{{ triggerError }}</p>
+        <p v-if="triggerError" data-testid="trigger-error" class="text-sm text-red-400">{{ triggerError }}</p>
       </div>
 
       <!-- Footer -->

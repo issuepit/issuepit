@@ -157,7 +157,6 @@ public class BranchTriggerTests : IAsyncLifetime
 
             // 8. Capture and mock the trigger endpoint — record the request body so we can assert it
             string? capturedRequestBody = null;
-            int triggerResponseStatus = 0;
             await page.RouteAsync("**/api/cicd-runs/trigger", async route =>
             {
                 capturedRequestBody = route.Request.PostData;
@@ -168,7 +167,6 @@ public class BranchTriggerTests : IAsyncLifetime
                     ContentType = "application/json",
                     Body = $$"""{"runId":"{{newRunId}}","projectId":"{{projectId}}","commitSha":"main","eventName":"push"}""",
                 });
-                triggerResponseStatus = 202;
             });
 
             // 9. Navigate to the code page on the branches tab
@@ -185,7 +183,7 @@ public class BranchTriggerTests : IAsyncLifetime
             var modalClosed = await codePage.WaitForModalToCloseAsync();
             Assert.True(modalClosed, "Trigger modal should close after a successful trigger.");
 
-            // 13. Verify the API was called with a valid request (not a MouseEvent serialised as {})
+            // 13. Verify the API was called with a valid request (not a MouseEvent serialized as {})
             Assert.NotNull(capturedRequestBody);
             using var doc = JsonDocument.Parse(capturedRequestBody!);
             var root = doc.RootElement;
@@ -197,8 +195,6 @@ public class BranchTriggerTests : IAsyncLifetime
             // branch must be "main"
             Assert.True(root.TryGetProperty("branch", out var branchField));
             Assert.Equal("main", branchField.GetString());
-
-            Assert.Equal(202, triggerResponseStatus);
         }
         finally
         {

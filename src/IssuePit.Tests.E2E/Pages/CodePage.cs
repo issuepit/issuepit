@@ -70,8 +70,7 @@ public class CodePage(IPage page)
     /// <summary>Returns true when any trigger error message is visible in the modal.</summary>
     public async Task<bool> HasTriggerErrorAsync()
     {
-        // The triggerError is displayed as <p class="text-sm text-red-400">…</p>
-        var errorEl = page.Locator("p.text-red-400").First;
+        var errorEl = page.Locator("[data-testid='trigger-error']").First;
         return await errorEl.IsVisibleAsync();
     }
 }
