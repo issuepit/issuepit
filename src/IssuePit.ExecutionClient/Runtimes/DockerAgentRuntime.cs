@@ -1474,48 +1474,93 @@ public class DockerAgentRuntime(
         Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {
-        await onLogLine("[INFO] opencode agents (opencode agent list):", LogStream.Stdout);
+        // Collect output first so we can skip the header when there is nothing to show,
+        // and silently suppress "executable not found" errors from test/minimal images.
+        var lines = new List<string>();
         try
         {
             await ExecCommandAsync(containerId, ["opencode", "agent", "list"],
-                async (line, stream) => await onLogLine($"[INFO]   {line}", stream),
+                (line, _) => { lines.Add(line); return Task.CompletedTask; },
                 cancellationToken, workingDir: "/");
         }
         catch (OperationCanceledException)
         {
             throw;
         }
+        catch (Exception ex) when (IsExecutableNotFoundError(ex))
+        {
+            // opencode is not installed in this container (e.g. busybox test image) — skip silently.
+            return;
+        }
         catch (Exception ex)
         {
             await onLogLine($"[WARN] Could not list opencode agents: {ex.Message}", LogStream.Stderr);
+            return;
         }
+
+        if (lines.Count == 0) return;
+
+        await onLogLine("[INFO] opencode agents (opencode agent list):", LogStream.Stdout);
+        foreach (var line in lines)
+            await onLogLine($"[INFO]   {line}", LogStream.Stdout);
     }
 
     /// <summary>
     /// Runs <c>opencode mcp list</c> inside the container and emits the output as log lines.
     /// Best-effort: failure is non-fatal and only logs a warning.
+    /// Silently skipped when opencode is not installed (e.g. busybox test images).
     /// </summary>
     private async Task LogOpenCodeMcpServersAsync(
         string containerId,
         Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {
-        await onLogLine("[INFO] opencode MCP servers (opencode mcp list):", LogStream.Stdout);
+        // Collect output first so we can skip the header when there is nothing to show,
+        // and silently suppress "executable not found" errors from test/minimal images.
+        var lines = new List<string>();
         try
         {
             await ExecCommandAsync(containerId, ["opencode", "mcp", "list"],
-                async (line, stream) => await onLogLine($"[INFO]   {line}", stream),
+                (line, _) => { lines.Add(line); return Task.CompletedTask; },
                 cancellationToken, workingDir: "/");
         }
         catch (OperationCanceledException)
         {
             throw;
         }
+        catch (Exception ex) when (IsExecutableNotFoundError(ex))
+        {
+            // opencode is not installed in this container (e.g. busybox test image) — skip silently.
+            return;
+        }
         catch (Exception ex)
         {
             await onLogLine($"[WARN] Could not list opencode MCP servers: {ex.Message}", LogStream.Stderr);
+            return;
         }
+
+        if (lines.Count == 0) return;
+
+        await onLogLine("[INFO] opencode MCP servers (opencode mcp list):", LogStream.Stdout);
+        foreach (var line in lines)
+            await onLogLine($"[INFO]   {line}", LogStream.Stdout);
     }
+
+    /// <summary>
+    /// Returns <c>true</c> when <paramref name="ex"/> indicates that the executable was not
+    /// found inside the container (Docker OCI "executable file not found in $PATH" error).
+    /// Used to silently skip diagnostic commands in minimal test images (e.g. busybox) that
+    /// do not have opencode installed.
+    /// </summary>
+    /// <remarks>
+    /// The check relies on the OCI runtime error message format produced by runc/containerd,
+    /// which has been stable across all Linux Docker versions. The method requires that the
+    /// exception is a <see cref="DockerApiException"/> to avoid matching unrelated errors.
+    /// </remarks>
+    private static bool IsExecutableNotFoundError(Exception ex) =>
+        ex is DockerApiException &&
+        (ex.Message.Contains("executable file not found", StringComparison.OrdinalIgnoreCase) ||
+         ex.Message.Contains("no such file or directory", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// Downloads each public issue attachment from its URL and injects the file content into the
