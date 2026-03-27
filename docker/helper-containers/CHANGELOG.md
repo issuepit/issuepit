@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1](https://github.com/issuepit/issuepit/compare/helper-containers-v1.7.0...helper-containers-v1.7.1) (2026-03-27)
+
+
+### Bug Fixes
+
+* added missing unzip package ([#868](https://github.com/issuepit/issuepit/issues/868)) ([4c09a36](https://github.com/issuepit/issuepit/commit/4c09a3638832c0daeabfeb10bef6a594531f5a7b))
+
 ## [1.7.0](https://github.com/issuepit/issuepit/compare/helper-containers-v1.6.1...helper-containers-v1.7.0) (2026-03-23)
 
 
