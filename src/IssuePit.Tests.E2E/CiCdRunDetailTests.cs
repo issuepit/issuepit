@@ -11,7 +11,7 @@ namespace IssuePit.Tests.E2E;
 /// Jobs tab correctly populates the issue description with captured log lines.
 /// </summary>
 [Collection("E2E")]
-[Trait("Category", "E2E")]
+[Trait("Category", "CiCd")]
 public class CiCdRunDetailTests : IAsyncLifetime
 {
     private readonly AspireFixture _fixture;

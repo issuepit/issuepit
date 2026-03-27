@@ -32,7 +32,7 @@ namespace IssuePit.Tests.E2E;
 /// </list>
 /// </summary>
 [Collection("E2E")]
-[Trait("Category", "E2E")]
+[Trait("Category", "CiCd")]
 public class CiCdPipelineTests(AspireFixture fixture)
 {
     private const string NativeRuntime = "Native";

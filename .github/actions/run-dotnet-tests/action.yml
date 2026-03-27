@@ -1,0 +1,56 @@
+name: Run .NET Tests
+description: >
+  Optionally build a .NET test project, run the tests, and upload the TRX
+  results as a workflow artifact.
+
+inputs:
+  project:
+    description: Path to the test project file (.csproj or .slnx)
+    required: true
+  filter:
+    description: Test filter expression passed to --filter
+    required: true
+  artifact-name:
+    description: >
+      Prefix for the uploaded artifact; results are stored as
+      '<artifact-name>-test-results'.
+    required: true
+  extra-args:
+    description: Additional arguments forwarded verbatim to dotnet test
+    required: false
+    default: ''
+  skip-build:
+    description: >
+      Set to 'true' when the project was already built by a preceding step
+      (e.g. when Playwright browser installation must happen between build
+      and test). The composite action will still pass --no-build to dotnet
+      test in both cases; the difference is only whether 'dotnet build' is
+      called here first.
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Build
+      if: ${{ inputs.skip-build != 'true' }}
+      shell: bash
+      run: dotnet build "${{ inputs.project }}" --configuration Release
+
+    - name: Test
+      shell: bash
+      run: >
+        dotnet test "${{ inputs.project }}"
+        --no-build
+        --configuration Release
+        --filter "${{ inputs.filter }}"
+        --verbosity normal
+        --logger "trx;LogFileName=${{ inputs.artifact-name }}-results.trx"
+        ${{ inputs.extra-args }}
+
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}-test-results
+        path: '**/*.trx'

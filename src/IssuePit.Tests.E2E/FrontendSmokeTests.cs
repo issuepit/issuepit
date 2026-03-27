@@ -9,7 +9,7 @@ namespace IssuePit.Tests.E2E;
 /// The FRONTEND_URL environment variable overrides the Aspire-started frontend URL.
 /// </summary>
 [Collection("E2E")]
-[Trait("Category", "E2E")]
+[Trait("Category", "Smoke")]
 public class FrontendSmokeTests : IAsyncLifetime
 {
     private readonly AspireFixture _fixture;

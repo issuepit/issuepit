@@ -6,7 +6,7 @@ namespace IssuePit.Tests.E2E;
 /// E2E smoke tests that verify the API is reachable when the full Aspire stack is running.
 /// </summary>
 [Collection("E2E")]
-[Trait("Category", "E2E")]
+[Trait("Category", "Smoke")]
 public class ApiSmokeTests(AspireFixture fixture)
 {
     [Fact]

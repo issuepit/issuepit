@@ -21,12 +21,18 @@ namespace IssuePit.Tests.E2E;
 /// </list>
 /// </summary>
 [Collection("E2E")]
-[Trait("Category", "E2E")]
+[Trait("Category", "Agent")]
 public class AgentSessionTests(AspireFixture fixture)
 {
     /// <summary>Docker image used for agent E2E tests. Defaults to <c>busybox:latest</c> if the env var is not set.</summary>
     private static readonly string AgentTestDockerImage =
         Environment.GetEnvironmentVariable("AGENT_E2E_DOCKER_IMAGE") ?? "busybox:latest";
+
+    /// <summary>
+    /// Cached result of the Docker availability check.  <c>docker info</c> is run at most once
+    /// per test process; subsequent calls are free.
+    /// </summary>
+    private static readonly Lazy<bool> DockerAvailable = new(CheckDockerAvailable);
 
     private HttpClient CreateCookieClient()
     {
@@ -47,9 +53,20 @@ public class AgentSessionTests(AspireFixture fixture)
     }
 
     /// <summary>
-    /// Returns <c>true</c> when the Docker daemon is reachable on the host.
+    /// Skips the current test when the Docker daemon is not reachable on the host.
+    /// Uses a cached availability check so <c>docker info</c> is run at most once.
     /// </summary>
-    private static bool IsDockerAvailable()
+    private static void SkipIfDockerUnavailable()
+    {
+        if (!DockerAvailable.Value)
+            throw Xunit.Sdk.SkipException.ForSkip("Docker is not available on this host.");
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> when the Docker daemon is reachable on the host.
+    /// Called lazily via <see cref="DockerAvailable"/>; result is cached for the process lifetime.
+    /// </summary>
+    private static bool CheckDockerAvailable()
     {
         try
         {
@@ -85,7 +102,7 @@ public class AgentSessionTests(AspireFixture fixture)
     [Fact]
     public async Task AgentSession_ShowsLogsAfterContainerExit()
     {
-        if (!IsDockerAvailable()) return;
+        SkipIfDockerUnavailable();
 
         using var client = CreateCookieClient();
         var tenantId = await GetDefaultTenantIdAsync();
@@ -170,7 +187,7 @@ public class AgentSessionTests(AspireFixture fixture)
     [Fact]
     public async Task AgentSession_ContainerExitsNonZero_MarksSessionAsFailed()
     {
-        if (!IsDockerAvailable()) return;
+        SkipIfDockerUnavailable();
 
         using var client = CreateCookieClient();
         var tenantId = await GetDefaultTenantIdAsync();
@@ -251,7 +268,7 @@ public class AgentSessionTests(AspireFixture fixture)
     [Fact]
     public async Task AgentSession_McpConnectivity_ContainerCanReachMcpServer()
     {
-        if (!IsDockerAvailable()) return;
+        SkipIfDockerUnavailable();
 
         using var client = CreateCookieClient();
         var tenantId = await GetDefaultTenantIdAsync();
@@ -356,7 +373,7 @@ public class AgentSessionTests(AspireFixture fixture)
     [Fact]
     public async Task AgentSession_McpToolsWork_ContainerCanQueryProjectsAndGetVersion()
     {
-        if (!IsDockerAvailable()) return;
+        SkipIfDockerUnavailable();
 
         using var client = CreateCookieClient();
         var tenantId = await GetDefaultTenantIdAsync();
@@ -527,7 +544,7 @@ public class AgentSessionTests(AspireFixture fixture)
     [Fact]
     public async Task AgentSession_ExecFlow_ContainerIdLoggedBeforeSessionFails()
     {
-        if (!IsDockerAvailable()) return;
+        SkipIfDockerUnavailable();
 
         using var client = CreateCookieClient();
         var tenantId = await GetDefaultTenantIdAsync();
@@ -628,7 +645,7 @@ public class AgentSessionTests(AspireFixture fixture)
     [Fact]
     public async Task AgentSession_ManualMode_SessionReportsIsManualModeFlag()
     {
-        if (!IsDockerAvailable()) return;
+        SkipIfDockerUnavailable();
 
         using var client = CreateCookieClient();
         var tenantId = await GetDefaultTenantIdAsync();
@@ -651,9 +668,9 @@ public class AgentSessionTests(AspireFixture fixture)
         var projectId = project.GetProperty("id").GetString()!;
 
         // Create a manual-mode agent.  We use busybox because it starts instantly and
-        // keeps alive (CMD = tail -f /dev/null) so the DinD startup script completes
-        // (warns, non-fatal) and the container-ID marker is emitted, moving the session
-        // to Running. The session then blocks waiting for a cancel signal.
+        // keeps alive (CMD = tail -f /dev/null); the DinD setup step detects that neither
+        // dockerd nor apt-get are available and exits immediately (no 60 s wait), so the
+        // container-ID marker is emitted quickly and the session moves to Running.
         var agentResp = await client.PostAsJsonAsync("/api/agents",
             new
             {
@@ -681,8 +698,6 @@ public class AgentSessionTests(AspireFixture fixture)
         var sessionId = startBody.GetProperty("sessionId").GetString()!;
 
         // Manual-mode sessions stay in Running state — wait for Running (not a terminal state).
-        // DinD startup in busybox waits up to 60 s then warns and continues; total workspace
-        // setup takes slightly over 1 minute.
         await WaitForManualModeSessionRunningByIdAsync(client, sessionId, TimeSpan.FromMinutes(3));
 
         // Fetch full session detail and verify the manual-mode flag.
