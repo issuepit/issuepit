@@ -4,7 +4,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace IssuePit.Tests.Unit;
 
-[Trait("Category", "Unit")]
 public class ArtifactStorageServiceTests
 {
     private static ArtifactStorageService CreateService()

@@ -4,7 +4,6 @@ using IssuePit.ExecutionClient.Runtimes;
 namespace IssuePit.Tests.Unit;
 
 /// <summary>Unit tests for <see cref="DockerAgentRuntime"/> helper methods.</summary>
-[Trait("Category", "Unit")]
 public class DockerAgentRuntimeTests
 {
     // ──────────────────────────────────────────────────────────────────────────

@@ -7,7 +7,6 @@ using McpServerEntity = IssuePit.Core.Entities.McpServer;
 namespace IssuePit.Tests.Unit;
 
 /// <summary>Unit tests for <see cref="AgentEnvironmentBuilder"/> helper methods.</summary>
-[Trait("Category", "Unit")]
 public class AgentEnvironmentBuilderTests
 {
     private static Agent MakeAgent(

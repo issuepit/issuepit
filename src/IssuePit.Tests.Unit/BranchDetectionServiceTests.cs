@@ -3,7 +3,6 @@ using IssuePit.Api.Services;
 
 namespace IssuePit.Tests.Unit;
 
-[Trait("Category", "Unit")]
 public class BranchDetectionServiceTests
 {
     // ── Helpers ───────────────────────────────────────────────────────────────

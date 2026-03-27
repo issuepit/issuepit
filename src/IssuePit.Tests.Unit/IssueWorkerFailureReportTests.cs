@@ -2,7 +2,6 @@ using IssuePit.ExecutionClient.Workers;
 
 namespace IssuePit.Tests.Unit;
 
-[Trait("Category", "Unit")]
 public class IssueWorkerFailureReportTests
 {
     [Fact]

@@ -109,10 +109,14 @@ jobs:
 
   # Matrix job running unit, integration, and E2E tests.
   # Each entry name matches the original job name exactly so that GitHub push
-  # ruleset required-status-checks continue to match.
-  # The negative filter on 'Unit Tests' also catches any test that has no
-  # Category trait, ensuring tests are never silently excluded because a
-  # developer forgot to add [Trait("Category", "...")].
+  # ruleset required-status-checks continue to match ('Unit Tests',
+  # 'Integration Tests', 'E2E Tests').
+  # The Unit Tests negative filter catches any test that has no Category trait
+  # at all, so tests are never silently excluded when a developer forgets to add
+  # [Trait("Category", "...")].  Unit test files carry no Category trait by
+  # design, so they are always caught by this entry.
+  # E2E tests are split into sub-categories (CiCd, Smoke, Voice, default E2E)
+  # so they run in parallel and failures are easier to attribute.
   tests:
     name: ${{ matrix.suite.name }}
     runs-on: ubuntu-latest
@@ -126,9 +130,10 @@ jobs:
         suite:
           - name: Unit Tests
             project: src/IssuePit.Tests.Unit/IssuePit.Tests.Unit.csproj
-            # Negative filter: runs Unit-categorized tests AND any test that has
-            # no Category trait, ensuring nothing is silently skipped.
-            filter: Category!=Integration&Category!=E2E&Category!=PoC
+            # Negative filter: catches tests that have no Category trait (unit
+            # tests intentionally have none) AND acts as a safety net for any
+            # test that is added without a category.
+            filter: Category!=Integration&Category!=E2E&Category!=CiCd&Category!=Smoke&Category!=Voice
             artifact: unit
             needs_infra: false
             skip_build: false
@@ -146,8 +151,32 @@ jobs:
 
           - name: E2E Tests
             project: src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj
-            filter: Category=E2E|Category=PoC
+            filter: Category=E2E
             artifact: e2e
+            needs_infra: true
+            skip_build: true
+            extra_args: '--blame-hang-timeout 5min'
+
+          - name: E2E CiCd
+            project: src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj
+            filter: Category=CiCd
+            artifact: e2e-cicd
+            needs_infra: true
+            skip_build: true
+            extra_args: '--blame-hang-timeout 5min'
+
+          - name: E2E Smoke
+            project: src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj
+            filter: Category=Smoke
+            artifact: e2e-smoke
+            needs_infra: true
+            skip_build: true
+            extra_args: '--blame-hang-timeout 5min'
+
+          - name: E2E Voice
+            project: src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj
+            filter: Category=Voice
+            artifact: e2e-voice
             needs_infra: true
             skip_build: true
             extra_args: '--blame-hang-timeout 5min'

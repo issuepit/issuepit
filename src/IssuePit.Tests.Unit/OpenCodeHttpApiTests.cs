@@ -10,7 +10,6 @@ namespace IssuePit.Tests.Unit;
 /// Uses a fake <see cref="HttpMessageHandler"/> to simulate opencode HTTP server responses
 /// without requiring a real running server.
 /// </summary>
-[Trait("Category", "Unit")]
 public class OpenCodeHttpApiTests
 {
     private const string BaseUrl = "http://localhost:4096";
