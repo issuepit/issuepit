@@ -211,7 +211,8 @@ function clearBrowserOverride() {
   setBrowserTheme(null)
 }
 
-/** Hardcoded preview swatches so they don't depend on the active theme's CSS variables. */
+/** Hardcoded preview swatches so they don't depend on the active theme's CSS variables.
+ * Keep these in sync with the RGB values in assets/themes.css. */
 const SWATCH_COLORS: Record<string, { bg: string; card: string; text: string; accent: string }> = {
   dark:         { bg: '#030712', card: '#111827', text: '#d1d5db', accent: '#4c6ef5' },
   dim:          { bg: '#0b0b0f', card: '#161b22', text: '#adb5bd', accent: '#4c6ef5' },

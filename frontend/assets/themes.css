@@ -135,14 +135,17 @@
   --brand-800: 59 91 219;
   --brand-900: 54 79 199;
 
-  color-scheme: dark;
-}
+  /* Square: all border-radius tokens set to 0 */
+  --radius-sm:  0px;
+  --radius:     0px;
+  --radius-md:  0px;
+  --radius-lg:  0px;
+  --radius-xl:  0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-full: 0px;
 
-/* Remove all border-radius in dark-square theme */
-[data-theme="dark-square"] *,
-[data-theme="dark-square"] *::before,
-[data-theme="dark-square"] *::after {
-  border-radius: 0 !important;
+  color-scheme: dark;
 }
 
 /* ─── Light ───────────────────────────────────────────────── */

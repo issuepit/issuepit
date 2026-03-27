@@ -57,13 +57,6 @@ function applyTheme(id: ThemeId) {
   document.documentElement.setAttribute('data-theme', id)
 }
 
-/**
- * Resolved theme — the one currently applied to the document.
- * Stored as module-level state so it is shared across all composable calls
- * (Nuxt useState would reset on navigation).
- */
-let _activeTheme: ThemeId | null = null
-
 export const useTheme = () => {
   const auth = useAuthStore()
   const api = useApi()
@@ -72,17 +65,22 @@ export const useTheme = () => {
   const activeTheme = useState<ThemeId>('activeTheme', () => 'dark')
 
   /**
+   * Reactive ref tracking the browser-local override. Updated synchronously
+   * whenever setBrowserTheme() is called so computed consumers re-evaluate.
+   */
+  const _browserOverrideTick = useState<ThemeId | null>('browserOverrideTick', () => readLocalStorage())
+
+  /**
    * Determine and apply the correct theme based on the priority chain.
    * Call this once on app mount (app.vue) and after the user changes their preference.
    */
   function resolveAndApply(userDbTheme?: string | null) {
     const qs = readQueryString()
-    const ls = readLocalStorage()
+    const ls = _browserOverrideTick.value
     const db = (userDbTheme && THEMES.some(t => t.id === userDbTheme)) ? (userDbTheme as ThemeId) : null
     const sys = systemDefault()
 
     const resolved: ThemeId = qs ?? ls ?? db ?? sys
-    _activeTheme = resolved
     activeTheme.value = resolved
     applyTheme(resolved)
   }
@@ -100,6 +98,7 @@ export const useTheme = () => {
         localStorage.removeItem(STORAGE_KEY)
       }
     } catch { /* ignore */ }
+    _browserOverrideTick.value = id
     resolveAndApply(auth.user?.theme)
   }
 
@@ -115,12 +114,8 @@ export const useTheme = () => {
     resolveAndApply(id)
   }
 
-  /** Currently active browser override (from localStorage). */
-  const browserOverride = computed<ThemeId | null>(() => {
-    // Re-evaluate reactively only on client
-    if (!import.meta.client) return null
-    return readLocalStorage()
-  })
+  /** Currently active browser override (from localStorage), reactive. */
+  const browserOverride = computed<ThemeId | null>(() => _browserOverrideTick.value)
 
   return {
     activeTheme,
