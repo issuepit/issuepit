@@ -838,6 +838,9 @@ public class CiCdRunsController(
         else if (!string.IsNullOrWhiteSpace(request.Branch))
         {
             // Prefer the repo whose local clone already has the branch tracked.
+            // GetBranchTipSha reads from the local bare/working clone on disk — it is a fast
+            // in-process libgit2 call, not a network round-trip, so iterating through the
+            // (typically 1–3) configured remotes is not a performance concern in practice.
             repo = allRepos.FirstOrDefault(r => gitService.GetBranchTipSha(r, request.Branch) is not null)
                    ?? allRepos.FirstOrDefault();
         }

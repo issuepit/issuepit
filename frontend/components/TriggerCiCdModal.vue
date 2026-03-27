@@ -361,7 +361,10 @@ onMounted(async () => {
   loadingWorkflows.value = true
   const [wf, remotes] = await Promise.all([
     cicdStore.fetchWorkflows(props.projectId),
-    api.get<GitRepository[]>(`/api/projects/${props.projectId}/git/repos`).catch(() => [] as GitRepository[]),
+    api.get<GitRepository[]>(`/api/projects/${props.projectId}/git/repos`).catch((err) => {
+      console.warn('[TriggerCiCdModal] Failed to load git remotes:', err)
+      return [] as GitRepository[]
+    }),
   ])
   workflows.value = wf
   repos.value = remotes
