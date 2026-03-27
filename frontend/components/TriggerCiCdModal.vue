@@ -151,7 +151,7 @@
           </div>
         </div>
 
-        <p v-if="triggerError" class="text-sm text-red-400">{{ triggerError }}</p>
+        <p v-if="triggerError" data-testid="trigger-error" class="text-sm text-red-400">{{ triggerError }}</p>
       </div>
 
       <!-- Footer -->
@@ -160,7 +160,7 @@
           class="text-sm text-gray-400 hover:text-gray-200 px-3 py-1.5 rounded-lg transition-colors">
           Cancel
         </button>
-        <button @click="triggerRun" :disabled="triggering"
+        <button @click="() => triggerRun()" :disabled="triggering"
           class="text-sm bg-brand-600 hover:bg-brand-700 text-white px-4 py-1.5 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2">
           <svg v-if="triggering" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />

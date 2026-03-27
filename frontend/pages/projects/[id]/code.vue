@@ -342,7 +342,7 @@
       />
 
       <!-- Branches tab -->
-      <div v-else-if="activeTab === 'branches'">
+      <div v-else-if="activeTab === 'branches'" data-testid="branches-tab-content">
         <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
           <div v-for="branch in store.branches" :key="branch.name"
             class="flex items-center gap-3 px-4 py-3 border-b border-gray-800 last:border-0">
