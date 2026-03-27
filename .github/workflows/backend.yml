@@ -164,7 +164,7 @@ jobs:
             artifact: e2e
             needs_infra: true
             skip_build: true
-            extra_args: '--blame-hang-timeout 5min'
+            extra_args: '--blame-hang-timeout 4min'
 
           - name: E2E CiCd
             project: src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj
@@ -172,7 +172,7 @@ jobs:
             artifact: e2e-cicd
             needs_infra: true
             skip_build: true
-            extra_args: '--blame-hang-timeout 5min'
+            extra_args: '--blame-hang-timeout 4min'
 
           - name: E2E Smoke
             project: src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj
@@ -180,7 +180,7 @@ jobs:
             artifact: e2e-smoke
             needs_infra: true
             skip_build: true
-            extra_args: '--blame-hang-timeout 5min'
+            extra_args: '--blame-hang-timeout 4min'
 
           - name: E2E Voice
             project: src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj
@@ -188,7 +188,7 @@ jobs:
             artifact: e2e-voice
             needs_infra: true
             skip_build: true
-            extra_args: '--blame-hang-timeout 5min'
+            extra_args: '--blame-hang-timeout 4min'
 
           - name: E2E PoC
             project: src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj
@@ -196,7 +196,7 @@ jobs:
             artifact: e2e-poc
             needs_infra: true
             skip_build: true
-            extra_args: '--blame-hang-timeout 5min'
+            extra_args: '--blame-hang-timeout 4min'
 
     steps:
       - uses: actions/checkout@v4
