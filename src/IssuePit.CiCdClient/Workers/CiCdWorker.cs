@@ -43,6 +43,9 @@ public class CiCdWorker(
     // preventing false positives from user log output that happens to contain the same words.
     private const int MaxStepStartPrefixOffset = 5;
 
+    // Timeout (seconds) for a single git ls-remote call when checking branch availability.
+    private const int GitLsRemoteTimeoutSeconds = 10;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // On startup, mark any runs that were left in Running/Pending state as Failed.
@@ -272,32 +275,46 @@ public class CiCdWorker(
         if (!string.IsNullOrWhiteSpace(trigger.GitRepoUrl) &&
             string.IsNullOrWhiteSpace(trigger.GitAuthToken) && string.IsNullOrWhiteSpace(trigger.GitAuthUsername))
         {
-            var allRepos = await db.GitRepositories
-                .Where(r => r.ProjectId == trigger.ProjectId)
-                .ToListAsync(stoppingToken);
+            GitRepository? gitRepo = null;
 
-            // Prefer the explicitly-requested repo (by ID), then fall back to matching by URL,
-            // then to the first repo in the list.
-            var gitRepo = (trigger.GitRepoId.HasValue
-                    ? allRepos.FirstOrDefault(r => r.Id == trigger.GitRepoId.Value)
-                    : null)
-                ?? allRepos.FirstOrDefault(r => string.Equals(r.RemoteUrl, trigger.GitRepoUrl, StringComparison.OrdinalIgnoreCase))
-                ?? allRepos.FirstOrDefault();
-
-            // When multiple remotes are configured and a branch is specified, check which remote
-            // actually has the branch so the clone uses the correct URL. This mirrors the
-            // agent-run logic in IssueWorker.CheckBranchOnRemotesAsync.
-            if (allRepos.Count > 1 && !string.IsNullOrWhiteSpace(trigger.Branch))
+            // When a specific repo ID is in the payload, load only that repo — fast path.
+            if (trigger.GitRepoId.HasValue)
             {
-                var branch = StripOriginPrefixForClone(trigger.Branch);
-                var repoWithBranch = await FindRepoWithBranchAsync(allRepos, branch, stoppingToken);
-                if (repoWithBranch is not null && repoWithBranch.Id != gitRepo?.Id)
+                gitRepo = await db.GitRepositories
+                    .Where(r => r.Id == trigger.GitRepoId.Value && r.ProjectId == trigger.ProjectId)
+                    .FirstOrDefaultAsync(stoppingToken);
+                if (gitRepo is null)
+                    logger.LogWarning(
+                        "GitRepoId {GitRepoId} not found for project {ProjectId} — will check all remotes",
+                        trigger.GitRepoId.Value, trigger.ProjectId);
+            }
+
+            // No specific repo ID (or lookup failed): load all remotes and pick the right one.
+            if (gitRepo is null)
+            {
+                var allRepos = await db.GitRepositories
+                    .Where(r => r.ProjectId == trigger.ProjectId)
+                    .ToListAsync(stoppingToken);
+
+                // First try exact URL match, then take the first available repo.
+                gitRepo = allRepos.FirstOrDefault(r => string.Equals(r.RemoteUrl, trigger.GitRepoUrl, StringComparison.OrdinalIgnoreCase))
+                    ?? allRepos.FirstOrDefault();
+
+                // When multiple remotes are configured and a branch is specified, check which
+                // remote actually has the branch so the clone uses the correct URL. This mirrors
+                // the agent-run logic in IssueWorker.CheckBranchOnRemotesAsync.
+                if (allRepos.Count > 1 && !string.IsNullOrWhiteSpace(trigger.Branch))
                 {
-                    logger.LogInformation(
-                        "Branch '{Branch}' not found on primary remote '{PrimaryUrl}'; switching to '{FallbackUrl}'",
-                        branch, trigger.GitRepoUrl, repoWithBranch.RemoteUrl);
-                    gitRepo = repoWithBranch;
-                    trigger = trigger with { GitRepoUrl = repoWithBranch.RemoteUrl };
+                    var branch = StripOriginPrefixForClone(trigger.Branch);
+                    var repoWithBranch = await FindRepoWithBranchAsync(allRepos, branch, stoppingToken);
+                    if (repoWithBranch is not null && repoWithBranch.Id != gitRepo?.Id)
+                    {
+                        logger.LogInformation(
+                            "Branch '{Branch}' not found on primary remote '{PrimaryUrl}'; switching to '{FallbackUrl}'",
+                            branch, trigger.GitRepoUrl, repoWithBranch.RemoteUrl);
+                        gitRepo = repoWithBranch;
+                        trigger = trigger with { GitRepoUrl = repoWithBranch.RemoteUrl };
+                    }
                 }
             }
 
@@ -1464,7 +1481,7 @@ public class CiCdWorker(
         {
             var url = BuildAuthenticatedUrlForCheck(remoteUrl, authUsername, authToken);
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeoutCts.CancelAfter(TimeSpan.FromSeconds(10));
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(GitLsRemoteTimeoutSeconds));
 
             using var process = new System.Diagnostics.Process();
             process.StartInfo = new System.Diagnostics.ProcessStartInfo

@@ -822,10 +822,17 @@ public class CiCdRunsController(
         // Look up the remote URL from the linked git repository (if any).
         // When a specific GitRepoId is provided use that remote; otherwise fall back to the first.
         // The container clones the repo inside itself — no host workspace path is needed.
-        var repo = request.GitRepoId.HasValue
-            ? await db.GitRepositories.FirstOrDefaultAsync(r => r.Id == request.GitRepoId.Value && r.ProjectId == request.ProjectId)
-              ?? await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == request.ProjectId)
-            : await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == request.ProjectId);
+        GitRepository? repo;
+        if (request.GitRepoId.HasValue)
+        {
+            // Load all repos in one query and pick the requested one (falling back to first).
+            var allRepos = await db.GitRepositories.Where(r => r.ProjectId == request.ProjectId).ToListAsync();
+            repo = allRepos.FirstOrDefault(r => r.Id == request.GitRepoId.Value) ?? allRepos.FirstOrDefault();
+        }
+        else
+        {
+            repo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == request.ProjectId);
+        }
 
         // When only a branch is given (no commit SHA), resolve the branch tip SHA from the local
         // clone so the run record has a meaningful commit identifier. Fall back to the branch name
