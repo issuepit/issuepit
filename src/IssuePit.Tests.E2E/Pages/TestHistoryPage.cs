@@ -11,20 +11,22 @@ public class TestHistoryPage(IPage page)
         await page.GotoAsync($"/projects/{projectId}/runs/test-history");
 
     /// <summary>
-    /// Navigates directly to the Coverage tab URL and waits for coverage content to appear.
-    /// Prefer this over <see cref="GotoAsync"/> + <see cref="WaitForLoadAsync"/> +
-    /// <see cref="ClickCoverageTabAsync"/> because tab-click navigation triggers
-    /// <c>router.replace</c> which can restart the loading cycle and cause flakiness.
-    /// The page initialises <c>loading=true</c>, so "No coverage data yet" is only rendered
-    /// after the initial data fetch completes — making the wait below race-free.
+    /// Navigates to the Test History page, waits for the initial data load to complete,
+    /// then switches to the Coverage tab.
+    /// <para>
+    /// All tab data (runs, tests, coverage) is fetched in a single <c>reload()</c> call on
+    /// <c>onMounted</c>. Waiting for <see cref="WaitForLoadAsync"/> (which checks for the
+    /// Overview tab's "Total Tests" card) guarantees that <c>loading===false</c> and that
+    /// <c>coverageRuns</c> is already populated before the Coverage tab is activated.
+    /// This avoids the race between the direct <c>?tab=Coverage</c> URL navigation and the
+    /// Vue hydration / API cycle that caused 10–20 s timeouts under CI load.
+    /// </para>
     /// </summary>
     public async Task GotoCoverageAsync(string projectId)
     {
-        await page.GotoAsync($"/projects/{projectId}/runs/test-history?tab=Coverage");
-        // Use p:has-text to match only the summary-card <p> label, not the table column <th>.
-        // Use NavigationLong (20 s) to accommodate the Vue onMounted + API cycle under CI load.
-        await page.Locator("p:has-text('Line Coverage')").Or(page.Locator("text=No coverage data yet"))
-            .WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.NavigationLong });
+        await GotoAsync(projectId);
+        await WaitForLoadAsync();
+        await ClickCoverageTabAsync();
     }
 
     public async Task WaitForLoadAsync()
@@ -62,13 +64,17 @@ public class TestHistoryPage(IPage page)
     public ILocator AnalyticsTab => page.Locator("button:has-text('Analytics')");
 
     /// <summary>
-    /// Navigates directly to the Analytics tab URL and waits for its content to appear.
+    /// Navigates to the Test History page, waits for the initial data load to complete,
+    /// then switches to the Analytics tab.
+    /// <para>
+    /// See <see cref="GotoCoverageAsync"/> for the rationale — same loading pattern applies.
+    /// </para>
     /// </summary>
     public async Task GotoAnalyticsAsync(string projectId)
     {
-        await page.GotoAsync($"/projects/{projectId}/runs/test-history?tab=Analytics");
-        await page.Locator("text=Duration Analytics").Or(page.Locator("text=No analytics data yet"))
-            .WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.NavigationLong });
+        await GotoAsync(projectId);
+        await WaitForLoadAsync();
+        await ClickAnalyticsTabAsync();
     }
 
     /// <summary>Clicks the Analytics tab and waits for its content to appear.</summary>
