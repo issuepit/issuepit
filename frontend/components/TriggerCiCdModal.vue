@@ -96,6 +96,23 @@
           </div>
         </div>
 
+        <!-- Remote selector (shown when multiple remotes are configured) -->
+        <div v-if="repos && repos.length > 1">
+          <label class="block text-sm font-medium text-gray-300 mb-1">
+            Remote <span class="text-gray-500">(optional — auto-detect when left on Auto)</span>
+          </label>
+          <select v-model="selectedRemoteId"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+            <option value="">Auto (detect from branch)</option>
+            <option v-for="r in repos" :key="r.id" :value="r.id">
+              {{ remoteLabel(r) }}
+            </option>
+          </select>
+          <p v-if="selectedRemoteId" class="text-xs text-gray-500 mt-1">
+            Selected: <span class="text-gray-300 font-mono">{{ repos.find(r => r.id === selectedRemoteId)?.remoteUrl }}</span>
+          </p>
+        </div>
+
         <!-- Event type selector -->
         <div>
           <label class="block text-sm font-medium text-gray-300 mb-1">Event Type</label>
@@ -174,7 +191,7 @@
 </template>
 
 <script setup lang="ts">
-import type { WorkflowInfo, WorkflowInput } from '~/types'
+import type { WorkflowInfo, WorkflowInput, GitRepository } from '~/types'
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 
 interface TriggerConflictResponse { error?: string; canForce?: boolean; activeRunIds?: string[] }
@@ -184,6 +201,8 @@ const props = defineProps<{
   /** When provided, the SHA is shown as read-only; when empty the user must type it. */
   commitSha?: string
   branch?: string
+  /** List of git remotes configured for this project. Used to render the remote selector. */
+  repos?: GitRepository[]
 }>()
 
 const emit = defineEmits<{
@@ -223,6 +242,21 @@ const triggerError = ref<string | null>(null)
 const triggerConflict = ref<{ message: string; activeRunIds: string[] } | null>(null)
 const loadingWorkflows = ref(false)
 const workflows = ref<WorkflowInfo[]>([])
+
+// Remote selector: empty string = Auto (let server pick based on branch)
+const selectedRemoteId = ref<string>('')
+
+function remoteLabel(r: GitRepository): string {
+  // Show a short host/org/repo fragment followed by the mode in brackets
+  let host = r.remoteUrl
+  try {
+    const u = new URL(r.remoteUrl)
+    // e.g. "github.com/org/repo" → take last two path segments
+    const parts = u.pathname.replace(/^\//, '').replace(/\.git$/, '').split('/')
+    host = parts.length >= 2 ? parts.slice(-2).join('/') : u.hostname
+  } catch { /* keep raw URL on parse failure */ }
+  return `${host}  [${r.mode}]`
+}
 
 // Workflows that support the currently selected event (or all if none match)
 const filteredWorkflows = computed(() => {
@@ -296,6 +330,7 @@ async function triggerRun(forceWithActiveRunIds?: string[]) {
       inputs,
       customImage: import.meta.client ? (localStorage.getItem(ACT_CONTAINER_STORAGE_KEY) ?? undefined) : undefined,
       forceWithActiveRunIds,
+      gitRemoteId: selectedRemoteId.value || undefined,
     })
     emit('triggered')
   } catch (e: unknown) {

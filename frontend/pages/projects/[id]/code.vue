@@ -337,6 +337,7 @@
         :project-id="id"
         :commit-sha="triggerModal.commitSha"
         :branch="triggerModal.branch"
+        :repos="store.repos"
         @close="triggerModal.open = false"
         @triggered="onRunTriggered"
       />

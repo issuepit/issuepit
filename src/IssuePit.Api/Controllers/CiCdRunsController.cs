@@ -744,10 +744,11 @@ public class CiCdRunsController(
         }
 
         // Re-resolve the remote URL so the container can clone the latest state of the repo.
-        var retryRepo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == run.ProjectId);
-
-        // Determine effective branch and commit SHA, honouring caller overrides.
+        // Use the same branch-aware repo selection as TriggerRun: find the repo whose local clone
+        // contains the target branch rather than always picking the first one.
+        var allRetryRepos = await db.GitRepositories.Where(r => r.ProjectId == run.ProjectId).ToListAsync();
         var retryBranch = !string.IsNullOrWhiteSpace(options?.Branch) ? options.Branch : run.Branch;
+        var retryRepo = FindRepoForBranch(allRetryRepos, retryBranch, null, gitService);
         string retryCommitSha;
         if (!string.IsNullOrWhiteSpace(options?.CommitSha))
         {
@@ -821,7 +822,14 @@ public class CiCdRunsController(
 
         // Look up the remote URL from the linked git repository (if any).
         // The container clones the repo inside itself — no host workspace path is needed.
-        var repo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == request.ProjectId);
+        // When a GitRemoteId is specified, use that exact repo. Otherwise, check all repos for
+        // the project and select the one whose local clone contains the branch — this mirrors the
+        // behaviour of the agent runner (IssueWorker.CheckBranchOnRemotesAsync) and avoids the
+        // case where the first repo in the DB is picked even though the branch only exists on
+        // a different remote (e.g. the branch is on the ReadOnly origin but the first repo is
+        // the Working remote).
+        var allRepos = await db.GitRepositories.Where(r => r.ProjectId == request.ProjectId).ToListAsync();
+        var repo = FindRepoForBranch(allRepos, request.Branch, request.GitRemoteId, gitService);
 
         // When only a branch is given (no commit SHA), resolve the branch tip SHA from the local
         // clone so the run record has a meaningful commit identifier. Fall back to the branch name
@@ -936,6 +944,38 @@ public class CiCdRunsController(
         projectHub.Clients
             .Group(ProjectHub.ProjectGroup(run.ProjectId.ToString()))
             .SendAsync("RunsUpdated", new { runId = run.Id, status = run.Status, statusName = run.Status.ToString() });
+
+    /// <summary>
+    /// Selects the most appropriate git repository for the given branch.
+    /// When <paramref name="gitRemoteId"/> is set, returns that specific repo (or null if not found).
+    /// Otherwise checks all repos in order and returns the first whose local clone contains the branch.
+    /// Falls back to the first repo in the list when no local clone has the branch yet (e.g. brand-new branch).
+    /// </summary>
+    private static GitRepository? FindRepoForBranch(
+        IList<GitRepository> repos,
+        string? branch,
+        Guid? gitRemoteId,
+        GitService gitService)
+    {
+        if (repos.Count == 0)
+            return null;
+
+        if (gitRemoteId.HasValue)
+            return repos.FirstOrDefault(r => r.Id == gitRemoteId.Value);
+
+        if (string.IsNullOrWhiteSpace(branch))
+            return repos.FirstOrDefault();
+
+        // Strip the "origin/" remote-tracking prefix so GetBranchTipSha can match both
+        // "origin/copilot/my-branch" and "copilot/my-branch" in the local clone.
+        var cleanBranch = branch.StartsWith("origin/", StringComparison.OrdinalIgnoreCase)
+            ? branch["origin/".Length..]
+            : branch;
+
+        // Prefer a repo whose local clone already has the branch.
+        var match = repos.FirstOrDefault(r => gitService.GetBranchTipSha(r, cleanBranch) is not null);
+        return match ?? repos.FirstOrDefault();
+    }
 }
 
 /// <summary>Options body for the retry run endpoint.</summary>
@@ -1007,7 +1047,13 @@ public record TriggerRunRequest(
     /// proceeds even if those runs are still in progress. If any new active runs have appeared
     /// since the conflict was surfaced, a fresh 409 is returned.
     /// </summary>
-    IReadOnlyList<Guid>? ForceWithActiveRunIds = null);
+    IReadOnlyList<Guid>? ForceWithActiveRunIds = null,
+    /// <summary>
+    /// Optional ID of the specific git remote (repository) to clone from.
+    /// When set, overrides the automatic remote selection that checks which repo has the branch.
+    /// When null, the system picks the repo whose local clone contains the branch, falling back to the first repo.
+    /// </summary>
+    Guid? GitRemoteId = null);
 
 /// <summary>Conflict response returned when another run is already active for the project and the caller has not acknowledged all active run IDs.</summary>
 public record ActiveRunConflictResponse(

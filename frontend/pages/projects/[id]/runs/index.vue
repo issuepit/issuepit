@@ -325,6 +325,7 @@
       v-if="triggerModal.open"
       :project-id="id"
       :commit-sha="triggerModal.commitSha"
+      :repos="gitStore.repos"
       @close="triggerModal.open = false"
       @triggered="onRunTriggered"
     />
@@ -342,6 +343,7 @@
 <script setup lang="ts">
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useProjectsStore } from '~/stores/projects'
+import { useGitStore } from '~/stores/git'
 import { CiCdRunStatus, AgentSessionStatus, type CiCdRun, type AgentSession } from '~/types'
 import type { MultiSelectOption } from '~/components/MultiSelect.vue'
 import { formatIssueId } from '~/composables/useIssueFormat'
@@ -352,6 +354,7 @@ const id = route.params.id as string
 
 const store = useCiCdRunsStore()
 const projectsStore = useProjectsStore()
+const gitStore = useGitStore()
 const tabs = ['All Runs', 'CI/CD Runs', 'Agent Runs'] as const
 type TabName = typeof tabs[number]
 
@@ -487,6 +490,7 @@ async function refreshRunsDataSilent() {
 
 onMounted(async () => {
   projectsStore.fetchProject(id)
+  gitStore.fetchRepos(id)
   await refreshRunsData()
 
   // Connect to SignalR for live run updates
