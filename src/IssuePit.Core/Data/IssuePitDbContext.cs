@@ -85,6 +85,9 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<PinnedProject> PinnedProjects => Set<PinnedProject>();
     public DbSet<HetznerServer> HetznerServers => Set<HetznerServer>();
     public DbSet<HetznerServerRuntimeHistory> HetznerServerRuntimeHistories => Set<HetznerServerRuntimeHistory>();
+    public DbSet<KanbanAbGroup> KanbanAbGroups => Set<KanbanAbGroup>();
+    public DbSet<KanbanAbVariant> KanbanAbVariants => Set<KanbanAbVariant>();
+    public DbSet<KanbanOrchestratorSchedule> KanbanOrchestratorSchedules => Set<KanbanOrchestratorSchedule>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -350,5 +353,59 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
         modelBuilder.Entity<PinnedProject>()
             .HasIndex(pp => new { pp.UserId, pp.ProjectId })
             .IsUnique();
+
+        modelBuilder.Entity<KanbanColumn>()
+            .HasOne(c => c.DefaultAgent)
+            .WithMany()
+            .HasForeignKey(c => c.DefaultAgentId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<KanbanAbGroup>()
+            .HasOne(g => g.OriginalIssue)
+            .WithMany()
+            .HasForeignKey(g => g.OriginalIssueId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<KanbanAbGroup>()
+            .HasOne(g => g.ScoringAgent)
+            .WithMany()
+            .HasForeignKey(g => g.ScoringAgentId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<KanbanAbGroup>()
+            .HasOne(g => g.ScoringSession)
+            .WithMany()
+            .HasForeignKey(g => g.ScoringSessionId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<KanbanAbVariant>()
+            .HasOne(v => v.Issue)
+            .WithMany()
+            .HasForeignKey(v => v.IssueId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<KanbanAbVariant>()
+            .HasOne(v => v.Agent)
+            .WithMany()
+            .HasForeignKey(v => v.AgentId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<KanbanAbVariant>()
+            .HasOne(v => v.Session)
+            .WithMany()
+            .HasForeignKey(v => v.SessionId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<KanbanOrchestratorSchedule>()
+            .HasOne(s => s.Agent)
+            .WithMany()
+            .HasForeignKey(s => s.AgentId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<KanbanOrchestratorSchedule>()
+            .HasOne(s => s.LastSession)
+            .WithMany()
+            .HasForeignKey(s => s.LastSessionId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

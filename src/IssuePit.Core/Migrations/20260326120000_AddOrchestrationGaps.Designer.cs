@@ -3,6 +3,7 @@ using System;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace IssuePit.Core.Migrations
 {
     [DbContext(typeof(IssuePitDbContext))]
-    partial class IssuePitDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260326120000_AddOrchestrationGaps")]
+    partial class AddOrchestrationGaps
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -35,11 +38,6 @@ namespace IssuePit.Core.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("ConfigFieldSourcesJson")
-                        .HasMaxLength(10000)
-                        .HasColumnType("character varying(10000)")
-                        .HasColumnName("config_field_sources");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -47,10 +45,6 @@ namespace IssuePit.Core.Migrations
                         .HasColumnType("boolean");
 
                     b.Property<string>("DockerImage")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("DockerImageSourceFile")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
@@ -300,44 +294,6 @@ namespace IssuePit.Core.Migrations
                     b.ToTable("agent_session_logs");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.AgentSessionMessage", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("AgentIdOverride")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("AgentSessionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ModelOverride")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<DateTime?>("ProcessedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AgentIdOverride");
-
-                    b.HasIndex("AgentSessionId");
-
-                    b.ToTable("agent_session_messages");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.ApiKey", b =>
                 {
                     b.Property<Guid>("Id")
@@ -353,14 +309,6 @@ namespace IssuePit.Core.Migrations
 
                     b.Property<DateTime?>("ExpiresAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("JiraBaseUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("JiraEmail")
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -1843,13 +1791,20 @@ namespace IssuePit.Core.Migrations
                     b.Property<bool>("ImportComments")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("JiraBaseUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("JiraEmail")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
                     b.Property<string>("JiraProjectKey")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
-                    b.Property<string>("ParentIssueKeys")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
+                    b.Property<bool>("OnlyImportWithParent")
+                        .HasColumnType("boolean");
 
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uuid");
@@ -1924,84 +1879,6 @@ namespace IssuePit.Core.Migrations
                     b.ToTable("jira_sync_run_logs");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.KanbanAbGroup", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("BoardId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("OriginalIssueId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("ScoringAgentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("ScoringSessionId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BoardId");
-
-                    b.HasIndex("OriginalIssueId");
-
-                    b.HasIndex("ScoringAgentId");
-
-                    b.HasIndex("ScoringSessionId");
-
-                    b.ToTable("kanban_ab_groups");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.KanbanAbVariant", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("AgentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("GroupId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("IssueId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ModelOverride")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<int?>("Score")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("ScoreReason")
-                        .HasColumnType("text");
-
-                    b.Property<Guid?>("SessionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("VariantIndex")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AgentId");
-
-                    b.HasIndex("GroupId");
-
-                    b.HasIndex("IssueId");
-
-                    b.HasIndex("SessionId");
-
-                    b.ToTable("kanban_ab_variants");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.KanbanBoard", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2063,48 +1940,6 @@ namespace IssuePit.Core.Migrations
                     b.HasIndex("DefaultAgentId");
 
                     b.ToTable("kanban_columns");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.KanbanOrchestratorSchedule", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("AgentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("BoardId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("IntervalMinutes")
-                        .HasColumnType("integer");
-
-                    b.Property<bool>("IsEnabled")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("LastBoardStateHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<DateTime?>("LastRunAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("LastSessionId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AgentId");
-
-                    b.HasIndex("BoardId");
-
-                    b.HasIndex("LastSessionId");
-
-                    b.ToTable("kanban_orchestrator_schedules");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.KanbanTransition", b =>
@@ -3256,10 +3091,6 @@ namespace IssuePit.Core.Migrations
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("Theme")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
                     b.Property<string>("Username")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -3431,23 +3262,6 @@ namespace IssuePit.Core.Migrations
                         .HasForeignKey("AgentSessionId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("AgentSession");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.AgentSessionMessage", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Agent", "AgentOverride")
-                        .WithMany()
-                        .HasForeignKey("AgentIdOverride");
-
-                    b.HasOne("IssuePit.Core.Entities.AgentSession", "AgentSession")
-                        .WithMany("Messages")
-                        .HasForeignKey("AgentSessionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("AgentOverride");
 
                     b.Navigation("AgentSession");
                 });
@@ -4061,72 +3875,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("SyncRun");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.KanbanAbGroup", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.KanbanBoard", "Board")
-                        .WithMany()
-                        .HasForeignKey("BoardId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("IssuePit.Core.Entities.Issue", "OriginalIssue")
-                        .WithMany()
-                        .HasForeignKey("OriginalIssueId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("IssuePit.Core.Entities.Agent", "ScoringAgent")
-                        .WithMany()
-                        .HasForeignKey("ScoringAgentId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("IssuePit.Core.Entities.AgentSession", "ScoringSession")
-                        .WithMany()
-                        .HasForeignKey("ScoringSessionId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Board");
-
-                    b.Navigation("OriginalIssue");
-
-                    b.Navigation("ScoringAgent");
-
-                    b.Navigation("ScoringSession");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.KanbanAbVariant", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Agent", "Agent")
-                        .WithMany()
-                        .HasForeignKey("AgentId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("IssuePit.Core.Entities.KanbanAbGroup", "Group")
-                        .WithMany("Variants")
-                        .HasForeignKey("GroupId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("IssuePit.Core.Entities.Issue", "Issue")
-                        .WithMany()
-                        .HasForeignKey("IssueId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("IssuePit.Core.Entities.AgentSession", "Session")
-                        .WithMany()
-                        .HasForeignKey("SessionId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Agent");
-
-                    b.Navigation("Group");
-
-                    b.Navigation("Issue");
-
-                    b.Navigation("Session");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.KanbanBoard", b =>
                 {
                     b.HasOne("IssuePit.Core.Entities.Project", "Project")
@@ -4154,32 +3902,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("DefaultAgent");
 
                     b.Navigation("KanbanBoard");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.KanbanOrchestratorSchedule", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Agent", "Agent")
-                        .WithMany()
-                        .HasForeignKey("AgentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("IssuePit.Core.Entities.KanbanBoard", "Board")
-                        .WithMany()
-                        .HasForeignKey("BoardId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("IssuePit.Core.Entities.AgentSession", "LastSession")
-                        .WithMany()
-                        .HasForeignKey("LastSessionId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Agent");
-
-                    b.Navigation("Board");
-
-                    b.Navigation("LastSession");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.KanbanTransition", b =>
@@ -4664,8 +4386,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("CiCdRuns");
 
                     b.Navigation("Logs");
-
-                    b.Navigation("Messages");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.BranchDetectionRun", b =>
@@ -4719,11 +4439,6 @@ namespace IssuePit.Core.Migrations
             modelBuilder.Entity("IssuePit.Core.Entities.JiraSyncRun", b =>
                 {
                     b.Navigation("Logs");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.KanbanAbGroup", b =>
-                {
-                    b.Navigation("Variants");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.KanbanBoard", b =>

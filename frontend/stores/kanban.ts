@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { KanbanBoard, KanbanColumn, KanbanTransition, IssueStatus } from '~/types'
+import type { KanbanBoard, KanbanColumn, KanbanTransition, TransitionCheckResult, IssueStatus } from '~/types'
 
 export const useKanbanStore = defineStore('kanban', () => {
   const boards = ref<KanbanBoard[]>([])
@@ -74,11 +74,11 @@ export const useKanbanStore = defineStore('kanban', () => {
 
   // ── Columns ───────────────────────────────────────────────────────────────
 
-  async function addColumn(boardId: string, name: string, position: number, issueStatus: IssueStatus, laneValue?: string) {
+  async function addColumn(boardId: string, name: string, position: number, issueStatus: IssueStatus, laneValue?: string, defaultAgentId?: string | null) {
     loading.value = true
     error.value = null
     try {
-      const col = await api.post<KanbanColumn>(`/api/kanban/boards/${boardId}/columns`, { name, position, issueStatus, laneValue })
+      const col = await api.post<KanbanColumn>(`/api/kanban/boards/${boardId}/columns`, { name, position, issueStatus, laneValue, defaultAgentId })
       const board = boards.value.find(b => b.id === boardId)
       if (board) {
         board.columns.push(col)
@@ -93,11 +93,11 @@ export const useKanbanStore = defineStore('kanban', () => {
     }
   }
 
-  async function updateColumn(boardId: string, columnId: string, name: string, position: number, issueStatus: IssueStatus, laneValue?: string) {
+  async function updateColumn(boardId: string, columnId: string, name: string, position: number, issueStatus: IssueStatus, laneValue?: string, defaultAgentId?: string | null) {
     loading.value = true
     error.value = null
     try {
-      const col = await api.put<KanbanColumn>(`/api/kanban/boards/${boardId}/columns/${columnId}`, { name, position, issueStatus, laneValue })
+      const col = await api.put<KanbanColumn>(`/api/kanban/boards/${boardId}/columns/${columnId}`, { name, position, issueStatus, laneValue, defaultAgentId })
       const replaceInBoard = (b: KanbanBoard) => {
         const idx = b.columns.findIndex(c => c.id === columnId)
         if (idx !== -1) b.columns[idx] = col
@@ -218,6 +218,17 @@ export const useKanbanStore = defineStore('kanban', () => {
     }
   }
 
+  async function checkTransitions(boardId: string, issueId: string): Promise<TransitionCheckResult[]> {
+    try {
+      return await api.get<TransitionCheckResult[]>(
+        `/api/kanban/boards/${boardId}/transitions/check`,
+        { params: { issueId } },
+      )
+    } catch {
+      return []
+    }
+  }
+
   async function moveIssue(boardId: string, issueId: string, columnId: string, position?: number) {
     try {
       return await api.post<import('~/types').Issue>(`/api/kanban/boards/${boardId}/move-issue`, { issueId, columnId, position })
@@ -246,6 +257,7 @@ export const useKanbanStore = defineStore('kanban', () => {
     updateTransition,
     deleteTransition,
     triggerTransition,
+    checkTransitions,
     moveIssue,
   }
 })

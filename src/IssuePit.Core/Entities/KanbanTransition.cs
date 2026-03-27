@@ -42,4 +42,19 @@ public class KanbanTransition
     public Agent? Agent { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>When true, the issue must have at least one passing CI/CD run before this transition is allowed.</summary>
+    public bool RequireGreenCiCd { get; set; }
+
+    /// <summary>When true, the issue must have at least one code review comment before this transition is allowed.</summary>
+    public bool RequireCodeReview { get; set; }
+
+    /// <summary>When true, the issue must have a plan comment (a comment mentioning "plan:") before this transition is allowed.</summary>
+    public bool RequirePlanComment { get; set; }
+
+    /// <summary>When true, all issue tasks must be completed before this transition is allowed.</summary>
+    public bool RequireTasksDone { get; set; }
+
+    /// <summary>When true, all sub-issues must be in Done or Cancelled status before this transition is allowed.</summary>
+    public bool RequireSubIssuesDone { get; set; }
 }

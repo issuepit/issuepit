@@ -115,4 +115,16 @@ public class KanbanPage(IPage page)
             return false;
         }
     }
+
+    /// <summary>Navigates directly to the dedicated Manage Lanes page for the given project.</summary>
+    public async Task GotoManageLanesPageAsync(string projectId)
+    {
+        await page.GotoAsync($"/projects/{projectId}/kanban/lanes");
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        // Wait for the "Lanes" heading which lives inside <template v-else-if="activeBoardId">.
+        // That block only renders once fetchBoards() resolves AND onMounted sets activeBoardId,
+        // so its presence guarantees the full content (incl. Orchestrator Schedule) is rendered.
+        await page.WaitForSelectorAsync("h2:has-text('Lanes')",
+            new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
+    }
 }

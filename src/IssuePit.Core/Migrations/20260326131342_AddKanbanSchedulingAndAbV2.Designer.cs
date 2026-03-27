@@ -3,6 +3,7 @@ using System;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace IssuePit.Core.Migrations
 {
     [DbContext(typeof(IssuePitDbContext))]
-    partial class IssuePitDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260326131342_AddKanbanSchedulingAndAbV2")]
+    partial class AddKanbanSchedulingAndAbV2
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -35,11 +38,6 @@ namespace IssuePit.Core.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("ConfigFieldSourcesJson")
-                        .HasMaxLength(10000)
-                        .HasColumnType("character varying(10000)")
-                        .HasColumnName("config_field_sources");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -47,10 +45,6 @@ namespace IssuePit.Core.Migrations
                         .HasColumnType("boolean");
 
                     b.Property<string>("DockerImage")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("DockerImageSourceFile")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
@@ -300,44 +294,6 @@ namespace IssuePit.Core.Migrations
                     b.ToTable("agent_session_logs");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.AgentSessionMessage", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("AgentIdOverride")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("AgentSessionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ModelOverride")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<DateTime?>("ProcessedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AgentIdOverride");
-
-                    b.HasIndex("AgentSessionId");
-
-                    b.ToTable("agent_session_messages");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.ApiKey", b =>
                 {
                     b.Property<Guid>("Id")
@@ -353,14 +309,6 @@ namespace IssuePit.Core.Migrations
 
                     b.Property<DateTime?>("ExpiresAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("JiraBaseUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("JiraEmail")
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -1843,13 +1791,20 @@ namespace IssuePit.Core.Migrations
                     b.Property<bool>("ImportComments")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("JiraBaseUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("JiraEmail")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
                     b.Property<string>("JiraProjectKey")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
-                    b.Property<string>("ParentIssueKeys")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
+                    b.Property<bool>("OnlyImportWithParent")
+                        .HasColumnType("boolean");
 
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uuid");
@@ -3256,10 +3211,6 @@ namespace IssuePit.Core.Migrations
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("Theme")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
                     b.Property<string>("Username")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -3431,23 +3382,6 @@ namespace IssuePit.Core.Migrations
                         .HasForeignKey("AgentSessionId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("AgentSession");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.AgentSessionMessage", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Agent", "AgentOverride")
-                        .WithMany()
-                        .HasForeignKey("AgentIdOverride");
-
-                    b.HasOne("IssuePit.Core.Entities.AgentSession", "AgentSession")
-                        .WithMany("Messages")
-                        .HasForeignKey("AgentSessionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("AgentOverride");
 
                     b.Navigation("AgentSession");
                 });
@@ -4664,8 +4598,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("CiCdRuns");
 
                     b.Navigation("Logs");
-
-                    b.Navigation("Messages");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.BranchDetectionRun", b =>

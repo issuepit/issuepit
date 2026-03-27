@@ -203,4 +203,33 @@ public class IssueViewerTests : IAsyncLifetime
             await context.CloseAsync();
         }
     }
+
+    /// <summary>
+    /// The agent protection toggles ("Prevent agent move", "Hide from agents") are visible
+    /// on an issue detail page.
+    /// </summary>
+    [Fact]
+    public async Task IssueDetail_AgentProtectionToggles_AreVisible()
+    {
+        var (context, page, projectSlug, issueNumber) = await SetUpAsync();
+        try
+        {
+            await page.GotoAsync($"/projects/{projectSlug}/issues/{issueNumber}");
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForSelectorAsync("a:has-text('Viewer Test Issue')",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+
+            var detail = new IssueDetailPage(page);
+            Assert.True(await detail.IsAgentProtectionSectionVisibleAsync(),
+                "Agent Protection section should be visible in the issue sidebar");
+            Assert.True(await detail.IsPreventAgentMoveToggleVisibleAsync(),
+                "Prevent agent move toggle should be visible");
+            Assert.True(await detail.IsHideFromAgentsToggleVisibleAsync(),
+                "Hide from agents toggle should be visible");
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
 }

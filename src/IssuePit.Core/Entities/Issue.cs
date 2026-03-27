@@ -74,6 +74,25 @@ public class Issue
 
     public int KanbanRank { get; set; }
 
+    /// <summary>
+    /// When true, agents and MCP tools are not allowed to move this issue between kanban columns.
+    /// </summary>
+    public bool PreventAgentMove { get; set; }
+
+    /// <summary>
+    /// When true, this issue is hidden from agents and MCP tools (excluded from list/get results in agent context).
+    /// </summary>
+    public bool HideFromAgents { get; set; }
+
+    /// <summary>
+    /// Number of times the orchestrator has interacted with this issue (both moves and skips).
+    /// Incremented on every AI-driven orchestration action: each skip (<see cref="IssueEventType.KanbanOrchestrationSkipped"/>)
+    /// and each AI-triggered transition (<see cref="IssueEventType.KanbanMoved"/> via TriggerTransition).
+    /// Reset to 0 only on direct human moves (via the MoveIssue endpoint).
+    /// Used by the orchestration loop limiter to prevent the AI from cycling an issue between states indefinitely.
+    /// </summary>
+    public int OrchestrationAttempts { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
