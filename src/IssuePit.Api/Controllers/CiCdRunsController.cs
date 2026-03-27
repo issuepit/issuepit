@@ -821,7 +821,30 @@ public class CiCdRunsController(
 
         // Look up the remote URL from the linked git repository (if any).
         // The container clones the repo inside itself — no host workspace path is needed.
-        var repo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == request.ProjectId);
+        var allRepos = await db.GitRepositories
+            .Where(r => r.ProjectId == request.ProjectId)
+            .ToListAsync();
+
+        // Select which repository to clone from:
+        //   1. Caller explicitly specifies a GitRepositoryId → use that one.
+        //   2. Branch-only trigger with no explicit repo → check each local clone to find
+        //      which remote already tracks the branch (same logic as agent runs).
+        //   3. Fallback: first repository in the list (preserves previous behaviour).
+        GitRepository? repo;
+        if (request.GitRepositoryId.HasValue)
+        {
+            repo = allRepos.FirstOrDefault(r => r.Id == request.GitRepositoryId.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(request.Branch))
+        {
+            // Prefer the repo whose local clone already has the branch tracked.
+            repo = allRepos.FirstOrDefault(r => gitService.GetBranchTipSha(r, request.Branch) is not null)
+                   ?? allRepos.FirstOrDefault();
+        }
+        else
+        {
+            repo = allRepos.FirstOrDefault();
+        }
 
         // When only a branch is given (no commit SHA), resolve the branch tip SHA from the local
         // clone so the run record has a meaningful commit identifier. Fall back to the branch name
@@ -1007,7 +1030,13 @@ public record TriggerRunRequest(
     /// proceeds even if those runs are still in progress. If any new active runs have appeared
     /// since the conflict was surfaced, a fresh 409 is returned.
     /// </summary>
-    IReadOnlyList<Guid>? ForceWithActiveRunIds = null);
+    IReadOnlyList<Guid>? ForceWithActiveRunIds = null,
+    /// <summary>
+    /// Explicitly selects which linked git repository (remote) to clone from.
+    /// When <c>null</c> the backend auto-selects: for branch-only triggers it picks the remote
+    /// whose local clone already tracks the branch; otherwise it falls back to the first remote.
+    /// </summary>
+    Guid? GitRepositoryId = null);
 
 /// <summary>Conflict response returned when another run is already active for the project and the caller has not acknowledged all active run IDs.</summary>
 public record ActiveRunConflictResponse(
