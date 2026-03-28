@@ -24,7 +24,7 @@ public class CiCdRunPage(IPage page)
         catch (Exception ex) when (ex is TimeoutException || (ex is PlaywrightException pe && pe.Message.Contains("ERR_ABORTED")))
         {
             await Task.Delay(E2ETimeouts.RetryDelay);
-            await page.GotoAsync(url);
+            await page.GotoAsync(url, new PageGotoOptions { Timeout = E2ETimeouts.NavigationLong });
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
             await page.WaitForSelectorAsync("text=CI/CD Run",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
@@ -48,7 +48,7 @@ public class CiCdRunPage(IPage page)
         catch (Exception ex) when (ex is TimeoutException || (ex is PlaywrightException pe && pe.Message.Contains("ERR_ABORTED")))
         {
             await Task.Delay(E2ETimeouts.RetryDelay);
-            await page.GotoAsync(url);
+            await page.GotoAsync(url, new PageGotoOptions { Timeout = E2ETimeouts.NavigationLong });
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
             await page.WaitForSelectorAsync("text=CI/CD Run",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
@@ -72,7 +72,7 @@ public class CiCdRunPage(IPage page)
         catch (Exception ex) when (ex is TimeoutException || (ex is PlaywrightException pe && pe.Message.Contains("ERR_ABORTED")))
         {
             await Task.Delay(E2ETimeouts.RetryDelay);
-            await page.GotoAsync(url);
+            await page.GotoAsync(url, new PageGotoOptions { Timeout = E2ETimeouts.NavigationLong });
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
             await page.WaitForSelectorAsync("text=CI/CD Run",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
