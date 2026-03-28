@@ -7,38 +7,66 @@ namespace IssuePit.Tests.E2E.Pages;
 /// </summary>
 public class TestHistoryPage(IPage page)
 {
-    public async Task<IResponse?> GotoAsync(string projectId) =>
-        await page.GotoAsync($"/projects/{projectId}/runs/test-history");
+    /// <summary>
+    /// Core helper: navigates to <paramref name="url"/>, waits for NetworkIdle, then waits for
+    /// <paramref name="contentLocator"/> to be visible.  Retries once on ERR_ABORTED or
+    /// TimeoutException (Nuxt SPA router race).  Pass <c>null</c> for <paramref name="contentLocator"/>
+    /// to skip the content check on the first attempt (the retry always waits for the selector
+    /// via <paramref name="fallbackSelector"/> instead).
+    /// </summary>
+    private async Task NavigateAndWaitAsync(string url, ILocator? contentLocator, string fallbackSelector)
+    {
+        try
+        {
+            await page.GotoAsync(url);
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            if (contentLocator is not null)
+                await contentLocator.WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Short });
+            else
+                await page.WaitForSelectorAsync(fallbackSelector, new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (Exception ex) when (ex is TimeoutException || (ex is PlaywrightException pe && pe.Message.Contains("ERR_ABORTED")))
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.GotoAsync(url);
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            if (contentLocator is not null)
+                await contentLocator.WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Navigation });
+            else
+                await page.WaitForSelectorAsync(fallbackSelector, new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
+        }
+    }
 
     /// <summary>
-    /// Navigates to the Test History page, waits for the initial data load to complete,
-    /// then switches to the Coverage tab.
-    /// <para>
-    /// All tab data (runs, tests, coverage) is fetched in a single <c>reload()</c> call on
-    /// <c>onMounted</c>. Waiting for <see cref="WaitForLoadAsync"/> (which checks for the
-    /// Overview tab's "Total Tests" card) guarantees that <c>loading===false</c> and that
-    /// <c>coverageRuns</c> is already populated before the Coverage tab is activated.
-    /// This avoids the race between the direct <c>?tab=Coverage</c> URL navigation and the
-    /// Vue hydration / API cycle that caused 10–20 s timeouts under CI load.
-    /// </para>
+    /// Navigates to the Test History overview page, waits for NetworkIdle
+    /// (all onMounted API calls finished), then confirms the heading.
+    /// Retries once on ERR_ABORTED or TimeoutException (Nuxt SPA router race).
     /// </summary>
-    public async Task GotoCoverageAsync(string projectId)
+    public Task GotoAsync(string projectId) =>
+        NavigateAndWaitAsync($"/projects/{projectId}/runs/test-history", null, "text=Test History");
+
+    /// <summary>
+    /// Navigates directly to <c>?tab=Coverage</c>, waits for NetworkIdle
+    /// (all onMounted API calls finished), then waits for the coverage content.
+    /// Retries once on ERR_ABORTED or TimeoutException.
+    /// </summary>
+    public Task GotoCoverageAsync(string projectId)
     {
-        await GotoAsync(projectId);
-        await WaitForLoadAsync();
-        await ClickCoverageTabAsync();
+        var contentLocator = page.Locator("p:has-text('Line Coverage')").Or(page.Locator("text=No coverage data yet"));
+        return NavigateAndWaitAsync($"/projects/{projectId}/runs/test-history?tab=Coverage", contentLocator, "text=No coverage data yet");
     }
 
     public async Task WaitForLoadAsync()
     {
+        // NetworkIdle is set by GotoAsync above — any remaining spinner means Vue is still
+        // processing; wait for the heading and then for loading to finish.
         await page.WaitForSelectorAsync("text=Test History", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
-        // Wait for the Overview tab's "Total Tests" stat card to appear. This card only renders
-        // when loading===false and activeTab==='Overview' (the default). The page initialises
-        // loading=true so the spinner is always present on first render and the stat cards only
-        // appear after the initial data fetch completes.
-        // NavigationLong is used here because the page fetches three API endpoints in parallel
-        // (runs, tests, coverage) and under CI load this can exceed the default Navigation timeout.
-        await page.WaitForSelectorAsync("text=Total Tests", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.NavigationLong });
+        await page.Locator("[data-testid='test-history-loading']")
+            .WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Hidden,
+                Timeout = E2ETimeouts.Navigation,
+            });
     }
 
     /// <summary>Returns the heading element containing "Test History".</summary>
@@ -66,17 +94,14 @@ public class TestHistoryPage(IPage page)
     public ILocator AnalyticsTab => page.Locator("button:has-text('Analytics')");
 
     /// <summary>
-    /// Navigates to the Test History page, waits for the initial data load to complete,
-    /// then switches to the Analytics tab.
-    /// <para>
-    /// See <see cref="GotoCoverageAsync"/> for the rationale — same loading pattern applies.
-    /// </para>
+    /// Navigates directly to <c>?tab=Analytics</c>, waits for NetworkIdle
+    /// (all onMounted API calls finished), then waits for the analytics content.
+    /// Retries once on ERR_ABORTED or TimeoutException.
     /// </summary>
-    public async Task GotoAnalyticsAsync(string projectId)
+    public Task GotoAnalyticsAsync(string projectId)
     {
-        await GotoAsync(projectId);
-        await WaitForLoadAsync();
-        await ClickAnalyticsTabAsync();
+        var contentLocator = page.Locator("text=Duration Analytics").Or(page.Locator("text=No analytics data yet"));
+        return NavigateAndWaitAsync($"/projects/{projectId}/runs/test-history?tab=Analytics", contentLocator, "text=No analytics data yet");
     }
 
     /// <summary>Clicks the Analytics tab and waits for its content to appear.</summary>

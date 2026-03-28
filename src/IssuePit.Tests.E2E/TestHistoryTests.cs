@@ -40,11 +40,13 @@ public class TestHistoryTests : IAsyncLifetime
         _playwright?.Dispose();
     }
 
-    private HttpClient CreateCookieClient()
+    private (HttpClient Client, HttpClientHandler Handler) CreateCookieClientWithHandler()
     {
         var handler = new HttpClientHandler { CookieContainer = new System.Net.CookieContainer() };
-        return new HttpClient(handler) { BaseAddress = _fixture.ApiClient!.BaseAddress };
+        return (new HttpClient(handler) { BaseAddress = _fixture.ApiClient!.BaseAddress }, handler);
     }
+
+    private HttpClient CreateCookieClient() => CreateCookieClientWithHandler().Client;
 
     private async Task<string> GetDefaultTenantIdAsync()
     {
@@ -112,7 +114,7 @@ public class TestHistoryTests : IAsyncLifetime
     [Fact]
     public async Task Api_CoverageImport_StoresCoverageData()
     {
-        var (apiClient, projectId, _, _) = await SetupProjectAsync();
+        var (apiClient, _, projectId, _, _) = await SetupProjectAsync();
         using var _ = apiClient;
 
         // Import a Cobertura XML file.
@@ -148,7 +150,7 @@ public class TestHistoryTests : IAsyncLifetime
         if (FrontendUrl is null)
             throw new InvalidOperationException("FRONTEND_URL is not set. This test requires a running frontend.");
 
-        var (apiClient, projectId, username, password) = await SetupProjectAsync();
+        var (apiClient, handler, projectId, _, _) = await SetupProjectAsync();
         using var _ = apiClient;
 
         // Import coverage data so the Coverage tab has something to display.
@@ -156,13 +158,13 @@ public class TestHistoryTests : IAsyncLifetime
 
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
         context.SetDefaultTimeout(E2ETimeouts.Navigation);
+        // Pre-authenticate the browser context using the API session cookie — avoids the
+        // UI login form which can time out under CI load.
+        await LoginPage.InjectApiSessionCookiesAsync(context, handler, _fixture.ApiClient!.BaseAddress!);
         var page = await context.NewPageAsync();
 
         try
         {
-            await new LoginPage(page).LoginAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation, WaitUntil = WaitUntilState.Commit });
-
             var historyPage = new TestHistoryPage(page);
             // Navigate directly to the Coverage tab URL to avoid the router.replace() race that
             // occurs when clicking a tab after Overview has already loaded.
@@ -195,7 +197,7 @@ public class TestHistoryTests : IAsyncLifetime
         if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CICD_E2E_REPO_PATH")))
             throw new InvalidOperationException("CICD_E2E_REPO_PATH is not set. This test requires the Docker runtime with the dummy CI/CD repo.");
 
-        var (apiClient, projectId, _, _) = await SetupProjectAsync();
+        var (apiClient, _, projectId, _, _) = await SetupProjectAsync();
         using var _ = apiClient;
 
         // Trigger a CI/CD run using ci.yml which generates both TRX and coverage artifacts.
@@ -314,7 +316,7 @@ public class TestHistoryTests : IAsyncLifetime
     [Fact]
     public async Task Api_JUnitImport_StoresTestData()
     {
-        var (apiClient, projectId, _, _) = await SetupProjectAsync();
+        var (apiClient, _, projectId, _, _) = await SetupProjectAsync();
         using var _ = apiClient;
 
         // Import a JUnit XML file.
@@ -336,9 +338,9 @@ public class TestHistoryTests : IAsyncLifetime
     }
 
     
-    private async Task<(HttpClient client, string projectId, string username, string password)> SetupProjectAsync()
+    private async Task<(HttpClient client, HttpClientHandler handler, string projectId, string username, string password)> SetupProjectAsync()
     {
-        var client = CreateCookieClient();
+        var (client, handler) = CreateCookieClientWithHandler();
         var tenantId = await GetDefaultTenantIdAsync();
         client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
 
@@ -358,7 +360,7 @@ public class TestHistoryTests : IAsyncLifetime
         var project = await projResp.Content.ReadFromJsonAsync<JsonElement>();
         var projectId = project.GetProperty("id").GetString()!;
 
-        return (client, projectId, username, password);
+        return (client, handler, projectId, username, password);
     }
 
     /// <summary>
@@ -371,7 +373,7 @@ public class TestHistoryTests : IAsyncLifetime
         if (FrontendUrl is null)
             throw new InvalidOperationException("FRONTEND_URL is not set. This test requires a running frontend.");
 
-        var (apiClient, projectId, username, password) = await SetupProjectAsync();
+        var (apiClient, handler, projectId, _, _) = await SetupProjectAsync();
         using var _ = apiClient;
 
         // Seed test data by importing a TRX file.
@@ -386,13 +388,13 @@ public class TestHistoryTests : IAsyncLifetime
         // Open the browser and navigate to the run's Tests tab.
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
         context.SetDefaultTimeout(E2ETimeouts.Navigation);
+        // Pre-authenticate the browser context using the API session cookie — avoids the
+        // UI login form which can time out under CI load.
+        await LoginPage.InjectApiSessionCookiesAsync(context, handler, _fixture.ApiClient!.BaseAddress!);
         var page = await context.NewPageAsync();
 
         try
         {
-            await new LoginPage(page).LoginAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation, WaitUntil = WaitUntilState.Commit });
-
             var runPage = new CiCdRunPage(page);
             await runPage.GotoTestsTabAsync(projectId, runId);
 
@@ -412,17 +414,19 @@ public class TestHistoryTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Verifies that the project dashboard shows a Test History section with a link
-    /// to the test history page.
+    /// Verifies that the Tests tab shows the stats bar and collapsible/filter controls
+    /// when test results are available.
     /// </summary>
     [Fact]
-    public async Task Ui_ProjectDashboard_ShowsTestHistorySection()
+    public async Task Ui_CiCdRunTestsTab_ShowsStatsBarAndControls()
     {
         if (FrontendUrl is null)
             throw new InvalidOperationException("FRONTEND_URL is not set. This test requires a running frontend.");
 
-        var (apiClient, projectId, username, password) = await SetupProjectAsync();
+        var (apiClient, _, projectId, username, password) = await SetupProjectAsync();
         using var _ = apiClient;
+
+        var runId = await ImportTrxAsync(apiClient, projectId);
 
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
         context.SetDefaultTimeout(E2ETimeouts.Navigation);
@@ -433,6 +437,65 @@ public class TestHistoryTests : IAsyncLifetime
             await new LoginPage(page).LoginAsync(username, password);
             await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation, WaitUntil = WaitUntilState.Commit });
 
+            var runPage = new CiCdRunPage(page);
+            await runPage.GotoTestsTabAsync(projectId, runId);
+            await runPage.WaitForTestsTabContentAsync();
+
+            // Stats bar should be present with Total and Fail Rate labels.
+            await page.WaitForSelectorAsync("p:has-text('Total')", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+            await page.WaitForSelectorAsync("p:has-text('Fail Rate')", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+
+            // Collapse/Expand/Failed-only controls should be present.
+            Assert.True(await page.IsVisibleAsync("button:has-text('Collapse all')"), "Collapse all button should be visible");
+            Assert.True(await page.IsVisibleAsync("button:has-text('Expand all')"), "Expand all button should be visible");
+            Assert.True(await page.IsVisibleAsync("button:has-text('Failed only')"), "Failed only toggle should be visible");
+
+            // Collapsing all suites should hide test cases.
+            await runPage.ClickCollapseAllAsync();
+            // After collapse, individual test case rows should not be visible (only suite headers remain).
+            var testCaseRows = page.Locator("a[href*='test-history?tab=Tests']");
+            await page.WaitForFunctionAsync(
+                "document.querySelectorAll('a[href*=\"test-history?tab=Tests\"]').length === 0",
+                null,
+                new PageWaitForFunctionOptions { Timeout = E2ETimeouts.Default });
+            Assert.Equal(0, await testCaseRows.CountAsync());
+
+            // Expanding again should restore visibility.
+            await runPage.ClickExpandAllAsync();
+            await page.WaitForFunctionAsync(
+                "document.querySelectorAll('a[href*=\"test-history?tab=Tests\"]').length > 0",
+                null,
+                new PageWaitForFunctionOptions { Timeout = E2ETimeouts.Default });
+            Assert.True(await testCaseRows.CountAsync() > 0, "Test cases should be visible after expand all");
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
+
+    /// <summary>
+    /// Verifies that the project dashboard shows a Test History section with a link
+    /// to the test history page.
+    /// </summary>
+    [Fact]
+    public async Task Ui_ProjectDashboard_ShowsTestHistorySection()
+    {
+        if (FrontendUrl is null)
+            throw new InvalidOperationException("FRONTEND_URL is not set. This test requires a running frontend.");
+
+        var (apiClient, handler, projectId, _, _) = await SetupProjectAsync();
+        using var _ = apiClient;
+
+        var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
+        context.SetDefaultTimeout(E2ETimeouts.Navigation);
+        // Pre-authenticate the browser context using the API session cookie — avoids the
+        // UI login form which can time out under CI load.
+        await LoginPage.InjectApiSessionCookiesAsync(context, handler, _fixture.ApiClient!.BaseAddress!);
+        var page = await context.NewPageAsync();
+
+        try
+        {
             // Navigate to the project dashboard.
             await page.GotoAsync($"/projects/{projectId}");
 
@@ -464,7 +527,7 @@ public class TestHistoryTests : IAsyncLifetime
         if (FrontendUrl is null)
             throw new InvalidOperationException("FRONTEND_URL is not set. This test requires a running frontend.");
 
-        var (apiClient, projectId, username, password) = await SetupProjectAsync();
+        var (apiClient, handler, projectId, _, _) = await SetupProjectAsync();
         using var _ = apiClient;
 
         // Import a TRX to have data to display.
@@ -472,13 +535,13 @@ public class TestHistoryTests : IAsyncLifetime
 
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
         context.SetDefaultTimeout(E2ETimeouts.Navigation);
+        // Pre-authenticate the browser context using the API session cookie — avoids the
+        // UI login form which can time out under CI load.
+        await LoginPage.InjectApiSessionCookiesAsync(context, handler, _fixture.ApiClient!.BaseAddress!);
         var page = await context.NewPageAsync();
 
         try
         {
-            await new LoginPage(page).LoginAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation, WaitUntil = WaitUntilState.Commit });
-
             var historyPage = new TestHistoryPage(page);
             await historyPage.GotoAsync(projectId);
             await historyPage.WaitForLoadAsync();
@@ -512,7 +575,7 @@ public class TestHistoryTests : IAsyncLifetime
         if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CICD_E2E_REPO_PATH")))
             throw new InvalidOperationException("CICD_E2E_REPO_PATH is not set. This test requires the Docker runtime with the dummy CI/CD repo.");
 
-        var (apiClient, projectId, username, password) = await SetupProjectAsync();
+        var (apiClient, handler, projectId, _, _) = await SetupProjectAsync();
         using var _ = apiClient;
 
         // Trigger a CI/CD run using the Docker runtime with the TRX workflow.
@@ -550,13 +613,13 @@ public class TestHistoryTests : IAsyncLifetime
         // Open the browser and navigate to the run's Tests tab.
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
         context.SetDefaultTimeout(E2ETimeouts.Navigation);
+        // Pre-authenticate the browser context using the API session cookie — avoids the
+        // UI login form which can time out under CI load.
+        await LoginPage.InjectApiSessionCookiesAsync(context, handler, _fixture.ApiClient!.BaseAddress!);
         var page = await context.NewPageAsync();
 
         try
         {
-            await new LoginPage(page).LoginAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation, WaitUntil = WaitUntilState.Commit });
-
             var runPage = new CiCdRunPage(page);
 
             // Verify Tests tab shows the parsed TRX results.
@@ -603,7 +666,7 @@ public class TestHistoryTests : IAsyncLifetime
         if (FrontendUrl is null)
             throw new InvalidOperationException("FRONTEND_URL is not set. This test requires a running frontend.");
 
-        var (apiClient, projectId, username, password) = await SetupProjectAsync();
+        var (apiClient, handler, projectId, _, _) = await SetupProjectAsync();
         using var _ = apiClient;
 
         // Import a TRX file so the analytics tab has data to display.
@@ -611,13 +674,13 @@ public class TestHistoryTests : IAsyncLifetime
 
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
         context.SetDefaultTimeout(E2ETimeouts.Navigation);
+        // Pre-authenticate the browser context using the API session cookie — avoids the
+        // UI login form which can time out under CI load.
+        await LoginPage.InjectApiSessionCookiesAsync(context, handler, _fixture.ApiClient!.BaseAddress!);
         var page = await context.NewPageAsync();
 
         try
         {
-            await new LoginPage(page).LoginAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation, WaitUntil = WaitUntilState.Commit });
-
             var historyPage = new TestHistoryPage(page);
             await historyPage.GotoAnalyticsAsync(projectId);
 
