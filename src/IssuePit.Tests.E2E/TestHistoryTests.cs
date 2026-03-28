@@ -414,6 +414,67 @@ public class TestHistoryTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// Verifies that the Tests tab shows the stats bar and collapsible/filter controls
+    /// when test results are available.
+    /// </summary>
+    [Fact]
+    public async Task Ui_CiCdRunTestsTab_ShowsStatsBarAndControls()
+    {
+        if (FrontendUrl is null)
+            throw new InvalidOperationException("FRONTEND_URL is not set. This test requires a running frontend.");
+
+        var (apiClient, projectId, username, password) = await SetupProjectAsync();
+        using var _ = apiClient;
+
+        var runId = await ImportTrxAsync(apiClient, projectId);
+
+        var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
+        context.SetDefaultTimeout(E2ETimeouts.Navigation);
+        var page = await context.NewPageAsync();
+
+        try
+        {
+            await new LoginPage(page).LoginAsync(username, password);
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation, WaitUntil = WaitUntilState.Commit });
+
+            var runPage = new CiCdRunPage(page);
+            await runPage.GotoTestsTabAsync(projectId, runId);
+            await runPage.WaitForTestsTabContentAsync();
+
+            // Stats bar should be present with Total and Fail Rate labels.
+            await page.WaitForSelectorAsync("p:has-text('Total')", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+            await page.WaitForSelectorAsync("p:has-text('Fail Rate')", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+
+            // Collapse/Expand/Failed-only controls should be present.
+            Assert.True(await page.IsVisibleAsync("button:has-text('Collapse all')"), "Collapse all button should be visible");
+            Assert.True(await page.IsVisibleAsync("button:has-text('Expand all')"), "Expand all button should be visible");
+            Assert.True(await page.IsVisibleAsync("button:has-text('Failed only')"), "Failed only toggle should be visible");
+
+            // Collapsing all suites should hide test cases.
+            await runPage.ClickCollapseAllAsync();
+            // After collapse, individual test case rows should not be visible (only suite headers remain).
+            var testCaseRows = page.Locator("a[href*='test-history?tab=Tests']");
+            await page.WaitForFunctionAsync(
+                "document.querySelectorAll('a[href*=\"test-history?tab=Tests\"]').length === 0",
+                null,
+                new PageWaitForFunctionOptions { Timeout = E2ETimeouts.Default });
+            Assert.Equal(0, await testCaseRows.CountAsync());
+
+            // Expanding again should restore visibility.
+            await runPage.ClickExpandAllAsync();
+            await page.WaitForFunctionAsync(
+                "document.querySelectorAll('a[href*=\"test-history?tab=Tests\"]').length > 0",
+                null,
+                new PageWaitForFunctionOptions { Timeout = E2ETimeouts.Default });
+            Assert.True(await testCaseRows.CountAsync() > 0, "Test cases should be visible after expand all");
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
+
+    /// <summary>
     /// Verifies that the project dashboard shows a Test History section with a link
     /// to the test history page.
     /// </summary>
