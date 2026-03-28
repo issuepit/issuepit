@@ -57,4 +57,41 @@ public class LoginPage(IPage page)
         await page.FillAsync("input[autocomplete='current-password']", password);
         await page.ClickAsync("button[type='submit']");
     }
+
+    /// <summary>
+    /// Injects the API session cookies from the given <paramref name="handler"/>'s cookie container
+    /// into <paramref name="context"/>, pre-authenticating the browser without going through the
+    /// login form. This is faster and more reliable than form-based login for tests that are not
+    /// specifically testing the login flow.
+    /// </summary>
+    /// <remarks>
+    /// Because HTTP cookies are port-agnostic, a session cookie obtained from the API server
+    /// (e.g. <c>http://localhost:5000</c>) is automatically forwarded by the browser to the
+    /// frontend server (e.g. <c>http://localhost:3000</c>), which in turn forwards it to the API
+    /// via <c>useRequestHeaders(['cookie'])</c> in the Nuxt SSR middleware. This means navigating
+    /// to any protected frontend page will succeed without an explicit login step.
+    /// </remarks>
+    public static async Task InjectApiSessionCookiesAsync(
+        IBrowserContext context, HttpClientHandler handler, Uri apiBaseUri)
+    {
+        // Use Domain + Path (not Url) so Playwright receives a valid CDP cookie:
+        // Url is converted to domain+path internally and an empty Path causes
+        // the "Cookie should have either url or path" validation error.
+        var cookies = handler.CookieContainer
+            .GetCookies(apiBaseUri)
+            .Cast<System.Net.Cookie>()
+            .Select(c => new Microsoft.Playwright.Cookie
+            {
+                Name = c.Name,
+                Value = c.Value,
+                Domain = apiBaseUri.Host,
+                Path = string.IsNullOrEmpty(c.Path) ? "/" : c.Path,
+                HttpOnly = c.HttpOnly,
+                Secure = c.Secure,
+            })
+            .ToList();
+
+        if (cookies.Count > 0)
+            await context.AddCookiesAsync(cookies);
+    }
 }

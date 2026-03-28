@@ -272,7 +272,10 @@ public class HappyPathTests : IAsyncLifetime
     public async Task Ui_HappyPath_CreateTeamAndAddMemberWithRole()
     {
         var tenantId = await GetDefaultTenantIdAsync();
-        using var apiClient = CreateCookieClient();
+
+        // Register owner via API and keep hold of the handler to extract the session cookie.
+        var handler = new HttpClientHandler { CookieContainer = new CookieContainer() };
+        using var apiClient = new HttpClient(handler) { BaseAddress = _fixture.ApiClient!.BaseAddress };
         apiClient.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
 
         // Register owner
@@ -294,14 +297,14 @@ public class HappyPathTests : IAsyncLifetime
 
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
         context.SetDefaultTimeout(E2ETimeouts.Default);
+
+        // Pre-authenticate the browser context using the API session cookie — avoids the
+        // UI login form which can time out under CI load.
+        await LoginPage.InjectApiSessionCookiesAsync(context, handler, _fixture.ApiClient!.BaseAddress!);
         var page = await context.NewPageAsync();
 
         try
         {
-            // Log in as owner
-            await new LoginPage(page).LoginAsync(ownerUsername, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
-
             // Navigate to the org via the orgs list to avoid SSR hydration race conditions
             var orgsPage = new OrgsPage(page);
             await orgsPage.GotoAsync();
@@ -400,7 +403,10 @@ public class HappyPathTests : IAsyncLifetime
     public async Task Ui_HappyPath_CreateMilestone()
     {
         var tenantId = await GetDefaultTenantIdAsync();
-        using var apiClient = CreateCookieClient();
+
+        // Register user via API and keep hold of the handler to extract the session cookie.
+        var handler = new HttpClientHandler { CookieContainer = new CookieContainer() };
+        using var apiClient = new HttpClient(handler) { BaseAddress = _fixture.ApiClient!.BaseAddress };
         apiClient.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
 
         var username = $"ui{Guid.NewGuid():N}"[..12];
@@ -420,14 +426,14 @@ public class HappyPathTests : IAsyncLifetime
 
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
         context.SetDefaultTimeout(E2ETimeouts.Default);
+
+        // Pre-authenticate the browser context using the API session cookie — avoids the
+        // UI login form which can time out under CI load.
+        await LoginPage.InjectApiSessionCookiesAsync(context, handler, _fixture.ApiClient!.BaseAddress!);
         var page = await context.NewPageAsync();
 
         try
         {
-            // Log in
-            await new LoginPage(page).LoginAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
-
             // Navigate to milestones page and create a milestone
             var milestonesPage = new MilestonesPage(page);
             await milestonesPage.GotoAsync(projectId);
@@ -447,7 +453,10 @@ public class HappyPathTests : IAsyncLifetime
     public async Task Ui_HappyPath_MilestoneRowNavigatesToDetail()
     {
         var tenantId = await GetDefaultTenantIdAsync();
-        using var apiClient = CreateCookieClient();
+
+        // Register user via API and keep hold of the handler to extract the session cookie.
+        var handler = new HttpClientHandler { CookieContainer = new CookieContainer() };
+        using var apiClient = new HttpClient(handler) { BaseAddress = _fixture.ApiClient!.BaseAddress };
         apiClient.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
 
         var username = $"ui{Guid.NewGuid():N}"[..12];
@@ -475,14 +484,14 @@ public class HappyPathTests : IAsyncLifetime
 
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
         context.SetDefaultTimeout(E2ETimeouts.Navigation);
+
+        // Pre-authenticate the browser context using the API session cookie — avoids the
+        // UI login form which can time out under CI load.
+        await LoginPage.InjectApiSessionCookiesAsync(context, handler, _fixture.ApiClient!.BaseAddress!);
         var page = await context.NewPageAsync();
 
         try
         {
-            // Log in
-            await new LoginPage(page).LoginAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
-
             // Navigate to milestones list and click the milestone row
             var milestonesPage = new MilestonesPage(page);
             await milestonesPage.GotoAsync(projectId);
@@ -506,7 +515,10 @@ public class HappyPathTests : IAsyncLifetime
     public async Task Ui_HappyPath_GanttBarNavigatesToDetail()
     {
         var tenantId = await GetDefaultTenantIdAsync();
-        using var apiClient = CreateCookieClient();
+
+        // Register user via API and keep hold of the handler to extract the session cookie.
+        var handler = new HttpClientHandler { CookieContainer = new CookieContainer() };
+        using var apiClient = new HttpClient(handler) { BaseAddress = _fixture.ApiClient!.BaseAddress };
         apiClient.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
 
         var username = $"ui{Guid.NewGuid():N}"[..12];
@@ -534,13 +546,14 @@ public class HappyPathTests : IAsyncLifetime
 
         var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
         context.SetDefaultTimeout(E2ETimeouts.Navigation);
+
+        // Pre-authenticate the browser context using the API session cookie — avoids the
+        // UI login form which can time out under CI load.
+        await LoginPage.InjectApiSessionCookiesAsync(context, handler, _fixture.ApiClient!.BaseAddress!);
         var page = await context.NewPageAsync();
 
         try
         {
-            await new LoginPage(page).LoginAsync(username, password);
-            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
-
             var milestonesPage = new MilestonesPage(page);
             await milestonesPage.GotoAsync(projectId);
 
