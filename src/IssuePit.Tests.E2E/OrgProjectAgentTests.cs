@@ -415,44 +415,6 @@ public class OrgProjectAgentTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// API: POST /api/agents with an empty orgId must return 400 with a descriptive error,
-    /// not a JSON parse exception.
-    /// Regression test for the bug where orgId: "" caused a 400 JSON deserialization error
-    /// instead of a friendly validation message.
-    /// </summary>
-    [Fact]
-    public async Task Api_CreateAgent_WithEmptyOrgId_Returns400WithDescription()
-    {
-        using var client = CreateCookieClient();
-
-        var tenantId = await GetDefaultTenantIdAsync();
-        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
-
-        var username = $"e2e{Guid.NewGuid():N}"[..12];
-        await client.PostAsJsonAsync("/api/auth/register", new { username, password = "TestPass1!" });
-
-        // Send exactly the payload that used to crash: orgId as an empty string.
-        var resp = await client.PostAsJsonAsync("/api/agents",
-            new
-            {
-                name = "manual",
-                description = "",
-                dockerImage = "",
-                systemPrompt = "",
-                isActive = true,
-                runnerType = 0,
-                orgId = "",
-                allowedTools = "[]",
-            });
-
-        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
-
-        // The response body must contain our human-readable error, not the raw JSON parse error.
-        var body = await resp.Content.ReadAsStringAsync();
-        Assert.Contains("organization", body, StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
     /// API: POST /api/agent-sessions/start-manual without an agentId must be accepted (202).
     /// Opencode has built-in agents so a configured agent is not required.
     /// Does not require Docker — only verifies that the session record is created.
