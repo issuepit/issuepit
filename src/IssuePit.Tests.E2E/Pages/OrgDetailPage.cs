@@ -14,10 +14,21 @@ public class OrgDetailPage(IPage page)
     public async Task CreateTeamAsync(string teamName)
     {
         await page.ClickAsync("button:has-text('New Team')");
-        // Wait for the modal to fully open before interacting — prevents a race with Vue hydration
-        // where the click is processed before the form is rendered.
-        await page.WaitForSelectorAsync("input[placeholder='Engineering']",
-            new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        // Wait for the modal to fully open before interacting. Retry once if the modal did not open —
+        // this can happen due to a Vue hydration race where the click is swallowed before the
+        // @click handler is attached (same pattern as OrgsPage.CreateOrgAndNavigateAsync).
+        try
+        {
+            await page.WaitForSelectorAsync("input[placeholder='Engineering']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (TimeoutException)
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.ClickAsync("button:has-text('New Team')");
+            await page.WaitForSelectorAsync("input[placeholder='Engineering']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
+        }
         await page.FillAsync("input[placeholder='Engineering']", teamName);
         // Use a text-specific selector to avoid matching "Save Runner Options" (another submit button
         // on the same page that is blocked by the modal backdrop and would cause a click timeout).
