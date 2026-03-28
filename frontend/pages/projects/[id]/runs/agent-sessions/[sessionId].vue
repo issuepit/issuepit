@@ -420,7 +420,7 @@
                   <div v-for="log in selectedStepLogs" :key="log.id" class="flex gap-3 leading-5">
                     <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
                     <!-- eslint-disable-next-line vue/no-v-html -->
-                    <span :class="[isOpenCodeStats(log.line) ? 'text-gray-300' : (log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'), wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
+                    <span :class="[isOpenCodeStats(log.line) || isOpenCodeStepFinish(log.line) ? 'text-gray-300' : (log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'), wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
                   </div>
                 </div>
                 <div v-else class="text-gray-500 text-center py-4">{{ logSearchQuery ? 'No matching log lines' : 'No logs for this step' }}</div>
@@ -446,11 +446,49 @@
                   <span class="flex-1 border-t border-gray-800" />
                 </div>
                 <template v-if="!collapsedSections.has(group.key)">
-                  <div v-for="log in group.logs.filter(l => !logSearchQuery.trim() || stripAnsiCodes(l.line).toLowerCase().includes(logSearchQuery.toLowerCase()))" :key="log.id" class="flex gap-3 leading-5">
-                    <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
-                    <!-- eslint-disable-next-line vue/no-v-html -->
-                    <span :class="[isOpenCodeStats(log.line) ? 'text-gray-300' : (log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'), wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
-                  </div>
+                  <!-- Sub-group by opencode steps when step markers are present -->
+                  <template v-if="buildOpenCodeSteps(group.key, group.logs).steps.length">
+                    <!-- Preamble lines before first opencode step -->
+                    <div
+                      v-for="log in buildOpenCodeSteps(group.key, group.logs).preamble.filter(l => !logSearchQuery.trim() || stripAnsiCodes(l.line).toLowerCase().includes(logSearchQuery.toLowerCase()))"
+                      :key="log.id"
+                      class="flex gap-3 leading-5">
+                      <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
+                      <!-- eslint-disable-next-line vue/no-v-html -->
+                      <span :class="[isOpenCodeStats(log.line) || isOpenCodeStepFinish(log.line) ? 'text-gray-300' : (log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'), wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
+                    </div>
+                    <!-- Collapsible opencode step sub-groups -->
+                    <template v-for="step in buildOpenCodeSteps(group.key, group.logs).steps" :key="step.key">
+                      <div
+                        class="flex items-center gap-1.5 my-0.5 ml-2 select-none cursor-pointer"
+                        @click="toggleOpenCodeStep(step.key)">
+                        <span class="text-gray-700 text-[10px] transition-transform" :class="collapsedOpenCodeSteps.has(step.key) ? '' : 'rotate-90'">▶</span>
+                        <span class="text-[10px] text-gray-600 hover:text-gray-400 transition-colors">{{ openCodeStepLabel(step) }}</span>
+                        <span v-if="step.finishLine" class="text-[10px] text-gray-700">
+                          <!-- eslint-disable-next-line vue/no-v-html -->
+                          <span v-html="renderLogLine(step.finishLine.line)" />
+                        </span>
+                      </div>
+                      <template v-if="!collapsedOpenCodeSteps.has(step.key)">
+                        <div
+                          v-for="log in step.lines.filter(l => !logSearchQuery.trim() || stripAnsiCodes(l.line).toLowerCase().includes(logSearchQuery.toLowerCase()))"
+                          :key="log.id"
+                          class="flex gap-3 leading-5 ml-4">
+                          <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
+                          <!-- eslint-disable-next-line vue/no-v-html -->
+                          <span :class="[log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300', wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
+                        </div>
+                      </template>
+                    </template>
+                  </template>
+                  <!-- Flat lines within the section when no opencode step markers are present -->
+                  <template v-else>
+                    <div v-for="log in group.logs.filter(l => !logSearchQuery.trim() || stripAnsiCodes(l.line).toLowerCase().includes(logSearchQuery.toLowerCase()))" :key="log.id" class="flex gap-3 leading-5">
+                      <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
+                      <!-- eslint-disable-next-line vue/no-v-html -->
+                      <span :class="[isOpenCodeStats(log.line) || isOpenCodeStepFinish(log.line) ? 'text-gray-300' : (log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'), wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
+                    </div>
+                  </template>
                 </template>
               </template>
             </template>
@@ -459,7 +497,7 @@
               <div v-for="log in filteredLogs" :key="log.id" class="flex gap-3 leading-5">
                 <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
                 <!-- eslint-disable-next-line vue/no-v-html -->
-                <span :class="[isOpenCodeStats(log.line) ? 'text-gray-300' : (log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'), wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
+                <span :class="[isOpenCodeStats(log.line) || isOpenCodeStepFinish(log.line) ? 'text-gray-300' : (log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'), wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
               </div>
             </template>
           </div>
@@ -688,6 +726,15 @@ const { prefs } = useUserPreferences()
 /** Prefix used by the backend to mark opencode session stats lines (see OpenCodeJsonLogParser.cs). */
 const OPENCODE_STATS_PREFIX = '[opencode:stats] '
 
+/** Marker used by the backend to identify an opencode step-start line. */
+const OPENCODE_STEP_START_MARKER = '[opencode:step-start]'
+
+/** Prefix used by the backend to mark opencode step-finish stats lines. */
+const OPENCODE_STEP_FINISH_PREFIX = '[opencode:step-finish] '
+
+/** Section prefix prepended to log lines from CI/CD fix runs. */
+const FIX_PREFIX = '[fix] '
+
 interface OpenCodeStats {
   inputTokens?: number | null
   outputTokens?: number | null
@@ -697,15 +744,53 @@ interface OpenCodeStats {
   model?: string | null
 }
 
+interface OpenCodeStepStats {
+  inputTokens?: number | null
+  outputTokens?: number | null
+  cacheReadTokens?: number | null
+  cacheWriteTokens?: number | null
+  cost?: number | null
+}
+
+/**
+ * Strips the optional `[fix] ` section prefix that the backend prepends to lines emitted
+ * during CI/CD fix runs, returning the raw payload for marker detection and parsing.
+ */
+function stripSectionPrefix(line: string): string {
+  return line.startsWith(FIX_PREFIX) ? line.slice(FIX_PREFIX.length) : line
+}
+
 /** Returns true when the log line carries opencode session stats. */
 function isOpenCodeStats(line: string): boolean {
-  return line.startsWith(OPENCODE_STATS_PREFIX)
+  return stripSectionPrefix(line).startsWith(OPENCODE_STATS_PREFIX)
 }
 
 /** Parses the JSON payload from an opencode stats log line. Returns null when parsing fails. */
 function parseOpenCodeStats(line: string): OpenCodeStats | null {
   try {
-    return JSON.parse(line.slice(OPENCODE_STATS_PREFIX.length)) as OpenCodeStats
+    const payload = stripSectionPrefix(line)
+    return JSON.parse(payload.slice(OPENCODE_STATS_PREFIX.length)) as OpenCodeStats
+  }
+  catch {
+    return null
+  }
+}
+
+/** Returns true when the log line is an opencode step-start marker. */
+function isOpenCodeStepStart(line: string): boolean {
+  return stripSectionPrefix(line) === OPENCODE_STEP_START_MARKER
+}
+
+/** Returns true when the log line carries opencode step-finish stats. */
+function isOpenCodeStepFinish(line: string): boolean {
+  return stripSectionPrefix(line).startsWith(OPENCODE_STEP_FINISH_PREFIX)
+}
+
+/** Parses the JSON payload from an opencode step-finish stats line. Returns null when parsing fails. */
+function parseOpenCodeStepStats(line: string): OpenCodeStepStats | null {
+  try {
+    const payload = stripSectionPrefix(line)
+    return JSON.parse(payload.slice(OPENCODE_STEP_FINISH_PREFIX.length)) as OpenCodeStepStats
   }
   catch {
     return null
@@ -731,11 +816,34 @@ function renderOpenCodeStatsHtml(stats: OpenCodeStats): string {
   return `${badge}${parts.join('<span class="text-gray-700 mx-1.5">·</span>')}`
 }
 
+/** Renders an opencode step-finish stats payload as a compact inline stats badge. */
+function renderOpenCodeStepFinishHtml(stats: OpenCodeStepStats): string {
+  const parts: string[] = []
+  if (stats.inputTokens != null)
+    parts.push(`<span class="text-gray-500">in:</span> <span class="text-gray-400">${stats.inputTokens.toLocaleString()}</span>`)
+  if (stats.outputTokens != null)
+    parts.push(`<span class="text-gray-500">out:</span> <span class="text-gray-400">${stats.outputTokens.toLocaleString()}</span>`)
+  const cacheTokens = (stats.cacheReadTokens ?? 0) + (stats.cacheWriteTokens ?? 0)
+  if (cacheTokens > 0)
+    parts.push(`<span class="text-gray-500">cached:</span> <span class="text-blue-400">${cacheTokens.toLocaleString()}</span>`)
+  if (stats.cost != null && stats.cost > 0)
+    parts.push(`<span class="text-gray-500">cost:</span> <span class="text-yellow-400">$${stats.cost.toFixed(4)}</span>`)
+
+  const dot = '<span class="text-gray-700 mx-1">·</span>'
+  return `<span class="text-gray-600 mr-1.5">step</span>${parts.join(dot)}`
+}
+
 function renderLogLine(line: string, highlight?: string): string {
   // Render opencode session stats as a styled summary instead of raw text.
   if (isOpenCodeStats(line)) {
     const stats = parseOpenCodeStats(line)
     return stats ? renderOpenCodeStatsHtml(stats) : line
+  }
+
+  // Render opencode step-finish stats as a compact inline badge.
+  if (isOpenCodeStepFinish(line)) {
+    const stats = parseOpenCodeStepStats(line)
+    return stats ? renderOpenCodeStepFinishHtml(stats) : line
   }
 
   let html = prefs.value.ansiColors ? parseAnsiToHtml(line) : stripAnsiCodes(line)
@@ -791,6 +899,8 @@ const filteredLogs = computed(() => {
     logs = logs.filter(l => l.stream === activeStream.value)
   if (!verboseLogs.value)
     logs = logs.filter(l => !DNSMASQ_RE.test(l.line) && !CMD_RE.test(l.line))
+  // Hide opencode step-start markers from the flat log view; they are used only for sub-grouping.
+  logs = logs.filter(l => !isOpenCodeStepStart(l.line))
   if (logSearchQuery.value.trim())
     logs = logs.filter(l => stripAnsiCodes(l.line).toLowerCase().includes(logSearchQuery.value.toLowerCase()))
   return logs
@@ -927,6 +1037,73 @@ const collapsedSections = ref(new Set<string>())
 function toggleSection(key: string) {
   if (collapsedSections.value.has(key)) collapsedSections.value.delete(key)
   else collapsedSections.value.add(key)
+}
+
+/** Tracks which opencode sub-steps (within a section) are collapsed. Key: `${sectionKey}:step${stepIndex}`. */
+const collapsedOpenCodeSteps = ref(new Set<string>())
+
+function toggleOpenCodeStep(key: string) {
+  if (collapsedOpenCodeSteps.value.has(key)) collapsedOpenCodeSteps.value.delete(key)
+  else collapsedOpenCodeSteps.value.add(key)
+}
+
+/** A group of log lines belonging to a single opencode step (between step-start and step-finish). */
+interface OpenCodeStepSubGroup {
+  key: string
+  stepIndex: number
+  lines: AgentSessionLog[]
+  finishLine?: AgentSessionLog
+}
+
+/**
+ * Splits a section's log lines into opencode step sub-groups and a preamble (lines before the first
+ * step-start marker). When no step markers are found the preamble contains all lines and steps is empty.
+ */
+function buildOpenCodeSteps(sectionKey: string, logs: AgentSessionLog[]): {
+  preamble: AgentSessionLog[]
+  steps: OpenCodeStepSubGroup[]
+} {
+  const preamble: AgentSessionLog[] = []
+  const steps: OpenCodeStepSubGroup[] = []
+  let currentStep: OpenCodeStepSubGroup | null = null
+  let stepIndex = 0
+
+  for (const log of logs) {
+    if (isOpenCodeStepStart(log.line)) {
+      // Close any open step first
+      currentStep = null
+      stepIndex++
+      const key = `${sectionKey}:step${stepIndex}`
+      currentStep = { key, stepIndex, lines: [], finishLine: undefined }
+      steps.push(currentStep)
+    }
+    else if (isOpenCodeStepFinish(log.line)) {
+      if (currentStep) {
+        currentStep.finishLine = log
+        currentStep = null
+      }
+    }
+    else if (currentStep) {
+      currentStep.lines.push(log)
+    }
+    else {
+      preamble.push(log)
+    }
+  }
+
+  return { preamble, steps }
+}
+
+/** Returns a summary label for an opencode step sub-group. */
+function openCodeStepLabel(step: OpenCodeStepSubGroup): string {
+  // Try to derive a label from the first tool call in the step.
+  const firstTool = step.lines.find(l => stripSectionPrefix(l.line).startsWith('[tool:'))
+  if (firstTool) {
+    const toolLine = stripSectionPrefix(firstTool.line)
+    const match = toolLine.match(/^\[tool:\s*(\w+)\]/)
+    if (match) return `Step ${step.stepIndex} · ${match[1]}`
+  }
+  return `Step ${step.stepIndex}`
 }
 
 /** Returns step duration string or empty string. */

@@ -27,6 +27,12 @@ public class GitPollingService(
 
         var repos = await db.GitRepositories.ToListAsync(cancellationToken);
 
+        // Tracks (projectId, branch, sha) combinations already triggered this poll cycle.
+        // A project may have multiple git repositories (e.g. a local mirror and a GitHub remote)
+        // that all resolve to the same commit SHA on the same branch. Without deduplication each
+        // repo would independently fire a separate CI/CD run for the same push.
+        var triggeredThisCycle = new HashSet<(Guid ProjectId, string Branch, string Sha)>();
+
         foreach (var repo in repos)
         {
             if (cancellationToken.IsCancellationRequested) break;
@@ -76,21 +82,35 @@ public class GitPollingService(
 
                 if (sha != repo.LastKnownCommitSha)
                 {
-                    logger.LogInformation(
-                        "New commit {Sha} on '{Branch}' for repo {RepoId} — triggering CI/CD",
-                        sha, repo.DefaultBranch, repo.Id);
-
-                    await runQueue.EnqueueAsync(
-                        projectId: repo.ProjectId,
-                        commitSha: sha,
-                        branch: repo.DefaultBranch,
-                        workflow: null,
-                        eventName: "push",
-                        inputs: null,
-                        gitRepoUrl: repo.RemoteUrl,
-                        cancellationToken: cancellationToken);
-
+                    // Always advance the watermark so this repo doesn't re-trigger on the next cycle.
                     repo.LastKnownCommitSha = sha;
+
+                    // Deduplicate: a project with multiple remotes (local mirror + GitHub, etc.)
+                    // may all resolve to the same SHA on the same branch. Only one CI/CD run
+                    // should be created per (project, branch, sha) per poll cycle.
+                    var triggerKey = (repo.ProjectId, repo.DefaultBranch, sha);
+                    if (triggeredThisCycle.Add(triggerKey))
+                    {
+                        logger.LogInformation(
+                            "New commit {Sha} on '{Branch}' for repo {RepoId} — triggering CI/CD",
+                            sha, repo.DefaultBranch, repo.Id);
+
+                        await runQueue.EnqueueAsync(
+                            projectId: repo.ProjectId,
+                            commitSha: sha,
+                            branch: repo.DefaultBranch,
+                            workflow: null,
+                            eventName: "push",
+                            inputs: null,
+                            gitRepoUrl: repo.RemoteUrl,
+                            cancellationToken: cancellationToken);
+                    }
+                    else
+                    {
+                        logger.LogDebug(
+                            "Skipping duplicate CI/CD trigger for project {ProjectId}, branch '{Branch}', sha {Sha} (already triggered by another repo this cycle)",
+                            repo.ProjectId, repo.DefaultBranch, sha);
+                    }
                 }
 
                 // Check open merge requests for this repo and trigger CI on new commits
