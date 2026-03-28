@@ -559,6 +559,17 @@ public class IssueWorker(
                 db.AgentSessions.Add(preCreated);
             }
 
+            // If the session was cancelled (e.g. because the agent was removed between the
+            // assignment and the Kafka message being processed), skip this run entirely.
+            // A subsequent re-assignment will create a new session and trigger a fresh run.
+            if (preCreated.Status == AgentSessionStatus.Cancelled)
+            {
+                logger.LogInformation(
+                    "Session {SessionId} was cancelled before being processed — skipping launch",
+                    existingSessionId.Value);
+                return;
+            }
+
             preCreated.AgentId = agent.Id;
             preCreated.ProjectId = projectId;
             preCreated.RuntimeConfigId = runtimeConfig?.Id;
@@ -623,7 +634,7 @@ public class IssueWorker(
                 && s.OpenCodeSessionId != null
                 && (s.Status == AgentSessionStatus.Succeeded || s.Status == AgentSessionStatus.Failed))
             .OrderByDescending(s => s.EndedAt)
-            .Select(s => new { s.OpenCodeSessionId, s.OpenCodeDbS3Url })
+            .Select(s => new { s.OpenCodeSessionId, s.OpenCodeDbS3Url, s.GitBranch })
             .FirstOrDefaultAsync(cancellationToken) : null;
 
         if (previousSession is not null)
@@ -632,6 +643,18 @@ public class IssueWorker(
             logger.LogInformation(
                 "Found previous opencode session {PrevSessionId} for issue {IssueId} — will continue from it",
                 previousSession.OpenCodeSessionId, issue?.Id);
+
+            // When no explicit branch override was given, continue on the same branch as the
+            // previous session so the agent does not start on a different feature branch.
+            if (string.IsNullOrWhiteSpace(branchOverride) && !string.IsNullOrWhiteSpace(previousSession.GitBranch) && issue is not null)
+            {
+                if (db.Entry(issue).State != EntityState.Detached)
+                    db.Entry(issue).State = EntityState.Detached;
+                issue.GitBranch = previousSession.GitBranch;
+                logger.LogInformation(
+                    "Reusing previous session branch {Branch} for issue {IssueId} (session continuation)",
+                    previousSession.GitBranch, issue.Id);
+            }
 
             // If there is a preserved DB snapshot, download it for injection into the new container.
             if (!string.IsNullOrEmpty(previousSession.OpenCodeDbS3Url) && gitArtifactUploader.IsConfigured)

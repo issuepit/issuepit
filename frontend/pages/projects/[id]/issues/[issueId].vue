@@ -971,24 +971,43 @@
         </div>
         <!-- Branch selector -->
         <div class="mb-5">
-          <label class="block text-xs font-medium text-gray-400 mb-1.5">
-            <svg class="w-3.5 h-3.5 inline-block mr-1 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />
-            </svg>
-            Branch <span class="text-gray-600">(optional)</span>
-          </label>
-          <BranchSelect
-            v-model="assignAgentModal.branch"
-            :branches="gitStore.branches"
-            :allow-free-form="true"
-            :full="true"
-            placeholder="default branch"
-          />
-          <p class="text-xs text-gray-600 mt-1">Agent will start from this branch instead of the default.</p>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="flex items-center gap-1.5 text-xs font-medium text-gray-400 cursor-pointer select-none">
+              <svg class="w-3.5 h-3.5 -mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />
+              </svg>
+              Branch
+            </label>
+            <label class="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer select-none">
+              <input
+                v-model="assignAgentModal.createNewBranch"
+                type="checkbox"
+                class="w-3.5 h-3.5 rounded accent-brand-500"
+              />
+              Create new branch
+            </label>
+          </div>
+          <div v-if="assignAgentModal.createNewBranch">
+            <p class="text-xs text-gray-500">A unique feature branch will be created automatically for this agent run.</p>
+          </div>
+          <div v-else>
+            <BranchSelect
+              v-model="assignAgentModal.branch"
+              :branches="gitStore.branches"
+              :allow-free-form="true"
+              :full="true"
+              placeholder="select or type a branch"
+            />
+            <p v-if="assignBranchIsDefault" class="text-xs text-red-400 mt-1">
+              ⚠ This is a default branch. Please create a new branch or select a feature branch instead.
+            </p>
+            <p v-else class="text-xs text-gray-600 mt-1">Agent will start from this branch.</p>
+          </div>
         </div>
         <div class="flex gap-3">
           <button @click="confirmAssignAgent"
-            class="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
+            :disabled="!assignAgentModal.createNewBranch && assignBranchIsDefault"
+            class="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
             Assign{{ assignAgentModal.comment.trim() ? ' &amp; Comment' : '' }}
           </button>
           <button @click="cancelAssignAgent"
@@ -1256,11 +1275,12 @@ watch(commentHasAgentMention, (hasMention) => {
 })
 
 // Agent assignment modal state
-const assignAgentModal = reactive<{ agentId: string | null; agentName: string; comment: string; branch: string }>({
+const assignAgentModal = reactive<{ agentId: string | null; agentName: string; comment: string; branch: string; createNewBranch: boolean }>({
   agentId: null,
   agentName: '',
   comment: '',
   branch: '',
+  createNewBranch: true,
 })
 const assignAgentModalRef = ref<HTMLTextAreaElement | null>(null)
 function setAssignAgentModalRef(el: unknown) {
@@ -1584,6 +1604,18 @@ const availableAgents = computed(() => {
   return agentsStore.agents.filter(a => !assigned.has(a.id))
 })
 
+// Default branches from project git repositories (e.g. "main", "master")
+const projectDefaultBranches = computed(() =>
+  new Set(gitStore.repos.map(r => r.defaultBranch).filter(Boolean))
+)
+
+// True when the manually-selected branch is one of the project's default branches
+const assignBranchIsDefault = computed(() => {
+  if (assignAgentModal.createNewBranch) return false
+  const b = assignAgentModal.branch.trim()
+  return b.length > 0 && projectDefaultBranches.value.has(b)
+})
+
 async function saveTitle() {
   editingTitle.value = false
   if (titleEdit.value && titleEdit.value !== store.currentIssue?.title) {
@@ -1739,8 +1771,11 @@ function onSelectAgentForAssignment(e: Event) {
   assignAgentModal.agentName = agent.name
   assignAgentModal.comment = ''
   assignAgentModal.branch = ''
+  assignAgentModal.createNewBranch = true
   // Ensure branches are loaded for the branch selector
   if (!gitStore.branches.length) gitStore.fetchBranches(actualProjectId.value)
+  // Ensure repos are loaded so we can detect default branches
+  if (!gitStore.repos.length) gitStore.fetchRepos(actualProjectId.value)
   nextTick(() => {
     assignAgentModalRef.value?.focus()
   })
@@ -1748,7 +1783,19 @@ function onSelectAgentForAssignment(e: Event) {
 
 async function confirmAssignAgent() {
   if (!assignAgentModal.agentId) return
-  const branch = assignAgentModal.branch.trim() || undefined
+
+  let branch: string | undefined
+  if (assignAgentModal.createNewBranch) {
+    // Generate a unique branch name with a random seed to avoid collisions between agents
+    const issueNum = store.currentIssue?.number ?? 'x'
+    const randomSeed = Math.random().toString(16).slice(2, 10)
+    branch = `agent/issue-${issueNum}-${randomSeed}`
+  } else {
+    branch = assignAgentModal.branch.trim() || undefined
+    // Prevent assigning on a default branch (e.g. main, master)
+    if (assignBranchIsDefault.value) return
+  }
+
   // Assign the agent to the issue (with optional branch override)
   await store.addAssignee(resolvedIssueId.value, { agentId: assignAgentModal.agentId, branch })
   // If a comment was provided, post it (the backend will detect @mention and trigger the agent)
@@ -1759,6 +1806,7 @@ async function confirmAssignAgent() {
   assignAgentModal.agentName = ''
   assignAgentModal.comment = ''
   assignAgentModal.branch = ''
+  assignAgentModal.createNewBranch = true
 }
 
 function cancelAssignAgent() {
@@ -1766,6 +1814,7 @@ function cancelAssignAgent() {
   assignAgentModal.agentName = ''
   assignAgentModal.comment = ''
   assignAgentModal.branch = ''
+  assignAgentModal.createNewBranch = true
 }
 
 function assigneeName(a: { userId?: string; agentId?: string; user?: { username: string } | null; agent?: { name: string } | null }) {

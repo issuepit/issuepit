@@ -657,6 +657,21 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
         var assigneeName = assignee.User?.Username ?? assignee.Agent?.Name ?? "Unknown";
         db.IssueAssignees.Remove(assignee);
         db.IssueEvents.Add(MakeEvent(id, IssueEventType.AssigneeRemoved, oldValue: assigneeName));
+
+        // Cancel any pending sessions for this agent+issue so they don't linger in the UI
+        // and so the IssueWorker skips stale Kafka messages for the removed assignment.
+        if (assignee.AgentId.HasValue)
+        {
+            var pendingSessions = await db.AgentSessions
+                .Where(s => s.IssueId == id && s.AgentId == assignee.AgentId.Value && s.Status == AgentSessionStatus.Pending)
+                .ToListAsync();
+            foreach (var s in pendingSessions)
+            {
+                s.Status = AgentSessionStatus.Cancelled;
+                s.EndedAt = DateTime.UtcNow;
+            }
+        }
+
         await db.SaveChangesAsync();
         return NoContent();
     }
