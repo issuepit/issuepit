@@ -284,12 +284,17 @@ public class DockerAgentRuntime(
         if (comments is not null)
             await onLogLine($"[DEBUG] Comments       : {comments.Count} comment(s) included in prompt", LogStream.Stdout);
 
-        // Build CLI args for exec flow (not used in HTTP server mode or manual mode).
+        // Build the full CLI command for the exec flow (not used in HTTP server mode or manual mode).
+        // runnerCmd is the complete docker-exec command list (executable + flags + task prompt), e.g.:
+        //   ["opencode", "run", "--model", "claude", "--format", "json", "TASK_PROMPT"]
+        //   ["codex", "--full-auto", "TASK_PROMPT"]
+        // This is NOT the container startup CMD (which is always "tail -f /dev/null"), and NOT
+        // arguments to the Docker runtime. It is the command executed inside the container via docker exec.
         // Only pass --session <id> when a DB snapshot was actually loaded; without the restored
         // DB the session does not exist in the fresh container and opencode would throw NotFoundError.
         // File paths (--file) are not included here — they are appended after attachments are
         // downloaded to the container in Step D.5.
-        var runnerArgs = (useHttpServerMode || useManualMode) ? [] : RunnerCommandBuilder.BuildArgsList(
+        var runnerCmd = (useHttpServerMode || useManualMode) ? [] : RunnerCommandBuilder.BuildCmdList(
             agent, issue,
             continueSessionId: session.PreviousOpenCodeDbTar is { Length: > 0 } ? session.PreviousOpenCodeSessionId : null,
             comments: comments);
@@ -301,18 +306,20 @@ public class DockerAgentRuntime(
         var useExecFlow = !useHttpServerMode && !useManualMode;
 
         // Tracks container paths of downloaded issue attachments; populated in Step D.5 and
-        // used when rebuilding runnerArgs (including in fallback cases).
+        // used when rebuilding runnerCmd (including in fallback cases).
         var downloadedAttachmentPaths = new List<string>();
 
-        if (runnerArgs.Count > 0)
+        if (session.CustomCmd is { Length: > 0 })
+        {
+            // CustomCmdOverride replaces the entire runner command — e.g. ["sh", "-c", "wget ..."].
+            // It is a full docker-exec command list, not additional arguments to the runner CLI.
+            await onLogLine($"[DEBUG] Runner cmd     : {string.Join(" ", session.CustomCmd)} (CustomCmdOverride)", LogStream.Stdout);
+        }
+        else if (runnerCmd.Count > 0)
         {
             // Log the CLI command (e.g. "opencode run --model ...") without the task text.
-            var cmdDisplay = string.Join(" ", runnerArgs.Take(runnerArgs.Count - 1));
+            var cmdDisplay = string.Join(" ", runnerCmd.Take(runnerCmd.Count - 1));
             await onLogLine($"[DEBUG] Runner cmd     : {cmdDisplay}", LogStream.Stdout);
-        }
-        else if (session.CustomCmd is { Length: > 0 })
-        {
-            await onLogLine($"[DEBUG] Runner cmd     : {string.Join(" ", session.CustomCmd)}", LogStream.Stdout);
         }
 
         // Build the task prompt (used for the exec flow and HTTP server mode).
@@ -346,6 +353,15 @@ public class DockerAgentRuntime(
             // special value that resolves to the correct host IP on both Linux and Docker Desktop.
             ExtraHosts = ["host.docker.internal:host-gateway"],
         };
+
+        // Apply optional extra volume bind mounts from RunnerArgs.
+        // Each entry must be a bind-mount string: "host-path:container-path" or "host-path:container-path:ro".
+        // Docker CLI flag syntax (--volume etc.) is not supported here.
+        if (session.RunnerArgs is { Length: > 0 })
+        {
+            hostConfig.Binds = session.RunnerArgs.ToList();
+            await onLogLine($"[DEBUG] Runner args    : {string.Join(", ", session.RunnerArgs)} (volume binds)", LogStream.Stdout);
+        }
 
         if (dns is not null)
             hostConfig.DNS = dns;
@@ -438,9 +454,9 @@ public class DockerAgentRuntime(
                 await onLogLine($"[WARN] Failed to inject opencode DB snapshot: {ex.Message} — starting fresh session", LogStream.Stderr);
                 logger.LogWarning(ex, "Failed to inject opencode DB into container {ContainerId}", container.ID);
                 // The session does not exist in the container without the restored DB; rebuild
-                // runner args without --session to avoid a "Session not found" crash in opencode.
+                // runner cmd without --session to avoid a "Session not found" crash in opencode.
                 session.PreviousOpenCodeSessionId = null;
-                runnerArgs = RunnerCommandBuilder.BuildArgsList(agent, issue, comments: comments);
+                runnerCmd = RunnerCommandBuilder.BuildCmdList(agent, issue, comments: comments);
             }
         }
 
@@ -541,13 +557,13 @@ public class DockerAgentRuntime(
 
                 if (downloadedAttachmentPaths.Count > 0)
                 {
-                // Rebuild runnerArgs to include --file flags for each downloaded attachment.
-                runnerArgs = RunnerCommandBuilder.BuildArgsList(
+                // Rebuild runnerCmd to include --file flags for each downloaded attachment.
+                runnerCmd = RunnerCommandBuilder.BuildCmdList(
                     agent, issue,
                     continueSessionId: session.PreviousOpenCodeDbTar is { Length: > 0 } ? session.PreviousOpenCodeSessionId : null,
                     comments: comments,
                     filePaths: downloadedAttachmentPaths);
-                var updatedCmdDisplay = string.Join(" ", runnerArgs.Take(runnerArgs.Count - 1));
+                var updatedCmdDisplay = string.Join(" ", runnerCmd.Take(runnerCmd.Count - 1));
                 await onLogLine($"[DEBUG] Runner cmd     : {updatedCmdDisplay}", LogStream.Stdout);
                 }
             }
@@ -585,9 +601,9 @@ public class DockerAgentRuntime(
                 $"[WARN] Previous opencode session {session.PreviousOpenCodeSessionId} not found in restored DB — starting fresh session",
                 LogStream.Stderr);
             session.PreviousOpenCodeSessionId = null;
-            runnerArgs = RunnerCommandBuilder.BuildArgsList(agent, issue, comments: comments,
+            runnerCmd = RunnerCommandBuilder.BuildCmdList(agent, issue, comments: comments,
                 filePaths: downloadedAttachmentPaths.Count > 0 ? downloadedAttachmentPaths : null);
-            var newCmdDisplay = string.Join(" ", runnerArgs.Take(runnerArgs.Count - 1));
+            var newCmdDisplay = string.Join(" ", runnerCmd.Take(runnerCmd.Count - 1));
             await onLogLine($"[DEBUG] Runner cmd     : {newCmdDisplay}", LogStream.Stdout);
             }
         }
@@ -802,14 +818,17 @@ public class DockerAgentRuntime(
                 }
             }
 
-            // Step 7: Execute the agent tool via docker exec.
-            // Prefer runnerArgs (set when RunnerType is configured), fall back to session.CustomCmd
-            // (DockerCmdOverride for diagnostic/test runs). When neither is set the agent has no
-            // RunnerType and no override — skip execution and treat the run as a no-op.
+            // Step 7: Execute the agent command via docker exec.
+            // Both runnerCmd and CustomCmd are full docker-exec command lists (executable + args),
+            // NOT the container's startup CMD (which is always "tail -f /dev/null"), and NOT
+            // Docker runtime args (see RunnerArgs / HostConfig.Binds for those).
+            // CustomCmd (from CustomCmdOverride API field) replaces the entire runner command when
+            // set — used for diagnostic/test runs. Otherwise use runnerCmd (the standard CLI
+            // invocation from RunnerType). When neither is set the session completes as a no-op.
             // Working directory: use /workspace only when a repo was actually cloned; otherwise
             // fall back to / so the exec doesn't fail on images that don't have /workspace.
-            IReadOnlyList<string>? effectiveCmd = runnerArgs.Count > 0 ? runnerArgs
-                : (session.CustomCmd is { Length: > 0 } ? session.CustomCmd : null);
+            IReadOnlyList<string>? effectiveCmd = session.CustomCmd is { Length: > 0 } ? session.CustomCmd
+                : (runnerCmd.Count > 0 ? runnerCmd : null);
             var agentWorkingDir = cloneRepo is not null ? "/workspace" : "/";
             var agentExitCode = 0L;
             if (effectiveCmd is not null)
@@ -904,13 +923,13 @@ public class DockerAgentRuntime(
             return onLogLine($"[fix] {displayLine}", stream);
         }
 
-        var runnerArgs = RunnerCommandBuilder.BuildArgsList(agent, fixIssue, forkSessionId: openCodeSessionId);
-        if (runnerArgs.Count > 0)
+        var runnerCmd = RunnerCommandBuilder.BuildCmdList(agent, fixIssue, forkSessionId: openCodeSessionId);
+        if (runnerCmd.Count > 0)
         {
             var shortId = containerId[..Math.Min(12, containerId.Length)];
             var forkInfo = openCodeSessionId is not null ? $" (--session {openCodeSessionId[..Math.Min(8, openCodeSessionId.Length)]} --fork)" : string.Empty;
             await onLogLine($"[INFO] Exec fix run in container {shortId}{forkInfo}…", LogStream.Stdout);
-            var exitCode = await ExecCommandAsync(containerId, runnerArgs, onFixLogLine, cancellationToken, logCommand: true);
+            var exitCode = await ExecCommandAsync(containerId, runnerCmd, onFixLogLine, cancellationToken, logCommand: true);
             if (exitCode != 0)
                 await onLogLine($"[WARN] Fix agent exited with code {exitCode}", LogStream.Stderr);
         }
@@ -945,10 +964,10 @@ public class DockerAgentRuntime(
                     GitBranch = currentBranch,
                 };
 
-                var uncommittedArgs = RunnerCommandBuilder.BuildArgsList(agent, uncommittedIssue, forkSessionId: openCodeSessionId);
-                if (uncommittedArgs.Count > 0)
+                var uncommittedCmd = RunnerCommandBuilder.BuildCmdList(agent, uncommittedIssue, forkSessionId: openCodeSessionId);
+                if (uncommittedCmd.Count > 0)
                 {
-                    var exitCode2 = await ExecCommandAsync(containerId, uncommittedArgs, onFixLogLine, cancellationToken);
+                    var exitCode2 = await ExecCommandAsync(containerId, uncommittedCmd, onFixLogLine, cancellationToken);
                     if (exitCode2 != 0)
                         await onLogLine($"[WARN] Uncommitted-changes fix agent exited with code {exitCode2}", LogStream.Stderr);
                 }

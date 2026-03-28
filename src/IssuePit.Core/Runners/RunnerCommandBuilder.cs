@@ -36,9 +36,11 @@ public static class RunnerCommandBuilder
     }
 
     /// <summary>
-    /// Returns the additional CLI arguments as a raw string list for use with the Docker API.
+    /// Returns the full CLI command as a parsed argument list for use with the Docker exec API.
+    /// The first element is the executable name (e.g. <c>"opencode"</c>, <c>"codex"</c>),
+    /// followed by flags and the task prompt as the last element.
     /// Suitable for Docker-based runtimes where shell escaping is not needed.
-    /// Returns an empty list when no runner type is set (legacy entrypoint behaviour).
+    /// Returns an empty list when no runner type is set.
     /// <para>
     /// When <paramref name="forkSessionId"/> is provided and the runner supports session forking
     /// (opencode: <c>--session &lt;id&gt; --fork</c>), the fix run will continue from the given
@@ -55,7 +57,7 @@ public static class RunnerCommandBuilder
     /// https://opencode.ai/docs/cli/#run-1
     /// </para>
     /// </summary>
-    public static IReadOnlyList<string> BuildArgsList(Agent agent, Issue issue, string? forkSessionId = null, string? continueSessionId = null, IReadOnlyList<IssueComment>? comments = null, IReadOnlyList<string>? filePaths = null)
+    public static IReadOnlyList<string> BuildCmdList(Agent agent, Issue issue, string? forkSessionId = null, string? continueSessionId = null, IReadOnlyList<IssueComment>? comments = null, IReadOnlyList<string>? filePaths = null)
     {
         if (agent.RunnerType is null)
             return [];
@@ -64,9 +66,9 @@ public static class RunnerCommandBuilder
 
         return agent.RunnerType switch
         {
-            RunnerType.OpenCode => BuildOpenCodeArgsList(agent, task, forkSessionId, continueSessionId, filePaths),
-            RunnerType.Codex => BuildCodexArgsList(agent, task),
-            RunnerType.GitHubCopilotCli => BuildCopilotArgsList(task),
+            RunnerType.OpenCode => BuildOpenCodeCmdList(agent, task, forkSessionId, continueSessionId, filePaths),
+            RunnerType.Codex => BuildCodexCmdList(agent, task),
+            RunnerType.GitHubCopilotCli => BuildCopilotCmdList(task),
             _ => [],
         };
     }
@@ -113,7 +115,7 @@ public static class RunnerCommandBuilder
         return args.ToString();
     }
 
-    private static IReadOnlyList<string> BuildOpenCodeArgsList(Agent agent, string task, string? forkSessionId = null, string? continueSessionId = null, IReadOnlyList<string>? filePaths = null)
+    private static IReadOnlyList<string> BuildOpenCodeCmdList(Agent agent, string task, string? forkSessionId = null, string? continueSessionId = null, IReadOnlyList<string>? filePaths = null)
     {
         var args = new List<string> { "opencode", "run" };
         if (!string.IsNullOrWhiteSpace(forkSessionId))
@@ -168,7 +170,7 @@ public static class RunnerCommandBuilder
         return args.ToString().TrimStart();
     }
 
-    private static IReadOnlyList<string> BuildCodexArgsList(Agent agent, string task)
+    private static IReadOnlyList<string> BuildCodexCmdList(Agent agent, string task)
     {
         var args = new List<string> { "codex" };
         if (!string.IsNullOrWhiteSpace(agent.Model))
@@ -190,7 +192,7 @@ public static class RunnerCommandBuilder
         // GitHub Copilot CLI does not support --model selection at this time
         $"suggest {EscapeShellArg(task)}";
 
-    private static IReadOnlyList<string> BuildCopilotArgsList(string task) =>
+    private static IReadOnlyList<string> BuildCopilotCmdList(string task) =>
         // GitHub Copilot CLI does not support --model selection at this time
         ["gh", "copilot", "suggest", task];
 

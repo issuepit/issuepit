@@ -250,7 +250,7 @@ public class AgentSessionTests(AspireFixture fixture)
     /// Verifies that an agent container can reach the IssuePit MCP server at the URL injected
     /// via <c>ISSUEPIT_MCP_URL</c>.
     ///
-    /// The test triggers an agent session with a custom <c>DockerCmdOverride</c> that runs
+    /// The test triggers an agent session with a custom <c>CustomCmdOverride</c> that runs
     /// <c>wget</c> against the MCP health endpoint and echoes a marker line to stdout.
     /// Connectivity is confirmed by asserting that <c>[ISSUEPIT:MCP_CHECK]=OK</c> appears in
     /// the session logs.
@@ -291,8 +291,8 @@ public class AgentSessionTests(AspireFixture fixture)
         var project = await projResp.Content.ReadFromJsonAsync<JsonElement>();
         var projectId = project.GetProperty("id").GetString()!;
 
-        // Create an agent with busybox:latest (has wget and sh); no RunnerType so legacy flow is used.
-        // The session will run a custom command that probes the MCP health endpoint.
+        // Create an agent with busybox:latest (has wget and sh) and RunnerType=Codex.
+        // The CustomCmdOverride takes precedence over the Codex runner command in the exec flow.
         var agentResp = await client.PostAsJsonAsync("/api/agents",
             new
             {
@@ -300,9 +300,9 @@ public class AgentSessionTests(AspireFixture fixture)
                 orgId = Guid.Parse(orgId),
                 systemPrompt = "You are a diagnostic agent.",
                 dockerImage = "busybox:latest",
+                runnerType = "Codex",
                 allowedTools = "[]",
                 isActive = true,
-                // No RunnerType → legacy flow; DockerCmdOverride is sent in the assignment request
             });
         Assert.Equal(HttpStatusCode.Created, agentResp.StatusCode);
         var agent = await agentResp.Content.ReadFromJsonAsync<JsonElement>();
@@ -315,7 +315,7 @@ public class AgentSessionTests(AspireFixture fixture)
         var issue = await issueResp.Content.ReadFromJsonAsync<JsonElement>();
         var issueId = issue.GetProperty("id").GetString()!;
 
-        // Assign the agent with a DockerCmdOverride: use wget to check the MCP health endpoint.
+        // Assign the agent with a CustomCmdOverride: use wget to check the MCP health endpoint.
         // ISSUEPIT_MCP_URL is set to http://host.docker.internal:PORT by the execution client
         // (localhost is replaced with host.docker.internal before passing to the container).
         // The sh command always exits 0 so the session status reflects connectivity, not failure.
@@ -332,7 +332,7 @@ public class AgentSessionTests(AspireFixture fixture)
         };
 
         var assignResp = await client.PostAsJsonAsync($"/api/issues/{issueId}/assignees",
-            new { agentId = Guid.Parse(agentId), dockerCmdOverride = mcpCheckCmd });
+            new { agentId = Guid.Parse(agentId), customCmdOverride = mcpCheckCmd });
         Assert.Equal(HttpStatusCode.Created, assignResp.StatusCode);
 
         // Wait for the session to complete
@@ -396,7 +396,8 @@ public class AgentSessionTests(AspireFixture fixture)
         var project = await projResp.Content.ReadFromJsonAsync<JsonElement>();
         var projectId = project.GetProperty("id").GetString()!;
 
-        // Create an agent with busybox:latest (has wget and sh)
+        // Create an agent with busybox:latest (has wget and sh) and RunnerType=Codex.
+        // The CustomCmdOverride takes precedence over the Codex runner command in the exec flow.
         var agentResp = await client.PostAsJsonAsync("/api/agents",
             new
             {
@@ -404,6 +405,7 @@ public class AgentSessionTests(AspireFixture fixture)
                 orgId = Guid.Parse(orgId),
                 systemPrompt = "You are a diagnostic agent.",
                 dockerImage = AgentTestDockerImage,
+                runnerType = "Codex",
                 allowedTools = "[]",
                 isActive = true,
             });
@@ -479,7 +481,7 @@ public class AgentSessionTests(AspireFixture fixture)
         };
 
         var assignResp = await client.PostAsJsonAsync($"/api/issues/{issueId}/assignees",
-            new { agentId = Guid.Parse(agentId), dockerCmdOverride = mcpToolsCmd });
+            new { agentId = Guid.Parse(agentId), customCmdOverride = mcpToolsCmd });
         Assert.Equal(HttpStatusCode.Created, assignResp.StatusCode);
 
         // Wait for the session to complete

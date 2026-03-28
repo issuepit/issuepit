@@ -633,7 +633,7 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
                 await producer.ProduceAsync("issue-assigned", new Message<string, string>
                 {
                     Key = issue.Id.ToString(),
-                    Value = JsonSerializer.Serialize(new { issue.Id, issue.ProjectId, issue.Title, AgentId = req.AgentId.Value, sessionId = queuedSession.Id, req.DockerCmdOverride, Branch = req.Branch })
+                    Value = JsonSerializer.Serialize(new { issue.Id, issue.ProjectId, issue.Title, AgentId = req.AgentId.Value, sessionId = queuedSession.Id, req.CustomCmdOverride, req.RunnerArgs, Branch = req.Branch })
                 });
             }
             catch (Exception ex)
@@ -1003,8 +1003,9 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
 
 public record CommentRequest(string Body, Guid? UserId, string? Branch = null);
 public record CodeReviewCommentRequest(string FilePath, int StartLine, int EndLine, string Sha, string? Snippet, string? ContextBefore, string? ContextAfter, string Body);
-/// <param name="DockerCmdOverride">Optional command override for the agent container (for diagnostic/test runs, e.g. a connectivity check). Only applies when no RunnerType is set.</param>
-public record AssigneeRequest(Guid? UserId, Guid? AgentId, string[]? DockerCmdOverride = null, string? Branch = null);
+/// <param name="CustomCmdOverride">Optional full command to execute via <c>docker exec</c> inside the container, replacing the runner CLI command. Accepts a complete command list e.g. <c>["sh", "-c", "wget ..."]</c>. When set, takes precedence over the command built from the agent's RunnerType.</param>
+/// <param name="RunnerArgs">Optional extra volume bind mounts added to the container at creation time. Each element must be a bind-mount string in the format <c>host-path:container-path</c> (e.g. <c>"/data:/workspace/data"</c>) or <c>host-path:container-path:ro</c>. Docker CLI flag syntax (<c>--volume</c> etc.) is not supported.</param>
+public record AssigneeRequest(Guid? UserId, Guid? AgentId, string[]? CustomCmdOverride = null, string? Branch = null, string[]? RunnerArgs = null);
 public record LabelAssignRequest(Guid LabelId);
 public record IssueLinkRequest(Guid TargetIssueId, IssueLinkType LinkType);
 public record IssueLinkDto(Guid Id, Guid IssueId, Guid TargetIssueId, Issue? TargetIssue, IssueLinkType LinkType, DateTime CreatedAt);
