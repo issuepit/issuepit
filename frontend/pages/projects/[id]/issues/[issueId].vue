@@ -999,7 +999,7 @@
               placeholder="select or type a branch"
             />
             <p v-if="assignBranchIsDefault" class="text-xs text-red-400 mt-1">
-              ⚠ This is a default branch. Please create a new branch or select a feature branch instead.
+              <span aria-label="Warning">⚠</span> This is a default branch. Please create a new branch or select a feature branch instead.
             </p>
             <p v-else class="text-xs text-gray-600 mt-1">Agent will start from this branch.</p>
           </div>
@@ -1786,10 +1786,11 @@ async function confirmAssignAgent() {
 
   let branch: string | undefined
   if (assignAgentModal.createNewBranch) {
-    // Generate a unique branch name with a random seed to avoid collisions between agents
+    // Generate a unique branch name combining a timestamp and random hex to avoid collisions
     const issueNum = store.currentIssue?.number ?? 'x'
-    const randomSeed = Math.random().toString(16).slice(2, 10)
-    branch = `agent/issue-${issueNum}-${randomSeed}`
+    const tsPart = Date.now().toString(36)
+    const randPart = Math.random().toString(36).slice(2, 7)
+    branch = `agent/issue-${issueNum}-${tsPart}${randPart}`
   } else {
     branch = assignAgentModal.branch.trim() || undefined
     // Prevent assigning on a default branch (e.g. main, master)

@@ -81,11 +81,12 @@ There are two ways to trigger an agent on an issue:
 
 1. Open any issue.
 2. In the **Assignees** section on the right sidebar, choose an agent from the **Assign agent** dropdown.
-3. A modal opens where you can optionally provide a task comment and **select a starting branch**.
+3. A modal opens where you can optionally provide a task comment and configure the **branch**.
 
    ![Assign Agent modal with branch selector]({{ '/assets/screenshots/assign-agent-branch-select.png' | relative_url }})
 
-4. Click **Assign** (or **Assign & Comment** if you filled the comment field).
+4. The **Create new branch** checkbox (enabled by default) automatically generates a unique feature branch (e.g. `agent/issue-42-a1b2c3d4`) so multiple agent runs never collide with each other.  Uncheck it only if you want the agent to work directly on an existing branch.
+5. Click **Assign** (or **Assign & Comment** if you filled the comment field).
 
 ### Option B — @mention in a comment
 
@@ -107,10 +108,17 @@ Both trigger methods support choosing a **starting branch**:
 
 | Method | Where to set the branch |
 |--------|------------------------|
-| Sidebar modal | **Branch** field inside the *Assign Agent* modal (searchable dropdown) |
+| Sidebar modal | **Branch** section inside the *Assign Agent* modal — toggle the **Create new branch** checkbox |
 | @mention comment | Branch input in the comment footer (appears after typing `@agent-name`) |
 
-The branch selector lets you search through all branches fetched for the project. You can also type a branch name that is not yet in the list and press **Enter** to use it directly.
+**Create new branch (default: enabled)**  
+When this checkbox is checked, IssuePit automatically generates a unique feature branch name (e.g. `agent/issue-42-a1b2c3d4`) for the agent run. This prevents collisions when the same agent is assigned to the same issue multiple times or when multiple agents work in parallel.
+
+**Using an existing branch**  
+Uncheck *Create new branch* and select or type a branch name. Note: selecting a **default branch** (e.g. `main`, `master`) is not permitted — the agent must work on a feature branch to avoid accidentally pushing to a protected branch.
+
+**Session continuation**  
+When an agent is triggered again on the same issue (e.g. via an `@mention` comment) without an explicit branch override, the agent automatically continues on the same feature branch as its most recent completed session. This ensures follow-up runs build on the previous work rather than starting fresh on the default branch.
 
 ---
 
