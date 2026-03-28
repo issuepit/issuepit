@@ -238,6 +238,7 @@ public class AgentSessionsController(
                 runnerTypeOverride = body?.RunnerTypeOverride != null ? (int?)body.RunnerTypeOverride.Value : null,
                 useHttpServerOverride = body?.UseHttpServerOverride,
                 runtimeTypeOverride = body?.RuntimeTypeOverride != null ? (int?)body.RuntimeTypeOverride.Value : null,
+                maxCiCdLoopCountOverride = body?.MaxCiCdLoopCountOverride,
                 forceAgentId = body?.AgentIdOverride.HasValue ?? false,
             };
         }
@@ -259,6 +260,7 @@ public class AgentSessionsController(
                 runnerTypeOverride = body?.RunnerTypeOverride != null ? (int?)body.RunnerTypeOverride.Value : null,
                 useHttpServerOverride = body?.UseHttpServerOverride,
                 runtimeTypeOverride = body?.RuntimeTypeOverride != null ? (int?)body.RuntimeTypeOverride.Value : null,
+                maxCiCdLoopCountOverride = body?.MaxCiCdLoopCountOverride,
                 forceAgentId = true,
                 branch = session.GitBranch,
             };
@@ -501,7 +503,9 @@ public record RetrySessionRequest(
     /// <summary>Override whether to use HTTP server mode (opencode only). Null = use the agent's setting.</summary>
     bool? UseHttpServerOverride = null,
     /// <summary>Override the runtime type (Docker, Native, SSH…) for this retry. Null = use the org default.</summary>
-    RuntimeType? RuntimeTypeOverride = null);
+    RuntimeType? RuntimeTypeOverride = null,
+    /// <summary>Override the maximum number of CI/CD → agent-fix loop iterations for this retry. Null = use the project/org/system default.</summary>
+    int? MaxCiCdLoopCountOverride = null);
 
 public record StartManualSessionRequest(
     Guid AgentId,

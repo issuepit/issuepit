@@ -96,5 +96,11 @@ public class Organization
     /// </summary>
     public string? SkipSteps { get; set; }
 
+    /// <summary>
+    /// Maximum number of CI/CD → agent-fix loop iterations after the initial agent run.
+    /// Null means use the system default (3).
+    /// </summary>
+    public int? MaxCiCdLoopCount { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

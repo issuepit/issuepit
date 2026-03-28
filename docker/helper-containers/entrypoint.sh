@@ -339,11 +339,13 @@ if opencode_password:
     config["password"] = opencode_password
 
 # Add the IssuePit MCP server when the URL is configured.
+# ISSUEPIT_MCP_URL is the base URL (e.g. http://host.docker.internal:5010);
+# the actual MCP Streamable HTTP endpoint is always at /mcp.
 if mcp_url:
     config["mcp"] = {
         "issuepit": {
             "type": "remote",
-            "url": mcp_url,
+            "url": mcp_url.rstrip('/') + '/mcp',
         }
     }
 

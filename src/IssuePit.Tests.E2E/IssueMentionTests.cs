@@ -168,6 +168,46 @@ public class IssueMentionTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// Typing @ shows both linked agents (with robot icon) and tenant users (with person icon)
+    /// in the mention dropdown.
+    /// </summary>
+    [Fact]
+    public async Task CommentTextarea_TypeAtSign_ShowsBothAgentsAndUsers()
+    {
+        var (context, page, projectSlug, issueNumber, agentName) = await SetUpAsync();
+        try
+        {
+            // The logged-in user's own username should appear in the users section because
+            // /api/users/search returns all tenant users including the current user.
+            // We simply verify that at least one item carries the agent icon (🤖) and at
+            // least one item carries the user icon (👤).
+            var detailPage = new IssueDetailPage(page);
+            await detailPage.GotoAsync(projectSlug, issueNumber);
+
+            await detailPage.TypeInCommentAsync("@");
+
+            // Wait for agent to appear first.
+            await page.WaitForSelectorAsync(
+                $"textarea[placeholder*='Leave a comment'] ~ div button:has-text('{agentName}')",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+
+            // Verify agent item shows a robot icon (🤖).
+            var agentIcon = await page.QuerySelectorAsync(
+                $"textarea[placeholder*='Leave a comment'] ~ div button:has-text('{agentName}') span:has-text('🤖')");
+            Assert.NotNull(agentIcon);
+
+            // Verify at least one user item shows a person icon (👤).
+            var userIcon = await page.QuerySelectorAsync(
+                "textarea[placeholder*='Leave a comment'] ~ div button span:has-text('👤')");
+            Assert.NotNull(userIcon);
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
+
+    /// <summary>
     /// Selecting an item from the @mention dropdown inserts the mention into the comment textarea.
     /// </summary>
     [Fact]
