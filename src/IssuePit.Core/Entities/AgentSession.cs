@@ -63,15 +63,26 @@ public class AgentSession
     public bool KeepContainer { get; set; }
 
     /// <summary>
-    /// Optional full command to execute via <c>docker exec</c> instead of the runner CLI command.
-    /// This is a complete docker-exec command list (e.g. <c>["sh", "-c", "wget ..."]</c>), not
-    /// additional arguments — it replaces the entire runner invocation.
+    /// Optional full command to execute via <c>docker exec</c> inside the container, replacing
+    /// the runner CLI command built from <see cref="Agent.RunnerType"/>.
+    /// Accepts a complete command list, e.g. <c>["sh", "-c", "wget ..."]</c>.
     /// Useful for diagnostic or test runs (e.g. a connectivity check or MCP tool probe).
-    /// When set, takes precedence over the command built from <see cref="Agent.RunnerType"/>.
-    /// Not persisted — set at launch time from the <c>issue-assigned</c> Kafka message.
+    /// When set, takes precedence over the auto-built runner command.
+    /// Not persisted — set at launch time from the <c>CustomCmdOverride</c> API field.
     /// </summary>
     [NotMapped]
     public string[]? CustomCmd { get; set; }
+
+    /// <summary>
+    /// Optional extra volume bind mounts applied when creating the Docker container (runtime-level args).
+    /// Each element is a bind-mount entry in the format
+    /// <c>host-path:container-path</c> or <c>host-path:container-path:ro</c> and is added to
+    /// <c>HostConfig.Binds</c>. Useful for injecting files or directories into the container
+    /// without baking them into the image.
+    /// Not persisted — set at launch time from the <c>RunnerArgs</c> API field.
+    /// </summary>
+    [NotMapped]
+    public string[]? RunnerArgs { get; set; }
 
     public ICollection<CiCdRun> CiCdRuns { get; set; } = [];
 

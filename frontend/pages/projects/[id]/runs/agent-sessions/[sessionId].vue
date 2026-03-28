@@ -217,9 +217,9 @@
 
             <p class="text-xs text-gray-500 mb-4">A new session will be started for the same issue.</p>
 
-            <!-- Docker cmd override -->
+            <!-- Custom command override (CustomCmdOverride) -->
             <div class="mb-4">
-              <label class="block text-xs text-gray-500 mb-1.5">Docker command override</label>
+              <label class="block text-xs text-gray-500 mb-1.5">Custom command override</label>
               <textarea
                 v-model="retryCmdOverride"
                 rows="2"
@@ -1489,7 +1489,7 @@ async function retrySession() {
       runnerTypeOverride,
       useHttpServerOverride,
       runtimeTypeOverride: retryRuntimeType.value !== '' ? retryRuntimeType.value as number : undefined,
-      dockerCmdOverride: parseCmdOverride(retryCmdOverride.value),
+      customCmdOverride: parseCmdOverride(retryCmdOverride.value),
     })
     if (result?.retriedSessionId) {
       navigateTo(`/projects/${projectId}/runs/agent-sessions/${result.retriedSessionId}`)

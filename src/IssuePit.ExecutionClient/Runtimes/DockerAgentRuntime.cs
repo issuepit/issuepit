@@ -311,9 +311,9 @@ public class DockerAgentRuntime(
 
         if (session.CustomCmd is { Length: > 0 })
         {
-            // DockerCmdOverride replaces the entire runner command — e.g. ["sh", "-c", "wget ..."].
+            // CustomCmdOverride replaces the entire runner command — e.g. ["sh", "-c", "wget ..."].
             // It is a full docker-exec command list, not additional arguments to the runner CLI.
-            await onLogLine($"[DEBUG] Runner cmd     : {string.Join(" ", session.CustomCmd)} (DockerCmdOverride)", LogStream.Stdout);
+            await onLogLine($"[DEBUG] Runner cmd     : {string.Join(" ", session.CustomCmd)} (CustomCmdOverride)", LogStream.Stdout);
         }
         else if (runnerCmd.Count > 0)
         {
@@ -353,6 +353,14 @@ public class DockerAgentRuntime(
             // special value that resolves to the correct host IP on both Linux and Docker Desktop.
             ExtraHosts = ["host.docker.internal:host-gateway"],
         };
+
+        // Apply optional extra volume bind mounts from RunnerArgs (Docker runtime args).
+        // Each entry is a bind-mount string: "host-path:container-path" or "host-path:container-path:ro".
+        if (session.RunnerArgs is { Length: > 0 })
+        {
+            hostConfig.Binds = session.RunnerArgs.ToList();
+            await onLogLine($"[DEBUG] Runner args    : {string.Join(", ", session.RunnerArgs)} (volume binds)", LogStream.Stdout);
+        }
 
         if (dns is not null)
             hostConfig.DNS = dns;
@@ -812,10 +820,10 @@ public class DockerAgentRuntime(
             // Step 7: Execute the agent command via docker exec.
             // Both runnerCmd and CustomCmd are full docker-exec command lists (executable + args),
             // NOT the container's startup CMD (which is always "tail -f /dev/null"), and NOT
-            // arguments to the Docker runtime.
-            // CustomCmd (DockerCmdOverride) replaces the entire runner command when set — used for
-            // diagnostic/test runs. Otherwise use runnerCmd (the standard CLI invocation from
-            // RunnerType). When neither is set the session completes as a no-op.
+            // Docker runtime args (see RunnerArgs / HostConfig.Binds for those).
+            // CustomCmd (from CustomCmdOverride API field) replaces the entire runner command when
+            // set — used for diagnostic/test runs. Otherwise use runnerCmd (the standard CLI
+            // invocation from RunnerType). When neither is set the session completes as a no-op.
             // Working directory: use /workspace only when a repo was actually cloned; otherwise
             // fall back to / so the exec doesn't fail on images that don't have /workspace.
             IReadOnlyList<string>? effectiveCmd = session.CustomCmd is { Length: > 0 } ? session.CustomCmd

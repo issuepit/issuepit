@@ -233,7 +233,8 @@ public class AgentSessionsController(
                 sessionId = queuedSession.Id,
                 dockerImageOverride = body?.DockerImageOverride,
                 keepContainer = body?.KeepContainer ?? false,
-                dockerCmdOverride = body?.DockerCmdOverride,
+                customCmdOverride = body?.CustomCmdOverride,
+                runnerArgs = body?.RunnerArgs,
                 modelOverride = body?.ModelOverride,
                 runnerTypeOverride = body?.RunnerTypeOverride != null ? (int?)body.RunnerTypeOverride.Value : null,
                 useHttpServerOverride = body?.UseHttpServerOverride,
@@ -254,7 +255,8 @@ public class AgentSessionsController(
                 isManualDirectStart = true,
                 dockerImageOverride = body?.DockerImageOverride,
                 keepContainer = body?.KeepContainer ?? false,
-                dockerCmdOverride = body?.DockerCmdOverride,
+                customCmdOverride = body?.CustomCmdOverride,
+                runnerArgs = body?.RunnerArgs,
                 modelOverride = body?.ModelOverride,
                 runnerTypeOverride = body?.RunnerTypeOverride != null ? (int?)body.RunnerTypeOverride.Value : null,
                 useHttpServerOverride = body?.UseHttpServerOverride,
@@ -491,8 +493,10 @@ public record TriggerCiCdResponse(Guid RunId, string Status, string Branch, stri
 public record RetrySessionRequest(
     string? DockerImageOverride = null,
     bool KeepContainer = false,
-    /// <summary>Optional full command to execute via docker exec instead of the runner CLI (e.g. <c>["sh", "-c", "wget ..."]</c>). Replaces the entire runner invocation. When set, takes precedence over the agent's RunnerType command.</summary>
-    string[]? DockerCmdOverride = null,
+    /// <summary>Optional full command to execute via <c>docker exec</c> inside the container, replacing the runner CLI. Accepts a complete command list e.g. <c>["sh", "-c", "wget ..."]</c>. When set, takes precedence over the agent's RunnerType command.</summary>
+    string[]? CustomCmdOverride = null,
+    /// <summary>Optional extra volume bind mounts applied when creating the container (Docker runtime level). Each element is a bind-mount entry in the format <c>host-path:container-path</c> (e.g. <c>"/data:/workspace/data"</c>) or <c>host-path:container-path:ro</c>. Added to <c>HostConfig.Binds</c>.</summary>
+    string[]? RunnerArgs = null,
     /// <summary>Override the agent used for this retry run. Null = use the same agent as the original session.</summary>
     Guid? AgentIdOverride = null,
     /// <summary>Override the model used for this retry run. Null = use the agent's configured model.</summary>
