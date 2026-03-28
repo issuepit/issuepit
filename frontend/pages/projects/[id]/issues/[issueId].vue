@@ -377,8 +377,9 @@
                     class="w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors"
                     :class="idx === commentMention.activeIndex.value ? 'bg-brand-700/40 text-white' : 'text-gray-300 hover:bg-gray-700'"
                     @mousedown.prevent="commentMention.confirmSelection(item)">
-                    <span class="w-5 h-5 rounded-full bg-brand-700 flex items-center justify-center text-xs text-brand-200 shrink-0">
-                      {{ (item.label || item.value).charAt(0).toUpperCase() }}
+                    <span class="w-5 h-5 rounded-full flex items-center justify-center text-xs shrink-0"
+                      :class="item.type === 'agent' ? 'bg-brand-700 text-brand-200' : 'bg-gray-700 text-gray-300'">
+                      {{ item.type === 'agent' ? '🤖' : item.type === 'user' ? '👤' : '#' }}
                     </span>
                     <span class="truncate">{{ item.label || item.value }}</span>
                   </button>
@@ -960,8 +961,9 @@
                 class="w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors"
                 :class="idx === assignModalMention.activeIndex.value ? 'bg-brand-700/40 text-white' : 'text-gray-300 hover:bg-gray-700'"
                 @mousedown.prevent="assignModalMention.confirmSelection(item)">
-                <span class="w-5 h-5 rounded-full bg-brand-700 flex items-center justify-center text-xs text-brand-200 shrink-0">
-                  {{ (item.label || item.value).charAt(0).toUpperCase() }}
+                <span class="w-5 h-5 rounded-full flex items-center justify-center text-xs shrink-0"
+                  :class="item.type === 'agent' ? 'bg-brand-700 text-brand-200' : 'bg-gray-700 text-gray-300'">
+                  {{ item.type === 'agent' ? '🤖' : item.type === 'user' ? '👤' : '#' }}
                 </span>
                 <span class="truncate">{{ item.label || item.value }}</span>
               </button>

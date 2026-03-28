@@ -61,6 +61,7 @@ public class OrganizationsController(IssuePitDbContext db, TenantContext ctx) : 
         org.ActionOfflineMode = updated.ActionOfflineMode;
         org.LocalRepositories = updated.LocalRepositories;
         org.SkipSteps = updated.SkipSteps;
+        org.MaxCiCdLoopCount = updated.MaxCiCdLoopCount;
         await db.SaveChangesAsync();
         return Ok(org);
     }
