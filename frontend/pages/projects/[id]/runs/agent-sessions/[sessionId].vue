@@ -1289,7 +1289,7 @@ onMounted(async () => {
     await agentConnection.value.invoke('JoinSession', sessionId).catch((e: unknown) => { console.warn('Failed to join agent session group', e) })
     agentConnection.value.on('LogLine', ({ payload }: { sessionId: string; payload: string }) => {
       try {
-        const data = JSON.parse(payload) as { event?: string; stream?: string; line?: string; timestamp?: string; status?: string; section?: string; sectionIndex?: number }
+        const data = JSON.parse(payload) as { event?: string; stream?: string; line?: string; timestamp?: string; status?: string; messageId?: string; section?: string; sectionIndex?: number }
         if (data.event === 'session-completed') {
           now.value = Date.now()
           // Refresh session metadata (status, endedAt) without replacing logs
@@ -1297,6 +1297,10 @@ onMounted(async () => {
           loadMessages()
         } else if (data.event === 'session-heartbeat') {
           now.value = Date.now()
+        } else if (data.event === 'message-status-updated' && data.messageId && data.status) {
+          // Real-time message status update from the agent — update in place without a reload
+          const idx = sessionMessages.value.findIndex(m => m.id === data.messageId)
+          if (idx !== -1) sessionMessages.value[idx].status = data.status
         } else if (data.line !== undefined) {
           store.currentSessionLogs.push({
             id: crypto.randomUUID(),
@@ -1372,28 +1376,6 @@ async function queueEditedContentAsNew() {
   cancelEdit()
   await submitMessage()
 }
-
-// ── Message status polling ───────────────────────────────────────────────────
-
-const hasActiveMessages = computed(() =>
-  sessionMessages.value.some(m => m.status === 'Pending' || m.status === 'Running')
-)
-
-let messagesPoller: ReturnType<typeof setInterval> | null = null
-
-watch(hasActiveMessages, (active) => {
-  if (active && !messagesPoller) {
-    messagesPoller = setInterval(loadMessages, 5000)
-  }
-  else if (!active && messagesPoller) {
-    clearInterval(messagesPoller)
-    messagesPoller = null
-  }
-})
-
-onUnmounted(() => {
-  if (messagesPoller) clearInterval(messagesPoller)
-})
 
 const { uploading: uploadingImage, handlePaste: handleImagePaste } = useImageUpload()
 

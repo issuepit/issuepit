@@ -1413,6 +1413,17 @@ public class IssueWorker(
             payload);
     }
 
+    private Task PublishMessageStatusAsync(string sessionId, string messageId, AgentSessionMessageStatus status)
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            @event = "message-status-updated",
+            messageId,
+            status = status.ToString(),
+        });
+        return PublishSessionEventAsync(sessionId, payload);
+    }
+
     /// <summary>
     /// Publishes a lightweight heartbeat event every 30 seconds for the duration of the session.
     /// The relay service forwards it as <c>RunsUpdated</c> on the project hub so that connected
@@ -1508,6 +1519,7 @@ public class IssueWorker(
             var messageIndex = counter.Next++;
             message.Status = AgentSessionMessageStatus.Running;
             await db.SaveChangesAsync(cancellationToken);
+            await PublishMessageStatusAsync(session.Id.ToString(), message.Id.ToString(), AgentSessionMessageStatus.Running);
 
             logger.LogInformation("Processing queued message {MessageId} (index {Index}) for session {SessionId}",
                 message.Id, messageIndex, session.Id);
@@ -1569,6 +1581,7 @@ public class IssueWorker(
             }
 
             await db.SaveChangesAsync(cancellationToken);
+            await PublishMessageStatusAsync(session.Id.ToString(), message.Id.ToString(), message.Status);
         }
     }
 
