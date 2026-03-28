@@ -12,9 +12,11 @@ namespace IssuePit.Core.Runners;
 ///   <item><c>tool</c> — tool invocation (bash, read, write, etc.); formatted as a summary line.</item>
 ///   <item><c>session</c> — session state, including cost and token counts; formatted as a stats line
 ///     with the special <see cref="StatsPrefix"/> marker so the frontend can render it as a UI card.</item>
-///   <item><c>step_start</c> — step boundary marker (new opencode format); silently dropped.</item>
+///   <item><c>step_start</c> — step boundary marker (new opencode format); emits <see cref="StepStartMarker"/>
+///     so the frontend can group subsequent tool calls into a collapsible step block.</item>
 ///   <item><c>tool_use</c> — tool invocation in new opencode format; formatted as a summary line with duration.</item>
-///   <item><c>step_finish</c> — step boundary marker (new opencode format); silently dropped.</item>
+///   <item><c>step_finish</c> — step boundary marker (new opencode format); emits a
+///     <see cref="StepFinishPrefix"/> stats line with per-step token and cost data.</item>
 /// </list>
 /// Any line that is not valid JSON, or has an unrecognised event type, is returned unchanged as-is.
 ///
@@ -27,10 +29,22 @@ namespace IssuePit.Core.Runners;
 public static class OpenCodeJsonLogParser
 {
     /// <summary>
-    /// Prefix that identifies a formatted opencode stats line stored in the database.
+    /// Prefix that identifies a formatted opencode session stats line stored in the database.
     /// The frontend detects this prefix and renders a stats card instead of plain text.
     /// </summary>
     public const string StatsPrefix = "[opencode:stats] ";
+
+    /// <summary>
+    /// Marker that identifies an opencode step-start line stored in the database.
+    /// The frontend uses this to open a new collapsible step group in the log view.
+    /// </summary>
+    public const string StepStartMarker = "[opencode:step-start]";
+
+    /// <summary>
+    /// Prefix that identifies an opencode step-finish stats line stored in the database.
+    /// The frontend detects this prefix and renders a compact per-step stats badge.
+    /// </summary>
+    public const string StepFinishPrefix = "[opencode:step-finish] ";
 
     /// <summary>
     /// Tries to parse <paramref name="rawLine"/> as an opencode JSON event and returns a
@@ -55,9 +69,9 @@ public static class OpenCodeJsonLogParser
                 "tool" => ParseToolEvent(root),
                 "session" => ParseSessionEvent(root),
                 // New opencode format (opencode ≥ 0.3): step/tool events wrapped in a "part" envelope.
-                "step_start" => string.Empty,
+                "step_start" => StepStartMarker,
                 "tool_use" => ParseToolUseEvent(root),
-                "step_finish" => string.Empty,
+                "step_finish" => ParseStepFinishEvent(root),
                 // Unrecognized type — fall back to raw line.
                 _ => rawLine,
             };
@@ -141,6 +155,40 @@ public static class OpenCodeJsonLogParser
         var inputSummary = FormatToolInput(toolName, state);
         var durationSuffix = durationStr != null ? $" [{durationStr}]" : string.Empty;
         return $"[tool: {toolName}]{inputSummary}{durationSuffix}";
+    }
+
+    private static string ParseStepFinishEvent(JsonElement root)
+    {
+        // New opencode format: step-finish wrapped in a "part" envelope with per-step token/cost data.
+        if (!root.TryGetProperty("part", out var part) || part.ValueKind != JsonValueKind.Object)
+            return string.Empty;
+
+        long? inputTokens = null;
+        long? outputTokens = null;
+        long? cacheReadTokens = null;
+        long? cacheWriteTokens = null;
+
+        if (part.TryGetProperty("tokens", out var tokensEl) && tokensEl.ValueKind == JsonValueKind.Object)
+        {
+            inputTokens = TryGetLong(tokensEl, "input");
+            outputTokens = TryGetLong(tokensEl, "output");
+            if (tokensEl.TryGetProperty("cache", out var cacheEl) && cacheEl.ValueKind == JsonValueKind.Object)
+            {
+                cacheReadTokens = TryGetLong(cacheEl, "read");
+                cacheWriteTokens = TryGetLong(cacheEl, "write");
+            }
+        }
+
+        double? cost = null;
+        if (part.TryGetProperty("cost", out var costEl) && costEl.ValueKind == JsonValueKind.Number)
+            cost = costEl.GetDouble();
+
+        // Emit nothing when there are no meaningful stats.
+        if (inputTokens is null && outputTokens is null)
+            return string.Empty;
+
+        var stats = new { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, cost };
+        return StepFinishPrefix + JsonSerializer.Serialize(stats);
     }
 
     private static string ParseSessionEvent(JsonElement root)
