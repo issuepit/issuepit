@@ -618,43 +618,82 @@ public class AgentSessionTests(AspireFixture fixture)
         var startBody = await startResp.Content.ReadFromJsonAsync<JsonElement>();
         var sessionId = startBody.GetProperty("sessionId").GetString()!;
 
-        // Manual-mode sessions stay in Running state — wait for Running (not a terminal state).
-        await WaitForManualModeSessionRunningByIdAsync(client, sessionId, TimeSpan.FromMinutes(3));
+        // Always cancel the session in a finally block so the IssueWorker's sequential Kafka
+        // consumer is unblocked even when an assertion fails. Without the cancel the worker
+        // blocks forever in the manual-mode "wait for cancellation" loop, causing all
+        // subsequent Docker tests in the same test run to timeout.
+        try
+        {
+            // Poll the session logs until the expected log line appears rather than just
+            // waiting for the session to reach "Running" status. The status is set to Running
+            // in the DB before DockerAgentRuntime.LaunchAsync writes any log lines, so polling
+            // status alone has a race condition: the test can see "Running" but find empty logs.
+            var logLines = await WaitForSessionLogLineAsync(
+                client, sessionId, "Manual (live terminal session)", TimeSpan.FromMinutes(3));
 
-        // Fetch full session detail and verify the manual-mode flag.
-        var sessionResp = await client.GetAsync($"/api/agent-sessions/{sessionId}");
-        Assert.Equal(HttpStatusCode.OK, sessionResp.StatusCode);
-        var sessionDetail = await sessionResp.Content.ReadFromJsonAsync<JsonElement>();
+            // Fetch full session detail and verify the manual-mode flag.
+            var sessionResp = await client.GetAsync($"/api/agent-sessions/{sessionId}");
+            Assert.Equal(HttpStatusCode.OK, sessionResp.StatusCode);
+            var sessionDetail = await sessionResp.Content.ReadFromJsonAsync<JsonElement>();
 
-        Assert.True(sessionDetail.GetProperty("isManualMode").GetBoolean(),
-            "Session detail must report isManualMode=true for a manual-mode agent");
+            Assert.True(sessionDetail.GetProperty("isManualMode").GetBoolean(),
+                "Session detail must report isManualMode=true for a manual-mode agent");
 
-        // Verify the early [DEBUG] log lines (emitted well before container startup).
-        var logsResp = await client.GetAsync($"/api/agent-sessions/{sessionId}/logs");
-        Assert.Equal(HttpStatusCode.OK, logsResp.StatusCode);
-        var logs = await logsResp.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.True(
+                logLines.Any(l => l.Contains("Manual (live terminal session)")),
+                "Expected '[DEBUG] Agent mode : Manual (live terminal session)' log line. Actual logs:\n"
+                    + string.Join("\n", logLines.Take(20)));
 
-        var logLines = logs.EnumerateArray()
-            .Select(l => l.GetProperty("line").GetString() ?? string.Empty)
-            .ToList();
+            Assert.True(
+                logLines.Any(l => l.StartsWith("[DEBUG] Runtime")),
+                "Expected a '[DEBUG] Runtime' startup log line. Actual logs:\n"
+                    + string.Join("\n", logLines.Take(20)));
+        }
+        finally
+        {
+            // Cancel the session to clean up the running container and unblock IssueWorker.
+            var cancelResp = await client.PostAsJsonAsync($"/api/agent-sessions/{sessionId}/cancel", new { });
+            Assert.True(cancelResp.IsSuccessStatusCode,
+                $"Expected cancel to succeed (200/202), got {cancelResp.StatusCode}");
 
-        Assert.True(
-            logLines.Any(l => l.Contains("Manual (live terminal session)")),
-            "Expected '[DEBUG] Agent mode : Manual (live terminal session)' log line. Actual logs:\n"
-                + string.Join("\n", logLines.Take(20)));
+            // Wait for the session to reach Cancelled state (confirms the worker handled the signal).
+            await WaitForAgentSessionByIdAsync(client, sessionId, TimeSpan.FromMinutes(2));
+        }
+    }
 
-        Assert.True(
-            logLines.Any(l => l.StartsWith("[DEBUG] Runtime")),
-            "Expected a '[DEBUG] Runtime' startup log line. Actual logs:\n"
-                + string.Join("\n", logLines.Take(20)));
+    /// <summary>
+    /// Polls <c>GET /api/agent-sessions/{sessionId}/logs</c> until a log line containing
+    /// <paramref name="expectedSubstring"/> appears, then returns all current log lines.
+    /// Avoids the race condition where the session is already <c>Running</c> in the DB but
+    /// <c>DockerAgentRuntime.LaunchAsync</c> has not yet written any log lines.
+    /// </summary>
+    private static async Task<List<string>> WaitForSessionLogLineAsync(
+        HttpClient client,
+        string sessionId,
+        string expectedSubstring,
+        TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        List<string> logLines = [];
+        while (DateTime.UtcNow < deadline)
+        {
+            var resp = await client.GetAsync($"/api/agent-sessions/{sessionId}/logs");
+            if (resp.IsSuccessStatusCode)
+            {
+                var logs = await resp.Content.ReadFromJsonAsync<JsonElement>();
+                logLines = logs.EnumerateArray()
+                    .Select(l => l.GetProperty("line").GetString() ?? string.Empty)
+                    .ToList();
+                if (logLines.Any(l => l.Contains(expectedSubstring)))
+                    return logLines;
+            }
 
-        // Cancel the session to clean up the running container.
-        var cancelResp = await client.PostAsJsonAsync($"/api/agent-sessions/{sessionId}/cancel", new { });
-        Assert.True(cancelResp.IsSuccessStatusCode,
-            $"Expected cancel to succeed (200/202), got {cancelResp.StatusCode}");
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+        }
 
-        // Wait for the session to reach Cancelled state (confirms the worker handled the signal).
-        await WaitForAgentSessionByIdAsync(client, sessionId, TimeSpan.FromMinutes(2));
+        throw new TimeoutException(
+            $"Log line containing '{expectedSubstring}' did not appear in session {sessionId} within {timeout}.\n" +
+            $"Actual logs:\n{string.Join('\n', logLines.Take(20))}");
     }
 
     /// <summary>
