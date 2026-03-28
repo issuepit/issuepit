@@ -423,7 +423,7 @@ public class TestHistoryTests : IAsyncLifetime
         if (FrontendUrl is null)
             throw new InvalidOperationException("FRONTEND_URL is not set. This test requires a running frontend.");
 
-        var (apiClient, projectId, username, password) = await SetupProjectAsync();
+        var (apiClient, _, projectId, username, password) = await SetupProjectAsync();
         using var _ = apiClient;
 
         var runId = await ImportTrxAsync(apiClient, projectId);
