@@ -737,6 +737,70 @@ public class AgentSessionTests(AspireFixture fixture)
     }
 
     /// <summary>
+    /// Starts a manual session without specifying a configured agent mode — opencode has
+    /// built-in models so no agent configuration is required.
+    /// Verifies that:
+    /// <list type="bullet">
+    ///   <item>The session reaches <c>Running</c> state (the container is confirmed live).</item>
+    ///   <item>The session detail reports <c>isManualMode=true</c>.</item>
+    ///   <item>The session can be cancelled and reaches a terminal state.</item>
+    /// </list>
+    /// Requires Docker.
+    /// </summary>
+    [Fact]
+    public async Task AgentSession_ManualMode_WithoutAgent_ContainerRunsAndCancels()
+    {
+        SkipIfDockerUnavailable();
+
+        using var client = CreateCookieClient();
+        var tenantId = await GetDefaultTenantIdAsync();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"e2e{Guid.NewGuid():N}"[..12];
+        await client.PostAsJsonAsync("/api/auth/register", new { username, password = "TestPass1!" });
+
+        var orgSlug = $"noagt-org-{Guid.NewGuid():N}"[..16];
+        var orgResp = await client.PostAsJsonAsync("/api/orgs", new { name = "No-Agent Session Org", slug = orgSlug });
+        Assert.Equal(HttpStatusCode.Created, orgResp.StatusCode);
+        var org = await orgResp.Content.ReadFromJsonAsync<JsonElement>();
+        var orgId = org.GetProperty("id").GetString()!;
+
+        var projectSlug = $"noagt-proj-{Guid.NewGuid():N}"[..16];
+        var projResp = await client.PostAsJsonAsync("/api/projects",
+            new { name = "No-Agent Session Project", slug = projectSlug, orgId = Guid.Parse(orgId) });
+        Assert.Equal(HttpStatusCode.Created, projResp.StatusCode);
+        var project = await projResp.Content.ReadFromJsonAsync<JsonElement>();
+        var projectId = project.GetProperty("id").GetString()!;
+
+        // Start a manual session without specifying an agent — must be accepted.
+        var startResp = await client.PostAsJsonAsync("/api/agent-sessions/start-manual",
+            new { projectId = Guid.Parse(projectId) });
+        Assert.Equal(HttpStatusCode.Accepted, startResp.StatusCode);
+
+        var startBody = await startResp.Content.ReadFromJsonAsync<JsonElement>();
+        var sessionId = startBody.GetProperty("sessionId").GetString()!;
+        Assert.False(string.IsNullOrEmpty(sessionId), "Response must include a sessionId");
+
+        // Wait for the container to reach Running state.
+        await WaitForManualModeSessionRunningByIdAsync(client, sessionId, TimeSpan.FromMinutes(3));
+
+        // Verify the session reports isManualMode=true (the synthesised transient agent is manual-mode).
+        var sessionResp = await client.GetAsync($"/api/agent-sessions/{sessionId}");
+        Assert.Equal(HttpStatusCode.OK, sessionResp.StatusCode);
+        var sessionDetail = await sessionResp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(sessionDetail.GetProperty("isManualMode").GetBoolean(),
+            "Session started without an explicit agent must report isManualMode=true");
+
+        // Cancel the session to clean up the running container.
+        var cancelResp = await client.PostAsJsonAsync($"/api/agent-sessions/{sessionId}/cancel", new { });
+        Assert.True(cancelResp.IsSuccessStatusCode,
+            $"Expected cancel to succeed, got {cancelResp.StatusCode}");
+
+        // Confirm the worker handled the signal.
+        await WaitForAgentSessionByIdAsync(client, sessionId, TimeSpan.FromMinutes(2));
+    }
+
+    /// <summary>
     /// Polls <c>GET /api/agent-sessions/{id}</c> until the session reaches <c>Running</c> state.
     /// Used for manual-mode sessions started explicitly via the start-manual endpoint.
     /// </summary>
