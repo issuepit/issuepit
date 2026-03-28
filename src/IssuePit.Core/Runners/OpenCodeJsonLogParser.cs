@@ -12,6 +12,9 @@ namespace IssuePit.Core.Runners;
 ///   <item><c>tool</c> — tool invocation (bash, read, write, etc.); formatted as a summary line.</item>
 ///   <item><c>session</c> — session state, including cost and token counts; formatted as a stats line
 ///     with the special <see cref="StatsPrefix"/> marker so the frontend can render it as a UI card.</item>
+///   <item><c>step_start</c> — step boundary marker (new opencode format); silently dropped.</item>
+///   <item><c>tool_use</c> — tool invocation in new opencode format; formatted as a summary line with duration.</item>
+///   <item><c>step_finish</c> — step boundary marker (new opencode format); silently dropped.</item>
 /// </list>
 /// Any line that is not valid JSON, or has an unrecognised event type, is returned unchanged as-is.
 ///
@@ -51,6 +54,10 @@ public static class OpenCodeJsonLogParser
                 "text" => ParseTextEvent(root),
                 "tool" => ParseToolEvent(root),
                 "session" => ParseSessionEvent(root),
+                // New opencode format (opencode ≥ 0.3): step/tool events wrapped in a "part" envelope.
+                "step_start" => string.Empty,
+                "tool_use" => ParseToolUseEvent(root),
+                "step_finish" => string.Empty,
                 // Unrecognized type — fall back to raw line.
                 _ => rawLine,
             };
@@ -99,6 +106,41 @@ public static class OpenCodeJsonLogParser
         var inputSummary = FormatToolInput(name, props);
         var errorSuffix = hasError ? " [error]" : string.Empty;
         return $"[tool: {name}]{inputSummary}{errorSuffix}";
+    }
+
+    private static string ParseToolUseEvent(JsonElement root)
+    {
+        // New opencode format: tool call wrapped in a "part" envelope.
+        if (!root.TryGetProperty("part", out var part) || part.ValueKind != JsonValueKind.Object)
+            return string.Empty;
+
+        if (!part.TryGetProperty("state", out var state) || state.ValueKind != JsonValueKind.Object)
+            return string.Empty;
+
+        // Only emit once the tool call has completed.
+        var status = GetString(state, "status");
+        if (status != "completed")
+            return string.Empty;
+
+        var toolName = GetString(part, "tool") ?? "unknown";
+
+        // Calculate duration from state.time (millisecond Unix timestamps).
+        string? durationStr = null;
+        if (state.TryGetProperty("time", out var timeEl) && timeEl.ValueKind == JsonValueKind.Object)
+        {
+            var start = TryGetLong(timeEl, "start");
+            var end = TryGetLong(timeEl, "end");
+            if (start.HasValue && end.HasValue)
+            {
+                var ms = end.Value - start.Value;
+                durationStr = ms >= 1000 ? $"{ms / 1000.0:0.##}s" : $"{ms}ms";
+            }
+        }
+
+        // state has the "input" sub-property expected by FormatToolInput.
+        var inputSummary = FormatToolInput(toolName, state);
+        var durationSuffix = durationStr != null ? $" [{durationStr}]" : string.Empty;
+        return $"[tool: {toolName}]{inputSummary}{durationSuffix}";
     }
 
     private static string ParseSessionEvent(JsonElement root)
@@ -188,6 +230,7 @@ public static class OpenCodeJsonLogParser
             "read" => GetString(inputEl, "filePath") ?? GetString(inputEl, "path"),
             "write" or "edit" or "patch" => GetString(inputEl, "filePath") ?? GetString(inputEl, "path"),
             "search" or "grep" => GetString(inputEl, "pattern") ?? GetString(inputEl, "query"),
+            "glob" => GetString(inputEl, "pattern"),
             "ls" or "list" => GetString(inputEl, "path") ?? GetString(inputEl, "dir"),
             _ => null,
         };

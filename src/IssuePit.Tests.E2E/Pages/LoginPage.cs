@@ -39,12 +39,15 @@ public class LoginPage(IPage page)
 
         await page.FillAsync("input[autocomplete='username']", username);
         await page.FillAsync("input[autocomplete='new-password']", password);
+        // Register the URL watcher BEFORE clicking so it cannot miss the redirect.
+        var postRegisterNav = page.WaitForURLAsync("**/", new PageWaitForURLOptions { Timeout = E2ETimeouts.NavigationLong });
         await page.ClickAsync("button[type='submit']");
+        await postRegisterNav;
     }
 
     /// <summary>
     /// Logs in with an existing account: navigates to /login, fills in credentials,
-    /// and submits.
+    /// submits, and waits for the post-login redirect to complete.
     /// </summary>
     public async Task LoginAsync(string username, string password)
     {
@@ -55,7 +58,11 @@ public class LoginPage(IPage page)
             new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
         await page.FillAsync("input[autocomplete='username']", username);
         await page.FillAsync("input[autocomplete='current-password']", password);
+        // Register the URL watcher BEFORE clicking so it cannot miss the redirect.
+        // "**/" matches the root URL (e.g. http://localhost:3000/).
+        var postLoginNav = page.WaitForURLAsync("**/", new PageWaitForURLOptions { Timeout = E2ETimeouts.NavigationLong });
         await page.ClickAsync("button[type='submit']");
+        await postLoginNav;
     }
 
     /// <summary>

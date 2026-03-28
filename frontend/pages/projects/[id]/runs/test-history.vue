@@ -60,7 +60,7 @@
     </div>
 
     <!-- Loading -->
-    <div v-if="loading" class="flex items-center justify-center py-16">
+    <div v-if="loading" data-testid="test-history-loading" class="flex items-center justify-center py-16">
       <div class="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
     </div>
 
@@ -179,7 +179,10 @@
             <tbody class="divide-y divide-gray-800">
               <tr v-for="test in filteredTests" :key="test.fullName"
                 class="hover:bg-gray-900/50 transition-colors cursor-pointer"
-                @click="openTestDetail(test)">
+                @click="openTestDetail(test)"
+                @mouseenter="showHistoryTestTooltip($event, test)"
+                @mousemove="moveHistoryTestTooltip($event)"
+                @mouseleave="hideHistoryTestTooltip">
                 <td class="px-4 py-3 max-w-sm">
                   <div class="flex items-center gap-2">
                     <span v-if="test.lastOutcomeName === 'Passed'" class="text-green-400 shrink-0 text-xs">✓</span>
@@ -237,7 +240,10 @@
               <tbody class="divide-y divide-gray-800">
                 <tr v-for="test in flakyTests" :key="test.fullName"
                   class="hover:bg-gray-900/50 transition-colors cursor-pointer"
-                  @click="openTestDetail(test)">
+                  @click="openTestDetail(test)"
+                  @mouseenter="showHistoryTestTooltip($event, test)"
+                  @mousemove="moveHistoryTestTooltip($event)"
+                  @mouseleave="hideHistoryTestTooltip">
                   <td class="px-4 py-3 max-w-xs">
                     <p class="text-xs text-gray-300 font-mono truncate" :title="test.fullName">{{ test.methodName || test.fullName }}</p>
                     <p v-if="test.className" class="text-xs text-gray-600 font-mono truncate">{{ test.className }}</p>
@@ -987,6 +993,49 @@
         </div>
       </div>
     </Teleport>
+
+    <!-- Test stats tooltip (tests & flaky tabs) -->
+    <Teleport to="body">
+      <div
+        v-if="historyTestTooltip.visible"
+        class="fixed z-[9999] pointer-events-none bg-gray-900 border border-gray-700 rounded-lg shadow-xl text-xs p-2.5 min-w-[180px] max-w-[280px]"
+        :style="`left:${historyTestTooltip.x + 14}px;top:${historyTestTooltip.y - 8}px;transform:translateY(-100%)`">
+        <div class="font-medium text-gray-200 mb-1.5 truncate">{{ historyTestTooltip.test?.methodName || historyTestTooltip.test?.fullName }}</div>
+        <template v-if="historyTestTooltip.test">
+          <div class="space-y-0.5">
+            <div class="flex justify-between gap-3">
+              <span class="text-gray-400">Total runs</span>
+              <span class="text-gray-200">{{ historyTestTooltip.test.totalRuns }}</span>
+            </div>
+            <div class="flex justify-between gap-3">
+              <span class="text-green-400">Passed</span>
+              <span class="text-gray-200">{{ historyTestTooltip.test.passedRuns }}</span>
+            </div>
+            <div v-if="historyTestTooltip.test.failedRuns > 0" class="flex justify-between gap-3">
+              <span class="text-red-400">Failed</span>
+              <span class="text-gray-200">{{ historyTestTooltip.test.failedRuns }}</span>
+            </div>
+            <div class="flex justify-between gap-3">
+              <span class="text-gray-400">Fail rate</span>
+              <span :class="historyTestTooltip.test.failedRuns / historyTestTooltip.test.totalRuns >= 0.5 ? 'text-red-400' : historyTestTooltip.test.failedRuns > 0 ? 'text-yellow-400' : 'text-gray-200'">
+                {{ Math.round((historyTestTooltip.test.failedRuns / historyTestTooltip.test.totalRuns) * 100) }}%
+              </span>
+            </div>
+            <div class="flex justify-between gap-3">
+              <span class="text-gray-400">Avg duration</span>
+              <span class="text-gray-200">{{ formatDuration(historyTestTooltip.test.avgDurationMs) }}</span>
+            </div>
+            <div class="flex justify-between gap-3 pt-0.5 border-t border-gray-800 mt-0.5">
+              <span class="text-gray-400">Last result</span>
+              <span :class="historyTestTooltip.test.lastOutcomeName === 'Passed' ? 'text-green-400' : historyTestTooltip.test.lastOutcomeName === 'Failed' ? 'text-red-400' : 'text-yellow-400'">
+                {{ historyTestTooltip.test.lastOutcomeName }}
+              </span>
+            </div>
+          </div>
+          <p class="mt-1.5 text-gray-600 text-[10px]">Click row to open full history</p>
+        </template>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -1368,4 +1417,32 @@ onMounted(async () => {
     if (match) openTestDetail(match)
   }
 })
+
+// ── Test row tooltip (Tests & Flaky tabs) ──────────────────────────────────────
+
+const historyTestTooltip = ref<{
+  visible: boolean
+  x: number
+  y: number
+  test: TestStats | null
+}>({ visible: false, x: 0, y: 0, test: null })
+
+let historyTestTooltipTimer: ReturnType<typeof setTimeout> | null = null
+
+function showHistoryTestTooltip(e: MouseEvent, test: TestStats) {
+  if (historyTestTooltipTimer) clearTimeout(historyTestTooltipTimer)
+  historyTestTooltipTimer = setTimeout(() => {
+    historyTestTooltip.value = { visible: true, x: e.clientX, y: e.clientY, test }
+  }, 250)
+}
+
+function moveHistoryTestTooltip(e: MouseEvent) {
+  if (historyTestTooltip.value.visible)
+    historyTestTooltip.value = { ...historyTestTooltip.value, x: e.clientX, y: e.clientY }
+}
+
+function hideHistoryTestTooltip() {
+  if (historyTestTooltipTimer) { clearTimeout(historyTestTooltipTimer); historyTestTooltipTimer = null }
+  historyTestTooltip.value = { ...historyTestTooltip.value, visible: false }
+}
 </script>
