@@ -650,7 +650,7 @@ public abstract class DockerRuntimeBase
         try
         {
             var script = BuildActrcSetupScript(actRunnerImage);
-            await ExecCommandAsync(containerId, ["/bin/sh", "-c", script], onLogLine, cancellationToken);
+            await ExecCommandAsync(containerId, ["/bin/sh", "-c", script], onLogLine, cancellationToken, workingDir: "/");
             await onLogLine($"[INFO] actrc written (runner: {actRunnerImage})", LogStream.Stdout);
         }
         catch (OperationCanceledException)
