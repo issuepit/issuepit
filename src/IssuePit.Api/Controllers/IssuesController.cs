@@ -937,7 +937,7 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
             {
                 s.Id,
                 s.AgentId,
-                AgentName = s.Agent.Name,
+                AgentName = s.Agent != null ? s.Agent.Name : null,
                 s.IssueId,
                 s.CommitSha,
                 s.GitBranch,

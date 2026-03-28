@@ -59,11 +59,30 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
     }
 
     [HttpPost]
-    public async Task<IActionResult> CreateAgent([FromBody] Agent agent)
+    public async Task<IActionResult> CreateAgent([FromBody] CreateAgentRequest request)
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
-        agent.Id = Guid.NewGuid();
-        agent.CreatedAt = DateTime.UtcNow;
+        if (!Guid.TryParse(request.OrgId, out var orgId) || orgId == Guid.Empty)
+            return BadRequest(new { error = "A valid non-empty organization ID (GUID) is required." });
+        var agent = new Agent
+        {
+            Id = Guid.NewGuid(),
+            OrgId = orgId,
+            Name = request.Name,
+            SystemPrompt = request.SystemPrompt ?? string.Empty,
+            DockerImage = string.IsNullOrEmpty(request.DockerImage) ? null : request.DockerImage,
+            AllowedTools = request.AllowedTools ?? "[]",
+            RunnerType = request.RunnerType,
+            Model = string.IsNullOrEmpty(request.Model) ? null : request.Model,
+            IsActive = request.IsActive,
+            ParentAgentId = request.ParentAgentId,
+            AgentType = request.AgentType,
+            UseHttpServer = request.UseHttpServer,
+            HttpServerPassword = string.IsNullOrEmpty(request.HttpServerPassword) ? null : request.HttpServerPassword,
+            ManualMode = request.ManualMode,
+            DisableInternet = request.DisableInternet,
+            CreatedAt = DateTime.UtcNow,
+        };
         db.Agents.Add(agent);
         await db.SaveChangesAsync();
         // Return the created agent without the password (security: never expose credentials).
@@ -156,6 +175,23 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
 }
 
 public sealed record SetAgentActiveRequest(bool IsActive);
+
+/// <summary>Request body for POST /api/agents. Uses string OrgId to handle empty-string input gracefully.</summary>
+public sealed record CreateAgentRequest(
+    string? OrgId,
+    string Name,
+    string? SystemPrompt,
+    string? DockerImage,
+    string? AllowedTools,
+    RunnerType? RunnerType,
+    string? Model,
+    bool IsActive,
+    Guid? ParentAgentId,
+    OpenCodeAgentType? AgentType,
+    bool UseHttpServer,
+    string? HttpServerPassword,
+    bool ManualMode,
+    bool DisableInternet);
 
 /// <summary>Agent summary returned by POST (create) and PUT (update) endpoints.</summary>
 public sealed record AgentResponse(
