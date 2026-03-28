@@ -234,7 +234,7 @@ public class IssueMentionTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// The agent assignment modal shows a branch input field.
+    /// The agent assignment modal shows a branch input field when "Create new branch" is unchecked.
     /// </summary>
     [Fact]
     public async Task AssignAgentModal_ShowsBranchInput()
@@ -246,9 +246,12 @@ public class IssueMentionTests : IAsyncLifetime
             await detailPage.GotoAsync(projectSlug, issueNumber);
 
             await detailPage.OpenAssignAgentModalAsync(agentName);
+            // By default "Create new branch" is checked and the BranchSelect is hidden.
+            // Uncheck it to reveal the manual branch selector.
+            await detailPage.UncheckCreateNewBranchAsync();
 
             Assert.True(await detailPage.IsAssignAgentModalBranchInputVisibleAsync(),
-                "Branch input should be visible inside the agent assignment modal");
+                "Branch input should be visible inside the agent assignment modal when 'Create new branch' is unchecked");
         }
         finally
         {

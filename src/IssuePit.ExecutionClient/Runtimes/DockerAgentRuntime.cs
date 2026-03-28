@@ -1468,7 +1468,8 @@ public class DockerAgentRuntime(
     }
 
     /// <summary>
-    /// Runs <c>opencode agent list</c> inside the container and emits the output as log lines.
+    /// Runs <c>opencode agent list</c> inside the container and logs the output as verbose/debug
+    /// (host application log only — not emitted to the session log visible in the UI).
     /// Best-effort: failure is non-fatal and only logs a warning.
     /// </summary>
     private async Task LogOpenCodeAgentsAsync(
@@ -1502,9 +1503,10 @@ public class DockerAgentRuntime(
 
         if (lines.Count == 0) return;
 
-        await onLogLine("[INFO] opencode agents (opencode agent list):", LogStream.Stdout);
+        // Emit to the host application log only (verbose/debug), not to the session log in the UI.
+        logger.LogDebug("opencode agent list for container {ContainerId}:", containerId);
         foreach (var line in lines)
-            await onLogLine($"[INFO]   {line}", LogStream.Stdout);
+            logger.LogDebug("  {Line}", line);
     }
 
     /// <summary>
