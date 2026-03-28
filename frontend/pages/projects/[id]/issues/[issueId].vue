@@ -975,20 +975,49 @@
             <svg class="w-3.5 h-3.5 inline-block mr-1 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />
             </svg>
-            Branch <span class="text-gray-600">(optional)</span>
+            Branch
           </label>
-          <BranchSelect
-            v-model="assignAgentModal.branch"
-            :branches="gitStore.branches"
-            :allow-free-form="true"
-            :full="true"
-            placeholder="default branch"
-          />
-          <p class="text-xs text-gray-600 mt-1">Agent will start from this branch instead of the default.</p>
+          <!-- Create new branch toggle -->
+          <label class="flex items-center gap-2 cursor-pointer mb-2">
+            <input
+              type="checkbox"
+              v-model="assignAgentModal.createNewBranch"
+              class="w-4 h-4 rounded border-gray-600 bg-gray-800 text-brand-500 focus:ring-brand-500 focus:ring-offset-gray-900"
+            />
+            <span class="text-xs text-gray-300">Create new branch</span>
+          </label>
+          <!-- Generated branch name (when "create new branch" is on) -->
+          <div v-if="assignAgentModal.createNewBranch" class="flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2">
+            <svg class="w-3 h-3 text-green-400 shrink-0" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5z"/>
+            </svg>
+            <span class="text-xs font-mono text-gray-300 truncate flex-1">{{ assignAgentModal.generatedBranch }}</span>
+          </div>
+          <!-- Manual branch selector (when "create new branch" is off) -->
+          <div v-else>
+            <BranchSelect
+              v-model="assignAgentModal.branch"
+              :branches="gitStore.branches"
+              :allow-free-form="true"
+              :full="true"
+              placeholder="Select or type a branch"
+            />
+            <!-- Warning when a default/protected branch is selected -->
+            <div v-if="assignAgentBranchIsProtected"
+              class="mt-2 flex items-start gap-2 bg-yellow-900/30 border border-yellow-700/50 rounded-lg px-3 py-2 text-xs text-yellow-300">
+              <svg class="w-3.5 h-3.5 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <span>
+                <strong>{{ assignAgentModal.branch }}</strong> is a protected default branch. Agents must work on a feature branch to avoid conflicts. Enable "Create new branch" or select a different branch.
+              </span>
+            </div>
+          </div>
         </div>
         <div class="flex gap-3">
           <button @click="confirmAssignAgent"
-            class="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
+            :disabled="assignAgentBranchIsProtected"
+            class="flex-1 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2 rounded-lg transition-colors">
             Assign{{ assignAgentModal.comment.trim() ? ' &amp; Comment' : '' }}
           </button>
           <button @click="cancelAssignAgent"
@@ -1256,11 +1285,13 @@ watch(commentHasAgentMention, (hasMention) => {
 })
 
 // Agent assignment modal state
-const assignAgentModal = reactive<{ agentId: string | null; agentName: string; comment: string; branch: string }>({
+const assignAgentModal = reactive<{ agentId: string | null; agentName: string; comment: string; branch: string; createNewBranch: boolean; generatedBranch: string }>({
   agentId: null,
   agentName: '',
   comment: '',
   branch: '',
+  createNewBranch: true,
+  generatedBranch: '',
 })
 const assignAgentModalRef = ref<HTMLTextAreaElement | null>(null)
 function setAssignAgentModalRef(el: unknown) {
@@ -1270,6 +1301,29 @@ const assignModalMention = useMentionDropdown({
   agents: mentionAgents,
   users: mentionUsers,
   hashTokens,
+})
+
+function generateAgentBranchName(issueNumber: number): string {
+  // Use a short UUID segment so each assignment gets a collision-resistant unique branch name.
+  const seed = crypto.randomUUID().replace(/-/g, '').slice(0, 8)
+  return `issuepit/issue-${issueNumber}-${seed}`
+}
+
+// Collect all default/protected branches from project git repos plus common defaults.
+// Agents must not be assigned to these branches directly — a feature branch must be used instead.
+const defaultProtectedBranches = computed(() => {
+  const branches = new Set(['main', 'master'])
+  for (const repo of gitStore.repos) {
+    if (repo.defaultBranch) branches.add(repo.defaultBranch)
+  }
+  return branches
+})
+
+// True when "create new branch" is disabled and the selected branch is a protected/default branch.
+const assignAgentBranchIsProtected = computed(() => {
+  if (assignAgentModal.createNewBranch) return false
+  const b = assignAgentModal.branch.trim()
+  return !!b && defaultProtectedBranches.value.has(b)
 })
 
 // Issue view tabs
@@ -1739,8 +1793,16 @@ function onSelectAgentForAssignment(e: Event) {
   assignAgentModal.agentName = agent.name
   assignAgentModal.comment = ''
   assignAgentModal.branch = ''
+  assignAgentModal.createNewBranch = true
+  // Generate a unique branch name each time the modal opens so that multiple agents or
+  // repeated assignments all work on isolated branches and never collide with each other.
+  assignAgentModal.generatedBranch = store.currentIssue?.number
+    ? generateAgentBranchName(store.currentIssue.number)
+    : ''
   // Ensure branches are loaded for the branch selector
   if (!gitStore.branches.length) gitStore.fetchBranches(actualProjectId.value)
+  // Ensure repos are loaded for default-branch detection
+  if (!gitStore.repos.length) gitStore.fetchRepos(actualProjectId.value)
   nextTick(() => {
     assignAgentModalRef.value?.focus()
   })
@@ -1748,7 +1810,10 @@ function onSelectAgentForAssignment(e: Event) {
 
 async function confirmAssignAgent() {
   if (!assignAgentModal.agentId) return
-  const branch = assignAgentModal.branch.trim() || undefined
+  // When "create new branch" is enabled, use the generated branch name; otherwise use the user-selected branch
+  const branch = assignAgentModal.createNewBranch
+    ? (assignAgentModal.generatedBranch || undefined)
+    : (assignAgentModal.branch.trim() || undefined)
   // Assign the agent to the issue (with optional branch override)
   await store.addAssignee(resolvedIssueId.value, { agentId: assignAgentModal.agentId, branch })
   // If a comment was provided, post it (the backend will detect @mention and trigger the agent)
@@ -1759,6 +1824,8 @@ async function confirmAssignAgent() {
   assignAgentModal.agentName = ''
   assignAgentModal.comment = ''
   assignAgentModal.branch = ''
+  assignAgentModal.createNewBranch = true
+  assignAgentModal.generatedBranch = ''
 }
 
 function cancelAssignAgent() {
@@ -1766,6 +1833,8 @@ function cancelAssignAgent() {
   assignAgentModal.agentName = ''
   assignAgentModal.comment = ''
   assignAgentModal.branch = ''
+  assignAgentModal.createNewBranch = true
+  assignAgentModal.generatedBranch = ''
 }
 
 function assigneeName(a: { userId?: string; agentId?: string; user?: { username: string } | null; agent?: { name: string } | null }) {

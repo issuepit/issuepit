@@ -523,7 +523,7 @@ public class DockerAgentRuntime(
             cancellationToken: cancellationToken);
 
             // Step D2: Log which agents are configured in opencode for diagnostics.
-            await LogOpenCodeAgentsAsync(container.ID, onLogLine, cancellationToken);
+            await LogOpenCodeAgentsAsync(container.ID, cancellationToken);
 
             // Step D2.5: Log which MCP servers are configured in opencode for diagnostics.
             await LogOpenCodeMcpServersAsync(container.ID, onLogLine, cancellationToken);
@@ -1468,12 +1468,12 @@ public class DockerAgentRuntime(
     }
 
     /// <summary>
-    /// Runs <c>opencode agent list</c> inside the container and emits the output as log lines.
+    /// Runs <c>opencode agent list</c> inside the container and logs the output at Debug level.
     /// Best-effort: failure is non-fatal and only logs a warning.
+    /// Output is intentionally kept out of the user-visible session log (verbose diagnostics only).
     /// </summary>
     private async Task LogOpenCodeAgentsAsync(
         string containerId,
-        Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {
         // Collect output first so we can skip the header when there is nothing to show,
@@ -1496,15 +1496,14 @@ public class DockerAgentRuntime(
         }
         catch (Exception ex)
         {
-            await onLogLine($"[WARN] Could not list opencode agents: {ex.Message}", LogStream.Stderr);
+            logger.LogWarning(ex, "Could not list opencode agents in container {ContainerId}", containerId);
             return;
         }
 
         if (lines.Count == 0) return;
 
-        await onLogLine("[INFO] opencode agents (opencode agent list):", LogStream.Stdout);
-        foreach (var line in lines)
-            await onLogLine($"[INFO]   {line}", LogStream.Stdout);
+        logger.LogDebug("opencode agents (opencode agent list) in container {ContainerId}: {Lines}",
+            containerId, string.Join("; ", lines));
     }
 
     /// <summary>

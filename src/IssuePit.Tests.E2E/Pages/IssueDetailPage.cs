@@ -208,19 +208,45 @@ public class IssueDetailPage(IPage page)
 
     /// <summary>
     /// Returns true if the branch selector inside the agent assignment modal is visible.
+    /// When "create new branch" is enabled (the default), the BranchSelect trigger is hidden;
+    /// this method first unchecks the "create new branch" checkbox so the BranchSelect becomes visible.
     /// </summary>
     public async Task<bool> IsAssignAgentModalBranchInputVisibleAsync()
     {
         // BranchSelect renders a trigger button with aria-expanded attribute inside the modal overlay.
+        // It is only shown when "create new branch" is unchecked.
         return await page.Locator(".fixed button[aria-expanded]").IsVisibleAsync();
     }
 
     /// <summary>
+    /// Returns true if the "Create new branch" checkbox inside the agent assignment modal is visible and checked.
+    /// </summary>
+    public async Task<bool> IsCreateNewBranchCheckedAsync()
+    {
+        var checkbox = page.Locator(".fixed input[type='checkbox']").First;
+        return await checkbox.IsCheckedAsync();
+    }
+
+    /// <summary>
+    /// Unchecks the "Create new branch" checkbox inside the agent assignment modal so the BranchSelect becomes visible.
+    /// </summary>
+    public async Task UncheckCreateNewBranchAsync()
+    {
+        var checkbox = page.Locator(".fixed input[type='checkbox']").First;
+        await checkbox.WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Default });
+        if (await checkbox.IsCheckedAsync())
+            await checkbox.UncheckAsync();
+    }
+
+    /// <summary>
     /// Sets the branch value inside the agent assignment modal using the BranchSelect component.
-    /// Opens the dropdown, types the branch name, and presses Enter to accept (free-form mode).
+    /// Unchecks "Create new branch" first, then opens the dropdown, types the branch name, and
+    /// presses Enter to accept (free-form mode).
     /// </summary>
     public async Task SetAssignAgentModalBranchAsync(string branch)
     {
+        // Uncheck "create new branch" so the BranchSelect becomes visible
+        await UncheckCreateNewBranchAsync();
         // Click the BranchSelect trigger to open its dropdown
         await page.Locator(".fixed button[aria-expanded]").ClickAsync();
         // Wait for the search input inside BranchSelect

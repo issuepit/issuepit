@@ -623,7 +623,7 @@ public class IssueWorker(
                 && s.OpenCodeSessionId != null
                 && (s.Status == AgentSessionStatus.Succeeded || s.Status == AgentSessionStatus.Failed))
             .OrderByDescending(s => s.EndedAt)
-            .Select(s => new { s.OpenCodeSessionId, s.OpenCodeDbS3Url })
+            .Select(s => new { s.OpenCodeSessionId, s.OpenCodeDbS3Url, s.GitBranch })
             .FirstOrDefaultAsync(cancellationToken) : null;
 
         if (previousSession is not null)
@@ -632,6 +632,22 @@ public class IssueWorker(
             logger.LogInformation(
                 "Found previous opencode session {PrevSessionId} for issue {IssueId} — will continue from it",
                 previousSession.OpenCodeSessionId, issue?.Id);
+
+            // When reusing a previous session, keep the same branch unless an explicit override was provided.
+            // This ensures the agent continues working on the same feature branch rather than starting
+            // from the default branch again.
+            if (issue is not null
+                && string.IsNullOrWhiteSpace(branchOverride)
+                && !string.IsNullOrWhiteSpace(previousSession.GitBranch))
+            {
+                // Detach so the branch override is applied only in-memory and is never persisted back to
+                // the Issue table — the same pattern used for branchOverride above (line 420-424).
+                db.Entry(issue).State = EntityState.Detached;
+                issue.GitBranch = previousSession.GitBranch;
+                logger.LogInformation(
+                    "Reusing branch {Branch} from previous session for issue {IssueId}",
+                    previousSession.GitBranch, issue.Id);
+            }
 
             // If there is a preserved DB snapshot, download it for injection into the new container.
             if (!string.IsNullOrEmpty(previousSession.OpenCodeDbS3Url) && gitArtifactUploader.IsConfigured)
