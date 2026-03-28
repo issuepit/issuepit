@@ -134,6 +134,15 @@
                 class="w-40 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed" />
               <p class="text-xs text-gray-500 mt-1">Overrides the organization setting for <code class="bg-gray-800 px-1 rounded">--concurrent-jobs</code>.</p>
             </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">
+                CI/CD fix loop count
+                <span class="text-gray-500 font-normal">(blank = inherit from org / default 3)</span>
+              </label>
+              <input v-model.number="ciCdForm.maxCiCdLoopCount" type="number" min="1" placeholder="inherit"
+                class="w-40 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+              <p class="text-xs text-gray-500 mt-1">Max number of CI/CD → agent-fix loop iterations after the initial agent run. Overrides the organization setting.</p>
+            </div>
             <div class="flex items-center justify-between">
               <div>
                 <label class="block text-sm font-medium text-gray-300">Require run approval</label>
@@ -343,6 +352,7 @@ const ciCdForm = reactive({
   mountRepositoryInDocker: true,
   maxConcurrentRunners: 0,
   concurrentJobs: null as number | null,
+  maxCiCdLoopCount: null as number | null,
   actEnv: '',
   actSecrets: '',
   actionCachePath: '' as string,
@@ -386,6 +396,7 @@ onMounted(async () => {
     ciCdForm.mountRepositoryInDocker = p.mountRepositoryInDocker
     ciCdForm.maxConcurrentRunners = p.maxConcurrentRunners ?? 0
     ciCdForm.concurrentJobs = p.concurrentJobs ?? null
+    ciCdForm.maxCiCdLoopCount = p.maxCiCdLoopCount ?? null
     ciCdForm.actEnv = p.actEnv || ''
     ciCdForm.actSecrets = p.actSecrets || ''
     ciCdForm.actionCachePath = p.actionCachePath || ''
@@ -411,6 +422,7 @@ async function save() {
       mountRepositoryInDocker: ciCdForm.mountRepositoryInDocker,
       maxConcurrentRunners: ciCdForm.maxConcurrentRunners,
       concurrentJobs: ciCdForm.concurrentJobs,
+      maxCiCdLoopCount: ciCdForm.maxCiCdLoopCount ?? null,
       actEnv: ciCdForm.actEnv || undefined,
       actSecrets: ciCdForm.actSecrets || undefined,
       actionCachePath: ciCdForm.actionCachePath || null,

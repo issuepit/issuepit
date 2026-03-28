@@ -51,6 +51,8 @@ export interface Organization {
   actionOfflineMode?: boolean
   localRepositories?: string | null
   skipSteps?: string | null
+  /** Maximum number of CI/CD → agent-fix loop iterations. Null means use the system default (3). */
+  maxCiCdLoopCount?: number | null
   /** Per-field config source mapping. Keys are camelCase field names; values are source file names. */
   configFieldSources?: Record<string, string> | null
   createdAt: string
@@ -199,6 +201,8 @@ export interface Project {
   actionOfflineMode?: boolean | null
   localRepositories?: string | null
   skipSteps?: string | null
+  /** Maximum number of CI/CD → agent-fix loop iterations. Null means inherit from org (system default: 3). */
+  maxCiCdLoopCount?: number | null
   requiresRunApproval: boolean
   unwrapSingleFileArtifacts: boolean
   openMergeRequestCount: number

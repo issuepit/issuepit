@@ -217,6 +217,18 @@
 
             <p class="text-xs text-gray-500 mb-4">A new session will be started for the same issue.</p>
 
+            <!-- CI/CD fix loop count override -->
+            <div class="mb-4">
+              <label class="block text-xs text-gray-500 mb-1.5">CI/CD fix loop count</label>
+              <input
+                v-model.number="retryMaxCiCdLoopCount"
+                type="number"
+                min="1"
+                placeholder="inherit from project/org (default 3)"
+                class="w-full bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-300 px-2.5 py-1.5 placeholder-gray-600 focus:outline-none focus:border-brand-500" />
+              <p class="text-xs text-gray-500 mt-1">Max number of CI/CD → agent-fix iterations for this retry. Leave blank to use the project/org setting.</p>
+            </div>
+
             <!-- Keep container option -->
             <label class="flex items-start gap-2.5 cursor-pointer mb-5">
               <input
@@ -1414,6 +1426,7 @@ const retryModel = ref('')
 // 'codex' = Codex CLI; 'copilot' = GitHub Copilot CLI; 'none' = no runner (entrypoint default)
 const retryCli = ref('')
 const retryRuntimeType = ref<number | ''>('')
+const retryMaxCiCdLoopCount = ref<number | null>(null)
 
 // CLI options shown in the retry modal dropdown
 const cliOptions = [
@@ -1441,6 +1454,7 @@ async function openRetryModal() {
   retryDockerImage.value = agentImageOptions.value[0].value
   retryCustomDockerImage.value = ''
   retryKeepContainer.value = false
+  retryMaxCiCdLoopCount.value = null
   showRetryModal.value = true
 }
 
@@ -1480,6 +1494,7 @@ async function retrySession() {
       runnerTypeOverride,
       useHttpServerOverride,
       runtimeTypeOverride: retryRuntimeType.value !== '' ? retryRuntimeType.value as number : undefined,
+      maxCiCdLoopCountOverride: retryMaxCiCdLoopCount.value ?? undefined,
     })
     if (result?.retriedSessionId) {
       navigateTo(`/projects/${projectId}/runs/agent-sessions/${result.retriedSessionId}`)
