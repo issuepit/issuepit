@@ -1468,16 +1468,18 @@ public class DockerAgentRuntime(
     }
 
     /// <summary>
-    /// Runs <c>opencode agent list</c> inside the container and emits the output as log lines.
-    /// Best-effort: failure is non-fatal and only logs a warning.
+    /// Runs <c>opencode agent list</c> inside the container and logs the output at server level only.
+    /// The output is intentionally NOT forwarded to the session log stream — it is diagnostic data
+    /// that is only useful for debugging and would add noise for end-users.
+    /// Best-effort: failure is non-fatal.
     /// </summary>
     private async Task LogOpenCodeAgentsAsync(
         string containerId,
         Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {
-        // Collect output first so we can skip the header when there is nothing to show,
-        // and silently suppress "executable not found" errors from test/minimal images.
+        // Collect output first so we can silently suppress "executable not found" errors from
+        // test/minimal images that don't have opencode installed.
         var lines = new List<string>();
         try
         {
@@ -1496,15 +1498,14 @@ public class DockerAgentRuntime(
         }
         catch (Exception ex)
         {
-            await onLogLine($"[WARN] Could not list opencode agents: {ex.Message}", LogStream.Stderr);
+            logger.LogWarning(ex, "Could not list opencode agents");
             return;
         }
 
         if (lines.Count == 0) return;
 
-        await onLogLine("[INFO] opencode agents (opencode agent list):", LogStream.Stdout);
-        foreach (var line in lines)
-            await onLogLine($"[INFO]   {line}", LogStream.Stdout);
+        // Log to server diagnostics only — not to the user-visible session log stream.
+        logger.LogDebug("opencode agent list: {Agents}", string.Join(", ", lines));
     }
 
     /// <summary>
