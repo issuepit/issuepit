@@ -121,6 +121,26 @@ public class CiCdRunPage(IPage page)
         return await suiteHeaders.CountAsync() > 0;
     }
 
+    /// <summary>Returns true when the tests tab stats bar shows both Total and Fail Rate stats.</summary>
+    public async Task<bool> HasTestRunStatsBarAsync()
+    {
+        var hasTotal = await page.IsVisibleAsync("p:has-text('Total')");
+        var hasFailRate = await page.IsVisibleAsync("p:has-text('Fail Rate')");
+        return hasTotal && hasFailRate;
+    }
+
+    /// <summary>Clicks the "Failed only" toggle button in the tests tab.</summary>
+    public async Task ClickFailedOnlyToggleAsync() =>
+        await page.ClickAsync("button:has-text('Failed only')");
+
+    /// <summary>Clicks the "Collapse all" button in the tests tab.</summary>
+    public async Task ClickCollapseAllAsync() =>
+        await page.ClickAsync("button:has-text('Collapse all')");
+
+    /// <summary>Clicks the "Expand all" button in the tests tab.</summary>
+    public async Task ClickExpandAllAsync() =>
+        await page.ClickAsync("button:has-text('Expand all')");
+
     /// <summary>Returns true when the tests tab shows the empty state message.</summary>
     public async Task<bool> IsTestsTabEmptyAsync() =>
         await page.IsVisibleAsync("text=No test results available");

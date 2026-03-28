@@ -747,24 +747,82 @@
         <!-- Tests tab -->
         <template v-else-if="activeSection === 'tests'">
           <div v-if="store.currentRunTestSuites.length" class="p-4 space-y-4">
-            <div class="flex justify-end">
-              <NuxtLink
-                :to="`/projects/${projectId}/runs/test-history`"
-                class="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
-                View Test History
-              </NuxtLink>
+            <!-- Stats bar -->
+            <div class="flex flex-wrap items-center gap-4 bg-gray-900 border border-gray-800 rounded-lg px-4 py-3">
+              <div>
+                <p class="text-xs text-gray-500">Total</p>
+                <p class="text-lg font-semibold text-white">{{ testRunStats.total }}</p>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500">Passed</p>
+                <p class="text-lg font-semibold text-green-400">{{ testRunStats.passed }}</p>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500">Failed</p>
+                <p class="text-lg font-semibold" :class="testRunStats.failed > 0 ? 'text-red-400' : 'text-gray-600'">{{ testRunStats.failed }}</p>
+              </div>
+              <div v-if="testRunStats.skipped">
+                <p class="text-xs text-gray-500">Skipped</p>
+                <p class="text-lg font-semibold text-yellow-500">{{ testRunStats.skipped }}</p>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500">Fail Rate</p>
+                <p class="text-lg font-semibold" :class="testRunStats.failRate >= 0.5 ? 'text-red-400' : testRunStats.failRate > 0 ? 'text-yellow-400' : 'text-gray-600'">
+                  {{ Math.round(testRunStats.failRate * 100) }}%
+                </p>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500">Duration</p>
+                <p class="text-lg font-semibold text-gray-300">{{ formatTestDuration(testRunStats.duration) }}</p>
+              </div>
+              <div class="ml-auto flex items-center gap-2">
+                <NuxtLink
+                  :to="`/projects/${projectId}/runs/test-history`"
+                  class="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  </svg>
+                  Test History
+                </NuxtLink>
+              </div>
             </div>
+
+            <!-- Controls bar -->
+            <div class="flex flex-wrap items-center gap-2">
+              <!-- Failed-only filter toggle -->
+              <button
+                :class="['flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors', showFailedOnly ? 'border-red-600 bg-red-950/30 text-red-400' : 'border-gray-700 text-gray-500 hover:border-gray-600 hover:text-gray-300']"
+                @click="showFailedOnly = !showFailedOnly">
+                <span class="w-1.5 h-1.5 rounded-full" :class="showFailedOnly ? 'bg-red-400' : 'bg-gray-600'" />
+                Failed only
+              </button>
+              <!-- Collapse/expand all -->
+              <button
+                class="text-xs text-gray-500 hover:text-gray-300 transition-colors px-2 py-1.5"
+                @click="collapseAllSuites">
+                Collapse all
+              </button>
+              <button
+                class="text-xs text-gray-500 hover:text-gray-300 transition-colors px-2 py-1.5"
+                @click="expandAllSuites">
+                Expand all
+              </button>
+            </div>
+
+            <!-- Suite list -->
             <div
-              v-for="suite in store.currentRunTestSuites"
+              v-for="suite in filteredSuites"
               :key="suite.id"
               class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
-              <!-- Suite header -->
-              <div class="flex items-center gap-4 p-3 border-b border-gray-800 bg-gray-800/40">
-                <span class="text-sm font-medium text-gray-300 truncate flex-1">{{ suite.artifactName }}</span>
+              <!-- Suite header — clickable to collapse/expand -->
+              <div
+                class="flex items-center gap-4 p-3 border-b border-gray-800 bg-gray-800/40 cursor-pointer select-none group"
+                @click="toggleSuite(suite.id)">
+                <span
+                  class="text-gray-500 transition-transform shrink-0"
+                  :class="collapsedSuites.has(suite.id) ? '' : 'rotate-90'">▶</span>
+                <span class="text-sm font-medium text-gray-300 truncate flex-1 group-hover:text-gray-200 transition-colors">{{ suite.artifactName }}</span>
                 <span class="flex items-center gap-1 text-xs text-green-400">
                   <span class="w-1.5 h-1.5 rounded-full bg-green-400" />
                   {{ suite.passedTests }} passed
@@ -779,8 +837,8 @@
                 </span>
                 <span class="text-xs text-gray-500">{{ formatTestDuration(suite.durationMs) }}</span>
               </div>
-              <!-- Test cases -->
-              <div class="divide-y divide-gray-800">
+              <!-- Test cases (hidden when suite is collapsed) -->
+              <div v-if="!collapsedSuites.has(suite.id)" class="divide-y divide-gray-800">
                 <div
                   v-for="tc in suite.testCases"
                   :key="tc.id"
@@ -793,9 +851,23 @@
                     <NuxtLink
                       :to="`/projects/${projectId}/runs/test-history?tab=Tests&test=${encodeURIComponent(tc.fullName)}`"
                       class="text-xs text-gray-300 font-mono truncate flex-1 hover:text-brand-400 transition-colors"
-                      :title="tc.fullName">
+                      :title="tc.fullName"
+                      @mouseenter="showTestTooltip($event, tc)"
+                      @mousemove="moveTestTooltip($event)"
+                      @mouseleave="hideTestTooltip">
                       {{ tc.methodName || tc.fullName }}
                     </NuxtLink>
+                    <!-- Create issue button (only for failed tests) -->
+                    <button
+                      v-if="tc.outcomeName === 'Failed'"
+                      class="shrink-0 text-xs text-gray-600 hover:text-red-400 transition-colors px-1"
+                      title="Create issue from this failed test"
+                      @click.stop="openCreateIssueFromTest(tc, suite.artifactName)">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </button>
                     <span class="text-xs text-gray-600 shrink-0">{{ formatTestDuration(tc.durationMs) }}</span>
                   </div>
                   <!-- Error details (collapsed by default) -->
@@ -1009,6 +1081,91 @@
       </div>
     </Teleport>
 
+    <!-- Create Issue from failed test modal -->
+    <Teleport to="body">
+      <div v-if="createIssueTestCase" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @mousedown.self="createIssueTestCase = null">
+        <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-xl p-6 w-full max-w-lg">
+          <h3 class="text-base font-semibold text-white mb-1">Create Issue from Failed Test</h3>
+          <div class="flex flex-wrap gap-x-4 text-xs text-gray-500 mb-4">
+            <span class="font-mono text-gray-400 truncate max-w-xs" :title="createIssueTestCase.fullName">{{ createIssueTestCase.methodName || createIssueTestCase.fullName }}</span>
+            <span v-if="store.currentRun?.branch">Branch: <span class="font-mono text-gray-300">{{ store.currentRun.branch }}</span></span>
+            <span v-if="store.currentRun?.commitSha">Commit: <span class="font-mono text-gray-300">{{ store.currentRun.commitSha.slice(0, 7) }}</span></span>
+          </div>
+
+          <div class="mb-3">
+            <label class="block text-xs text-gray-500 mb-1">Title</label>
+            <input
+              v-model="createIssueFromTestTitle"
+              type="text"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md text-sm text-gray-300 px-3 py-2 focus:outline-none focus:border-brand-500" />
+          </div>
+
+          <div v-if="createIssueTestCase.errorMessage" class="mb-3">
+            <label class="block text-xs text-gray-500 mb-1">Error</label>
+            <div class="bg-gray-950 rounded-lg p-3 font-mono text-xs text-red-400 whitespace-pre-wrap break-all max-h-[120px] overflow-auto">{{ createIssueTestCase.errorMessage }}</div>
+          </div>
+
+          <div v-if="createIssueTestCase.stackTrace" class="mb-4">
+            <label class="block text-xs text-gray-500 mb-1">Stack trace</label>
+            <div class="bg-gray-950 rounded-lg p-3 font-mono text-xs text-gray-400 whitespace-pre-wrap break-all max-h-[120px] overflow-auto">{{ createIssueTestCase.stackTrace }}</div>
+          </div>
+
+          <div v-if="createIssueFromTestError" class="mb-3 text-xs text-red-400">{{ createIssueFromTestError }}</div>
+
+          <div class="flex justify-end gap-2">
+            <button class="px-4 py-1.5 text-sm text-gray-400 hover:text-gray-200 transition-colors" @click="createIssueTestCase = null">Cancel</button>
+            <button
+              :disabled="creatingIssueFromTest || !createIssueFromTestTitle.trim()"
+              class="px-4 py-1.5 text-sm bg-red-700 hover:bg-red-600 disabled:opacity-50 text-white rounded-md transition-colors"
+              @click="submitCreateIssueFromTest">
+              {{ creatingIssueFromTest ? 'Creating…' : 'Create Issue' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Test stats tooltip -->
+    <Teleport to="body">
+      <div
+        v-if="testTooltip.visible"
+        class="fixed z-[9999] pointer-events-none bg-gray-900 border border-gray-700 rounded-lg shadow-xl text-xs p-2.5 min-w-[180px] max-w-[280px]"
+        :style="`left:${testTooltip.x + 14}px;top:${testTooltip.y - 8}px;transform:translateY(-100%)`">
+        <div class="font-medium text-gray-200 mb-1.5 truncate">{{ testTooltip.data?.methodName || testTooltip.fullName }}</div>
+        <div v-if="testTooltip.loading" class="flex items-center gap-1.5 text-gray-500">
+          <div class="w-3 h-3 border border-gray-500 border-t-transparent rounded-full animate-spin" />
+          Loading stats…
+        </div>
+        <template v-else-if="testTooltip.data">
+          <div class="space-y-0.5">
+            <div class="flex justify-between gap-3">
+              <span class="text-gray-400">Total runs</span>
+              <span class="text-gray-200">{{ testTooltip.data.totalRuns }}</span>
+            </div>
+            <div class="flex justify-between gap-3">
+              <span class="text-green-400">Passed</span>
+              <span class="text-gray-200">{{ testTooltip.data.passedRuns }}</span>
+            </div>
+            <div v-if="testTooltip.data.failedRuns > 0" class="flex justify-between gap-3">
+              <span class="text-red-400">Failed</span>
+              <span class="text-gray-200">{{ testTooltip.data.failedRuns }}</span>
+            </div>
+            <div class="flex justify-between gap-3">
+              <span class="text-gray-400">Fail rate</span>
+              <span :class="testTooltip.data.failedRuns / testTooltip.data.totalRuns >= 0.5 ? 'text-red-400' : testTooltip.data.failedRuns > 0 ? 'text-yellow-400' : 'text-gray-200'">
+                {{ Math.round((testTooltip.data.failedRuns / testTooltip.data.totalRuns) * 100) }}%
+              </span>
+            </div>
+            <div class="flex justify-between gap-3">
+              <span class="text-gray-400">Avg duration</span>
+              <span class="text-gray-200">{{ formatTestDuration(testTooltip.data.avgDurationMs) }}</span>
+            </div>
+          </div>
+        </template>
+        <div v-else class="text-gray-600">No history data</div>
+      </div>
+    </Teleport>
+
     <!-- Trigger filter modal -->
     <Teleport to="body">
       <div v-if="showTriggerFilterModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @mousedown.self="showTriggerFilterModal = false">
@@ -1055,7 +1212,7 @@
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 import { useIssuesStore } from '~/stores/issues'
 import { useProjectsStore } from '~/stores/projects'
-import { CiCdRunStatus, type CiCdRunLog, type LinkedCiCdRun, type LinkedRunType } from '~/types'
+import { CiCdRunStatus, type CiCdRunLog, type LinkedCiCdRun, type LinkedRunType, type CiCdTestCase, type TestStats } from '~/types'
 import { parseAnsiToHtml, stripAnsiCodes } from '~/composables/useAnsiParser'
 import { buildGraphJobIndexes, resolveLogJobId as resolveLogJobIdFn, matrixLabel as matrixLabelFn } from '~/utils/cicdLogMapper'
 import { buildBranchUrl } from '~/utils/gitHub'
@@ -1070,6 +1227,7 @@ const issuesStore = useIssuesStore()
 const projectsStore = useProjectsStore()
 const { prefs } = useUserPreferences()
 const config = useRuntimeConfig()
+const api = useApi()
 
 /**
  * Pre-compiled regex cache for log color rules. Rebuilt whenever the rules list changes.
@@ -2107,6 +2265,140 @@ async function submitCreateIssue() {
     createIssueError.value = e instanceof Error ? e.message : 'Failed to create issue'
   } finally {
     creatingIssue.value = false
+  }
+}
+
+// ── Tests tab enhancements ─────────────────────────────────────────────────────
+
+/** Set of suite IDs that are currently collapsed. */
+const collapsedSuites = ref<Set<string>>(new Set())
+
+/** When true, only failed test cases are shown in each suite. */
+const showFailedOnly = ref(false)
+
+/** Aggregate stats computed from all test suites of the current run. */
+const testRunStats = computed(() => {
+  const suites = store.currentRunTestSuites
+  const total = suites.reduce((s, suite) => s + suite.totalTests, 0)
+  const passed = suites.reduce((s, suite) => s + suite.passedTests, 0)
+  const failed = suites.reduce((s, suite) => s + suite.failedTests, 0)
+  const skipped = suites.reduce((s, suite) => s + suite.skippedTests, 0)
+  const duration = suites.reduce((s, suite) => s + suite.durationMs, 0)
+  return { total, passed, failed, skipped, duration, failRate: total > 0 ? failed / total : 0 }
+})
+
+/** Suites after applying the "failed only" filter (suites with no remaining tests are hidden). */
+const filteredSuites = computed(() => {
+  if (!showFailedOnly.value) return store.currentRunTestSuites
+  return store.currentRunTestSuites
+    .map(suite => ({
+      ...suite,
+      testCases: suite.testCases.filter(tc => tc.outcomeName === 'Failed'),
+    }))
+    .filter(suite => suite.testCases.length > 0)
+})
+
+function toggleSuite(suiteId: string) {
+  const next = new Set(collapsedSuites.value)
+  if (next.has(suiteId)) next.delete(suiteId)
+  else next.add(suiteId)
+  collapsedSuites.value = next
+}
+
+function collapseAllSuites() {
+  collapsedSuites.value = new Set(store.currentRunTestSuites.map(s => s.id))
+}
+
+function expandAllSuites() {
+  collapsedSuites.value = new Set()
+}
+
+// ── Test tooltip ────────────────────────────────────────────────────────────────
+
+const testTooltip = ref<{
+  visible: boolean
+  x: number
+  y: number
+  loading: boolean
+  data: TestStats | null
+  fullName: string
+}>({ visible: false, x: 0, y: 0, loading: false, data: null, fullName: '' })
+
+let testTooltipTimer: ReturnType<typeof setTimeout> | null = null
+
+async function showTestTooltip(e: MouseEvent, tc: CiCdTestCase) {
+  if (testTooltipTimer) clearTimeout(testTooltipTimer)
+  testTooltipTimer = setTimeout(async () => {
+    testTooltip.value = { visible: true, x: e.clientX, y: e.clientY, loading: true, data: null, fullName: tc.fullName }
+    try {
+      const results = await api.get<TestStats[]>(
+        `/api/projects/${projectId}/test-history/tests?search=${encodeURIComponent(tc.fullName)}&take=10`,
+      )
+      const match = results.find(r => r.fullName === tc.fullName) ?? null
+      testTooltip.value = { ...testTooltip.value, loading: false, data: match }
+    } catch {
+      testTooltip.value = { ...testTooltip.value, loading: false, data: null }
+    }
+  }, 300)
+}
+
+function moveTestTooltip(e: MouseEvent) {
+  if (testTooltip.value.visible)
+    testTooltip.value = { ...testTooltip.value, x: e.clientX, y: e.clientY }
+}
+
+function hideTestTooltip() {
+  if (testTooltipTimer) { clearTimeout(testTooltipTimer); testTooltipTimer = null }
+  testTooltip.value = { ...testTooltip.value, visible: false }
+}
+
+// ── Create Issue from failed test ───────────────────────────────────────────────
+
+/** When set, the "create issue from test" modal is shown. */
+const createIssueTestCase = ref<(CiCdTestCase & { suiteName: string }) | null>(null)
+const createIssueFromTestTitle = ref('')
+const createIssueFromTestError = ref<string | null>(null)
+const creatingIssueFromTest = ref(false)
+
+function openCreateIssueFromTest(tc: CiCdTestCase, suiteName: string) {
+  createIssueTestCase.value = { ...tc, suiteName }
+  createIssueFromTestTitle.value = `Test "${tc.methodName || tc.fullName}" failed`
+  createIssueFromTestError.value = null
+  creatingIssueFromTest.value = false
+}
+
+async function submitCreateIssueFromTest() {
+  if (!createIssueTestCase.value || !createIssueFromTestTitle.value.trim()) return
+  creatingIssueFromTest.value = true
+  createIssueFromTestError.value = null
+  const tc = createIssueTestCase.value
+  try {
+    const branch = store.currentRun?.branch
+    const commit = store.currentRun?.commitSha
+    const branchLine = branch ? `\n- **Branch:** \`${branch}\`` : ''
+    const commitLine = commit ? `\n- **Commit:** \`${commit.slice(0, 7)}\`` : ''
+    const suiteLine = `\n- **Suite:** \`${tc.suiteName}\``
+    const runLine = `\n- **Run:** [${runId.slice(0, 8)}](/projects/${projectId}/runs/cicd/${runId}?tab=tests)`
+    const errorSection = tc.errorMessage
+      ? `\n\n**Error:**\n\`\`\`\n${tc.errorMessage}\n\`\`\``
+      : ''
+    const stackSection = tc.stackTrace
+      ? `\n\n**Stack trace:**\n\`\`\`\n${tc.stackTrace}\n\`\`\``
+      : ''
+    const body = `Test **\`${tc.fullName}\`** failed.${branchLine}${commitLine}${suiteLine}${runLine}${errorSection}${stackSection}`
+    const newIssue = await issuesStore.createIssue(projectId, {
+      title: createIssueFromTestTitle.value.trim(),
+      body,
+      gitBranch: branch,
+    })
+    createIssueTestCase.value = null
+    if (newIssue) {
+      await navigateTo(`/projects/${projectId}/issues/${newIssue.number}`)
+    }
+  } catch (e: unknown) {
+    createIssueFromTestError.value = e instanceof Error ? e.message : 'Failed to create issue'
+  } finally {
+    creatingIssueFromTest.value = false
   }
 }
 
