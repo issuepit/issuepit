@@ -272,7 +272,11 @@ public class CiCdWorker(
         if (!string.IsNullOrWhiteSpace(trigger.GitRepoUrl) &&
             string.IsNullOrWhiteSpace(trigger.GitAuthToken) && string.IsNullOrWhiteSpace(trigger.GitAuthUsername))
         {
+            // Match by URL so that multi-remote projects inject credentials for the correct remote.
             var gitRepo = await db.GitRepositories
+                .Where(r => r.ProjectId == trigger.ProjectId && r.RemoteUrl == trigger.GitRepoUrl)
+                .FirstOrDefaultAsync(stoppingToken)
+                ?? await db.GitRepositories
                 .Where(r => r.ProjectId == trigger.ProjectId)
                 .FirstOrDefaultAsync(stoppingToken);
             if (gitRepo is not null &&

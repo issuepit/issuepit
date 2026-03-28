@@ -239,6 +239,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     inputs?: Record<string, string>
     customImage?: string
     forceWithActiveRunIds?: string[]
+    gitRepositoryId?: string
   }) {
     await api.post('/api/cicd-runs/trigger', request)
   }
