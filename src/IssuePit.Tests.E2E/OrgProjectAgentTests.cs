@@ -415,13 +415,17 @@ public class OrgProjectAgentTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// API: POST /api/agent-sessions/start-manual without an agentId must be accepted (202).
-    /// Opencode has built-in agents so a configured agent is not required.
-    /// Does not require Docker — only verifies that the session record is created.
+    /// API: POST /api/agent-sessions/start-manual without an agentId starts a container, reaches Running,
+    /// reports isManualMode=true, and can be cancelled cleanly.
+    /// Opencode has built-in agents so no configured agent is required.
+    /// Requires Docker.
     /// </summary>
     [Fact]
-    public async Task Api_StartManualSession_WithoutAgent_Returns202()
+    public async Task Api_StartManualSession_WithoutAgent_ContainerRunsAndCancels()
     {
+        if (!CheckDockerAvailable())
+            throw Xunit.Sdk.SkipException.ForSkip("Docker is not available on this host.");
+
         using var client = CreateCookieClient();
 
         var tenantId = await GetDefaultTenantIdAsync();
@@ -446,12 +450,89 @@ public class OrgProjectAgentTests : IAsyncLifetime
         // Start a manual session without specifying an agent — must be accepted.
         var startResp = await client.PostAsJsonAsync("/api/agent-sessions/start-manual",
             new { projectId });
-
         Assert.Equal(HttpStatusCode.Accepted, startResp.StatusCode);
 
-        var body = await startResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
-        var sessionId = body.GetProperty("sessionId").GetString();
+        var startBody = await startResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var sessionId = startBody.GetProperty("sessionId").GetString()!;
         Assert.False(string.IsNullOrEmpty(sessionId), "Response must include a sessionId");
+
+        // Wait for the container to reach Running state.
+        await WaitForManualModeSessionRunningByIdAsync(client, sessionId, TimeSpan.FromMinutes(3));
+
+        // Verify the session reports isManualMode=true (the synthesised transient agent is manual-mode).
+        var sessionResp = await client.GetAsync($"/api/agent-sessions/{sessionId}");
+        Assert.Equal(HttpStatusCode.OK, sessionResp.StatusCode);
+        var sessionDetail = await sessionResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.True(sessionDetail.GetProperty("isManualMode").GetBoolean(),
+            "Session started without an explicit agent must report isManualMode=true");
+
+        // Cancel the session to clean up the running container.
+        var cancelResp = await client.PostAsJsonAsync($"/api/agent-sessions/{sessionId}/cancel", new { });
+        Assert.True(cancelResp.IsSuccessStatusCode,
+            $"Expected cancel to succeed, got {cancelResp.StatusCode}");
+
+        // Confirm the worker handled the signal.
+        await WaitForAgentSessionByIdAsync(client, sessionId, TimeSpan.FromMinutes(2));
+    }
+
+    private static bool CheckDockerAvailable()
+    {
+        try
+        {
+            using var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("docker", "info")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            });
+            p?.WaitForExit(5000);
+            return p?.ExitCode == 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static async Task WaitForManualModeSessionRunningByIdAsync(HttpClient client, string sessionId, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            var resp = await client.GetAsync($"/api/agent-sessions/{sessionId}");
+            if (resp.IsSuccessStatusCode)
+            {
+                var body = await resp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+                var statusName = body.GetProperty("statusName").GetString();
+                if (statusName is "Running" or "Failed" or "Cancelled")
+                    return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+        }
+
+        throw new TimeoutException($"Agentless manual session {sessionId} did not reach Running state within {timeout}.");
+    }
+
+    private static async Task WaitForAgentSessionByIdAsync(HttpClient client, string sessionId, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            var resp = await client.GetAsync($"/api/agent-sessions/{sessionId}");
+            if (resp.IsSuccessStatusCode)
+            {
+                var body = await resp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+                var statusName = body.GetProperty("statusName").GetString();
+                if (statusName is "Succeeded" or "Failed" or "Cancelled")
+                    return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+        }
+
+        throw new TimeoutException($"Agentless manual session {sessionId} did not reach a terminal state within {timeout}.");
     }
 
     private HttpClient CreateCookieClient()
