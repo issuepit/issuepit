@@ -91,14 +91,15 @@ public static class OpenCodeJsonLogParser
                 "step_start" => StepStartMarker,
                 "tool_use" => ParseToolUseEvent(root),
                 "step_finish" => ParseStepFinishEvent(root),
-                // Unrecognized type — fall back to the raw JSON (without any prefix).
+                // Unrecognized type — return the raw JSON payload so it is re-prefixed below.
                 _ => json,
             };
 
             if (parsed.Length == 0) return string.Empty;
 
-            // For unrecognised types, `parsed == json` (the raw JSON without the prefix).
-            // Re-prepend the section prefix so the caller receives the original line back.
+            // Re-prepend the section prefix when present. For unrecognised types this reconstructs
+            // the original raw line (prefix + json). For recognised types it scopes the parsed
+            // result to the correct section (e.g. "[fix] [opencode:step-start]").
             return prefix.Length > 0 ? prefix + parsed : parsed;
         }
         catch (JsonException)
