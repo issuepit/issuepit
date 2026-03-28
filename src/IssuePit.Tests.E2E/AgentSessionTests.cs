@@ -631,6 +631,103 @@ public class AgentSessionTests(AspireFixture fixture)
     }
 
     /// <summary>
+    /// Verifies that the MCP server URL written to the opencode <c>config.json</c> inside
+    /// the agent container includes the <c>/mcp</c> path suffix, not just the base URL.
+    ///
+    /// Regression test for the bug where <c>ISSUEPIT_MCP_URL</c> (e.g.
+    /// <c>http://host.docker.internal:5010</c>) was written verbatim into the opencode config,
+    /// causing opencode to fail with "SSE error: Invalid content type, expected text/event-stream"
+    /// because the root endpoint serves the playground HTML page, not the JSON-RPC endpoint.
+    ///
+    /// The test uses the exec flow (<c>RunnerType=OpenCode</c>) so that
+    /// <c>WriteOpencodeConfigAsync</c> is exercised. The session will fail (opencode is not
+    /// installed in busybox) but <c>WriteOpencodeConfigAsync</c> runs before the agent command
+    /// and emits a <c>[DEBUG] MCP URL in config : …/mcp</c> log line that this test asserts on.
+    ///
+    /// Skipped automatically when Docker is not available on the host.
+    /// </summary>
+    [Fact]
+    public async Task AgentSession_ExecFlow_McpUrlInOpencodeConfigHasMcpSuffix()
+    {
+        SkipIfDockerUnavailable();
+
+        using var client = CreateCookieClient();
+        var tenantId = await GetDefaultTenantIdAsync();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"e2e{Guid.NewGuid():N}"[..12];
+        await client.PostAsJsonAsync("/api/auth/register", new { username, password = "TestPass1!" });
+
+        var orgSlug = $"mcpcfg-{Guid.NewGuid():N}"[..14];
+        var orgResp = await client.PostAsJsonAsync("/api/orgs", new { name = "MCP Config Test Org", slug = orgSlug });
+        Assert.Equal(HttpStatusCode.Created, orgResp.StatusCode);
+        var org = await orgResp.Content.ReadFromJsonAsync<JsonElement>();
+        var orgId = org.GetProperty("id").GetString()!;
+
+        var projectSlug = $"mcpcfg-p-{Guid.NewGuid():N}"[..14];
+        var projResp = await client.PostAsJsonAsync("/api/projects",
+            new { name = "MCP Config Project", slug = projectSlug, orgId = Guid.Parse(orgId) });
+        Assert.Equal(HttpStatusCode.Created, projResp.StatusCode);
+        var project = await projResp.Content.ReadFromJsonAsync<JsonElement>();
+        var projectId = project.GetProperty("id").GetString()!;
+
+        // OpenCode exec-flow agent with busybox. The exec flow calls WriteOpencodeConfigAsync
+        // (step D) which logs "[DEBUG] MCP URL in config : <url>". Since busybox has no opencode,
+        // the session fails at step 7, but step D always runs first and emits the debug line.
+        var agentResp = await client.PostAsJsonAsync("/api/agents",
+            new
+            {
+                name = "MCP Config Test Agent",
+                orgId = Guid.Parse(orgId),
+                systemPrompt = "You are a diagnostic agent.",
+                dockerImage = AgentTestDockerImage,
+                runnerType = 0, // OpenCode = 0
+                allowedTools = "[]",
+                isActive = true,
+            });
+        Assert.Equal(HttpStatusCode.Created, agentResp.StatusCode);
+        var agent = await agentResp.Content.ReadFromJsonAsync<JsonElement>();
+        var agentId = agent.GetProperty("id").GetString()!;
+
+        var issueResp = await client.PostAsJsonAsync("/api/issues",
+            new { title = "MCP Config URL Test", projectId = Guid.Parse(projectId) });
+        Assert.Equal(HttpStatusCode.Created, issueResp.StatusCode);
+        var issue = await issueResp.Content.ReadFromJsonAsync<JsonElement>();
+        var issueId = issue.GetProperty("id").GetString()!;
+
+        var assignResp = await client.PostAsJsonAsync($"/api/issues/{issueId}/assignees",
+            new { agentId = Guid.Parse(agentId) });
+        Assert.Equal(HttpStatusCode.Created, assignResp.StatusCode);
+
+        var session = await WaitForAgentSessionAsync(client, issueId, TimeSpan.FromMinutes(3));
+        var sessionId = session.GetProperty("id").GetString()!;
+
+        var logsResp = await client.GetAsync($"/api/agent-sessions/{sessionId}/logs");
+        Assert.Equal(HttpStatusCode.OK, logsResp.StatusCode);
+        var logs = await logsResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        var logLines = logs.EnumerateArray()
+            .Select(l => l.GetProperty("line").GetString() ?? string.Empty)
+            .ToList();
+
+        // WriteOpencodeConfigAsync emits "[DEBUG] MCP URL in config : <url>" after writing
+        // config.json. Verify this line is present and that the URL ends with "/mcp".
+        var mcpConfigLine = logLines.FirstOrDefault(l => l.StartsWith("[DEBUG] MCP URL in config"));
+        Assert.True(
+            mcpConfigLine is not null,
+            $"Expected a '[DEBUG] MCP URL in config' log line from WriteOpencodeConfigAsync.\n" +
+            $"If missing, the MCP URL was not logged (ISSUEPIT_MCP_URL may be unset in this env).\n" +
+            $"Actual logs:\n{string.Join('\n', logLines.Take(40))}");
+
+        Assert.True(
+            mcpConfigLine!.EndsWith("/mcp", StringComparison.OrdinalIgnoreCase),
+            $"The MCP URL in opencode config must end with '/mcp' to point at the Streamable HTTP " +
+            $"endpoint, not the bare base URL. Got: '{mcpConfigLine}'\n" +
+            $"This is a regression guard for the bug where opencode reported " +
+            $"'SSE error: Invalid content type, expected text/event-stream'.");
+    }
+
+    /// <summary>
     /// A manual-mode session stays in <c>Running</c> state indefinitely until cancelled —
     /// that is intentional by design (the container keeps alive for the user's terminal).
     /// This test verifies that:

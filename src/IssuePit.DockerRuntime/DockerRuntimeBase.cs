@@ -801,8 +801,14 @@ public abstract class DockerRuntimeBase
         // ── MCP section ──────────────────────────────────────────────────────
         var mcpSection = new Dictionary<string, object>();
 
-        if (!string.IsNullOrWhiteSpace(mcpUrl))
-            mcpSection["issuepit"] = new Dictionary<string, object> { ["type"] = "remote", ["url"] = mcpUrl };
+        // mcpUrl is the base URL (e.g. http://host.docker.internal:5010).
+        // The MCP Streamable HTTP endpoint is always at /mcp — append it here.
+        var mcpEndpointUrl = string.IsNullOrWhiteSpace(mcpUrl)
+            ? null
+            : mcpUrl.TrimEnd('/') + "/mcp";
+
+        if (mcpEndpointUrl is not null)
+            mcpSection["issuepit"] = new Dictionary<string, object> { ["type"] = "remote", ["url"] = mcpEndpointUrl };
 
         if (!string.IsNullOrWhiteSpace(extraMcpJson))
         {
@@ -884,6 +890,8 @@ public abstract class DockerRuntimeBase
             cancellationToken);
 
         await onLogLine("[INFO] opencode config written: /root/.config/opencode/config.json", LogStream.Stdout);
+        if (mcpEndpointUrl is not null)
+            await onLogLine($"[DEBUG] MCP URL in config : {mcpEndpointUrl}", LogStream.Stdout);
 
         // ── Write runtime plugins ────────────────────────────────────────────
         if (!string.IsNullOrWhiteSpace(pluginsJson))
