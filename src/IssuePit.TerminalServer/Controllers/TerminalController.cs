@@ -132,6 +132,34 @@ public class TerminalController(
         }
         else
         {
+            // tmux is not available — warn the user so they know the session will not persist across
+            // page reloads.  The standard helper image ships tmux; this path indicates a custom image
+            // that does not include it.
+            logger.LogWarning("tmux not found in container {ContainerId} for session {SessionId}. " +
+                "Terminal session will not persist across page reloads. " +
+                "Install tmux in the container image to enable session persistence.",
+                containerId[..Math.Min(12, containerId.Length)], sessionId);
+
+            // Send a visible warning line to the terminal before the shell starts.
+            const string noTmuxWarning =
+                "\r\n\x1b[33m⚠  tmux not found in this container image. " +
+                "Terminal session will not persist across page reloads.\r\n" +
+                "   Install tmux in your Docker image to enable session persistence.\x1b[0m\r\n\r\n";
+            try
+            {
+                if (webSocket.State == WebSocketState.Open)
+                {
+                    var warningBytes = Encoding.UTF8.GetBytes(noTmuxWarning);
+                    await webSocket.SendAsync(new ArraySegment<byte>(warningBytes),
+                        WebSocketMessageType.Binary, true, cancellationToken);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Best-effort — continue to start the shell even if the warning couldn't be sent.
+                logger.LogDebug(ex, "Failed to send tmux-absent warning to terminal for session {SessionId}", sessionId);
+            }
+
             // Try bash first; fall back to sh if bash is not present.
             var shell = DefaultShell;
             try

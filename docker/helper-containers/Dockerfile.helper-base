@@ -23,7 +23,7 @@ ARG DOTNET_SDK_CHANNEL=10.0
 # causing Aspire-hosted services to fail their health checks when running E2E tests
 # inside the issuepit helper image.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl gnupg git dnsmasq unzip && \
+    apt-get install -y --no-install-recommends curl gnupg git dnsmasq unzip tmux && \
     curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
