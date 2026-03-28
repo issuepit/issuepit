@@ -1003,7 +1003,7 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
 
 public record CommentRequest(string Body, Guid? UserId, string? Branch = null);
 public record CodeReviewCommentRequest(string FilePath, int StartLine, int EndLine, string Sha, string? Snippet, string? ContextBefore, string? ContextAfter, string Body);
-/// <param name="DockerCmdOverride">Optional command override for the agent container (for diagnostic/test runs, e.g. a connectivity check). Only applies when no RunnerType is set.</param>
+/// <param name="DockerCmdOverride">Optional command override for the agent container (for diagnostic/test runs, e.g. a connectivity check). When set, takes precedence over the command built from the agent's RunnerType.</param>
 public record AssigneeRequest(Guid? UserId, Guid? AgentId, string[]? DockerCmdOverride = null, string? Branch = null);
 public record LabelAssignRequest(Guid LabelId);
 public record IssueLinkRequest(Guid TargetIssueId, IssueLinkType LinkType);

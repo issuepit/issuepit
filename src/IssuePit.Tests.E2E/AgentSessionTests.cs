@@ -291,8 +291,8 @@ public class AgentSessionTests(AspireFixture fixture)
         var project = await projResp.Content.ReadFromJsonAsync<JsonElement>();
         var projectId = project.GetProperty("id").GetString()!;
 
-        // Create an agent with busybox:latest (has wget and sh); no RunnerType so legacy flow is used.
-        // The session will run a custom command that probes the MCP health endpoint.
+        // Create an agent with busybox:latest (has wget and sh) and RunnerType=Codex.
+        // The DockerCmdOverride takes precedence over the Codex runner command in the exec flow.
         var agentResp = await client.PostAsJsonAsync("/api/agents",
             new
             {
@@ -300,9 +300,9 @@ public class AgentSessionTests(AspireFixture fixture)
                 orgId = Guid.Parse(orgId),
                 systemPrompt = "You are a diagnostic agent.",
                 dockerImage = "busybox:latest",
+                runnerType = "Codex",
                 allowedTools = "[]",
                 isActive = true,
-                // No RunnerType → legacy flow; DockerCmdOverride is sent in the assignment request
             });
         Assert.Equal(HttpStatusCode.Created, agentResp.StatusCode);
         var agent = await agentResp.Content.ReadFromJsonAsync<JsonElement>();
@@ -396,7 +396,8 @@ public class AgentSessionTests(AspireFixture fixture)
         var project = await projResp.Content.ReadFromJsonAsync<JsonElement>();
         var projectId = project.GetProperty("id").GetString()!;
 
-        // Create an agent with busybox:latest (has wget and sh)
+        // Create an agent with busybox:latest (has wget and sh) and RunnerType=Codex.
+        // The DockerCmdOverride takes precedence over the Codex runner command in the exec flow.
         var agentResp = await client.PostAsJsonAsync("/api/agents",
             new
             {
@@ -404,6 +405,7 @@ public class AgentSessionTests(AspireFixture fixture)
                 orgId = Guid.Parse(orgId),
                 systemPrompt = "You are a diagnostic agent.",
                 dockerImage = AgentTestDockerImage,
+                runnerType = "Codex",
                 allowedTools = "[]",
                 isActive = true,
             });

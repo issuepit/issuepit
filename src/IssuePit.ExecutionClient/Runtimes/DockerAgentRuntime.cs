@@ -304,15 +304,16 @@ public class DockerAgentRuntime(
         // used when rebuilding runnerArgs (including in fallback cases).
         var downloadedAttachmentPaths = new List<string>();
 
-        if (runnerArgs.Count > 0)
+        if (session.CustomCmd is { Length: > 0 })
+        {
+            // DockerCmdOverride is an explicit override — log it and prefer it over runner args.
+            await onLogLine($"[DEBUG] Runner cmd     : {string.Join(" ", session.CustomCmd)} (DockerCmdOverride)", LogStream.Stdout);
+        }
+        else if (runnerArgs.Count > 0)
         {
             // Log the CLI command (e.g. "opencode run --model ...") without the task text.
             var cmdDisplay = string.Join(" ", runnerArgs.Take(runnerArgs.Count - 1));
             await onLogLine($"[DEBUG] Runner cmd     : {cmdDisplay}", LogStream.Stdout);
-        }
-        else if (session.CustomCmd is { Length: > 0 })
-        {
-            await onLogLine($"[DEBUG] Runner cmd     : {string.Join(" ", session.CustomCmd)}", LogStream.Stdout);
         }
 
         // Build the task prompt (used for the exec flow and HTTP server mode).
@@ -803,13 +804,13 @@ public class DockerAgentRuntime(
             }
 
             // Step 7: Execute the agent tool via docker exec.
-            // Prefer runnerArgs (set when RunnerType is configured), fall back to session.CustomCmd
-            // (DockerCmdOverride for diagnostic/test runs). When neither is set the agent has no
-            // RunnerType and no override — skip execution and treat the run as a no-op.
+            // Prefer session.CustomCmd (DockerCmdOverride) when set — it is an explicit override
+            // for diagnostic/test runs. Otherwise use runnerArgs (from RunnerType configuration).
+            // When neither is set the session completes as a no-op.
             // Working directory: use /workspace only when a repo was actually cloned; otherwise
             // fall back to / so the exec doesn't fail on images that don't have /workspace.
-            IReadOnlyList<string>? effectiveCmd = runnerArgs.Count > 0 ? runnerArgs
-                : (session.CustomCmd is { Length: > 0 } ? session.CustomCmd : null);
+            IReadOnlyList<string>? effectiveCmd = session.CustomCmd is { Length: > 0 } ? session.CustomCmd
+                : (runnerArgs.Count > 0 ? runnerArgs : null);
             var agentWorkingDir = cloneRepo is not null ? "/workspace" : "/";
             var agentExitCode = 0L;
             if (effectiveCmd is not null)
