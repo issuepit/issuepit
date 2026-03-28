@@ -491,6 +491,7 @@ public record TriggerCiCdResponse(Guid RunId, string Status, string Branch, stri
 public record RetrySessionRequest(
     string? DockerImageOverride = null,
     bool KeepContainer = false,
+    /// <summary>Optional full command to execute via docker exec instead of the runner CLI (e.g. <c>["sh", "-c", "wget ..."]</c>). Replaces the entire runner invocation. When set, takes precedence over the agent's RunnerType command.</summary>
     string[]? DockerCmdOverride = null,
     /// <summary>Override the agent used for this retry run. Null = use the same agent as the original session.</summary>
     Guid? AgentIdOverride = null,

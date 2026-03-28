@@ -63,7 +63,9 @@ public class AgentSession
     public bool KeepContainer { get; set; }
 
     /// <summary>
-    /// Optional command override to execute via <c>docker exec</c> instead of the runner CLI.
+    /// Optional full command to execute via <c>docker exec</c> instead of the runner CLI command.
+    /// This is a complete docker-exec command list (e.g. <c>["sh", "-c", "wget ..."]</c>), not
+    /// additional arguments — it replaces the entire runner invocation.
     /// Useful for diagnostic or test runs (e.g. a connectivity check or MCP tool probe).
     /// When set, takes precedence over the command built from <see cref="Agent.RunnerType"/>.
     /// Not persisted — set at launch time from the <c>issue-assigned</c> Kafka message.

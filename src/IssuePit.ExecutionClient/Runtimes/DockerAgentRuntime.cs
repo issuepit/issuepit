@@ -284,7 +284,11 @@ public class DockerAgentRuntime(
         if (comments is not null)
             await onLogLine($"[DEBUG] Comments       : {comments.Count} comment(s) included in prompt", LogStream.Stdout);
 
-        // Build CLI args for exec flow (not used in HTTP server mode or manual mode).
+        // Build the full CLI command for the exec flow (not used in HTTP server mode or manual mode).
+        // runnerArgs is the complete docker-exec command list, e.g.:
+        //   ["opencode", "run", "--model", "claude", "--format", "json", "TASK_PROMPT"]
+        //   ["codex", "--full-auto", "TASK_PROMPT"]
+        // This is NOT the container startup CMD (which is always "tail -f /dev/null").
         // Only pass --session <id> when a DB snapshot was actually loaded; without the restored
         // DB the session does not exist in the fresh container and opencode would throw NotFoundError.
         // File paths (--file) are not included here — they are appended after attachments are
@@ -306,7 +310,8 @@ public class DockerAgentRuntime(
 
         if (session.CustomCmd is { Length: > 0 })
         {
-            // DockerCmdOverride is an explicit override — log it and prefer it over runner args.
+            // DockerCmdOverride replaces the entire runner command — e.g. ["sh", "-c", "wget ..."].
+            // It is a full docker-exec command list, not additional arguments to the runner CLI.
             await onLogLine($"[DEBUG] Runner cmd     : {string.Join(" ", session.CustomCmd)} (DockerCmdOverride)", LogStream.Stdout);
         }
         else if (runnerArgs.Count > 0)
@@ -803,10 +808,12 @@ public class DockerAgentRuntime(
                 }
             }
 
-            // Step 7: Execute the agent tool via docker exec.
-            // Prefer session.CustomCmd (DockerCmdOverride) when set — it is an explicit override
-            // for diagnostic/test runs. Otherwise use runnerArgs (from RunnerType configuration).
-            // When neither is set the session completes as a no-op.
+            // Step 7: Execute the agent command via docker exec.
+            // Both runnerArgs and CustomCmd are full docker-exec command lists (executable + args),
+            // NOT the container's startup CMD (which is always "tail -f /dev/null").
+            // CustomCmd (DockerCmdOverride) replaces the entire runner command when set — used for
+            // diagnostic/test runs. Otherwise use runnerArgs (the standard CLI invocation from
+            // RunnerType). When neither is set the session completes as a no-op.
             // Working directory: use /workspace only when a repo was actually cloned; otherwise
             // fall back to / so the exec doesn't fail on images that don't have /workspace.
             IReadOnlyList<string>? effectiveCmd = session.CustomCmd is { Length: > 0 } ? session.CustomCmd
