@@ -194,6 +194,7 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
         project.ActionOfflineMode = updated.ActionOfflineMode;
         project.LocalRepositories = updated.LocalRepositories;
         project.SkipSteps = updated.SkipSteps;
+        project.MaxCiCdLoopCount = updated.MaxCiCdLoopCount;
         project.RequiresRunApproval = updated.RequiresRunApproval;
         project.UnwrapSingleFileArtifacts = updated.UnwrapSingleFileArtifacts;
         project.IssueKey = string.IsNullOrWhiteSpace(updated.IssueKey) ? null : updated.IssueKey.Trim().ToUpperInvariant();

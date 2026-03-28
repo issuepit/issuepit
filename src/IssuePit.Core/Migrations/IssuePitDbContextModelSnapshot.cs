@@ -2517,6 +2517,9 @@ namespace IssuePit.Core.Migrations
                     b.Property<string>("SkipSteps")
                         .HasColumnType("text");
 
+                    b.Property<int?>("MaxCiCdLoopCount")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Slug")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -2656,6 +2659,9 @@ namespace IssuePit.Core.Migrations
 
                     b.Property<string>("SkipSteps")
                         .HasColumnType("text");
+
+                    b.Property<int?>("MaxCiCdLoopCount")
+                        .HasColumnType("integer");
 
                     b.Property<string>("Slug")
                         .IsRequired()
