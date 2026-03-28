@@ -480,6 +480,15 @@
                         </div>
                       </template>
                     </template>
+                    <!-- Postamble lines after last opencode step (e.g. session stats summary) -->
+                    <div
+                      v-for="log in buildOpenCodeSteps(group.key, group.logs).postamble.filter(l => !logSearchQuery.trim() || stripAnsiCodes(l.line).toLowerCase().includes(logSearchQuery.toLowerCase()))"
+                      :key="log.id"
+                      class="flex gap-3 leading-5">
+                      <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
+                      <!-- eslint-disable-next-line vue/no-v-html -->
+                      <span :class="[isOpenCodeStats(log.line) || isOpenCodeStepFinish(log.line) ? 'text-gray-300' : (log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'), wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
+                    </div>
                   </template>
                   <!-- Flat lines within the section when no opencode step markers are present -->
                   <template v-else>
@@ -1056,23 +1065,28 @@ interface OpenCodeStepSubGroup {
 }
 
 /**
- * Splits a section's log lines into opencode step sub-groups and a preamble (lines before the first
- * step-start marker). When no step markers are found the preamble contains all lines and steps is empty.
+ * Splits a section's log lines into opencode step sub-groups, a preamble (lines before the first
+ * step-start marker), and a postamble (lines after the last step-finish marker).
+ * When no step markers are found the preamble contains all lines and steps/postamble are empty.
  */
 function buildOpenCodeSteps(sectionKey: string, logs: AgentSessionLog[]): {
   preamble: AgentSessionLog[]
   steps: OpenCodeStepSubGroup[]
+  postamble: AgentSessionLog[]
 } {
   const preamble: AgentSessionLog[] = []
   const steps: OpenCodeStepSubGroup[] = []
+  const postamble: AgentSessionLog[] = []
   let currentStep: OpenCodeStepSubGroup | null = null
   let stepIndex = 0
+  let seenFirstStep = false
 
   for (const log of logs) {
     if (isOpenCodeStepStart(log.line)) {
       // Close any open step first
       currentStep = null
       stepIndex++
+      seenFirstStep = true
       const key = `${sectionKey}:step${stepIndex}`
       currentStep = { key, stepIndex, lines: [], finishLine: undefined }
       steps.push(currentStep)
@@ -1086,12 +1100,17 @@ function buildOpenCodeSteps(sectionKey: string, logs: AgentSessionLog[]): {
     else if (currentStep) {
       currentStep.lines.push(log)
     }
+    else if (seenFirstStep) {
+      // Lines after the last step-finish (e.g. session stats summary) go to postamble
+      // so they are rendered at the bottom, not at the top with the preamble.
+      postamble.push(log)
+    }
     else {
       preamble.push(log)
     }
   }
 
-  return { preamble, steps }
+  return { preamble, steps, postamble }
 }
 
 /** Returns a summary label for an opencode step sub-group. */
