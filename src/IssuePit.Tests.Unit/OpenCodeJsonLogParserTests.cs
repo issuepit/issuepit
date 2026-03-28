@@ -173,4 +173,76 @@ public class OpenCodeJsonLogParserTests
         const string line = """{"message":"no type here"}""";
         Assert.Equal(line, OpenCodeJsonLogParser.ParseLine(line));
     }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // New opencode format: step_start / tool_use / step_finish
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ParseLine_StepStart_ReturnsEmpty()
+    {
+        const string line = """{"type":"step_start","timestamp":1774585963911,"sessionID":"ses_abc","part":{"id":"prt_1","type":"step-start","snapshot":"abc123"}}""";
+        Assert.Equal(string.Empty, OpenCodeJsonLogParser.ParseLine(line));
+    }
+
+    [Fact]
+    public void ParseLine_StepFinish_ReturnsEmpty()
+    {
+        const string line = """{"type":"step_finish","timestamp":1774585965612,"sessionID":"ses_abc","part":{"id":"prt_2","type":"step-finish","reason":"tool-calls","cost":0,"tokens":{"total":11126,"input":61,"output":134,"reasoning":0,"cache":{"read":0,"write":10931}}}}""";
+        Assert.Equal(string.Empty, OpenCodeJsonLogParser.ParseLine(line));
+    }
+
+    [Fact]
+    public void ParseLine_ToolUse_Completed_ReturnsFormattedLine()
+    {
+        const string line = """{"type":"tool_use","timestamp":1774585965531,"sessionID":"ses_abc","part":{"id":"prt_3","type":"tool","callID":"call_1","tool":"glob","state":{"status":"completed","input":{"pattern":"**/*Dockerfile*"},"output":"/workspace/Dockerfile","time":{"start":1774585965514,"end":1774585965530}}}}""";
+        var result = OpenCodeJsonLogParser.ParseLine(line);
+        Assert.Contains("[tool: glob]", result);
+        Assert.Contains("**/*Dockerfile*", result);
+        Assert.Contains("16ms", result);
+    }
+
+    [Fact]
+    public void ParseLine_ToolUse_CompletedReadFile_IncludesPath()
+    {
+        const string line = """{"type":"tool_use","timestamp":1774585968394,"sessionID":"ses_abc","part":{"id":"prt_4","type":"tool","callID":"call_2","tool":"read","state":{"status":"completed","input":{"filePath":"/workspace/docker/Dockerfile.api"},"output":"...","time":{"start":1774585968389,"end":1774585968394}}}}""";
+        var result = OpenCodeJsonLogParser.ParseLine(line);
+        Assert.Contains("[tool: read]", result);
+        Assert.Contains("/workspace/docker/Dockerfile.api", result);
+        Assert.Contains("5ms", result);
+    }
+
+    [Fact]
+    public void ParseLine_ToolUse_LongDuration_FormatsAsSeconds()
+    {
+        const string line = """{"type":"tool_use","timestamp":1000,"sessionID":"ses_abc","part":{"id":"prt_5","type":"tool","callID":"call_3","tool":"bash","state":{"status":"completed","input":{"command":"npm run build"},"output":"ok","time":{"start":1000,"end":3500}}}}""";
+        var result = OpenCodeJsonLogParser.ParseLine(line);
+        Assert.Contains("[tool: bash]", result);
+        Assert.Contains("npm run build", result);
+        Assert.Contains("2.5s", result);
+    }
+
+    [Fact]
+    public void ParseLine_ToolUse_NotCompleted_ReturnsEmpty()
+    {
+        const string line = """{"type":"tool_use","timestamp":1000,"sessionID":"ses_abc","part":{"id":"prt_6","type":"tool","callID":"call_4","tool":"glob","state":{"status":"running","input":{"pattern":"**/*.cs"}}}}""";
+        Assert.Equal(string.Empty, OpenCodeJsonLogParser.ParseLine(line));
+    }
+
+    [Fact]
+    public void ParseLine_ToolUse_MissingPart_ReturnsEmpty()
+    {
+        const string line = """{"type":"tool_use","timestamp":1000,"sessionID":"ses_abc"}""";
+        Assert.Equal(string.Empty, OpenCodeJsonLogParser.ParseLine(line));
+    }
+
+    [Fact]
+    public void ParseLine_ToolUse_NoDuration_OmitsDurationSuffix()
+    {
+        const string line = """{"type":"tool_use","timestamp":1000,"sessionID":"ses_abc","part":{"id":"prt_7","type":"tool","callID":"call_5","tool":"glob","state":{"status":"completed","input":{"pattern":"*.json"}}}}""";
+        var result = OpenCodeJsonLogParser.ParseLine(line);
+        Assert.Contains("[tool: glob]", result);
+        Assert.Contains("*.json", result);
+        Assert.DoesNotContain("[", result.Replace("[tool: glob]", ""));
+    }
 }
