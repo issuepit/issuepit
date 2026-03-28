@@ -121,6 +121,62 @@
           <p v-if="loadingWorkflows" class="text-xs text-gray-500 mt-1">Loading workflows…</p>
         </div>
 
+        <!-- Remote selector (only shown when multiple remotes are configured) -->
+        <div v-if="repos.length > 1" ref="remoteDropdownRef" class="relative">
+          <label class="block text-sm font-medium text-gray-300 mb-1">
+            Remote <span class="text-gray-500">(optional — auto-detects from branch)</span>
+          </label>
+          <button
+            type="button"
+            @click="remoteDropdownOpen = !remoteDropdownOpen"
+            class="w-full flex items-center justify-between bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500 hover:border-gray-600 transition-colors">
+            <span class="flex items-center gap-2 min-w-0">
+              <template v-if="selectedRepo">
+                <span class="font-mono text-gray-200 truncate">{{ remoteDisplayUrl(selectedRepo.remoteUrl) }}</span>
+                <span :class="['text-xs px-1.5 py-0.5 rounded font-medium shrink-0', modeChipClass[selectedRepo.mode]]">
+                  {{ selectedRepo.mode }}
+                </span>
+              </template>
+              <span v-else class="text-gray-400">Auto (detect from branch)</span>
+            </span>
+            <svg class="w-4 h-4 text-gray-400 shrink-0 ml-2 transition-transform" :class="{ 'rotate-180': remoteDropdownOpen }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          <!-- Dropdown -->
+          <div v-if="remoteDropdownOpen"
+            class="absolute z-10 mt-1 w-full bg-gray-900 border border-gray-700 rounded-lg shadow-xl overflow-hidden">
+            <!-- Auto option -->
+            <button
+              type="button"
+              @click="selectRepo(null)"
+              :class="[
+                'w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors',
+                selectedGitRepositoryId === null
+                  ? 'bg-brand-800/30 text-brand-300'
+                  : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200',
+              ]">
+              <span>Detect from branch</span>
+              <span class="text-xs px-1.5 py-0.5 rounded font-medium bg-gray-700/60 text-gray-400 border border-gray-600/50">Auto</span>
+            </button>
+            <!-- Repo options -->
+            <button
+              v-for="repo in repos"
+              :key="repo.id"
+              type="button"
+              @click="selectRepo(repo.id)"
+              :class="[
+                'w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors border-t border-gray-800 min-w-0',
+                selectedGitRepositoryId === repo.id
+                  ? 'bg-brand-800/30 text-brand-200'
+                  : 'text-gray-300 hover:bg-gray-800',
+              ]">
+              <span class="font-mono truncate">{{ remoteDisplayUrl(repo.remoteUrl) }}</span>
+              <span :class="['text-xs px-1.5 py-0.5 rounded font-medium shrink-0', modeChipClass[repo.mode]]">{{ repo.mode }}</span>
+            </button>
+          </div>
+        </div>
+
         <!-- workflow_dispatch inputs -->
         <div v-if="selectedEvent === 'workflow_dispatch' && dispatchInputs.length > 0" class="space-y-3">
           <p class="text-xs font-medium text-gray-400 uppercase tracking-wide">Workflow Inputs</p>
@@ -174,7 +230,7 @@
 </template>
 
 <script setup lang="ts">
-import type { WorkflowInfo, WorkflowInput } from '~/types'
+import type { WorkflowInfo, WorkflowInput, GitRepository } from '~/types'
 import { useCiCdRunsStore } from '~/stores/cicdRuns'
 
 interface TriggerConflictResponse { error?: string; canForce?: boolean; activeRunIds?: string[] }
@@ -194,6 +250,50 @@ const emit = defineEmits<{
 const ACT_CONTAINER_STORAGE_KEY = 'cicd-act-container-image'
 
 const cicdStore = useCiCdRunsStore()
+const api = useApi()
+
+// Remote (git repository) selector
+const repos = ref<GitRepository[]>([])
+const selectedGitRepositoryId = ref<string | null>(null)
+const remoteDropdownOpen = ref(false)
+const remoteDropdownRef = ref<HTMLElement | null>(null)
+
+const modeChipClass: Record<string, string> = {
+  Working: 'bg-green-900/60 text-green-300 border border-green-700/50',
+  ReadOnly: 'bg-gray-700/60 text-gray-300 border border-gray-600/50',
+  Release: 'bg-purple-900/60 text-purple-300 border border-purple-700/50',
+}
+
+function remoteDisplayUrl(url: string): string {
+  return url.replace(/^https?:\/\//, '').replace(/\.git$/, '')
+}
+
+const selectedRepo = computed(() =>
+  repos.value.find(r => r.id === selectedGitRepositoryId.value) ?? null,
+)
+
+function selectRepo(id: string | null) {
+  selectedGitRepositoryId.value = id
+  remoteDropdownOpen.value = false
+}
+
+function onRemoteOutsideClick(e: MouseEvent) {
+  if (remoteDropdownRef.value && !remoteDropdownRef.value.contains(e.target as Node)) {
+    remoteDropdownOpen.value = false
+  }
+}
+
+watch(remoteDropdownOpen, (open) => {
+  if (open) {
+    document.addEventListener('mousedown', onRemoteOutsideClick)
+  } else {
+    document.removeEventListener('mousedown', onRemoteOutsideClick)
+  }
+})
+
+onUnmounted(() => {
+  document.removeEventListener('mousedown', onRemoteOutsideClick)
+})
 
 const eventOptions = [
   { value: 'push', label: 'push' },
@@ -256,10 +356,18 @@ watch([selectedWorkflow, selectedEvent], () => {
   }
 })
 
-// Load workflows on mount
+// Load workflows and remotes on mount
 onMounted(async () => {
   loadingWorkflows.value = true
-  workflows.value = await cicdStore.fetchWorkflows(props.projectId)
+  const [wf, remotes] = await Promise.all([
+    cicdStore.fetchWorkflows(props.projectId),
+    api.get<GitRepository[]>(`/api/projects/${props.projectId}/git/repos`).catch((err) => {
+      console.warn('[TriggerCiCdModal] Failed to load git remotes:', err)
+      return [] as GitRepository[]
+    }),
+  ])
+  workflows.value = wf
+  repos.value = remotes
   loadingWorkflows.value = false
 })
 
@@ -296,6 +404,7 @@ async function triggerRun(forceWithActiveRunIds?: string[]) {
       inputs,
       customImage: import.meta.client ? (localStorage.getItem(ACT_CONTAINER_STORAGE_KEY) ?? undefined) : undefined,
       forceWithActiveRunIds,
+      gitRepositoryId: selectedGitRepositoryId.value ?? undefined,
     })
     emit('triggered')
   } catch (e: unknown) {

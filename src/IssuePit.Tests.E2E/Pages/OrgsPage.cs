@@ -60,8 +60,11 @@ public class OrgsPage(IPage page)
         }
         catch (TimeoutException)
         {
+            // Give the page a moment to finish hydrating before re-clicking.
+            await Task.Delay(E2ETimeouts.RetryDelay);
             await page.ClickAsync("button:has-text('New Organization')");
-            await page.WaitForSelectorAsync("input[placeholder='Acme Corp']");
+            await page.WaitForSelectorAsync("input[placeholder='Acme Corp']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
         }
 
         await page.FillAsync("input[placeholder='Acme Corp']", orgName);
