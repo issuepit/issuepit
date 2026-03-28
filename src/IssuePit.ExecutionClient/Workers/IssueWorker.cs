@@ -259,7 +259,7 @@ public class IssueWorker(
 
             await LaunchAgentAsync(message.AgentId.Value, null, message.ProjectId, message.DockerImageOverride,
                 message.KeepContainer, message.DockerCmdOverride, message.ModelOverride, message.RunnerTypeOverride,
-                message.UseHttpServerOverride, message.RuntimeTypeOverride,
+                message.UseHttpServerOverride, message.RuntimeTypeOverride, message.MaxCiCdLoopCountOverride,
                 message.SessionId, null, message.Branch, cancellationToken);
             return;
         }
@@ -320,6 +320,7 @@ public class IssueWorker(
         await Task.WhenAll(agentIds.Select(agentId =>
             LaunchAgentAsync(agentId, message.Id, message.ProjectId, message.DockerImageOverride, message.KeepContainer, message.DockerCmdOverride,
                 message.ModelOverride, message.RunnerTypeOverride, message.UseHttpServerOverride, message.RuntimeTypeOverride,
+                message.MaxCiCdLoopCountOverride,
                 // Only pass the pre-created session ID when exactly one agent is being launched (retry case).
                 agentIds.Count == 1 ? message.SessionId : null,
                 message.TriggeringCommentId,
@@ -343,6 +344,7 @@ public class IssueWorker(
         int? runnerTypeOverride,
         bool? useHttpServerOverride,
         int? runtimeTypeOverride,
+        int? maxCiCdLoopCountOverride,
         Guid? existingSessionId,
         Guid? triggeringCommentId,
         string? branchOverride,
@@ -1098,15 +1100,23 @@ public class IssueWorker(
 
                 if (cicdPrerequisitesMet && !capturedGitPushFailed)
                 {
-                    // Resolve the configured max loop count from project → org → system default.
-                    var project = issueForRuntime.ProjectId != Guid.Empty
-                        ? await db.Projects
-                            .Include(p => p.Organization)
-                            .FirstOrDefaultAsync(p => p.Id == issueForRuntime.ProjectId, sessionCts.Token)
-                        : null;
-                    var maxCiCdLoopCount = project?.MaxCiCdLoopCount
-                        ?? project?.Organization?.MaxCiCdLoopCount
-                        ?? MaxCiCdFixAttempts;
+                    // Resolve the configured max loop count: explicit override → project → org → system default.
+                    int maxCiCdLoopCount;
+                    if (maxCiCdLoopCountOverride.HasValue)
+                    {
+                        maxCiCdLoopCount = maxCiCdLoopCountOverride.Value;
+                    }
+                    else
+                    {
+                        var project = issueForRuntime.ProjectId != Guid.Empty
+                            ? await db.Projects
+                                .Include(p => p.Organization)
+                                .FirstOrDefaultAsync(p => p.Id == issueForRuntime.ProjectId, sessionCts.Token)
+                            : null;
+                        maxCiCdLoopCount = project?.MaxCiCdLoopCount
+                            ?? project?.Organization?.MaxCiCdLoopCount
+                            ?? MaxCiCdFixAttempts;
+                    }
 
                     var cicdSucceeded = await RunCiCdFixLoopAsync(
                         session, agent, issueForRuntime, gitRepository!, cloneRepository, credentials, runtimeConfig,
@@ -2249,7 +2259,7 @@ public class IssueWorker(
         GitBranch = branchName,
     };
 
-    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, Guid? SessionId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? DockerCmdOverride = null, string? ModelOverride = null, int? RunnerTypeOverride = null, bool? UseHttpServerOverride = null, int? RuntimeTypeOverride = null, bool ForceAgentId = false, Guid? TriggeringCommentId = null, string? Branch = null, bool IsManualDirectStart = false);
+    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, Guid? SessionId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? DockerCmdOverride = null, string? ModelOverride = null, int? RunnerTypeOverride = null, bool? UseHttpServerOverride = null, int? RuntimeTypeOverride = null, int? MaxCiCdLoopCountOverride = null, bool ForceAgentId = false, Guid? TriggeringCommentId = null, string? Branch = null, bool IsManualDirectStart = false);
 
     /// <summary>
     /// A simple mutable counter shared across all <see cref="DrainPendingMessagesAsync"/> calls
