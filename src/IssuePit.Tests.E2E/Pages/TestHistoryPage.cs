@@ -15,11 +15,11 @@ public class TestHistoryPage(IPage page)
     /// then switches to the Coverage tab.
     /// <para>
     /// All tab data (runs, tests, coverage) is fetched in a single <c>reload()</c> call on
-    /// <c>onMounted</c>. Waiting for <see cref="WaitForLoadAsync"/> (which checks for the
-    /// Overview tab's "Total Tests" card) guarantees that <c>loading===false</c> and that
-    /// <c>coverageRuns</c> is already populated before the Coverage tab is activated.
-    /// This avoids the race between the direct <c>?tab=Coverage</c> URL navigation and the
-    /// Vue hydration / API cycle that caused 10–20 s timeouts under CI load.
+    /// <c>onMounted</c>. <see cref="WaitForLoadAsync"/> waits for the loading spinner
+    /// (<c>data-testid="test-history-loading"</c>) to disappear, which guarantees that
+    /// <c>loading===false</c> and <c>coverageRuns</c> is already populated before the
+    /// Coverage tab is activated. This avoids both the direct <c>?tab=Coverage</c> URL race
+    /// and the previous "Total Tests" approach that required <c>activeTab === 'Overview'</c>.
     /// </para>
     /// </summary>
     public async Task GotoCoverageAsync(string projectId)
@@ -32,11 +32,17 @@ public class TestHistoryPage(IPage page)
     public async Task WaitForLoadAsync()
     {
         await page.WaitForSelectorAsync("text=Test History", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
-        // Wait for the Overview tab's "Total Tests" stat card to appear. This card only renders
-        // when loading===false and activeTab==='Overview' (the default). The page initialises
-        // loading=true so the spinner is always present on first render and the stat cards only
-        // appear after the initial data fetch completes.
-        await page.WaitForSelectorAsync("text=Total Tests", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
+        // Wait for the loading spinner to be hidden. The spinner is always present in the
+        // server-rendered HTML (loading starts as true) and is removed from the DOM once the
+        // onMounted reload() call completes. This is more reliable than waiting for "Total Tests"
+        // because that approach required activeTab === 'Overview' — any Vue Router race or
+        // unexpected tab state would cause a spurious timeout.
+        await page.Locator("[data-testid='test-history-loading']")
+            .WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Hidden,
+                Timeout = E2ETimeouts.Navigation,
+            });
     }
 
     /// <summary>Returns the heading element containing "Test History".</summary>
