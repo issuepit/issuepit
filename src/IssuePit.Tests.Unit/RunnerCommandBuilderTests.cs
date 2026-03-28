@@ -96,52 +96,52 @@ public class RunnerCommandBuilderTests
         Assert.Contains("Write tests", args);
     }
 
-    // --- BuildArgsList (Docker CMD format — includes binary name as first element) ---
+    // --- BuildCmdList (Docker CMD format — includes binary name as first element) ---
 
     [Fact]
-    public void BuildArgsList_NoRunnerType_ReturnsEmpty()
+    public void BuildCmdList_NoRunnerType_ReturnsEmpty()
     {
         var agent = MakeAgent();
         var issue = MakeIssue();
-        Assert.Empty(RunnerCommandBuilder.BuildArgsList(agent, issue));
+        Assert.Empty(RunnerCommandBuilder.BuildCmdList(agent, issue));
     }
 
     [Fact]
-    public void BuildArgsList_OpenCode_StartsWithOpencode()
+    public void BuildCmdList_OpenCode_StartsWithOpencode()
     {
         var agent = MakeAgent(RunnerType.OpenCode);
         var issue = MakeIssue("Fix the bug");
-        var args = RunnerCommandBuilder.BuildArgsList(agent, issue);
+        var args = RunnerCommandBuilder.BuildCmdList(agent, issue);
         Assert.Equal("opencode", args[0]);
         Assert.Equal("run", args[1]);
     }
 
     [Fact]
-    public void BuildArgsList_OpenCode_ContainsFormatJsonFlag()
+    public void BuildCmdList_OpenCode_ContainsFormatJsonFlag()
     {
         var agent = MakeAgent(RunnerType.OpenCode);
         var issue = MakeIssue();
-        var args = RunnerCommandBuilder.BuildArgsList(agent, issue);
+        var args = RunnerCommandBuilder.BuildCmdList(agent, issue);
         Assert.Contains("--format", args);
         var formatIdx = args.ToList().IndexOf("--format");
         Assert.Equal("json", args[formatIdx + 1]);
     }
 
     [Fact]
-    public void BuildArgsList_OpenCode_ContainsTask()
+    public void BuildCmdList_OpenCode_ContainsTask()
     {
         var agent = MakeAgent(RunnerType.OpenCode);
         var issue = MakeIssue("Fix the bug");
-        var args = RunnerCommandBuilder.BuildArgsList(agent, issue);
+        var args = RunnerCommandBuilder.BuildCmdList(agent, issue);
         Assert.Contains(args, a => a.Contains("Fix the bug"));
     }
 
     [Fact]
-    public void BuildArgsList_OpenCode_WithModel_ContainsModelFlag()
+    public void BuildCmdList_OpenCode_WithModel_ContainsModelFlag()
     {
         var agent = MakeAgent(RunnerType.OpenCode, model: "anthropic/claude-opus-4-5");
         var issue = MakeIssue();
-        var args = RunnerCommandBuilder.BuildArgsList(agent, issue);
+        var args = RunnerCommandBuilder.BuildCmdList(agent, issue);
         Assert.Equal("opencode", args[0]);
         Assert.Equal("run", args[1]);
         Assert.Contains("--model", args);
@@ -149,29 +149,29 @@ public class RunnerCommandBuilderTests
     }
 
     [Fact]
-    public void BuildArgsList_Codex_StartsWithCodex()
+    public void BuildCmdList_Codex_StartsWithCodex()
     {
         var agent = MakeAgent(RunnerType.Codex);
         var issue = MakeIssue();
-        var args = RunnerCommandBuilder.BuildArgsList(agent, issue);
+        var args = RunnerCommandBuilder.BuildCmdList(agent, issue);
         Assert.Equal("codex", args[0]);
     }
 
     [Fact]
-    public void BuildArgsList_Codex_ContainsFullAutoFlag()
+    public void BuildCmdList_Codex_ContainsFullAutoFlag()
     {
         var agent = MakeAgent(RunnerType.Codex);
         var issue = MakeIssue();
-        var args = RunnerCommandBuilder.BuildArgsList(agent, issue);
+        var args = RunnerCommandBuilder.BuildCmdList(agent, issue);
         Assert.Contains("--full-auto", args);
     }
 
     [Fact]
-    public void BuildArgsList_GitHubCopilotCli_StartsWithGh()
+    public void BuildCmdList_GitHubCopilotCli_StartsWithGh()
     {
         var agent = MakeAgent(RunnerType.GitHubCopilotCli);
         var issue = MakeIssue("Write tests");
-        var args = RunnerCommandBuilder.BuildArgsList(agent, issue);
+        var args = RunnerCommandBuilder.BuildCmdList(agent, issue);
         Assert.Equal("gh", args[0]);
         Assert.Contains("copilot", args);
         Assert.Contains("suggest", args);
@@ -381,11 +381,11 @@ public class RunnerCommandBuilderTests
     // --- Session continuation / fork ---
 
     [Fact]
-    public void BuildArgsList_OpenCode_WithForkSessionId_IncludesForkFlags()
+    public void BuildCmdList_OpenCode_WithForkSessionId_IncludesForkFlags()
     {
         var agent = MakeAgent(RunnerType.OpenCode);
         var issue = MakeIssue("Fix a bug");
-        var args = RunnerCommandBuilder.BuildArgsList(agent, issue, forkSessionId: "ses_abc123");
+        var args = RunnerCommandBuilder.BuildCmdList(agent, issue, forkSessionId: "ses_abc123");
         Assert.Contains("--session", args);
         Assert.Contains("ses_abc123", args);
         Assert.Contains("--fork", args);
@@ -397,23 +397,23 @@ public class RunnerCommandBuilderTests
     }
 
     [Fact]
-    public void BuildArgsList_OpenCode_WithContinueSessionId_IncludesSessionFlagWithoutFork()
+    public void BuildCmdList_OpenCode_WithContinueSessionId_IncludesSessionFlagWithoutFork()
     {
         var agent = MakeAgent(RunnerType.OpenCode);
         var issue = MakeIssue("Continue work");
-        var args = RunnerCommandBuilder.BuildArgsList(agent, issue, continueSessionId: "ses_xyz789");
+        var args = RunnerCommandBuilder.BuildCmdList(agent, issue, continueSessionId: "ses_xyz789");
         Assert.Contains("--session", args);
         Assert.Contains("ses_xyz789", args);
         Assert.DoesNotContain("--fork", args);
     }
 
     [Fact]
-    public void BuildArgsList_OpenCode_ForkTakesPrecedenceOverContinue()
+    public void BuildCmdList_OpenCode_ForkTakesPrecedenceOverContinue()
     {
         // When both forkSessionId and continueSessionId are provided, fork takes precedence.
         var agent = MakeAgent(RunnerType.OpenCode);
         var issue = MakeIssue("Fix");
-        var args = RunnerCommandBuilder.BuildArgsList(agent, issue, forkSessionId: "ses_fork", continueSessionId: "ses_cont");
+        var args = RunnerCommandBuilder.BuildCmdList(agent, issue, forkSessionId: "ses_fork", continueSessionId: "ses_cont");
         Assert.Contains("ses_fork", args);
         Assert.Contains("--fork", args);
         Assert.DoesNotContain("ses_cont", args);
@@ -422,12 +422,12 @@ public class RunnerCommandBuilderTests
     // --- File attachment (--file) ---
 
     [Fact]
-    public void BuildArgsList_OpenCode_WithFilePaths_IncludesFileFlags()
+    public void BuildCmdList_OpenCode_WithFilePaths_IncludesFileFlags()
     {
         var agent = MakeAgent(RunnerType.OpenCode);
         var issue = MakeIssue("Fix with attachment");
         var paths = new List<string> { "/tmp/issuepit-attachments/diagram.png", "/tmp/issuepit-attachments/spec.pdf" };
-        var args = RunnerCommandBuilder.BuildArgsList(agent, issue, filePaths: paths);
+        var args = RunnerCommandBuilder.BuildCmdList(agent, issue, filePaths: paths);
         var argsList = args.ToList();
         Assert.Contains("--file", argsList);
         Assert.Contains("/tmp/issuepit-attachments/diagram.png", argsList);
@@ -440,12 +440,12 @@ public class RunnerCommandBuilderTests
     }
 
     [Fact]
-    public void BuildArgsList_OpenCode_WithFilePaths_FilesFlagBeforeTask()
+    public void BuildCmdList_OpenCode_WithFilePaths_FilesFlagBeforeTask()
     {
         var agent = MakeAgent(RunnerType.OpenCode);
         var issue = MakeIssue("Fix with attachment");
         var paths = new List<string> { "/tmp/issuepit-attachments/notes.txt" };
-        var args = RunnerCommandBuilder.BuildArgsList(agent, issue, filePaths: paths);
+        var args = RunnerCommandBuilder.BuildCmdList(agent, issue, filePaths: paths);
         var argsList = args.ToList();
         var fileIdx = argsList.IndexOf("--file");
         // The task string is always the last element.
@@ -453,22 +453,22 @@ public class RunnerCommandBuilderTests
     }
 
     [Fact]
-    public void BuildArgsList_OpenCode_NoFilePaths_NoFileFlag()
+    public void BuildCmdList_OpenCode_NoFilePaths_NoFileFlag()
     {
         var agent = MakeAgent(RunnerType.OpenCode);
         var issue = MakeIssue("Fix without attachment");
-        var args = RunnerCommandBuilder.BuildArgsList(agent, issue);
+        var args = RunnerCommandBuilder.BuildCmdList(agent, issue);
         Assert.DoesNotContain("--file", args);
     }
 
     [Fact]
-    public void BuildArgsList_Codex_WithFilePaths_IgnoresFilePaths()
+    public void BuildCmdList_Codex_WithFilePaths_IgnoresFilePaths()
     {
         // --file is opencode-specific; Codex should not include it even when paths are provided.
         var agent = MakeAgent(RunnerType.Codex);
         var issue = MakeIssue("Fix");
         var paths = new List<string> { "/tmp/issuepit-attachments/diagram.png" };
-        var args = RunnerCommandBuilder.BuildArgsList(agent, issue, filePaths: paths);
+        var args = RunnerCommandBuilder.BuildCmdList(agent, issue, filePaths: paths);
         Assert.DoesNotContain("--file", args);
     }
 }

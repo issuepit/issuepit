@@ -217,6 +217,17 @@
 
             <p class="text-xs text-gray-500 mb-4">A new session will be started for the same issue.</p>
 
+            <!-- Docker cmd override -->
+            <div class="mb-4">
+              <label class="block text-xs text-gray-500 mb-1.5">Docker command override</label>
+              <textarea
+                v-model="retryCmdOverride"
+                rows="2"
+                placeholder="Leave blank to use the agent's RunnerType command. JSON array e.g. [&quot;sh&quot;,&quot;-c&quot;,&quot;echo hi&quot;] or space-separated."
+                class="w-full bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-300 px-2.5 py-1.5 placeholder-gray-600 focus:outline-none focus:border-brand-500 font-mono resize-none" />
+              <p class="text-xs text-gray-600 mt-1">Replaces the entire runner command via docker exec. Useful for diagnostic runs.</p>
+            </div>
+
             <!-- Keep container option -->
             <label class="flex items-start gap-2.5 cursor-pointer mb-5">
               <input
@@ -1386,6 +1397,7 @@ const agentImageOptions = computed(() => {
 const retryDockerImage = ref(DEFAULT_AGENT_IMAGE)
 const retryCustomDockerImage = ref('')
 const retryKeepContainer = ref(false)
+const retryCmdOverride = ref('')
 
 // Retry override state — all default to "use original / agent default"
 const retryAgentId = ref<string>('')
@@ -1422,7 +1434,23 @@ async function openRetryModal() {
   retryDockerImage.value = agentImageOptions.value[0].value
   retryCustomDockerImage.value = ''
   retryKeepContainer.value = false
+  retryCmdOverride.value = ''
   showRetryModal.value = true
+}
+
+// Parse a docker cmd override string: either a JSON array like ["sh","-c","echo hi"]
+// or a simple shell-like string split on whitespace. Returns undefined when blank.
+function parseCmdOverride(value: string): string[] | undefined {
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  try {
+    const parsed = JSON.parse(trimmed)
+    if (Array.isArray(parsed) && parsed.every(x => typeof x === 'string')) return parsed
+  }
+  catch {
+    // fall through to whitespace split
+  }
+  return trimmed.split(/\s+/)
 }
 
 async function retrySession() {
@@ -1461,6 +1489,7 @@ async function retrySession() {
       runnerTypeOverride,
       useHttpServerOverride,
       runtimeTypeOverride: retryRuntimeType.value !== '' ? retryRuntimeType.value as number : undefined,
+      dockerCmdOverride: parseCmdOverride(retryCmdOverride.value),
     })
     if (result?.retriedSessionId) {
       navigateTo(`/projects/${projectId}/runs/agent-sessions/${result.retriedSessionId}`)
