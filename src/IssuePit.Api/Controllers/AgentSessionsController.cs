@@ -463,6 +463,32 @@ public class AgentSessionsController(
                 message.ModelOverride, message.AgentIdOverride, null, message.CreatedAt, message.ProcessedAt));
     }
 
+    /// <summary>Updates the content of a pending message. Returns 409 Conflict if the message is no longer pending.</summary>
+    [HttpPatch("{id:guid}/messages/{messageId:guid}")]
+    public async Task<IActionResult> UpdateMessage(Guid id, Guid messageId, [FromBody] UpdateMessageRequest request, CancellationToken cancellationToken)
+    {
+        if (tenant.CurrentTenant is null) return Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(request.Content))
+            return BadRequest(new UpdateMessageErrorResponse("Message content cannot be empty.", string.Empty));
+
+        var message = await db.AgentSessionMessages
+            .Include(m => m.AgentSession).ThenInclude(s => s!.Project).ThenInclude(p => p!.Organization)
+            .FirstOrDefaultAsync(m => m.Id == messageId && m.AgentSessionId == id
+                && m.AgentSession!.Project!.Organization.TenantId == tenant.CurrentTenant.Id, cancellationToken);
+
+        if (message is null) return NotFound();
+
+        if (message.Status != AgentSessionMessageStatus.Pending)
+            return Conflict(new UpdateMessageErrorResponse("Only pending messages can be edited.", message.Status.ToString()));
+
+        message.Content = request.Content.Trim();
+        await db.SaveChangesAsync(cancellationToken);
+
+        return Ok(new AgentSessionMessageDto(message.Id, message.Content, message.Status.ToString(),
+            message.ModelOverride, message.AgentIdOverride, null, message.CreatedAt, message.ProcessedAt));
+    }
+
     /// <summary>Cancels a pending message (cannot cancel running or done messages).</summary>
     [HttpDelete("{id:guid}/messages/{messageId:guid}")]
     public async Task<IActionResult> CancelMessage(Guid id, Guid messageId, CancellationToken cancellationToken)
@@ -528,6 +554,10 @@ public record QueueMessageRequest(
     string Content,
     string? ModelOverride = null,
     Guid? AgentIdOverride = null);
+
+public record UpdateMessageRequest(string Content);
+
+public record UpdateMessageErrorResponse(string Error, string Status);
 
 public record AgentSessionMessageDto(
     Guid Id,

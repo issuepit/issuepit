@@ -258,6 +258,34 @@
         </div>
       </Teleport>
 
+      <!-- Edit message conflict modal: shown when the edited message was already picked up by the agent -->
+      <Teleport to="body">
+        <div v-if="showEditConflictModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60" @mousedown.self="showEditConflictModal = false">
+          <div class="bg-gray-900 border border-gray-700 rounded-xl p-6 w-full max-w-md shadow-xl">
+            <h3 class="text-base font-semibold text-white mb-2">Message already sent to the agent</h3>
+            <p class="text-sm text-gray-400 mb-4">
+              The message you were editing was picked up by the agent before you could save your changes.
+              Would you like to queue your edited version as a new message?
+            </p>
+            <div class="bg-gray-800 rounded-lg px-3 py-2 mb-4">
+              <p class="text-sm text-gray-300 whitespace-pre-wrap break-words">{{ editingMessageContent }}</p>
+            </div>
+            <div class="flex justify-end gap-2">
+              <button
+                class="px-4 py-1.5 text-sm text-gray-400 hover:text-gray-200 transition-colors"
+                @click="showEditConflictModal = false">
+                Discard
+              </button>
+              <button
+                class="px-4 py-1.5 text-sm bg-brand-600 hover:bg-brand-500 text-white rounded-md transition-colors"
+                @click="queueEditedContentAsNew">
+                Queue as New Message
+              </button>
+            </div>
+          </div>
+        </div>
+      </Teleport>
+
       <!-- Warnings -->
       <div v-if="sessionWarnings.length" class="mb-6 space-y-2">
         <div v-for="(warning, idx) in sessionWarnings" :key="idx"
@@ -285,7 +313,7 @@
         <button class="ml-auto text-red-500 hover:text-red-400" @click="authBackupError = null">✕</button>
       </div>
 
-      <!-- Logs / Details -->
+      <!-- Logs / Details + Message Queue -->
       <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden mb-6">
         <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800">
           <div class="flex gap-1">
@@ -592,96 +620,123 @@
           </div>
           <div v-if="!gitRemoteChecks.length && !debugMetadata.length" class="py-10 text-center text-sm text-gray-500">No details available</div>
         </template>
-      </div>
 
-      <!-- Message Queue — compact section beneath the tab area -->
-      <div class="mt-6 bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-        <!-- Queued messages list (compact rows) -->
-        <div v-if="sessionMessages.length" class="divide-y divide-gray-800">
-          <div v-for="msg in sessionMessages" :key="msg.id"
-            class="px-4 py-2.5 flex items-start gap-2.5">
-            <!-- Status badge -->
-            <span :class="[
-              'mt-0.5 shrink-0 inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full font-medium',
-              msg.status === 'Pending' ? 'bg-yellow-900/30 text-yellow-400' :
-              msg.status === 'Running' ? 'bg-blue-900/30 text-blue-400' :
-              msg.status === 'Done' ? 'bg-green-900/30 text-green-400' :
-              'bg-gray-800 text-gray-400'
-            ]">
+        <!-- Message Queue — compact section beneath the tab area -->
+        <div class="border-t border-gray-800">
+          <!-- Queued messages list (compact rows) -->
+          <div v-if="sessionMessages.length" class="divide-y divide-gray-800">
+            <div v-for="msg in sessionMessages" :key="msg.id"
+              class="px-4 py-2.5 flex items-start gap-2.5">
+              <!-- Status badge -->
               <span :class="[
-                'w-1 h-1 rounded-full',
-                msg.status === 'Pending' ? 'bg-yellow-400' :
-                msg.status === 'Running' ? 'bg-blue-400 animate-pulse' :
-                msg.status === 'Done' ? 'bg-green-400' :
-                'bg-gray-500'
-              ]" />
-              {{ msg.status }}
-            </span>
-            <!-- Content + meta inline -->
-            <div class="flex-1 min-w-0">
-              <p class="text-sm text-gray-300 whitespace-pre-wrap break-words leading-snug">{{ msg.content }}</p>
-              <span class="text-xs text-gray-600 flex items-center gap-2 mt-0.5 flex-wrap">
-                <DateDisplay :date="msg.createdAt" mode="relative" />
-                <span v-if="msg.agentOverrideName" class="text-gray-500">· agent: {{ msg.agentOverrideName }}</span>
-                <span v-if="msg.modelOverride" class="font-mono text-gray-500">· {{ msg.modelOverride }}</span>
+                'mt-0.5 shrink-0 inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full font-medium',
+                msg.status === 'Pending' ? 'bg-yellow-900/30 text-yellow-400' :
+                msg.status === 'Running' ? 'bg-blue-900/30 text-blue-400' :
+                msg.status === 'Done' ? 'bg-green-900/30 text-green-400' :
+                'bg-gray-800 text-gray-400'
+              ]">
+                <span :class="[
+                  'w-1 h-1 rounded-full',
+                  msg.status === 'Pending' ? 'bg-yellow-400' :
+                  msg.status === 'Running' ? 'bg-blue-400 animate-pulse' :
+                  msg.status === 'Done' ? 'bg-green-400' :
+                  'bg-gray-500'
+                ]" />
+                {{ msg.status }}
               </span>
+              <!-- Inline editor or read-only view -->
+              <div class="flex-1 min-w-0">
+                <template v-if="editingMessageId === msg.id">
+                  <textarea
+                    v-model="editingMessageContent"
+                    rows="2"
+                    class="w-full bg-gray-800 border border-brand-600 rounded text-sm text-gray-300 px-2 py-1 placeholder-gray-600 focus:outline-none resize-none"
+                    @keydown.escape.prevent="cancelEdit"
+                    @keydown.ctrl.enter.prevent="saveEdit(msg)"
+                    @keydown.meta.enter.prevent="saveEdit(msg)" />
+                  <div class="flex items-center gap-2 mt-1">
+                    <button
+                      class="text-xs text-brand-400 hover:text-brand-300 transition-colors"
+                      @click="saveEdit(msg)">Save</button>
+                    <button
+                      class="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                      @click="cancelEdit">Cancel</button>
+                  </div>
+                </template>
+                <template v-else>
+                  <p class="text-sm text-gray-300 whitespace-pre-wrap break-words leading-snug">{{ msg.content }}</p>
+                  <span class="text-xs text-gray-600 flex items-center gap-2 mt-0.5 flex-wrap">
+                    <DateDisplay :date="msg.createdAt" mode="relative" />
+                    <span v-if="msg.agentOverrideName" class="text-gray-500">· agent: {{ msg.agentOverrideName }}</span>
+                    <span v-if="msg.modelOverride" class="font-mono text-gray-500">· {{ msg.modelOverride }}</span>
+                  </span>
+                </template>
+              </div>
+              <!-- Edit button (pending only, not while editing another) -->
+              <button
+                v-if="msg.status === 'Pending' && editingMessageId !== msg.id"
+                class="shrink-0 text-xs text-gray-500 hover:text-gray-300 transition-colors mt-0.5"
+                title="Edit this message"
+                @click="startEdit(msg)">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </button>
+              <!-- Cancel button (pending only) -->
+              <button
+                v-if="msg.status === 'Pending'"
+                class="shrink-0 text-xs text-red-500 hover:text-red-400 transition-colors mt-0.5"
+                title="Cancel this message"
+                @click="cancelMessage(msg.id)">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
-            <!-- Cancel button (pending only) -->
-            <button
-              v-if="msg.status === 'Pending'"
-              class="shrink-0 text-xs text-red-500 hover:text-red-400 transition-colors mt-0.5"
-              title="Cancel this message"
-              @click="cancelMessage(msg.id)">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        <!-- New message input -->
-        <div class="px-4 py-3">
-          <!-- Compact agent + model selectors on one row -->
-          <div class="flex items-center gap-2 mb-2">
-            <select v-model="newMessageAgentId"
-              class="bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-400 px-2 py-1 focus:outline-none focus:border-brand-500">
-              <option value="">Session agent</option>
-              <option v-for="agent in agentsStore.agents" :key="agent.id" :value="agent.id">
-                {{ agent.name }}{{ agent.id === store.currentSession.agentId ? ' ✓' : '' }}
-              </option>
-            </select>
-            <input
-              v-model="newMessageModel"
-              type="text"
-              placeholder="Model (default)"
-              class="flex-1 bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-400 px-2 py-1 placeholder-gray-600 focus:outline-none focus:border-brand-500" />
           </div>
 
-          <!-- Textarea for message content -->
-          <div class="relative">
-            <textarea
-              v-model="newMessageContent"
-              rows="2"
-              placeholder="Queue a follow-up message for the agent… (paste images to attach, Ctrl+Enter to send)"
-              class="w-full bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 px-3 py-2 placeholder-gray-600 focus:outline-none focus:border-brand-500 resize-none"
-              @paste="e => handleImagePaste(e, md => { newMessageContent += md })"
-              @keydown.ctrl.enter.prevent="submitMessage"
-              @keydown.meta.enter.prevent="submitMessage" />
-            <span v-if="uploadingImage" class="absolute bottom-2 right-2 text-xs text-blue-400">Uploading…</span>
-          </div>
+          <!-- New message input -->
+          <div class="px-4 py-3">
+            <!-- Textarea for message content -->
+            <div class="relative mb-1.5">
+              <textarea
+                v-model="newMessageContent"
+                rows="2"
+                placeholder="Queue a follow-up message for the agent… (paste images to attach, Ctrl+Enter to send)"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 px-3 py-2 placeholder-gray-600 focus:outline-none focus:border-brand-500 resize-none"
+                @paste="e => handleImagePaste(e, md => { newMessageContent += md })"
+                @keydown.ctrl.enter.prevent="submitMessage"
+                @keydown.meta.enter.prevent="submitMessage" />
+              <span v-if="uploadingImage" class="absolute bottom-2 right-2 text-xs text-blue-400">Uploading…</span>
+            </div>
 
-          <div class="flex items-center justify-end mt-1.5">
-            <button
-              :disabled="!newMessageContent.trim() || sendingMessage"
-              class="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-brand-600 hover:bg-brand-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-md transition-colors"
-              @click="submitMessage">
-              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-              </svg>
-              {{ sendingMessage ? 'Queuing…' : 'Queue Message' }}
-            </button>
+            <!-- Selectors + Queue button on one row -->
+            <div class="flex items-center gap-2">
+              <select v-model="newMessageAgentId"
+                class="bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-400 px-2 py-1 focus:outline-none focus:border-brand-500">
+                <option value="">Session agent</option>
+                <option v-for="agent in agentsStore.agents" :key="agent.id" :value="agent.id">
+                  {{ agent.name }}{{ agent.id === store.currentSession.agentId ? ' ✓' : '' }}
+                </option>
+              </select>
+              <input
+                v-model="newMessageModel"
+                type="text"
+                placeholder="Model (default)"
+                class="w-28 bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-400 px-2 py-1 placeholder-gray-600 focus:outline-none focus:border-brand-500" />
+              <div class="flex-1" />
+              <button
+                :disabled="!newMessageContent.trim() || sendingMessage"
+                class="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-brand-600 hover:bg-brand-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-md transition-colors"
+                @click="submitMessage">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+                {{ sendingMessage ? 'Queuing…' : 'Queue Message' }}
+              </button>
+            </div>
+            <p v-if="messageError" class="mt-1.5 text-xs text-red-400">{{ messageError }}</p>
           </div>
-          <p v-if="messageError" class="mt-1.5 text-xs text-red-400">{{ messageError }}</p>
         </div>
       </div>
 
@@ -1274,6 +1329,7 @@ onMounted(async () => {
     connection.value.on('RunsUpdated', async () => {
       now.value = Date.now()
       if (store.currentSession) await store.fetchAgentSessionOnly(sessionId)
+      await loadMessages()
     })
   }
 
@@ -1283,13 +1339,18 @@ onMounted(async () => {
     await agentConnection.value.invoke('JoinSession', sessionId).catch((e: unknown) => { console.warn('Failed to join agent session group', e) })
     agentConnection.value.on('LogLine', ({ payload }: { sessionId: string; payload: string }) => {
       try {
-        const data = JSON.parse(payload) as { event?: string; stream?: string; line?: string; timestamp?: string; status?: string; section?: string; sectionIndex?: number }
+        const data = JSON.parse(payload) as { event?: string; stream?: string; line?: string; timestamp?: string; status?: string; messageId?: string; section?: string; sectionIndex?: number }
         if (data.event === 'session-completed') {
           now.value = Date.now()
           // Refresh session metadata (status, endedAt) without replacing logs
           store.fetchAgentSessionOnly(sessionId)
+          loadMessages()
         } else if (data.event === 'session-heartbeat') {
           now.value = Date.now()
+        } else if (data.event === 'message-status-updated' && data.messageId && data.status) {
+          // Real-time message status update from the agent — update in place without a reload
+          const idx = sessionMessages.value.findIndex(m => m.id === data.messageId)
+          if (idx !== -1) sessionMessages.value[idx].status = data.status
         } else if (data.line !== undefined) {
           store.currentSessionLogs.push({
             id: crypto.randomUUID(),
@@ -1321,6 +1382,50 @@ const newMessageModel = ref('')
 const newMessageAgentId = ref('')
 const sendingMessage = ref(false)
 const messageError = ref<string | null>(null)
+
+// ── Inline editing of Pending messages ──────────────────────────────────────
+const editingMessageId = ref<string | null>(null)
+const editingMessageContent = ref('')
+const showEditConflictModal = ref(false)
+
+function startEdit(msg: AgentSessionMessage) {
+  editingMessageId.value = msg.id
+  editingMessageContent.value = msg.content
+}
+
+function cancelEdit() {
+  editingMessageId.value = null
+  editingMessageContent.value = ''
+}
+
+async function saveEdit(msg: AgentSessionMessage) {
+  if (!editingMessageContent.value.trim()) return
+  try {
+    const updated = await store.updateSessionMessage(sessionId, msg.id, editingMessageContent.value.trim())
+    const idx = sessionMessages.value.findIndex(m => m.id === msg.id)
+    if (idx !== -1) sessionMessages.value[idx].content = updated.content
+    cancelEdit()
+  }
+  catch (e: unknown) {
+    // 409 Conflict means the message was already picked up — offer to queue as new
+    interface FetchError { status?: number }
+    if ((e as FetchError)?.status === 409) {
+      showEditConflictModal.value = true
+    }
+    else {
+      // Re-load messages so the UI reflects the real state
+      await loadMessages()
+      cancelEdit()
+    }
+  }
+}
+
+async function queueEditedContentAsNew() {
+  showEditConflictModal.value = false
+  newMessageContent.value = editingMessageContent.value
+  cancelEdit()
+  await submitMessage()
+}
 
 const { uploading: uploadingImage, handlePaste: handleImagePaste } = useImageUpload()
 

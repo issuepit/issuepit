@@ -163,6 +163,10 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
   async function cancelSessionMessage(sessionId: string, messageId: string) {
     await api.del(`/api/agent-sessions/${sessionId}/messages/${messageId}`)
   }
+
+  async function updateSessionMessage(sessionId: string, messageId: string, content: string): Promise<AgentSessionMessage> {
+    return await api.patch<AgentSessionMessage>(`/api/agent-sessions/${sessionId}/messages/${messageId}`, { content })
+  }
   async function retryRun(runId: string, options?: {
     keepContainerOnFailure?: boolean
     forceRetryWithActiveRunIds?: string[]
@@ -274,6 +278,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     fetchSessionMessages,
     queueSessionMessage,
     cancelSessionMessage,
+    updateSessionMessage,
     retryRun,
     cancelRun,
     approveRun,
