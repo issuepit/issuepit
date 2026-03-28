@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.2](https://github.com/issuepit/issuepit/compare/helper-containers-v1.7.1...helper-containers-v1.7.2) (2026-03-28)
+
+
+### Bug Fixes
+
+* manual agent mode terminal — retries, tmux persistence, size controls ([#894](https://github.com/issuepit/issuepit/issues/894)) ([543fcf3](https://github.com/issuepit/issuepit/commit/543fcf3d639c727808fd00d7b4bf35e92453696d))
+
 ## [1.7.1](https://github.com/issuepit/issuepit/compare/helper-containers-v1.7.0...helper-containers-v1.7.1) (2026-03-27)
 
 
