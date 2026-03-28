@@ -256,4 +256,102 @@ public class OpenCodeJsonLogParserTests
         Assert.Contains("*.json", result);
         Assert.DoesNotContain("[", result.Replace("[tool: glob]", ""));
     }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // [fix] section prefix handling
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ParseLine_FixPrefixed_StepStart_ReturnsFixPrefixedStepStartMarker()
+    {
+        const string line = """[fix] {"type":"step_start","timestamp":1774670700702,"sessionID":"ses_abc","part":{"id":"prt_1","type":"step-start","snapshot":"abc123"}}""";
+        var result = OpenCodeJsonLogParser.ParseLine(line);
+        Assert.Equal("[fix] " + OpenCodeJsonLogParser.StepStartMarker, result);
+    }
+
+    [Fact]
+    public void ParseLine_FixPrefixed_ToolUse_ReturnsFixPrefixedToolLine()
+    {
+        const string line = """[fix] {"type":"tool_use","timestamp":1774670702616,"sessionID":"ses_abc","part":{"id":"prt_2","type":"tool","callID":"call_1","tool":"read","state":{"status":"completed","input":{"filePath":"/workspace/file.cs"},"output":"...","time":{"start":1000,"end":1010}}}}""";
+        var result = OpenCodeJsonLogParser.ParseLine(line);
+        Assert.StartsWith("[fix] ", result);
+        Assert.Contains("[tool: read]", result);
+        Assert.Contains("/workspace/file.cs", result);
+    }
+
+    [Fact]
+    public void ParseLine_FixPrefixed_StepFinish_ReturnsFixPrefixedStepFinishLine()
+    {
+        const string line = """[fix] {"type":"step_finish","timestamp":1774670702652,"sessionID":"ses_abc","part":{"id":"prt_3","type":"step-finish","reason":"tool-calls","cost":0,"tokens":{"total":16932,"input":65,"output":119,"reasoning":0,"cache":{"read":4623,"write":12125}}}}""";
+        var result = OpenCodeJsonLogParser.ParseLine(line);
+        Assert.StartsWith("[fix] " + OpenCodeJsonLogParser.StepFinishPrefix, result);
+        Assert.Contains("65", result);
+        Assert.Contains("119", result);
+    }
+
+    [Fact]
+    public void ParseLine_FixPrefixed_UnknownType_ReturnedAsIs()
+    {
+        const string line = """[fix] {"type":"unknown_event","data":"something"}""";
+        Assert.Equal(line, OpenCodeJsonLogParser.ParseLine(line));
+    }
+
+    [Fact]
+    public void ParseLine_FixPrefixed_NonJsonPayload_ReturnedAsIs()
+    {
+        const string line = "[fix] [INFO] Starting agent run";
+        Assert.Equal(line, OpenCodeJsonLogParser.ParseLine(line));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // New opencode format: text event with part envelope
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ParseLine_TextEvent_PartFormat_ReturnsText()
+    {
+        const string line = """{"type":"text","timestamp":1774670700000,"sessionID":"ses_abc","part":{"id":"prt_1","type":"text","text":"Analyzing the CI/CD failure..."}}""";
+        Assert.Equal("Analyzing the CI/CD failure...", OpenCodeJsonLogParser.ParseLine(line));
+    }
+
+    [Fact]
+    public void ParseLine_TextEvent_PartFormat_EmptyText_ReturnsEmpty()
+    {
+        const string line = """{"type":"text","timestamp":1774670700000,"sessionID":"ses_abc","part":{"id":"prt_1","type":"text","text":""}}""";
+        Assert.Equal(string.Empty, OpenCodeJsonLogParser.ParseLine(line));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // New opencode format: session event with part envelope
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ParseLine_SessionEvent_PartFormat_ReturnsStatsLine()
+    {
+        const string line = """{"type":"session","timestamp":1774670800000,"sessionID":"ses_abc","part":{"id":"prt_end","type":"session","cost":0.0045,"tokens":{"input":1234,"output":567,"cache":{"read":100,"write":200}},"model":"anthropic/claude-sonnet-4-5"}}""";
+        var result = OpenCodeJsonLogParser.ParseLine(line);
+        Assert.StartsWith(OpenCodeJsonLogParser.StatsPrefix, result);
+        Assert.Contains("1234", result);
+        Assert.Contains("567", result);
+        Assert.Contains("0.0045", result);
+        Assert.Contains("claude-sonnet-4-5", result);
+    }
+
+    [Fact]
+    public void ParseLine_SessionEvent_PartFormat_NoStats_ReturnsEmpty()
+    {
+        // A session event with no cost/tokens (e.g. session-start) should be silently dropped.
+        const string line = """{"type":"session","timestamp":1000,"sessionID":"ses_abc","part":{"id":"prt_1","type":"session-start"}}""";
+        Assert.Equal(string.Empty, OpenCodeJsonLogParser.ParseLine(line));
+    }
+
+    [Fact]
+    public void ParseLine_FixPrefixed_SessionEvent_PartFormat_ReturnsFixPrefixedStatsLine()
+    {
+        const string line = """[fix] {"type":"session","timestamp":1774670800000,"sessionID":"ses_abc","part":{"cost":0.002,"tokens":{"input":500,"output":80},"model":"anthropic/claude-haiku"}}""";
+        var result = OpenCodeJsonLogParser.ParseLine(line);
+        Assert.StartsWith("[fix] " + OpenCodeJsonLogParser.StatsPrefix, result);
+        Assert.Contains("500", result);
+        Assert.Contains("80", result);
+    }
 }

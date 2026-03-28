@@ -47,23 +47,42 @@ public static class OpenCodeJsonLogParser
     public const string StepFinishPrefix = "[opencode:step-finish] ";
 
     /// <summary>
+    /// Section prefix prepended to log lines emitted during CI/CD fix runs (and other exec-based
+    /// fix sections such as <c>UncommittedChangesFix</c> and <c>MessageRun</c>).
+    /// <see cref="ParseLine"/> strips this prefix before parsing so that fix-run log lines are
+    /// handled identically to primary-run log lines.
+    /// </summary>
+    private const string FixSectionPrefix = "[fix] ";
+
+    /// <summary>
     /// Tries to parse <paramref name="rawLine"/> as an opencode JSON event and returns a
     /// human-readable display string. Returns the original line unchanged when it is not
     /// valid JSON or has an unrecognised event type.
+    ///
+    /// Lines that carry the <see cref="FixSectionPrefix"/> are handled transparently: the prefix
+    /// is stripped before parsing and re-prepended to the parsed result, so callers do not need
+    /// to strip it themselves.
     /// </summary>
     public static string ParseLine(string rawLine)
     {
-        if (rawLine.Length == 0 || rawLine[0] != '{')
+        // Strip the known section prefix (added by CI/CD fix runs) so the JSON payload
+        // can be parsed independently of the enclosing section context.
+        var prefix = rawLine.StartsWith(FixSectionPrefix, StringComparison.Ordinal)
+            ? FixSectionPrefix
+            : string.Empty;
+        var json = prefix.Length > 0 ? rawLine[prefix.Length..] : rawLine;
+
+        if (json.Length == 0 || json[0] != '{')
             return rawLine;
 
         try
         {
-            using var doc = JsonDocument.Parse(rawLine);
+            using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
             var type = GetString(root, "type");
 
-            return type switch
+            var parsed = type switch
             {
                 "text" => ParseTextEvent(root),
                 "tool" => ParseToolEvent(root),
@@ -72,9 +91,16 @@ public static class OpenCodeJsonLogParser
                 "step_start" => StepStartMarker,
                 "tool_use" => ParseToolUseEvent(root),
                 "step_finish" => ParseStepFinishEvent(root),
-                // Unrecognized type — fall back to raw line.
-                _ => rawLine,
+                // Unrecognized type — return the raw JSON payload so it is re-prefixed below.
+                _ => json,
             };
+
+            if (parsed.Length == 0) return string.Empty;
+
+            // Re-prepend the section prefix when present. For unrecognised types this reconstructs
+            // the original raw line (prefix + json). For recognised types it scopes the parsed
+            // result to the correct section (e.g. "[fix] [opencode:step-start]").
+            return prefix.Length > 0 ? prefix + parsed : parsed;
         }
         catch (JsonException)
         {
@@ -89,8 +115,10 @@ public static class OpenCodeJsonLogParser
 
     private static string ParseTextEvent(JsonElement root)
     {
-        // opencode uses either a nested "properties" object or flat fields.
+        // opencode uses either a nested "properties" object, a "part" envelope (new format),
+        // or flat fields at the root level.
         var text = TryGetNestedString(root, "properties", "text")
+            ?? TryGetNestedString(root, "part", "text")
             ?? GetString(root, "text");
 
         return string.IsNullOrEmpty(text) ? string.Empty : text;
@@ -195,8 +223,15 @@ public static class OpenCodeJsonLogParser
     {
         // Session info (cost, tokens) is the "done" signal from opencode.
         // Format a stats line with the special prefix so the frontend can render a card.
+        //
+        // Three possible layouts are handled:
+        //   1. Old flat format:        {"type":"session","cost":N,"tokens":{...},"model":"..."}
+        //   2. Old properties format:  {"type":"session","properties":{"cost":N,"tokens":{...},...}}
+        //   3. New part format (≥0.3): {"type":"session","part":{"cost":N,"tokens":{...},...}}
         JsonElement props = root;
-        if (root.TryGetProperty("properties", out var propsEl) && propsEl.ValueKind == JsonValueKind.Object)
+        if (root.TryGetProperty("part", out var partEl) && partEl.ValueKind == JsonValueKind.Object)
+            props = partEl;
+        else if (root.TryGetProperty("properties", out var propsEl) && propsEl.ValueKind == JsonValueKind.Object)
             props = propsEl;
 
         // Tokens
