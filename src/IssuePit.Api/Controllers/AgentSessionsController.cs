@@ -470,7 +470,7 @@ public class AgentSessionsController(
         if (tenant.CurrentTenant is null) return Unauthorized();
 
         if (string.IsNullOrWhiteSpace(request.Content))
-            return BadRequest(new { error = "Message content cannot be empty." });
+            return BadRequest(new UpdateMessageErrorResponse("Message content cannot be empty.", string.Empty));
 
         var message = await db.AgentSessionMessages
             .Include(m => m.AgentSession).ThenInclude(s => s!.Project).ThenInclude(p => p!.Organization)
@@ -480,7 +480,7 @@ public class AgentSessionsController(
         if (message is null) return NotFound();
 
         if (message.Status != AgentSessionMessageStatus.Pending)
-            return Conflict(new UpdateMessageConflictResponse("Only pending messages can be edited.", message.Status.ToString()));
+            return Conflict(new UpdateMessageErrorResponse("Only pending messages can be edited.", message.Status.ToString()));
 
         message.Content = request.Content.Trim();
         await db.SaveChangesAsync(cancellationToken);
@@ -557,7 +557,7 @@ public record QueueMessageRequest(
 
 public record UpdateMessageRequest(string Content);
 
-public record UpdateMessageConflictResponse(string Error, string Status);
+public record UpdateMessageErrorResponse(string Error, string Status);
 
 public record AgentSessionMessageDto(
     Guid Id,

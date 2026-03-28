@@ -1375,18 +1375,21 @@ async function queueEditedContentAsNew() {
 
 // ── Message status polling ───────────────────────────────────────────────────
 
+const hasActiveMessages = computed(() =>
+  sessionMessages.value.some(m => m.status === 'Pending' || m.status === 'Running')
+)
+
 let messagesPoller: ReturnType<typeof setInterval> | null = null
 
-watch(sessionMessages, (msgs) => {
-  const hasPendingOrRunning = msgs.some(m => m.status === 'Pending' || m.status === 'Running')
-  if (hasPendingOrRunning && !messagesPoller) {
+watch(hasActiveMessages, (active) => {
+  if (active && !messagesPoller) {
     messagesPoller = setInterval(loadMessages, 5000)
   }
-  else if (!hasPendingOrRunning && messagesPoller) {
+  else if (!active && messagesPoller) {
     clearInterval(messagesPoller)
     messagesPoller = null
   }
-}, { deep: true })
+})
 
 onUnmounted(() => {
   if (messagesPoller) clearInterval(messagesPoller)
