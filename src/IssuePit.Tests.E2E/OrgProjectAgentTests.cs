@@ -414,6 +414,84 @@ public class OrgProjectAgentTests : IAsyncLifetime
             "Expected manualMode=false after update");
     }
 
+    /// <summary>
+    /// API: POST /api/agents with an empty orgId must return 400 with a descriptive error,
+    /// not a JSON parse exception.
+    /// Regression test for the bug where orgId: "" caused a 400 JSON deserialization error
+    /// instead of a friendly validation message.
+    /// </summary>
+    [Fact]
+    public async Task Api_CreateAgent_WithEmptyOrgId_Returns400WithDescription()
+    {
+        using var client = CreateCookieClient();
+
+        var tenantId = await GetDefaultTenantIdAsync();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"e2e{Guid.NewGuid():N}"[..12];
+        await client.PostAsJsonAsync("/api/auth/register", new { username, password = "TestPass1!" });
+
+        // Send exactly the payload that used to crash: orgId as an empty string.
+        var resp = await client.PostAsJsonAsync("/api/agents",
+            new
+            {
+                name = "manual",
+                description = "",
+                dockerImage = "",
+                systemPrompt = "",
+                isActive = true,
+                runnerType = 0,
+                orgId = "",
+                allowedTools = "[]",
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+
+        // The response body must contain our human-readable error, not the raw JSON parse error.
+        var body = await resp.Content.ReadAsStringAsync();
+        Assert.Contains("organization", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// API: POST /api/agent-sessions/start-manual without an agentId must be accepted (202).
+    /// Opencode has built-in agents so a configured agent is not required.
+    /// Does not require Docker — only verifies that the session record is created.
+    /// </summary>
+    [Fact]
+    public async Task Api_StartManualSession_WithoutAgent_Returns202()
+    {
+        using var client = CreateCookieClient();
+
+        var tenantId = await GetDefaultTenantIdAsync();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"e2e{Guid.NewGuid():N}"[..12];
+        await client.PostAsJsonAsync("/api/auth/register", new { username, password = "TestPass1!" });
+
+        var orgSlug = $"noagent-org-{Guid.NewGuid():N}"[..20];
+        var orgResp = await client.PostAsJsonAsync("/api/orgs", new { name = "No-Agent Session Org", slug = orgSlug });
+        Assert.Equal(HttpStatusCode.Created, orgResp.StatusCode);
+        var org = await orgResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var orgId = Guid.Parse(org.GetProperty("id").GetString()!);
+
+        var projectSlug = $"noagent-proj-{Guid.NewGuid():N}"[..20];
+        var projResp = await client.PostAsJsonAsync("/api/projects",
+            new { name = "No-Agent Session Project", slug = projectSlug, orgId });
+        Assert.Equal(HttpStatusCode.Created, projResp.StatusCode);
+        var project = await projResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var projectId = Guid.Parse(project.GetProperty("id").GetString()!);
+
+        // Start a manual session without specifying an agent — must be accepted.
+        var startResp = await client.PostAsJsonAsync("/api/agent-sessions/start-manual",
+            new { projectId });
+
+        Assert.Equal(HttpStatusCode.Accepted, startResp.StatusCode);
+
+        var body = await startResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var sessionId = body.GetProperty("sessionId").GetString();
+        Assert.False(string.IsNullOrEmpty(sessionId), "Response must include a sessionId");
+    }
+
     private HttpClient CreateCookieClient()
     {
         var handler = new HttpClientHandler { CookieContainer = new System.Net.CookieContainer() };
