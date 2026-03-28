@@ -179,16 +179,27 @@ public class OpenCodeJsonLogParserTests
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void ParseLine_StepStart_ReturnsEmpty()
+    public void ParseLine_StepStart_ReturnsStepStartMarker()
     {
         const string line = """{"type":"step_start","timestamp":1774585963911,"sessionID":"ses_abc","part":{"id":"prt_1","type":"step-start","snapshot":"abc123"}}""";
-        Assert.Equal(string.Empty, OpenCodeJsonLogParser.ParseLine(line));
+        Assert.Equal(OpenCodeJsonLogParser.StepStartMarker, OpenCodeJsonLogParser.ParseLine(line));
     }
 
     [Fact]
-    public void ParseLine_StepFinish_ReturnsEmpty()
+    public void ParseLine_StepFinish_WithTokens_ReturnsStepFinishStatsLine()
     {
         const string line = """{"type":"step_finish","timestamp":1774585965612,"sessionID":"ses_abc","part":{"id":"prt_2","type":"step-finish","reason":"tool-calls","cost":0,"tokens":{"total":11126,"input":61,"output":134,"reasoning":0,"cache":{"read":0,"write":10931}}}}""";
+        var result = OpenCodeJsonLogParser.ParseLine(line);
+        Assert.StartsWith(OpenCodeJsonLogParser.StepFinishPrefix, result);
+        Assert.Contains("61", result);
+        Assert.Contains("134", result);
+    }
+
+    [Fact]
+    public void ParseLine_StepFinish_NoTokens_ReturnsEmpty()
+    {
+        // A step_finish without token data should return empty string (silently dropped).
+        const string line = """{"type":"step_finish","timestamp":1000,"sessionID":"ses_abc","part":{"id":"prt_3","type":"step-finish","reason":"done"}}""";
         Assert.Equal(string.Empty, OpenCodeJsonLogParser.ParseLine(line));
     }
 

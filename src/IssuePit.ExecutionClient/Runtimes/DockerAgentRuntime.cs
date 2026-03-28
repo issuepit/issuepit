@@ -885,13 +885,23 @@ public class DockerAgentRuntime(
         string? fixBranchName = null;
 
         // Intercept git markers before prefixing with [fix] so we can return them to the caller.
+        // Parse opencode JSON events into human-readable display text before adding the prefix,
+        // mirroring the behaviour of IssueWorker for both the primary run and the legacy fix path.
         Task onFixLogLine(string line, LogStream stream)
         {
             if (line.StartsWith(GitCommitShaMarker, StringComparison.Ordinal))
                 fixCommitSha = line[GitCommitShaMarker.Length..].Trim();
             else if (line.StartsWith(GitBranchMarker, StringComparison.Ordinal))
                 fixBranchName = line[GitBranchMarker.Length..].Trim();
-            return onLogLine($"[fix] {line}", stream);
+
+            var displayLine = agent.RunnerType == RunnerType.OpenCode
+                ? OpenCodeJsonLogParser.ParseLine(line)
+                : line;
+
+            if (displayLine.Length == 0)
+                return Task.CompletedTask;
+
+            return onLogLine($"[fix] {displayLine}", stream);
         }
 
         var runnerArgs = RunnerCommandBuilder.BuildArgsList(agent, fixIssue, forkSessionId: openCodeSessionId);
