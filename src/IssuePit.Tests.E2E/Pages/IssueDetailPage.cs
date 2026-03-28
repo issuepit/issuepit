@@ -208,6 +208,8 @@ public class IssueDetailPage(IPage page)
 
     /// <summary>
     /// Returns true if the branch selector inside the agent assignment modal is visible.
+    /// With the default "Create new branch" mode enabled, the BranchSelect is hidden.
+    /// This method returns true only when the checkbox is unchecked and the selector is shown.
     /// </summary>
     public async Task<bool> IsAssignAgentModalBranchInputVisibleAsync()
     {
@@ -216,11 +218,26 @@ public class IssueDetailPage(IPage page)
     }
 
     /// <summary>
+    /// Unchecks the "Create new branch" checkbox inside the agent assignment modal so the manual
+    /// branch selector becomes visible.
+    /// </summary>
+    public async Task UncheckCreateNewBranchAsync()
+    {
+        var checkbox = page.Locator(".fixed input[type='checkbox']");
+        await checkbox.WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Default });
+        if (await checkbox.IsCheckedAsync())
+            await checkbox.UncheckAsync();
+    }
+
+    /// <summary>
     /// Sets the branch value inside the agent assignment modal using the BranchSelect component.
-    /// Opens the dropdown, types the branch name, and presses Enter to accept (free-form mode).
+    /// Unchecks "Create new branch" first if needed, then opens the dropdown, types the branch
+    /// name, and presses Enter to accept (free-form mode).
     /// </summary>
     public async Task SetAssignAgentModalBranchAsync(string branch)
     {
+        // Uncheck "Create new branch" to reveal the manual branch selector
+        await UncheckCreateNewBranchAsync();
         // Click the BranchSelect trigger to open its dropdown
         await page.Locator(".fixed button[aria-expanded]").ClickAsync();
         // Wait for the search input inside BranchSelect
