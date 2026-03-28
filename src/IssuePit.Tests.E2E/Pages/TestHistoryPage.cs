@@ -36,7 +36,9 @@ public class TestHistoryPage(IPage page)
         // when loading===false and activeTab==='Overview' (the default). The page initialises
         // loading=true so the spinner is always present on first render and the stat cards only
         // appear after the initial data fetch completes.
-        await page.WaitForSelectorAsync("text=Total Tests", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
+        // NavigationLong is used here because the page fetches three API endpoints in parallel
+        // (runs, tests, coverage) and under CI load this can exceed the default Navigation timeout.
+        await page.WaitForSelectorAsync("text=Total Tests", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.NavigationLong });
     }
 
     /// <summary>Returns the heading element containing "Test History".</summary>
