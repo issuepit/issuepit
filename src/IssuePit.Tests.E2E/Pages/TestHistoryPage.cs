@@ -14,29 +14,32 @@ public class TestHistoryPage(IPage page)
     /// Navigates to the Test History page, waits for the initial data load to complete,
     /// then switches to the Coverage tab.
     /// <para>
-    /// All tab data (runs, tests, coverage) is fetched in a single <c>reload()</c> call on
-    /// <c>onMounted</c>. <see cref="WaitForLoadAsync"/> waits for the loading spinner
-    /// (<c>data-testid="test-history-loading"</c>) to disappear, which guarantees that
-    /// <c>loading===false</c> and <c>coverageRuns</c> is already populated before the
-    /// Coverage tab is activated. This avoids both the direct <c>?tab=Coverage</c> URL race
-    /// and the previous "Total Tests" approach that required <c>activeTab === 'Overview'</c>.
+    /// Navigates directly to the <c>?tab=Coverage</c> URL so that Vue initialises
+    /// <c>activeTab='Coverage'</c> from the query parameter — no tab-click is required
+    /// and there is no router.replace() race.  We then wait for either the coverage data
+    /// cards or the empty-state message, which only renders when <c>loading===false</c>
+    /// AND <c>activeTab==='Coverage'</c>, making it the most precise signal that the page
+    /// is fully loaded and showing the correct content.
     /// </para>
     /// </summary>
     public async Task GotoCoverageAsync(string projectId)
     {
-        await GotoAsync(projectId);
-        await WaitForLoadAsync();
-        await ClickCoverageTabAsync();
+        await page.GotoAsync($"/projects/{projectId}/runs/test-history?tab=Coverage");
+        await page.Locator("p:has-text('Line Coverage')").Or(page.Locator("text=No coverage data yet"))
+            .WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.NavigationLong });
     }
 
     public async Task WaitForLoadAsync()
     {
         await page.WaitForSelectorAsync("text=Test History", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
-        // Wait for the loading spinner to be hidden. The spinner is always present in the
-        // server-rendered HTML (loading starts as true) and is removed from the DOM once the
-        // onMounted reload() call completes. This is more reliable than waiting for "Total Tests"
-        // because that approach required activeTab === 'Overview' — any Vue Router race or
-        // unexpected tab state would cause a spurious timeout.
+        // Wait for the tab bar buttons — these are rendered outside v-if="loading" and are
+        // only present once Vue has hydrated and mounted the component. This guarantees that
+        // the spinner element is also in the DOM (loading===true at that point) so that the
+        // subsequent hidden-state wait is reliable and cannot satisfy prematurely.
+        await page.Locator("button:has-text('Overview')").WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Navigation });
+        // Now the spinner is guaranteed to be in the DOM (or data arrived so fast that loading
+        // already completed, in which case Hidden is satisfied correctly). Either way, this
+        // reliably waits for the onMounted reload() call to finish.
         await page.Locator("[data-testid='test-history-loading']")
             .WaitForAsync(new LocatorWaitForOptions
             {
@@ -73,14 +76,17 @@ public class TestHistoryPage(IPage page)
     /// Navigates to the Test History page, waits for the initial data load to complete,
     /// then switches to the Analytics tab.
     /// <para>
-    /// See <see cref="GotoCoverageAsync"/> for the rationale — same loading pattern applies.
+    /// Navigates directly to the <c>?tab=Analytics</c> URL — same rationale as
+    /// <see cref="GotoCoverageAsync"/>: Vue initialises <c>activeTab='Analytics'</c> from
+    /// the query parameter and we wait for the actual content to appear as proof that
+    /// loading has completed with the correct tab active.
     /// </para>
     /// </summary>
     public async Task GotoAnalyticsAsync(string projectId)
     {
-        await GotoAsync(projectId);
-        await WaitForLoadAsync();
-        await ClickAnalyticsTabAsync();
+        await page.GotoAsync($"/projects/{projectId}/runs/test-history?tab=Analytics");
+        await page.Locator("text=Duration Analytics").Or(page.Locator("text=No analytics data yet"))
+            .WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.NavigationLong });
     }
 
     /// <summary>Clicks the Analytics tab and waits for its content to appear.</summary>
