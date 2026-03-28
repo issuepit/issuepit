@@ -239,6 +239,7 @@ public class AgentSessionsController(
                 runnerTypeOverride = body?.RunnerTypeOverride != null ? (int?)body.RunnerTypeOverride.Value : null,
                 useHttpServerOverride = body?.UseHttpServerOverride,
                 runtimeTypeOverride = body?.RuntimeTypeOverride != null ? (int?)body.RuntimeTypeOverride.Value : null,
+                maxCiCdLoopCountOverride = body?.MaxCiCdLoopCountOverride,
                 forceAgentId = body?.AgentIdOverride.HasValue ?? false,
             };
         }
@@ -261,6 +262,7 @@ public class AgentSessionsController(
                 runnerTypeOverride = body?.RunnerTypeOverride != null ? (int?)body.RunnerTypeOverride.Value : null,
                 useHttpServerOverride = body?.UseHttpServerOverride,
                 runtimeTypeOverride = body?.RuntimeTypeOverride != null ? (int?)body.RuntimeTypeOverride.Value : null,
+                maxCiCdLoopCountOverride = body?.MaxCiCdLoopCountOverride,
                 forceAgentId = true,
                 branch = session.GitBranch,
             };
@@ -495,7 +497,7 @@ public record RetrySessionRequest(
     bool KeepContainer = false,
     /// <summary>Optional full command to execute via <c>docker exec</c> inside the container, replacing the runner CLI. Accepts a complete command list e.g. <c>["sh", "-c", "wget ..."]</c>. When set, takes precedence over the agent's RunnerType command.</summary>
     string[]? CustomCmdOverride = null,
-    /// <summary>Optional extra volume bind mounts applied when creating the container (Docker runtime level). Each element is a bind-mount entry in the format <c>host-path:container-path</c> (e.g. <c>"/data:/workspace/data"</c>) or <c>host-path:container-path:ro</c>. Added to <c>HostConfig.Binds</c>.</summary>
+    /// <summary>Optional extra volume bind mounts added to the container at creation time. Each element must be a bind-mount string in the format <c>host-path:container-path</c> (e.g. <c>"/data:/workspace/data"</c>) or <c>host-path:container-path:ro</c>. Docker CLI flag syntax (<c>--volume</c> etc.) is not supported.</summary>
     string[]? RunnerArgs = null,
     /// <summary>Override the agent used for this retry run. Null = use the same agent as the original session.</summary>
     Guid? AgentIdOverride = null,
@@ -506,7 +508,9 @@ public record RetrySessionRequest(
     /// <summary>Override whether to use HTTP server mode (opencode only). Null = use the agent's setting.</summary>
     bool? UseHttpServerOverride = null,
     /// <summary>Override the runtime type (Docker, Native, SSH…) for this retry. Null = use the org default.</summary>
-    RuntimeType? RuntimeTypeOverride = null);
+    RuntimeType? RuntimeTypeOverride = null,
+    /// <summary>Override the maximum number of CI/CD → agent-fix loop iterations for this retry. Null = use the project/org/system default.</summary>
+    int? MaxCiCdLoopCountOverride = null);
 
 public record StartManualSessionRequest(
     Guid AgentId,

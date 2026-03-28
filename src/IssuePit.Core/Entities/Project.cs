@@ -106,6 +106,12 @@ public class Project
     public string? SkipSteps { get; set; }
 
     /// <summary>
+    /// Maximum number of CI/CD → agent-fix loop iterations after the initial agent run.
+    /// Null means inherit from the organization setting (which itself defaults to 3 when null).
+    /// </summary>
+    public int? MaxCiCdLoopCount { get; set; }
+
+    /// <summary>
     /// Short project key used as prefix for issue IDs in the UI (e.g. "IP" yields "IP-123").
     /// Auto-generated from the project name using initials. Must be unique within the organization.
     /// </summary>

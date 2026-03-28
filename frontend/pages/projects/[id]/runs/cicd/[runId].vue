@@ -1577,8 +1577,8 @@ const prevStepCount = ref(0)
 const manuallyOpenedSteps = ref(new Set<string>())
 
 // Auto-collapse logic:
-// - A new step starts → collapse it unless it is the current (last) step or has failed.
-// - When a new step starts, the previously-current step (now second-to-last) is collapsed unless it failed.
+// - A new step is seen for the first time → collapse it unless it is the current (last) step or has failed.
+// - When a new step starts, already-open steps are NOT auto-closed (user may be watching them).
 // - Failed steps are always kept open (even if previously collapsed).
 // - Steps manually opened by the user are not re-collapsed automatically.
 watch(jobLogsByStep, (groups) => {
@@ -1596,12 +1596,9 @@ watch(jobLogsByStep, (groups) => {
       // First time we see this step: auto-collapse unless it's current, failed, or manually opened.
       newSeen.add(key)
       if (!isLast && !hasFailed && !manuallyOpened) newCollapsed.add(key)
-    } else if (!isLast && !hasFailed && !manuallyOpened && groups.length > prevStepCount.value && i === groups.length - 2) {
-      // A new step just appeared (groups grew by 1). The step at position groups.length-2 is
-      // the one that was the last (current) step in the previous render — collapse it now that
-      // it has been superseded by the new last step.
-      newCollapsed.add(key)
     }
+    // Note: steps that were already open are never auto-closed when a new step starts,
+    // so the user can keep watching a step that is no longer the last one.
 
     // Failed steps must always stay open regardless of previous state.
     if (hasFailed) newCollapsed.delete(key)

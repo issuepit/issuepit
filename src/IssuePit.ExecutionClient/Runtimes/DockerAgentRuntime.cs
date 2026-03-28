@@ -354,8 +354,9 @@ public class DockerAgentRuntime(
             ExtraHosts = ["host.docker.internal:host-gateway"],
         };
 
-        // Apply optional extra volume bind mounts from RunnerArgs (Docker runtime args).
-        // Each entry is a bind-mount string: "host-path:container-path" or "host-path:container-path:ro".
+        // Apply optional extra volume bind mounts from RunnerArgs.
+        // Each entry must be a bind-mount string: "host-path:container-path" or "host-path:container-path:ro".
+        // Docker CLI flag syntax (--volume etc.) is not supported here.
         if (session.RunnerArgs is { Length: > 0 })
         {
             hostConfig.Binds = session.RunnerArgs.ToList();

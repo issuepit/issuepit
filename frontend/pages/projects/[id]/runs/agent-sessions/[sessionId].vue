@@ -228,6 +228,18 @@
               <p class="text-xs text-gray-600 mt-1">Replaces the entire runner command via docker exec. Useful for diagnostic runs.</p>
             </div>
 
+            <!-- CI/CD fix loop count override -->
+            <div class="mb-4">
+              <label class="block text-xs text-gray-500 mb-1.5">CI/CD fix loop count</label>
+              <input
+                v-model.number="retryMaxCiCdLoopCount"
+                type="number"
+                min="1"
+                placeholder="inherit from project/org (default 3)"
+                class="w-full bg-gray-800 border border-gray-700 rounded-md text-xs text-gray-300 px-2.5 py-1.5 placeholder-gray-600 focus:outline-none focus:border-brand-500" />
+              <p class="text-xs text-gray-500 mt-1">Max number of CI/CD → agent-fix iterations for this retry. Leave blank to use the project/org setting.</p>
+            </div>
+
             <!-- Keep container option -->
             <label class="flex items-start gap-2.5 cursor-pointer mb-5">
               <input
@@ -334,6 +346,16 @@
               title="Show/hide DNS proxy (dnsmasq) lines"
               @click="verboseLogs = !verboseLogs">
               Verbose
+            </button>
+            <!-- Follow toggle — auto-scrolls to the bottom when new log lines arrive -->
+            <button
+              v-if="activeSection === 'logs'"
+              :class="['px-2.5 py-1 text-xs font-medium rounded-md border transition-colors', followLogs ? 'border-brand-700 text-brand-300 bg-brand-950/30' : 'border-gray-700 text-gray-500 hover:border-gray-600']"
+              :title="followLogs ? 'Following logs — click to stop' : 'Click to follow logs (auto-scroll to bottom)'"
+              @click="followLogs = !followLogs">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
             </button>
             <button
               v-if="store.currentSessionLogs.length"
@@ -443,7 +465,7 @@
 
         <!-- Logs tab -->
         <template v-else-if="activeSection === 'logs'">
-          <div v-if="filteredLogs.length" class="bg-gray-950 p-4 font-mono text-xs overflow-auto max-h-[600px]">
+          <div v-if="filteredLogs.length" ref="logContainer" class="bg-gray-950 p-4 font-mono text-xs overflow-auto max-h-[600px]" @scroll.passive="onLogContainerScroll">
             <!-- When section data exists, group logs into collapsible sections -->
             <template v-if="hasSections && logsBySection.length">
               <template v-for="(group, gi) in logsBySection" :key="gi">
@@ -897,6 +919,27 @@ const logSearchQuery = ref('')
 
 /** Word wrap toggle — off by default to match CiCd run page behaviour. */
 const wordWrap = ref(false)
+
+/** When true, the log container auto-scrolls to the bottom whenever new log lines arrive. */
+const followLogs = ref(true)
+
+/** Template ref for the main logs container div (used for auto-scroll). */
+const logContainer = ref<HTMLElement | null>(null)
+
+watch(filteredLogs, async () => {
+  if (!followLogs.value) return
+  await nextTick()
+  if (logContainer.value) logContainer.value.scrollTop = logContainer.value.scrollHeight
+})
+
+/** When the user scrolls up in the log container, disable auto-follow so logs stop jumping. */
+function onLogContainerScroll() {
+  const el = logContainer.value
+  if (!el) return
+  // Allow a small buffer (32 px) so minor browser sub-pixel differences don't toggle follow off.
+  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 32
+  followLogs.value = atBottom
+}
 
 /** Pattern that identifies noisy DNS-proxy lines emitted by dnsmasq inside the container. */
 const DNSMASQ_RE = /dnsmasq\[/
@@ -1407,6 +1450,7 @@ const retryModel = ref('')
 // 'codex' = Codex CLI; 'copilot' = GitHub Copilot CLI; 'none' = no runner (entrypoint default)
 const retryCli = ref('')
 const retryRuntimeType = ref<number | ''>('')
+const retryMaxCiCdLoopCount = ref<number | null>(null)
 
 // CLI options shown in the retry modal dropdown
 const cliOptions = [
@@ -1435,6 +1479,7 @@ async function openRetryModal() {
   retryCustomDockerImage.value = ''
   retryKeepContainer.value = false
   retryCmdOverride.value = ''
+  retryMaxCiCdLoopCount.value = null
   showRetryModal.value = true
 }
 
@@ -1490,6 +1535,7 @@ async function retrySession() {
       useHttpServerOverride,
       runtimeTypeOverride: retryRuntimeType.value !== '' ? retryRuntimeType.value as number : undefined,
       customCmdOverride: parseCmdOverride(retryCmdOverride.value),
+      maxCiCdLoopCountOverride: retryMaxCiCdLoopCount.value ?? undefined,
     })
     if (result?.retriedSessionId) {
       navigateTo(`/projects/${projectId}/runs/agent-sessions/${result.retriedSessionId}`)

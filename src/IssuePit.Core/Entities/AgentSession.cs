@@ -74,12 +74,13 @@ public class AgentSession
     public string[]? CustomCmd { get; set; }
 
     /// <summary>
-    /// Optional extra volume bind mounts applied when creating the Docker container (runtime-level args).
+    /// Optional extra volume bind mounts applied when creating the Docker container.
     /// Each element is a bind-mount entry in the format
     /// <c>host-path:container-path</c> or <c>host-path:container-path:ro</c> and is added to
     /// <c>HostConfig.Binds</c>. Useful for injecting files or directories into the container
     /// without baking them into the image.
     /// Not persisted — set at launch time from the <c>RunnerArgs</c> API field.
+    /// Note: only bind-mount format is supported — Docker CLI flag syntax (<c>--volume</c> etc.) is not.
     /// </summary>
     [NotMapped]
     public string[]? RunnerArgs { get; set; }

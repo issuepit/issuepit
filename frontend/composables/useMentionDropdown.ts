@@ -8,22 +8,25 @@
  *   // Render mention.dropdown when mention.isOpen is true
  */
 
-export interface MentionItem {
-  /** Unique value that will be inserted after the @ or # symbol. */
+/** Raw item supplied to the composable (lacks the `type` discriminator field that `MentionItem` adds). */
+export interface MentionInputItem {
   value: string
-  /** Human-readable label shown in the dropdown. */
   label: string
-  /** Optional CSS dot class for colored indicators (e.g. online status). */
   dotClass?: string
+}
+
+export interface MentionItem extends MentionInputItem {
+  /** Distinguishes the kind of item so the UI can render different icons. */
+  type: 'agent' | 'user' | 'hash'
 }
 
 export interface UseMentionDropdownOptions {
   /** Active agents to show in the @-mention dropdown. May be a reactive ref. */
-  agents?: MentionItem[] | Ref<MentionItem[]> | ComputedRef<MentionItem[]>
+  agents?: MentionInputItem[] | Ref<MentionInputItem[]> | ComputedRef<MentionInputItem[]>
   /** Active users to show in the @-mention dropdown. May be a reactive ref. */
-  users?: MentionItem[] | Ref<MentionItem[]> | ComputedRef<MentionItem[]>
+  users?: MentionInputItem[] | Ref<MentionInputItem[]> | ComputedRef<MentionInputItem[]>
   /** Special # reference tokens (e.g. "similar", "runs"). */
-  hashTokens?: MentionItem[]
+  hashTokens?: MentionInputItem[]
 }
 
 export interface MentionDropdownState {
@@ -67,13 +70,19 @@ export function useMentionDropdown(options: UseMentionDropdownOptions): MentionD
     const agentsArr = unref(options.agents) ?? []
     const usersArr = unref(options.users) ?? []
     if (triggerChar.value === 'at') {
-      const agents = agentsArr.filter(a => a.value.toLowerCase().includes(q) || a.label.toLowerCase().includes(q))
-      const users = usersArr.filter(u => u.value.toLowerCase().includes(q) || u.label.toLowerCase().includes(q))
+      const agents = agentsArr
+        .filter(a => a.value.toLowerCase().includes(q) || a.label.toLowerCase().includes(q))
+        .map(a => ({ ...a, type: 'agent' as const }))
+      const users = usersArr
+        .filter(u => u.value.toLowerCase().includes(q) || u.label.toLowerCase().includes(q))
+        .map(u => ({ ...u, type: 'user' as const }))
       return [...agents, ...users]
     }
     if (triggerChar.value === 'hash') {
       const tokens = options.hashTokens ?? []
-      return tokens.filter(t => t.value.toLowerCase().includes(q) || t.label.toLowerCase().includes(q))
+      return tokens
+        .filter(t => t.value.toLowerCase().includes(q) || t.label.toLowerCase().includes(q))
+        .map(t => ({ ...t, type: 'hash' as const }))
     }
     return []
   })

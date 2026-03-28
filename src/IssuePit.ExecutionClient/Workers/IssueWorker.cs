@@ -259,7 +259,7 @@ public class IssueWorker(
 
             await LaunchAgentAsync(message.AgentId.Value, null, message.ProjectId, message.DockerImageOverride,
                 message.KeepContainer, message.CustomCmdOverride, message.RunnerArgs, message.ModelOverride, message.RunnerTypeOverride,
-                message.UseHttpServerOverride, message.RuntimeTypeOverride,
+                message.UseHttpServerOverride, message.RuntimeTypeOverride, message.MaxCiCdLoopCountOverride,
                 message.SessionId, null, message.Branch, cancellationToken);
             return;
         }
@@ -320,6 +320,7 @@ public class IssueWorker(
         await Task.WhenAll(agentIds.Select(agentId =>
             LaunchAgentAsync(agentId, message.Id, message.ProjectId, message.DockerImageOverride, message.KeepContainer, message.CustomCmdOverride,
                 message.RunnerArgs, message.ModelOverride, message.RunnerTypeOverride, message.UseHttpServerOverride, message.RuntimeTypeOverride,
+                message.MaxCiCdLoopCountOverride,
                 // Only pass the pre-created session ID when exactly one agent is being launched (retry case).
                 agentIds.Count == 1 ? message.SessionId : null,
                 message.TriggeringCommentId,
@@ -344,6 +345,7 @@ public class IssueWorker(
         int? runnerTypeOverride,
         bool? useHttpServerOverride,
         int? runtimeTypeOverride,
+        int? maxCiCdLoopCountOverride,
         Guid? existingSessionId,
         Guid? triggeringCommentId,
         string? branchOverride,
@@ -1101,9 +1103,28 @@ public class IssueWorker(
 
                 if (cicdPrerequisitesMet && !capturedGitPushFailed)
                 {
+                    // Resolve the configured max loop count: explicit override → project → org → system default.
+                    int maxCiCdLoopCount;
+                    if (maxCiCdLoopCountOverride.HasValue)
+                    {
+                        maxCiCdLoopCount = maxCiCdLoopCountOverride.Value;
+                    }
+                    else
+                    {
+                        var project = issueForRuntime.ProjectId != Guid.Empty
+                            ? await db.Projects
+                                .Include(p => p.Organization)
+                                .FirstOrDefaultAsync(p => p.Id == issueForRuntime.ProjectId, sessionCts.Token)
+                            : null;
+                        maxCiCdLoopCount = project?.MaxCiCdLoopCount
+                            ?? project?.Organization?.MaxCiCdLoopCount
+                            ?? MaxCiCdFixAttempts;
+                    }
+
                     var cicdSucceeded = await RunCiCdFixLoopAsync(
                         session, agent, issueForRuntime, gitRepository!, cloneRepository, credentials, runtimeConfig,
                         capturedCommitSha!, capturedBranchName!, db, sessionCts.Token,
+                        maxAttempts: maxCiCdLoopCount,
                         execRuntime: useExecForFixes ? execRuntime : null,
                         execContainerId: useExecForFixes ? runtimeId : null,
                         openCodeSessionId: capturedOpenCodeSessionId,
@@ -1620,7 +1641,7 @@ public class IssueWorker(
     }
 
     /// <summary>
-    /// Runs up to <see cref="MaxCiCdFixAttempts"/> CI/CD → opencode-fix cycles.
+    /// Runs up to <paramref name="maxAttempts"/> CI/CD → opencode-fix cycles.
     /// Returns <c>true</c> when a CI/CD run eventually succeeds; <c>false</c> when all
     /// attempts are exhausted or when an unrecoverable error occurs.
     /// </summary>
@@ -1636,6 +1657,7 @@ public class IssueWorker(
         string branchName,
         IssuePitDbContext db,
         CancellationToken cancellationToken,
+        int maxAttempts = MaxCiCdFixAttempts,
         // Exec-flow parameters: when set, fix runs reuse the same container.
         IExecCapableRuntime? execRuntime = null,
         string? execContainerId = null,
@@ -1643,7 +1665,7 @@ public class IssueWorker(
         MessageIndexCounter? msgCtx = null,
         Func<string, LogStream, AgentLogSection, int, Task>? onLogLine = null)
     {
-        for (var attempt = 0; attempt < MaxCiCdFixAttempts; attempt++)
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
             var cicdSectionIndex = attempt + 1;
             var appendCiCdLog = (string line, LogStream stream) =>
@@ -1651,7 +1673,7 @@ public class IssueWorker(
                     line, stream, AgentLogSection.CiCdRun, cicdSectionIndex);
 
             await appendCiCdLog(
-                $"[INFO] Starting CI/CD run (attempt {cicdSectionIndex}/{MaxCiCdFixAttempts}) for branch '{branchName}' commit '{(commitSha.Length > 0 ? commitSha[..Math.Min(7, commitSha.Length)] : "(none)")}'",
+                $"[INFO] Starting CI/CD run (attempt {cicdSectionIndex}/{maxAttempts}) for branch '{branchName}' commit '{(commitSha.Length > 0 ? commitSha[..Math.Min(7, commitSha.Length)] : "(none)")}'",
                 LogStream.Stdout);
 
             // Create a CiCdRun record (linked to this session) and publish the Kafka trigger.
@@ -1677,10 +1699,10 @@ public class IssueWorker(
                 $"[WARN] CI/CD run {cicdRun.Id} finished with status '{cicdStatus}'.",
                 LogStream.Stderr);
 
-            if (attempt >= MaxCiCdFixAttempts - 1)
+            if (attempt >= maxAttempts - 1)
             {
                 await appendCiCdLog(
-                    $"[ERROR] CI/CD fix loop exhausted after {MaxCiCdFixAttempts} attempt(s). Marking session as failed.",
+                    $"[ERROR] CI/CD fix loop exhausted after {maxAttempts} attempt(s). Marking session as failed.",
                     LogStream.Stderr);
                 return false;
             }
@@ -1700,7 +1722,7 @@ public class IssueWorker(
                     line, stream, AgentLogSection.CiCdFixRun, fixSectionIndex);
 
             await appendFixLog(
-                $"[INFO] Launching opencode fix agent (attempt {fixSectionIndex}/{MaxCiCdFixAttempts - 1}) to address CI/CD failures…",
+                $"[INFO] Launching opencode fix agent (attempt {fixSectionIndex}/{maxAttempts - 1}) to address CI/CD failures…",
                 LogStream.Stdout);
 
             var fixIssue = BuildFixIssue(issue, failureLogs, branchName);
@@ -2240,7 +2262,7 @@ public class IssueWorker(
         GitBranch = branchName,
     };
 
-    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, Guid? SessionId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? CustomCmdOverride = null, string[]? RunnerArgs = null, string? ModelOverride = null, int? RunnerTypeOverride = null, bool? UseHttpServerOverride = null, int? RuntimeTypeOverride = null, bool ForceAgentId = false, Guid? TriggeringCommentId = null, string? Branch = null, bool IsManualDirectStart = false);
+    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, Guid? SessionId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? CustomCmdOverride = null, string[]? RunnerArgs = null, string? ModelOverride = null, int? RunnerTypeOverride = null, bool? UseHttpServerOverride = null, int? RuntimeTypeOverride = null, int? MaxCiCdLoopCountOverride = null, bool ForceAgentId = false, Guid? TriggeringCommentId = null, string? Branch = null, bool IsManualDirectStart = false);
 
     /// <summary>
     /// A simple mutable counter shared across all <see cref="DrainPendingMessagesAsync"/> calls

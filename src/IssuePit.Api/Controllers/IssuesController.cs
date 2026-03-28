@@ -1004,7 +1004,7 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
 public record CommentRequest(string Body, Guid? UserId, string? Branch = null);
 public record CodeReviewCommentRequest(string FilePath, int StartLine, int EndLine, string Sha, string? Snippet, string? ContextBefore, string? ContextAfter, string Body);
 /// <param name="CustomCmdOverride">Optional full command to execute via <c>docker exec</c> inside the container, replacing the runner CLI command. Accepts a complete command list e.g. <c>["sh", "-c", "wget ..."]</c>. When set, takes precedence over the command built from the agent's RunnerType.</param>
-/// <param name="RunnerArgs">Optional extra volume bind mounts applied when creating the container (Docker runtime level). Each element is a bind-mount entry in the format <c>host-path:container-path</c> (e.g. <c>"/data:/workspace/data"</c>) or <c>host-path:container-path:ro</c>. Added to <c>HostConfig.Binds</c>.</param>
+/// <param name="RunnerArgs">Optional extra volume bind mounts added to the container at creation time. Each element must be a bind-mount string in the format <c>host-path:container-path</c> (e.g. <c>"/data:/workspace/data"</c>) or <c>host-path:container-path:ro</c>. Docker CLI flag syntax (<c>--volume</c> etc.) is not supported.</param>
 public record AssigneeRequest(Guid? UserId, Guid? AgentId, string[]? CustomCmdOverride = null, string? Branch = null, string[]? RunnerArgs = null);
 public record LabelAssignRequest(Guid LabelId);
 public record IssueLinkRequest(Guid TargetIssueId, IssueLinkType LinkType);
