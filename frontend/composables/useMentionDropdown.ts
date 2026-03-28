@@ -8,7 +8,7 @@
  *   // Render mention.dropdown when mention.isOpen is true
  */
 
-/** Raw item supplied to the composable (without a type; the composable assigns it). */
+/** Raw item supplied to the composable (lacks the `type` discriminator field that `MentionItem` adds). */
 export interface MentionInputItem {
   value: string
   label: string
