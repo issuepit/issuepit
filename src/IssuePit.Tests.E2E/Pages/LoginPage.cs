@@ -74,7 +74,9 @@ public class LoginPage(IPage page)
     public static async Task InjectApiSessionCookiesAsync(
         IBrowserContext context, HttpClientHandler handler, Uri apiBaseUri)
     {
-        var apiUrl = apiBaseUri.GetLeftPart(UriPartial.Authority);
+        // Use Domain + Path (not Url) so Playwright receives a valid CDP cookie:
+        // Url is converted to domain+path internally and an empty Path causes
+        // the "Cookie should have either url or path" validation error.
         var cookies = handler.CookieContainer
             .GetCookies(apiBaseUri)
             .Cast<System.Net.Cookie>()
@@ -82,8 +84,8 @@ public class LoginPage(IPage page)
             {
                 Name = c.Name,
                 Value = c.Value,
-                Url = apiUrl,
-                Path = c.Path,
+                Domain = apiBaseUri.Host,
+                Path = string.IsNullOrEmpty(c.Path) ? "/" : c.Path,
                 HttpOnly = c.HttpOnly,
                 Secure = c.Secure,
             })
