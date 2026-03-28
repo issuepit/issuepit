@@ -814,6 +814,8 @@ public class DockerAgentRuntime(
             var agentExitCode = 0L;
             if (effectiveCmd is not null)
                 agentExitCode = await ExecCommandAsync(container.ID, effectiveCmd, onLogLine, cancellationToken, logCommand: true, workingDir: agentWorkingDir);
+            else
+                await onLogLine("[WARN] No agent command to execute (agent has no RunnerType and no CustomCmd override -- session will complete as no-op)", LogStream.Stderr);
 
             // Step 8: Capture the opencode session ID for --fork on subsequent fix runs.
             // NOTE: opencode run --fork <session-id> will continue from the same session and retain
