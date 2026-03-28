@@ -31,6 +31,7 @@ public class TerminalController(
 {
     private const string DefaultShell = "/bin/bash";
     private const string FallbackShell = "/bin/sh";
+    private const string TmuxSessionName = "main";
 
     [HttpGet("{id:guid}/terminal")]
     public async Task ConnectTerminal(Guid id, CancellationToken cancellationToken)
@@ -109,18 +110,69 @@ public class TerminalController(
         Guid sessionId,
         CancellationToken cancellationToken)
     {
-        // Create a PTY exec inside the running container.
-        // Try bash first; fall back to sh if bash is not present.
-        var shell = DefaultShell;
+        // Prefer tmux so that the shell session survives page reloads.
+        // "tmux new-session -A -s <name>" attaches to an existing session named <name>
+        // or creates a new one if none exists — giving persistent session semantics.
+        // Fall back to bash / sh when tmux is not installed.
+        bool hasTmux;
         try
         {
-            var whichResult = await ExecReadOutputAsync(containerId, ["which", "bash"], cancellationToken);
-            if (string.IsNullOrWhiteSpace(whichResult))
-                shell = FallbackShell;
+            var tmuxPath = await ExecReadOutputAsync(containerId, ["which", "tmux"], cancellationToken);
+            hasTmux = !string.IsNullOrWhiteSpace(tmuxPath);
         }
         catch
         {
-            shell = FallbackShell;
+            hasTmux = false;
+        }
+
+        List<string> cmd;
+        if (hasTmux)
+        {
+            cmd = ["tmux", "new-session", "-A", "-s", TmuxSessionName];
+        }
+        else
+        {
+            // tmux is not available — warn the user so they know the session will not persist across
+            // page reloads.  The standard helper image ships tmux; this path indicates a custom image
+            // that does not include it.
+            logger.LogWarning("tmux not found in container {ContainerId} for session {SessionId}. " +
+                "Terminal session will not persist across page reloads. " +
+                "Install tmux in the container image to enable session persistence.",
+                containerId[..Math.Min(12, containerId.Length)], sessionId);
+
+            // Send a visible warning line to the terminal before the shell starts.
+            const string noTmuxWarning =
+                "\r\n\x1b[33m⚠  tmux not found in this container image. " +
+                "Terminal session will not persist across page reloads.\r\n" +
+                "   Install tmux in your Docker image to enable session persistence.\x1b[0m\r\n\r\n";
+            try
+            {
+                if (webSocket.State == WebSocketState.Open)
+                {
+                    var warningBytes = Encoding.UTF8.GetBytes(noTmuxWarning);
+                    await webSocket.SendAsync(new ArraySegment<byte>(warningBytes),
+                        WebSocketMessageType.Binary, true, cancellationToken);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Best-effort — continue to start the shell even if the warning couldn't be sent.
+                logger.LogDebug(ex, "Failed to send tmux-absent warning to terminal for session {SessionId}", sessionId);
+            }
+
+            // Try bash first; fall back to sh if bash is not present.
+            var shell = DefaultShell;
+            try
+            {
+                var whichResult = await ExecReadOutputAsync(containerId, ["which", "bash"], cancellationToken);
+                if (string.IsNullOrWhiteSpace(whichResult))
+                    shell = FallbackShell;
+            }
+            catch
+            {
+                shell = FallbackShell;
+            }
+            cmd = [shell];
         }
 
         ContainerExecCreateResponse exec;
@@ -130,7 +182,7 @@ public class TerminalController(
                 containerId,
                 new ContainerExecCreateParameters
                 {
-                    Cmd = [shell],
+                    Cmd = cmd,
                     AttachStdin = true,
                     AttachStdout = true,
                     AttachStderr = true,
