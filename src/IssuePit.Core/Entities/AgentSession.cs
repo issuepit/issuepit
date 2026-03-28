@@ -63,10 +63,11 @@ public class AgentSession
     public bool KeepContainer { get; set; }
 
     /// <summary>
-    /// Optional command to run in the container instead of the image's default CMD.
-    /// Useful for diagnostic or test runs (e.g. a curl connectivity check).
-    /// Only applies to the legacy flow (no <see cref="Agent.RunnerType"/>); the exec flow always
-    /// uses <c>sleep infinity</c> as the container CMD.
+    /// Optional command to run in the container via <c>docker exec</c> instead of the runner CLI.
+    /// Useful for diagnostic or test runs (e.g. a custom connectivity check).
+    /// Applies when no <see cref="Agent.RunnerType"/> is set; the exec flow uses this as the
+    /// <c>docker exec</c> command when <see cref="IssuePit.Core.Runners.RunnerCommandBuilder.BuildArgsList"/>
+    /// returns an empty list.
     /// Not persisted — set at launch time from the <c>issue-assigned</c> Kafka message.
     /// </summary>
     [NotMapped]
