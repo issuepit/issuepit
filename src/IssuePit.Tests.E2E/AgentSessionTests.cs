@@ -358,6 +358,131 @@ public class AgentSessionTests(AspireFixture fixture)
     }
 
     /// <summary>
+    /// Runs a busybox agent container (via <c>DockerCmdOverride</c>) that executes a two-step
+    /// MCP interaction entirely from inside the container:
+    /// <list type="bullet">
+    ///   <item>Calls <c>POST /mcp</c> <c>initialize</c> and captures the <c>Mcp-Session-Id</c> header.</item>
+    ///   <item>Calls <c>POST /mcp</c> <c>tools/call list_projects</c> using that session ID and
+    ///         asserts the response contains a <c>"content"</c> field (success indicator).</item>
+    /// </list>
+    ///
+    /// This verifies that MCP <em>tool execution</em> works end-to-end from inside an agent
+    /// container — not just health-check connectivity. The <see cref="DockerCmdOverride"/>
+    /// mechanism is exactly the same as <see cref="AgentSession_McpConnectivity_ContainerCanReachMcpServer"/>
+    /// but exercises a full JSON-RPC MCP session.
+    ///
+    /// Assertions use <c>StartsWith</c> (not <c>Contains</c>) so they only match lines that are
+    /// actual container output, not the <c>[DEBUG] Runner cmd</c> log line that embeds the echo
+    /// statement as plain text.
+    ///
+    /// Skipped automatically when Docker is not available on the host.
+    /// </summary>
+    [Fact]
+    public async Task AgentSession_McpToolsWork_ContainerCanCallMcpTools()
+    {
+        SkipIfDockerUnavailable();
+
+        using var client = CreateCookieClient();
+        var tenantId = await GetDefaultTenantIdAsync();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"e2e{Guid.NewGuid():N}"[..12];
+        await client.PostAsJsonAsync("/api/auth/register", new { username, password = "TestPass1!" });
+
+        var orgSlug = $"mcp-ct-{Guid.NewGuid():N}"[..14];
+        var orgResp = await client.PostAsJsonAsync("/api/orgs", new { name = "MCP Container Tools Org", slug = orgSlug });
+        Assert.Equal(HttpStatusCode.Created, orgResp.StatusCode);
+        var org = await orgResp.Content.ReadFromJsonAsync<JsonElement>();
+        var orgId = org.GetProperty("id").GetString()!;
+
+        var projectSlug = $"mcp-ct-{Guid.NewGuid():N}"[..14];
+        var projResp = await client.PostAsJsonAsync("/api/projects",
+            new { name = "MCP Container Tools Project", slug = projectSlug, orgId = Guid.Parse(orgId) });
+        Assert.Equal(HttpStatusCode.Created, projResp.StatusCode);
+        var proj = await projResp.Content.ReadFromJsonAsync<JsonElement>();
+        var projectId = proj.GetProperty("id").GetString()!;
+
+        // busybox has wget and sh; no RunnerType so DockerCmdOverride drives execution via CustomCmd.
+        var agentResp = await client.PostAsJsonAsync("/api/agents",
+            new
+            {
+                name = "MCP Container Tools Agent",
+                orgId = Guid.Parse(orgId),
+                systemPrompt = "You are a diagnostic agent.",
+                dockerImage = "busybox:latest",
+                allowedTools = "[]",
+                isActive = true,
+            });
+        Assert.Equal(HttpStatusCode.Created, agentResp.StatusCode);
+        var agent = await agentResp.Content.ReadFromJsonAsync<JsonElement>();
+        var agentId = agent.GetProperty("id").GetString()!;
+
+        var issueResp = await client.PostAsJsonAsync("/api/issues",
+            new { title = "MCP Container Tools Test", projectId = Guid.Parse(projectId) });
+        Assert.Equal(HttpStatusCode.Created, issueResp.StatusCode);
+        var issue = await issueResp.Content.ReadFromJsonAsync<JsonElement>();
+        var issueId = issue.GetProperty("id").GetString()!;
+
+        // Shell script executed inside the container via docker exec (CustomCmd / DockerCmdOverride):
+        //   1. POST /mcp initialize → capture Mcp-Session-Id from response headers
+        //   2. POST /mcp tools/call list_projects → assert "content" in response (success indicator)
+        //
+        // The script is kept intentionally short to avoid Kafka message-size concerns and to be
+        // easy to audit. Assertions below use StartsWith so they only match actual container stdout
+        // lines and cannot be satisfied by the "[DEBUG] Runner cmd : ..." log entry that embeds
+        // this script as plain text.
+        var mcpToolsCmd = new string[]
+        {
+            "sh", "-c",
+            """
+            MCP_URL="${ISSUEPIT_MCP_URL%/}/mcp"
+
+            wget -qS -O /tmp/ib \
+              --post-data='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"e2e","version":"1.0"}}}' \
+              --header='Content-Type: application/json' \
+              --header='Accept: application/json, text/event-stream' \
+              "$MCP_URL" 2>/tmp/ih \
+              || { echo '[ISSUEPIT:MCP_TOOLS]=FAIL_INIT'; exit 0; }
+
+            SID=$(grep -i 'mcp-session-id' /tmp/ih | head -1 | awk '{print $2}' | tr -d '\r')
+
+            wget -qO /tmp/lb \
+              --post-data='{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_projects","arguments":{}}}' \
+              --header='Content-Type: application/json' \
+              --header='Accept: application/json, text/event-stream' \
+              --header="Mcp-Session-Id: $SID" \
+              "$MCP_URL" 2>/dev/null \
+              && grep -qF '"content"' /tmp/lb \
+              && echo '[ISSUEPIT:MCP_TOOLS]=OK' \
+              || echo '[ISSUEPIT:MCP_TOOLS]=FAIL_TOOLS'
+            """,
+        };
+
+        var assignResp = await client.PostAsJsonAsync($"/api/issues/{issueId}/assignees",
+            new { agentId = Guid.Parse(agentId), dockerCmdOverride = mcpToolsCmd });
+        Assert.Equal(HttpStatusCode.Created, assignResp.StatusCode);
+
+        var session = await WaitForAgentSessionAsync(client, issueId, TimeSpan.FromMinutes(3));
+        var sessionId = session.GetProperty("id").GetString()!;
+
+        var logsResp = await client.GetAsync($"/api/agent-sessions/{sessionId}/logs");
+        Assert.Equal(HttpStatusCode.OK, logsResp.StatusCode);
+        var logs = await logsResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        var logLines = logs.EnumerateArray()
+            .Select(l => l.GetProperty("line").GetString() ?? string.Empty)
+            .ToList();
+
+        // Use StartsWith (not Contains) so only actual container output lines match — not the
+        // "[DEBUG] Runner cmd : ... echo '[ISSUEPIT:MCP_TOOLS]=OK' ..." log entry.
+        Assert.True(
+            logLines.Any(l => l.StartsWith("[ISSUEPIT:MCP_TOOLS]=OK")),
+            $"Expected a log line starting with '[ISSUEPIT:MCP_TOOLS]=OK', indicating MCP tool " +
+            $"execution worked from inside the agent container.\n" +
+            $"Actual logs:\n{string.Join('\n', logLines.Take(60))}");
+    }
+
+    /// <summary>
     /// Verifies that the MCP server's <c>initialize</c> and <c>list_projects</c> tool work
     /// end-to-end by calling them directly via <c>fixture.McpClient</c>.
     ///
