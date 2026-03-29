@@ -252,7 +252,7 @@ public class IssueWorker(
                 message.ProjectId, message.AgentId.HasValue ? message.AgentId.Value : "(none)");
 
             await LaunchAgentAsync(message.AgentId, null, message.ProjectId, message.DockerImageOverride,
-                message.KeepContainer, message.DockerCmdOverride, message.RunnerArgs, message.ModelOverride, message.RunnerTypeOverride,
+                message.KeepContainer, message.CustomCmdOverride, message.RunnerArgs, message.ModelOverride, message.RunnerTypeOverride,
                 message.UseHttpServerOverride, message.RuntimeTypeOverride, message.MaxCiCdLoopCountOverride,
                 message.SessionId, null, message.Branch, cancellationToken);
             return;
