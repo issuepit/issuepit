@@ -252,7 +252,7 @@ public class IssueWorker(
                 message.ProjectId, message.AgentId.HasValue ? message.AgentId.Value : "(none)");
 
             await LaunchAgentAsync(message.AgentId, null, message.ProjectId, message.DockerImageOverride,
-                message.KeepContainer, message.DockerCmdOverride, message.ModelOverride, message.RunnerTypeOverride,
+                message.KeepContainer, message.DockerCmdOverride, message.RunnerArgs, message.ModelOverride, message.RunnerTypeOverride,
                 message.UseHttpServerOverride, message.RuntimeTypeOverride, message.MaxCiCdLoopCountOverride,
                 message.SessionId, null, message.Branch, cancellationToken);
             return;
@@ -312,8 +312,8 @@ public class IssueWorker(
 
         // Launch all assigned agents in parallel; each task manages its own DB scope
         await Task.WhenAll(agentIds.Select(agentId =>
-            LaunchAgentAsync(agentId, message.Id, message.ProjectId, message.DockerImageOverride, message.KeepContainer, message.DockerCmdOverride,
-                message.ModelOverride, message.RunnerTypeOverride, message.UseHttpServerOverride, message.RuntimeTypeOverride,
+            LaunchAgentAsync(agentId, message.Id, message.ProjectId, message.DockerImageOverride, message.KeepContainer, message.CustomCmdOverride,
+                message.RunnerArgs, message.ModelOverride, message.RunnerTypeOverride, message.UseHttpServerOverride, message.RuntimeTypeOverride,
                 message.MaxCiCdLoopCountOverride,
                 // Only pass the pre-created session ID when exactly one agent is being launched (retry case).
                 agentIds.Count == 1 ? message.SessionId : null,
@@ -333,7 +333,8 @@ public class IssueWorker(
         Guid projectId,
         string? dockerImageOverride,
         bool keepContainer,
-        string[]? dockerCmdOverride,
+        string[]? customCmdOverride,
+        string[]? runnerArgs,
         string? modelOverride,
         int? runnerTypeOverride,
         bool? useHttpServerOverride,
@@ -600,7 +601,8 @@ public class IssueWorker(
             preCreated.ProjectId = projectId;
             preCreated.RuntimeConfigId = runtimeConfig?.Id;
             preCreated.KeepContainer = keepContainer;
-            preCreated.CustomCmd = dockerCmdOverride;
+            preCreated.CustomCmd = customCmdOverride;
+            preCreated.RunnerArgs = runnerArgs;
             preCreated.PushPolicy = pushPolicy;
             preCreated.StartedAt = DateTime.UtcNow;
             preCreated.Status = AgentSessionStatus.Running;
@@ -623,7 +625,8 @@ public class IssueWorker(
                 Status = AgentSessionStatus.Running,
                 StartedAt = DateTime.UtcNow,
                 KeepContainer = keepContainer,
-                CustomCmd = dockerCmdOverride,
+                CustomCmd = customCmdOverride,
+                RunnerArgs = runnerArgs,
                 PushPolicy = pushPolicy,
                 Warnings = commentsWarning is not null
                     ? System.Text.Json.JsonSerializer.Serialize(new[] { commentsWarning })
@@ -1437,6 +1440,17 @@ public class IssueWorker(
             payload);
     }
 
+    private Task PublishMessageStatusAsync(string sessionId, string messageId, AgentSessionMessageStatus status)
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            @event = "message-status-updated",
+            messageId,
+            status = status.ToString(),
+        });
+        return PublishSessionEventAsync(sessionId, payload);
+    }
+
     /// <summary>
     /// Publishes a lightweight heartbeat event every 30 seconds for the duration of the session.
     /// The relay service forwards it as <c>RunsUpdated</c> on the project hub so that connected
@@ -1532,6 +1546,7 @@ public class IssueWorker(
             var messageIndex = counter.Next++;
             message.Status = AgentSessionMessageStatus.Running;
             await db.SaveChangesAsync(cancellationToken);
+            await PublishMessageStatusAsync(session.Id.ToString(), message.Id.ToString(), AgentSessionMessageStatus.Running);
 
             logger.LogInformation("Processing queued message {MessageId} (index {Index}) for session {SessionId}",
                 message.Id, messageIndex, session.Id);
@@ -1593,6 +1608,7 @@ public class IssueWorker(
             }
 
             await db.SaveChangesAsync(cancellationToken);
+            await PublishMessageStatusAsync(session.Id.ToString(), message.Id.ToString(), message.Status);
         }
     }
 
@@ -2283,7 +2299,7 @@ public class IssueWorker(
         GitBranch = branchName,
     };
 
-    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, Guid? SessionId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? DockerCmdOverride = null, string? ModelOverride = null, int? RunnerTypeOverride = null, bool? UseHttpServerOverride = null, int? RuntimeTypeOverride = null, int? MaxCiCdLoopCountOverride = null, bool ForceAgentId = false, Guid? TriggeringCommentId = null, string? Branch = null, bool IsManualDirectStart = false);
+    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, Guid? SessionId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? CustomCmdOverride = null, string[]? RunnerArgs = null, string? ModelOverride = null, int? RunnerTypeOverride = null, bool? UseHttpServerOverride = null, int? RuntimeTypeOverride = null, int? MaxCiCdLoopCountOverride = null, bool ForceAgentId = false, Guid? TriggeringCommentId = null, string? Branch = null, bool IsManualDirectStart = false);
 
     /// <summary>
     /// A simple mutable counter shared across all <see cref="DrainPendingMessagesAsync"/> calls

@@ -233,7 +233,8 @@ public class AgentSessionsController(
                 sessionId = queuedSession.Id,
                 dockerImageOverride = body?.DockerImageOverride,
                 keepContainer = body?.KeepContainer ?? false,
-                dockerCmdOverride = body?.DockerCmdOverride,
+                customCmdOverride = body?.CustomCmdOverride,
+                runnerArgs = body?.RunnerArgs,
                 modelOverride = body?.ModelOverride,
                 runnerTypeOverride = body?.RunnerTypeOverride != null ? (int?)body.RunnerTypeOverride.Value : null,
                 useHttpServerOverride = body?.UseHttpServerOverride,
@@ -255,7 +256,8 @@ public class AgentSessionsController(
                 isManualDirectStart = true,
                 dockerImageOverride = body?.DockerImageOverride,
                 keepContainer = body?.KeepContainer ?? false,
-                dockerCmdOverride = body?.DockerCmdOverride,
+                customCmdOverride = body?.CustomCmdOverride,
+                runnerArgs = body?.RunnerArgs,
                 modelOverride = body?.ModelOverride,
                 runnerTypeOverride = body?.RunnerTypeOverride != null ? (int?)body.RunnerTypeOverride.Value : null,
                 useHttpServerOverride = body?.UseHttpServerOverride,
@@ -468,6 +470,32 @@ public class AgentSessionsController(
                 message.ModelOverride, message.AgentIdOverride, null, message.CreatedAt, message.ProcessedAt));
     }
 
+    /// <summary>Updates the content of a pending message. Returns 409 Conflict if the message is no longer pending.</summary>
+    [HttpPatch("{id:guid}/messages/{messageId:guid}")]
+    public async Task<IActionResult> UpdateMessage(Guid id, Guid messageId, [FromBody] UpdateMessageRequest request, CancellationToken cancellationToken)
+    {
+        if (tenant.CurrentTenant is null) return Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(request.Content))
+            return BadRequest(new UpdateMessageErrorResponse("Message content cannot be empty.", string.Empty));
+
+        var message = await db.AgentSessionMessages
+            .Include(m => m.AgentSession).ThenInclude(s => s!.Project).ThenInclude(p => p!.Organization)
+            .FirstOrDefaultAsync(m => m.Id == messageId && m.AgentSessionId == id
+                && m.AgentSession!.Project!.Organization.TenantId == tenant.CurrentTenant.Id, cancellationToken);
+
+        if (message is null) return NotFound();
+
+        if (message.Status != AgentSessionMessageStatus.Pending)
+            return Conflict(new UpdateMessageErrorResponse("Only pending messages can be edited.", message.Status.ToString()));
+
+        message.Content = request.Content.Trim();
+        await db.SaveChangesAsync(cancellationToken);
+
+        return Ok(new AgentSessionMessageDto(message.Id, message.Content, message.Status.ToString(),
+            message.ModelOverride, message.AgentIdOverride, null, message.CreatedAt, message.ProcessedAt));
+    }
+
     /// <summary>Cancels a pending message (cannot cancel running or done messages).</summary>
     [HttpDelete("{id:guid}/messages/{messageId:guid}")]
     public async Task<IActionResult> CancelMessage(Guid id, Guid messageId, CancellationToken cancellationToken)
@@ -498,7 +526,10 @@ public record TriggerCiCdResponse(Guid RunId, string Status, string Branch, stri
 public record RetrySessionRequest(
     string? DockerImageOverride = null,
     bool KeepContainer = false,
-    string[]? DockerCmdOverride = null,
+    /// <summary>Optional full command to execute via <c>docker exec</c> inside the container, replacing the runner CLI. Accepts a complete command list e.g. <c>["sh", "-c", "wget ..."]</c>. When set, takes precedence over the agent's RunnerType command.</summary>
+    string[]? CustomCmdOverride = null,
+    /// <summary>Optional extra volume bind mounts added to the container at creation time. Each element must be a bind-mount string in the format <c>host-path:container-path</c> (e.g. <c>"/data:/workspace/data"</c>) or <c>host-path:container-path:ro</c>. Docker CLI flag syntax (<c>--volume</c> etc.) is not supported.</summary>
+    string[]? RunnerArgs = null,
     /// <summary>Override the agent used for this retry run. Null = use the same agent as the original session.</summary>
     Guid? AgentIdOverride = null,
     /// <summary>Override the model used for this retry run. Null = use the agent's configured model.</summary>
@@ -533,6 +564,10 @@ public record QueueMessageRequest(
     string Content,
     string? ModelOverride = null,
     Guid? AgentIdOverride = null);
+
+public record UpdateMessageRequest(string Content);
+
+public record UpdateMessageErrorResponse(string Error, string Status);
 
 public record AgentSessionMessageDto(
     Guid Id,
