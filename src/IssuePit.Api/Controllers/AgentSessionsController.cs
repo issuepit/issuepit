@@ -31,7 +31,7 @@ public class AgentSessionsController(
                 s.Id,
                 s.AgentId,
                 AgentName = s.Agent != null ? s.Agent.Name : null,
-                IsManualMode = s.Agent != null && s.Agent.ManualMode,
+                IsManualMode = s.AgentId == null || (s.Agent != null && s.Agent.ManualMode),
                 s.IssueId,
                 IssueTitle = s.Issue != null ? s.Issue.Title : null,
                 IssueNumber = s.Issue != null ? (int?)s.Issue.Number : null,

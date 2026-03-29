@@ -497,13 +497,6 @@ public class AgentSessionTests(AspireFixture fixture)
             .Select(l => l.GetProperty("line").GetString() ?? string.Empty)
             .ToList();
 
-        // Print MCP version and raw list response for CI log visibility
-        var versionLine = logLines.FirstOrDefault(l => l.Contains("[ISSUEPIT:MCP_VERSION]="));
-        Console.WriteLine($"[MCP] server version from container: {versionLine ?? "(not found)"}");
-        var listRespLine = logLines.FirstOrDefault(l => l.Contains("[ISSUEPIT:MCP_LIST_RESP]="));
-        if (listRespLine is not null)
-            Console.WriteLine($"[MCP] list_projects raw response: {listRespLine}");
-
         // Assert MCP tools worked end-to-end from inside the container
         Assert.True(
             logLines.Any(l => l.Contains("[ISSUEPIT:MCP_TOOLS]=OK")),
