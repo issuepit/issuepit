@@ -1,17 +1,22 @@
 using System.Text.RegularExpressions;
+using IssuePit.Notes.Api.Hubs;
 using IssuePit.Notes.Api.Services;
 using IssuePit.Notes.Core.Data;
 using IssuePit.Notes.Core.Entities;
 using IssuePit.Notes.Core.Enums;
 using IssuePit.Notes.Core.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
 namespace IssuePit.Notes.Api.Controllers;
 
 [ApiController]
 [Route("api/notes")]
-public partial class NotesController(NotesDbContext db, NotesTenantContext ctx) : ControllerBase
+public partial class NotesController(
+    NotesDbContext db,
+    NotesTenantContext ctx,
+    IHubContext<NoteOperationsHub> hub) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetNotes(
@@ -228,13 +233,21 @@ public partial class NotesController(NotesDbContext db, NotesTenantContext ctx) 
         await db.SaveChangesAsync();
         await tx.CommitAsync();
 
-        return Ok(new OperationResponse(
+        var response = new OperationResponse(
             operation.Id,
             operation.SequenceNumber,
             operation.Delta,
             operation.ClientId,
             note.Version,
-            operation.AppliedAt));
+            operation.AppliedAt);
+
+        // Broadcast to all clients watching this note via SignalR.
+        // Client-side echo suppression (clientId check) handles the submitter ignoring its own op.
+        await hub.Clients
+            .Group(NoteOperationsHub.NoteGroup(id.ToString()))
+            .SendAsync("OperationReceived", response);
+
+        return Ok(response);
     }
 
     /// <summary>

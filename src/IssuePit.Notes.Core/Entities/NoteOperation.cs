@@ -49,4 +49,10 @@ public class NoteOperation
     public string Delta { get; set; } = string.Empty;
 
     public DateTime AppliedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// True when this row is a compacted summary of multiple same-day operations.
+    /// Compaction runs nightly and merges ops older than 30 days into one per day.
+    /// </summary>
+    public bool IsCompacted { get; set; }
 }

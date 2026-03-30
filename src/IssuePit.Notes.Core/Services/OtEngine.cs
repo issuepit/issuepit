@@ -152,6 +152,97 @@ public static class OtEngine
         return result;
     }
 
+    /// <summary>
+    /// Compose two sequential deltas into one equivalent delta.
+    /// Given deltas A and B where B is applied after A, returns delta C such that:
+    ///   apply(apply(doc, A), B) == apply(doc, C)
+    /// This is used by the compaction service to merge multiple same-day operations
+    /// into a single delta.
+    /// </summary>
+    /// <remarks>
+    /// Algorithm follows the Quill-delta compose rules (three priority cases):
+    ///  1. B-insert  → always emit immediately (B adds chars before any A output).
+    ///  2. A-delete  → always emit immediately (A deletes input chars B never sees).
+    ///  3. Otherwise → A output (retain/insert) meets B consumer (retain/delete); take min.
+    /// </remarks>
+    public static List<TextOp> Compose(IReadOnlyList<TextOp> a, IReadOnlyList<TextOp> b)
+    {
+        var result = new List<TextOp>(a.Count + b.Count);
+
+        // Track position within current op for partial consumption
+        int ia = 0, ib = 0;
+        // Remaining chars in current A / B op (for inserts: remaining text chars)
+        int remA = OpRemaining(ia < a.Count ? a[ia] : null);
+        int remB = OpRemaining(ib < b.Count ? b[ib] : null);
+
+        while (ia < a.Count || ib < b.Count)
+        {
+            var curA = ia < a.Count ? a[ia] : null;
+            var curB = ib < b.Count ? b[ib] : null;
+
+            // ── Priority 1: B inserts ─────────────────────────────────────
+            // B introduces new chars that aren't part of A's output; emit them directly.
+            if (curB is InsertOp insB)
+            {
+                AppendOrMerge(result, insB);
+                ib++;
+                remB = OpRemaining(ib < b.Count ? b[ib] : null);
+                continue;
+            }
+
+            // ── Priority 2: A deletes ─────────────────────────────────────
+            // A removes input chars; B never sees them, so emit the delete unchanged.
+            if (curA is DeleteOp)
+            {
+                AppendOrMerge(result, new DeleteOp(remA));
+                ia++;
+                remA = OpRemaining(ia < a.Count ? a[ia] : null);
+                continue;
+            }
+
+            // ── Priority 3: A output meets B consumer ─────────────────────
+            // curA is retain or insert; curB is retain or delete.
+            // Take the minimum of the two remaining lengths.
+            if (curA is null || curB is null) break;
+
+            int take = Math.Min(remA, remB);
+
+            switch (curA, curB)
+            {
+                case (RetainOp, RetainOp):
+                    AppendOrMerge(result, new RetainOp(take));
+                    break;
+                case (RetainOp, DeleteOp):
+                    AppendOrMerge(result, new DeleteOp(take));
+                    break;
+                case (InsertOp insA, RetainOp):
+                    // Emit the slice of insA's text that B retains
+                    int startA = insA.Text.Length - remA;
+                    AppendOrMerge(result, new InsertOp(insA.Text.Substring(startA, take)));
+                    break;
+                case (InsertOp, DeleteOp):
+                    // B deletes what A inserted — cancel; emit nothing
+                    break;
+            }
+
+            remA -= take;
+            remB -= take;
+            if (remA <= 0) { ia++; remA = OpRemaining(ia < a.Count ? a[ia] : null); }
+            if (remB <= 0) { ib++; remB = OpRemaining(ib < b.Count ? b[ib] : null); }
+        }
+
+        return result;
+    }
+
+    /// <summary>Returns the "remaining" length for an op (text length for inserts).</summary>
+    private static int OpRemaining(TextOp? op) => op switch
+    {
+        RetainOp r => r.Count,
+        DeleteOp d => d.Count,
+        InsertOp ins => ins.Text.Length,
+        _ => 0
+    };
+
     // ── Serialization ─────────────────────────────────────────────────────
 
     /// <summary>Serialize ops to JSON: [{"retain":5},{"insert":"hi"},{"delete":3}]</summary>

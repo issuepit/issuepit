@@ -391,51 +391,110 @@ async function submitCrdtDelta(currentContent: string) {
   }
 }
 
-/** Poll for remote operations (runs every 5 seconds). */
+// ── SignalR real-time delivery ────────────────────────────────────────────────
+// The Notes API exposes a SignalR hub at /hubs/notes.  When the editor opens a note,
+// it connects, joins the note's group, and receives OperationReceived events pushed
+// by the server whenever another client submits an operation.
+// A fallback catchup via getOperations() runs on first connect and after reconnects
+// to recover any ops missed during a disconnection window.
+
+/** Active SignalR connection (null when noteId is not provided or SSR). */
+let signalrConn: import('@microsoft/signalr').HubConnection | null = null
+
+/** Whether the fallback polling interval is active (used only when SignalR is unavailable). */
 let pollInterval: ReturnType<typeof setInterval> | null = null
 
-async function pollRemoteOps() {
+/**
+ * Apply a single confirmed remote operation to the local editor.
+ * Shared by both the SignalR event handler and the HTTP catchup path.
+ */
+async function applyRemoteOp(op: import('~/composables/useNotesApi').NoteOperationResponse) {
+  // Echo-suppress: skip ops we submitted ourselves
+  if (op.clientId === (props.clientId ?? 'anon')) {
+    currentSeq = op.sequenceNumber
+    emit('seq-updated', currentSeq)
+    return
+  }
+
+  if (submitting) {
+    bufferedRemoteOps.push({ delta: op.delta, clientId: op.clientId })
+    currentSeq = op.sequenceNumber
+    emit('seq-updated', currentSeq)
+    return
+  }
+
+  const current = editor.value?.getHTML() ?? syncedContent
+  try {
+    const updated = applyDelta(current, op.delta)
+    syncedContent = updated
+    currentSeq = op.sequenceNumber
+    emit('seq-updated', currentSeq)
+    if (editor.value && editor.value.getHTML() !== updated) {
+      applyRemoteContent(updated)
+    }
+  }
+  catch (err) {
+    console.warn('[NoteEditor] Failed to apply remote op, skipping:', err)
+    currentSeq = op.sequenceNumber
+    emit('seq-updated', currentSeq)
+  }
+}
+
+/** HTTP catchup: fetch and apply any ops we missed (used on connect/reconnect). */
+async function catchUpOps() {
   if (!props.noteId) return
   try {
     const ops = await notesApi.getOperations(props.noteId, currentSeq)
-    if (ops.length === 0) return
-
-    for (const op of ops) {
-      // Echo-suppress: skip our own confirmed ops
-      if (op.clientId === (props.clientId ?? 'anon')) {
-        currentSeq = op.sequenceNumber
-        emit('seq-updated', currentSeq)
-        continue
-      }
-
-      if (submitting) {
-        // Buffer to apply after current submission completes
-        bufferedRemoteOps.push({ delta: op.delta, clientId: op.clientId })
-        currentSeq = op.sequenceNumber
-        emit('seq-updated', currentSeq)
-        continue
-      }
-
-      // Apply the remote delta to the current editor content
-      const current = editor.value?.getHTML() ?? syncedContent
-      try {
-        const updated = applyDelta(current, op.delta)
-        syncedContent = updated
-        currentSeq = op.sequenceNumber
-        emit('seq-updated', currentSeq)
-        if (editor.value && editor.value.getHTML() !== updated) {
-          applyRemoteContent(updated)
-        }
-      }
-      catch (applyErr) {
-        console.warn('[NoteEditor] Failed to apply remote op, skipping:', applyErr)
-        currentSeq = op.sequenceNumber
-        emit('seq-updated', currentSeq)
-      }
-    }
+    for (const op of ops) await applyRemoteOp(op)
   }
   catch {
-    // Polling errors are non-fatal (network blip, etc.)
+    // Non-fatal — will retry on next reconnect
+  }
+}
+
+/** Fallback polling loop (activated only when SignalR fails to connect). */
+async function pollRemoteOps() {
+  await catchUpOps()
+}
+
+/** Connect to the Notes SignalR hub and join the note's group. */
+async function connectSignalR() {
+  if (!props.noteId || typeof window === 'undefined') return
+
+  try {
+    const { HubConnectionBuilder, LogLevel, HubConnectionState } = await import('@microsoft/signalr')
+
+    signalrConn = new HubConnectionBuilder()
+      .withUrl(`${notesApiBase}/hubs/notes`)
+      .withAutomaticReconnect()
+      .configureLogging(LogLevel.Warning)
+      .build()
+
+    // Real-time operation delivery
+    signalrConn.on('OperationReceived', (op: import('~/composables/useNotesApi').NoteOperationResponse) => {
+      applyRemoteOp(op)
+    })
+
+    // Catchup on reconnect to recover ops missed during the disconnection window
+    signalrConn.onreconnected(async () => {
+      await catchUpOps()
+    })
+
+    await signalrConn.start()
+    await signalrConn.invoke('JoinNote', props.noteId)
+
+    // Catchup on first connect
+    await catchUpOps()
+
+    if (signalrConn.state !== HubConnectionState.Connected) throw new Error('not connected')
+  }
+  catch (err) {
+    console.warn('[NoteEditor] SignalR unavailable, falling back to polling:', err)
+    signalrConn = null
+    // Activate 5s polling fallback
+    if (!pollInterval) {
+      pollInterval = setInterval(pollRemoteOps, 5000)
+    }
   }
 }
 
@@ -565,10 +624,10 @@ watch(() => props.lastSeq, (newSeq) => {
   if (newSeq !== undefined && newSeq > currentSeq) currentSeq = newSeq
 })
 
-// Start the remote-ops polling loop when a noteId is provided
+// Connect to SignalR hub (or fall back to polling) when a noteId is provided
 onMounted(() => {
   if (props.noteId) {
-    pollInterval = setInterval(pollRemoteOps, 5000)
+    connectSignalR()
   }
 })
 
@@ -655,6 +714,17 @@ function toolbarBtnClass(active: boolean) {
 onBeforeUnmount(() => {
   if (pollInterval) clearInterval(pollInterval)
   if (crdtSubmitTimer) clearTimeout(crdtSubmitTimer)
+  if (signalrConn) {
+    const { HubConnectionState } = await import('@microsoft/signalr').catch(() => ({ HubConnectionState: null }))
+    if (
+      HubConnectionState
+      && signalrConn.state === HubConnectionState.Connected
+      && props.noteId
+    ) {
+      await signalrConn.invoke('LeaveNote', props.noteId).catch(() => {})
+    }
+    signalrConn.stop().catch(() => {})
+  }
   editor.value?.destroy()
 })
 </script>

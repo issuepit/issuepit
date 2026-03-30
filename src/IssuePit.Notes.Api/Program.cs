@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using IssuePit.Notes.Api.Hubs;
 using IssuePit.Notes.Api.Middleware;
 using IssuePit.Notes.Api.Services;
 using IssuePit.Notes.Core.Data;
@@ -28,6 +29,11 @@ builder.Services.AddSingleton<NotesImageStorageService>();
 
 // Git sync background service for git-backed notebooks
 builder.Services.AddHostedService<GitSyncBackgroundService>();
+
+// Nightly CRDT event log compaction (merges ops >30 days into daily buckets)
+builder.Services.AddHostedService<NoteCompactionService>();
+
+builder.Services.AddSignalR();
 
 builder.Services.AddControllers()
     .AddJsonOptions(opts =>
@@ -77,5 +83,6 @@ if (app.Environment.IsDevelopment())
 app.UseCors();
 app.UseMiddleware<NotesTenantMiddleware>();
 app.MapControllers();
+app.MapHub<NoteOperationsHub>("/hubs/notes");
 
 app.Run();
