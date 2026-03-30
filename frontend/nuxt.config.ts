@@ -7,6 +7,7 @@ export default defineNuxtConfig({
       apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:5000',
       mcpBase: process.env.NUXT_PUBLIC_MCP_BASE || 'http://localhost:5010',
       terminalBase: process.env.NUXT_PUBLIC_TERMINAL_BASE || 'http://localhost:5020',
+      notesBase: process.env.NUXT_PUBLIC_NOTES_BASE || 'http://localhost:5030',
     }
   },
   typescript: {

@@ -1629,3 +1629,79 @@ export interface AgentAuth {
 export interface AgentAuthDetail extends AgentAuth {
   authJsonContent: string
 }
+
+// ── Notes Module ────────────────────────────────────────────────────────────
+
+export enum NoteStorageEngine {
+  Postgres = 0,
+  Sqlite = 1,
+  Git = 2,
+  S3 = 3,
+  Elasticsearch = 4,
+}
+
+export enum NoteLinkType {
+  NoteToNote = 0,
+  NoteToProject = 1,
+  NoteToIssue = 2,
+  NoteToTodo = 3,
+}
+
+export interface NoteWorkspace {
+  id: string
+  name: string
+  description?: string
+  storageEngine: NoteStorageEngine
+  linkedProjectId?: string
+  gitRepositoryUrl?: string
+  gitBranch?: string
+  createdAt: string
+  updatedAt: string
+  noteCount: number
+}
+
+export interface NoteListItem {
+  id: string
+  workspaceId: string
+  title: string
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface NoteLink {
+  id: string
+  linkType: NoteLinkType
+  targetNoteId?: string
+  targetEntityId?: string
+  rawLinkText?: string
+}
+
+export interface NoteDetail {
+  id: string
+  workspaceId: string
+  title: string
+  content: string
+  version: number
+  createdAt: string
+  updatedAt: string
+  links: NoteLink[]
+}
+
+export interface GraphNode {
+  id: string
+  title: string
+}
+
+export interface GraphEdge {
+  sourceId: string
+  linkType: NoteLinkType
+  targetNoteId?: string
+  targetEntityId?: string
+  rawLinkText?: string
+}
+
+export interface GraphData {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+}
