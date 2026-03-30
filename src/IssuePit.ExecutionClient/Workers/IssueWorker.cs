@@ -1148,7 +1148,7 @@ public class IssueWorker(
                 }
 
                 // Post a summary comment on the issue with all messages processed during this session.
-                await PostSessionMessagesCommentAsync(session, db, sessionCts.Token);
+                await PostSessionMessagesCommentAsync(session, db, sessionCts.Token, agent.Name);
             }
             finally
             {
@@ -1595,7 +1595,8 @@ public class IssueWorker(
     private async Task PostSessionMessagesCommentAsync(
         AgentSession session,
         IssuePitDbContext db,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? agentName = null)
     {
         if (!session.IssueId.HasValue) return;
 
@@ -1608,7 +1609,7 @@ public class IssueWorker(
 
         try
         {
-            var commentBody = BuildSessionMessagesComment(processedMessages, session);
+            var commentBody = BuildSessionMessagesComment(processedMessages, session, agentName);
             var comment = new IssueComment
             {
                 Id = Guid.NewGuid(),
@@ -1631,10 +1632,14 @@ public class IssueWorker(
     /// <summary>Builds a Markdown comment body summarising all messages processed during the session.</summary>
     private static string BuildSessionMessagesComment(
         IReadOnlyList<AgentSessionMessage> processedMessages,
-        AgentSession session)
+        AgentSession session,
+        string? agentName = null)
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"## 🤖 Agent Session Messages");
+        if (!string.IsNullOrWhiteSpace(agentName))
+            sb.AppendLine($"## 🤖 Agent Session Messages — {agentName}");
+        else
+            sb.AppendLine($"## 🤖 Agent Session Messages");
         sb.AppendLine();
         sb.AppendLine($"The following {processedMessages.Count} message(s) were processed during agent session `{session.Id}`:");
         sb.AppendLine();

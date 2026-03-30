@@ -210,6 +210,8 @@ export interface Project {
   issueKey?: string | null
   /** Offset added to issue numbers when displayed in the UI. Defaults to 0. */
   issueNumberOffset: number
+  /** Optional agent used for git conflict resolution during push/merge recovery. Null means use session's primary agent. */
+  gitResolutionAgentId?: string | null
   /** Per-field config source mapping. Keys are camelCase field names; values are source file names. */
   configFieldSources?: Record<string, string> | null
   createdAt: string
@@ -412,6 +414,8 @@ export interface Agent {
   useHttpServer?: boolean
   hasHttpServerPassword?: boolean
   manualMode?: boolean
+  isShellAgent?: boolean
+  openCodeAgentName?: string | null
   parentAgentId?: string
   childAgents?: AgentChild[]
   createdAt: string
