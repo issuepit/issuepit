@@ -290,11 +290,9 @@ public class CiCdRunPage(IPage page)
     /// <remarks>
     /// Strategy: click → wait for modal to close (API call done) → wait for URL match.
     /// <para>
-    /// <c>WaitForURLAsync</c> called AFTER the modal closes will check the current URL first
-    /// and resolve immediately if <c>navigateTo</c> already ran during the modal-close wait.
-    /// This avoids the <c>RunAndWaitForNavigationAsync</c> race where concurrent
-    /// <c>?tab=jobs</c> router-pushes (from SignalR polling on the CI/CD run page) can
-    /// interfere with a pre-registered navigation watcher.
+    /// The frontend uses <c>window.location.href</c> (full page load) for the post-create
+    /// navigation, which bypasses Vue Router and cannot be cancelled by concurrent
+    /// <c>?tab=jobs</c> router-pushes from SignalR events on the CI/CD run page.
     /// </para>
     /// If the modal does not close within <see cref="E2ETimeouts.Default"/> the click likely
     /// did not register (Vue hydration race on the modal) and the click is retried once.

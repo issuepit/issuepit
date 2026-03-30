@@ -2256,7 +2256,11 @@ async function submitCreateIssue() {
     })
     showCreateIssueModal.value = false
     if (newIssue) {
-      await navigateTo(`/projects/${projectId}/issues/${newIssue.number}`)
+      // Use window.location.href instead of navigateTo to avoid Vue Router cancellation
+      // races: concurrent ?tab=jobs router.push calls (from SignalR events on this page)
+      // can silently cancel a navigateTo(), since Vue Router 4 resolves NavigationFailure
+      // without throwing. A direct location assignment bypasses the router entirely.
+      window.location.href = `/projects/${projectId}/issues/${newIssue.number}`
     }
   } catch (e: unknown) {
     createIssueError.value = e instanceof Error ? e.message : 'Failed to create issue'
@@ -2390,7 +2394,7 @@ async function submitCreateIssueFromTest() {
     })
     createIssueTestCase.value = null
     if (newIssue) {
-      await navigateTo(`/projects/${projectId}/issues/${newIssue.number}`)
+      window.location.href = `/projects/${projectId}/issues/${newIssue.number}`
     }
   } catch (e: unknown) {
     createIssueFromTestError.value = e instanceof Error ? e.message : 'Failed to create issue'
