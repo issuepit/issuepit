@@ -123,9 +123,6 @@ const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void
 }>()
 
-const store = useNotesStore()
-const router = useRouter()
-
 // Image upload state
 const uploading = ref(false)
 
