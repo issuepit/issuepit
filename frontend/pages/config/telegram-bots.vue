@@ -153,7 +153,7 @@
 </template>
 
 <script setup lang="ts">
-import { TelegramNotificationEvent, TelegramNotificationEventLabels, DigestInterval, DigestIntervalLabels } from '~/types'
+import { TelegramNotificationEvent, TelegramNotificationEventLabels, DigestInterval, DigestIntervalLabels, TelegramSilentMode, TelegramSilentModeLabels } from '~/types'
 import type { TelegramBot } from '~/types'
 import { useConfigStore } from '~/stores/config'
 
@@ -174,11 +174,14 @@ const form = reactive({
   events: 0,
   isSilent: false,
   digestInterval: DigestInterval.Immediate,
+  silentMode: TelegramSilentMode.None,
+  rateLimitCount: 0,
+  rateLimitWindowMinutes: 0,
 })
 
 function openCreate() {
   editingId.value = null
-  Object.assign(form, { name: '', botToken: '', chatId: '', orgId: '', projectId: '', events: 0, isSilent: false, digestInterval: DigestInterval.Immediate })
+  Object.assign(form, { name: '', botToken: '', chatId: '', orgId: '', projectId: '', events: 0, isSilent: false, digestInterval: DigestInterval.Immediate, silentMode: TelegramSilentMode.None, rateLimitCount: 0, rateLimitWindowMinutes: 0 })
   showForm.value = true
 }
 
@@ -193,6 +196,9 @@ function openEdit(bot: TelegramBot) {
     events: bot.events,
     isSilent: bot.isSilent,
     digestInterval: bot.digestInterval,
+    silentMode: bot.silentMode ?? TelegramSilentMode.None,
+    rateLimitCount: bot.rateLimitCount ?? 0,
+    rateLimitWindowMinutes: bot.rateLimitWindowMinutes ?? 0,
   })
   showForm.value = true
 }
@@ -235,6 +241,9 @@ async function handleSubmit() {
       events: form.events,
       isSilent: form.isSilent,
       digestInterval: form.digestInterval,
+      silentMode: form.silentMode,
+      rateLimitCount: form.rateLimitCount,
+      rateLimitWindowMinutes: form.rateLimitWindowMinutes,
       orgId: form.orgId || undefined,
       projectId: form.projectId || undefined,
     }
@@ -249,7 +258,15 @@ async function handleSubmit() {
   }
 }
 
-function confirmDelete(id: string, name: string) {
-  if (confirm(`Delete bot "${name}"?`)) store.deleteTelegramBot(id)
+const deletingBot = ref<TelegramBot | null>(null)
+
+function confirmDelete(bot: TelegramBot) {
+  deletingBot.value = bot
+}
+
+async function doDelete() {
+  if (!deletingBot.value) return
+  await store.deleteTelegramBot(deletingBot.value.id)
+  deletingBot.value = null
 }
 </script>
