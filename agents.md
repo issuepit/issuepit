@@ -18,7 +18,7 @@ this file descripes rules on how agenting coding tools work with this repository
 - All PRs run all actions for frontend and backend
 - **The Aspire stack runs in the sandboxed agent environment** — `copilot-setup-steps.yml` pre-installs all required infrastructure (Docker images, frontend npm dependencies, Playwright). Always run E2E tests at the end of a session using:
   ```sh
-  dotnet test src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj \
+  dotnet test src/IssuePit.slnx \
     --configuration Release \
     --filter "Category=E2E|Category=Smoke|Category=CiCd|Category=Agent" \
     --verbosity normal --blame-hang-timeout 4min
