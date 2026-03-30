@@ -288,41 +288,52 @@ public class CiCdRunPage(IPage page)
     /// glob such as <c>"{frontendUrl}/projects/{id}/issues/**"</c>.
     /// </summary>
     /// <remarks>
-    /// The watcher is registered BEFORE the click so it cannot miss a fast navigation.
-    /// If the navigation does not happen within <see cref="E2ETimeouts.Short"/> (the API call
-    /// in the store may have failed silently and the Vue component closes the modal without
-    /// calling <c>navigateTo</c>), the method checks whether the modal is still open and
-    /// retries the click once before waiting with <see cref="E2ETimeouts.NavigationLong"/>.
+    /// Strategy: click → wait for modal to close (API call done) → wait for URL match.
+    /// <para>
+    /// <c>WaitForURLAsync</c> called AFTER the modal closes will check the current URL first
+    /// and resolve immediately if <c>navigateTo</c> already ran during the modal-close wait.
+    /// This avoids the <c>RunAndWaitForNavigationAsync</c> race where concurrent
+    /// <c>?tab=jobs</c> router-pushes (from SignalR polling on the CI/CD run page) can
+    /// interfere with a pre-registered navigation watcher.
+    /// </para>
+    /// If the modal does not close within <see cref="E2ETimeouts.Default"/> the click likely
+    /// did not register (Vue hydration race on the modal) and the click is retried once.
     /// </remarks>
     public async Task SubmitCreateIssueAsync(string expectedIssueUrlPattern)
     {
-        // Register the URL watcher BEFORE clicking so a fast navigation is not missed.
-        var navTask = page.WaitForURLAsync(expectedIssueUrlPattern,
-            new PageWaitForURLOptions { Timeout = E2ETimeouts.Short });
         await page.ClickAsync("[data-testid='create-issue-submit']");
+
+        // Wait for the modal to close — indicates the API call completed (success or silent error).
         try
         {
-            await navTask;
+            await page.WaitForSelectorAsync(
+                "text=Create Issue from",
+                new PageWaitForSelectorOptions
+                {
+                    State = WaitForSelectorState.Hidden,
+                    Timeout = E2ETimeouts.Default,
+                });
         }
         catch (TimeoutException)
         {
-            // Navigation did not start within Short ms. Two possible causes:
-            //   1. The click did not register (Vue hydration race) — modal still open.
-            //   2. The API call failed silently (store caught exception, returned undefined) —
-            //      modal closed but navigateTo was never called.
+            // Modal still visible after Default ms — click did not register (Vue hydration race).
             await Task.Delay(E2ETimeouts.RetryDelay);
-            var modalStillOpen = await page.IsVisibleAsync("text=Create Issue from");
-            var retryNav = page.WaitForURLAsync(expectedIssueUrlPattern,
-                new PageWaitForURLOptions { Timeout = E2ETimeouts.NavigationLong });
-            if (modalStillOpen)
-            {
-                // Case 1: click did not register — retry the click.
-                await page.ClickAsync("[data-testid='create-issue-submit']");
-            }
-            // Case 2 (modal already closed): just wait for the navigation that Vue may have
-            // started just after the Short window expired.
-            await retryNav;
+            await page.ClickAsync("[data-testid='create-issue-submit']");
+            await page.WaitForSelectorAsync(
+                "text=Create Issue from",
+                new PageWaitForSelectorOptions
+                {
+                    State = WaitForSelectorState.Hidden,
+                    Timeout = E2ETimeouts.NavigationLong,
+                });
         }
+
+        // Modal is now closed. Vue sets showCreateIssueModal = false first, then calls
+        // navigateTo() — so navigation may already be complete or just starting.
+        // WaitForURLAsync checks the current URL immediately; if it already matches the
+        // pattern (fast navigation) it resolves without waiting for a new navigation event.
+        await page.WaitForURLAsync(expectedIssueUrlPattern,
+            new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
     }
 
     /// <summary>
