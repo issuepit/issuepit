@@ -75,6 +75,9 @@ if (gitBranch is not null)
 
 var postgresDb = postgresServer.AddDatabase("issuepit-db");
 
+// Separate database for the Notes module (same postgres server, own schema/database).
+var notesDb = postgresServer.AddDatabase("notes-db");
+
 
 
 var kafka = builder.AddKafka("kafka")
@@ -323,6 +326,17 @@ var voskModelDownloader = builder.AddProject<Projects.IssuePit_VoskModelDownload
     .WithEnvironment("VoiceTranscription__ModelPath", voskModelPath)
     .WithEnvironment("VoiceTranscription__ModelDownloadUrl", voskModelDownloadUrl);
 
+// ── Notes Module ──────────────────────────────────────────────────────────────
+// Separate service with its own database for modular note-taking.
+var notesMigrator = builder.AddProject<Projects.IssuePit_Notes_Migrator>("notes-migrator")
+    .WithReference(notesDb)
+    .WaitFor(notesDb);
+
+var notesApi = builder.AddProject<Projects.IssuePit_Notes_Api>("notes-api")
+    .WithReference(notesDb)
+    .WaitForCompletion(notesMigrator)
+    .WithHttpHealthCheck("/health", endpointName: "http");
+
 var frontend = builder.AddNpmApp("frontend", "../../frontend", "dev")
     .WithHttpEndpoint(env: "NUXT_PORT")
     .WithExternalHttpEndpoints();
@@ -452,7 +466,9 @@ frontend
     .WithEnvironment("NUXT_PUBLIC_API_BASE", api.GetEndpoint("http"))
     .WithEnvironment("NUXT_PUBLIC_MCP_BASE", mcpServer.GetEndpoint("http"))
     .WithEnvironment("NUXT_PUBLIC_TERMINAL_BASE", terminalServer.GetEndpoint("http"))
+    .WithEnvironment("NUXT_PUBLIC_NOTES_BASE", notesApi.GetEndpoint("http"))
     .WaitFor(api)
+    .WaitFor(notesApi)
     .WithUrlForEndpoint("http", u =>
     {
         u.DisplayText = "Admin Login";
