@@ -23,7 +23,10 @@ src/
 ├── IssuePit.Migrator/         # EF Core database migrations runner
 ├── IssuePit.KafkaInitializer/ # Kafka topic setup on startup
 ├── IssuePit.ExecutionClient/  # Worker: consumes Kafka, runs agents in Docker
-└── IssuePit.CiCdClient/       # Worker: consumes Kafka, triggers CI/CD via act
+├── IssuePit.CiCdClient/       # Worker: consumes Kafka, triggers CI/CD via act
+├── IssuePit.Notes.Core/       # Notes module: domain models, NotesDbContext (separate DB)
+├── IssuePit.Notes.Api/        # Notes module: REST API (standalone service)
+└── IssuePit.Notes.Migrator/   # Notes module: database migrations runner
 
 frontend/                      # Vue 3 + Nuxt 3 + Pinia frontend
 ```
@@ -75,3 +78,15 @@ Background worker that subscribes to the `issue-assigned` Kafka topic. Uses `Doc
 ### `IssuePit.CiCdClient`
 
 Background worker that subscribes to the `cicd-trigger` Kafka topic and drives local CI runs via `act`.
+
+### Notes Module (`IssuePit.Notes.*`)
+
+Modular note-taking service, implemented as a separate backend with its own database. Designed for standalone deployment.
+
+- **`IssuePit.Notes.Core`** — Domain models (`Note`, `NoteWorkspace`, `NoteLink`) and `NotesDbContext`. Uses a dedicated PostgreSQL database (`notes-db`) independent of the main IssuePit database.
+- **`IssuePit.Notes.Api`** — REST API service providing CRUD endpoints for workspaces and notes, wiki-link extraction (`[[...]]` syntax), full-text search, graph data for visualization, and optimistic concurrency via version numbers. Tenant isolation uses the `X-Tenant-Id` header.
+- **`IssuePit.Notes.Migrator`** — Runs EF Core migrations for the Notes database at startup.
+
+The Notes module supports multiple storage engine types (Postgres, SQLite, Git, S3, Elasticsearch) via the `NoteStorageEngine` enum — only Postgres is implemented initially; others are prepared as extension points.
+
+Notes can link to other notes via `[[Note Title]]` wiki-style syntax, and to IssuePit entities via `[[issue:ID]]`, `[[project:ID]]`, or `[[todo:ID]]` prefixed links.

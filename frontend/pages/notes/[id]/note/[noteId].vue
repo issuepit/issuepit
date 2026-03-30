@@ -51,6 +51,22 @@
       </div>
     </div>
 
+    <!-- Version Conflict Banner -->
+    <div
+      v-if="versionConflict"
+      class="mx-4 mt-2 p-3 bg-yellow-900/50 border border-yellow-700 rounded-lg flex items-center justify-between shrink-0"
+    >
+      <span class="text-sm text-yellow-200">
+        This note was modified by another user. Your changes could not be saved.
+      </span>
+      <button
+        class="px-3 py-1 bg-yellow-700 hover:bg-yellow-600 text-white rounded text-sm font-medium"
+        @click="reloadNote"
+      >
+        Reload Latest
+      </button>
+    </div>
+
     <!-- Editor Area -->
     <div class="flex-1 overflow-hidden flex">
       <!-- Edit Pane -->
@@ -97,6 +113,9 @@
 </template>
 
 <script setup lang="ts">
+import DOMPurify from 'dompurify'
+import { marked } from 'marked'
+
 const route = useRoute()
 const store = useNotesStore()
 
@@ -109,6 +128,7 @@ const version = ref(1)
 const editorMode = ref<'edit' | 'preview' | 'split'>('edit')
 const saving = ref(false)
 const lastSaved = ref<string | null>(null)
+const versionConflict = ref(false)
 let saveTimeout: ReturnType<typeof setTimeout> | null = null
 
 onMounted(async () => {
@@ -122,6 +142,7 @@ onMounted(async () => {
 })
 
 function onContentChange() {
+  versionConflict.value = false
   // Auto-save after 1.5s of idle time
   if (saveTimeout) clearTimeout(saveTimeout)
   saveTimeout = setTimeout(() => saveNote(), 1500)
@@ -130,6 +151,7 @@ function onContentChange() {
 async function saveNote() {
   if (!title.value && !content.value) return
   saving.value = true
+  versionConflict.value = false
   try {
     const note = await store.updateNote(noteId.value, {
       title: title.value,
@@ -141,7 +163,7 @@ async function saveNote() {
   }
   catch (e: unknown) {
     if (e && typeof e === 'object' && 'statusCode' in e && (e as { statusCode: number }).statusCode === 409) {
-      alert('This note was modified by another user. Please refresh to see the latest version.')
+      versionConflict.value = true
     }
   }
   finally {
@@ -149,31 +171,25 @@ async function saveNote() {
   }
 }
 
-// Simple markdown-to-HTML rendering (basic support for headings, bold, italic, links, code, wiki links)
-const renderedContent = computed(() => {
-  const html = content.value
-    // Escape HTML entities
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    // Headings
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    // Bold and italic
-    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    // Inline code
-    .replace(/`(.+?)`/g, '<code class="bg-gray-800 px-1 py-0.5 rounded text-sm">$1</code>')
-    // Wiki links
-    .replace(/\[\[([^\]]+)\]\]/g, '<span class="text-brand-400 bg-brand-500/10 px-1 rounded cursor-pointer hover:underline">$1</span>')
-    // Standard markdown links
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-brand-400 hover:underline" target="_blank" rel="noopener">$1</a>')
-    // Line breaks
-    .replace(/\n\n/g, '</p><p>')
-    .replace(/\n/g, '<br>')
+async function reloadNote() {
+  await store.fetchNote(noteId.value)
+  if (store.currentNote) {
+    title.value = store.currentNote.title
+    content.value = store.currentNote.content
+    version.value = store.currentNote.version
+    lastSaved.value = store.currentNote.updatedAt
+    versionConflict.value = false
+  }
+}
 
-  return `<p>${html}</p>`
+// Render markdown with wiki-link support, sanitized via DOMPurify
+const renderedContent = computed(() => {
+  // Pre-process wiki links before passing to marked: convert [[text]] to a styled span
+  const preprocessed = content.value.replace(
+    /\[\[([^\]]+)\]\]/g,
+    '<span class="text-brand-400 bg-brand-500/10 px-1 rounded cursor-pointer hover:underline">$1</span>',
+  )
+  const html = marked(preprocessed, { async: false }) as string
+  return DOMPurify.sanitize(html)
 })
 </script>

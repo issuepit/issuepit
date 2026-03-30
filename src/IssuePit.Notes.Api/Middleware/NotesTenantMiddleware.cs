@@ -4,8 +4,12 @@ namespace IssuePit.Notes.Api.Middleware;
 
 /// <summary>
 /// Resolves the current tenant from the X-Tenant-Id request header.
-/// The Notes service trusts the header value since tenant authentication is handled
-/// by the main IssuePit API gateway or the frontend.
+/// <para>
+/// <b>Security note:</b> This service trusts the header value without further validation.
+/// It must only be exposed behind the main IssuePit API gateway or a reverse proxy that
+/// authenticates the tenant before forwarding requests. Direct public exposure would allow
+/// any client to impersonate any tenant by sending an arbitrary header.
+/// </para>
 /// </summary>
 public class NotesTenantMiddleware(RequestDelegate next)
 {
