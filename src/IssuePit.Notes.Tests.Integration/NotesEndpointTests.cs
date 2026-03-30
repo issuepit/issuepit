@@ -300,6 +300,24 @@ public class NotesEndpointTests(NotesApiFactory factory) : IClassFixture<NotesAp
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
+    // ── Uploads ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task UploadImage_WithoutStorage_Returns503()
+    {
+        SetTenantHeader();
+
+        using var content = new MultipartFormDataContent();
+        var imageBytes = new byte[] { 0x89, 0x50, 0x4E, 0x47 }; // PNG header bytes
+        content.Add(new ByteArrayContent(imageBytes), "file", "test.png");
+
+        var response = await _client.PostAsync("/api/notes/uploads/image", content);
+        // Image storage is not configured in test environment, expect 503
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+
+        RemoveTenantHeader();
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private void SetTenantHeader()

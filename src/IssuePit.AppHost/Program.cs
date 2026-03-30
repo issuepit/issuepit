@@ -332,7 +332,9 @@ var notesMigrator = builder.AddProject<Projects.IssuePit_Notes_Migrator>("notes-
 var notesApi = builder.AddProject<Projects.IssuePit_Notes_Api>("notes-api")
     .WithReference(notesDb)
     .WaitForCompletion(notesMigrator)
-    .WithHttpHealthCheck("/health", endpointName: "http");
+    .WaitFor(storage)
+    .WithHttpHealthCheck("/health", endpointName: "http")
+    .WithEnvironment("ImageStorage__ServiceUrl", storage.GetEndpoint("http"));
 
 var notesMcpServer = builder.AddProject<Projects.IssuePit_Notes_McpServer>("notes-mcp-server")
     .WithReference(notesApi)

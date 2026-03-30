@@ -21,6 +21,14 @@ else
 
 builder.Services.AddScoped<NotesTenantContext>();
 
+// Image storage (S3/B2/LocalStack)
+builder.Services.Configure<NotesImageStorageOptions>(
+    builder.Configuration.GetSection(NotesImageStorageOptions.SectionName));
+builder.Services.AddSingleton<NotesImageStorageService>();
+
+// Git sync background service for git-backed notebooks
+builder.Services.AddHostedService<GitSyncBackgroundService>();
+
 builder.Services.AddControllers()
     .AddJsonOptions(opts =>
     {

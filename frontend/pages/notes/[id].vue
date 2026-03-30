@@ -61,40 +61,9 @@
         </div>
       </div>
 
-      <!-- Markdown editor area -->
-      <div class="flex-1 flex gap-4 overflow-hidden">
-        <!-- Editor pane -->
-        <div class="flex-1 flex flex-col overflow-hidden">
-          <div class="flex items-center justify-between mb-2">
-            <span class="text-xs text-gray-500 uppercase tracking-wide">Markdown</span>
-            <div class="flex bg-gray-800 rounded p-0.5 border border-gray-700">
-              <button @click="editorMode = 'edit'"
-                :class="['px-2 py-0.5 text-xs rounded transition-colors', editorMode === 'edit' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-200']">
-                Edit
-              </button>
-              <button @click="editorMode = 'preview'"
-                :class="['px-2 py-0.5 text-xs rounded transition-colors', editorMode === 'preview' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-200']">
-                Preview
-              </button>
-              <button @click="editorMode = 'split'"
-                :class="['px-2 py-0.5 text-xs rounded transition-colors', editorMode === 'split' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-200']">
-                Split
-              </button>
-            </div>
-          </div>
-
-          <div class="flex-1 flex gap-4 overflow-hidden">
-            <!-- Editor -->
-            <textarea v-if="editorMode !== 'preview'" v-model="editContent"
-              class="flex-1 bg-gray-800/50 border border-gray-700 rounded-lg p-4 text-sm text-gray-200 font-mono resize-none focus:outline-none focus:ring-1 focus:ring-brand-500 overflow-y-auto"
-              placeholder="Start writing... Use [[Note Title]] to link to other notes." />
-
-            <!-- Preview -->
-            <div v-if="editorMode !== 'edit'"
-              class="flex-1 bg-gray-800/30 border border-gray-700 rounded-lg p-4 text-sm text-gray-300 overflow-y-auto prose prose-invert prose-sm max-w-none"
-              v-html="renderedContent" />
-          </div>
-        </div>
+      <!-- WYSIWYG editor -->
+      <div class="flex-1 overflow-hidden">
+        <NoteEditor v-model="editContent" :notebook-id="store.currentNote.notebookId" />
       </div>
 
       <!-- Outgoing links -->
@@ -153,32 +122,9 @@ const noteId = computed(() => route.params.id as string)
 const editTitle = ref('')
 const editContent = ref('')
 const editStatus = ref<NoteStatus>(NoteStatusEnum.Draft)
-const editorMode = ref<'edit' | 'preview' | 'split'>('split')
 const saving = ref(false)
 const showDeleteConfirm = ref(false)
 const versionConflict = ref(false)
-
-// Simple markdown rendering (basic — replaces wiki links and basic formatting)
-const renderedContent = computed(() => {
-  let html = editContent.value
-  // Escape HTML
-  html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  // Wiki links [[...]]
-  html = html.replace(/\[\[([^\]]+)\]\]/g, '<a href="#" class="text-brand-400 hover:text-brand-300 underline">$1</a>')
-  // Bold
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-  // Italic
-  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
-  // Code
-  html = html.replace(/`(.+?)`/g, '<code class="bg-gray-800 px-1 rounded text-sm">$1</code>')
-  // Headings
-  html = html.replace(/^### (.+)$/gm, '<h3 class="text-lg font-semibold text-white mt-4 mb-2">$1</h3>')
-  html = html.replace(/^## (.+)$/gm, '<h2 class="text-xl font-bold text-white mt-6 mb-3">$1</h2>')
-  html = html.replace(/^# (.+)$/gm, '<h1 class="text-2xl font-bold text-white mt-8 mb-4">$1</h1>')
-  // Line breaks
-  html = html.replace(/\n/g, '<br />')
-  return html
-})
 
 async function saveNote() {
   if (!store.currentNote) return
