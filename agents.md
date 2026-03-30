@@ -16,6 +16,15 @@ this file descripes rules on how agenting coding tools work with this repository
 - AI agents must execute tests before ending a task/session
 - E2E tests for Vue use the Aspire backend
 - All PRs run all actions for frontend and backend
+- **The Aspire stack runs in the sandboxed agent environment** — `copilot-setup-steps.yml` pre-installs all required infrastructure (Docker images, frontend npm dependencies, Playwright). Always run E2E tests at the end of a session using:
+  ```sh
+  dotnet test src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj \
+    --no-build --configuration Release \
+    --filter "Category=E2E|Category=Smoke" \
+    --verbosity normal --blame-hang-timeout 4min
+  ```
+  Run the command **twice** and report both total runtimes to confirm stability.
+  > **Note:** The GitHub-hosted runner sets `DOTNET_SYSTEM_NET_DISABLEIPV6=1`, which prevents the .NET Aspire client from reaching the DCP gRPC endpoint on `[::1]`. The `copilot-setup-steps.yml` re-enables IPv6 and sets `CICD_E2E_HELPER_ACT_IMAGE` via `GITHUB_ENV` so Aspire and Docker-runtime CI/CD tests start correctly. If you ever see `Polly.Timeout.TimeoutRejectedException` when starting the Aspire fixture, verify that `DOTNET_SYSTEM_NET_DISABLEIPV6` is `0` or unset.
 - Keep changes minimal; create commits after each task/work piece; don't do refactors
 - Check that helpers and other methods were not created twice
 - Do not remove comments

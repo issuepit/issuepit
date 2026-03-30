@@ -1,0 +1,133 @@
+name: Copilot Setup Steps
+
+# Runs before each GitHub Copilot coding-agent session to pre-install the
+# infrastructure the agent needs for building and running E2E tests.
+# This mirrors the e2e-infra-setup composite action used in backend.yml,
+# but is scoped to what the coding agent actually requires (no Vosk model,
+# no ffmpeg — those are only needed for Voice suites).
+
+on:
+  workflow_dispatch:
+
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Authenticate to GHCR so the helper-act image (used by Docker-runtime CI/CD
+      # E2E tests) can be pulled. The default GITHUB_TOKEN has packages:read.
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # Cache Docker images as tar files so agent sessions skip the pull entirely.
+      - name: Cache Docker images
+        id: cache-docker
+        uses: actions/cache@v4
+        with:
+          path: /tmp/docker-images
+          key: docker-v1-false-postgres17.6-valkey9.0-kafka3.9.0-node20slim-localstack4.3-helperact-main-dotnet10-node24
+
+      # Build act and pull/load Docker images in parallel to minimise setup time.
+      - name: Build act and pull Docker images (parallel)
+        env:
+          DOCKER_CACHE_HIT: ${{ steps.cache-docker.outputs.cache-hit }}
+        run: |
+          ACT_COMMIT=a471da174034e4d6db6fc89b0ea7bfcd38b9236a
+
+          # Clone and build the issuepit/act fork in the background.
+          # The fork adds --container-name-suffix which is required by NativeCiCdRuntime.
+          (
+            git init /tmp/issuepit-act
+            cd /tmp/issuepit-act
+            git remote add origin https://github.com/issuepit/act.git
+            git fetch --depth 1 origin "$ACT_COMMIT"
+            git checkout FETCH_HEAD
+            go build -ldflags "-X main.version=${ACT_COMMIT}" -o /usr/local/bin/act main.go
+            rm -rf /tmp/issuepit-act
+          ) &
+
+          # Handle Docker images concurrently with the act build.
+          (
+            if [ "$DOCKER_CACHE_HIT" = 'true' ]; then
+              docker load -i /tmp/docker-images/postgres-17.6.tar &
+              docker load -i /tmp/docker-images/valkey-9.0.tar &
+              docker load -i /tmp/docker-images/kafka-3.9.0.tar &
+              docker load -i /tmp/docker-images/node-20-slim.tar &
+              docker load -i /tmp/docker-images/localstack-4.3.tar &
+              if [ -f /tmp/docker-images/helper-act.tar ]; then
+                docker load -i /tmp/docker-images/helper-act.tar &
+              fi
+              wait
+            else
+              timeout 10m docker pull postgres:17.6 &
+              timeout 10m docker pull valkey/valkey:9.0 &
+              timeout 10m docker pull apache/kafka:3.9.0 &
+              timeout 10m docker pull node:20-slim &
+              timeout 10m docker pull localstack/localstack:4.3 &
+              timeout 10m docker pull ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24 &
+              wait
+
+              mkdir -p /tmp/docker-images
+              docker save postgres:17.6        -o /tmp/docker-images/postgres-17.6.tar &
+              docker save valkey/valkey:9.0    -o /tmp/docker-images/valkey-9.0.tar &
+              docker save apache/kafka:3.9.0   -o /tmp/docker-images/kafka-3.9.0.tar &
+              docker save node:20-slim         -o /tmp/docker-images/node-20-slim.tar &
+              docker save localstack/localstack:4.3 -o /tmp/docker-images/localstack-4.3.tar &
+              docker save ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24 \
+                -o /tmp/docker-images/helper-act.tar &
+              wait
+            fi
+          ) &
+
+          # Wait for both act build and Docker image handling to complete.
+          wait
+          act --version
+
+      # The GitHub-hosted runner sets DOTNET_SYSTEM_NET_DISABLEIPV6=1, which
+      # prevents the .NET Aspire client from connecting to DCP's IPv6 endpoint
+      # ([::1]). Re-enable IPv6 for all subsequent steps so Aspire can start.
+      - name: Set E2E environment variables
+        run: |
+          echo "DOTNET_SYSTEM_NET_DISABLEIPV6=0" >> "$GITHUB_ENV"
+          echo "CICD_E2E_HELPER_ACT_IMAGE=ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24" >> "$GITHUB_ENV"
+
+      # Build must happen before Playwright browser install because the install
+      # script is generated into the build output directory.
+      # continue-on-error: a build failure should not break the agent setup —
+      # the agent will see build errors when it runs 'dotnet build' itself.
+      - name: Build E2E tests
+        id: build-e2e
+        continue-on-error: true
+        run: dotnet build src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj --configuration Release
+
+      # Skip Playwright install if the build failed (no playwright.ps1 to run).
+      - name: Install Playwright browsers
+        if: steps.build-e2e.outcome == 'success'
+        run: |
+          PLAYWRIGHT_SCRIPT=$(find src/IssuePit.Tests.E2E/bin/Release -name 'playwright.ps1' | head -1)
+          pwsh "$PLAYWRIGHT_SCRIPT" install --with-deps chromium
