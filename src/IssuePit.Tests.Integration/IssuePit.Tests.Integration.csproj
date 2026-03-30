@@ -21,6 +21,10 @@
   <ItemGroup>
     <ProjectReference Include="..\IssuePit.Api\IssuePit.Api.csproj" />
     <ProjectReference Include="..\IssuePit.Core\IssuePit.Core.csproj" />
+    <ProjectReference Include="..\IssuePit.Notes.Api\IssuePit.Notes.Api.csproj">
+      <Aliases>NotesApi</Aliases>
+    </ProjectReference>
+    <ProjectReference Include="..\IssuePit.Notes.Core\IssuePit.Notes.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

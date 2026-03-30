@@ -52,5 +52,9 @@ if (app.Environment.IsDevelopment())
 
 app.Run();
 
-// Make Program accessible for integration tests (WebApplicationFactory)
-public partial class Program;
+// Marker class for WebApplicationFactory — in the IssuePit.Notes.Api namespace to avoid
+// ambiguity with the main API's implicit top-level Program class.
+namespace IssuePit.Notes.Api
+{
+    public class NotesApiMarker;
+}
