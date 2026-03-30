@@ -80,6 +80,7 @@
 
       <!-- Upload indicator -->
       <span v-if="uploading" class="text-xs text-gray-400 animate-pulse">Uploading...</span>
+      <span v-if="uploadError" class="text-xs text-red-400">{{ uploadError }}</span>
     </div>
 
     <!-- Editor content -->
@@ -114,6 +115,8 @@ import Placeholder from '@tiptap/extension-placeholder'
 import Image from '@tiptap/extension-image'
 import type { Note } from '~/types'
 
+const WIKI_LINK_MAX_QUERY_LENGTH = 50
+
 const props = defineProps<{
   modelValue: string
   notebookId?: string
@@ -125,6 +128,7 @@ const emit = defineEmits<{
 
 // Image upload state
 const uploading = ref(false)
+const uploadError = ref<string | null>(null)
 
 // Wiki-link suggestion state
 const showSuggestion = ref(false)
@@ -141,6 +145,7 @@ const notesApiBase = config.public.notesApiBase as string
 
 async function handleImageUpload(file: File): Promise<string | null> {
   uploading.value = true
+  uploadError.value = null
   try {
     const body = new FormData()
     body.append('file', file)
@@ -153,6 +158,8 @@ async function handleImageUpload(file: File): Promise<string | null> {
     return result.url
   } catch (e) {
     console.error('[NoteEditor] Image upload failed:', e)
+    uploadError.value = e instanceof Error ? e.message : 'Image upload failed. Please try again.'
+    setTimeout(() => { uploadError.value = null }, 5000)
     return null
   } finally {
     uploading.value = false
@@ -256,9 +263,10 @@ watch(() => props.modelValue, (newVal) => {
 function checkForWikiLink(e: ReturnType<typeof useEditor>['value']) {
   if (!e) return
   const { from } = e.state.selection
-  const textBefore = e.state.doc.textBetween(Math.max(0, from - 50), from, '')
+  const lookback = WIKI_LINK_MAX_QUERY_LENGTH + 2 // +2 for the [[ prefix
+  const textBefore = e.state.doc.textBetween(Math.max(0, from - lookback), from, '')
 
-  const match = textBefore.match(/\[\[([^\]]{0,50})$/)
+  const match = textBefore.match(new RegExp(`\\[\\[([^\\]]{0,${WIKI_LINK_MAX_QUERY_LENGTH}})$`))
   if (match) {
     const query = match[1]
     suggestionQuery.value = query

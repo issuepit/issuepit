@@ -78,11 +78,24 @@ public class GitSyncBackgroundService(
         var workDir = GetWorkDir(notebook);
         var branch = notebook.GitBranch ?? "main";
 
+        // Validate git URL and branch to prevent injection
+        if (string.IsNullOrWhiteSpace(notebook.GitRepoUrl) || notebook.GitRepoUrl.Contains('\n') || notebook.GitRepoUrl.Contains('\r'))
+        {
+            logger.LogWarning("Invalid git URL for notebook '{Name}' ({Id}), skipping sync", notebook.Name, notebook.Id);
+            return;
+        }
+
+        if (branch.Contains('\n') || branch.Contains('\r') || branch.Contains(' '))
+        {
+            logger.LogWarning("Invalid git branch for notebook '{Name}' ({Id}), skipping sync", notebook.Name, notebook.Id);
+            return;
+        }
+
         if (!Directory.Exists(Path.Combine(workDir, ".git")))
         {
             // Clone the repository
             logger.LogInformation("Cloning git repo for notebook '{Name}' ({Id})", notebook.Name, notebook.Id);
-            var cloneResult = await RunGitAsync(workDir, $"clone --branch {branch} --depth 1 {notebook.GitRepoUrl} .", ct);
+            var cloneResult = await RunGitAsync(workDir, ["clone", "--branch", branch, "--depth", "1", notebook.GitRepoUrl, "."], ct);
             if (!cloneResult.Success)
             {
                 logger.LogError("git clone failed for notebook '{Name}': {Error}", notebook.Name, cloneResult.Error);
@@ -92,7 +105,7 @@ public class GitSyncBackgroundService(
         else
         {
             // Pull latest changes
-            var pullResult = await RunGitAsync(workDir, "pull --ff-only", ct);
+            var pullResult = await RunGitAsync(workDir, ["pull", "--ff-only"], ct);
             if (!pullResult.Success)
             {
                 logger.LogWarning("git pull failed for notebook '{Name}': {Error}", notebook.Name, pullResult.Error);
@@ -106,12 +119,12 @@ public class GitSyncBackgroundService(
         await ExportNotesToFilesAsync(notebook, workDir, db, ct);
 
         // Commit and push if there are changes
-        var statusResult = await RunGitAsync(workDir, "status --porcelain", ct);
+        var statusResult = await RunGitAsync(workDir, ["status", "--porcelain"], ct);
         if (statusResult.Success && !string.IsNullOrWhiteSpace(statusResult.Output))
         {
-            await RunGitAsync(workDir, "add -A", ct);
-            await RunGitAsync(workDir, "commit -m \"sync: update notes from IssuePit\"", ct);
-            var pushResult = await RunGitAsync(workDir, "push", ct);
+            await RunGitAsync(workDir, ["add", "-A"], ct);
+            await RunGitAsync(workDir, ["commit", "-m", "sync: update notes from IssuePit"], ct);
+            var pushResult = await RunGitAsync(workDir, ["push"], ct);
             if (!pushResult.Success)
             {
                 logger.LogWarning("git push failed for notebook '{Name}': {Error}", notebook.Name, pushResult.Error);
@@ -214,10 +227,10 @@ public class GitSyncBackgroundService(
         return dir;
     }
 
-    private static async Task<GitResult> RunGitAsync(string workDir, string arguments, CancellationToken ct)
+    private static async Task<GitResult> RunGitAsync(string workDir, string[] arguments, CancellationToken ct)
     {
         Directory.CreateDirectory(workDir);
-        var psi = new ProcessStartInfo("git", arguments)
+        var psi = new ProcessStartInfo("git")
         {
             WorkingDirectory = workDir,
             RedirectStandardOutput = true,
@@ -225,13 +238,21 @@ public class GitSyncBackgroundService(
             UseShellExecute = false,
             CreateNoWindow = true,
         };
+        foreach (var arg in arguments)
+            psi.ArgumentList.Add(arg);
 
-        using var process = Process.Start(psi)!;
-        var stdout = await process.StandardOutput.ReadToEndAsync(ct);
-        var stderr = await process.StandardError.ReadToEndAsync(ct);
-        await process.WaitForExitAsync(ct);
+        var process = Process.Start(psi);
+        if (process is null)
+            throw new InvalidOperationException("Failed to start git process. Ensure git is installed and available in PATH.");
 
-        return new GitResult(process.ExitCode == 0, stdout.Trim(), stderr.Trim());
+        using (process)
+        {
+            var stdout = await process.StandardOutput.ReadToEndAsync(ct);
+            var stderr = await process.StandardError.ReadToEndAsync(ct);
+            await process.WaitForExitAsync(ct);
+
+            return new GitResult(process.ExitCode == 0, stdout.Trim(), stderr.Trim());
+        }
     }
 
     private record GitResult(bool Success, string Output, string Error);

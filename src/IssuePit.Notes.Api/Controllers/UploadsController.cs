@@ -29,7 +29,7 @@ public class UploadsController(NotesTenantContext ctx, NotesImageStorageService 
             return BadRequest(new UploadErrorResponse($"File exceeds maximum size of {MaxImageSize / 1024 / 1024} MB."));
 
         if (!AllowedImageTypes.Contains(file.ContentType))
-            return BadRequest(new UploadErrorResponse($"File type '{file.ContentType}' is not allowed. Allowed types: {string.Join(", ", AllowedImageTypes)}."));
+            return BadRequest(new UploadErrorResponse("Unsupported image file type. Allowed: JPEG, PNG, GIF, WebP, SVG."));
 
         await using var stream = file.OpenReadStream();
         var url = await storage.UploadImageAsync(stream, file.FileName, file.ContentType, ct);
