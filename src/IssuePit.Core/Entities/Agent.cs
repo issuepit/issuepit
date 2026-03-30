@@ -113,6 +113,22 @@ public class Agent
     /// </summary>
     public bool ManualMode { get; set; }
 
+    /// <summary>
+    /// When true, this agent is a shell/wrapper that maps to a built-in opencode agent
+    /// (e.g. build, explore, plan, summary, title). Shell agents do not carry their own
+    /// system prompt or Docker image — they rely on the opencode default configuration.
+    /// The UI shows a link to the official opencode repository for these agents.
+    /// </summary>
+    public bool IsShellAgent { get; set; }
+
+    /// <summary>
+    /// The opencode agent name this agent maps to. For shell/wrapper agents this is a built-in
+    /// name (e.g. "build", "explore", "plan"). For regular agents this can optionally override
+    /// the name derived from <see cref="Name"/>. Used as the <c>--agent</c> CLI argument.
+    /// </summary>
+    [MaxLength(200)]
+    public string? OpenCodeAgentName { get; set; }
+
     public ICollection<Agent> ChildAgents { get; set; } = [];
 
     public ICollection<AgentMcpServer> AgentMcpServers { get; set; } = [];

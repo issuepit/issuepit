@@ -471,4 +471,113 @@ public class RunnerCommandBuilderTests
         var args = RunnerCommandBuilder.BuildCmdList(agent, issue, filePaths: paths);
         Assert.DoesNotContain("--file", args);
     }
+
+    // --- --agent flag ---
+
+    [Fact]
+    public void BuildArgs_OpenCode_ContainsAgentFlag()
+    {
+        var agent = MakeAgent(RunnerType.OpenCode);
+        agent.Name = "Code Agent";
+        var issue = MakeIssue("Fix the bug");
+        var args = RunnerCommandBuilder.BuildArgs(agent, issue);
+        Assert.Contains("--agent", args);
+        Assert.Contains("code-agent", args);
+    }
+
+    [Fact]
+    public void BuildCmdList_OpenCode_ContainsAgentFlag()
+    {
+        var agent = MakeAgent(RunnerType.OpenCode);
+        agent.Name = "Code Agent";
+        var issue = MakeIssue("Fix the bug");
+        var args = RunnerCommandBuilder.BuildCmdList(agent, issue);
+        var argsList = args.ToList();
+        var agentIdx = argsList.IndexOf("--agent");
+        Assert.True(agentIdx >= 0, "--agent flag should be present");
+        Assert.Equal("code-agent", argsList[agentIdx + 1]);
+    }
+
+    [Fact]
+    public void BuildCmdList_OpenCode_ShellAgent_UsesOpenCodeAgentName()
+    {
+        var agent = MakeAgent(RunnerType.OpenCode);
+        agent.Name = "My Build Agent";
+        agent.IsShellAgent = true;
+        agent.OpenCodeAgentName = "build";
+        var issue = MakeIssue("Build project");
+        var args = RunnerCommandBuilder.BuildCmdList(agent, issue);
+        var argsList = args.ToList();
+        var agentIdx = argsList.IndexOf("--agent");
+        Assert.True(agentIdx >= 0, "--agent flag should be present");
+        Assert.Equal("build", argsList[agentIdx + 1]);
+    }
+
+    [Fact]
+    public void BuildCmdList_Codex_DoesNotContainAgentFlag()
+    {
+        var agent = MakeAgent(RunnerType.Codex);
+        agent.Name = "Code Agent";
+        var issue = MakeIssue("Fix");
+        var args = RunnerCommandBuilder.BuildCmdList(agent, issue);
+        Assert.DoesNotContain("--agent", args);
+    }
+
+    // --- Agent context in prompt ---
+
+    [Fact]
+    public void BuildTaskPrompt_WithAgentName_IncludesAgentIdentity()
+    {
+        var issue = MakeIssue("Fix the bug", number: 5);
+        var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue, agentName: "Code Agent");
+        Assert.Contains("**Code Agent** agent", prompt);
+        Assert.Contains("IssuePit issue #5", prompt);
+    }
+
+    [Fact]
+    public void BuildTaskPrompt_WithoutAgentName_IncludesGenericIdentity()
+    {
+        var issue = MakeIssue("Fix the bug", number: 3);
+        var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue);
+        Assert.Contains("IssuePit agent", prompt);
+        Assert.Contains("IssuePit issue #3", prompt);
+    }
+
+    [Fact]
+    public void BuildTaskPrompt_IncludesProjectAndIssueIds()
+    {
+        var issue = MakeIssue("Fix the bug", number: 42);
+        var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue);
+        Assert.Contains($"project {issue.ProjectId}", prompt);
+        Assert.Contains($"issue {issue.Id}", prompt);
+    }
+
+    // --- NormalizeAgentName ---
+
+    [Fact]
+    public void NormalizeAgentName_LowercasesAndReplacesSpaces()
+    {
+        Assert.Equal("code-agent", RunnerCommandBuilder.NormalizeAgentName("Code Agent"));
+        Assert.Equal("build", RunnerCommandBuilder.NormalizeAgentName("build"));
+        Assert.Equal("my-review-agent", RunnerCommandBuilder.NormalizeAgentName("My Review Agent"));
+    }
+
+    // --- ResolveOpenCodeAgentName ---
+
+    [Fact]
+    public void ResolveOpenCodeAgentName_ShellAgent_ReturnsOpenCodeAgentName()
+    {
+        var agent = MakeAgent(RunnerType.OpenCode);
+        agent.IsShellAgent = true;
+        agent.OpenCodeAgentName = "explore";
+        Assert.Equal("explore", RunnerCommandBuilder.ResolveOpenCodeAgentName(agent));
+    }
+
+    [Fact]
+    public void ResolveOpenCodeAgentName_RegularAgent_ReturnsNormalizedName()
+    {
+        var agent = MakeAgent(RunnerType.OpenCode);
+        agent.Name = "Code Agent";
+        Assert.Equal("code-agent", RunnerCommandBuilder.ResolveOpenCodeAgentName(agent));
+    }
 }

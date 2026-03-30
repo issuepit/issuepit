@@ -324,7 +324,7 @@ public class DockerAgentRuntime(
 
         // Build the task prompt (used for the exec flow and HTTP server mode).
         // In manual mode the user drives the agent interactively, so skip building/logging it.
-        var taskPrompt = useManualMode ? string.Empty : RunnerCommandBuilder.BuildTaskPrompt(issue, comments);
+        var taskPrompt = useManualMode ? string.Empty : RunnerCommandBuilder.BuildTaskPrompt(issue, comments, agent.Name);
 
         // Log the task prompt that will be passed to the agent so it is always visible in the logs.
         if (!useManualMode)
