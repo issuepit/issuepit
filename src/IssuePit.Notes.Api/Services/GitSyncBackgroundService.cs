@@ -1,15 +1,17 @@
-using System.Diagnostics;
 using IssuePit.Notes.Core.Data;
 using IssuePit.Notes.Core.Entities;
 using IssuePit.Notes.Core.Enums;
+using LibGit2Sharp;
 using Microsoft.EntityFrameworkCore;
+using NoteEntity = IssuePit.Notes.Core.Entities.Note;
 
 namespace IssuePit.Notes.Api.Services;
 
 /// <summary>
-/// Background service that periodically syncs git-backed notebooks by pulling remote changes
-/// and pushing local modifications. Each git-backed notebook is stored in a local working
-/// directory under <see cref="GitSyncOptions.WorkDir"/>.
+/// Background service that periodically syncs git-backed notebooks using LibGit2Sharp.
+/// Clones the remote repository on first run, pulls changes on subsequent runs,
+/// imports new/changed markdown files into the database, exports DB changes to files,
+/// and commits + pushes the result back to the remote.
 /// </summary>
 public class GitSyncBackgroundService(
     ILogger<GitSyncBackgroundService> logger,
@@ -23,7 +25,7 @@ public class GitSyncBackgroundService(
     {
         logger.LogInformation("GitSyncBackgroundService started; interval = {Interval}s", _interval.TotalSeconds);
 
-        // Startup delay
+        // Startup delay — wait for the application to fully initialise
         try { await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken); }
         catch (OperationCanceledException) { return; }
 
@@ -64,99 +66,106 @@ public class GitSyncBackgroundService(
         {
             try
             {
-                await SyncNotebookAsync(notebook, db, ct);
+                // LibGit2Sharp is synchronous — run on thread pool to avoid blocking the async loop
+                await Task.Run(() => SyncNotebook(notebook, db), ct);
             }
             catch (Exception ex)
             {
                 logger.LogWarning(ex, "Git sync failed for notebook '{Name}' ({Id})", notebook.Name, notebook.Id);
             }
         }
+
+        await db.SaveChangesAsync(ct);
     }
 
-    private async Task SyncNotebookAsync(Notebook notebook, NotesDbContext db, CancellationToken ct)
+    private void SyncNotebook(Notebook notebook, NotesDbContext db)
     {
         var workDir = GetWorkDir(notebook);
         var branch = notebook.GitBranch ?? "main";
+        var repoUrl = notebook.GitRepoUrl!;
 
-        // Validate git URL and branch to prevent injection
-        if (string.IsNullOrWhiteSpace(notebook.GitRepoUrl) || notebook.GitRepoUrl.Contains('\n') || notebook.GitRepoUrl.Contains('\r'))
+        if (!Repository.IsValid(workDir))
         {
-            logger.LogWarning("Invalid git URL for notebook '{Name}' ({Id}), skipping sync", notebook.Name, notebook.Id);
-            return;
-        }
-
-        if (branch.Contains('\n') || branch.Contains('\r') || branch.Contains(' '))
-        {
-            logger.LogWarning("Invalid git branch for notebook '{Name}' ({Id}), skipping sync", notebook.Name, notebook.Id);
-            return;
-        }
-
-        if (!Directory.Exists(Path.Combine(workDir, ".git")))
-        {
-            // Clone the repository
             logger.LogInformation("Cloning git repo for notebook '{Name}' ({Id})", notebook.Name, notebook.Id);
-            var cloneResult = await RunGitAsync(workDir, ["clone", "--branch", branch, "--depth", "1", notebook.GitRepoUrl, "."], ct);
-            if (!cloneResult.Success)
+            Directory.CreateDirectory(workDir);
+            Repository.Clone(repoUrl, workDir, new CloneOptions
             {
-                logger.LogError("git clone failed for notebook '{Name}': {Error}", notebook.Name, cloneResult.Error);
-                return;
-            }
-        }
-        else
-        {
-            // Pull latest changes
-            var pullResult = await RunGitAsync(workDir, ["pull", "--ff-only"], ct);
-            if (!pullResult.Success)
-            {
-                logger.LogWarning("git pull failed for notebook '{Name}': {Error}", notebook.Name, pullResult.Error);
-            }
+                BranchName = branch,
+                IsBare = false,
+            });
         }
 
-        // Import new/changed markdown files into the database
-        await ImportMarkdownFilesAsync(notebook, workDir, db, ct);
+        using var repo = new Repository(workDir);
 
-        // Export notes from DB to files (for notes created/modified in the UI)
-        await ExportNotesToFilesAsync(notebook, workDir, db, ct);
+        // Pull (fetch + fast-forward)
+        var remote = repo.Network.Remotes.FirstOrDefault()
+            ?? throw new InvalidOperationException($"No remote configured in notebook '{notebook.Name}'.");
 
-        // Commit and push if there are changes
-        var statusResult = await RunGitAsync(workDir, ["status", "--porcelain"], ct);
-        if (statusResult.Success && !string.IsNullOrWhiteSpace(statusResult.Output))
+        var refSpecs = remote.FetchRefSpecs.Select(r => r.Specification).ToArray();
+        Commands.Fetch(repo, remote.Name, refSpecs, new FetchOptions(), logMessage: null);
+        logger.LogDebug("Fetched from remote '{Remote}' for notebook '{Name}'", remote.Name, notebook.Name);
+
+        var remoteBranch = repo.Branches[$"{remote.Name}/{branch}"];
+        if (remoteBranch != null)
         {
-            await RunGitAsync(workDir, ["add", "-A"], ct);
-            await RunGitAsync(workDir, ["commit", "-m", "sync: update notes from IssuePit"], ct);
-            var pushResult = await RunGitAsync(workDir, ["push"], ct);
-            if (!pushResult.Success)
+            var localBranch = repo.Branches[branch];
+            if (localBranch == null)
             {
-                logger.LogWarning("git push failed for notebook '{Name}': {Error}", notebook.Name, pushResult.Error);
+                localBranch = repo.CreateBranch(branch, remoteBranch.Tip);
+                repo.Branches.Update(localBranch, b => b.TrackedBranch = remoteBranch.CanonicalName);
             }
             else
             {
-                logger.LogInformation("Pushed changes for notebook '{Name}'", notebook.Name);
+                var divergence = repo.ObjectDatabase.CalculateHistoryDivergence(localBranch.Tip, remoteBranch.Tip);
+                if (divergence.AheadBy == 0 && divergence.BehindBy > 0)
+                {
+                    repo.Refs.UpdateTarget(localBranch.Reference, remoteBranch.Tip.Id);
+                    logger.LogDebug("Fast-forwarded '{Branch}' for notebook '{Name}'", branch, notebook.Name);
+                }
             }
         }
+
+        // Import markdown files from the working tree into DB
+        ImportMarkdownFiles(notebook, workDir, db);
+
+        // Export DB changes to files
+        ExportNotesToFiles(notebook, workDir, db);
+
+        // Stage all changes and commit+push if anything changed
+        var status = repo.RetrieveStatus();
+        if (!status.IsDirty) return;
+
+        Commands.Stage(repo, "*");
+
+        var signature = new Signature("IssuePit Notes Sync", "notes-sync@issuepit.local", DateTimeOffset.UtcNow);
+        repo.Commit("sync: update notes from IssuePit", signature, signature);
+        logger.LogInformation("Committed changes for notebook '{Name}'", notebook.Name);
+
+        var pushRefSpec = $"refs/heads/{branch}:refs/heads/{branch}";
+        repo.Network.Push(remote, pushRefSpec, new PushOptions());
+        logger.LogInformation("Pushed changes for notebook '{Name}'", notebook.Name);
     }
 
-    private async Task ImportMarkdownFilesAsync(Notebook notebook, string workDir, NotesDbContext db, CancellationToken ct)
+    private void ImportMarkdownFiles(Notebook notebook, string workDir, NotesDbContext db)
     {
-        var mdFiles = Directory.GetFiles(workDir, "*.md", SearchOption.AllDirectories)
-            .Where(f => !f.Contains(Path.Combine(workDir, ".git")))
+        var mdFiles = Directory
+            .GetFiles(workDir, "*.md", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}.git{Path.DirectorySeparatorChar}"))
             .ToList();
 
         foreach (var filePath in mdFiles)
         {
-            var relativePath = Path.GetRelativePath(workDir, filePath);
-            var title = Path.GetFileNameWithoutExtension(relativePath);
-            var slug = title.ToLowerInvariant().Replace(' ', '-');
-            var content = await File.ReadAllTextAsync(filePath, ct);
+            var title = Path.GetFileNameWithoutExtension(filePath);
+            var slug = GenerateSlug(title);
+            var content = File.ReadAllText(filePath);
             var fileLastWrite = File.GetLastWriteTimeUtc(filePath);
 
-            var existingNote = await db.Notes
-                .FirstOrDefaultAsync(n => n.NotebookId == notebook.Id && n.Slug == slug, ct);
+            var existingNote = db.Notes
+                .FirstOrDefault(n => n.NotebookId == notebook.Id && n.Slug == slug);
 
             if (existingNote is null)
             {
-                // Import new note
-                var note = new Note
+                db.Notes.Add(new NoteEntity
                 {
                     Id = Guid.NewGuid(),
                     TenantId = notebook.TenantId,
@@ -168,52 +177,41 @@ public class GitSyncBackgroundService(
                     Version = 1,
                     CreatedAt = fileLastWrite,
                     UpdatedAt = fileLastWrite,
-                };
-                db.Notes.Add(note);
-                logger.LogDebug("Imported note '{Title}' from file for notebook '{Notebook}'", title, notebook.Name);
+                });
+                logger.LogDebug("Imported note '{Title}' from file", title);
             }
             else if (fileLastWrite > existingNote.UpdatedAt)
             {
-                // Update from file (file is newer than DB)
                 existingNote.Content = content;
                 existingNote.Title = title;
                 existingNote.UpdatedAt = fileLastWrite;
                 existingNote.Version++;
-                logger.LogDebug("Updated note '{Title}' from file for notebook '{Notebook}'", title, notebook.Name);
+                logger.LogDebug("Updated note '{Title}' from file (file is newer)", title);
             }
         }
-
-        await db.SaveChangesAsync(ct);
     }
 
-    private async Task ExportNotesToFilesAsync(Notebook notebook, string workDir, NotesDbContext db, CancellationToken ct)
+    private void ExportNotesToFiles(Notebook notebook, string workDir, NotesDbContext db)
     {
-        var notes = await db.Notes
-            .Where(n => n.NotebookId == notebook.Id)
-            .ToListAsync(ct);
-
+        var notes = db.Notes.Where(n => n.NotebookId == notebook.Id).ToList();
         foreach (var note in notes)
         {
-            var fileName = $"{note.Slug}.md";
-            var filePath = Path.Combine(workDir, fileName);
-
+            var filePath = Path.Combine(workDir, $"{note.Slug}.md");
             if (File.Exists(filePath))
             {
                 var fileLastWrite = File.GetLastWriteTimeUtc(filePath);
                 if (note.UpdatedAt > fileLastWrite)
                 {
-                    // DB is newer — export to file
-                    await File.WriteAllTextAsync(filePath, note.Content, ct);
+                    File.WriteAllText(filePath, note.Content);
                     File.SetLastWriteTimeUtc(filePath, note.UpdatedAt);
-                    logger.LogDebug("Exported note '{Title}' to file for notebook '{Notebook}'", note.Title, notebook.Name);
+                    logger.LogDebug("Exported note '{Title}' to file (DB is newer)", note.Title);
                 }
             }
             else
             {
-                // New note — create file
-                await File.WriteAllTextAsync(filePath, note.Content, ct);
+                File.WriteAllText(filePath, note.Content);
                 File.SetLastWriteTimeUtc(filePath, note.UpdatedAt);
-                logger.LogDebug("Created file for note '{Title}' in notebook '{Notebook}'", note.Title, notebook.Name);
+                logger.LogDebug("Created file for note '{Title}'", note.Title);
             }
         }
     }
@@ -227,33 +225,27 @@ public class GitSyncBackgroundService(
         return dir;
     }
 
-    private static async Task<GitResult> RunGitAsync(string workDir, string[] arguments, CancellationToken ct)
+    /// <summary>
+    /// Generates a URL/filename-safe slug from a note title.
+    /// Collapses whitespace, removes non-alphanumeric characters, lowercases.
+    /// </summary>
+    private static string GenerateSlug(string title)
     {
-        Directory.CreateDirectory(workDir);
-        var psi = new ProcessStartInfo("git")
-        {
-            WorkingDirectory = workDir,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-        foreach (var arg in arguments)
-            psi.ArgumentList.Add(arg);
+        if (string.IsNullOrWhiteSpace(title)) return "untitled";
 
-        var process = Process.Start(psi);
-        if (process is null)
-            throw new InvalidOperationException("Failed to start git process. Ensure git is installed and available in PATH.");
+        // Normalise unicode and lowercase
+        var slug = title.Normalize(System.Text.NormalizationForm.FormD)
+            .ToLowerInvariant();
 
-        using (process)
-        {
-            var stdout = await process.StandardOutput.ReadToEndAsync(ct);
-            var stderr = await process.StandardError.ReadToEndAsync(ct);
-            await process.WaitForExitAsync(ct);
+        // Replace whitespace sequences with a single dash
+        slug = System.Text.RegularExpressions.Regex.Replace(slug, @"\s+", "-");
 
-            return new GitResult(process.ExitCode == 0, stdout.Trim(), stderr.Trim());
-        }
+        // Keep only alphanumeric, dashes, and dots
+        slug = System.Text.RegularExpressions.Regex.Replace(slug, @"[^a-z0-9\-\.]", "");
+
+        // Collapse consecutive dashes
+        slug = System.Text.RegularExpressions.Regex.Replace(slug, @"-{2,}", "-");
+
+        return slug.Trim('-');
     }
-
-    private record GitResult(bool Success, string Output, string Error);
 }
