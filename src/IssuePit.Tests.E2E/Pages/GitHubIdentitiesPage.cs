@@ -31,17 +31,34 @@ public class GitHubIdentitiesPage(IPage page)
 
     /// <summary>
     /// Returns true when the empty-state placeholder ("No GitHub identities configured yet.") is visible.
+    /// Waits up to <see cref="E2ETimeouts.Default"/> for the async API response to render the empty state.
     /// </summary>
     public async Task<bool> IsEmptyStateVisibleAsync()
     {
-        var locator = page.Locator("text=No GitHub identities configured yet.");
-        return await locator.IsVisibleAsync();
+        try
+        {
+            await page.WaitForSelectorAsync("text=No GitHub identities configured yet.",
+                new PageWaitForSelectorOptions { State = WaitForSelectorState.Visible, Timeout = E2ETimeouts.Default });
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            return false;
+        }
     }
 
     /// <summary>Returns true when the "Add Identity" button is visible on the page.</summary>
     public async Task<bool> IsAddButtonVisibleAsync()
     {
-        var locator = page.Locator("button:has-text('Add Identity')");
-        return await locator.IsVisibleAsync();
+        try
+        {
+            await page.WaitForSelectorAsync("button:has-text('Add Identity')",
+                new PageWaitForSelectorOptions { State = WaitForSelectorState.Visible, Timeout = E2ETimeouts.Default });
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            return false;
+        }
     }
 }
