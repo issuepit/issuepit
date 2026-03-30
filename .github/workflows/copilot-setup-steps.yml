@@ -44,6 +44,15 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      # Pre-build the frontend to warm the Nuxt cache (.nuxt/).
+      # When Aspire starts the frontend via 'npm run dev', it will find the
+      # already-compiled cache and start in seconds instead of the ~3 minutes
+      # a cold Nuxt build takes — preventing the first E2E test from exceeding
+      # the 4-minute blame-hang-timeout.
+      - name: Pre-build frontend (warm Nuxt cache)
+        working-directory: frontend
+        run: npx nuxt build
+
       # Cache Docker images as tar files so agent sessions skip the pull entirely.
       - name: Cache Docker images
         id: cache-docker
@@ -110,11 +119,16 @@ jobs:
 
       # The GitHub-hosted runner sets DOTNET_SYSTEM_NET_DISABLEIPV6=1, which
       # prevents the .NET Aspire client from connecting to DCP's IPv6 endpoint
-      # ([::1]). Re-enable IPv6 for all subsequent steps so Aspire can start.
+      # ([::1]). Re-enable IPv6 so Aspire can start.
+      # Written to both GITHUB_ENV (for subsequent workflow steps) and
+      # /etc/environment (system-wide, so every new agent shell session picks
+      # it up without needing to source a profile file).
       - name: Set E2E environment variables
         run: |
           echo "DOTNET_SYSTEM_NET_DISABLEIPV6=0" >> "$GITHUB_ENV"
           echo "CICD_E2E_HELPER_ACT_IMAGE=ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24" >> "$GITHUB_ENV"
+          echo "DOTNET_SYSTEM_NET_DISABLEIPV6=0" | sudo tee -a /etc/environment
+          echo "CICD_E2E_HELPER_ACT_IMAGE=ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24" | sudo tee -a /etc/environment
 
       # Build must happen before Playwright browser install because the install
       # script is generated into the build output directory.
