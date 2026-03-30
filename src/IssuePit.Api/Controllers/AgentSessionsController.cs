@@ -3,6 +3,7 @@ using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
+using IssuePit.Core.Runners;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -512,6 +513,74 @@ public class AgentSessionsController(
 
         return Ok(new { message.Id, Status = message.Status.ToString() });
     }
+
+    /// <summary>
+    /// Creates a completed agent session pre-seeded with the given log lines.
+    /// Intended for E2E tests that need to verify the session detail UI without running a real agent container.
+    /// Each raw log line is parsed by <see cref="OpenCodeJsonLogParser"/> before being stored,
+    /// so callers can supply raw opencode JSON lines exactly as they would appear in real agent output.
+    /// </summary>
+    [HttpPost("seed-logs")]
+    public async Task<IActionResult> SeedLogs([FromBody] SeedLogsRequest request, CancellationToken cancellationToken)
+    {
+        if (tenant.CurrentTenant is null) return Unauthorized();
+
+        var project = await db.Projects
+            .Include(p => p.Organization)
+            .Where(p => p.Id == request.ProjectId && p.Organization.TenantId == tenant.CurrentTenant.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (project is null) return NotFound(new { error = "Project not found." });
+
+        var agent = await db.Agents
+            .FirstOrDefaultAsync(a => a.Id == request.AgentId && a.Organization.TenantId == tenant.CurrentTenant.Id,
+                cancellationToken);
+
+        if (agent is null) return NotFound(new { error = "Agent not found." });
+
+        var session = new AgentSession
+        {
+            Id = Guid.NewGuid(),
+            AgentId = agent.Id,
+            ProjectId = project.Id,
+            IssueId = null,
+            Status = AgentSessionStatus.Succeeded,
+            StartedAt = DateTime.UtcNow.AddMinutes(-1),
+            EndedAt = DateTime.UtcNow,
+        };
+        db.AgentSessions.Add(session);
+
+        AgentLogSection? section = null;
+        if (!string.IsNullOrEmpty(request.Section) && Enum.TryParse<AgentLogSection>(request.Section, ignoreCase: true, out var parsedSection))
+            section = parsedSection;
+
+        var now = DateTime.UtcNow.AddMinutes(-1);
+        foreach (var line in request.LogLines)
+        {
+            var parsed = OpenCodeJsonLogParser.ParseLine(line);
+            // OpenCodeJsonLogParser returns an empty string for session-start events that carry no
+            // meaningful stats (inputTokens/outputTokens/cost all null). These are intentionally
+            // omitted — they would produce blank log entries that add no value.
+            if (parsed.Length == 0) continue;
+
+            db.AgentSessionLogs.Add(new AgentSessionLog
+            {
+                Id = Guid.NewGuid(),
+                AgentSessionId = session.Id,
+                Line = parsed,
+                Stream = LogStream.Stdout,
+                Timestamp = now,
+                Section = section,
+                SectionIndex = request.SectionIndex,
+            });
+
+            now = now.AddMilliseconds(1);
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        return Created($"/api/agent-sessions/{session.Id}", new SeedLogsResponse(session.Id, project.Id));
+    }
 }
 
 public record RetrySessionResponse(Guid RetriedSessionId);
@@ -573,3 +642,15 @@ public record AgentSessionMessageDto(
     string? AgentOverrideName,
     DateTime CreatedAt,
     DateTime? ProcessedAt);
+
+/// <summary>Request body for <c>POST /api/agent-sessions/seed-logs</c>.</summary>
+public record SeedLogsRequest(
+    Guid ProjectId,
+    Guid AgentId,
+    string[] LogLines,
+    /// <summary>Optional section name (e.g. "CiCdFixRun", "InitialAgentRun"). Null for no section.</summary>
+    string? Section = null,
+    int SectionIndex = 0);
+
+/// <summary>Response for <c>POST /api/agent-sessions/seed-logs</c>.</summary>
+public record SeedLogsResponse(Guid SessionId, Guid ProjectId);
