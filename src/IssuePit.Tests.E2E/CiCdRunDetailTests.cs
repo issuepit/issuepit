@@ -168,12 +168,7 @@ public class CiCdRunDetailTests : IAsyncLifetime
                 $"Expected the Create Issue modal to show log lines but preview was: '{previewText}'");
 
             // Submit the form — the page should navigate to the new issue.
-            await runPage.SubmitCreateIssueAsync();
-
-            // After modal closes, the page should navigate to an issue detail URL.
-            await page.WaitForURLAsync(
-                $"{FrontendUrl}/projects/{projectId}/issues/**",
-                new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
+            await runPage.SubmitCreateIssueAsync($"{FrontendUrl}/projects/{projectId}/issues/**");
 
             Assert.True(runPage.IsOnIssuePage(),
                 $"Expected navigation to an issue detail page after creating the issue, but URL was: {page.Url}");

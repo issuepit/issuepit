@@ -283,15 +283,46 @@ public class CiCdRunPage(IPage page)
     }
 
     /// <summary>
-    /// Submits the create-issue form in the modal and waits for the modal to close.
+    /// Submits the create-issue form in the modal and waits for the page to navigate to the
+    /// new issue URL.  The <paramref name="expectedIssueUrlPattern"/> should be a Playwright
+    /// glob such as <c>"{frontendUrl}/projects/{id}/issues/**"</c>.
     /// </summary>
-    public async Task SubmitCreateIssueAsync()
+    /// <remarks>
+    /// The watcher is registered BEFORE the click so it cannot miss a fast navigation.
+    /// If the navigation does not happen within <see cref="E2ETimeouts.Short"/> (the API call
+    /// in the store may have failed silently and the Vue component closes the modal without
+    /// calling <c>navigateTo</c>), the method checks whether the modal is still open and
+    /// retries the click once before waiting with <see cref="E2ETimeouts.NavigationLong"/>.
+    /// </remarks>
+    public async Task SubmitCreateIssueAsync(string expectedIssueUrlPattern)
     {
+        // Register the URL watcher BEFORE clicking so a fast navigation is not missed.
+        var navTask = page.WaitForURLAsync(expectedIssueUrlPattern,
+            new PageWaitForURLOptions { Timeout = E2ETimeouts.Short });
         await page.ClickAsync("[data-testid='create-issue-submit']");
-        // Wait for modal to close
-        await page.WaitForSelectorAsync(
-            "text=Create Issue from",
-            new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation, State = WaitForSelectorState.Hidden });
+        try
+        {
+            await navTask;
+        }
+        catch (TimeoutException)
+        {
+            // Navigation did not start within Short ms. Two possible causes:
+            //   1. The click did not register (Vue hydration race) — modal still open.
+            //   2. The API call failed silently (store caught exception, returned undefined) —
+            //      modal closed but navigateTo was never called.
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            var modalStillOpen = await page.IsVisibleAsync("text=Create Issue from");
+            var retryNav = page.WaitForURLAsync(expectedIssueUrlPattern,
+                new PageWaitForURLOptions { Timeout = E2ETimeouts.NavigationLong });
+            if (modalStillOpen)
+            {
+                // Case 1: click did not register — retry the click.
+                await page.ClickAsync("[data-testid='create-issue-submit']");
+            }
+            // Case 2 (modal already closed): just wait for the navigation that Vue may have
+            // started just after the Short window expired.
+            await retryNav;
+        }
     }
 
     /// <summary>
