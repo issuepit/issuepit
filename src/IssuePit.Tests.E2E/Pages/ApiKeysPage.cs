@@ -13,7 +13,7 @@ public class ApiKeysPage(IPage page)
     public async Task GotoAsync()
     {
         await page.GotoAsync("/config/keys");
-        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
 
         // Retry once in case the heading was not yet visible due to a Vue SSR hydration race.
         try
@@ -24,7 +24,7 @@ public class ApiKeysPage(IPage page)
         catch (TimeoutException)
         {
             await page.GotoAsync("/config/keys");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
             await page.WaitForSelectorAsync("h2:has-text('API Keys')");
         }
     }

@@ -16,7 +16,7 @@ public class KanbanPage(IPage page)
         try
         {
             await page.GotoAsync($"/projects/{projectId}/kanban");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
             await page.WaitForSelectorAsync("a:text-is('Kanban')",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
         }
@@ -24,7 +24,7 @@ public class KanbanPage(IPage page)
         {
             await Task.Delay(E2ETimeouts.RetryDelay);
             await page.GotoAsync($"/projects/{projectId}/kanban");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
             await page.WaitForSelectorAsync("a:text-is('Kanban')");
         }
     }
@@ -120,7 +120,7 @@ public class KanbanPage(IPage page)
     public async Task GotoManageLanesPageAsync(string projectId)
     {
         await page.GotoAsync($"/projects/{projectId}/kanban/lanes");
-        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
         // Wait for the "Lanes" heading which lives inside <template v-else-if="activeBoardId">.
         // That block only renders once fetchBoards() resolves AND onMounted sets activeBoardId,
         // so its presence guarantees the full content (incl. Orchestrator Schedule) is rendered.

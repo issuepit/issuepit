@@ -19,7 +19,7 @@ public class IssuesPage(IPage page)
         try
         {
             await page.GotoAsync($"/projects/{projectId}/issues");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
             await page.WaitForSelectorAsync("a:text-is('Issues')",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
         }
@@ -27,7 +27,7 @@ public class IssuesPage(IPage page)
         {
             await Task.Delay(NavigationRetryDelayMs);
             await page.GotoAsync($"/projects/{projectId}/issues");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
             await page.WaitForSelectorAsync("a:text-is('Issues')");
         }
     }

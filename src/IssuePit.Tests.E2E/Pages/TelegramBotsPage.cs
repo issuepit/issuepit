@@ -14,7 +14,7 @@ public class TelegramBotsPage(IPage page)
     public async Task GotoAsync()
     {
         await page.GotoAsync("/config/telegram-bots");
-        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
 
         // Retry once in case the heading was not yet visible due to a Vue SSR hydration race.
         try
@@ -25,7 +25,7 @@ public class TelegramBotsPage(IPage page)
         catch (TimeoutException)
         {
             await page.GotoAsync("/config/telegram-bots");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
             await page.WaitForSelectorAsync("h2:has-text('Telegram Bots')");
         }
     }

@@ -17,7 +17,7 @@ public class CodePage(IPage page)
         try
         {
             await page.GotoAsync(url);
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
             await page.WaitForSelectorAsync("[data-testid='branches-tab-content']",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
         }
@@ -25,7 +25,7 @@ public class CodePage(IPage page)
         {
             await Task.Delay(E2ETimeouts.RetryDelay);
             await page.GotoAsync(url);
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
             await page.WaitForSelectorAsync("[data-testid='branches-tab-content']",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
         }

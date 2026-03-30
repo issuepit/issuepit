@@ -7,12 +7,27 @@ namespace IssuePit.Tests.E2E.Pages;
 /// </summary>
 public class TodosPage(IPage page)
 {
-    /// <summary>Navigates to the todos page and waits for the heading to appear.</summary>
+    /// <summary>
+    /// Navigates to the todos page and waits for the heading to appear.
+    /// Retries once on ERR_ABORTED (Nuxt SPA router race) or TimeoutException (slow first render).
+    /// </summary>
     public async Task GotoAsync()
     {
-        await page.GotoAsync("/todos");
-        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        await page.WaitForSelectorAsync("a:has-text('Todos')", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        try
+        {
+            await page.GotoAsync("/todos");
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+            await page.WaitForSelectorAsync("a:has-text('Todos')",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (Exception ex) when (ex is TimeoutException || (ex is PlaywrightException pe && pe.Message.Contains("ERR_ABORTED")))
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.GotoAsync("/todos");
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+            await page.WaitForSelectorAsync("a:has-text('Todos')",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
+        }
     }
 
     /// <summary>Creates a todo via the New Todo modal and waits for it to appear in the list.</summary>

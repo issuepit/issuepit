@@ -17,7 +17,7 @@ public class MergeRequestsPage(IPage page)
         try
         {
             await page.GotoAsync($"/projects/{projectId}/merge-requests");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
             await page.WaitForSelectorAsync("a:text-is('Merge Requests')",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
         }
@@ -25,7 +25,7 @@ public class MergeRequestsPage(IPage page)
         {
             await Task.Delay(NavigationRetryDelayMs);
             await page.GotoAsync($"/projects/{projectId}/merge-requests");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
             await page.WaitForSelectorAsync("a:text-is('Merge Requests')");
         }
     }

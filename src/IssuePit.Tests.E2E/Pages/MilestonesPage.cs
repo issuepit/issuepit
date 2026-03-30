@@ -9,12 +9,26 @@ public class MilestonesPage(IPage page)
 {
     /// <summary>
     /// Navigates to the milestones page for the given project and waits for the heading.
+    /// Retries once on ERR_ABORTED (Nuxt SPA router race) or TimeoutException (slow first render).
     /// </summary>
     public async Task GotoAsync(string projectId)
     {
-        await page.GotoAsync($"/projects/{projectId}/milestones");
-        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        await page.WaitForSelectorAsync("a:has-text('Milestones')", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        var url = $"/projects/{projectId}/milestones";
+        try
+        {
+            await page.GotoAsync(url);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+            await page.WaitForSelectorAsync("a:has-text('Milestones')",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (Exception ex) when (ex is TimeoutException || (ex is PlaywrightException pe && pe.Message.Contains("ERR_ABORTED")))
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.GotoAsync(url);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+            await page.WaitForSelectorAsync("a:has-text('Milestones')",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
+        }
     }
 
     /// <summary>
