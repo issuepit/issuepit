@@ -78,7 +78,7 @@ public partial class NotesController(NotesDbContext db, NotesTenantContext ctx) 
         db.Notes.Add(note);
 
         // Parse and create wiki-style links from content
-        var links = ParseWikiLinks(note.Id, note.Content, note.NotebookId);
+        var links = await ParseWikiLinksAsync(note.Id, note.Content, note.NotebookId);
         db.NoteLinks.AddRange(links);
 
         // Tag mappings
@@ -119,7 +119,7 @@ public partial class NotesController(NotesDbContext db, NotesTenantContext ctx) 
 
         // Re-parse links
         db.NoteLinks.RemoveRange(note.OutgoingLinks);
-        var links = ParseWikiLinks(note.Id, note.Content, note.NotebookId);
+        var links = await ParseWikiLinksAsync(note.Id, note.Content, note.NotebookId);
         db.NoteLinks.AddRange(links);
 
         // Update tag mappings
@@ -196,7 +196,7 @@ public partial class NotesController(NotesDbContext db, NotesTenantContext ctx) 
     /// <summary>
     /// Parses [[...]] wiki-style links from markdown content.
     /// </summary>
-    private List<NoteLink> ParseWikiLinks(Guid sourceNoteId, string content, Guid notebookId)
+    private async Task<List<NoteLink>> ParseWikiLinksAsync(Guid sourceNoteId, string content, Guid notebookId)
     {
         var links = new List<NoteLink>();
         var matches = WikiLinkRegex().Matches(content);
@@ -215,7 +215,7 @@ public partial class NotesController(NotesDbContext db, NotesTenantContext ctx) 
 
             // Try to resolve to an existing note in the same notebook by slug
             var targetSlug = GenerateSlug(linkText);
-            var targetNote = db.Notes.FirstOrDefault(n =>
+            var targetNote = await db.Notes.FirstOrDefaultAsync(n =>
                 n.NotebookId == notebookId && n.Slug == targetSlug && n.Id != sourceNoteId);
             if (targetNote is not null)
                 link.TargetNoteId = targetNote.Id;

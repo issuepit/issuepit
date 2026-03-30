@@ -142,6 +142,7 @@
 
 <script setup lang="ts">
 import type { NoteStatus } from '~/types'
+import { NoteStatus as NoteStatusEnum } from '~/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -151,7 +152,7 @@ const noteId = computed(() => route.params.id as string)
 
 const editTitle = ref('')
 const editContent = ref('')
-const editStatus = ref<NoteStatus>('draft' as NoteStatus)
+const editStatus = ref<NoteStatus>(NoteStatusEnum.Draft)
 const editorMode = ref<'edit' | 'preview' | 'split'>('split')
 const saving = ref(false)
 const showDeleteConfirm = ref(false)

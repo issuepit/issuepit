@@ -149,6 +149,7 @@
 
 <script setup lang="ts">
 import type { Notebook, NoteStatus } from '~/types'
+import { NoteStatus as NoteStatusEnum, StorageProvider } from '~/types'
 
 const store = useNotesStore()
 const router = useRouter()
@@ -182,9 +183,9 @@ const filteredNotes = computed(() => {
 
 function statusClass(status: NoteStatus) {
   switch (status) {
-    case 'draft': return 'bg-yellow-900/50 text-yellow-400'
-    case 'published': return 'bg-green-900/50 text-green-400'
-    case 'archived': return 'bg-gray-700 text-gray-400'
+    case NoteStatusEnum.Draft: return 'bg-yellow-900/50 text-yellow-400'
+    case NoteStatusEnum.Published: return 'bg-green-900/50 text-green-400'
+    case NoteStatusEnum.Archived: return 'bg-gray-700 text-gray-400'
     default: return 'bg-gray-700 text-gray-400'
   }
 }
@@ -199,7 +200,7 @@ async function submitCreate() {
     const note = await store.createNote({
       notebookId: createForm.value.notebookId,
       title: createForm.value.title,
-      status: 'draft' as NoteStatus,
+      status: NoteStatusEnum.Draft,
     })
     showCreate.value = false
     router.push(`/notes/${note.id}`)
@@ -212,7 +213,7 @@ async function createNotebook() {
   if (!newNotebookName.value.trim()) return
   await store.createNotebook({
     name: newNotebookName.value.trim(),
-    storageProvider: 'postgres' as import('~/types').StorageProvider,
+    storageProvider: StorageProvider.Postgres,
   })
   newNotebookName.value = ''
 }
