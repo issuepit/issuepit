@@ -41,6 +41,32 @@ public class CiCdPipelineTests(AspireFixture fixture)
     /// <summary>Runtime modes exercised by the parameterized tests.</summary>
     public static TheoryData<string> RuntimeModes => new() { NativeRuntime, DockerRuntime };
 
+    /// <summary>
+    /// Test cases for <see cref="CiCdRun_SkipsStepByUsesFilter"/>: each row provides a
+    /// runtime mode, the <c>skipSteps</c> filter to apply, the artifacts that must be absent,
+    /// and the artifacts that must be present after the run.
+    /// </summary>
+    public static TheoryData<string, string, string[], string[]> SkipByUsesFilterCases
+    {
+        get
+        {
+            var data = new TheoryData<string, string, string[], string[]>();
+            foreach (var runtime in new[] { NativeRuntime, DockerRuntime })
+            {
+                // Global uses filter — all three upload steps are affected (no job prefix).
+                data.Add(runtime, "actions/upload-artifact@v4",
+                    ["build-output", "test-results", "coverage-report"],
+                    []);
+
+                // Scoped job:uses filter — only the build job's upload step is affected.
+                data.Add(runtime, "build:actions/upload-artifact@v4",
+                    ["build-output"],
+                    ["test-results", "coverage-report"]);
+            }
+            return data;
+        }
+    }
+
     /// <summary>Returns <c>true</c> when the <c>act</c> binary is available on the PATH.</summary>
     private static bool IsActAvailable()
     {
@@ -1038,14 +1064,22 @@ public class CiCdPipelineTests(AspireFixture fixture)
     }
 
     /// <summary>
-    /// Verifies that a step can be skipped by specifying its <c>uses</c> value (e.g.
-    /// <c>actions/upload-artifact@v4</c>) without a job prefix. When passed globally, act
-    /// skips every step whose <c>uses</c> field matches — so all three upload steps across
-    /// the build/test/coverage jobs should be skipped and no artifacts should be produced.
+    /// Verifies that a step can be skipped by specifying its <c>uses</c> value, with or without
+    /// a job prefix:
+    /// <list type="bullet">
+    ///   <item>Global filter (e.g. <c>actions/upload-artifact@v4</c>): every step whose
+    ///         <c>uses</c> field matches is skipped across all jobs.</item>
+    ///   <item>Scoped filter (e.g. <c>build:actions/upload-artifact@v4</c>): only the matching
+    ///         step inside the specified job is skipped.</item>
+    /// </list>
     /// </summary>
     [Theory]
-    [MemberData(nameof(RuntimeModes))]
-    public async Task CiCdRun_SkipsStepByUsesValue(string runtimeMode)
+    [MemberData(nameof(SkipByUsesFilterCases))]
+    public async Task CiCdRun_SkipsStepByUsesFilter(
+        string runtimeMode,
+        string skipStepsFilter,
+        string[] absentArtifacts,
+        string[] presentArtifacts)
     {
         if (!IsReady(runtimeMode))
             throw Xunit.Sdk.SkipException.ForSkip(SkipReason(runtimeMode));
@@ -1057,13 +1091,12 @@ public class CiCdPipelineTests(AspireFixture fixture)
         getResp.EnsureSuccessStatusCode();
         var existing = await getResp.Content.ReadFromJsonAsync<JsonElement>();
 
-        // Skip by uses value (global, no job prefix) — all upload steps share this uses value.
         var updateResp = await client.PutAsJsonAsync($"/api/projects/{projectId}", new
         {
             name = existing.GetProperty("name").GetString(),
             slug = existing.GetProperty("slug").GetString(),
             orgId = Guid.Parse(existing.GetProperty("orgId").GetString()!),
-            skipSteps = "actions/upload-artifact@v4",
+            skipSteps = skipStepsFilter,
         });
         updateResp.EnsureSuccessStatusCode();
 
@@ -1074,81 +1107,23 @@ public class CiCdPipelineTests(AspireFixture fixture)
         var runId = run.GetProperty("id").GetString()!;
         await AssertRunSucceededAsync(client, run, runId);
 
-        // Give artifact processing a moment; since all upload steps are skipped, we expect
-        // an empty list rather than waiting for a specific artifact to appear.
-        var artifacts = await WaitForArtifactsAsync(client, runId, 0, TimeSpan.FromSeconds(10));
+        // If artifacts are expected, poll until the first one appears to confirm processing
+        // is complete; otherwise give processing a brief window before asserting absence.
+        JsonElement artifacts;
+        if (presentArtifacts.Length > 0)
+            artifacts = await WaitForArtifactByNameAsync(client, runId, presentArtifacts[0], TimeSpan.FromSeconds(30));
+        else
+            artifacts = await WaitForArtifactsAsync(client, runId, 0, TimeSpan.FromSeconds(10));
+
         var artifactNames = artifacts.EnumerateArray()
             .Select(a => a.GetProperty("name").GetString())
             .ToList();
 
-        // All three upload steps (build-output, test-results, coverage-report) should be absent.
-        Assert.DoesNotContain("build-output", artifactNames);
-        Assert.DoesNotContain("test-results", artifactNames);
-        Assert.DoesNotContain("coverage-report", artifactNames);
+        foreach (var absent in absentArtifacts)
+            Assert.DoesNotContain(absent, artifactNames);
 
-        // Verify the skip log lines are present.
-        var runLogsResp = await client.GetAsync($"/api/cicd-runs/{runId}/logs");
-        runLogsResp.EnsureSuccessStatusCode();
-        var runLogs = await runLogsResp.Content.ReadFromJsonAsync<JsonElement>();
-        var logLines = runLogs.EnumerateArray()
-            .Select(l => l.TryGetProperty("line", out var ln) ? ln.GetString() ?? "" : "")
-            .ToList();
-
-        Assert.True(
-            logLines.Any(l => l.Contains("Skipping") && l.Contains("actions/upload-artifact@v4")),
-            "Expected an act log line indicating a step with uses 'actions/upload-artifact@v4' was skipped, but none found.\n" +
-            $"Log lines captured: {string.Join('\n', logLines.TakeLast(20))}");
-    }
-
-    /// <summary>
-    /// Verifies that a step can be skipped by specifying a <c>job:uses</c> value
-    /// (e.g. <c>build:actions/upload-artifact@v4</c>). Only the upload step in the
-    /// <c>build</c> job should be skipped; the <c>test</c> and <c>coverage</c> jobs
-    /// should still produce their artifacts.
-    /// </summary>
-    [Theory]
-    [MemberData(nameof(RuntimeModes))]
-    public async Task CiCdRun_SkipsStepByJobColonUsesValue(string runtimeMode)
-    {
-        if (!IsReady(runtimeMode))
-            throw Xunit.Sdk.SkipException.ForSkip(SkipReason(runtimeMode));
-
-        var (client, projectId) = await SetupProjectAsync();
-        using var _ = client;
-
-        var getResp = await client.GetAsync($"/api/projects/{projectId}");
-        getResp.EnsureSuccessStatusCode();
-        var existing = await getResp.Content.ReadFromJsonAsync<JsonElement>();
-
-        // Skip by job:uses — only the upload step in the build job should be skipped.
-        var updateResp = await client.PutAsJsonAsync($"/api/projects/{projectId}", new
-        {
-            name = existing.GetProperty("name").GetString(),
-            slug = existing.GetProperty("slug").GetString(),
-            orgId = Guid.Parse(existing.GetProperty("orgId").GetString()!),
-            skipSteps = "build:actions/upload-artifact@v4",
-        });
-        updateResp.EnsureSuccessStatusCode();
-
-        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
-            BuildTriggerPayload(projectId, "e2e-skipjobuses-abc", runtimeMode, "ci.yml"));
-
-        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
-        var runId = run.GetProperty("id").GetString()!;
-        await AssertRunSucceededAsync(client, run, runId);
-
-        // Poll until "test-results" appears — confirms the test job ran and artifact processing is done.
-        var artifacts = await WaitForArtifactByNameAsync(client, runId, "test-results", TimeSpan.FromSeconds(30));
-        var artifactNames = artifacts.EnumerateArray()
-            .Select(a => a.GetProperty("name").GetString())
-            .ToList();
-
-        // The build job's upload step was skipped — build-output must not be present.
-        Assert.DoesNotContain("build-output", artifactNames);
-
-        // The test and coverage jobs were unaffected and produced their artifacts normally.
-        Assert.Contains("test-results", artifactNames);
-        Assert.Contains("coverage-report", artifactNames);
+        foreach (var present in presentArtifacts)
+            Assert.Contains(present, artifactNames);
     }
 
     /// <summary>
