@@ -290,9 +290,9 @@ public class CiCdRunPage(IPage page)
     /// <remarks>
     /// Strategy: click → wait for modal to close (API call done) → wait for URL match.
     /// <para>
-    /// The frontend uses <c>window.location.href</c> (full page load) for the post-create
-    /// navigation, which bypasses Vue Router and cannot be cancelled by concurrent
-    /// <c>?tab=jobs</c> router-pushes from SignalR events on the CI/CD run page.
+    /// The frontend disconnects both SignalR hubs before calling <c>navigateTo()</c>, which
+    /// prevents concurrent <c>router.push</c> calls from hub event handlers from silently
+    /// cancelling the SPA navigation (Vue Router 4 resolves NavigationFailure without throwing).
     /// </para>
     /// If the modal does not close within <see cref="E2ETimeouts.Default"/> the click likely
     /// did not register (Vue hydration race on the modal) and the click is retried once.
