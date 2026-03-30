@@ -30,18 +30,18 @@ public class OrgDetailPage(IPage page)
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
         }
         await page.FillAsync("input[placeholder='Engineering']", teamName);
-        // Use a text-specific selector to avoid matching "Save Runner Options" (another submit button
-        // on the same page that is blocked by the modal backdrop and would cause a click timeout).
+        // Use a data-testid selector scoped to the team modal submit button to avoid any
+        // ambiguity with other submit buttons on the page (runner settings, add-member form).
         // Retry once in case the modal animation is still in progress when we try to click.
         try
         {
-            await page.ClickAsync("button[type='submit']:has-text('Create')",
+            await page.ClickAsync("[data-testid='team-modal-submit']",
                 new PageClickOptions { Timeout = E2ETimeouts.Short });
         }
         catch (TimeoutException)
         {
             await Task.Delay(E2ETimeouts.RetryDelay);
-            await page.ClickAsync("button[type='submit']:has-text('Create')",
+            await page.ClickAsync("[data-testid='team-modal-submit']",
                 new PageClickOptions { Timeout = E2ETimeouts.Navigation });
         }
         await page.WaitForSelectorAsync($"text={teamName}", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });

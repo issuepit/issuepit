@@ -590,6 +590,7 @@
           <div class="flex gap-3 pt-1">
             <button
               type="submit"
+              data-testid="team-modal-submit"
               :disabled="savingTeam"
               class="flex-1 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
             >
