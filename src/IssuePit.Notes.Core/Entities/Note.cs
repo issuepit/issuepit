@@ -49,4 +49,9 @@ public class Note
     public ICollection<NoteLink> IncomingLinks { get; set; } = [];
 
     public ICollection<NoteTagMapping> TagMappings { get; set; } = [];
+
+    /// <summary>
+    /// CRDT event log: all OT operations applied to this note in order.
+    /// </summary>
+    public ICollection<NoteOperation> Operations { get; set; } = [];
 }

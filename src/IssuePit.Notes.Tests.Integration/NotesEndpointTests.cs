@@ -318,6 +318,150 @@ public class NotesEndpointTests(NotesApiFactory factory) : IClassFixture<NotesAp
         RemoveTenantHeader();
     }
 
+    // ── CRDT Operations ───────────────────────────────────────────────────
+
+    [Fact]
+    public async Task SubmitOperation_FirstOp_Returns200WithSequence1()
+    {
+        var notebookId = await SeedNotebookAsync("CrdtNb1");
+        var noteId = await SeedNoteAsync(notebookId, "Crdt Note", "hello");
+        SetTenantHeader();
+
+        // Insert " world" after "hello" → retain(5), insert(" world")
+        var delta = "[{\"retain\":5},{\"insert\":\" world\"}]";
+        var response = await _client.PostAsJsonAsync($"/api/notes/{noteId}/operations", new
+        {
+            delta,
+            baseSequence = 0,
+            clientId = "test-client-A",
+        });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal(1, body.GetProperty("sequenceNumber").GetInt64());
+
+        RemoveTenantHeader();
+    }
+
+    [Fact]
+    public async Task SubmitOperation_AppliesDeltaToNoteContent()
+    {
+        var notebookId = await SeedNotebookAsync("CrdtNb2");
+        var noteId = await SeedNoteAsync(notebookId, "Content Test", "hello");
+        SetTenantHeader();
+
+        // delete "hello" (5 chars) and insert "world"
+        var delta = "[{\"delete\":5},{\"insert\":\"world\"}]";
+        await _client.PostAsJsonAsync($"/api/notes/{noteId}/operations", new
+        {
+            delta,
+            baseSequence = 0,
+            clientId = "test-client-B",
+        });
+
+        // Fetch the note and verify content changed
+        var noteResp = await _client.GetAsync($"/api/notes/{noteId}");
+        var note = await noteResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal("world", note.GetProperty("content").GetString());
+
+        RemoveTenantHeader();
+    }
+
+    [Fact]
+    public async Task SubmitOperation_ConcurrentOps_TransformsAndMerges()
+    {
+        var notebookId = await SeedNotebookAsync("CrdtNb3");
+        var noteId = await SeedNoteAsync(notebookId, "Concurrent", "hello world");
+        SetTenantHeader();
+
+        // Op A (client A): insert "dear " at position 6 — retain(6), insert("dear "), retain(5)
+        var deltaA = "[{\"retain\":6},{\"insert\":\"dear \"},{\"retain\":5}]";
+        var respA = await _client.PostAsJsonAsync($"/api/notes/{noteId}/operations", new
+        {
+            delta = deltaA,
+            baseSequence = 0,
+            clientId = "test-client-A",
+        });
+        Assert.Equal(HttpStatusCode.OK, respA.StatusCode);
+        var bodyA = await respA.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var seqA = bodyA.GetProperty("sequenceNumber").GetInt64();
+
+        // Op B (client B): also against base 0 — insert "! " at the end — retain(11), insert("!")
+        var deltaB = "[{\"retain\":11},{\"insert\":\"!\"}]";
+        var respB = await _client.PostAsJsonAsync($"/api/notes/{noteId}/operations", new
+        {
+            delta = deltaB,
+            baseSequence = 0,   // concurrent: same base as A
+            clientId = "test-client-B",
+        });
+        Assert.Equal(HttpStatusCode.OK, respB.StatusCode);
+        var bodyB = await respB.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.True(bodyB.GetProperty("sequenceNumber").GetInt64() > seqA);
+
+        // After merging, content should include both A's insert and B's insert
+        var noteResp = await _client.GetAsync($"/api/notes/{noteId}");
+        var note = await noteResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var finalContent = note.GetProperty("content").GetString()!;
+
+        // B appended "!" and A inserted "dear " — both must be present
+        Assert.Contains("dear ", finalContent);
+        Assert.Contains("!", finalContent);
+
+        RemoveTenantHeader();
+    }
+
+    [Fact]
+    public async Task GetOperations_ReturnsSince()
+    {
+        var notebookId = await SeedNotebookAsync("CrdtNb4");
+        var noteId = await SeedNoteAsync(notebookId, "Poll Test", "abc");
+        SetTenantHeader();
+
+        // Submit two ops
+        var delta1 = "[{\"retain\":3},{\"insert\":\"d\"}]";
+        await _client.PostAsJsonAsync($"/api/notes/{noteId}/operations", new
+        {
+            delta = delta1, baseSequence = 0, clientId = "client-X",
+        });
+        var delta2 = "[{\"retain\":4},{\"insert\":\"e\"}]";
+        await _client.PostAsJsonAsync($"/api/notes/{noteId}/operations", new
+        {
+            delta = delta2, baseSequence = 1, clientId = "client-X",
+        });
+
+        // Poll since=0 → should return both ops
+        var allOps = await _client.GetAsync($"/api/notes/{noteId}/operations?since=0");
+        Assert.Equal(HttpStatusCode.OK, allOps.StatusCode);
+        var all = await allOps.Content.ReadFromJsonAsync<System.Text.Json.JsonElement[]>();
+        Assert.Equal(2, all!.Length);
+
+        // Poll since=1 → should return only op 2
+        var laterOps = await _client.GetAsync($"/api/notes/{noteId}/operations?since=1");
+        var later = await laterOps.Content.ReadFromJsonAsync<System.Text.Json.JsonElement[]>();
+        Assert.Single(later!);
+        Assert.Equal(2, later![0].GetProperty("sequenceNumber").GetInt64());
+
+        RemoveTenantHeader();
+    }
+
+    [Fact]
+    public async Task SubmitOperation_InvalidDelta_Returns400()
+    {
+        var notebookId = await SeedNotebookAsync("CrdtNb5");
+        var noteId = await SeedNoteAsync(notebookId, "Invalid Delta", "hello");
+        SetTenantHeader();
+
+        var response = await _client.PostAsJsonAsync($"/api/notes/{noteId}/operations", new
+        {
+            delta = "not valid json",
+            baseSequence = 0,
+            clientId = "test",
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        RemoveTenantHeader();
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private void SetTenantHeader()

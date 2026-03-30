@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -36,7 +37,10 @@ public class NotesApiFactory : WebApplicationFactory<Program>
 
             var dbName = $"notes-test-{Guid.NewGuid()}";
             services.AddDbContext<NotesDbContext>(opts =>
-                opts.UseInMemoryDatabase(dbName));
+                opts.UseInMemoryDatabase(dbName)
+                    // In-memory provider doesn't support real transactions but silently
+                    // ignores BeginTransaction calls, which is fine for tests.
+                    .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
 
             // Remove infrastructure health checks
             services.Configure<HealthCheckServiceOptions>(opts =>

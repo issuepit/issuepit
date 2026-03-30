@@ -120,10 +120,18 @@ const WIKI_LINK_MAX_QUERY_LENGTH = 50
 const props = defineProps<{
   modelValue: string
   notebookId?: string
+  /** Note ID — when provided, enables CRDT operation-based collaborative editing. */
+  noteId?: string
+  /** Per-session client UUID for echo-suppression (so we don't re-apply our own ops). */
+  clientId?: string
+  /** Last confirmed sequence number from the server (passed in from parent). */
+  lastSeq?: number
 }>()
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void
+  /** Emitted when the CRDT sync advances the sequence number. */
+  (e: 'seq-updated', seq: number): void
 }>()
 
 // Image upload state
@@ -142,6 +150,295 @@ let suggestionRange: { from: number; to: number } | null = null
 
 const config = useRuntimeConfig()
 const notesApiBase = config.public.notesApiBase as string
+
+// ── CRDT / OT collaborative editing ──────────────────────────────────────────
+// Uses a polling-based OT model:
+//  1. When the local content changes, we compute an OT delta (retain/insert/delete ops)
+//     from the last server-confirmed content and submit it via POST /operations.
+//  2. A background poll fetches remote operations every 5s and applies them locally.
+//  3. If a remote op arrives while we have a pending local delta, we transform the
+//     pending delta against the remote op before submitting (client-side OT).
+
+const notesApi = useNotesApi()
+
+/** Last content confirmed by the server (HTML string). Used as the "base document" for delta computation. */
+let syncedContent = props.modelValue
+
+/**
+ * Update the TipTap editor with new content received from the server and notify the parent.
+ * Suppresses the internal `onUpdate` event to avoid triggering a new delta submission.
+ */
+function applyRemoteContent(newContent: string) {
+  if (editor.value) editor.value.commands.setContent(newContent, false)
+  emit('update:modelValue', newContent)
+}
+
+/** Sequence number of the last server-confirmed operation (0 = none). */
+let currentSeq = props.lastSeq ?? 0
+
+/** Whether a submit is currently in flight. */
+let submitting = false
+
+/** Remote ops buffered while submitting — applied after confirmation. */
+const bufferedRemoteOps: Array<{ delta: string; clientId: string }> = []
+
+/**
+ * Compute an OT delta (list of retain/insert/delete ops) from `oldText` to `newText`.
+ * Returns a JSON string in Quill delta format: [{"retain":N},{"insert":"..."},{"delete":N}].
+ */
+function computeDelta(oldText: string, newText: string): string {
+  if (oldText === newText) return '[]'
+
+  // Common prefix
+  let prefixLen = 0
+  const maxPrefix = Math.min(oldText.length, newText.length)
+  while (prefixLen < maxPrefix && oldText[prefixLen] === newText[prefixLen]) prefixLen++
+
+  // Common suffix (excluding the already-matched prefix)
+  let suffixLen = 0
+  const maxSuffix = Math.min(oldText.length - prefixLen, newText.length - prefixLen)
+  while (
+    suffixLen < maxSuffix
+    && oldText[oldText.length - 1 - suffixLen] === newText[newText.length - 1 - suffixLen]
+  ) suffixLen++
+
+  type Op = { retain?: number; insert?: string; delete?: number }
+  const ops: Op[] = []
+  if (prefixLen > 0) ops.push({ retain: prefixLen })
+
+  const deletedLen = oldText.length - prefixLen - suffixLen
+  const insertedText = newText.slice(prefixLen, newText.length - (suffixLen || 0))
+
+  if (deletedLen > 0) ops.push({ delete: deletedLen })
+  if (insertedText.length > 0) ops.push({ insert: insertedText })
+  if (suffixLen > 0) ops.push({ retain: suffixLen })
+
+  return JSON.stringify(ops)
+}
+
+/**
+ * Apply an OT delta (JSON string) to a text, returning the new text.
+ * Used to reconstruct remote content after applying server-confirmed ops.
+ */
+function applyDelta(text: string, deltaJson: string): string {
+  type Op = { retain?: number; insert?: string; delete?: number }
+  const ops: Op[] = JSON.parse(deltaJson)
+  let result = ''
+  let pos = 0
+  for (const op of ops) {
+    if (op.retain !== undefined) {
+      result += text.slice(pos, pos + op.retain)
+      pos += op.retain
+    }
+    else if (op.insert !== undefined) {
+      result += op.insert
+    }
+    else if (op.delete !== undefined) {
+      pos += op.delete
+    }
+  }
+  result += text.slice(pos)
+  return result
+}
+
+/**
+ * Transform `pendingDelta` (local, not yet submitted) against `remoteDelta`
+ * (already applied by the server) so the pending delta can still be applied
+ * correctly on top of the remote change.
+ *
+ * This is the client-side half of OT: keeps local edits valid after receiving
+ * concurrent server operations.
+ */
+function transformDelta(pendingJson: string, remoteJson: string): string {
+  type Op = { retain?: number; insert?: string; delete?: number }
+  const pending: Op[] = JSON.parse(pendingJson)
+  const remote: Op[] = JSON.parse(remoteJson)
+
+  if (pending.length === 0) return pendingJson
+
+  const result: Op[] = []
+  let ia = 0, ib = 0
+  let remA = opLen(pending[ia]), remB = opLen(remote[ib])
+
+  function getA() { return ia < pending.length ? pending[ia] : undefined }
+  function getB() { return ib < remote.length ? remote[ib] : undefined }
+
+  function appendMerge(op: Op) {
+    const last = result[result.length - 1]
+    if (last?.retain !== undefined && op.retain !== undefined) { last.retain += op.retain; return }
+    if (last?.delete !== undefined && op.delete !== undefined) { last.delete += op.delete; return }
+    if (last?.insert !== undefined && op.insert !== undefined) { last.insert += op.insert; return }
+    result.push({ ...op })
+  }
+
+  while (ia < pending.length) {
+    const curA = getA()!
+    let curB = getB()
+
+    // Drain b-inserts before processing a (b inserted new chars; a must skip over them)
+    while (curB?.insert !== undefined && curA.insert === undefined) {
+      appendMerge({ retain: curB.insert.length })
+      ib++; remB = opLen(getB())
+      curB = getB()
+    }
+
+    if (curA.insert !== undefined) {
+      appendMerge({ insert: curA.insert })
+      ia++; remA = opLen(getA())
+      continue
+    }
+
+    if (curB === undefined) {
+      appendMerge(curA)
+      ia++
+      continue
+    }
+
+    const take = Math.min(remA, remB)
+
+    if (curA.retain !== undefined && curB.retain !== undefined) appendMerge({ retain: take })
+    else if (curA.retain !== undefined && curB.delete !== undefined) { /* b deleted it */ }
+    else if (curA.delete !== undefined && curB.retain !== undefined) appendMerge({ delete: take })
+    else if (curA.delete !== undefined && curB.delete !== undefined) { /* both deleted */ }
+
+    remA -= take
+    remB -= take
+    if (remA <= 0) { ia++; remA = opLen(getA()) }
+    if (remB <= 0) { ib++; remB = opLen(getB()) }
+  }
+
+  // Drain any trailing b-inserts
+  while (ib < remote.length) {
+    const curB = remote[ib]
+    if (curB.insert !== undefined) appendMerge({ retain: curB.insert.length })
+    ib++
+  }
+
+  return JSON.stringify(result)
+}
+
+function opLen(op: { retain?: number; insert?: string; delete?: number } | undefined): number {
+  if (!op) return 0
+  if (op.retain !== undefined) return op.retain
+  if (op.delete !== undefined) return op.delete
+  if (op.insert !== undefined) return op.insert.length
+  return 0
+}
+
+/** Debounce timer for CRDT operation submission */
+let crdtSubmitTimer: ReturnType<typeof setTimeout> | null = null
+
+/**
+ * Schedule a CRDT delta submission after the user pauses typing (1 second).
+ * If a submission is already in-flight, the next one is queued automatically.
+ */
+function scheduleCrdtSubmit(currentContent: string) {
+  if (!props.noteId) return
+  if (crdtSubmitTimer) clearTimeout(crdtSubmitTimer)
+  crdtSubmitTimer = setTimeout(() => submitCrdtDelta(currentContent), 1000)
+}
+
+async function submitCrdtDelta(currentContent: string) {
+  if (!props.noteId) return
+  const delta = computeDelta(syncedContent, currentContent)
+  if (delta === '[]') return // no change
+
+  if (submitting) {
+    // Buffer the current content; it will be resubmitted after the in-flight op confirms
+    return
+  }
+
+  submitting = true
+  try {
+    const confirmed = await notesApi.submitOperation(
+      props.noteId,
+      delta,
+      currentSeq,
+      props.clientId ?? 'anon',
+    )
+    syncedContent = currentContent
+    currentSeq = confirmed.sequenceNumber
+    emit('seq-updated', currentSeq)
+
+    // Apply any remote ops that arrived while we were submitting.
+    // They were computed against the old content (before our delta), so we must
+    // transform them against our delta before applying to the new syncedContent.
+    if (bufferedRemoteOps.length > 0) {
+      let merged = syncedContent
+      let evolvedLocalDelta = delta
+      for (const remote of bufferedRemoteOps) {
+        if (remote.clientId === (props.clientId ?? 'anon')) continue // echo-suppress
+        // Transform remote op so it can be applied after our local delta
+        const transformedRemote = transformDelta(remote.delta, evolvedLocalDelta)
+        merged = applyDelta(merged, transformedRemote)
+        // Evolve local delta for subsequent remote ops in the buffer
+        evolvedLocalDelta = transformDelta(evolvedLocalDelta, remote.delta)
+      }
+      bufferedRemoteOps.length = 0
+      if (merged !== syncedContent) {
+        syncedContent = merged
+        if (editor.value && editor.value.getHTML() !== merged) {
+          applyRemoteContent(merged)
+        }
+      }
+    }
+  }
+  catch (e) {
+    console.error('[NoteEditor] CRDT submit failed:', e)
+  }
+  finally {
+    submitting = false
+  }
+}
+
+/** Poll for remote operations (runs every 5 seconds). */
+let pollInterval: ReturnType<typeof setInterval> | null = null
+
+async function pollRemoteOps() {
+  if (!props.noteId) return
+  try {
+    const ops = await notesApi.getOperations(props.noteId, currentSeq)
+    if (ops.length === 0) return
+
+    for (const op of ops) {
+      // Echo-suppress: skip our own confirmed ops
+      if (op.clientId === (props.clientId ?? 'anon')) {
+        currentSeq = op.sequenceNumber
+        emit('seq-updated', currentSeq)
+        continue
+      }
+
+      if (submitting) {
+        // Buffer to apply after current submission completes
+        bufferedRemoteOps.push({ delta: op.delta, clientId: op.clientId })
+        currentSeq = op.sequenceNumber
+        emit('seq-updated', currentSeq)
+        continue
+      }
+
+      // Apply the remote delta to the current editor content
+      const current = editor.value?.getHTML() ?? syncedContent
+      try {
+        const updated = applyDelta(current, op.delta)
+        syncedContent = updated
+        currentSeq = op.sequenceNumber
+        emit('seq-updated', currentSeq)
+        if (editor.value && editor.value.getHTML() !== updated) {
+          applyRemoteContent(updated)
+        }
+      }
+      catch (applyErr) {
+        console.warn('[NoteEditor] Failed to apply remote op, skipping:', applyErr)
+        currentSeq = op.sequenceNumber
+        emit('seq-updated', currentSeq)
+      }
+    }
+  }
+  catch {
+    // Polling errors are non-fatal (network blip, etc.)
+  }
+}
+
 
 async function handleImageUpload(file: File): Promise<string | null> {
   uploading.value = true
@@ -249,13 +546,29 @@ const editor = useEditor({
     const html = e.getHTML()
     emit('update:modelValue', html)
     checkForWikiLink(e)
+    // Schedule CRDT delta submission (only when noteId is provided)
+    if (props.noteId) scheduleCrdtSubmit(html)
   },
 })
 
-// Watch for external content changes
+// Watch for external content changes (e.g., initial load or forced refresh from parent)
 watch(() => props.modelValue, (newVal) => {
   if (editor.value && editor.value.getHTML() !== newVal) {
     editor.value.commands.setContent(newVal, false)
+    // Reset the synced baseline to the new externally-provided content
+    syncedContent = newVal
+  }
+})
+
+// Watch for lastSeq prop changes (parent may advance the seq on initial load)
+watch(() => props.lastSeq, (newSeq) => {
+  if (newSeq !== undefined && newSeq > currentSeq) currentSeq = newSeq
+})
+
+// Start the remote-ops polling loop when a noteId is provided
+onMounted(() => {
+  if (props.noteId) {
+    pollInterval = setInterval(pollRemoteOps, 5000)
   }
 })
 
@@ -340,6 +653,8 @@ function toolbarBtnClass(active: boolean) {
 }
 
 onBeforeUnmount(() => {
+  if (pollInterval) clearInterval(pollInterval)
+  if (crdtSubmitTimer) clearTimeout(crdtSubmitTimer)
   editor.value?.destroy()
 })
 </script>

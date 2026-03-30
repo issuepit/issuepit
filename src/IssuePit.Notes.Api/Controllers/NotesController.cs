@@ -3,6 +3,7 @@ using IssuePit.Notes.Api.Services;
 using IssuePit.Notes.Core.Data;
 using IssuePit.Notes.Core.Entities;
 using IssuePit.Notes.Core.Enums;
+using IssuePit.Notes.Core.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -149,6 +150,115 @@ public partial class NotesController(NotesDbContext db, NotesTenantContext ctx) 
         return NoContent();
     }
 
+    // ── CRDT Operations ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// Submit an OT operation for a note's content (CRDT event log).
+    /// The server transforms the submitted delta against any concurrent operations
+    /// that arrived since <paramref name="req"/>.<c>BaseSequence</c>, applies the
+    /// transformed delta to the note content, and returns the confirmed operation.
+    /// This endpoint replaces full-document saves for content-only edits.
+    /// </summary>
+    [HttpPost("{id:guid}/operations")]
+    public async Task<IActionResult> SubmitOperation(Guid id, [FromBody] SubmitOperationRequest req)
+    {
+        if (ctx.TenantId is null) return Unauthorized();
+        if (string.IsNullOrWhiteSpace(req.Delta))
+            return BadRequest("Delta is required.");
+
+        List<TextOp> incomingOps;
+        try { incomingOps = OtEngine.Deserialize(req.Delta); }
+        catch (OtException ex) { return BadRequest($"Invalid delta: {ex.Message}"); }
+
+        // Use an explicit transaction so the sequence-number assignment is atomic
+        await using var tx = await db.Database.BeginTransactionAsync();
+
+        var note = await db.Notes
+            .FirstOrDefaultAsync(n => n.Id == id && n.TenantId == ctx.TenantId.Value);
+        if (note is null) return NotFound();
+
+        // Fetch all concurrent server operations (those that arrived after BaseSequence)
+        var concurrentOps = await db.NoteOperations
+            .Where(o => o.NoteId == id && o.SequenceNumber > req.BaseSequence)
+            .OrderBy(o => o.SequenceNumber)
+            .ToListAsync();
+
+        // Transform the incoming delta against each concurrent operation in order
+        var transformed = incomingOps;
+        foreach (var serverOp in concurrentOps)
+        {
+            var serverDelta = OtEngine.Deserialize(serverOp.Delta);
+            transformed = OtEngine.Transform(transformed, serverDelta);
+        }
+
+        // Apply the transformed delta to the current note content
+        string newContent;
+        try { newContent = OtEngine.Apply(note.Content, transformed); }
+        catch (OtException ex) { return UnprocessableEntity($"Invalid delta: {ex.Message}"); }
+
+        // Assign the next sequence number
+        var nextSeq = concurrentOps.Count > 0
+            ? concurrentOps[^1].SequenceNumber + 1
+            : (await db.NoteOperations
+                .Where(o => o.NoteId == id)
+                .MaxAsync(o => (long?)o.SequenceNumber) ?? 0) + 1;
+
+        var operation = new NoteOperation
+        {
+            Id = Guid.NewGuid(),
+            NoteId = id,
+            ClientId = req.ClientId ?? string.Empty,
+            SequenceNumber = nextSeq,
+            BaseSequence = req.BaseSequence,
+            Delta = OtEngine.Serialize(transformed),
+            AppliedAt = DateTime.UtcNow,
+        };
+
+        note.Content = newContent;
+        note.Version++;
+        note.UpdatedAt = DateTime.UtcNow;
+
+        // Re-parse wiki-links after content update
+        var existingLinks = db.NoteLinks.Where(l => l.SourceNoteId == id);
+        db.NoteLinks.RemoveRange(existingLinks);
+        var links = await ParseWikiLinksAsync(id, newContent, note.NotebookId);
+        db.NoteLinks.AddRange(links);
+
+        db.NoteOperations.Add(operation);
+        await db.SaveChangesAsync();
+        await tx.CommitAsync();
+
+        return Ok(new OperationResponse(
+            operation.Id,
+            operation.SequenceNumber,
+            operation.Delta,
+            operation.ClientId,
+            note.Version,
+            operation.AppliedAt));
+    }
+
+    /// <summary>
+    /// Return all operations for a note with SequenceNumber greater than <paramref name="since"/>.
+    /// Clients use this to poll for remote changes and apply them locally via OT.
+    /// </summary>
+    [HttpGet("{id:guid}/operations")]
+    public async Task<IActionResult> GetOperations(Guid id, [FromQuery] long since = 0)
+    {
+        if (ctx.TenantId is null) return Unauthorized();
+
+        var noteExists = await db.Notes.AnyAsync(n => n.Id == id && n.TenantId == ctx.TenantId.Value);
+        if (!noteExists) return NotFound();
+
+        var ops = await db.NoteOperations
+            .Where(o => o.NoteId == id && o.SequenceNumber > since)
+            .OrderBy(o => o.SequenceNumber)
+            .Select(o => new OperationResponse(
+                o.Id, o.SequenceNumber, o.Delta, o.ClientId, 0, o.AppliedAt))
+            .ToListAsync();
+
+        return Ok(ops);
+    }
+
     // ── Graph Data ────────────────────────────────────────────────────────
 
     /// <summary>
@@ -248,3 +358,19 @@ public record VersionConflictResponse(long CurrentVersion, string Message);
 public record GraphNode(Guid Id, string Title, string Slug, Guid NotebookId);
 public record GraphEdge(Guid SourceNoteId, NoteLinkType TargetType, Guid? TargetNoteId, Guid? TargetEntityId, string LinkText);
 public record GraphResponse(List<GraphNode> Nodes, List<GraphEdge> Edges);
+
+public record SubmitOperationRequest(
+    /// <summary>The OT delta in Quill format: [{"retain":N},{"insert":"text"},{"delete":N}]</summary>
+    string Delta,
+    /// <summary>The last SequenceNumber this client has seen (0 if none).</summary>
+    long BaseSequence,
+    /// <summary>UUID identifying the editing session, used for echo-suppression.</summary>
+    string? ClientId);
+
+public record OperationResponse(
+    Guid Id,
+    long SequenceNumber,
+    string Delta,
+    string ClientId,
+    long NoteVersion,
+    DateTime AppliedAt);

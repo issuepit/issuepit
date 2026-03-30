@@ -61,9 +61,16 @@
         </div>
       </div>
 
-      <!-- WYSIWYG editor -->
+      <!-- WYSIWYG editor (CRDT-enabled: passes noteId + clientId for operation-based sync) -->
       <div class="flex-1 overflow-hidden">
-        <NoteEditor v-model="editContent" :notebook-id="store.currentNote.notebookId" />
+        <NoteEditor
+          v-model="editContent"
+          :notebook-id="store.currentNote.notebookId"
+          :note-id="noteId"
+          :client-id="crdtClientId"
+          :last-seq="crdtLastSeq"
+          @seq-updated="crdtLastSeq = $event"
+        />
       </div>
 
       <!-- Outgoing links -->
@@ -125,6 +132,18 @@ const editStatus = ref<NoteStatus>(NoteStatusEnum.Draft)
 const saving = ref(false)
 const showDeleteConfirm = ref(false)
 const versionConflict = ref(false)
+
+// CRDT: stable per-tab client ID (persisted across page refreshes)
+const crdtClientId = (() => {
+  if (typeof window === 'undefined') return crypto.randomUUID()
+  const key = 'notes-crdt-client-id'
+  let id = localStorage.getItem(key)
+  if (!id) { id = crypto.randomUUID(); localStorage.setItem(key, id) }
+  return id
+})()
+
+/** Last confirmed CRDT sequence number; updated by NoteEditor as ops are acknowledged. */
+const crdtLastSeq = ref(0)
 
 async function saveNote() {
   if (!store.currentNote) return
