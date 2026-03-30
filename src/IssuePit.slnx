@@ -15,4 +15,8 @@
   <Project Path="IssuePit.Tests.Integration/IssuePit.Tests.Integration.csproj" />
   <Project Path="IssuePit.Tests.Unit/IssuePit.Tests.Unit.csproj" />
   <Project Path="IssuePit.GitServer/IssuePit.GitServer.csproj" />
+  <Project Path="IssuePit.Notes.Core/IssuePit.Notes.Core.csproj" />
+  <Project Path="IssuePit.Notes.Api/IssuePit.Notes.Api.csproj" />
+  <Project Path="IssuePit.Notes.Migrator/IssuePit.Notes.Migrator.csproj" />
+  <Project Path="IssuePit.Notes.McpServer/IssuePit.Notes.McpServer.csproj" />
 </Solution>

@@ -74,6 +74,7 @@ if (gitBranch is not null)
         .WithDataVolume($"issuepit-postgres-{SanitizeForVolumeName(gitBranch)}", false); // https://aspire.dev/integrations/databases/postgres/postgres-host/#add-postgresql-server-resource-with-data-volume
 
 var postgresDb = postgresServer.AddDatabase("issuepit-db");
+var notesDb = postgresServer.AddDatabase("notes-db");
 
 
 
@@ -323,6 +324,21 @@ var voskModelDownloader = builder.AddProject<Projects.IssuePit_VoskModelDownload
     .WithEnvironment("VoiceTranscription__ModelPath", voskModelPath)
     .WithEnvironment("VoiceTranscription__ModelDownloadUrl", voskModelDownloadUrl);
 
+// ── Notes service (separate database and API) ──────────────────────────────────
+var notesMigrator = builder.AddProject<Projects.IssuePit_Notes_Migrator>("notes-migrator")
+    .WithReference(notesDb)
+    .WaitFor(notesDb);
+
+var notesApi = builder.AddProject<Projects.IssuePit_Notes_Api>("notes-api")
+    .WithReference(notesDb)
+    .WaitForCompletion(notesMigrator)
+    .WithHttpHealthCheck("/health", endpointName: "http");
+
+var notesMcpServer = builder.AddProject<Projects.IssuePit_Notes_McpServer>("notes-mcp-server")
+    .WithReference(notesApi)
+    .WaitFor(notesApi)
+    .WithEnvironment("Notes__ApiBaseUrl", notesApi.GetEndpoint("http"));
+
 var frontend = builder.AddNpmApp("frontend", "../../frontend", "dev")
     .WithHttpEndpoint(env: "NUXT_PORT")
     .WithExternalHttpEndpoints();
@@ -452,7 +468,9 @@ frontend
     .WithEnvironment("NUXT_PUBLIC_API_BASE", api.GetEndpoint("http"))
     .WithEnvironment("NUXT_PUBLIC_MCP_BASE", mcpServer.GetEndpoint("http"))
     .WithEnvironment("NUXT_PUBLIC_TERMINAL_BASE", terminalServer.GetEndpoint("http"))
+    .WithEnvironment("NUXT_PUBLIC_NOTES_API_BASE", notesApi.GetEndpoint("http"))
     .WaitFor(api)
+    .WaitFor(notesApi)
     .WithUrlForEndpoint("http", u =>
     {
         u.DisplayText = "Admin Login";
