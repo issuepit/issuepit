@@ -1071,8 +1071,8 @@ async function updateGitResolutionAgent(agentId: string | null) {
   gitResolutionAgentId.value = agentId
   try {
     await projectsStore.updateProject(id, { gitResolutionAgentId: agentId ?? undefined })
-  } catch {
-    // silently ignore
+  } catch (e: unknown) {
+    console.warn('Failed to update git resolution agent:', e)
   }
 }
 

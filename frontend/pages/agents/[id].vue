@@ -340,6 +340,8 @@ const form = reactive({
 })
 
 const builtInOpenCodeAgents = ['build', 'compaction', 'explore', 'general', 'plan', 'summary', 'title']
+// NOTE: Keep this list in sync with opencode's built-in agents.
+// See https://github.com/sst/opencode/tree/dev/pkg/agent for the canonical list.
 
 const runnerOptions = [
   { value: null, label: '— None (use container entrypoint)' },
@@ -468,7 +470,7 @@ function buildPayload(allowedTools: string[]) {
     useHttpServer: form.useHttpServer,
     manualMode: form.manualMode,
     isShellAgent: form.isShellAgent,
-    openCodeAgentName: form.isShellAgent ? (form.openCodeAgentName || undefined) : undefined,
+    openCodeAgentName: form.isShellAgent && form.openCodeAgentName ? form.openCodeAgentName : undefined,
     httpServerPassword: form.httpServerPassword || undefined,
     allowedTools: JSON.stringify(allowedTools),
   }
