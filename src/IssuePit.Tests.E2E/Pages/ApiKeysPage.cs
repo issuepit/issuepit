@@ -32,11 +32,23 @@ public class ApiKeysPage(IPage page)
     /// <summary>
     /// Opens the "Add Key" modal, fills in the required fields, and submits the form.
     /// Waits for the key name to appear in the table.
+    /// Retries the button click once if the modal does not open (Vue SSR hydration race).
     /// </summary>
     public async Task AddKeyAsync(string name, string value)
     {
-        await page.ClickAsync("button:has-text('Add Key')");
-        await page.WaitForSelectorAsync("h3:has-text('Add API Key')");
+        try
+        {
+            await page.ClickAsync("button:has-text('Add Key')");
+            await page.WaitForSelectorAsync("h3:has-text('Add API Key')",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (TimeoutException)
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.ClickAsync("button:has-text('Add Key')");
+            await page.WaitForSelectorAsync("h3:has-text('Add API Key')",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        }
 
         await page.FillAsync("input[placeholder='e.g. Hetzner Production']", name);
         await page.FillAsync("input[type='password']", value);

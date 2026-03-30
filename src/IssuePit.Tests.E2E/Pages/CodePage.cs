@@ -33,12 +33,23 @@ public class CodePage(IPage page)
 
     /// <summary>
     /// Clicks the "Run" button next to the first branch and waits for the trigger modal to open.
+    /// Retries the button click once if the modal does not open (Vue SSR hydration race).
     /// </summary>
     public async Task ClickRunOnFirstBranchAsync()
     {
-        await page.ClickAsync("button[title='Trigger CI/CD run for this branch']");
-        await page.WaitForSelectorAsync("text=Trigger CI/CD Run",
-            new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        try
+        {
+            await page.ClickAsync("button[title='Trigger CI/CD run for this branch']");
+            await page.WaitForSelectorAsync("text=Trigger CI/CD Run",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (TimeoutException)
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.ClickAsync("button[title='Trigger CI/CD run for this branch']");
+            await page.WaitForSelectorAsync("text=Trigger CI/CD Run",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        }
     }
 
     /// <summary>

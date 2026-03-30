@@ -33,10 +33,23 @@ public class MilestonesPage(IPage page)
 
     /// <summary>
     /// Creates a milestone via the New Milestone modal and waits for the title to appear in the list.
+    /// Retries the button click once if the modal does not open (Vue SSR hydration race).
     /// </summary>
     public async Task CreateMilestoneAsync(string title)
     {
-        await page.ClickAsync("button:has-text('New Milestone')");
+        try
+        {
+            await page.ClickAsync("button:has-text('New Milestone')");
+            await page.WaitForSelectorAsync("input[placeholder='Milestone title']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (TimeoutException)
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.ClickAsync("button:has-text('New Milestone')");
+            await page.WaitForSelectorAsync("input[placeholder='Milestone title']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        }
         await page.FillAsync("input[placeholder='Milestone title']", title);
         await page.ClickAsync("button:has-text('Create Milestone')");
         await page.WaitForSelectorAsync($"text={title}", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
@@ -44,11 +57,23 @@ public class MilestonesPage(IPage page)
 
     /// <summary>
     /// Switches the milestones page to the Gantt-only view by clicking the "Gantt" toggle button.
+    /// Retries once if the view does not switch (Vue SSR hydration race).
     /// </summary>
     public async Task SwitchToGanttViewAsync()
     {
-        await page.ClickAsync("[data-testid='gantt-view-button']");
-        await page.WaitForSelectorAsync(".bar-area-container", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        try
+        {
+            await page.ClickAsync("[data-testid='gantt-view-button']");
+            await page.WaitForSelectorAsync(".bar-area-container",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (TimeoutException)
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.ClickAsync("[data-testid='gantt-view-button']");
+            await page.WaitForSelectorAsync(".bar-area-container",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        }
     }
 
     /// <summary>

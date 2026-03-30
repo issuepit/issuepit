@@ -30,10 +30,24 @@ public class TodosPage(IPage page)
         }
     }
 
-    /// <summary>Creates a todo via the New Todo modal and waits for it to appear in the list.</summary>
+    /// <summary>Creates a todo via the New Todo modal and waits for it to appear in the list.
+    /// Retries the button click once if the modal does not open (Vue SSR hydration race).
+    /// </summary>
     public async Task CreateTodoAsync(string title)
     {
-        await page.ClickAsync("button:has-text('+ Todo')");
+        try
+        {
+            await page.ClickAsync("button:has-text('+ Todo')");
+            await page.WaitForSelectorAsync("input[placeholder='Todo title']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (TimeoutException)
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.ClickAsync("button:has-text('+ Todo')");
+            await page.WaitForSelectorAsync("input[placeholder='Todo title']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        }
         await page.FillAsync("input[placeholder='Todo title']", title);
         await page.ClickAsync("button:has-text('Create')");
         await page.WaitForSelectorAsync($"text={title}", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });

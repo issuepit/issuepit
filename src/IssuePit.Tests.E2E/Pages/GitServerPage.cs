@@ -32,11 +32,23 @@ public class GitServerPage(IPage page)
     /// <summary>
     /// Opens the "New Repository" modal, fills in the slug, and submits the form.
     /// Waits for the repo slug to appear in the list.
+    /// Retries the button click once if the modal does not open (Vue SSR hydration race).
     /// </summary>
     public async Task CreateRepoAsync(string slug)
     {
-        await page.ClickAsync("button:has-text('New Repository')");
-        await page.WaitForSelectorAsync("h3:has-text('New Repository')");
+        try
+        {
+            await page.ClickAsync("button:has-text('New Repository')");
+            await page.WaitForSelectorAsync("h3:has-text('New Repository')",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (TimeoutException)
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.ClickAsync("button:has-text('New Repository')");
+            await page.WaitForSelectorAsync("h3:has-text('New Repository')",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        }
 
         await page.FillAsync("input[placeholder='e.g. my-repo']", slug);
 
