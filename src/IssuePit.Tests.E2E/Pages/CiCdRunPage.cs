@@ -113,6 +113,17 @@ public class CiCdRunPage(IPage page)
             null,
             new PageWaitForFunctionOptions { Timeout = E2ETimeouts.Navigation });
 
+    /// <summary>
+    /// Waits for the Tests tab to show actual test results (at least one "passed" entry).
+    /// Use this instead of <see cref="WaitForTestsTabContentAsync"/> when you know the run
+    /// should have test results, to avoid resolving early on the transient empty-state shown during loading.
+    /// </summary>
+    public async Task WaitForNonEmptyTestsTabAsync() =>
+        await page.WaitForFunctionAsync(
+            "document.body?.innerText?.includes('passed')",
+            null,
+            new PageWaitForFunctionOptions { Timeout = E2ETimeouts.Navigation });
+
     /// <summary>Returns true when the tests tab shows at least one test suite result.</summary>
     public async Task<bool> HasTestSuitesAsync()
     {
