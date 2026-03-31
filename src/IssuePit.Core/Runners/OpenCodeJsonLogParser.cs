@@ -47,6 +47,25 @@ public static class OpenCodeJsonLogParser
     public const string StepFinishPrefix = "[opencode:step-finish] ";
 
     /// <summary>
+    /// Prefix that identifies a task-prompt log line stored in the database.
+    /// The frontend detects this prefix and renders a collapsible prompt block (collapsed by default).
+    /// The payload is a JSON object with a <c>text</c> property containing the full prompt text.
+    /// </summary>
+    public const string PromptPrefix = "[opencode:prompt] ";
+
+    /// <summary>
+    /// Prefix that identifies the beginning of a command-execution block.
+    /// The frontend groups all subsequent log lines until <see cref="CmdEndMarker"/>
+    /// into a single collapsible cmd block (collapsed by default).
+    /// </summary>
+    public const string CmdBeginPrefix = "[opencode:cmd-begin] ";
+
+    /// <summary>
+    /// Marker that closes a command-execution block opened by <see cref="CmdBeginPrefix"/>.
+    /// </summary>
+    public const string CmdEndMarker = "[opencode:cmd-end]";
+
+    /// <summary>
     /// Section prefix prepended to log lines emitted during CI/CD fix runs (and other exec-based
     /// fix sections such as <c>UncommittedChangesFix</c> and <c>MessageRun</c>).
     /// <see cref="ParseLine"/> strips this prefix before parsing so that fix-run log lines are

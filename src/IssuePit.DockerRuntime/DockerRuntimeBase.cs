@@ -4,6 +4,7 @@ using System.Text.Json;
 using Docker.DotNet;
 using Docker.DotNet.Models;
 using IssuePit.Core.Enums;
+using IssuePit.Core.Runners;
 using Microsoft.Extensions.Logging;
 
 namespace IssuePit.DockerRuntime;
@@ -72,8 +73,9 @@ public abstract class DockerRuntimeBase
     /// <param name="env">Optional environment variables for this exec, in <c>KEY=VALUE</c> form.</param>
     /// <param name="workingDir">Working directory inside the container (default: <c>/workspace</c>).</param>
     /// <param name="logCommand">
-    /// When <c>true</c>, emits a <c>[CMD] $ &lt;command&gt;</c> line via <paramref name="onLogLine"/> before
-    /// executing, so the full command (including arguments) is visible in the session logs in verbose mode.
+    /// When <c>true</c>, wraps command output in <c>[opencode:cmd-begin]</c>/<c>[opencode:cmd-end]</c>
+    /// markers via <paramref name="onLogLine"/>, so the command and its output are rendered as a
+    /// collapsible block in the session logs UI.
     /// Defaults to <c>false</c>. Pass <c>true</c> for any exec that does not contain sensitive values
     /// (e.g. auth tokens in URLs) and whose command line is useful for diagnostics.
     /// </param>
@@ -92,12 +94,12 @@ public abstract class DockerRuntimeBase
             // Truncate very long command strings (e.g. multi-line shell scripts passed via
             // CustomCmdOverride) so they do not spam the session log with hundreds of characters
             // per line. The full script is visible via docker inspect / the session detail UI
-            // for the agent, so truncation here only affects the one-line [CMD] entry.
+            // for the agent, so truncation here only affects the one-line cmd-begin entry.
             const int MaxCmdLogLength = 200;
             var cmdDisplay = cmdLine.Length > MaxCmdLogLength
                 ? cmdLine[..MaxCmdLogLength] + "..."
                 : cmdLine;
-            await onLogLine($"[CMD] $ {cmdDisplay}", LogStream.Stdout);
+            await onLogLine($"{OpenCodeJsonLogParser.CmdBeginPrefix}$ {cmdDisplay}", LogStream.Stdout);
         }
 
         var execCreate = await DockerClient.Exec.CreateContainerExecAsync(
@@ -118,7 +120,12 @@ public abstract class DockerRuntimeBase
         await ReadMultiplexedStreamAsync(stream, onLogLine, cancellationToken);
 
         var inspect = await DockerClient.Exec.InspectContainerExecAsync(execCreate.ID, cancellationToken);
-        return inspect.ExitCode ?? 0;
+        var exitCode = inspect.ExitCode ?? 0;
+
+        if (logCommand)
+            await onLogLine(OpenCodeJsonLogParser.CmdEndMarker, LogStream.Stdout);
+
+        return exitCode;
     }
 
     /// <summary>
@@ -581,7 +588,7 @@ public abstract class DockerRuntimeBase
             {
                 await onLogLine("[INFO] Running npm install", LogStream.Stdout);
                 await ExecCommandAsync(containerId, ["npm", "install", "--prefer-offline"],
-                    async (line, stream) => await onLogLine(line, stream), cancellationToken);
+                    async (line, stream) => await onLogLine(line, stream), cancellationToken, logCommand: true);
             }
         }
         catch (Exception ex)
@@ -600,7 +607,7 @@ public abstract class DockerRuntimeBase
             {
                 await onLogLine("[INFO] Running dotnet restore", LogStream.Stdout);
                 await ExecCommandAsync(containerId, ["dotnet", "restore"],
-                    async (line, stream) => await onLogLine(line, stream), cancellationToken);
+                    async (line, stream) => await onLogLine(line, stream), cancellationToken, logCommand: true);
             }
         }
         catch (Exception ex)

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Formats.Tar;
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
 using Docker.DotNet;
 using Docker.DotNet.Models;
 using IssuePit.Core.Entities;
@@ -326,12 +327,11 @@ public class DockerAgentRuntime(
         // In manual mode the user drives the agent interactively, so skip building/logging it.
         var taskPrompt = useManualMode ? string.Empty : RunnerCommandBuilder.BuildTaskPrompt(issue, comments, agent.Name);
 
-        // Log the task prompt that will be passed to the agent so it is always visible in the logs.
+        // Log the task prompt as a single collapsible block visible in the UI.
         if (!useManualMode)
         {
-            await onLogLine($"[DEBUG] Task prompt    :", LogStream.Stdout);
-            foreach (var promptLine in taskPrompt.Split('\n'))
-                await onLogLine($"[DEBUG]   {promptLine}", LogStream.Stdout);
+            var promptJson = JsonSerializer.Serialize(new { text = taskPrompt });
+            await onLogLine($"{OpenCodeJsonLogParser.PromptPrefix}{promptJson}", LogStream.Stdout);
         }
 
         // Step 4: Configure DNS-based firewall when internet access should be restricted.
