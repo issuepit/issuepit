@@ -333,4 +333,24 @@ public class CiCdRunPage(IPage page)
     /// </summary>
     public bool IsOnIssuePage() =>
         page.Url.Contains("/issues/");
+
+    /// <summary>
+    /// Navigates directly to an issue detail page.
+    /// Retries once on ERR_ABORTED (Nuxt SPA router race) or TimeoutException (slow first render).
+    /// </summary>
+    public async Task GotoIssueAsync(string projectId, int issueNumber)
+    {
+        var url = $"/projects/{projectId}/issues/{issueNumber}";
+        try
+        {
+            await page.GotoAsync(url);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+        }
+        catch (Exception ex) when (ex is TimeoutException || (ex is PlaywrightException pe && pe.Message.Contains("ERR_ABORTED")))
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.GotoAsync(url);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+        }
+    }
 }

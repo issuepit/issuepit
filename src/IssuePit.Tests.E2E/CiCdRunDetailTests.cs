@@ -177,9 +177,7 @@ public class CiCdRunDetailTests : IAsyncLifetime
             var issueNumber = await CiCdTestPollingHelpers.WaitForNewIssueAsync(
                 apiClient, projectId, TimeSpan.FromSeconds(15));
 
-            var issueUrl = $"{FrontendUrl}/projects/{projectId}/issues/{issueNumber}";
-            await page.GotoAsync(issueUrl);
-            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+            await runPage.GotoIssueAsync(projectId, issueNumber);
 
             Assert.True(runPage.IsOnIssuePage(),
                 $"Expected to be on an issue detail page after navigating, but URL was: {page.Url}");
