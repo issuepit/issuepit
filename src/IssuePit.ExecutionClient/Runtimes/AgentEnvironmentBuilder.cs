@@ -152,19 +152,24 @@ internal static class AgentEnvironmentBuilder
     /// Serialises MCP servers linked to the agent into a JSON array for the container entrypoint
     /// to merge into the opencode config's <c>mcp</c> section.
     /// Each entry contains the server name (slug), URL, type, and any secrets as HTTP headers.
+    /// Docker-type MCP servers are excluded here — they are handled as sidecar containers and
+    /// their entries are passed via <paramref name="sidecarEntries"/> instead.
     /// Returns an empty string when no linked MCP servers are configured.
     /// </summary>
-    internal static string BuildExtraMcpJson(Agent agent)
+    /// <param name="sidecarEntries">
+    ///   Additional MCP entries produced by Docker sidecar containers (already serialisation-ready
+    ///   anonymous objects with name/type/url/headers). Merged with the linked-server entries.
+    /// </param>
+    internal static string BuildExtraMcpJson(Agent agent, IReadOnlyList<object>? sidecarEntries = null)
     {
         var linked = agent.AgentMcpServers
-            .Where(ams => ams.McpServer is not null)
-            .Select(ams => ams.McpServer)
+            .Where(ams => ams.McpServer is not null && ams.McpServer.ServerType != McpServerType.Docker)
+            .Select(ams => ams.McpServer!)
             .ToList();
 
-        if (linked.Count == 0)
-            return string.Empty;
+        var allEntries = new List<object>();
 
-        var entries = linked.Select(s =>
+        foreach (var s in linked)
         {
             // Resolve secrets scoped to this agent or global, with agent-scoped taking precedence.
             // McpSecretScope.Agent (3) > McpSecretScope.Global (0), so OrderByDescending puts agent first.
@@ -173,18 +178,24 @@ internal static class AgentEnvironmentBuilder
                               (sec.Scope == McpSecretScope.Agent && sec.ScopeId == agent.Id))
                 .GroupBy(sec => sec.Key)
                 .Select(g => g.OrderBy(sec => sec.Scope == McpSecretScope.Agent ? 0 : 1).First())
-                .ToDictionary(sec => sec.Key, sec => DecryptMcpSecret(sec.EncryptedValue));
+                .ToDictionary(sec => sec.Key, sec => DecryptSecret(sec.EncryptedValue));
 
-            return new
+            allEntries.Add(new
             {
                 name = s.Name.ToLowerInvariant().Replace(' ', '-'),
                 type = ResolveMcpType(s.Configuration),
                 url = s.Url,
                 headers = headers.Count > 0 ? (object)headers : null,
-            };
-        }).ToList();
+            });
+        }
 
-        return JsonSerializer.Serialize(entries);
+        if (sidecarEntries is { Count: > 0 })
+            allEntries.AddRange(sidecarEntries);
+
+        if (allEntries.Count == 0)
+            return string.Empty;
+
+        return JsonSerializer.Serialize(allEntries);
     }
 
     /// <summary>
@@ -219,6 +230,6 @@ internal static class AgentEnvironmentBuilder
     };
 
     /// <summary>Strips the "plain:" placeholder prefix. Production will use proper decryption.</summary>
-    private static string DecryptMcpSecret(string encryptedValue) =>
+    internal static string DecryptSecret(string encryptedValue) =>
         encryptedValue.StartsWith("plain:") ? encryptedValue["plain:".Length..] : encryptedValue;
 }

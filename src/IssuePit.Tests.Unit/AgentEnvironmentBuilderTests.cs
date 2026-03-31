@@ -124,7 +124,8 @@ public class AgentEnvironmentBuilderTests
         string name,
         string url,
         string configuration = "{}",
-        IEnumerable<McpServerSecret>? secrets = null) =>
+        IEnumerable<McpServerSecret>? secrets = null,
+        McpServerType serverType = McpServerType.Remote) =>
         new()
         {
             Id = Guid.NewGuid(),
@@ -132,6 +133,7 @@ public class AgentEnvironmentBuilderTests
             Name = name,
             Url = url,
             Configuration = configuration,
+            ServerType = serverType,
             Secrets = secrets?.ToList() ?? [],
         };
 
@@ -433,5 +435,90 @@ public class AgentEnvironmentBuilderTests
         var entry = doc.RootElement[0];
         Assert.Equal("review-agent", entry.GetProperty("name").GetString());
         Assert.Equal("Review code carefully.", entry.GetProperty("prompt").GetString());
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Docker-type MCP server filtering
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void BuildExtraMcpJson_DockerTypeServer_IsExcludedFromOutput()
+    {
+        var dockerServer = MakeMcpServer(
+            "Playwright",
+            "",
+            configuration: """{"image":"mcr.microsoft.com/playwright/mcp","args":[]}""",
+            serverType: McpServerType.Docker);
+
+        var agent = new Agent
+        {
+            Id = Guid.NewGuid(),
+            Name = "agent",
+            SystemPrompt = "test",
+            DockerImage = "img",
+            AgentMcpServers = [new AgentMcpServer { McpServer = dockerServer }],
+        };
+
+        // Docker-type servers are excluded from BuildExtraMcpJson — they are handled by the sidecar launcher.
+        var json = AgentEnvironmentBuilder.BuildExtraMcpJson(agent);
+        Assert.Equal(string.Empty, json);
+    }
+
+    [Fact]
+    public void BuildExtraMcpJson_MixedTypes_OnlyIncludesNonDockerServers()
+    {
+        var remoteServer = MakeMcpServer("GitHub MCP", "https://api.githubcopilot.com/mcp/", serverType: McpServerType.Remote);
+        var dockerServer = MakeMcpServer(
+            "Playwright",
+            "",
+            configuration: """{"image":"playwright:latest","args":[]}""",
+            serverType: McpServerType.Docker);
+
+        var agent = new Agent
+        {
+            Id = Guid.NewGuid(),
+            Name = "agent",
+            SystemPrompt = "test",
+            DockerImage = "img",
+            AgentMcpServers =
+            [
+                new AgentMcpServer { McpServer = remoteServer },
+                new AgentMcpServer { McpServer = dockerServer },
+            ],
+        };
+
+        var json = AgentEnvironmentBuilder.BuildExtraMcpJson(agent);
+        var doc = JsonDocument.Parse(json);
+        // Only the remote server should appear.
+        Assert.Equal(1, doc.RootElement.GetArrayLength());
+        Assert.Equal("github-mcp", doc.RootElement[0].GetProperty("name").GetString());
+    }
+
+    [Fact]
+    public void BuildExtraMcpJson_WithSidecarEntries_MergesSidecarUrls()
+    {
+        var remoteServer = MakeMcpServer("Context7", "https://mcp.context7.com/mcp", serverType: McpServerType.Remote);
+
+        var agent = new Agent
+        {
+            Id = Guid.NewGuid(),
+            Name = "agent",
+            SystemPrompt = "test",
+            DockerImage = "img",
+            AgentMcpServers = [new AgentMcpServer { McpServer = remoteServer }],
+        };
+
+        var sidecarEntries = new List<object>
+        {
+            new { name = "playwright", type = "remote", url = "http://host.docker.internal:12345/mcp", headers = (object?)null },
+        };
+
+        var json = AgentEnvironmentBuilder.BuildExtraMcpJson(agent, sidecarEntries);
+        var doc = JsonDocument.Parse(json);
+        // Both the regular remote server and the sidecar entry should be present.
+        Assert.Equal(2, doc.RootElement.GetArrayLength());
+        Assert.Equal("context7", doc.RootElement[0].GetProperty("name").GetString());
+        Assert.Equal("playwright", doc.RootElement[1].GetProperty("name").GetString());
+        Assert.Equal("http://host.docker.internal:12345/mcp", doc.RootElement[1].GetProperty("url").GetString());
     }
 }

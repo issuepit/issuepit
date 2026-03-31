@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Formats.Tar;
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
 using Docker.DotNet;
 using Docker.DotNet.Models;
 using IssuePit.Core.Entities;
@@ -522,11 +523,71 @@ public class DockerAgentRuntime(
         // Step C: Start DNS logging/firewall proxy.
         await SetupDnsProxyAsync(container.ID, agent.DisableInternet, onLogLine, cancellationToken);
 
+        // Step C2: Start Docker-type MCP sidecar containers on the host Docker daemon so the
+        // agent container can reach them via host.docker.internal:<port>.
+        // Sidecars are tracked in sidecarContainerIds and cleaned up in the finally block.
+        var sidecarContainerIds = new List<string>();
+        var sidecarMcpEntries = new List<object>();
+        try
+        {
+            var dockerMcpServers = agent.AgentMcpServers
+                .Where(ams => ams.McpServer is not null && ams.McpServer.ServerType == McpServerType.Docker)
+                .Select(ams => ams.McpServer!)
+                .ToList();
+
+            if (dockerMcpServers.Count > 0)
+            {
+                await onLogLine($"[INFO] Starting {dockerMcpServers.Count} Docker MCP sidecar(s)…", LogStream.Stdout);
+                foreach (var mcpServer in dockerMcpServers)
+                {
+                    try
+                    {
+                        var (sidecarId, sidecarUrl) = await StartDockerMcpSidecarAsync(
+                            mcpServer, session.Id, onLogLine, cancellationToken);
+                        sidecarContainerIds.Add(sidecarId);
+
+                        var headers = mcpServer.Secrets
+                            .Where(sec => sec.Scope == McpSecretScope.Global ||
+                                          (sec.Scope == McpSecretScope.Agent && sec.ScopeId == agent.Id))
+                            .GroupBy(sec => sec.Key)
+                            .Select(g => g.OrderBy(sec => sec.Scope == McpSecretScope.Agent ? 0 : 1).First())
+                            .ToDictionary(sec => sec.Key, sec => AgentEnvironmentBuilder.DecryptSecret(sec.EncryptedValue));
+
+                        sidecarMcpEntries.Add(new
+                        {
+                            name = mcpServer.Name.ToLowerInvariant().Replace(' ', '-'),
+                            type = "remote",
+                            url = sidecarUrl,
+                            headers = headers.Count > 0 ? (object)headers : null,
+                        });
+                        await onLogLine($"[INFO] MCP sidecar '{mcpServer.Name}' ready at {sidecarUrl}", LogStream.Stdout);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        await onLogLine($"[WARN] Failed to start Docker MCP sidecar '{mcpServer.Name}': {ex.Message} — skipping", LogStream.Stderr);
+                        logger.LogWarning(ex, "Failed to start Docker MCP sidecar '{McpName}' for session {SessionId}", mcpServer.Name, session.Id);
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            await onLogLine($"[WARN] Docker MCP sidecar startup encountered an error: {ex.Message}", LogStream.Stderr);
+        }
+
         // Step D: Write opencode config (replaces the Python script that ran inside entrypoint.sh).
         if (agent.RunnerType == RunnerType.OpenCode)
         {
             var agentsJson = AgentEnvironmentBuilder.BuildAgentsJson(agent);
-            var extraMcpJson = AgentEnvironmentBuilder.BuildExtraMcpJson(agent);
+            var extraMcpJson = AgentEnvironmentBuilder.BuildExtraMcpJson(agent, sidecarMcpEntries);
             await WriteOpencodeConfigAsync(
             container.ID,
             mcpUrl: issuePitMcpUrl,
@@ -780,6 +841,7 @@ public class DockerAgentRuntime(
             {
                 if (!session.KeepContainer)
                     await TryStopAndRemoveContainerAsync(container.ID);
+                await StopDockerMcpSidecarsAsync(sidecarContainerIds);
                 throw;
             }
         }
@@ -878,6 +940,7 @@ public class DockerAgentRuntime(
                     $"Agent exited with code {agentExitCode} (image: {image}, session: {session.Id})");
 
             // Return the container ID — the container is still alive for fix runs.
+            await StopDockerMcpSidecarsAsync(sidecarContainerIds);
             return container.ID;
         }
         catch
@@ -885,6 +948,7 @@ public class DockerAgentRuntime(
             // Clean up the container on failure unless KeepContainer is set (for debugging).
             if (!session.KeepContainer)
                 await TryStopAndRemoveContainerAsync(container.ID);
+            await StopDockerMcpSidecarsAsync(sidecarContainerIds);
             throw;
         }
     }
@@ -1977,6 +2041,147 @@ public class DockerAgentRuntime(
 
         var builder = new UriBuilder(uri) { Host = "host.docker.internal" };
         return builder.Uri.ToString().TrimEnd('/');
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Docker MCP sidecar helpers
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Starts a Docker-type MCP server as a sidecar container on the host Docker daemon.
+    /// The container is started with a random host port bound to the MCP server port inside
+    /// the container. Returns the container ID and the URL that the agent container can use
+    /// to reach the sidecar via <c>host.docker.internal:{hostPort}</c>.
+    /// </summary>
+    /// <remarks>
+    /// Configuration JSON format:
+    /// <code>{"image":"org/mcp-image:latest","args":[],"env":{},"port":8080}</code>
+    /// <list type="bullet">
+    ///   <item><c>image</c> — Docker image to run (required).</item>
+    ///   <item><c>args</c> — command-line arguments passed to the container CMD (optional).</item>
+    ///   <item><c>env</c> — environment variables injected into the container (optional).</item>
+    ///   <item><c>port</c> — container port the MCP server listens on (default: 8080).</item>
+    ///   <item><c>path</c> — URL path suffix to append to the host URL (default: <c>/mcp</c>).</item>
+    /// </list>
+    /// </remarks>
+    private async Task<(string ContainerId, string Url)> StartDockerMcpSidecarAsync(
+        McpServer mcpServer,
+        Guid sessionId,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        // Parse configuration JSON.
+        string image;
+        IList<string> args = [];
+        IDictionary<string, string> envDict = new Dictionary<string, string>();
+        int containerPort = 8080;
+        string urlPath = "/mcp";
+
+        try
+        {
+            using var doc = JsonDocument.Parse(mcpServer.Configuration);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("image", out var imageEl) || string.IsNullOrWhiteSpace(imageEl.GetString()))
+                throw new InvalidOperationException($"Docker MCP server '{mcpServer.Name}' configuration is missing required 'image' field.");
+
+            image = imageEl.GetString()!;
+
+            if (root.TryGetProperty("args", out var argsEl) && argsEl.ValueKind == JsonValueKind.Array)
+                args = argsEl.EnumerateArray().Select(a => a.GetString() ?? string.Empty).Where(a => a.Length > 0).ToList();
+
+            if (root.TryGetProperty("env", out var envEl) && envEl.ValueKind == JsonValueKind.Object)
+                foreach (var prop in envEl.EnumerateObject())
+                    envDict[prop.Name] = prop.Value.GetString() ?? string.Empty;
+
+            if (root.TryGetProperty("port", out var portEl) && portEl.TryGetInt32(out var p) && p > 0)
+                containerPort = p;
+
+            if (root.TryGetProperty("path", out var pathEl) && !string.IsNullOrWhiteSpace(pathEl.GetString()))
+                urlPath = pathEl.GetString()!;
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException($"Docker MCP server '{mcpServer.Name}' has invalid JSON configuration: {ex.Message}", ex);
+        }
+
+        // Pull the image.
+        await onLogLine($"[INFO] Pulling Docker MCP image '{image}' for '{mcpServer.Name}'…", LogStream.Stdout);
+        await PullImageAsync(image, cancellationToken);
+
+        // Build env list.
+        var env = envDict.Select(kv => $"{kv.Key}={kv.Value}").ToList();
+
+        // Container name scoped to session so we can find it for cleanup.
+        var safeName = mcpServer.Name.ToLowerInvariant().Replace(' ', '-');
+        var sidecarName = $"issuepit-mcp-{safeName}-{sessionId:N}"[..Math.Min(63, $"issuepit-mcp-{safeName}-{sessionId:N}".Length)];
+
+        // Port binding: host port 0 → Docker assigns a random available port.
+        var containerPortKey = $"{containerPort}/tcp";
+        var hostConfig = new HostConfig
+        {
+            AutoRemove = false,
+            PortBindings = new Dictionary<string, IList<PortBinding>>
+            {
+                { containerPortKey, [new PortBinding { HostIP = "127.0.0.1", HostPort = "" }] },
+            },
+        };
+
+        var createParams = new CreateContainerParameters
+        {
+            Name = sidecarName,
+            Image = image,
+            Env = env,
+            Cmd = args.Count > 0 ? args : null,
+            ExposedPorts = new Dictionary<string, EmptyStruct> { { containerPortKey, new EmptyStruct() } },
+            HostConfig = hostConfig,
+            Labels = new Dictionary<string, string>
+            {
+                ["issuepit.session-id"] = sessionId.ToString(),
+                ["issuepit.mcp-server-id"] = mcpServer.Id.ToString(),
+                ["issuepit.role"] = "mcp-sidecar",
+            },
+        };
+
+        var sidecar = await dockerClient.Containers.CreateContainerAsync(createParams, cancellationToken);
+        await dockerClient.Containers.StartContainerAsync(sidecar.ID, new ContainerStartParameters(), cancellationToken);
+
+        // Inspect to discover the assigned host port.
+        var inspect = await dockerClient.Containers.InspectContainerAsync(sidecar.ID, cancellationToken);
+        inspect.NetworkSettings.Ports.TryGetValue(containerPortKey, out var portBindings);
+        var assignedPort = portBindings?.FirstOrDefault()?.HostPort;
+
+        if (string.IsNullOrEmpty(assignedPort))
+            throw new InvalidOperationException($"Docker MCP sidecar '{mcpServer.Name}' started but no host port was assigned for container port {containerPort}.");
+
+        // The agent container reaches the sidecar at host.docker.internal:<hostPort><path>.
+        var sidecarUrl = $"http://host.docker.internal:{assignedPort}{urlPath}";
+
+        await onLogLine($"[DEBUG] MCP sidecar    : {mcpServer.Name} → {sidecar.ID[..Math.Min(12, sidecar.ID.Length)]} (host port {assignedPort})", LogStream.Stdout);
+
+        return (sidecar.ID, sidecarUrl);
+    }
+
+    /// <summary>
+    /// Stops and removes Docker MCP sidecar containers. Best-effort — failures are logged but do not throw.
+    /// </summary>
+    private async Task StopDockerMcpSidecarsAsync(IReadOnlyList<string> sidecarContainerIds)
+    {
+        foreach (var id in sidecarContainerIds)
+        {
+            try
+            {
+                await dockerClient.Containers.StopContainerAsync(
+                    id, new ContainerStopParameters { WaitBeforeKillSeconds = 5 }, CancellationToken.None);
+                await dockerClient.Containers.RemoveContainerAsync(
+                    id, new ContainerRemoveParameters(), CancellationToken.None);
+                logger.LogDebug("Stopped and removed MCP sidecar container {ContainerId}", id);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to stop/remove MCP sidecar container {ContainerId}", id);
+            }
+        }
     }
 
     /// <summary>Best-effort stop + remove of a container. Used for cleanup on failure paths.</summary>
