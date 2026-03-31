@@ -31,8 +31,14 @@ public class MergeRequest
 
     public MergeRequestStatus Status { get; set; } = MergeRequestStatus.Open;
 
+    /// <summary>The preferred merge strategy for this MR.</summary>
+    public MergeStrategy MergeStrategy { get; set; } = MergeStrategy.Merge;
+
     /// <summary>When true, the MR will be merged automatically once CI succeeds.</summary>
     public bool AutoMergeEnabled { get; set; }
+
+    /// <summary>When true, the source branch will be deleted after a successful merge.</summary>
+    public bool DeleteSourceBranch { get; set; }
 
     /// <summary>The commit SHA that was current on the source branch when the MR was last updated.</summary>
     [MaxLength(200)]
