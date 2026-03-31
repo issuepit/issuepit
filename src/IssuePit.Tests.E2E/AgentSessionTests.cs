@@ -323,7 +323,7 @@ public class AgentSessionTests(AspireFixture fixture)
         {
             "sh", "-c",
             """
-            if wget -qO- "${ISSUEPIT_MCP_URL}/health" 2>&1; then
+            if wget -qO /dev/null "${ISSUEPIT_MCP_URL}/health" 2>/dev/null; then
               echo '[ISSUEPIT:MCP_CHECK]=OK'
             else
               echo '[ISSUEPIT:MCP_CHECK]=FAIL'
