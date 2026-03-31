@@ -122,26 +122,58 @@ async function seedData(apiClient, tenantId) {
   return project;
 }
 
-async function screenshot(page, name) {
-  const file = path.join(OUTPUT_DIR, `${name}.png`);
+// Helper to apply a theme via the DOM (no navigation or reload needed).
+// The app uses a `data-theme` attribute on <html>, see frontend/composables/useTheme.ts.
+async function applyTheme(page, theme) {
+  await page.evaluate((t) => document.documentElement.setAttribute('data-theme', t), theme);
+  await page.waitForTimeout(100); // let CSS transitions settle
+}
+
+async function screenshot(page, name, { themed = true } = {}) {
   await page.waitForLoadState('networkidle');
-  await page.screenshot({ path: file, fullPage: false });
-  console.log(`  ✓  ${file}`);
+
+  // Dark theme screenshot (default)
+  const darkFile = path.join(OUTPUT_DIR, `${name}.png`);
+  await page.screenshot({ path: darkFile, fullPage: false });
+  console.log(`  ✓  ${darkFile}`);
+
+  if (themed) {
+    // Light theme screenshot
+    await applyTheme(page, 'light');
+    const lightFile = path.join(OUTPUT_DIR, `${name}-light.png`);
+    await page.screenshot({ path: lightFile, fullPage: false });
+    console.log(`  ✓  ${lightFile}`);
+    // Restore dark theme
+    await applyTheme(page, 'dark');
+  }
 }
 
 // Screenshot after an interactive action (e.g. modal open, sidebar expanded).
 // Does NOT wait for networkidle — just lets animations settle.
 // Pass scrollToTop=true to scroll to the top of the page before capturing
 // (use when clicking a button near the bottom scrolls the viewport down).
-async function screenshotState(page, name, { scrollToTop = false } = {}) {
-  const file = path.join(OUTPUT_DIR, `${name}.png`);
+async function screenshotState(page, name, { scrollToTop = false, themed = true } = {}) {
   await page.waitForTimeout(500);
   if (scrollToTop) {
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.waitForTimeout(150);
   }
-  await page.screenshot({ path: file, fullPage: false });
-  console.log(`  ✓  ${file}`);
+
+  // Dark theme screenshot (default)
+  const darkFile = path.join(OUTPUT_DIR, `${name}.png`);
+  await page.screenshot({ path: darkFile, fullPage: false });
+  console.log(`  ✓  ${darkFile}`);
+
+  if (themed) {
+    // Light theme screenshot
+    await applyTheme(page, 'light');
+    await page.waitForTimeout(200);
+    const lightFile = path.join(OUTPUT_DIR, `${name}-light.png`);
+    await page.screenshot({ path: lightFile, fullPage: false });
+    console.log(`  ✓  ${lightFile}`);
+    // Restore dark theme
+    await applyTheme(page, 'dark');
+  }
 }
 
 async function main() {
@@ -433,11 +465,12 @@ async function main() {
   await page.goto(`${FRONTEND_URL}/settings`);
   await screenshot(page, 'settings-appearance');
 
-  // Take screenshots of each theme for docs
+  // Take screenshots of each theme for docs (no dual-theme variant needed,
+  // these already show what each theme looks like).
   const THEMES = ['dark', 'dim', 'dark-accent', 'dark-square', 'light'];
   for (const theme of THEMES) {
     await page.goto(`${FRONTEND_URL}?theme=${theme}`);
-    await screenshot(page, `theme-${theme}`);
+    await screenshot(page, `theme-${theme}`, { themed: false });
   }
 
   // --- Demo component pages ---

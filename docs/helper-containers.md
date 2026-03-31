@@ -1,8 +1,5 @@
 ---
 title: Helper Containers
-layout: default
-parent: Developer
-nav_order: 2
 ---
 
 # Helper Containers

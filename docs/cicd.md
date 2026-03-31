@@ -1,7 +1,5 @@
 ---
 title: CI/CD Integration
-layout: default
-nav_order: 7
 ---
 
 # CI/CD Integration
@@ -103,7 +101,7 @@ IssuePit passes `--skip-step` flags to `act` so you can disable specific workflo
    - A bare step name (e.g. `deploy`) skips that step in every job.
    - A `job-id:step-name` pair (e.g. `build:upload-to-s3`) skips the step only within the named job.
 
-   ![Skip Steps editor with wizard]({{ '/assets/screenshots/ci-cd-skip-steps.png' | relative_url }})
+   ![Skip Steps editor with wizard](./assets/screenshots/ci-cd-skip-steps.png)
 
 4. Use the **wizard** to load steps from recent runs automatically — click **"Use wizard (auto-complete from recent runs)"**, check the steps you want to skip, then click **Apply**.
 5. Click **Save CI/CD Config**.
@@ -150,7 +148,7 @@ IssuePit ships pre-built helper container images for CI/CD agent use:
 | `ghcr.io/issuepit/helper-act` | Docker CLI + `act` + `actionlint` |
 | `ghcr.io/issuepit/helper-opencode-act` | `helper-act` + `opencode` for combined agent/CI/CD runs |
 
-See [Helper Containers →](developer/helper-containers) for details.
+See [Helper Containers →](./helper-containers) for details.
 
 ---
 
@@ -165,5 +163,5 @@ See [Projects → Test History](projects#test-history) for full documentation.
 ## Next Steps
 
 - [Projects → Runs](projects#runs)
-- [Helper Containers →](developer/helper-containers)
+- [Helper Containers →](./helper-containers)
 - [Configuration →](configuration)

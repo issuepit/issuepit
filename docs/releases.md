@@ -1,7 +1,5 @@
 ---
 title: Releases
-layout: default
-nav_order: 8
 ---
 
 # Releases
@@ -56,4 +54,4 @@ Database migrations run automatically on startup.
 
 ## Helper Containers
 
-The [helper container images](developer/helper-containers) are versioned independently and published under the `ghcr.io/issuepit/` namespace.
+The [helper container images](./helper-containers) are versioned independently and published under the `ghcr.io/issuepit/` namespace.

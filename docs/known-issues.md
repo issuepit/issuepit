@@ -1,8 +1,5 @@
 ---
 title: Known Issues
-layout: default
-nav_order: 11
-parent: Developer
 ---
 
 # Known Issues

@@ -1,7 +1,5 @@
 ---
 title: Projects
-layout: default
-nav_order: 3
 ---
 
 # Projects
@@ -12,7 +10,7 @@ Projects are the main organizational unit in IssuePit. Each project belongs to a
 
 ## Creating a Project
 
-![Projects page]({{ '/assets/screenshots/projects.png' | relative_url }})
+![Projects page](./assets/screenshots/projects.png)
 
 1. Navigate to the **Projects** section in the sidebar.
 2. Click **New Project**.
@@ -32,7 +30,7 @@ Your new project appears in the project list immediately.
 
 Opening a project takes you to the **project dashboard** — a configurable overview of everything happening in the project.
 
-![Project dashboard]({{ '/assets/screenshots/project-dashboard.png' | relative_url }})
+![Project dashboard](./assets/screenshots/project-dashboard.png)
 
 The dashboard includes compact pill stats (open issues, agent runs, CI/CD runs, members), a **Recent Issues** list, inline read-only kanban, recent agent and CI/CD run summaries, and an issue history feed.
 
@@ -46,7 +44,7 @@ Click **Customize dashboard** (bottom of the page) to enter **draft mode**. In d
 - Group sections into **tab groups** — multiple sections share the same space and are switched via tabs.
 - Click **Save** to persist the layout (stored per user in the browser), or **Cancel** to discard changes.
 
-![Project dashboard in draft/customize mode]({{ '/assets/screenshots/project-dashboard-draft.png' | relative_url }})
+![Project dashboard in draft/customize mode](./assets/screenshots/project-dashboard-draft.png)
 
 ### Test History Chart Card
 
@@ -66,9 +64,9 @@ The **Test History** card can be switched between **list mode** (recent run tabl
 - **Pass/Fail** — stacked green (passed) / red (failed) bar. In Time mode the bar height is the total duration, split proportionally green/red by the pass/fail test count ratio.
 - **Groups** — stacked segments per test artifact name (e.g. `unit`, `integration`, `e2e`). Each group segment uses a stable hue that shifts toward dark red as that group's own failure rate increases. The legend shows each group's own gradient chip — vivid base color = healthy, dark red = failing.
 
-![Test History chart — failure rate mode]({{ '/assets/screenshots/project-dashboard-test-history-failure-rate.png' | relative_url }})
+![Test History chart — failure rate mode](./assets/screenshots/project-dashboard-test-history-failure-rate.png)
 
-![Test History chart — pass/fail and groups modes]({{ '/assets/screenshots/project-dashboard-test-history-groups.png' | relative_url }})
+![Test History chart — pass/fail and groups modes](./assets/screenshots/project-dashboard-test-history-groups.png)
 
 Multiple Test History chart cards can be placed on the same dashboard (e.g. one per branch) by dragging the **+ Test History** button from the draft-mode toolbar.
 
@@ -82,7 +80,7 @@ The **Kanban Board** dashboard card shows an inline read-only kanban view. To ad
 
 Each card is independent — you can place the same board twice or show different boards side by side.
 
-![Dashboard kanban card]({{ '/assets/screenshots/project-dashboard-kanban-card.png' | relative_url }})
+![Dashboard kanban card](./assets/screenshots/project-dashboard-kanban-card.png)
 
 ---
 
@@ -217,7 +215,7 @@ Every manual or automatic import creates an **import run** record. Open the **Im
 
 Each project has a **Kanban board** with the following columns by default:
 
-![Kanban board]({{ '/assets/screenshots/kanban.png' | relative_url }})
+![Kanban board](./assets/screenshots/kanban.png)
 
 | Column | Meaning |
 |--------|---------|
@@ -233,7 +231,7 @@ To reorder or rename columns, go to **Project Settings → Board**.
 
 Clicking any card on the Kanban board opens a **slide-in preview panel** on the right side. The panel shows the issue's status, priority, type, labels, assignees, milestone, and description excerpt. Click **Open Full Issue** to navigate to the full issue page, or click the × button or the backdrop to dismiss the panel.
 
-![Issue preview sidebar]({{ '/assets/screenshots/kanban-card-preview.png' | relative_url }})
+![Issue preview sidebar](./assets/screenshots/kanban-card-preview.png)
 
 ![Issue preview sidebar (detailed)](https://github.com/user-attachments/assets/8891f583-cfc1-4612-bd60-6cfbdb42d75a)
 
@@ -252,7 +250,7 @@ By default, Kanban columns group issues by **Status**. You can switch the active
 
 To change the lane property, click **+ Board** and select the desired **Lane Property**, or view the active board badge in the toolbar to see the current grouping mode. Dragging an issue to a different column automatically updates the corresponding property on that issue.
 
-![New board dialog — lane property selector]({{ '/assets/screenshots/kanban-new-board.png' | relative_url }})
+![New board dialog — lane property selector](./assets/screenshots/kanban-new-board.png)
 
 ![Lane property selector and board variants](https://github.com/user-attachments/assets/539cb797-210a-4e57-88a8-5fea8bab937b)
 
@@ -267,13 +265,13 @@ The **Transitions** button in the board toolbar lets you define which column-to-
 
 When transitions are defined, invalid drop targets are visually grayed out during a drag. When no transitions are defined the board is open — any drag is allowed. The Transitions button pulses amber when dragging from a column that has no outgoing transitions configured.
 
-![Lane transitions dialog]({{ '/assets/screenshots/kanban-transitions.png' | relative_url }})
+![Lane transitions dialog](./assets/screenshots/kanban-transitions.png)
 
 ### Custom Issue Properties
 
 Projects can define **custom properties** to capture structured data beyond the built-in fields (status, priority, type, etc.).
 
-![Custom properties list in project settings]({{ '/assets/screenshots/project-settings-custom-properties.png' | relative_url }})
+![Custom properties list in project settings](./assets/screenshots/project-settings-custom-properties.png)
 
 #### Adding a custom property
 
@@ -288,16 +286,16 @@ Projects can define **custom properties** to capture structured data beyond the 
    - **Constraints** *(type-specific)*:
      - **Enum** — comma-separated or JSON array of allowed values
 
-       ![Custom property form — Enum type]({{ '/assets/screenshots/custom-property-form-enum.png' | relative_url }})
+       ![Custom property form — Enum type](./assets/screenshots/custom-property-form-enum.png)
 
      - **Text** — minimum and maximum character length
      - **Number** — minimum and maximum numeric range
 
-       ![Custom property form — Number type]({{ '/assets/screenshots/custom-property-form-number.png' | relative_url }})
+       ![Custom property form — Number type](./assets/screenshots/custom-property-form-number.png)
 
      - **Date** — minimum and maximum date
 
-       ![Custom property form — Date type]({{ '/assets/screenshots/custom-property-form-date.png' | relative_url }})
+       ![Custom property form — Date type](./assets/screenshots/custom-property-form-date.png)
 
      - **Person / Agent** — allow multiple selections (optionally with a max count)
 5. Click **Save**.
@@ -441,8 +439,7 @@ IssuePit can auto-merge a merge request when all required checks pass.
 
 ---
 
-## Runs
-{: #runs }
+## Runs {#runs}
 
 The **Runs** tab shows a combined list of all agent sessions and CI/CD pipeline runs for the project.
 
@@ -459,7 +456,7 @@ You can also view runs across all projects from the global **Runs** page in the 
 
 The **Test History** page (`Project → Runs → Test History`) surfaces all test results stored from CI/CD `.trx` artifact files into a queryable dashboard.
 
-![Test history overview]({{ '/assets/screenshots/test-history-overview.png' | relative_url }})
+![Test history overview](./assets/screenshots/test-history-overview.png)
 
 ### Tabs
 
@@ -472,7 +469,7 @@ The **Test History** page (`Project → Runs → Test History`) surfaces all tes
 
 | Tests tab | Flaky tab |
 |-----------|-----------|
-| ![Tests tab]({{ '/assets/screenshots/test-history-tests.png' | relative_url }}) | ![Flaky tab]({{ '/assets/screenshots/test-history-flaky.png' | relative_url }}) |
+| ![Tests tab](./assets/screenshots/test-history-tests.png) | ![Flaky tab](./assets/screenshots/test-history-flaky.png) |
 
 | Compare — picker | Compare — results |
 |---|---|
@@ -482,7 +479,7 @@ The **Test History** page (`Project → Runs → Test History`) surfaces all tes
 
 Click **Import TRX** (accessible from any tab) to upload a `.trx` file directly — useful for E2E runs that run outside CI. You can optionally specify a commit SHA, branch name, and artifact label.
 
-![Import TRX modal]({{ '/assets/screenshots/test-history-import.png' | relative_url }})
+![Import TRX modal](./assets/screenshots/test-history-import.png)
 
 ### MCP tools
 

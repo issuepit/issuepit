@@ -1,7 +1,5 @@
 ---
 title: Todo Tracker
-layout: default
-nav_order: 6
 ---
 
 # Todo Tracker
