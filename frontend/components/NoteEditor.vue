@@ -150,6 +150,16 @@ let suggestionRange: { from: number; to: number } | null = null
 
 const config = useRuntimeConfig()
 const notesApiBase = config.public.notesApiBase as string
+const auth = useAuthStore()
+
+// Build headers including X-Tenant-Id required by the Notes API for tenant resolution.
+const notesHeaders = () => {
+  const headers: Record<string, string> = {}
+  if (auth.user?.tenantId) {
+    headers['X-Tenant-Id'] = auth.user.tenantId
+  }
+  return headers
+}
 
 // ── CRDT / OT collaborative editing ──────────────────────────────────────────
 // Uses a polling-based OT model:
@@ -465,7 +475,9 @@ async function connectSignalR() {
     const { HubConnectionBuilder, LogLevel, HubConnectionState } = await import('@microsoft/signalr')
 
     signalrConn = new HubConnectionBuilder()
-      .withUrl(`${notesApiBase}/hubs/notes`)
+      .withUrl(`${notesApiBase}/hubs/notes`, {
+        headers: notesHeaders(),
+      })
       .withAutomaticReconnect()
       .configureLogging(LogLevel.Warning)
       .build()
@@ -510,6 +522,7 @@ async function handleImageUpload(file: File): Promise<string | null> {
       method: 'POST',
       body,
       credentials: 'include',
+      headers: notesHeaders(),
     })
     return result.url
   } catch (e) {
@@ -674,6 +687,7 @@ async function searchNotes(query: string) {
         method: 'GET',
         params,
         credentials: 'include',
+        headers: notesHeaders(),
       })
       suggestionItems.value = notes.slice(0, 10)
     } catch {

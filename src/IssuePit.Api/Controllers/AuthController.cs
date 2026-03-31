@@ -113,7 +113,8 @@ public class AuthController(
             ctx.CurrentUser.Email,
             ctx.CurrentUser.IsAdmin,
             ctx.CurrentUser.CreatedAt,
-            ctx.CurrentUser.Theme));
+            ctx.CurrentUser.Theme,
+            ctx.CurrentTenant?.Id));
     }
 
     /// <summary>Updates the UI theme preference for the currently authenticated user.</summary>
@@ -274,7 +275,8 @@ public class AuthController(
             user.Email,
             user.IsAdmin,
             user.CreatedAt,
-            user.Theme));
+            user.Theme,
+            ctx.CurrentTenant?.Id));
     }
 
     /// <summary>
@@ -314,7 +316,8 @@ public class AuthController(
             user.Email,
             user.IsAdmin,
             user.CreatedAt,
-            user.Theme));
+            user.Theme,
+            ctx.CurrentTenant.Id));
     }
 
     // -------------------------------------------------------------------------
@@ -461,4 +464,4 @@ public record LocalLoginRequest(string Username, string Password);
 public record RegisterRequest(string Username, string Password, string? Email = null);
 public record ChangePasswordRequest(string? CurrentPassword, string NewPassword);
 public record UpdateThemeRequest(string? Theme);
-public record MeResponse(Guid Id, string Username, string Email, bool IsAdmin, DateTime CreatedAt, string? Theme);
+public record MeResponse(Guid Id, string Username, string Email, bool IsAdmin, DateTime CreatedAt, string? Theme, Guid? TenantId);

@@ -327,7 +327,9 @@ var voskModelDownloader = builder.AddProject<Projects.IssuePit_VoskModelDownload
 // ── Notes service (separate database and API) ──────────────────────────────────
 var notesMigrator = builder.AddProject<Projects.IssuePit_Notes_Migrator>("notes-migrator")
     .WithReference(notesDb)
-    .WaitFor(notesDb);
+    .WithReference(postgresDb)
+    .WaitFor(notesDb)
+    .WaitForCompletion(migrator);
 
 var notesApi = builder.AddProject<Projects.IssuePit_Notes_Api>("notes-api")
     .WithReference(notesDb)

@@ -90,6 +90,7 @@ export interface AuthUser {
   isAdmin: boolean
   createdAt: string
   theme?: string
+  tenantId?: string
 }
 
 export enum OrgRole {
