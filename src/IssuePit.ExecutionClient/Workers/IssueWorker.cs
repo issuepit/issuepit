@@ -24,7 +24,8 @@ public class IssueWorker(
     AgentRuntimeFactory runtimeFactory,
     IConnectionMultiplexer redis,
     IProducer<string, string> kafkaProducer,
-    GitArtifactUploadService gitArtifactUploader) : BackgroundService
+    GitArtifactUploadService gitArtifactUploader,
+    NotesApiClient notesApiClient) : BackgroundService
 {
     // Tracks CancellationTokenSources for in-flight agent launches so they can be cancelled on demand.
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _activeSessions = new();
@@ -514,6 +515,33 @@ public class IssueWorker(
         {
             // For issue-free manual sessions, branch is set via the session's GitBranch field after creation.
             // We hold it here so it can be passed to the runtime workspace setup.
+        }
+
+        // Inject guideline notes from the project's "Agent Guidelines" notebook when the agent
+        // has AutoSummarize enabled. These notes contain summaries from previous sessions and
+        // help the agent avoid repeating past mistakes.
+        if (agent.AutoSummarize && issue is not null && notesApiClient.IsConfigured)
+        {
+            try
+            {
+                var org = await db.Organizations.FindAsync([agent.OrgId], cancellationToken);
+                if (org is not null)
+                {
+                    var guidelines = await notesApiClient.FetchGuidelineNotesAsync(
+                        org.TenantId, projectId, maxNotes: 5, cancellationToken);
+                    issue.PromptGuidelineNotes = guidelines
+                        .Select(g => new GuidelineNotePrompt(g.Title, g.Content))
+                        .ToList();
+                    if (issue.PromptGuidelineNotes.Count > 0)
+                        logger.LogInformation(
+                            "Injected {Count} guideline note(s) into agent prompt for project {ProjectId}",
+                            issue.PromptGuidelineNotes.Count, projectId);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to fetch guideline notes for project {ProjectId}", projectId);
+            }
         }
 
         // Resolve runtime: use the org's default configuration or fall back to Docker
@@ -1173,6 +1201,12 @@ public class IssueWorker(
 
                 // Post a summary comment on the issue with all messages processed during this session.
                 await PostSessionMessagesCommentAsync(session, db, sessionCts.Token, agent.Name);
+
+                // Auto-summarize: create a guideline note from the session logs for future agent runs.
+                if (agent.AutoSummarize && notesApiClient.IsConfigured)
+                {
+                    await CreateSessionSummaryNoteAsync(session, agent, issueForRuntime, db, sessionCts.Token);
+                }
             }
             finally
             {
@@ -1680,6 +1714,61 @@ public class IssueWorker(
         }
 
         return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>
+    /// Creates a structured summary note from the session's logs and saves it to the project's
+    /// "Agent Guidelines" notebook via the Notes API. Sets <see cref="AgentSession.SummaryNoteId"/>
+    /// on success. Errors are logged but do not fail the session.
+    /// </summary>
+    private async Task CreateSessionSummaryNoteAsync(
+        AgentSession session,
+        Agent agent,
+        Issue issueForRuntime,
+        IssuePitDbContext db,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var org = await db.Organizations.FindAsync([agent.OrgId], cancellationToken);
+            if (org is null)
+            {
+                logger.LogWarning("Organization {OrgId} not found — skipping session summary", agent.OrgId);
+                return;
+            }
+
+            var notebookId = await notesApiClient.EnsureGuidelinesNotebookAsync(
+                org.TenantId, session.ProjectId, cancellationToken);
+            if (notebookId is null)
+            {
+                logger.LogWarning("Could not ensure Guidelines notebook for project {ProjectId}", session.ProjectId);
+                return;
+            }
+
+            // Load session logs for summary building
+            var logs = await db.AgentSessionLogs
+                .Where(l => l.AgentSessionId == session.Id)
+                .OrderBy(l => l.Timestamp)
+                .ToListAsync(cancellationToken);
+
+            var (title, content) = SessionSummaryBuilder.Build(
+                session, agent.Name, issueForRuntime.Title, logs);
+
+            var noteId = await notesApiClient.CreateSummaryNoteAsync(
+                org.TenantId, notebookId.Value, title, content, cancellationToken);
+
+            if (noteId.HasValue)
+            {
+                session.SummaryNoteId = noteId.Value;
+                logger.LogInformation(
+                    "Created session summary note {NoteId} for session {SessionId} in project {ProjectId}",
+                    noteId.Value, session.Id, session.ProjectId);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to create session summary note for session {SessionId}", session.Id);
+        }
     }
 
     /// <summary>

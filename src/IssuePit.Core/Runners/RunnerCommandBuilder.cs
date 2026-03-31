@@ -336,6 +336,20 @@ public static class RunnerCommandBuilder
             sb.AppendLine("  </cicd_runs>");
         }
 
+        // Guideline notes from previous agent sessions (auto-summarized learnings)
+        if (issue.PromptGuidelineNotes.Count > 0)
+        {
+            sb.AppendLine("  <guidelines>");
+            sb.AppendLine("    <!-- Summaries from previous agent sessions. Use these as reference for common errors, patterns, and approaches. -->");
+            foreach (var note in issue.PromptGuidelineNotes)
+            {
+                sb.AppendLine($"    <guideline title=\"{EscapeXml(note.Title)}\">");
+                sb.AppendLine(note.Content.Trim());
+                sb.AppendLine("    </guideline>");
+            }
+            sb.AppendLine("  </guidelines>");
+        }
+
         // Comments
         if (comments is { Count: > 0 })
         {

@@ -409,6 +409,7 @@ var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("exe
     .WithEnvironment("McpServer__BaseUrl", mcpServer.GetEndpoint("http"))
     .WithEnvironment("ApiServer__BaseUrl", api.GetEndpoint("http"))
     .WithEnvironment("GitServer__BaseUrl", gitServer.GetEndpoint("http"))
+    .WithEnvironment("NotesApi__BaseUrl", notesApi.GetEndpoint("http"))
     .WithHttpHealthCheck("/health", endpointName: "http");
 
 // Scale cicd-client horizontally to allow multiple concurrent runs.

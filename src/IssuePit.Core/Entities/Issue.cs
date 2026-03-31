@@ -155,4 +155,13 @@ public class Issue
     [NotMapped]
     [JsonIgnore]
     public IList<CiCdRun> PromptCiCdRuns { get; set; } = [];
+
+    /// <summary>
+    /// Guideline notes from the project's "Agent Guidelines" notebook. Not persisted — populated
+    /// on demand when the agent has <see cref="Agent.AutoSummarize"/> enabled and the project has
+    /// existing guideline notes from previous sessions.
+    /// </summary>
+    [NotMapped]
+    [JsonIgnore]
+    public IList<GuidelineNotePrompt> PromptGuidelineNotes { get; set; } = [];
 }
