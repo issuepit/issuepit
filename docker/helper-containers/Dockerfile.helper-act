@@ -9,7 +9,7 @@
 # so they are available to the build engine when it resolves the base image reference.
 # They must also be re-declared inside each stage that needs them as regular build args.
 ARG BASE_IMAGE=ghcr.io/issuepit/issuepit-helper-base:latest
-ARG ACT_COMMIT=a471da174034e4d6db6fc89b0ea7bfcd38b9236a
+ARG ACT_COMMIT=873f292b55ae7a68b7d53f7d1f372355517555f3
 
 # Stage 1: Build act from source at the specified commit of the issuepit/act fork.
 # The module name in go.mod is still github.com/nektos/act so "go install" with the

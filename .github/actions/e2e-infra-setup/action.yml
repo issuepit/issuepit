@@ -62,7 +62,7 @@ runs:
         ISSUEPIT_RUN: ${{ inputs.issuepit-run }}
         DOCKER_CACHE_HIT: ${{ steps.cache-docker.outputs.cache-hit }}
       run: |
-        ACT_COMMIT=a471da174034e4d6db6fc89b0ea7bfcd38b9236a
+        ACT_COMMIT=873f292b55ae7a68b7d53f7d1f372355517555f3
 
         # Clone and build the issuepit/act fork in parallel (independent of Docker cache).
         # Uses a shallow fetch of the exact commit for speed; the fork adds

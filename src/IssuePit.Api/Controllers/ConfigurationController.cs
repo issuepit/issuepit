@@ -273,19 +273,11 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
             .Where(b =>
                 (b.OrgId != null && db.Organizations.Any(o => o.Id == b.OrgId && o.TenantId == tenant.CurrentTenant!.Id)) ||
                 (b.ProjectId != null && db.Projects.Any(p => p.Id == b.ProjectId && p.Organization.TenantId == tenant.CurrentTenant!.Id)))
-            .Select(b => new
-            {
-                b.Id,
-                b.OrgId,
-                b.ProjectId,
-                b.Name,
-                b.ChatId,
-                b.Events,
-                b.IsSilent,
-                b.DigestInterval,
-                b.CreatedAt,
-                // Never return the encrypted token
-            })
+            .Select(b => new TelegramBotResponse(
+                b.Id, b.Name, b.OrgId, b.ProjectId, b.ChatId,
+                b.Events, b.IsSilent, b.DigestInterval,
+                b.RateLimitCount, b.RateLimitWindowMinutes, b.SilentMode,
+                b.CreatedAt))
             .ToListAsync();
         return Ok(bots);
     }
@@ -305,10 +297,13 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
             Events = req.Events,
             IsSilent = req.IsSilent,
             DigestInterval = req.DigestInterval,
+            RateLimitCount = req.RateLimitCount,
+            RateLimitWindowMinutes = req.RateLimitWindowMinutes,
+            SilentMode = req.SilentMode,
         };
         db.TelegramBots.Add(bot);
         await db.SaveChangesAsync();
-        return Created($"/api/config/telegram-bots/{bot.Id}", new { bot.Id, bot.Name, bot.OrgId, bot.ProjectId, bot.ChatId, bot.Events, bot.IsSilent, bot.DigestInterval, bot.CreatedAt });
+        return Created($"/api/config/telegram-bots/{bot.Id}", new TelegramBotResponse(bot.Id, bot.Name, bot.OrgId, bot.ProjectId, bot.ChatId, bot.Events, bot.IsSilent, bot.DigestInterval, bot.RateLimitCount, bot.RateLimitWindowMinutes, bot.SilentMode, bot.CreatedAt));
     }
 
     [HttpPut("telegram-bots/{id:guid}")]
@@ -328,10 +323,13 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
         bot.Events = req.Events;
         bot.IsSilent = req.IsSilent;
         bot.DigestInterval = req.DigestInterval;
+        bot.RateLimitCount = req.RateLimitCount;
+        bot.RateLimitWindowMinutes = req.RateLimitWindowMinutes;
+        bot.SilentMode = req.SilentMode;
         if (!string.IsNullOrEmpty(req.BotToken))
             bot.EncryptedBotToken = $"plain:{req.BotToken}";
         await db.SaveChangesAsync();
-        return Ok(new { bot.Id, bot.Name, bot.OrgId, bot.ProjectId, bot.ChatId, bot.Events, bot.IsSilent, bot.DigestInterval, bot.CreatedAt });
+        return Ok(new TelegramBotResponse(bot.Id, bot.Name, bot.OrgId, bot.ProjectId, bot.ChatId, bot.Events, bot.IsSilent, bot.DigestInterval, bot.RateLimitCount, bot.RateLimitWindowMinutes, bot.SilentMode, bot.CreatedAt));
     }
 
     [HttpDelete("telegram-bots/{id:guid}")]
@@ -351,4 +349,5 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
 
 public record ApiKeyRequest(Guid? OrgId, string Name, ApiKeyProvider Provider, string Value, DateTime? ExpiresAt, Guid? ProjectId = null, Guid? TeamId = null, Guid? UserId = null, string? JiraBaseUrl = null, string? JiraEmail = null);
 public record RuntimeConfigRequest(Guid? OrgId, string Name, RuntimeType Type, string Configuration, bool IsDefault, int MaxConcurrentAgents = 0);
-public record TelegramBotRequest(string Name, string BotToken, string ChatId, int Events, bool IsSilent, DigestInterval DigestInterval, Guid? OrgId, Guid? ProjectId);
+public record TelegramBotRequest(string Name, string BotToken, string ChatId, int Events, bool IsSilent, DigestInterval DigestInterval, Guid? OrgId, Guid? ProjectId, int RateLimitCount = 0, int RateLimitWindowMinutes = 0, TelegramSilentMode SilentMode = TelegramSilentMode.None);
+public record TelegramBotResponse(Guid Id, string Name, Guid? OrgId, Guid? ProjectId, string ChatId, int Events, bool IsSilent, DigestInterval DigestInterval, int RateLimitCount, int RateLimitWindowMinutes, TelegramSilentMode SilentMode, DateTime CreatedAt);

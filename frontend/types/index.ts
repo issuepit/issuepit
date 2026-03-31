@@ -785,6 +785,9 @@ export enum TelegramNotificationEvent {
   AgentStarted = 8,
   AgentCompleted = 16,
   AgentFailed = 32,
+  CiCdFailed = 64,
+  CiCdWaitingApproval = 128,
+  IssueNeedsTriage = 256,
 }
 
 export const TelegramNotificationEventLabels: Record<TelegramNotificationEvent, string> = {
@@ -794,6 +797,9 @@ export const TelegramNotificationEventLabels: Record<TelegramNotificationEvent, 
   [TelegramNotificationEvent.AgentStarted]: 'Agent Started',
   [TelegramNotificationEvent.AgentCompleted]: 'Agent Completed',
   [TelegramNotificationEvent.AgentFailed]: 'Agent Failed',
+  [TelegramNotificationEvent.CiCdFailed]: 'CI/CD Failed',
+  [TelegramNotificationEvent.CiCdWaitingApproval]: 'Build Waiting for Approval',
+  [TelegramNotificationEvent.IssueNeedsTriage]: 'Issue Needs Triage',
 }
 
 export enum DigestInterval {
@@ -808,6 +814,20 @@ export const DigestIntervalLabels: Record<DigestInterval, string> = {
   [DigestInterval.Daily]: 'Daily digest',
 }
 
+export enum TelegramSilentMode {
+  None = 0,
+  SilentAfterFirst = 1,
+  SilentAfterRateLimit = 2,
+  AlwaysSilent = 3,
+}
+
+export const TelegramSilentModeLabels: Record<TelegramSilentMode, string> = {
+  [TelegramSilentMode.None]: 'Use global setting',
+  [TelegramSilentMode.SilentAfterFirst]: 'Silent after first of each type',
+  [TelegramSilentMode.SilentAfterRateLimit]: 'Silent after rate limit',
+  [TelegramSilentMode.AlwaysSilent]: 'Always silent',
+}
+
 export interface TelegramBot {
   id: string
   orgId?: string
@@ -817,6 +837,34 @@ export interface TelegramBot {
   events: number
   isSilent: boolean
   digestInterval: DigestInterval
+  rateLimitCount: number
+  rateLimitWindowMinutes: number
+  silentMode: TelegramSilentMode
+  createdAt: string
+}
+
+export interface TelegramPairing {
+  id: string
+  code: string
+  telegramChatId: string
+  telegramUsername?: string
+  createdAt: string
+  expiresAt: string
+}
+
+export interface TelegramChat {
+  id: string
+  telegramChatId: string
+  telegramUsername?: string
+  orgId?: string
+  projectId?: string
+  userId?: string
+  events: number
+  isSilent: boolean
+  digestInterval: DigestInterval
+  rateLimitCount: number
+  rateLimitWindowMinutes: number
+  silentMode: TelegramSilentMode
   createdAt: string
 }
 

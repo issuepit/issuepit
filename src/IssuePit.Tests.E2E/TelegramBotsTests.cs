@@ -6,8 +6,8 @@ using Microsoft.Playwright;
 namespace IssuePit.Tests.E2E;
 
 /// <summary>
-/// E2E tests for the Telegram Bots configuration UI (/config/telegram-bots).
-/// Verifies that users can add, view, and delete Telegram bot configurations.
+/// E2E tests for the Telegram Bots configuration UI (/config/telegram-bots)
+/// and the Telegram Setup (pairing) wizard UI (/config/telegram).
 /// Uses the real Aspire stack started by <see cref="AspireFixture"/>.
 /// </summary>
 [Collection("E2E")]
@@ -134,6 +134,98 @@ public class TelegramBotsTests : IAsyncLifetime
             await telegramBotsPage.DeleteBotAsync(botName);
 
             Assert.False(await telegramBotsPage.BotExistsAsync(botName));
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────────
+
+    private HttpClient CreateCookieClient()
+    {
+        var handler = new HttpClientHandler { CookieContainer = new System.Net.CookieContainer() };
+        return new HttpClient(handler) { BaseAddress = _fixture.ApiClient!.BaseAddress };
+    }
+
+    private async Task<string> GetDefaultTenantIdAsync()
+    {
+        var resp = await _fixture.ApiClient!.GetAsync("/api/admin/tenants");
+        resp.EnsureSuccessStatusCode();
+        var tenants = await resp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        foreach (var tenant in tenants.EnumerateArray())
+        {
+            if (tenant.GetProperty("hostname").GetString() == "localhost")
+                return tenant.GetProperty("id").GetString()!;
+        }
+        throw new InvalidOperationException("Default 'localhost' tenant not found. Ensure the migrator has run.");
+    }
+}
+
+/// <summary>
+/// E2E tests for the Telegram Setup (pairing) wizard UI at /config/telegram.
+/// </summary>
+[Collection("E2E")]
+[Trait("Category", "E2E")]
+public class TelegramPairingTests : IAsyncLifetime
+{
+    private readonly AspireFixture _fixture;
+    private IPlaywright? _playwright;
+    private IBrowser? _browser;
+
+    private string? FrontendUrl => _fixture.FrontendUrl
+        ?? Environment.GetEnvironmentVariable("FRONTEND_URL");
+
+    public TelegramPairingTests(AspireFixture fixture) => _fixture = fixture;
+
+    public async Task InitializeAsync()
+    {
+        _playwright = await Playwright.CreateAsync();
+        _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+        {
+            Headless = true,
+            Channel = "chrome",
+        });
+    }
+
+    public async Task DisposeAsync()
+    {
+        if (_browser is not null) await _browser.CloseAsync();
+        _playwright?.Dispose();
+    }
+
+    /// <summary>
+    /// Verifies that the Telegram Setup page loads and shows the how-to instructions.
+    /// </summary>
+    [Fact]
+    public async Task Ui_TelegramSetup_PageLoads()
+    {
+        var tenantId = await GetDefaultTenantIdAsync();
+        using var apiClient = CreateCookieClient();
+        apiClient.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = $"tgp{Guid.NewGuid():N}"[..12];
+        const string password = "TestPass1!";
+        await apiClient.PostAsJsonAsync("/api/auth/register", new { username, password });
+
+        var context = await _browser!.NewContextAsync(new BrowserNewContextOptions { BaseURL = FrontendUrl });
+        context.SetDefaultTimeout(E2ETimeouts.Default);
+        var page = await context.NewPageAsync();
+
+        try
+        {
+            await new LoginPage(page).LoginAsync(username, password);
+            await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
+
+            var pairingPage = new TelegramPairingPage(page);
+            await pairingPage.GotoAsync();
+
+            // Verify key UI elements are present
+            await page.WaitForSelectorAsync("text=How to pair a Telegram chat", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+            await page.WaitForSelectorAsync("text=Link a Chat", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+            await page.WaitForSelectorAsync("text=Pending Codes from Telegram", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+            await page.WaitForSelectorAsync("text=Paired Chats", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
         }
         finally
         {

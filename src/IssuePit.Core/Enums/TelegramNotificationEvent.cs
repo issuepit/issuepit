@@ -9,4 +9,7 @@ public enum TelegramNotificationEvent
     AgentStarted = 8,
     AgentCompleted = 16,
     AgentFailed = 32,
+    CiCdFailed = 64,
+    CiCdWaitingApproval = 128,
+    IssueNeedsTriage = 256,
 }

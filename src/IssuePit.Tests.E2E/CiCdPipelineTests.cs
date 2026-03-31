@@ -41,6 +41,32 @@ public class CiCdPipelineTests(AspireFixture fixture)
     /// <summary>Runtime modes exercised by the parameterized tests.</summary>
     public static TheoryData<string> RuntimeModes => new() { NativeRuntime, DockerRuntime };
 
+    /// <summary>
+    /// Test cases for <see cref="CiCdRun_SkipsStepByUsesFilter"/>: each row provides a
+    /// runtime mode, the <c>skipSteps</c> filter to apply, the artifacts that must be absent,
+    /// and the artifacts that must be present after the run.
+    /// </summary>
+    public static TheoryData<string, string, string[], string[]> SkipByUsesFilterCases
+    {
+        get
+        {
+            var data = new TheoryData<string, string, string[], string[]>();
+            foreach (var runtime in new[] { NativeRuntime, DockerRuntime })
+            {
+                // Global uses filter — all three upload steps are affected (no job prefix).
+                data.Add(runtime, "actions/upload-artifact@v4",
+                    ["build-output", "test-results", "coverage-report"],
+                    []);
+
+                // Scoped job:uses filter — only the build job's upload step is affected.
+                data.Add(runtime, "build:actions/upload-artifact@v4",
+                    ["build-output"],
+                    ["test-results", "coverage-report"]);
+            }
+            return data;
+        }
+    }
+
     /// <summary>Returns <c>true</c> when the <c>act</c> binary is available on the PATH.</summary>
     private static bool IsActAvailable()
     {
@@ -1035,6 +1061,69 @@ public class CiCdPipelineTests(AspireFixture fixture)
 
         // The coverage job was unaffected and uploaded its artifact normally.
         Assert.Contains("coverage-report", artifactNames);
+    }
+
+    /// <summary>
+    /// Verifies that a step can be skipped by specifying its <c>uses</c> value, with or without
+    /// a job prefix:
+    /// <list type="bullet">
+    ///   <item>Global filter (e.g. <c>actions/upload-artifact@v4</c>): every step whose
+    ///         <c>uses</c> field matches is skipped across all jobs.</item>
+    ///   <item>Scoped filter (e.g. <c>build:actions/upload-artifact@v4</c>): only the matching
+    ///         step inside the specified job is skipped.</item>
+    /// </list>
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(SkipByUsesFilterCases))]
+    public async Task CiCdRun_SkipsStepByUsesFilter(
+        string runtimeMode,
+        string skipStepsFilter,
+        string[] absentArtifacts,
+        string[] presentArtifacts)
+    {
+        if (!IsReady(runtimeMode))
+            throw Xunit.Sdk.SkipException.ForSkip(SkipReason(runtimeMode));
+
+        var (client, projectId) = await SetupProjectAsync();
+        using var _ = client;
+
+        var getResp = await client.GetAsync($"/api/projects/{projectId}");
+        getResp.EnsureSuccessStatusCode();
+        var existing = await getResp.Content.ReadFromJsonAsync<JsonElement>();
+
+        var updateResp = await client.PutAsJsonAsync($"/api/projects/{projectId}", new
+        {
+            name = existing.GetProperty("name").GetString(),
+            slug = existing.GetProperty("slug").GetString(),
+            orgId = Guid.Parse(existing.GetProperty("orgId").GetString()!),
+            skipSteps = skipStepsFilter,
+        });
+        updateResp.EnsureSuccessStatusCode();
+
+        await client.PostAsJsonAsync("/api/cicd-runs/trigger",
+            BuildTriggerPayload(projectId, "e2e-skipuses-abc", runtimeMode, "ci.yml"));
+
+        var run = await WaitForRunOfProjectAsync(client, projectId, TimeSpan.FromMinutes(5));
+        var runId = run.GetProperty("id").GetString()!;
+        await AssertRunSucceededAsync(client, run, runId);
+
+        // If artifacts are expected, poll until the first one appears to confirm processing
+        // is complete; otherwise give processing a brief window before asserting absence.
+        JsonElement artifacts;
+        if (presentArtifacts.Length > 0)
+            artifacts = await WaitForArtifactByNameAsync(client, runId, presentArtifacts[0], TimeSpan.FromSeconds(30));
+        else
+            artifacts = await WaitForArtifactsAsync(client, runId, 0, TimeSpan.FromSeconds(10));
+
+        var artifactNames = artifacts.EnumerateArray()
+            .Select(a => a.GetProperty("name").GetString())
+            .ToList();
+
+        foreach (var absent in absentArtifacts)
+            Assert.DoesNotContain(absent, artifactNames);
+
+        foreach (var present in presentArtifacts)
+            Assert.Contains(present, artifactNames);
     }
 
     /// <summary>

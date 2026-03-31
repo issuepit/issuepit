@@ -40,5 +40,16 @@ public class TelegramBot
     /// <summary>Controls how frequently notifications are sent (immediate, hourly digest, or daily digest).</summary>
     public DigestInterval DigestInterval { get; set; }
 
+    /// <summary>Maximum number of notifications in a rate-limit window. 0 = no limit.</summary>
+    public int RateLimitCount { get; set; }
+
+    /// <summary>Rate-limit window in minutes. Only applies when <see cref="RateLimitCount"/> &gt; 0.</summary>
+    public int RateLimitWindowMinutes { get; set; }
+
+    /// <summary>
+    /// Controls per-type silent behavior.
+    /// </summary>
+    public TelegramSilentMode SilentMode { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

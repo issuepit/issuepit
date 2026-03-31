@@ -59,7 +59,7 @@
             <td class="px-4 py-3 text-gray-400"><DateDisplay :date="bot.createdAt" mode="absolute" resolution="date" /></td>
             <td class="px-4 py-3 text-right space-x-3">
               <button class="text-gray-500 hover:text-brand-400 transition-colors text-xs" @click="openEdit(bot)">Edit</button>
-              <button class="text-gray-500 hover:text-red-400 transition-colors text-xs" @click="confirmDelete(bot.id, bot.name)">Delete</button>
+              <button class="text-gray-500 hover:text-red-400 transition-colors text-xs" @click="confirmDelete(bot)">Delete</button>
             </td>
           </tr>
         </tbody>
@@ -149,11 +149,21 @@
         </form>
       </div>
     </div>
+
+    <!-- Delete confirmation modal -->
+    <ConfirmModal
+      v-if="deletingBot"
+      :title="`Delete bot &quot;${deletingBot.name}&quot;?`"
+      :message="`Are you sure you want to delete the Telegram bot &quot;${deletingBot.name}&quot;? This action cannot be undone.`"
+      confirm-label="Delete"
+      @confirm="doDelete"
+      @cancel="deletingBot = null"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { TelegramNotificationEvent, TelegramNotificationEventLabels, DigestInterval, DigestIntervalLabels } from '~/types'
+import { TelegramNotificationEvent, TelegramNotificationEventLabels, DigestInterval, DigestIntervalLabels, TelegramSilentMode } from '~/types'
 import type { TelegramBot } from '~/types'
 import { useConfigStore } from '~/stores/config'
 
@@ -174,11 +184,14 @@ const form = reactive({
   events: 0,
   isSilent: false,
   digestInterval: DigestInterval.Immediate,
+  silentMode: TelegramSilentMode.None,
+  rateLimitCount: 0,
+  rateLimitWindowMinutes: 0,
 })
 
 function openCreate() {
   editingId.value = null
-  Object.assign(form, { name: '', botToken: '', chatId: '', orgId: '', projectId: '', events: 0, isSilent: false, digestInterval: DigestInterval.Immediate })
+  Object.assign(form, { name: '', botToken: '', chatId: '', orgId: '', projectId: '', events: 0, isSilent: false, digestInterval: DigestInterval.Immediate, silentMode: TelegramSilentMode.None, rateLimitCount: 0, rateLimitWindowMinutes: 0 })
   showForm.value = true
 }
 
@@ -193,6 +206,9 @@ function openEdit(bot: TelegramBot) {
     events: bot.events,
     isSilent: bot.isSilent,
     digestInterval: bot.digestInterval,
+    silentMode: bot.silentMode ?? TelegramSilentMode.None,
+    rateLimitCount: bot.rateLimitCount ?? 0,
+    rateLimitWindowMinutes: bot.rateLimitWindowMinutes ?? 0,
   })
   showForm.value = true
 }
@@ -235,6 +251,9 @@ async function handleSubmit() {
       events: form.events,
       isSilent: form.isSilent,
       digestInterval: form.digestInterval,
+      silentMode: form.silentMode,
+      rateLimitCount: form.rateLimitCount,
+      rateLimitWindowMinutes: form.rateLimitWindowMinutes,
       orgId: form.orgId || undefined,
       projectId: form.projectId || undefined,
     }
@@ -249,7 +268,15 @@ async function handleSubmit() {
   }
 }
 
-function confirmDelete(id: string, name: string) {
-  if (confirm(`Delete bot "${name}"?`)) store.deleteTelegramBot(id)
+const deletingBot = ref<TelegramBot | null>(null)
+
+function confirmDelete(bot: TelegramBot) {
+  deletingBot.value = bot
+}
+
+async function doDelete() {
+  if (!deletingBot.value) return
+  await store.deleteTelegramBot(deletingBot.value.id)
+  deletingBot.value = null
 }
 </script>

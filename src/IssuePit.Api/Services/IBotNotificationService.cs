@@ -14,6 +14,9 @@ public enum BotNotificationEventType
     AgentStarted = 8,
     AgentCompleted = 16,
     AgentFailed = 32,
+    CiCdFailed = 64,
+    CiCdWaitingApproval = 128,
+    IssueNeedsTriage = 256,
 }
 
 /// <summary>Payload passed to an <see cref="IBotNotificationService"/> when an event occurs.</summary>

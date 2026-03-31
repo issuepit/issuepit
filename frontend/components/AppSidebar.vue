@@ -135,6 +135,7 @@ stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
       <SidebarSection label="System" icon="config" :default-open="false">
         <SidebarNavLink to="/config/keys" icon="config" label="API Keys" />
         <SidebarNavLink to="/config/github-identities" icon="github" label="GitHub Identities" />
+        <SidebarNavLink to="/config/telegram" icon="config" label="Telegram Setup" />
         <SidebarNavLink to="/config/telegram-bots" icon="config" label="Telegram Bots" />
         <SidebarNavLink to="/config/ci-cd" icon="runs" label="CI/CD" />
         <SidebarNavLink to="/config/git-server" icon="config" label="Git Server" />

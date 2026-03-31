@@ -72,6 +72,7 @@ After adding a server, you can link it to specific agents in the agent settings.
 ---
 
 ## Telegram Bots
+{: #telegram-bots }
 
 IssuePit can send notifications about issue events and agent run results to Telegram.
 
@@ -81,9 +82,41 @@ IssuePit can send notifications about issue events and agent run results to Tele
    - **Name** — display name for this bot configuration
    - **Bot Token** — the token obtained from [@BotFather](https://t.me/BotFather)
    - **Chat ID** — the Telegram chat or channel ID where notifications are sent
-4. Click **Save**.
+4. Optionally select which **notification events** to receive (issue assigned, agent failed, CI/CD failed, etc.) and set **rate limiting** or **silent mode** to reduce notification noise.
+5. Click **Save**.
 
-Once configured, IssuePit dispatches notifications whenever issues are created, updated, or assigned, and when agent runs complete.
+Once configured, IssuePit dispatches notifications whenever the selected events occur.
+
+---
+
+## Telegram Setup (Pairing)
+{: #telegram-pairing }
+
+The **Telegram Setup** wizard lets you link a Telegram chat or group directly to an IssuePit org or project. Paired chats support interactive bot commands (`/newissue`, `/newtodo`, voice messages) in addition to notifications.
+
+### Pairing flow
+
+1. Open Telegram, find your bot, and send `/start` or `/pair`.
+2. The bot replies with a **6-character pairing code** (e.g. `ABCD34`), valid for 15 minutes.
+3. Go to **Configuration → Telegram Setup** in IssuePit.
+4. Enter the code in the **Link a Chat** form. Select a scope:
+   - **Personal** — linked to your user account
+   - **Organization** — linked to a specific org
+   - **Project** — linked to a specific project (enables `/newissue` commands)
+5. Paste your **Bot Token** and click **Link Chat**.
+
+### Bot commands (in paired chats)
+
+| Command | Description |
+|---------|-------------|
+| `/start` or `/pair` | Generate a new pairing code |
+| `/newissue <title>` | Create an issue in the paired project |
+| `/newtodo <title>` | Create a to-do item |
+| Voice message | Transcribe and create an issue (requires Vosk model) |
+
+### Managing paired chats
+
+Go to **Configuration → Telegram Setup** to see all paired chats. Click **Unpair** to remove a chat from IssuePit.
 
 ---
 
