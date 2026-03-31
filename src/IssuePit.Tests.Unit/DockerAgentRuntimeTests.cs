@@ -169,6 +169,39 @@ public class DockerAgentRuntimeTests
         Assert.Contains("Update GitRepository.DefaultBranch", content, StringComparison.Ordinal);
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    // SanitizeTrailerValue
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("My Agent", "My Agent")]
+    [InlineData("anthropic/claude-opus-4-5", "anthropic/claude-opus-4-5")]
+    [InlineData("https://github.com/org/repo/issues/42", "https://github.com/org/repo/issues/42")]
+    [InlineData("#42", "#42")]
+    public void SanitizeTrailerValue_SafeValues_AreUnchanged(string input, string expected)
+    {
+        Assert.Equal(expected, DockerAgentRuntime.SanitizeTrailerValue(input));
+    }
+
+    [Theory]
+    [InlineData("agent\"name", "agentname")]
+    [InlineData("agent'name", "agentname")]
+    [InlineData("agent`cmd`name", "agentcmdname")]
+    [InlineData("agent$HOME", "agentHOME")]
+    [InlineData("agent\\name", "agentname")]
+    [InlineData("agent\nname", "agentname")]
+    [InlineData("agent\rname", "agentname")]
+    public void SanitizeTrailerValue_DangerousChars_AreStripped(string input, string expected)
+    {
+        Assert.Equal(expected, DockerAgentRuntime.SanitizeTrailerValue(input));
+    }
+
+    [Fact]
+    public void SanitizeTrailerValue_EmptyString_ReturnsEmpty()
+    {
+        Assert.Equal(string.Empty, DockerAgentRuntime.SanitizeTrailerValue(string.Empty));
+    }
+
     private static string ReadEntrypoint()
     {
         var assembly = Assembly.GetAssembly(typeof(DockerAgentRuntime))
