@@ -47,6 +47,14 @@ public sealed class AspireFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        // Ensure IPv6 is enabled for the DCP gRPC control channel.
+        // Some runner environments (GitHub-hosted and IssuePit act runner) set
+        // DOTNET_SYSTEM_NET_DISABLEIPV6=1. Aspire DCP (a native binary) always listens on
+        // [::1]; if .NET project processes have IPv6 disabled they cannot connect back to DCP
+        // and crash after the gRPC retry timeout (~18 s), causing App.StartAsync() to hang.
+        // Setting the env var here ensures every child process Aspire spawns inherits 0.
+        Environment.SetEnvironmentVariable("DOTNET_SYSTEM_NET_DISABLEIPV6", "0");
+
         Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Building Aspire AppHost...");
 
         // Create a temporary git repository from the dummy-cicd-repo so that act can run the
