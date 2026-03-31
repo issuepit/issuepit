@@ -92,6 +92,10 @@
               <span class="font-medium text-white text-sm">{{ mr.title }}</span>
               <span v-if="mr.autoMergeEnabled"
                 class="text-xs bg-blue-900/30 text-blue-400 px-1.5 py-0.5 rounded-full">Auto-merge</span>
+              <span v-if="mr.mergeStrategyName && mr.mergeStrategyName !== 'Merge'"
+                class="text-xs bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded-full">{{ mr.mergeStrategyName }}</span>
+              <span v-if="mr.requireCiToPass"
+                class="text-xs bg-yellow-900/30 text-yellow-400 px-1.5 py-0.5 rounded-full">CI required</span>
               <!-- CI status badge -->
               <span v-if="mr.lastCiCdRunStatusName"
                 :class="ciStatusClass(mr.lastCiCdRunStatusName)"
@@ -175,6 +179,43 @@
                 class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" />
             </button>
           </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1">Merge Strategy</label>
+            <select v-model="form.mergeStrategy"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+              <option v-for="opt in mergeStrategyOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+            </select>
+            <p class="text-xs text-gray-500 mt-1">{{ mergeStrategyDescription }}</p>
+          </div>
+
+          <div class="flex items-center justify-between py-1">
+            <div>
+              <label class="block text-sm font-medium text-gray-300">Require CI to pass</label>
+              <p class="text-xs text-gray-500 mt-0.5">Block merge until all CI checks succeed.</p>
+            </div>
+            <button type="button"
+              :class="form.requireCiToPass ? 'bg-brand-600' : 'bg-gray-700'"
+              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
+              @click="form.requireCiToPass = !form.requireCiToPass">
+              <span :class="form.requireCiToPass ? 'translate-x-6' : 'translate-x-1'"
+                class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" />
+            </button>
+          </div>
+
+          <div class="flex items-center justify-between py-1">
+            <div>
+              <label class="block text-sm font-medium text-gray-300">Delete source branch on merge</label>
+              <p class="text-xs text-gray-500 mt-0.5">Remove the source branch after a successful merge.</p>
+            </div>
+            <button type="button"
+              :class="form.deleteSourceBranchOnMerge ? 'bg-brand-600' : 'bg-gray-700'"
+              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
+              @click="form.deleteSourceBranchOnMerge = !form.deleteSourceBranchOnMerge">
+              <span :class="form.deleteSourceBranchOnMerge ? 'translate-x-6' : 'translate-x-1'"
+                class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" />
+            </button>
+          </div>
         </div>
 
         <div v-if="createError" class="p-3 bg-red-900/30 border border-red-800/40 rounded-lg text-sm text-red-300">
@@ -216,7 +257,11 @@ interface MergeRequestDto {
   targetBranch: string
   status: number
   statusName: string
+  mergeStrategy: number
+  mergeStrategyName: string
   autoMergeEnabled: boolean
+  deleteSourceBranchOnMerge: boolean
+  requireCiToPass: boolean
   lastKnownSourceSha: string | null
   lastCiCdRunId: string | null
   lastCiCdRunStatus: number | null
@@ -257,7 +302,24 @@ const form = reactive({
   description: '',
   sourceBranch: '',
   targetBranch: '',
+  mergeStrategy: 0,
   autoMergeEnabled: false,
+  deleteSourceBranchOnMerge: false,
+  requireCiToPass: false,
+})
+
+const mergeStrategyOptions = [
+  { value: 0, label: 'Merge commit' },
+  { value: 1, label: 'Squash and merge' },
+  { value: 2, label: 'Rebase and merge' },
+]
+
+const mergeStrategyDescription = computed(() => {
+  switch (form.mergeStrategy) {
+    case 1: return 'All commits will be squashed into a single commit on the target branch.'
+    case 2: return 'Commits will be rebased on top of the target branch for a linear history.'
+    default: return 'A merge commit will be created to combine the branches.'
+  }
 })
 
 function resetForm() {
@@ -265,7 +327,10 @@ function resetForm() {
   form.description = ''
   form.sourceBranch = ''
   form.targetBranch = defaultBranch.value
+  form.mergeStrategy = 0
   form.autoMergeEnabled = false
+  form.deleteSourceBranchOnMerge = false
+  form.requireCiToPass = false
   createError.value = null
 }
 
@@ -319,7 +384,10 @@ async function createMr() {
       description: form.description || null,
       sourceBranch: form.sourceBranch,
       targetBranch: form.targetBranch || null,
+      mergeStrategy: form.mergeStrategy,
       autoMergeEnabled: form.autoMergeEnabled,
+      deleteSourceBranchOnMerge: form.deleteSourceBranchOnMerge,
+      requireCiToPass: form.requireCiToPass,
     })
     mergeRequests.value.unshift(mr)
     showCreateModal.value = false

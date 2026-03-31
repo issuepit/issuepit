@@ -24,6 +24,32 @@
     <template v-else-if="mr">
       <!-- MR metadata card -->
       <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
+        <!-- Title (inline editable) -->
+        <div class="mb-3">
+          <div v-if="editingTitle" class="flex items-center gap-2">
+            <input v-model="editTitle" type="text"
+              class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+              @keydown.enter="saveEdit" @keydown.escape="cancelEdit" />
+            <button @click="saveEdit" :disabled="saving || !editTitle.trim()"
+              class="text-sm bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+              Save
+            </button>
+            <button @click="cancelEdit"
+              class="text-sm text-gray-400 hover:text-gray-200 px-2 py-1.5 transition-colors">
+              Cancel
+            </button>
+          </div>
+          <h1 v-else class="text-lg font-bold text-white group cursor-default" @click="startEditTitle">
+            {{ mr.title }}
+            <svg v-if="mr.statusName === 'Open'"
+              class="w-3.5 h-3.5 inline-block ml-1 text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
+              fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            </svg>
+          </h1>
+        </div>
+
         <div class="flex flex-wrap items-start gap-4">
           <!-- Status badge -->
           <div class="flex items-center gap-2">
@@ -73,31 +99,107 @@
             Auto-merge
           </span>
 
-          <!-- Action buttons -->
-          <div v-if="mr.statusName === 'Open'" class="ml-auto flex items-center gap-2">
-            <button @click="mergeMr"
-              :disabled="actionLoading"
-              class="bg-purple-700 hover:bg-purple-600 text-white text-sm px-4 py-1.5 rounded-lg transition-colors disabled:opacity-50">
-              <span v-if="actionLoading === 'merge'">Merging…</span>
-              <span v-else>Merge</span>
-            </button>
-            <button @click="closeMr"
-              :disabled="!!actionLoading"
-              class="text-sm text-gray-400 hover:text-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50">
-              Close
-            </button>
-          </div>
-          <div v-else-if="mr.statusName === 'Closed'" class="ml-auto">
-            <button @click="reopenMr"
-              :disabled="!!actionLoading"
-              class="text-sm text-gray-400 hover:text-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50">
-              Reopen
-            </button>
-          </div>
+          <!-- Strategy badge (only show if not default) -->
+          <span v-if="mr.mergeStrategyName && mr.mergeStrategyName !== 'Merge'"
+            class="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full">
+            {{ mr.mergeStrategyName }}
+          </span>
+
+          <!-- CI required badge -->
+          <span v-if="mr.requireCiToPass"
+            class="text-xs bg-yellow-900/30 text-yellow-400 px-2 py-0.5 rounded-full">
+            CI required
+          </span>
         </div>
 
-        <!-- Description -->
-        <p v-if="mr.description" class="mt-4 text-sm text-gray-400">{{ mr.description }}</p>
+        <!-- Merge actions panel (open MRs) -->
+        <div v-if="mr.statusName === 'Open'" class="mt-4 bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+          <!-- CI gate warning -->
+          <div v-if="ciBlocked" class="mb-3 p-3 bg-yellow-900/20 border border-yellow-800/40 rounded-lg flex items-center gap-2 text-sm text-yellow-400">
+            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <span>
+              Merging is blocked — CI must pass before this merge request can be completed.
+              <span v-if="mr.lastCiCdRunStatusName"> Current status: <strong>{{ mr.lastCiCdRunStatusName }}</strong></span>
+              <span v-else>No CI run has been triggered yet.</span>
+            </span>
+          </div>
+
+          <div class="flex items-center gap-3 flex-wrap">
+            <!-- Merge strategy selector -->
+            <div class="flex items-center gap-2">
+              <label class="text-xs text-gray-400">Strategy:</label>
+              <select v-model.number="mergeStrategyOverride"
+                class="bg-gray-700 border border-gray-600 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option v-for="opt in mergeStrategyOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+              </select>
+            </div>
+
+            <!-- Delete source branch checkbox -->
+            <label class="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer">
+              <input v-model="deleteSourceOnMerge" type="checkbox"
+                class="rounded bg-gray-700 border-gray-600 text-brand-600 focus:ring-brand-500" />
+              Delete source branch
+            </label>
+
+            <div class="ml-auto flex items-center gap-2">
+              <button @click="mergeMr"
+                :disabled="!!actionLoading || ciBlocked"
+                class="bg-purple-700 hover:bg-purple-600 text-white text-sm px-4 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                <span v-if="actionLoading === 'merge'">Merging…</span>
+                <span v-else>
+                  {{ selectedMergeStrategy === 1 ? 'Squash and merge' : selectedMergeStrategy === 2 ? 'Rebase and merge' : 'Merge' }}
+                </span>
+              </button>
+              <button @click="closeMr"
+                :disabled="!!actionLoading"
+                class="text-sm text-gray-400 hover:text-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+        <div v-else-if="mr.statusName === 'Closed'" class="mt-4">
+          <button @click="reopenMr"
+            :disabled="!!actionLoading"
+            class="text-sm text-gray-400 hover:text-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50">
+            Reopen
+          </button>
+        </div>
+
+        <!-- Description (inline editable) -->
+        <div class="mt-4">
+          <div v-if="editingDescription">
+            <textarea v-model="editDescription" rows="4"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
+              placeholder="Add a description…"
+              @keydown.escape="cancelEdit" />
+            <div class="flex gap-2 mt-2">
+              <button @click="saveEdit" :disabled="saving"
+                class="text-sm bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                Save
+              </button>
+              <button @click="cancelEdit"
+                class="text-sm text-gray-400 hover:text-gray-200 px-2 py-1.5 transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+          <div v-else-if="mr.description" class="group cursor-default" @click="startEditDescription">
+            <p class="text-sm text-gray-400">{{ mr.description }}</p>
+            <span v-if="mr.statusName === 'Open'"
+              class="text-xs text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity">
+              Click to edit
+            </span>
+          </div>
+          <button v-else-if="mr.statusName === 'Open'"
+            @click="startEditDescription"
+            class="text-xs text-gray-600 hover:text-gray-400 transition-colors">
+            + Add description
+          </button>
+        </div>
 
         <!-- Meta row -->
         <div class="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-500">
@@ -107,6 +209,9 @@
             Merge commit:
             <code class="bg-gray-800 px-1 rounded text-gray-400">{{ mr.mergeCommitSha.slice(0, 8) }}</code>
           </span>
+          <span v-if="mr.statusName === 'Merged' && mr.mergeStrategyName">
+            Strategy: {{ mr.mergeStrategyName }}
+          </span>
         </div>
 
         <!-- Action error -->
@@ -115,8 +220,36 @@
         </div>
       </div>
 
+      <!-- Tabs: Changes / Commits -->
+      <div class="flex gap-1 border-b border-gray-800 mb-4">
+        <button @click="activeTab = 'changes'"
+          :class="[
+            'px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
+            activeTab === 'changes'
+              ? 'text-white border-brand-500'
+              : 'text-gray-400 hover:text-gray-200 border-transparent'
+          ]">
+          Changes
+          <span v-if="diff.length" class="ml-1.5 text-xs bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded-full">
+            {{ diff.length }}
+          </span>
+        </button>
+        <button @click="activeTab = 'commits'"
+          :class="[
+            'px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
+            activeTab === 'commits'
+              ? 'text-white border-brand-500'
+              : 'text-gray-400 hover:text-gray-200 border-transparent'
+          ]">
+          Commits
+          <span v-if="commits.length" class="ml-1.5 text-xs bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded-full">
+            {{ commits.length }}
+          </span>
+        </button>
+      </div>
+
       <!-- Diff section -->
-      <div>
+      <div v-if="activeTab === 'changes'">
         <!-- Diff loading -->
         <div v-if="diffLoading" class="flex items-center justify-center py-12">
           <div class="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
@@ -243,6 +376,39 @@
           </div>
         </template>
       </div>
+
+      <!-- Commits section -->
+      <div v-if="activeTab === 'commits'">
+        <div v-if="commitsLoading" class="flex items-center justify-center py-12">
+          <div class="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+          <span class="ml-3 text-sm text-gray-400">Loading commits…</span>
+        </div>
+        <div v-else-if="commitsError" class="p-4 bg-red-900/30 border border-red-800/40 rounded-lg text-sm text-red-300">
+          {{ commitsError }}
+        </div>
+        <div v-else-if="commits.length === 0"
+          class="bg-gray-900 border border-gray-800 rounded-xl p-10 text-center">
+          <p class="text-gray-500 text-sm">No commits found on branch
+            <code class="text-gray-400">{{ mr.sourceBranch }}</code>.
+          </p>
+        </div>
+        <div v-else class="space-y-1">
+          <div v-for="c in commits" :key="c.sha"
+            class="bg-gray-900 border border-gray-800 rounded-lg p-3 flex items-start gap-3">
+            <code class="shrink-0 bg-gray-800 px-2 py-0.5 rounded text-xs text-gray-400 font-mono mt-0.5">
+              {{ c.sha.slice(0, 8) }}
+            </code>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm text-white truncate">{{ c.messageShort }}</p>
+              <p class="text-xs text-gray-500 mt-0.5">
+                {{ c.authorName }}
+                <span class="mx-1">·</span>
+                <DateDisplay :date="c.date" mode="auto" resolution="datetime" />
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
     </template>
   </div>
 </template>
@@ -268,7 +434,11 @@ interface MergeRequestDto {
   targetBranch: string
   status: number
   statusName: string
+  mergeStrategy: number
+  mergeStrategyName: string
   autoMergeEnabled: boolean
+  deleteSourceBranchOnMerge: boolean
+  requireCiToPass: boolean
   lastKnownSourceSha: string | null
   lastCiCdRunId: string | null
   lastCiCdRunStatus: number | null
@@ -284,6 +454,49 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 const actionLoading = ref<string | null>(null)
 const actionError = ref<string | null>(null)
+
+// Active tab: 'changes' or 'commits'
+const activeTab = ref<'changes' | 'commits'>('changes')
+
+// Merge strategy override (for merge dropdown)
+const mergeStrategyOverride = ref<number | null>(null)
+const showMergeDropdown = ref(false)
+const selectedMergeStrategy = computed(() => mergeStrategyOverride.value ?? mr.value?.mergeStrategy ?? 0)
+const deleteSourceOnMerge = ref(false)
+
+const mergeStrategyOptions = [
+  { value: 0, label: 'Merge commit', description: 'Create a merge commit' },
+  { value: 1, label: 'Squash and merge', description: 'Squash all commits into one' },
+  { value: 2, label: 'Rebase and merge', description: 'Rebase commits for linear history' },
+]
+
+// Inline editing state
+const editingTitle = ref(false)
+const editTitle = ref('')
+const editingDescription = ref(false)
+const editDescription = ref('')
+const saving = ref(false)
+
+// Commits state
+interface CommitInfo {
+  sha: string
+  messageShort: string
+  message: string
+  authorName: string
+  authorEmail: string
+  date: string
+  parentShas: string[]
+}
+const commits = ref<CommitInfo[]>([])
+const commitsLoading = ref(false)
+const commitsError = ref<string | null>(null)
+
+// CI gate computed
+const ciBlocked = computed(() => {
+  if (!mr.value?.requireCiToPass) return false
+  const status = mr.value.lastCiCdRunStatusName
+  return !status || (status !== 'Succeeded' && status !== 'SucceededWithWarnings')
+})
 
 // Diff state
 const diff = ref<GitDiffFile[]>([])
@@ -374,8 +587,12 @@ function toggleFileCollapse(filePath: string) {
 async function mergeMr() {
   actionLoading.value = 'merge'
   actionError.value = null
+  showMergeDropdown.value = false
   try {
-    mr.value = await api.post<MergeRequestDto>(`/api/projects/${id}/merge-requests/${mrId}/merge`, {})
+    mr.value = await api.post<MergeRequestDto>(`/api/projects/${id}/merge-requests/${mrId}/merge`, {
+      strategy: selectedMergeStrategy.value,
+      deleteSourceBranch: deleteSourceOnMerge.value,
+    })
   } catch (e: unknown) {
     actionError.value = e instanceof Error ? e.message : 'Merge failed'
   } finally {
@@ -404,6 +621,63 @@ async function reopenMr() {
     actionError.value = e instanceof Error ? e.message : 'Failed to reopen MR'
   } finally {
     actionLoading.value = null
+  }
+}
+
+// ── Inline editing ────────────────────────────────────────────
+function startEditTitle() {
+  if (!mr.value || mr.value.statusName !== 'Open') return
+  editTitle.value = mr.value.title
+  editingTitle.value = true
+}
+
+function startEditDescription() {
+  if (!mr.value || mr.value.statusName !== 'Open') return
+  editDescription.value = mr.value.description || ''
+  editingDescription.value = true
+}
+
+async function saveEdit() {
+  if (!mr.value) return
+  saving.value = true
+  try {
+    mr.value = await api.put<MergeRequestDto>(`/api/projects/${id}/merge-requests/${mrId}`, {
+      title: editingTitle.value ? editTitle.value : mr.value.title,
+      description: editingDescription.value ? editDescription.value : mr.value.description,
+      mergeStrategy: mr.value.mergeStrategy,
+      autoMergeEnabled: mr.value.autoMergeEnabled,
+      deleteSourceBranchOnMerge: mr.value.deleteSourceBranchOnMerge,
+      requireCiToPass: mr.value.requireCiToPass,
+    })
+    editingTitle.value = false
+    editingDescription.value = false
+  } catch (e: unknown) {
+    actionError.value = e instanceof Error ? e.message : 'Failed to save changes'
+  } finally {
+    saving.value = false
+  }
+}
+
+function cancelEdit() {
+  editingTitle.value = false
+  editingDescription.value = false
+}
+
+// ── Commits ───────────────────────────────────────────────────
+async function loadCommits() {
+  if (!mr.value) return
+  commitsLoading.value = true
+  commitsError.value = null
+  try {
+    const params = new URLSearchParams({
+      branch: mr.value.sourceBranch,
+      take: '50',
+    })
+    commits.value = await api.get<CommitInfo[]>(`/api/projects/${id}/git/commits?${params}`)
+  } catch (e: unknown) {
+    commitsError.value = e instanceof Error ? e.message : 'Failed to load commits'
+  } finally {
+    commitsLoading.value = false
   }
 }
 
@@ -508,7 +782,8 @@ onMounted(async () => {
   projectsStore.fetchProject(id)
   await fetchMr()
   if (mr.value) {
-    await loadDiff()
+    deleteSourceOnMerge.value = mr.value.deleteSourceBranchOnMerge
+    await Promise.all([loadDiff(), loadCommits()])
   }
 })
 </script>
