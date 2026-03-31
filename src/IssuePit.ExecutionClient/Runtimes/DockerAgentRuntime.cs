@@ -761,7 +761,10 @@ public class DockerAgentRuntime(
                     try
                     {
                         await CheckAndEmitUncommittedChangesAsync(container.ID, onLogLine, cancellationToken);
-                        await EmitGitMarkersAsync(container.ID, gitRepository, agent, issue, onLogLine, cancellationToken);
+                        await EmitGitMarkersAsync(container.ID, gitRepository,
+                            session.AddGitTrailers ? agent : null,
+                            session.AddGitTrailers ? issue : null,
+                            onLogLine, cancellationToken);
                     }
                     catch (Exception ex)
                     {
@@ -865,7 +868,10 @@ public class DockerAgentRuntime(
                 try
                 {
                     await CheckAndEmitUncommittedChangesAsync(container.ID, onLogLine, cancellationToken);
-                    await EmitGitMarkersAsync(container.ID, gitRepository, agent, issue, onLogLine, cancellationToken);
+                    await EmitGitMarkersAsync(container.ID, gitRepository,
+                        session.AddGitTrailers ? agent : null,
+                        session.AddGitTrailers ? issue : null,
+                        onLogLine, cancellationToken);
                 }
                 catch (Exception ex)
                 {
@@ -983,7 +989,10 @@ public class DockerAgentRuntime(
         }
 
         // Emit git markers so the caller can capture the updated commit SHA and branch.
-        try { await EmitGitMarkersAsync(containerId, gitRepository, agent, fixIssue, onFixLogLine, cancellationToken); }
+        try { await EmitGitMarkersAsync(containerId, gitRepository,
+            parentSession.AddGitTrailers ? agent : null,
+            parentSession.AddGitTrailers ? fixIssue : null,
+            onFixLogLine, cancellationToken); }
         catch (Exception ex) { await onFixLogLine($"[WARN] Git marker emission failed: {ex.Message}", LogStream.Stderr); }
 
         return (fixCommitSha, fixBranchName);

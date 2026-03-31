@@ -2571,6 +2571,10 @@ namespace IssuePit.Core.Migrations
                     b.Property<int?>("MaxCiCdLoopCount")
                         .HasColumnType("integer");
 
+                    b.Property<bool>("AddGitTrailers")
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
                     b.Property<int>("MaxConcurrentRunners")
                         .HasColumnType("integer");
 
@@ -2707,6 +2711,9 @@ namespace IssuePit.Core.Migrations
 
                     b.Property<int?>("MaxCiCdLoopCount")
                         .HasColumnType("integer");
+
+                    b.Property<bool?>("AddGitTrailers")
+                        .HasColumnType("boolean");
 
                     b.Property<int>("MaxConcurrentRunners")
                         .HasColumnType("integer");

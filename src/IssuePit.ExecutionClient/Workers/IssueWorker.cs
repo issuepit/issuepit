@@ -572,6 +572,14 @@ public class IssueWorker(
             .FirstOrDefaultAsync(ap => ap.AgentId == agentId && ap.ProjectId == projectId, cancellationToken);
         var pushPolicy = agentProjectLink?.PushPolicy ?? AgentPushPolicy.Forbidden;
 
+        // Resolve the effective git-trailers setting: project → org → default (enabled).
+        var projectForTrailers = await db.Projects
+            .Include(p => p.Organization)
+            .FirstOrDefaultAsync(p => p.Id == projectId, cancellationToken);
+        var addGitTrailers = projectForTrailers?.AddGitTrailers
+            ?? projectForTrailers?.Organization?.AddGitTrailers
+            ?? true;
+
         AgentSession session;
         if (existingSessionId.HasValue)
         {
@@ -640,6 +648,9 @@ public class IssueWorker(
             db.AgentSessions.Add(session);
             await db.SaveChangesAsync(cancellationToken);
         }
+
+        // Set non-persisted session properties resolved above.
+        session.AddGitTrailers = addGitTrailers;
 
         // For manual direct-start sessions (no issue), create a transient stub so the runtime
         // has a valid object to read GitBranch from. The stub is never persisted.

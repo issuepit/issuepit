@@ -53,6 +53,8 @@ export interface Organization {
   skipSteps?: string | null
   /** Maximum number of CI/CD → agent-fix loop iterations. Null means use the system default (3). */
   maxCiCdLoopCount?: number | null
+  /** When false, disables git trailer injection for agent commits. Defaults to true. */
+  addGitTrailers?: boolean
   /** Per-field config source mapping. Keys are camelCase field names; values are source file names. */
   configFieldSources?: Record<string, string> | null
   createdAt: string
@@ -205,6 +207,8 @@ export interface Project {
   maxCiCdLoopCount?: number | null
   requiresRunApproval: boolean
   unwrapSingleFileArtifacts: boolean
+  /** When false, disables git trailer injection for agent commits. Null means inherit from org (default true). */
+  addGitTrailers?: boolean | null
   openMergeRequestCount: number
   /** Short project key used as prefix for issue IDs in the UI (e.g. "IP" yields "IP-123"). */
   issueKey?: string | null
