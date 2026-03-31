@@ -34,8 +34,10 @@ public class NotesPage(IPage page)
         await OpenNotebooksModalAsync();
         await page.FillAsync("input[placeholder='Notebook name']", name);
         await page.ClickAsync("button:has-text('Create')");
-        // Wait for the notebook to appear in the list
-        await page.WaitForSelectorAsync($"text={name}", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        // Wait for the notebook name to appear in the modal list (span inside .space-y-2).
+        // Using text= would also match the input field before Vue clears it, so we target
+        // the list entry directly to avoid a false-positive on the now-cleared input.
+        await page.WaitForSelectorAsync($"div.space-y-2 span:has-text('{name}')", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
     }
 
     /// <summary>Returns true if a notebook with the given name is visible in the modal list.</summary>

@@ -259,9 +259,11 @@ public class NotesTests : IAsyncLifetime
             Assert.Contains("/notes", page.Url);
 
             // After the seeder runs, at least the "Engineering" notebook should be listed
-            // in the notebook selector (the page fetches notebooks on mount).
-            await page.WaitForSelectorAsync("select option:has-text('Engineering')",
-                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+            // in the notebook selector. The <select> is rendered only when notebooks exist
+            // (v-if="store.notebooks.length"), so wait for the select element to be visible
+            // first, then check the option count. <option> elements inside a closed <select>
+            // are never "visible" in Playwright, so we use CountAsync instead of WaitForSelector.
+            await page.WaitForSelectorAsync("select", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
 
             var hasEngineering = await page.Locator("select option:has-text('Engineering')").CountAsync() > 0;
             Assert.True(hasEngineering, "Engineering notebook should be visible in the notebook selector");
