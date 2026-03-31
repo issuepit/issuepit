@@ -178,7 +178,7 @@ public sealed class AspireFixture : IAsyncLifetime
 
             if (FrontendUrl is not null)
             {
-                var ready = await WaitForHttpReadyAsync(frontendProbe, TimeSpan.FromSeconds(120));
+                var ready = await WaitForHttpReadyAsync(frontendProbe, TimeSpan.FromSeconds(30));
                 if (!ready)
                     FrontendUrl = null;
             }
