@@ -347,6 +347,46 @@ public class RunnerCommandBuilderTests
     }
 
     [Fact]
+    public void BuildTaskPrompt_WithGuidelineNotes_IncludesGuidelinesSection()
+    {
+        var issue = MakeIssue("Issue with guidelines");
+        issue.PromptGuidelineNotes =
+        [
+            new GuidelineNotePrompt("Session Summary — Succeeded", "## Session Overview\n- Agent ran successfully\n## Guidelines\nAlways run tests first."),
+        ];
+        var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue);
+        Assert.Contains("<guidelines>", prompt);
+        Assert.Contains("Session Summary", prompt);
+        Assert.Contains("Always run tests first.", prompt);
+        Assert.Contains("Summaries from previous agent sessions", prompt);
+    }
+
+    [Fact]
+    public void BuildTaskPrompt_WithMultipleGuidelineNotes_IncludesAll()
+    {
+        var issue = MakeIssue("Issue with multiple guidelines");
+        issue.PromptGuidelineNotes =
+        [
+            new GuidelineNotePrompt("Guideline 1", "Content from first session"),
+            new GuidelineNotePrompt("Guideline 2", "Content from second session"),
+        ];
+        var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue);
+        Assert.Contains("<guidelines>", prompt);
+        Assert.Contains("Guideline 1", prompt);
+        Assert.Contains("Guideline 2", prompt);
+        Assert.Contains("Content from first session", prompt);
+        Assert.Contains("Content from second session", prompt);
+    }
+
+    [Fact]
+    public void BuildTaskPrompt_WithoutGuidelineNotes_DoesNotIncludeGuidelinesSection()
+    {
+        var issue = MakeIssue("Issue without guidelines");
+        var prompt = RunnerCommandBuilder.BuildTaskPrompt(issue);
+        Assert.DoesNotContain("<guidelines>", prompt);
+    }
+
+    [Fact]
     public void BuildRunnerEnv_NoRunnerType_ReturnsEmpty()
     {
         var agent = MakeAgent();
