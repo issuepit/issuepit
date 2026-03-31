@@ -89,6 +89,9 @@ public abstract class DockerRuntimeBase
         if (logCommand)
         {
             var cmdLine = string.Join(' ', cmd.Select(a => a.Contains(' ') ? $"\"{a}\"" : a));
+            // Truncate very long commands (e.g. inline shell scripts) to keep session logs readable.
+            if (cmdLine.Length > 300)
+                cmdLine = cmdLine[..300] + "… (truncated)";
             await onLogLine($"[CMD] $ {cmdLine}", LogStream.Stdout);
         }
 

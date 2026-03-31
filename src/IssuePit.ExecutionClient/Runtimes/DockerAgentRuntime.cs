@@ -313,7 +313,11 @@ public class DockerAgentRuntime(
         {
             // CustomCmdOverride replaces the entire runner command — e.g. ["sh", "-c", "wget ..."].
             // It is a full docker-exec command list, not additional arguments to the runner CLI.
-            await onLogLine($"[DEBUG] Runner cmd     : {string.Join(" ", session.CustomCmd)} (CustomCmdOverride)", LogStream.Stdout);
+            // Truncate the display to avoid flooding session logs with long shell scripts.
+            var cmdDisplay = string.Join(" ", session.CustomCmd);
+            if (cmdDisplay.Length > 200)
+                cmdDisplay = cmdDisplay[..200] + "… (truncated)";
+            await onLogLine($"[DEBUG] Runner cmd     : {cmdDisplay} (CustomCmdOverride)", LogStream.Stdout);
         }
         else if (runnerCmd.Count > 0)
         {

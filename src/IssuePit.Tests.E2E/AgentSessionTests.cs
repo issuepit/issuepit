@@ -348,9 +348,10 @@ public class AgentSessionTests(AspireFixture fixture)
             .Select(l => l.GetProperty("line").GetString() ?? string.Empty)
             .ToList();
 
-        // The container should have output [ISSUEPIT:MCP_CHECK]=OK if the MCP server is reachable
+        // The container should have output [ISSUEPIT:MCP_CHECK]=OK if the MCP server is reachable.
+        // Use StartsWith to match only actual container output, not [CMD] entries.
         Assert.True(
-            logLines.Any(l => l.Contains("[ISSUEPIT:MCP_CHECK]=OK")),
+            logLines.Any(l => l.StartsWith("[ISSUEPIT:MCP_CHECK]=OK")),
             $"Expected '[ISSUEPIT:MCP_CHECK]=OK' in session logs, indicating the MCP server is reachable " +
             $"from inside the agent container via host.docker.internal.\n" +
             $"Actual logs:\n{string.Join('\n', logLines.Take(50))}");
@@ -497,16 +498,19 @@ public class AgentSessionTests(AspireFixture fixture)
             .Select(l => l.GetProperty("line").GetString() ?? string.Empty)
             .ToList();
 
-        // Print MCP version and raw list response for CI log visibility
-        var versionLine = logLines.FirstOrDefault(l => l.Contains("[ISSUEPIT:MCP_VERSION]="));
+        // Print MCP version and raw list response for CI log visibility.
+        // Use StartsWith to match only actual container output lines, not the [CMD]/[DEBUG]
+        // log entries which embed the echo statement inside the full script text.
+        var versionLine = logLines.FirstOrDefault(l => l.StartsWith("[ISSUEPIT:MCP_VERSION]="));
         Console.WriteLine($"[MCP] server version from container: {versionLine ?? "(not found)"}");
-        var listRespLine = logLines.FirstOrDefault(l => l.Contains("[ISSUEPIT:MCP_LIST_RESP]="));
+        var listRespLine = logLines.FirstOrDefault(l => l.StartsWith("[ISSUEPIT:MCP_LIST_RESP]="));
         if (listRespLine is not null)
             Console.WriteLine($"[MCP] list_projects raw response: {listRespLine}");
 
-        // Assert MCP tools worked end-to-end from inside the container
+        // Assert MCP tools worked end-to-end from inside the container.
+        // Use StartsWith to match only actual container output, not [CMD] entries.
         Assert.True(
-            logLines.Any(l => l.Contains("[ISSUEPIT:MCP_TOOLS]=OK")),
+            logLines.Any(l => l.StartsWith("[ISSUEPIT:MCP_TOOLS]=OK")),
             $"Expected '[ISSUEPIT:MCP_TOOLS]=OK' in session logs, indicating MCP tools work " +
             $"from inside the agent container.\n" +
             $"Actual logs:\n{string.Join('\n', logLines.Take(60))}");
