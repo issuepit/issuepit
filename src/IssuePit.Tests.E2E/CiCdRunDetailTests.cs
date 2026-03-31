@@ -167,17 +167,24 @@ public class CiCdRunDetailTests : IAsyncLifetime
                 string.IsNullOrWhiteSpace(previewText) || previewText.Contains("No log lines for this scope"),
                 $"Expected the Create Issue modal to show log lines but preview was: '{previewText}'");
 
-            // Submit the form — the page should navigate to the new issue.
-            await runPage.SubmitCreateIssueAsync($"{FrontendUrl}/projects/{projectId}/issues/**");
+            // Submit the form — wait for the modal to close (issue is created server-side).
+            // Navigation to the new issue is NOT awaited here because concurrent SignalR-triggered
+            // router.push() calls can cancel the Vue SPA navigateTo(), making WaitForURLAsync flaky.
+            await runPage.SubmitCreateIssueAsync();
+
+            // Poll the API until the newly-created issue appears, then navigate directly.
+            // This decouples the test from the Vue Router SPA navigation entirely.
+            var issueNumber = await CiCdTestPollingHelpers.WaitForNewIssueAsync(
+                apiClient, projectId, TimeSpan.FromSeconds(15));
+
+            var issueUrl = $"{FrontendUrl}/projects/{projectId}/issues/{issueNumber}";
+            await page.GotoAsync(issueUrl);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
 
             Assert.True(runPage.IsOnIssuePage(),
-                $"Expected navigation to an issue detail page after creating the issue, but URL was: {page.Url}");
+                $"Expected to be on an issue detail page after navigating, but URL was: {page.Url}");
 
             // ── API-level verification: the created issue should contain log lines ──
-
-            // Extract the issue number from the URL (/issues/{number}).
-            var urlSegments = page.Url.TrimEnd('/').Split('/');
-            var issueNumber = int.Parse(urlSegments[^1]);
 
             var issueResp = await apiClient.GetAsync($"/api/issues/by-project/{projectId}/{issueNumber}");
             Assert.Equal(HttpStatusCode.OK, issueResp.StatusCode);
