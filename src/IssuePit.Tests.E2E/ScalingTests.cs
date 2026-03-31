@@ -185,7 +185,7 @@ public class ScalingTests(AspireFixture fixture)
             Assert.Equal(HttpStatusCode.Accepted, triggerResp.StatusCode);
 
             var triggerResult = await triggerResp.Content.ReadFromJsonAsync<JsonElement>();
-            return triggerResult.GetProperty("id").GetString()!;
+            return triggerResult.GetProperty("runId").GetString()!;
         }).ToList();
 
         var ids = await Task.WhenAll(triggerTasks);
@@ -228,7 +228,7 @@ public class ScalingTests(AspireFixture fixture)
             BuildTriggerPayload(projectId, "seq-run-001", runtimeMode, "ci.yml"));
         Assert.Equal(HttpStatusCode.Accepted, triggerResp1.StatusCode);
         var trigger1 = await triggerResp1.Content.ReadFromJsonAsync<JsonElement>();
-        var runId1 = trigger1.GetProperty("id").GetString()!;
+        var runId1 = trigger1.GetProperty("runId").GetString()!;
 
         var run1 = await WaitForRunAsync(client, runId1, TimeSpan.FromMinutes(5));
         await AssertRunSucceededAsync(client, run1, runId1);
@@ -238,7 +238,7 @@ public class ScalingTests(AspireFixture fixture)
             BuildTriggerPayload(projectId, "seq-run-002", runtimeMode, "ci.yml"));
         Assert.Equal(HttpStatusCode.Accepted, triggerResp2.StatusCode);
         var trigger2 = await triggerResp2.Content.ReadFromJsonAsync<JsonElement>();
-        var runId2 = trigger2.GetProperty("id").GetString()!;
+        var runId2 = trigger2.GetProperty("runId").GetString()!;
 
         var run2 = await WaitForRunAsync(client, runId2, TimeSpan.FromMinutes(5));
         await AssertRunSucceededAsync(client, run2, runId2);
