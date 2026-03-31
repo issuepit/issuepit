@@ -252,7 +252,7 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
             {
                 s.Id,
                 s.AgentId,
-                AgentName = s.Agent.Name,
+                AgentName = s.Agent != null ? s.Agent.Name : null,
                 s.IssueId,
                 IssueTitle = s.Issue != null ? s.Issue.Title : null,
                 IssueNumber = s.Issue != null ? (int?)s.Issue.Number : null,

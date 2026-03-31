@@ -265,6 +265,19 @@ When an agent mode is assigned to an issue, `IssuePit.ExecutionClient` handles t
 
 ---
 
+## E2E Testing Conventions
+
+Docker-dependent agent tests live in `src/IssuePit.Tests.E2E/AgentSessionTests.cs` and require a running Docker daemon.
+
+**Rules:**
+
+- Never return from a test without asserting — a `return` without any assertion means the test always passes even when the feature is broken.
+- Use `SkipIfDockerUnavailable()` (which calls `Xunit.Sdk.SkipException.ForSkip`) at the top of any test that requires Docker. This makes the skip visible in test results and CI logs rather than silently passing. Docker is always available in CI, so the test will run there.
+- Do not duplicate Docker-availability helpers outside `AgentSessionTests.cs` — use the shared `SkipIfDockerUnavailable()` method that lives in that class.
+- Always cancel running containers at the end of a test to avoid resource leaks; wait for the session to reach a terminal state (`Cancelled`, `Succeeded`, or `Failed`) to confirm the worker handled the signal.
+
+---
+
 ## Next Steps
 
 - [API Keys and MCP Servers →](configuration)

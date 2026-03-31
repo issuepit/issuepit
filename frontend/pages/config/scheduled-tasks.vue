@@ -37,6 +37,7 @@
         <option value="BranchDetection">Branch Detection</option>
         <option value="ConfigRepoSync">Config Repo Sync</option>
         <option value="SimilarIssues">Similar Issues</option>
+        <option value="GitRepoAutoFetch">Auto Fetch</option>
       </select>
 
       <!-- Status filter -->
@@ -299,6 +300,7 @@ function typeLabel(type: ScheduledTaskType): string {
     case 'BranchDetection': return 'Branch Detection'
     case 'ConfigRepoSync': return 'Config Repo Sync'
     case 'SimilarIssues': return 'Similar Issues'
+    case 'GitRepoAutoFetch': return 'Auto Fetch'
     default: return type
   }
 }
@@ -313,6 +315,8 @@ function typeSettingsLink(run: { type: ScheduledTaskType; projectId?: string | n
       return run.projectId ? `/projects/${run.projectId}/settings` : '/config/keys'
     case 'ConfigRepoSync':
       return '/admin/tenants'
+    case 'GitRepoAutoFetch':
+      return run.projectId ? `/projects/${run.projectId}/settings` : '/config/keys'
     default:
       return '/config/keys'
   }
@@ -346,6 +350,8 @@ async function openRunLogs(run: { id: string; type: ScheduledTaskType; status: G
       detail = await get<Omit<RunDetail, 'type'>>(`/api/scheduled-tasks/branch-detection-runs/${run.id}`)
     } else if (run.type === 'ConfigRepoSync') {
       detail = await get<Omit<RunDetail, 'type'>>(`/api/scheduled-tasks/config-repo-sync-runs/${run.id}`)
+    } else if (run.type === 'GitRepoAutoFetch') {
+      detail = await get<Omit<RunDetail, 'type'>>(`/api/scheduled-tasks/auto-fetch-runs/${run.id}`)
     } else {
       logsModalLoading.value = false
       return

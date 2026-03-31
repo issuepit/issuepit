@@ -31,8 +31,8 @@ public class AgentSessionsController(
             {
                 s.Id,
                 s.AgentId,
-                AgentName = s.Agent.Name,
-                IsManualMode = s.Agent.ManualMode,
+                AgentName = s.Agent != null ? s.Agent.Name : null,
+                IsManualMode = s.AgentId == null || (s.Agent != null && s.Agent.ManualMode),
                 s.IssueId,
                 IssueTitle = s.Issue != null ? s.Issue.Title : null,
                 IssueNumber = s.Issue != null ? (int?)s.Issue.Number : null,
@@ -305,7 +305,7 @@ public class AgentSessionsController(
 
         if (session is null) return NotFound();
 
-        if (!session.Agent.ManualMode)
+        if (session.Agent?.ManualMode != true)
             return BadRequest(new { error = "CI/CD trigger is only available for manual-mode sessions." });
 
         var branch = session.GitBranch;
@@ -340,13 +340,18 @@ public class AgentSessionsController(
     {
         if (tenant.CurrentTenant is null) return Unauthorized();
 
-        var agent = await db.Agents
-            .FirstOrDefaultAsync(a => a.Id == request.AgentId && a.Organization.TenantId == tenant.CurrentTenant.Id, cancellationToken);
+        // Agent is optional — when not provided the execution client uses org defaults.
+        Agent? agent = null;
+        if (request.AgentId.HasValue)
+        {
+            agent = await db.Agents
+                .FirstOrDefaultAsync(a => a.Id == request.AgentId && a.Organization.TenantId == tenant.CurrentTenant.Id, cancellationToken);
 
-        if (agent is null) return NotFound(new { error = "Agent not found." });
+            if (agent is null) return NotFound(new { error = "Agent not found." });
 
-        if (!agent.ManualMode)
-            return BadRequest(new { error = "Only manual-mode agents can be started via this endpoint." });
+            if (!agent.ManualMode)
+                return BadRequest(new { error = "Only manual-mode agents can be started via this endpoint." });
+        }
 
         var project = await db.Projects
             .Include(p => p.Organization)
@@ -359,7 +364,7 @@ public class AgentSessionsController(
         var session = new AgentSession
         {
             Id = Guid.NewGuid(),
-            AgentId = agent.Id,
+            AgentId = agent?.Id,
             ProjectId = project.Id,
             IssueId = null,
             Status = AgentSessionStatus.Pending,
@@ -373,7 +378,7 @@ public class AgentSessionsController(
             id = Guid.Empty,
             projectId = project.Id,
             title = string.Empty,
-            agentId = agent.Id,
+            agentId = agent?.Id,
             sessionId = session.Id,
             isManualDirectStart = true,
             branch = request.Branch,
@@ -608,7 +613,7 @@ public record RetrySessionRequest(
     int? MaxCiCdLoopCountOverride = null);
 
 public record StartManualSessionRequest(
-    Guid AgentId,
+    Guid? AgentId,
     Guid ProjectId,
     string? Branch = null,
     string? Description = null);
