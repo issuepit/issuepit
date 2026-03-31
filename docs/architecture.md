@@ -23,7 +23,8 @@ src/
 ├── IssuePit.Migrator/         # EF Core database migrations runner
 ├── IssuePit.KafkaInitializer/ # Kafka topic setup on startup
 ├── IssuePit.ExecutionClient/  # Worker: consumes Kafka, runs agents in Docker
-└── IssuePit.CiCdClient/       # Worker: consumes Kafka, triggers CI/CD via act
+├── IssuePit.CiCdClient/       # Worker: consumes Kafka, triggers CI/CD via act
+├── IssuePit.TestRunner/       # API: live dotnet test discovery and execution
 
 frontend/                      # Vue 3 + Nuxt 3 + Pinia frontend
 ```
@@ -75,3 +76,7 @@ Background worker that subscribes to the `issue-assigned` Kafka topic. Uses `Doc
 ### `IssuePit.CiCdClient`
 
 Background worker that subscribes to the `cicd-trigger` Kafka topic and drives local CI runs via `act`.
+
+### `IssuePit.TestRunner`
+
+Standalone API service for live .NET test discovery and execution. Invokes `dotnet test` as an external process, parses TRX results, and exposes REST endpoints for listing tests, triggering runs, and fetching structured results. See [Test Runner](test-runner) for full endpoint documentation.

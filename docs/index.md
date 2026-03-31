@@ -64,6 +64,7 @@ nav_order: 1
 | [Common Agenda](agenda) | Org-wide goal tracker for cross-cutting initiatives |
 | [CI/CD Integration](cicd) | Run GitHub Actions workflows locally with real-time logs |
 | [Todo Tracker](todos) | Personal task board and weekly calendar with iCal subscription |
+| [Test Runner](test-runner) | Live dotnet test discovery and execution via REST API |
 | [Agents](agents) | Configure agent modes (system prompt, MCP tools, auth keys) |
 | [Configuration](configuration) | API keys, MCP servers, and other settings |
 | [Releases](releases) | Release notes, changelog, and upgrade instructions |
