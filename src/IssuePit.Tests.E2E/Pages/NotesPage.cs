@@ -71,9 +71,11 @@ public class NotesPage(IPage page)
 
         if (notebookName is not null)
         {
-            // Scope to the modal container to avoid targeting the notebook filter <select>
-            // that exists on the main notes list page behind the modal overlay.
-            await page.Locator("div:has(h2:has-text('New Note')) select").SelectOptionAsync(
+            // The "New Note" dialog body uses class "space-y-3"; the Notebooks management modal uses
+            // "space-y-2". This is the only select inside that div — more specific than
+            // "div:has(h2:has-text('New Note')) select" which matched every ancestor div including
+            // the page root (causing a strict-mode violation with 2 elements found).
+            await page.Locator("div.space-y-3 select").SelectOptionAsync(
                 new SelectOptionValue { Label = notebookName });
         }
 
