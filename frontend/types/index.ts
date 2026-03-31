@@ -539,6 +539,17 @@ export interface KanbanBoard {
   createdAt: string
 }
 
+/** Lightweight CI/CD summary for a single issue on the kanban board. */
+export interface IssueCiSummary {
+  issueId: string
+  latestRunId?: string | null
+  latestRunStatus?: CiCdRunStatus | null
+  passingChecks: number
+  failingChecks: number
+  totalChecks: number
+  branch?: string | null
+}
+
 export enum ProjectPropertyType {
   Text = 'text',
   Enum = 'enum',

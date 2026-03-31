@@ -1,10 +1,11 @@
 import { defineStore } from 'pinia'
-import type { KanbanBoard, KanbanColumn, KanbanTransition, TransitionCheckResult, IssueStatus } from '~/types'
+import type { KanbanBoard, KanbanColumn, KanbanTransition, TransitionCheckResult, IssueStatus, IssueCiSummary } from '~/types'
 
 export const useKanbanStore = defineStore('kanban', () => {
   const boards = ref<KanbanBoard[]>([])
   const currentBoard = ref<KanbanBoard | null>(null)
   const transitions = ref<KanbanTransition[]>([])
+  const ciSummaries = ref<Record<string, IssueCiSummary>>({})
   const loading = ref(false)
   const error = ref<string | null>(null)
 
@@ -237,10 +238,22 @@ export const useKanbanStore = defineStore('kanban', () => {
     }
   }
 
+  async function fetchCiSummaries(boardId: string) {
+    try {
+      const data = await api.get<IssueCiSummary[]>(`/api/kanban/boards/${boardId}/issue-ci-summaries`)
+      const map: Record<string, IssueCiSummary> = {}
+      for (const s of data) map[s.issueId] = s
+      ciSummaries.value = map
+    } catch {
+      // Non-critical: CI summaries are optional enhancement
+    }
+  }
+
   return {
     boards,
     currentBoard,
     transitions,
+    ciSummaries,
     loading,
     error,
     fetchBoards,
@@ -259,5 +272,6 @@ export const useKanbanStore = defineStore('kanban', () => {
     triggerTransition,
     checkTransitions,
     moveIssue,
+    fetchCiSummaries,
   }
 })

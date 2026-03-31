@@ -156,10 +156,28 @@
                   <span v-if="issue.labels.length > 2" class="text-xs text-gray-600">+{{ issue.labels.length - 2 }}</span>
                 </div>
               </div>
+              <!-- CI/CD status (shown for issues in Review / Ready to Merge with a branch) -->
+              <div v-if="isReviewOrMergeLane(col) && kanban.ciSummaries[issue.id]"
+                class="mt-2 pt-2 border-t border-gray-800/60">
+                <!-- Branch name -->
+                <div v-if="kanban.ciSummaries[issue.id].branch" class="flex items-center gap-1 mb-1.5">
+                  <svg class="w-3 h-3 text-green-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  <span class="text-xs font-mono text-gray-500 truncate" :title="kanban.ciSummaries[issue.id].branch ?? undefined">
+                    {{ kanban.ciSummaries[issue.id].branch }}
+                  </span>
+                </div>
+                <!-- CI status badge -->
+                <div v-if="kanban.ciSummaries[issue.id].latestRunStatus" class="flex items-center gap-1.5">
+                  <span :class="ciStatusBadgeClass(kanban.ciSummaries[issue.id])" class="text-xs px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1">
+                    <span :class="ciStatusDotClass(kanban.ciSummaries[issue.id])" class="w-1.5 h-1.5 rounded-full inline-block"></span>
+                    {{ ciStatusLabel(kanban.ciSummaries[issue.id]) }}
+                  </span>
+                </div>
+              </div>
             </div>
           </template>
-
-          <!-- Drop zone placeholder at the end of the list -->
           <div v-if="draggedId && !draggedColId && isValidDropTarget(col.id) && dragHoverColId === col.id && dragHoverInsertIdx >= (issuesByLane[col.id]?.length ?? 0)"
             role="status" aria-label="Drop zone"
             class="rounded-lg border-2 border-dashed border-brand-500/50 bg-brand-900/10 h-14 animate-pulse">
@@ -632,8 +650,8 @@
 </template>
 
 <script setup lang="ts">
-import { IssueStatus, IssuePriority, IssueType, KanbanLaneProperty } from '~/types'
-import type { Issue, KanbanColumn, IssuePropertyValue, TransitionCheckResult } from '~/types'
+import { IssueStatus, IssuePriority, IssueType, KanbanLaneProperty, CiCdRunStatus } from '~/types'
+import type { Issue, KanbanColumn, IssuePropertyValue, TransitionCheckResult, IssueCiSummary } from '~/types'
 import { useIssuesStore } from '~/stores/issues'
 import { useKanbanStore } from '~/stores/kanban'
 import { useMilestonesStore } from '~/stores/milestones'
@@ -857,6 +875,7 @@ watch(activeBoardId, (bid) => {
   if (bid) {
     kanban.selectBoard(kanban.boards.find(b => b.id === bid)!)
     kanban.fetchTransitions(bid)
+    kanban.fetchCiSummaries(bid)
   }
 })
 
@@ -1193,6 +1212,53 @@ function lanePropertyLabel(lp: KanbanLaneProperty): string {
     [KanbanLaneProperty.Milestone]: 'By Milestone',
   }
   return map[lp] ?? 'By Status'
+}
+
+// ── CI/CD summary helpers ────────────────────────────────────────────────
+
+function isReviewOrMergeLane(col: KanbanColumn): boolean {
+  return col.issueStatus === IssueStatus.InReview || col.issueStatus === IssueStatus.ReadyToMerge
+}
+
+function ciStatusBadgeClass(summary: IssueCiSummary): string {
+  switch (summary.latestRunStatus) {
+    case CiCdRunStatus.Succeeded:
+    case CiCdRunStatus.SucceededWithWarnings:
+      return 'bg-green-900/40 text-green-300'
+    case CiCdRunStatus.Failed:
+      return 'bg-red-900/40 text-red-300'
+    case CiCdRunStatus.Running:
+      return 'bg-blue-900/40 text-blue-300'
+    default:
+      return 'bg-gray-800 text-gray-400'
+  }
+}
+
+function ciStatusDotClass(summary: IssueCiSummary): string {
+  switch (summary.latestRunStatus) {
+    case CiCdRunStatus.Succeeded:
+    case CiCdRunStatus.SucceededWithWarnings:
+      return 'bg-green-400'
+    case CiCdRunStatus.Failed:
+      return 'bg-red-400'
+    case CiCdRunStatus.Running:
+      return 'bg-blue-400 animate-pulse'
+    default:
+      return 'bg-gray-500'
+  }
+}
+
+function ciStatusLabel(summary: IssueCiSummary): string {
+  if (!summary.latestRunStatus) return ''
+  if (summary.latestRunStatus === CiCdRunStatus.Running) return 'CI running'
+  if (summary.latestRunStatus === CiCdRunStatus.Pending) return 'CI pending'
+  if (summary.failingChecks > 0)
+    return `${summary.failingChecks} check${summary.failingChecks > 1 ? 's' : ''} failing`
+  if (summary.latestRunStatus === CiCdRunStatus.Succeeded || summary.latestRunStatus === CiCdRunStatus.SucceededWithWarnings)
+    return summary.totalChecks > 0 ? `${summary.passingChecks}/${summary.totalChecks} passing` : 'CI passing'
+  if (summary.latestRunStatus === CiCdRunStatus.Failed)
+    return summary.totalChecks > 0 ? `${summary.failingChecks} check${summary.failingChecks > 1 ? 's' : ''} failing` : 'CI failed'
+  return summary.latestRunStatus
 }
 </script>
 
