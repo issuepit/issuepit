@@ -70,7 +70,7 @@ public class DashboardController(IssuePitDbContext db, TenantContext ctx) : Cont
             {
                 s.Id,
                 s.AgentId,
-                AgentName = s.Agent.Name,
+                AgentName = s.Agent != null ? s.Agent.Name : null,
                 s.IssueId,
                 IssueTitle = s.Issue != null ? s.Issue.Title : null,
                 IssueNumber = s.Issue != null ? (int?)s.Issue.Number : null,

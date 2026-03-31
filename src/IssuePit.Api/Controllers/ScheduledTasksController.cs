@@ -150,11 +150,37 @@ public class ScheduledTasksController(
                 "SimilarIssues"))
             .ToListAsync();
 
+        // ── Git Repo Auto-Fetch runs ──────────────────────────────────────────
+        var afQuery = db.GitRepoAutoFetchRuns
+            .Include(r => r.Project)
+            .Where(r => r.Project.Organization.TenantId == ctx.CurrentTenant.Id);
+
+        if (projectId.HasValue)
+            afQuery = afQuery.Where(r => r.ProjectId == projectId.Value);
+
+        if (parsedStatus.HasValue)
+            afQuery = afQuery.Where(r => r.Status == parsedStatus.Value);
+
+        var afRuns = await afQuery
+            .OrderByDescending(r => r.StartedAt)
+            .Take(cappedTake)
+            .Select(r => new ScheduledTaskRunDto(
+                r.Id,
+                r.ProjectId,
+                r.Project.Name,
+                r.Status,
+                r.Summary,
+                r.StartedAt,
+                r.CompletedAt,
+                "GitRepoAutoFetch"))
+            .ToListAsync();
+
         // Merge and re-sort by StartedAt descending, then cap to requested take.
         var runs = ghRuns
             .Concat(bdRuns)
             .Concat(crRuns)
             .Concat(siRuns)
+            .Concat(afRuns)
             .OrderByDescending(r => r.StartedAt)
             .Take(cappedTake)
             .ToList();
@@ -190,9 +216,17 @@ public class ScheduledTasksController(
             .Distinct()
             .ToListAsync();
 
+        var afProjects = await db.GitRepoAutoFetchRuns
+            .Include(r => r.Project)
+            .Where(r => r.Project.Organization.TenantId == ctx.CurrentTenant.Id)
+            .Select(r => new { r.ProjectId, r.Project.Name })
+            .Distinct()
+            .ToListAsync();
+
         var projects = ghProjects
             .Concat(bdProjects)
             .Concat(siProjects)
+            .Concat(afProjects)
             .DistinctBy(p => p.ProjectId)
             .OrderBy(p => p.Name)
             .Select(p => new { p.ProjectId, p.Name })
@@ -234,6 +268,29 @@ public class ScheduledTasksController(
             .Include(r => r.Tenant)
             .Include(r => r.Logs)
             .FirstOrDefaultAsync(r => r.Id == runId && r.TenantId == ctx.CurrentTenant.Id);
+
+        if (run is null) return NotFound();
+
+        return Ok(new ScheduledTaskRunDetailResponse(
+            run.Id,
+            run.Status,
+            run.Summary,
+            run.StartedAt,
+            run.CompletedAt,
+            run.Logs.OrderBy(l => l.Timestamp).Select(l => new ScheduledTaskRunLogDto(l.Id, l.Level, l.Message, l.Timestamp)).ToList()));
+    }
+
+    /// <summary>Returns details and log entries for a specific git repo auto-fetch run.</summary>
+    [HttpGet("auto-fetch-runs/{runId:guid}")]
+    public async Task<IActionResult> GetAutoFetchRun(Guid runId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+
+        var run = await db.GitRepoAutoFetchRuns
+            .Include(r => r.Project)
+            .ThenInclude(p => p.Organization)
+            .Include(r => r.Logs)
+            .FirstOrDefaultAsync(r => r.Id == runId && r.Project.Organization.TenantId == ctx.CurrentTenant.Id);
 
         if (run is null) return NotFound();
 
