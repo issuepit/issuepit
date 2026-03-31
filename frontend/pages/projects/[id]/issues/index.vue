@@ -379,6 +379,7 @@ const statuses = [
   { value: IssueStatus.Todo, label: 'Todo' },
   { value: IssueStatus.InProgress, label: 'In Progress' },
   { value: IssueStatus.InReview, label: 'In Review' },
+  { value: IssueStatus.ReadyToMerge, label: 'Ready to Merge' },
   { value: IssueStatus.Done, label: 'Done' },
   { value: IssueStatus.Cancelled, label: 'Cancelled' }
 ]
@@ -436,6 +437,7 @@ function statusIcon(status: IssueStatus) {
     [IssueStatus.Todo]: { color: 'bg-blue-400' },
     [IssueStatus.InProgress]: { color: 'bg-yellow-400' },
     [IssueStatus.InReview]: { color: 'bg-purple-400' },
+    [IssueStatus.ReadyToMerge]: { color: 'bg-indigo-400' },
     [IssueStatus.Done]: { color: 'bg-green-400' },
     [IssueStatus.Cancelled]: { color: 'bg-red-400' }
   }

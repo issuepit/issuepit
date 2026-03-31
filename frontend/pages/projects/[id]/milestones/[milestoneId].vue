@@ -272,6 +272,7 @@ function statusDotColor(status: IssueStatus) {
     [IssueStatus.Todo]: 'bg-blue-400',
     [IssueStatus.InProgress]: 'bg-yellow-400',
     [IssueStatus.InReview]: 'bg-purple-400',
+    [IssueStatus.ReadyToMerge]: 'bg-indigo-400',
     [IssueStatus.Done]: 'bg-green-400',
     [IssueStatus.Cancelled]: 'bg-red-400',
   }
@@ -284,6 +285,7 @@ function statusBadgeClass(status: IssueStatus) {
     [IssueStatus.Todo]: 'bg-blue-900/40 text-blue-300',
     [IssueStatus.InProgress]: 'bg-yellow-900/40 text-yellow-300',
     [IssueStatus.InReview]: 'bg-purple-900/40 text-purple-300',
+    [IssueStatus.ReadyToMerge]: 'bg-indigo-900/40 text-indigo-300',
     [IssueStatus.Done]: 'bg-green-900/40 text-green-300',
     [IssueStatus.Cancelled]: 'bg-red-900/40 text-red-400',
   }
@@ -296,6 +298,7 @@ function statusLabel(status: IssueStatus) {
     [IssueStatus.Todo]: 'Todo',
     [IssueStatus.InProgress]: 'In Progress',
     [IssueStatus.InReview]: 'In Review',
+    [IssueStatus.ReadyToMerge]: 'Ready to Merge',
     [IssueStatus.Done]: 'Done',
     [IssueStatus.Cancelled]: 'Cancelled',
   }

@@ -5,6 +5,7 @@ export enum IssueStatus {
   Todo = 'todo',
   InProgress = 'in_progress',
   InReview = 'in_review',
+  ReadyToMerge = 'ready_to_merge',
   Done = 'done',
   Cancelled = 'cancelled'
 }
