@@ -178,7 +178,7 @@ public sealed class AspireFixture : IAsyncLifetime
 
             if (FrontendUrl is not null)
             {
-                var ready = await WaitForHttpReadyAsync(frontendProbe, TimeSpan.FromSeconds(120));
+                var ready = await WaitForHttpReadyAsync(frontendProbe, TimeSpan.FromSeconds(30));
                 if (!ready)
                     FrontendUrl = null;
             }
@@ -216,7 +216,13 @@ public sealed class AspireFixture : IAsyncLifetime
         {
             try
             {
-                var response = await client.GetAsync("/");
+                // Use a per-request timeout so the loop can retry promptly if the server
+                // accepts the TCP connection but stalls during Nuxt dev-server warm-up.
+                // Without this, a single request can block for the default HttpClient timeout
+                // (100 s), preventing any retry within the 120 s total deadline and causing
+                // the blame-hang-timeout to fire.
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                var response = await client.GetAsync("/", cts.Token);
                 if (response.IsSuccessStatusCode) return true;
             }
             catch { }
