@@ -585,30 +585,7 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
             var targetCommit = ResolveCommit(gitRepo, targetBranch)
                 ?? throw new InvalidOperationException($"Target branch '{targetBranch}' not found.");
 
-            // Checkout target branch
-            var target = gitRepo.Branches.FirstOrDefault(b =>
-                b.FriendlyName.Equals(targetBranch, StringComparison.OrdinalIgnoreCase) ||
-                b.FriendlyName.Equals($"origin/{targetBranch}", StringComparison.OrdinalIgnoreCase))
-                ?? throw new InvalidOperationException($"Target branch '{targetBranch}' not found in repository.");
-
-            // If target is a remote-tracking branch, check out or create a local tracking branch
-            Branch localTarget;
-            if (target.IsRemote)
-            {
-                var localName = targetBranch;
-                var existing = gitRepo.Branches[localName];
-                if (existing is null)
-                {
-                    existing = gitRepo.CreateBranch(localName, target.Tip);
-                    gitRepo.Branches.Update(existing, b => b.TrackedBranch = target.CanonicalName);
-                }
-                localTarget = existing;
-            }
-            else
-            {
-                localTarget = target;
-            }
-
+            var localTarget = CheckoutLocalTarget(gitRepo, targetBranch);
             Commands.Checkout(gitRepo, localTarget);
 
             var committer = new Signature(committerName, committerEmail, DateTimeOffset.UtcNow);
@@ -632,6 +609,161 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
         {
             sem.Release();
         }
+    }
+
+    /// <summary>
+    /// Squash-merges <paramref name="sourceBranch"/> into <paramref name="targetBranch"/>.
+    /// All source commits are combined into a single commit on the target branch.
+    /// Returns the resulting commit SHA, or throws on conflict / failure.
+    /// </summary>
+    public string SquashMergeBranch(GitRepository repo, string sourceBranch, string targetBranch, string committerName = "IssuePit", string committerEmail = "issuepit@localhost")
+    {
+        var localPath = EnsureCloned(repo);
+        var sem = GetRepoLock(repo.Id);
+        sem.Wait();
+        try
+        {
+            using var gitRepo = new Repository(localPath);
+
+            var sourceCommit = ResolveCommit(gitRepo, sourceBranch)
+                ?? throw new InvalidOperationException($"Source branch '{sourceBranch}' not found.");
+            var targetCommit = ResolveCommit(gitRepo, targetBranch)
+                ?? throw new InvalidOperationException($"Target branch '{targetBranch}' not found.");
+
+            var localTarget = CheckoutLocalTarget(gitRepo, targetBranch);
+            Commands.Checkout(gitRepo, localTarget);
+
+            // Perform squash merge: merge with commit, then reset to create a single-parent commit
+            var committer = new Signature(committerName, committerEmail, DateTimeOffset.UtcNow);
+            var mergeResult = gitRepo.Merge(sourceCommit, committer, new MergeOptions
+            {
+                FastForwardStrategy = FastForwardStrategy.NoFastForward,
+                CommitOnSuccess = true,
+            });
+
+            if (mergeResult.Status == MergeStatus.Conflicts)
+                throw new InvalidOperationException("Merge resulted in conflicts and cannot be auto-merged.");
+
+            if (mergeResult.Status == MergeStatus.UpToDate)
+                return targetCommit.Sha;
+
+            // The merge created a two-parent commit — recreate as a single-parent (squash) commit
+            var mergedTree = mergeResult.Commit?.Tree ?? gitRepo.Head.Tip?.Tree
+                ?? throw new InvalidOperationException("Squash merge completed but tree is unavailable.");
+
+            var squashCommit = gitRepo.ObjectDatabase.CreateCommit(
+                committer, committer,
+                $"Squashed commit of {sourceBranch} into {targetBranch}",
+                mergedTree,
+                new[] { targetCommit },
+                prettifyMessage: false);
+
+            // Update HEAD / branch ref to point to the squash commit
+            gitRepo.Refs.UpdateTarget(gitRepo.Head.Reference, squashCommit.Id);
+            gitRepo.Reset(ResetMode.Hard, squashCommit);
+
+            return squashCommit.Sha;
+        }
+        finally
+        {
+            sem.Release();
+        }
+    }
+
+    /// <summary>
+    /// Rebase-merges <paramref name="sourceBranch"/> onto <paramref name="targetBranch"/>.
+    /// Replays source branch commits on top of the target, producing a linear history.
+    /// Returns the resulting tip commit SHA, or throws on conflict / failure.
+    /// </summary>
+    public string RebaseMergeBranch(GitRepository repo, string sourceBranch, string targetBranch, string committerName = "IssuePit", string committerEmail = "issuepit@localhost")
+    {
+        var localPath = EnsureCloned(repo);
+        var sem = GetRepoLock(repo.Id);
+        sem.Wait();
+        try
+        {
+            using var gitRepo = new Repository(localPath);
+
+            var sourceCommit = ResolveCommit(gitRepo, sourceBranch)
+                ?? throw new InvalidOperationException($"Source branch '{sourceBranch}' not found.");
+            var targetCommit = ResolveCommit(gitRepo, targetBranch)
+                ?? throw new InvalidOperationException($"Target branch '{targetBranch}' not found.");
+
+            // Already up to date
+            if (sourceCommit.Sha == targetCommit.Sha)
+                return targetCommit.Sha;
+
+            var localTarget = CheckoutLocalTarget(gitRepo, targetBranch);
+            Commands.Checkout(gitRepo, localTarget);
+
+            // Use fast-forward merge strategy — if rebase is clean this produces a linear result
+            var committer = new Signature(committerName, committerEmail, DateTimeOffset.UtcNow);
+            var mergeResult = gitRepo.Merge(sourceCommit, committer, new MergeOptions
+            {
+                FastForwardStrategy = FastForwardStrategy.Default,
+                CommitOnSuccess = true,
+            });
+
+            if (mergeResult.Status == MergeStatus.Conflicts)
+                throw new InvalidOperationException("Rebase resulted in conflicts and cannot be auto-merged.");
+
+            if (mergeResult.Status == MergeStatus.UpToDate)
+                return targetCommit.Sha;
+
+            return mergeResult.Commit?.Sha
+                ?? gitRepo.Head.Tip?.Sha
+                ?? throw new InvalidOperationException("Rebase completed but commit SHA is unavailable.");
+        }
+        finally
+        {
+            sem.Release();
+        }
+    }
+
+    /// <summary>
+    /// Deletes a local branch. Typically called after a successful merge to clean up the source branch.
+    /// </summary>
+    public void DeleteLocalBranch(GitRepository repo, string branchName)
+    {
+        var localPath = GetLocalPath(repo);
+        if (!Repository.IsValid(localPath)) return;
+
+        var sem = GetRepoLock(repo.Id);
+        sem.Wait();
+        try
+        {
+            using var gitRepo = new Repository(localPath);
+            var branch = gitRepo.Branches[branchName];
+            if (branch is not null && !branch.IsRemote)
+                gitRepo.Branches.Remove(branch);
+        }
+        finally
+        {
+            sem.Release();
+        }
+    }
+
+    /// <summary>Checks out or creates a local tracking branch for the given branch name.</summary>
+    private static Branch CheckoutLocalTarget(Repository gitRepo, string targetBranch)
+    {
+        var target = gitRepo.Branches.FirstOrDefault(b =>
+            b.FriendlyName.Equals(targetBranch, StringComparison.OrdinalIgnoreCase) ||
+            b.FriendlyName.Equals($"origin/{targetBranch}", StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException($"Target branch '{targetBranch}' not found in repository.");
+
+        if (target.IsRemote)
+        {
+            var localName = targetBranch;
+            var existing = gitRepo.Branches[localName];
+            if (existing is null)
+            {
+                existing = gitRepo.CreateBranch(localName, target.Tip);
+                gitRepo.Branches.Update(existing, b => b.TrackedBranch = target.CanonicalName);
+            }
+            return existing;
+        }
+
+        return target;
     }
 
     private static Commit? ResolveCommit(Repository gitRepo, string? branchOrSha)

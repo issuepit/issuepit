@@ -54,8 +54,12 @@ public class MergeRequestAutoMergeService(
                     "Auto-merging MR {MrId} ({Source} → {Target}) — CI succeeded",
                     mr.Id, mr.SourceBranch, mr.TargetBranch);
 
-                var mergeCommitSha = await Task.Run(() =>
-                    gitService.MergeBranch(repo, mr.SourceBranch, mr.TargetBranch),
+                var mergeCommitSha = await Task.Run(() => mr.MergeStrategy switch
+                {
+                    MergeStrategy.Squash => gitService.SquashMergeBranch(repo, mr.SourceBranch, mr.TargetBranch),
+                    MergeStrategy.Rebase => gitService.RebaseMergeBranch(repo, mr.SourceBranch, mr.TargetBranch),
+                    _ => gitService.MergeBranch(repo, mr.SourceBranch, mr.TargetBranch),
+                },
                     cancellationToken);
 
                 mr.Status = MergeRequestStatus.Merged;
@@ -67,6 +71,19 @@ public class MergeRequestAutoMergeService(
                 logger.LogInformation(
                     "Auto-merged MR {MrId} → commit {Sha}",
                     mr.Id, mergeCommitSha);
+
+                // Delete source branch if configured
+                if (mr.DeleteSourceBranchOnMerge)
+                {
+                    try
+                    {
+                        await Task.Run(() => gitService.DeleteLocalBranch(repo, mr.SourceBranch), cancellationToken);
+                    }
+                    catch (Exception delEx) when (delEx is not OperationCanceledException)
+                    {
+                        logger.LogWarning(delEx, "Failed to delete source branch {Branch} after auto-merging MR {MrId}", mr.SourceBranch, mr.Id);
+                    }
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

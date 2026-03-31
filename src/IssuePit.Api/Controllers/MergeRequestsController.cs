@@ -105,7 +105,10 @@ public class MergeRequestsController(
             Description = req.Description,
             SourceBranch = req.SourceBranch,
             TargetBranch = targetBranch,
+            MergeStrategy = req.MergeStrategy,
             AutoMergeEnabled = req.AutoMergeEnabled,
+            DeleteSourceBranchOnMerge = req.DeleteSourceBranchOnMerge,
+            RequireCiToPass = req.RequireCiToPass,
             LastKnownSourceSha = sourceSha,
         };
 
@@ -156,7 +159,10 @@ public class MergeRequestsController(
 
         mr.Title = req.Title;
         mr.Description = req.Description;
+        mr.MergeStrategy = req.MergeStrategy;
         mr.AutoMergeEnabled = req.AutoMergeEnabled;
+        mr.DeleteSourceBranchOnMerge = req.DeleteSourceBranchOnMerge;
+        mr.RequireCiToPass = req.RequireCiToPass;
         mr.UpdatedAt = DateTime.UtcNow;
 
         await db.SaveChangesAsync();
@@ -208,7 +214,7 @@ public class MergeRequestsController(
     // ─────────────────────────────── Merge ──────────────────────────────
 
     [HttpPost("{id:guid}/merge")]
-    public async Task<IActionResult> Merge(Guid projectId, Guid id)
+    public async Task<IActionResult> Merge(Guid projectId, Guid id, [FromBody] MergeMergeRequestRequest? req = null)
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
 
@@ -221,22 +227,54 @@ public class MergeRequestsController(
         if (mr is null) return NotFound();
         if (mr.Status != MergeRequestStatus.Open) return BadRequest(new { error = "MR is not open." });
 
+        // CI gate: block merge if CI is required but hasn't succeeded
+        if (mr.RequireCiToPass)
+        {
+            if (mr.LastCiCdRun is null)
+                return BadRequest(new { error = "CI is required to pass before merging, but no CI run has been triggered." });
+            if (mr.LastCiCdRun.Status != CiCdRunStatus.Succeeded &&
+                mr.LastCiCdRun.Status != CiCdRunStatus.SucceededWithWarnings)
+                return BadRequest(new { error = $"CI is required to pass before merging. Current CI status: {mr.LastCiCdRun.Status}." });
+        }
+
         var repo = await db.GitRepositories
             .Where(r => r.ProjectId == projectId)
             .OrderByDescending(r => r.Mode == GitOriginMode.Working)
             .FirstOrDefaultAsync();
         if (repo is null) return BadRequest(new { error = "No git repository linked to this project." });
 
+        // Allow override of strategy at merge time, fall back to the MR's configured strategy
+        var strategy = req?.Strategy ?? mr.MergeStrategy;
+        var deleteSourceBranch = req?.DeleteSourceBranch ?? mr.DeleteSourceBranchOnMerge;
+
         try
         {
-            var mergeCommitSha = await Task.Run(() =>
-                gitService.MergeBranch(repo, mr.SourceBranch, mr.TargetBranch));
+            var mergeCommitSha = await Task.Run(() => strategy switch
+            {
+                MergeStrategy.Squash => gitService.SquashMergeBranch(repo, mr.SourceBranch, mr.TargetBranch),
+                MergeStrategy.Rebase => gitService.RebaseMergeBranch(repo, mr.SourceBranch, mr.TargetBranch),
+                _ => gitService.MergeBranch(repo, mr.SourceBranch, mr.TargetBranch),
+            });
 
             mr.Status = MergeRequestStatus.Merged;
             mr.MergedAt = DateTime.UtcNow;
             mr.MergeCommitSha = mergeCommitSha;
+            mr.MergeStrategy = strategy;
             mr.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
+
+            // Delete source branch if requested
+            if (deleteSourceBranch)
+            {
+                try
+                {
+                    await Task.Run(() => gitService.DeleteLocalBranch(repo, mr.SourceBranch));
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to delete source branch {Branch} after merging MR {MrId}", mr.SourceBranch, mr.Id);
+                }
+            }
 
             return Ok(MapToDto(mr));
         }
@@ -253,8 +291,7 @@ public class MergeRequestsController(
 
     // ─────────────────────────── Helper ─────────────────────────────────
 
-    private static object MapToDto(MergeRequest m) => new
-    {
+    private static MergeRequestResponse MapToDto(MergeRequest m) => new(
         m.Id,
         m.ProjectId,
         m.Title,
@@ -262,27 +299,63 @@ public class MergeRequestsController(
         m.SourceBranch,
         m.TargetBranch,
         m.Status,
-        StatusName = m.Status.ToString(),
+        m.Status.ToString(),
+        m.MergeStrategy,
+        m.MergeStrategy.ToString(),
         m.AutoMergeEnabled,
+        m.DeleteSourceBranchOnMerge,
+        m.RequireCiToPass,
         m.LastKnownSourceSha,
         m.LastCiCdRunId,
-        LastCiCdRunStatus = m.LastCiCdRun?.Status,
-        LastCiCdRunStatusName = m.LastCiCdRun?.Status.ToString(),
+        m.LastCiCdRun?.Status,
+        m.LastCiCdRun?.Status.ToString(),
         m.CreatedAt,
         m.UpdatedAt,
         m.MergedAt,
-        m.MergeCommitSha,
-    };
+        m.MergeCommitSha);
 }
+
+public record MergeRequestResponse(
+    Guid Id,
+    Guid ProjectId,
+    string Title,
+    string? Description,
+    string SourceBranch,
+    string TargetBranch,
+    MergeRequestStatus Status,
+    string StatusName,
+    MergeStrategy MergeStrategy,
+    string MergeStrategyName,
+    bool AutoMergeEnabled,
+    bool DeleteSourceBranchOnMerge,
+    bool RequireCiToPass,
+    string? LastKnownSourceSha,
+    Guid? LastCiCdRunId,
+    CiCdRunStatus? LastCiCdRunStatus,
+    string? LastCiCdRunStatusName,
+    DateTime CreatedAt,
+    DateTime UpdatedAt,
+    DateTime? MergedAt,
+    string? MergeCommitSha);
 
 public record CreateMergeRequestRequest(
     string Title,
     string? Description,
     string SourceBranch,
     string? TargetBranch,
-    bool AutoMergeEnabled = false);
+    MergeStrategy MergeStrategy = MergeStrategy.Merge,
+    bool AutoMergeEnabled = false,
+    bool DeleteSourceBranchOnMerge = false,
+    bool RequireCiToPass = false);
 
 public record UpdateMergeRequestRequest(
     string Title,
     string? Description,
-    bool AutoMergeEnabled);
+    MergeStrategy MergeStrategy,
+    bool AutoMergeEnabled,
+    bool DeleteSourceBranchOnMerge,
+    bool RequireCiToPass);
+
+public record MergeMergeRequestRequest(
+    MergeStrategy? Strategy = null,
+    bool? DeleteSourceBranch = null);
