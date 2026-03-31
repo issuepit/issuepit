@@ -2256,6 +2256,10 @@ async function submitCreateIssue() {
     })
     showCreateIssueModal.value = false
     if (newIssue) {
+      // Stop SignalR connections before navigating so their event handlers cannot
+      // trigger concurrent router.push() calls that would silently cancel the
+      // navigateTo() in Vue Router 4 (NavigationFailure resolves, does not throw).
+      await Promise.all([disconnectCicd(), disconnectProject()])
       await navigateTo(`/projects/${projectId}/issues/${newIssue.number}`)
     }
   } catch (e: unknown) {
@@ -2390,6 +2394,7 @@ async function submitCreateIssueFromTest() {
     })
     createIssueTestCase.value = null
     if (newIssue) {
+      await Promise.all([disconnectCicd(), disconnectProject()])
       await navigateTo(`/projects/${projectId}/issues/${newIssue.number}`)
     }
   } catch (e: unknown) {
@@ -2488,8 +2493,8 @@ const currentActRunnerImagePlaceholder = computed(() => {
 const now = ref(Date.now())
 
 // SignalR connections
-const { connection: cicdConnection, isConnected, connect: connectCicd } = useSignalR('/hubs/cicd-output')
-const { connection: projectConnection, connect: connectProject } = useSignalR('/hubs/project')
+const { connection: cicdConnection, isConnected, connect: connectCicd, disconnect: disconnectCicd } = useSignalR('/hubs/cicd-output')
+const { connection: projectConnection, connect: connectProject, disconnect: disconnectProject } = useSignalR('/hubs/project')
 
 onMounted(async () => {
   // Set up ResizeObserver to track actual rendered heights of job boxes.
