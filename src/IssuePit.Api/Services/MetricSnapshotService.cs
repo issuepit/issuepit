@@ -64,11 +64,12 @@ public class MetricSnapshotService(
                 .CountAsync(i => i.ProjectId == projectId
                     && i.Status != IssueStatus.Done
                     && i.Status != IssueStatus.Cancelled
-                    && i.Status != IssueStatus.InProgress, cancellationToken);
+                    && i.Status != IssueStatus.InProgress
+                    && i.Status != IssueStatus.ReadyToMerge, cancellationToken);
 
             var inProgressIssues = await db.Issues
                 .CountAsync(i => i.ProjectId == projectId
-                    && i.Status == IssueStatus.InProgress, cancellationToken);
+                    && (i.Status == IssueStatus.InProgress || i.Status == IssueStatus.ReadyToMerge), cancellationToken);
 
             var doneIssues = await db.Issues
                 .CountAsync(i => i.ProjectId == projectId

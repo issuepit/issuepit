@@ -40,8 +40,9 @@ public class DashboardController(IssuePitDbContext db, TenantContext ctx) : Cont
                     Open = dayIssues.Count(i =>
                         i.Status != IssueStatus.Done &&
                         i.Status != IssueStatus.Cancelled &&
-                        i.Status != IssueStatus.InProgress),
-                    InProgress = dayIssues.Count(i => i.Status == IssueStatus.InProgress),
+                        i.Status != IssueStatus.InProgress &&
+                        i.Status != IssueStatus.ReadyToMerge),
+                    InProgress = dayIssues.Count(i => i.Status == IssueStatus.InProgress || i.Status == IssueStatus.ReadyToMerge),
                     Done = dayIssues.Count(i => i.Status == IssueStatus.Done),
                 };
             })
