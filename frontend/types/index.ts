@@ -690,6 +690,13 @@ export interface PoolStatus {
   cicdPools: CiCdPoolStatus[]
 }
 
+export interface ScalingConfig {
+  ciCdReplicaCount: number
+  agentReplicaCount: number
+  ciCdMaxParallelRuns: number
+  agentMaxParallelRuns: number
+}
+
 export type GitOriginMode = 'ReadOnly' | 'Working' | 'Release'
 
 /** Per-remote result of the pre-flight branch availability check run before each agent session. */

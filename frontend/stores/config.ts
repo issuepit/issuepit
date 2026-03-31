@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { ApiKey, RuntimeConfiguration, ApiKeyProvider, RuntimeType, TelegramBot, TelegramPairing, TelegramChat, DigestInterval, TelegramSilentMode, PoolStatus, McpAccessToken } from '~/types'
+import type { ApiKey, RuntimeConfiguration, ApiKeyProvider, RuntimeType, TelegramBot, TelegramPairing, TelegramChat, DigestInterval, TelegramSilentMode, PoolStatus, ScalingConfig, McpAccessToken } from '~/types'
 
 export const useConfigStore = defineStore('config', () => {
   const { get, post, put, del } = useApi()
@@ -68,6 +68,19 @@ export const useConfigStore = defineStore('config', () => {
       poolStatus.value = await get<PoolStatus>('/api/config/pool-status')
     } finally {
       poolStatusLoading.value = false
+    }
+  }
+
+  // --- Scaling Configuration ---
+  const scalingConfig = ref<ScalingConfig | null>(null)
+  const scalingConfigLoading = ref(false)
+
+  async function fetchScalingConfig() {
+    scalingConfigLoading.value = true
+    try {
+      scalingConfig.value = await get<ScalingConfig>('/api/config/scaling')
+    } finally {
+      scalingConfigLoading.value = false
     }
   }
 
@@ -168,6 +181,7 @@ export const useConfigStore = defineStore('config', () => {
     apiKeys, keysLoading, fetchApiKeys, createApiKey, deleteApiKey,
     runtimes, runtimesLoading, fetchRuntimes, createRuntime, updateRuntime, deleteRuntime,
     poolStatus, poolStatusLoading, fetchPoolStatus,
+    scalingConfig, scalingConfigLoading, fetchScalingConfig,
     telegramBots, telegramBotsLoading, fetchTelegramBots, createTelegramBot, updateTelegramBot, deleteTelegramBot,
     telegramPairings, telegramPairingsLoading, fetchTelegramPairings, redeemPairingCode,
     telegramChats, telegramChatsLoading, fetchTelegramChats, updateTelegramChat, deleteTelegramChat,
