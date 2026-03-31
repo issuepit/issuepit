@@ -5,6 +5,9 @@ import mediumZoom from 'medium-zoom'
 import type { EnhanceAppContext } from 'vitepress'
 import './custom.css'
 
+// Screenshot directory prefix (relative URLs in markdown)
+const SCREENSHOT_PREFIX = '/assets/screenshots/'
+
 export default {
   extends: DefaultTheme,
   setup() {
@@ -18,8 +21,27 @@ export default {
       })
     }
 
+    /**
+     * Swap documentation screenshot images between dark and light variants.
+     *
+     * Convention:
+     *   - Dark (default):  <name>.png
+     *   - Light variant:   <name>-light.png
+     *
+     * Markdown references the dark variant; the theme swaps to the light
+     * variant automatically when the user switches to light mode.
+     */
     const updateThemedScreenshots = () => {
-      document.querySelectorAll<HTMLImageElement>('img[data-src-light][data-src-dark]').forEach((img) => {
+      document.querySelectorAll<HTMLImageElement>('.main img').forEach((img) => {
+        const src = img.getAttribute('src') || ''
+        if (!src.includes(SCREENSHOT_PREFIX)) return
+
+        // Store the original (dark) src on first encounter
+        if (!img.dataset.srcDark) {
+          img.dataset.srcDark = src
+          img.dataset.srcLight = src.replace(/\.png$/, '-light.png')
+        }
+
         img.src = isDark.value ? img.dataset.srcDark! : img.dataset.srcLight!
       })
     }
