@@ -397,6 +397,13 @@ var gitServer = builder.AddProject<Projects.IssuePit_GitServer>("git-server")
     .WaitForCompletion(migrator)
     .WithHttpHealthCheck("/health", endpointName: "http");
 
+// Scale execution-client horizontally to allow multiple concurrent agent runs.
+// Each replica is a separate Kafka consumer in the "execution-client" group; Kafka distributes
+// partitions across replicas so each instance processes different messages independently.
+// Increase EXECUTION_CLIENT_WORKERS (default 1) to allow more concurrent agent runs.
+var executionClientWorkers = int.TryParse(
+    Environment.GetEnvironmentVariable("EXECUTION_CLIENT_WORKERS"), out var ew) && ew > 0 ? ew : 1;
+
 var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("execution-client")
     .WithReference(postgresDb)
     .WithReference(postgresServer)
@@ -409,7 +416,8 @@ var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("exe
     .WithEnvironment("McpServer__BaseUrl", mcpServer.GetEndpoint("http"))
     .WithEnvironment("ApiServer__BaseUrl", api.GetEndpoint("http"))
     .WithEnvironment("GitServer__BaseUrl", gitServer.GetEndpoint("http"))
-    .WithHttpHealthCheck("/health", endpointName: "http");
+    .WithHttpHealthCheck("/health", endpointName: "http")
+    .WithReplicas(executionClientWorkers);
 
 // Scale cicd-client horizontally to allow multiple concurrent runs.
 // Each replica is a separate Kafka consumer in the "cicd-client" group; Kafka distributes
