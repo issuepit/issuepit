@@ -82,7 +82,8 @@ jobs:
       # Pinned commit from the issuepit/act fork.
       # The fork adds --container-name-suffix which NativeCiCdRuntime requires.
       # Update this when pulling in new upstream or fork changes.
-      ACT_COMMIT: a471da174034e4d6db6fc89b0ea7bfcd38b9236a
+      # Must match the ACT_COMMIT default in docker/helper-containers/Dockerfile.helper-act.
+      ACT_COMMIT: 873f292b55ae7a68b7d53f7d1f372355517555f3
 
     steps:
       - uses: actions/checkout@v4
@@ -124,6 +125,15 @@ jobs:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
+
+      # Pin Go 1.24 explicitly — act's go.mod requires go 1.24.0.
+      # Without this, the runner uses its default Go version which may be older
+      # and trigger GOTOOLCHAIN auto-download, causing intermittent build failures.
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: false
 
       - name: Install frontend dependencies
         working-directory: frontend
