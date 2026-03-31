@@ -357,13 +357,8 @@ public class NotesTests : IAsyncLifetime
         throw new InvalidOperationException("Default 'localhost' tenant not found.");
     }
 
-    private async Task LoginAsync(IPage page, string username, string password)
+    private static async Task LoginAsync(IPage page, string username, string password)
     {
-        await page.GotoAsync("/login", new PageGotoOptions { WaitUntil = WaitUntilState.Commit });
-        await page.WaitForURLAsync("**/login", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
-        await page.FillAsync("input[name='username'], input[placeholder*='username' i], input[type='text']", username);
-        await page.FillAsync("input[name='password'], input[type='password']", password);
-        await page.ClickAsync("button[type='submit'], button:has-text('Sign in'), button:has-text('Login')");
-        await page.WaitForURLAsync("**/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
+        await new LoginPage(page).LoginAsync(username, password);
     }
 }
