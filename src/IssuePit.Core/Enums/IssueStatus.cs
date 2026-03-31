@@ -13,6 +13,8 @@ public enum IssueStatus
     InProgress,
     [JsonStringEnumMemberName("in_review")]
     InReview,
+    [JsonStringEnumMemberName("ready_to_merge")]
+    ReadyToMerge,
     [JsonStringEnumMemberName("done")]
     Done,
     [JsonStringEnumMemberName("cancelled")]
