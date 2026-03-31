@@ -315,8 +315,8 @@ public class DockerAgentRuntime(
             // It is a full docker-exec command list, not additional arguments to the runner CLI.
             // Truncate the display to avoid flooding session logs with long shell scripts.
             var cmdDisplay = string.Join(" ", session.CustomCmd);
-            if (cmdDisplay.Length > 200)
-                cmdDisplay = cmdDisplay[..200] + "… (truncated)";
+            if (cmdDisplay.Length > MaxCmdLineDisplayLength)
+                cmdDisplay = cmdDisplay[..MaxCmdLineDisplayLength] + "… (truncated)";
             await onLogLine($"[DEBUG] Runner cmd     : {cmdDisplay} (CustomCmdOverride)", LogStream.Stdout);
         }
         else if (runnerCmd.Count > 0)

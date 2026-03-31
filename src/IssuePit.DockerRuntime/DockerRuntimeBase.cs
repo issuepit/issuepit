@@ -37,6 +37,9 @@ public abstract class DockerRuntimeBase
     /// <summary>Read buffer size for multiplexed stream I/O. 80 KiB matches Docker SDK convention.</summary>
     private const int LogBufferSize = 81920;
 
+    /// <summary>Maximum length for <c>[CMD]</c> log lines before truncation. Keeps session logs readable when inline shell scripts are used.</summary>
+    protected const int MaxCmdLineDisplayLength = 200;
+
     /// <summary>Domains always allowed through the DNS proxy even when DisableInternet=true.</summary>
     private static readonly IReadOnlyList<string> DefaultAllowedDomains =
     [
@@ -90,8 +93,8 @@ public abstract class DockerRuntimeBase
         {
             var cmdLine = string.Join(' ', cmd.Select(a => a.Contains(' ') ? $"\"{a}\"" : a));
             // Truncate very long commands (e.g. inline shell scripts) to keep session logs readable.
-            if (cmdLine.Length > 300)
-                cmdLine = cmdLine[..300] + "… (truncated)";
+            if (cmdLine.Length > MaxCmdLineDisplayLength)
+                cmdLine = cmdLine[..MaxCmdLineDisplayLength] + "… (truncated)";
             await onLogLine($"[CMD] $ {cmdLine}", LogStream.Stdout);
         }
 
