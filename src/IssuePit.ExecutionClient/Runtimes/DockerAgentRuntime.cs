@@ -967,7 +967,7 @@ public class DockerAgentRuntime(
                 var uncommittedCmd = RunnerCommandBuilder.BuildCmdList(agent, uncommittedIssue, forkSessionId: openCodeSessionId);
                 if (uncommittedCmd.Count > 0)
                 {
-                    var exitCode2 = await ExecCommandAsync(containerId, uncommittedCmd, onFixLogLine, cancellationToken);
+                    var exitCode2 = await ExecCommandAsync(containerId, uncommittedCmd, onFixLogLine, cancellationToken, logCommand: true);
                     if (exitCode2 != 0)
                         await onLogLine($"[WARN] Uncommitted-changes fix agent exited with code {exitCode2}", LogStream.Stderr);
                 }
@@ -1089,13 +1089,13 @@ public class DockerAgentRuntime(
             var rebaseExit = await ExecCommandAsync(
                 containerId,
                 [realGit, "rebase", "FETCH_HEAD"],
-                safeLog, cancellationToken);
+                safeLog, cancellationToken, logCommand: true);
 
             if (rebaseExit != 0)
             {
                 // Rebase conflict — abort and surface as a failure so the user is aware.
                 var abortExit = await ExecCommandAsync(containerId, [realGit, "rebase", "--abort"],
-                    safeLog, cancellationToken);
+                    safeLog, cancellationToken, logCommand: true);
                 if (abortExit != 0)
                     await onLogLine(
                         $"[WARN] Rebase --abort returned exit code {abortExit} — workspace may be in an inconsistent state.",
