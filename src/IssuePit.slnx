@@ -20,4 +20,5 @@
   <Project Path="IssuePit.Notes.Migrator/IssuePit.Notes.Migrator.csproj" />
   <Project Path="IssuePit.Notes.McpServer/IssuePit.Notes.McpServer.csproj" />
   <Project Path="IssuePit.Notes.Tests.Integration/IssuePit.Notes.Tests.Integration.csproj" />
+  <Project Path="IssuePit.TestRunner/IssuePit.TestRunner.csproj" />
 </Solution>
