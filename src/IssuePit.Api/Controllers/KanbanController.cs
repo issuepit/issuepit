@@ -443,6 +443,127 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx, IProducer
         return Ok(results);
     }
 
+    // ── Issue Enrichments (Merge Request + CI/CD data for kanban cards) ────
+
+    /// <summary>
+    /// Returns merge request and CI/CD enrichment data for issues on a board.
+    /// Used by the kanban UI to show PR info, CI checks, and diff stats on cards
+    /// in Review and Ready to Merge lanes.
+    /// </summary>
+    [HttpGet("boards/{boardId:guid}/issue-enrichments")]
+    public async Task<IActionResult> GetIssueEnrichments(Guid boardId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+
+        var board = await db.KanbanBoards
+            .Include(b => b.Project).ThenInclude(p => p.Organization)
+            .FirstOrDefaultAsync(b => b.Id == boardId && b.Project.Organization.TenantId == ctx.CurrentTenant.Id);
+        if (board is null) return NotFound();
+
+        // Find issues in InReview or ReadyToMerge status that have a git branch set
+        var enrichableIssues = await db.Issues
+            .Where(i => i.ProjectId == board.ProjectId
+                && i.GitBranch != null
+                && (i.Status == IssueStatus.InReview || i.Status == IssueStatus.ReadyToMerge))
+            .Select(i => new { i.Id, i.GitBranch })
+            .ToListAsync();
+
+        if (enrichableIssues.Count == 0)
+            return Ok(Array.Empty<IssueEnrichmentResponse>());
+
+        var branches = enrichableIssues
+            .Where(i => i.GitBranch != null)
+            .Select(i => i.GitBranch!)
+            .Distinct()
+            .ToList();
+
+        // Find matching merge requests by source branch
+        var mergeRequests = await db.MergeRequests
+            .Include(m => m.LastCiCdRun)
+            .Where(m => m.ProjectId == board.ProjectId && branches.Contains(m.SourceBranch))
+            .ToListAsync();
+
+        // Get CI/CD test results for the related runs
+        var runIds = mergeRequests
+            .Where(m => m.LastCiCdRunId.HasValue)
+            .Select(m => m.LastCiCdRunId!.Value)
+            .Distinct()
+            .ToList();
+
+        var testSuites = runIds.Count > 0
+            ? await db.CiCdTestSuites
+                .Where(ts => runIds.Contains(ts.CiCdRunId))
+                .ToListAsync()
+            : [];
+
+        // Get CI/CD job statuses from the workflow graph
+        var cicdRuns = runIds.Count > 0
+            ? await db.CiCdRuns
+                .Where(r => runIds.Contains(r.Id))
+                .Select(r => new { r.Id, r.Status, r.WorkflowGraphJson })
+                .ToListAsync()
+            : [];
+
+        // Build enrichments
+        var enrichments = new List<IssueEnrichmentResponse>();
+        foreach (var issue in enrichableIssues)
+        {
+            var mr = mergeRequests.FirstOrDefault(m => m.SourceBranch == issue.GitBranch);
+            if (mr is null) continue;
+
+            // Aggregate test results
+            var runTestSuites = mr.LastCiCdRunId.HasValue
+                ? testSuites.Where(ts => ts.CiCdRunId == mr.LastCiCdRunId.Value).ToList()
+                : [];
+            var totalTests = runTestSuites.Sum(ts => ts.TotalTests);
+            var passedTests = runTestSuites.Sum(ts => ts.PassedTests);
+            var failedTests = runTestSuites.Sum(ts => ts.FailedTests);
+
+            // Extract CI check names from workflow graph
+            var ciChecks = new List<CiCheckDto>();
+            var run = cicdRuns.FirstOrDefault(r => r.Id == mr.LastCiCdRunId);
+            if (run?.WorkflowGraphJson is not null)
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(run.WorkflowGraphJson);
+                    if (doc.RootElement.TryGetProperty("jobs", out var jobsEl))
+                    {
+                        foreach (var job in jobsEl.EnumerateObject())
+                        {
+                            var jobName = job.Name;
+                            var jobStatus = "unknown";
+                            if (job.Value.TryGetProperty("result", out var resultEl))
+                                jobStatus = resultEl.GetString() ?? "unknown";
+                            ciChecks.Add(new CiCheckDto(jobName, jobStatus));
+                        }
+                    }
+                }
+                catch { /* Ignore malformed workflow graph */ }
+            }
+
+            enrichments.Add(new IssueEnrichmentResponse(
+                IssueId: issue.Id,
+                MergeRequestId: mr.Id,
+                MergeRequestTitle: mr.Title,
+                SourceBranch: mr.SourceBranch,
+                TargetBranch: mr.TargetBranch,
+                MergeRequestStatus: mr.Status.ToString(),
+                GitHubPrNumber: mr.GitHubPrNumber,
+                GitHubPrUrl: mr.GitHubPrUrl,
+                LinesAdded: mr.LinesAdded,
+                LinesRemoved: mr.LinesRemoved,
+                CiCdRunId: mr.LastCiCdRunId,
+                CiCdRunStatus: mr.LastCiCdRun?.Status.ToString(),
+                TotalTests: totalTests,
+                PassedTests: passedTests,
+                FailedTests: failedTests,
+                CiChecks: ciChecks));
+        }
+
+        return Ok(enrichments);
+    }
+
     /// <summary>
     /// Records that an orchestrator evaluated an issue and decided NOT to move it (blocked by requirements or policy).
     /// Creates a <see cref="IssueEventType.KanbanOrchestrationSkipped"/> event for audit trail and increments the
@@ -1038,3 +1159,25 @@ public record OrchestratorTriggerResponse(
     DateTime? LastRunAt = null,
     string? BoardStateHash = null,
     Guid? SessionId = null);
+
+/// <summary>Enrichment data for a single issue on the kanban board (merge request + CI/CD info).</summary>
+public record IssueEnrichmentResponse(
+    Guid IssueId,
+    Guid MergeRequestId,
+    string MergeRequestTitle,
+    string SourceBranch,
+    string TargetBranch,
+    string MergeRequestStatus,
+    int? GitHubPrNumber,
+    string? GitHubPrUrl,
+    int? LinesAdded,
+    int? LinesRemoved,
+    Guid? CiCdRunId,
+    string? CiCdRunStatus,
+    int TotalTests,
+    int PassedTests,
+    int FailedTests,
+    IReadOnlyList<CiCheckDto> CiChecks);
+
+/// <summary>Status of a single CI check/job.</summary>
+public record CiCheckDto(string Name, string Status);
