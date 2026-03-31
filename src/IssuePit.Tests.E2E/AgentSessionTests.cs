@@ -490,8 +490,13 @@ public class AgentSessionTests(AspireFixture fixture)
             toolsResult.TryGetProperty("isError", out var isErrorEl) && isErrorEl.GetBoolean(),
             $"MCP list_projects returned isError:true. Response:\n{toolsJson}");
 
+        // The content array must have at least one element.
+        var contentArray = toolsResult.GetProperty("content");
+        Assert.True(contentArray.GetArrayLength() > 0,
+            $"MCP list_projects result.content array is empty. Response:\n{toolsJson}");
+
         // The content[0].text is a JSON string containing the projects list.
-        var contentText = toolsResult.GetProperty("content")[0].GetProperty("text").GetString() ?? "";
+        var contentText = contentArray[0].GetProperty("text").GetString() ?? "";
 
         Assert.True(contentText.Contains(projectId),
             $"Expected project ID '{projectId}' in list_projects response.\nContent:\n{contentText}");
@@ -499,8 +504,10 @@ public class AgentSessionTests(AspireFixture fixture)
 
     /// <summary>
     /// Parses the first JSON payload from an SSE response body.
-    /// SSE format: one or more <c>data: {…}\n\n</c> frames; each frame may span multiple lines.
-    /// Returns the first line that starts with a JSON object (<c>{{</c>), or <c>null</c>.
+    /// SSE format: one or more <c>data: {...}\n\n</c> frames.
+    /// The MCP Streamable HTTP transport always puts each JSON-RPC response on a single
+    /// <c>data: {…}</c> line, so this line-by-line approach is sufficient for test use.
+    /// Returns the first line that starts with a JSON object (<c>{</c>), or <c>null</c>.
     /// </summary>
     private static string? ParseSseBody(string body) =>
         body.Split('\n')

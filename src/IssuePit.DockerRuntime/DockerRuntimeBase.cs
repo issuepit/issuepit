@@ -95,7 +95,7 @@ public abstract class DockerRuntimeBase
             // for the agent, so truncation here only affects the one-line [CMD] entry.
             const int MaxCmdLogLength = 200;
             var cmdDisplay = cmdLine.Length > MaxCmdLogLength
-                ? cmdLine[..MaxCmdLogLength] + "…"
+                ? cmdLine[..MaxCmdLogLength] + "..."
                 : cmdLine;
             await onLogLine($"[CMD] $ {cmdDisplay}", LogStream.Stdout);
         }
