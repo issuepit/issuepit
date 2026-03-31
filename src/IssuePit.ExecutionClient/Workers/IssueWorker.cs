@@ -128,7 +128,7 @@ public class IssueWorker(
 
             var stale = await db.AgentSessions
                 .Include(s => s.Agent)
-                .Where(s => s.Agent.ManualMode
+                .Where(s => (s.AgentId == null || s.Agent!.ManualMode)
                     && (s.Status == AgentSessionStatus.Running || s.Status == AgentSessionStatus.Pending)
                     && s.ContainerId != null)
                 .ToListAsync(cancellationToken);
@@ -248,16 +248,10 @@ public class IssueWorker(
         // For manual direct-start sessions (no issue), bypass the issue lookup entirely.
         if (message.IsManualDirectStart)
         {
-            if (!message.AgentId.HasValue)
-            {
-                logger.LogWarning("IsManualDirectStart=true but AgentId is missing, skipping");
-                return;
-            }
-
             logger.LogInformation("Launching manual direct-start session for project {ProjectId}, agent {AgentId}",
-                message.ProjectId, message.AgentId.Value);
+                message.ProjectId, message.AgentId.HasValue ? message.AgentId.Value : "(none)");
 
-            await LaunchAgentAsync(message.AgentId.Value, null, message.ProjectId, message.DockerImageOverride,
+            await LaunchAgentAsync(message.AgentId, null, message.ProjectId, message.DockerImageOverride,
                 message.KeepContainer, message.CustomCmdOverride, message.RunnerArgs, message.ModelOverride, message.RunnerTypeOverride,
                 message.UseHttpServerOverride, message.RuntimeTypeOverride, message.MaxCiCdLoopCountOverride,
                 message.SessionId, null, message.Branch, cancellationToken);
@@ -334,7 +328,7 @@ public class IssueWorker(
     //   DockerAgentRuntime — exec flow, HTTP server flow, CheckBranchOnRemotesAsync
     //   RunCiCdFixAgentAsync — CI/CD fix loop container launch
     private async Task LaunchAgentAsync(
-        Guid agentId,
+        Guid? agentId,
         Guid? issueId,
         Guid projectId,
         string? dockerImageOverride,
@@ -354,24 +348,53 @@ public class IssueWorker(
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
 
-        var agent = await db.Agents
-            .Include(a => a.ChildAgents)
-            .Include(a => a.AgentMcpServers)
-                .ThenInclude(ams => ams.McpServer)
-                .ThenInclude(s => s.Secrets)
-            .FirstOrDefaultAsync(a => a.Id == agentId, cancellationToken);
+        Agent? agent = null;
+        if (agentId.HasValue)
+        {
+            agent = await db.Agents
+                .Include(a => a.ChildAgents)
+                .Include(a => a.AgentMcpServers)
+                    .ThenInclude(ams => ams.McpServer)
+                    .ThenInclude(s => s.Secrets)
+                .FirstOrDefaultAsync(a => a.Id == agentId.Value, cancellationToken);
+        }
 
         Issue? issue = issueId.HasValue ? await db.Issues.FindAsync([issueId.Value], cancellationToken) : null;
 
-        if (agent is null)
+        if (agentId.HasValue && agent is null)
         {
             logger.LogWarning("Agent {AgentId} not found, skipping launch", agentId);
             return;
         }
 
+        // When no agent is configured, create a transient synthetic agent from the project's org
+        // so the execution pipeline can proceed with defaults (opencode has built-in agents).
+        if (agent is null)
+        {
+            var project = await db.Projects
+                .Include(p => p.Organization)
+                .FirstOrDefaultAsync(p => p.Id == projectId, cancellationToken);
+            if (project is null)
+            {
+                logger.LogWarning("Project {ProjectId} not found for agentless manual session, skipping launch", projectId);
+                return;
+            }
+            agent = new Agent
+            {
+                Id = Guid.Empty,
+                OrgId = project.OrgId,
+                Name = "Anonymous",
+                SystemPrompt = string.Empty,
+                ManualMode = true,
+                AllowedTools = "[]",
+                ChildAgents = [],
+                AgentMcpServers = [],
+            };
+        }
+
         if (issueId.HasValue && issue is null)
         {
-            logger.LogWarning("Agent {AgentId} or Issue {IssueId} not found, skipping launch", agentId, issueId);
+            logger.LogWarning("Issue {IssueId} not found, skipping launch", issueId);
             return;
         }
 
@@ -398,10 +421,11 @@ public class IssueWorker(
         }
 
         // Apply overrides that change agent properties. Detach the entity so the changes are never saved to the database.
-        bool needsDetach = !string.IsNullOrWhiteSpace(dockerImageOverride)
+        // For synthetic (agentless) agents, no detach is needed as the object is not tracked.
+        bool needsDetach = agentId.HasValue && (!string.IsNullOrWhiteSpace(dockerImageOverride)
             || !string.IsNullOrWhiteSpace(modelOverride)
             || runnerTypeOverride.HasValue
-            || useHttpServerOverride.HasValue;
+            || useHttpServerOverride.HasValue);
 
         if (needsDetach)
             db.Entry(agent).State = EntityState.Detached;
@@ -573,7 +597,7 @@ public class IssueWorker(
                 return;
             }
 
-            preCreated.AgentId = agent.Id;
+            preCreated.AgentId = agentId;
             preCreated.ProjectId = projectId;
             preCreated.RuntimeConfigId = runtimeConfig?.Id;
             preCreated.KeepContainer = keepContainer;
@@ -594,7 +618,7 @@ public class IssueWorker(
             session = new AgentSession
             {
                 Id = Guid.NewGuid(),
-                AgentId = agent.Id,
+                AgentId = agentId,
                 IssueId = issue?.Id,
                 ProjectId = projectId,
                 RuntimeConfigId = runtimeConfig?.Id,
