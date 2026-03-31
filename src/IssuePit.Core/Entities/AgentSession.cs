@@ -11,10 +11,10 @@ public class AgentSession
     [Key]
     public Guid Id { get; set; }
 
-    public Guid AgentId { get; set; }
+    public Guid? AgentId { get; set; }
 
     [ForeignKey(nameof(AgentId))]
-    public Agent Agent { get; set; } = null!;
+    public Agent? Agent { get; set; }
 
     public Guid? IssueId { get; set; }
 

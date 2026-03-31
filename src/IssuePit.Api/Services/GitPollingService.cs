@@ -33,113 +33,170 @@ public class GitPollingService(
         // repo would independently fire a separate CI/CD run for the same push.
         var triggeredThisCycle = new HashSet<(Guid ProjectId, string Branch, string Sha)>();
 
-        foreach (var repo in repos)
+        // Group by project so we create one run record per project per cycle.
+        var reposByProject = repos.GroupBy(r => r.ProjectId).ToList();
+
+        foreach (var group in reposByProject)
         {
             if (cancellationToken.IsCancellationRequested) break;
 
-            // Skip disabled repos entirely.
-            if (repo.Status == GitRepoStatus.Disabled)
+            var projectId = group.Key;
+            var run = new GitRepoAutoFetchRun
             {
-                logger.LogDebug("Repo {RepoId} is disabled — skipping poll", repo.Id);
-                continue;
-            }
+                Id = Guid.NewGuid(),
+                ProjectId = projectId,
+                Status = GitHubSyncRunStatus.Running,
+                StartedAt = DateTime.UtcNow,
+            };
+            db.GitRepoAutoFetchRuns.Add(run);
+            await db.SaveChangesAsync(cancellationToken);
 
-            // Skip throttled repos until the throttle window has passed.
-            if (repo.Status == GitRepoStatus.Throttled && repo.ThrottledUntil > DateTime.UtcNow)
+            int fetchedCount = 0;
+            int newCommitCount = 0;
+            bool failed = false;
+
+            foreach (var repo in group)
             {
-                logger.LogDebug("Repo {RepoId} is throttled until {Until} — skipping poll", repo.Id, repo.ThrottledUntil);
-                continue;
-            }
+                if (cancellationToken.IsCancellationRequested) break;
 
-            try
-            {
-                await gitService.FetchAsync(repo);
-                repo.LastFetchedAt = DateTime.UtcNow;
-
-                // Recover from a previous throttle once the fetch succeeds.
-                if (repo.Status == GitRepoStatus.Throttled)
+                // Skip disabled repos entirely.
+                if (repo.Status == GitRepoStatus.Disabled)
                 {
-                    repo.Status = GitRepoStatus.Active;
-                    repo.StatusMessage = null;
-                    repo.ThrottledUntil = null;
-                }
-
-                var sha = gitService.GetBranchTipSha(repo, repo.DefaultBranch);
-                if (sha is null)
-                {
-                    logger.LogDebug("No tip SHA for branch '{Branch}' in repo {RepoId} — skipping", repo.DefaultBranch, repo.Id);
-                    await db.SaveChangesAsync(cancellationToken);
+                    logger.LogDebug("Repo {RepoId} is disabled — skipping poll", repo.Id);
                     continue;
                 }
 
-                // Update commit count (chain depth) on every successful fetch so the agent runtime
-                // can select the clone source with the deepest commit chain instead of relying on
-                // fetch timestamps. GetBranchCommitCount uses git rev-list --count which is fast
-                // even for large repos (uses pack-index / commit-graph files).
-                var commitCount = gitService.GetBranchCommitCount(repo, repo.DefaultBranch);
-                if (commitCount.HasValue)
-                    repo.DefaultBranchCommitCount = commitCount.Value;
-
-                if (sha != repo.LastKnownCommitSha)
+                // Skip throttled repos until the throttle window has passed.
+                if (repo.Status == GitRepoStatus.Throttled && repo.ThrottledUntil > DateTime.UtcNow)
                 {
-                    // Always advance the watermark so this repo doesn't re-trigger on the next cycle.
-                    repo.LastKnownCommitSha = sha;
+                    logger.LogDebug("Repo {RepoId} is throttled until {Until} — skipping poll", repo.Id, repo.ThrottledUntil);
+                    continue;
+                }
 
-                    // Deduplicate: a project with multiple remotes (local mirror + GitHub, etc.)
-                    // may all resolve to the same SHA on the same branch. Only one CI/CD run
-                    // should be created per (project, branch, sha) per poll cycle.
-                    var triggerKey = (repo.ProjectId, repo.DefaultBranch, sha);
-                    if (triggeredThisCycle.Add(triggerKey))
+                try
+                {
+                    await gitService.FetchAsync(repo);
+                    repo.LastFetchedAt = DateTime.UtcNow;
+                    fetchedCount++;
+
+                    // Recover from a previous throttle once the fetch succeeds.
+                    if (repo.Status == GitRepoStatus.Throttled)
                     {
-                        logger.LogInformation(
-                            "New commit {Sha} on '{Branch}' for repo {RepoId} — triggering CI/CD",
-                            sha, repo.DefaultBranch, repo.Id);
+                        repo.Status = GitRepoStatus.Active;
+                        repo.StatusMessage = null;
+                        repo.ThrottledUntil = null;
+                    }
 
-                        await runQueue.EnqueueAsync(
-                            projectId: repo.ProjectId,
-                            commitSha: sha,
-                            branch: repo.DefaultBranch,
-                            workflow: null,
-                            eventName: "push",
-                            inputs: null,
-                            gitRepoUrl: repo.RemoteUrl,
-                            cancellationToken: cancellationToken);
+                    var sha = gitService.GetBranchTipSha(repo, repo.DefaultBranch);
+                    if (sha is null)
+                    {
+                        logger.LogDebug("No tip SHA for branch '{Branch}' in repo {RepoId} — skipping", repo.DefaultBranch, repo.Id);
+                        await db.SaveChangesAsync(cancellationToken);
+                        continue;
+                    }
+
+                    // Update commit count (chain depth) on every successful fetch so the agent runtime
+                    // can select the clone source with the deepest commit chain instead of relying on
+                    // fetch timestamps. GetBranchCommitCount uses git rev-list --count which is fast
+                    // even for large repos (uses pack-index / commit-graph files).
+                    var commitCount = gitService.GetBranchCommitCount(repo, repo.DefaultBranch);
+                    if (commitCount.HasValue)
+                        repo.DefaultBranchCommitCount = commitCount.Value;
+
+                    if (sha != repo.LastKnownCommitSha)
+                    {
+                        // Always advance the watermark so this repo doesn't re-trigger on the next cycle.
+                        repo.LastKnownCommitSha = sha;
+
+                        // Deduplicate: a project with multiple remotes (local mirror + GitHub, etc.)
+                        // may all resolve to the same SHA on the same branch. Only one CI/CD run
+                        // should be created per (project, branch, sha) per poll cycle.
+                        var triggerKey = (repo.ProjectId, repo.DefaultBranch, sha);
+                        if (triggeredThisCycle.Add(triggerKey))
+                        {
+                            logger.LogInformation(
+                                "New commit {Sha} on '{Branch}' for repo {RepoId} — triggering CI/CD",
+                                sha, repo.DefaultBranch, repo.Id);
+
+                            await runQueue.EnqueueAsync(
+                                projectId: repo.ProjectId,
+                                commitSha: sha,
+                                branch: repo.DefaultBranch,
+                                workflow: null,
+                                eventName: "push",
+                                inputs: null,
+                                gitRepoUrl: repo.RemoteUrl,
+                                cancellationToken: cancellationToken);
+
+                            newCommitCount++;
+                            AppendLog(db, run, GitHubSyncLogLevel.Info,
+                                $"New commit {sha[..8]} on '{repo.DefaultBranch}' — triggered CI/CD.");
+                        }
+                        else
+                        {
+                            logger.LogDebug(
+                                "Skipping duplicate CI/CD trigger for project {ProjectId}, branch '{Branch}', sha {Sha} (already triggered by another repo this cycle)",
+                                repo.ProjectId, repo.DefaultBranch, sha);
+                        }
+                    }
+
+                    // Check open merge requests for this repo and trigger CI on new commits
+                    await PollMergeRequestBranchesAsync(db, repo, gitService, runQueue, cancellationToken);
+
+                    await db.SaveChangesAsync(cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    failed = true;
+                    var (newStatus, message) = ClassifyGitException(ex);
+                    if (newStatus == GitRepoStatus.Disabled)
+                    {
+                        repo.Status = GitRepoStatus.Disabled;
+                        repo.StatusMessage = $"Disabled after non-recoverable error: {message}";
+                        logger.LogWarning(ex, "Disabling repo {RepoId}: {Reason}", repo.Id, message);
                     }
                     else
                     {
-                        logger.LogDebug(
-                            "Skipping duplicate CI/CD trigger for project {ProjectId}, branch '{Branch}', sha {Sha} (already triggered by another repo this cycle)",
-                            repo.ProjectId, repo.DefaultBranch, sha);
+                        // Recoverable: throttle for 1 hour.
+                        repo.Status = GitRepoStatus.Throttled;
+                        repo.ThrottledUntil = DateTime.UtcNow.AddHours(1);
+                        repo.StatusMessage = $"Throttled after transient error: {message}";
+                        logger.LogWarning(ex, "Throttling repo {RepoId} for 1 hour: {Reason}", repo.Id, message);
                     }
+
+                    var repoLabel = repo.RemoteUrl.Length > 0 ? repo.RemoteUrl : repo.Id.ToString();
+                    AppendLog(db, run, GitHubSyncLogLevel.Error,
+                        $"Repository {repoLabel}: {message}");
+
+                    try { await db.SaveChangesAsync(cancellationToken); }
+                    catch (Exception saveEx) { logger.LogError(saveEx, "Failed to persist status update for repo {RepoId}", repo.Id); }
                 }
-
-                // Check open merge requests for this repo and trigger CI on new commits
-                await PollMergeRequestBranchesAsync(db, repo, gitService, runQueue, cancellationToken);
-
-                await db.SaveChangesAsync(cancellationToken);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                var (newStatus, message) = ClassifyGitException(ex);
-                if (newStatus == GitRepoStatus.Disabled)
-                {
-                    repo.Status = GitRepoStatus.Disabled;
-                    repo.StatusMessage = $"Disabled after non-recoverable error: {message}";
-                    logger.LogWarning(ex, "Disabling repo {RepoId}: {Reason}", repo.Id, message);
-                }
-                else
-                {
-                    // Recoverable: throttle for 1 hour.
-                    repo.Status = GitRepoStatus.Throttled;
-                    repo.ThrottledUntil = DateTime.UtcNow.AddHours(1);
-                    repo.StatusMessage = $"Throttled after transient error: {message}";
-                    logger.LogWarning(ex, "Throttling repo {RepoId} for 1 hour: {Reason}", repo.Id, message);
-                }
 
-                try { await db.SaveChangesAsync(cancellationToken); }
-                catch (Exception saveEx) { logger.LogError(saveEx, "Failed to persist status update for repo {RepoId}", repo.Id); }
-            }
+            // Complete the run record.
+            run.Status = failed ? GitHubSyncRunStatus.Failed : GitHubSyncRunStatus.Succeeded;
+            run.Summary = newCommitCount > 0
+                ? $"Fetched {fetchedCount} repo(s), {newCommitCount} new commit(s)"
+                : $"Fetched {fetchedCount} repo(s), no new commits";
+            run.CompletedAt = DateTime.UtcNow;
+            AppendLog(db, run, failed ? GitHubSyncLogLevel.Warn : GitHubSyncLogLevel.Info,
+                $"Completed: {run.Summary}.");
+
+            try { await db.SaveChangesAsync(cancellationToken); }
+            catch (Exception saveEx) { logger.LogError(saveEx, "Failed to persist auto-fetch run for project {ProjectId}", projectId); }
         }
+    }
+
+    private static void AppendLog(IssuePitDbContext db, GitRepoAutoFetchRun run, GitHubSyncLogLevel level, string message)
+    {
+        db.GitRepoAutoFetchRunLogs.Add(new GitRepoAutoFetchRunLog
+        {
+            Id = Guid.NewGuid(),
+            RunId = run.Id,
+            Level = level,
+            Message = message,
+            Timestamp = DateTime.UtcNow,
+        });
     }
 
     /// <summary>

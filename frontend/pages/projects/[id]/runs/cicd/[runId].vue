@@ -2523,7 +2523,10 @@ onMounted(async () => {
   const jobFromQuery = route.query.job as string | undefined
   if (jobFromQuery) {
     selectedJob.value = jobFromQuery
-    activeSection.value = 'logs'
+    // Only default to the logs tab if no explicit tab was provided in the URL.
+    if (!route.query.tab) {
+      activeSection.value = 'logs'
+    }
   }
 
   // Connect to the CiCd output hub to receive live log lines and run-completed events

@@ -17,7 +17,9 @@ public class CiCdRunPage(IPage page)
         try
         {
             await page.GotoAsync(url);
+
             await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+
             await page.WaitForSelectorAsync("text=CI/CD Run",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
         }
@@ -25,7 +27,9 @@ public class CiCdRunPage(IPage page)
         {
             await Task.Delay(E2ETimeouts.RetryDelay);
             await page.GotoAsync(url);
+
             await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+
             await page.WaitForSelectorAsync("text=CI/CD Run",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
         }
@@ -41,7 +45,9 @@ public class CiCdRunPage(IPage page)
         try
         {
             await page.GotoAsync(url);
+
             await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+
             await page.WaitForSelectorAsync("text=CI/CD Run",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
         }
@@ -49,7 +55,9 @@ public class CiCdRunPage(IPage page)
         {
             await Task.Delay(E2ETimeouts.RetryDelay);
             await page.GotoAsync(url);
+
             await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+
             await page.WaitForSelectorAsync("text=CI/CD Run",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
         }
@@ -65,7 +73,9 @@ public class CiCdRunPage(IPage page)
         try
         {
             await page.GotoAsync(url);
+
             await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+
             await page.WaitForSelectorAsync("text=CI/CD Run",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
         }
@@ -73,7 +83,9 @@ public class CiCdRunPage(IPage page)
         {
             await Task.Delay(E2ETimeouts.RetryDelay);
             await page.GotoAsync(url);
+
             await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+
             await page.WaitForSelectorAsync("text=CI/CD Run",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
         }

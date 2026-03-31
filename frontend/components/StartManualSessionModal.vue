@@ -29,17 +29,14 @@
           </select>
         </div>
 
-        <!-- Agent -->
+        <!-- Agent (optional) -->
         <div>
-          <label class="block text-xs font-medium text-gray-400 mb-1.5">Agent</label>
+          <label class="block text-xs font-medium text-gray-400 mb-1.5">Agent <span class="text-gray-500">(optional — opencode uses built-in agents by default)</span></label>
           <select v-model="selectedAgentId"
             class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500">
-            <option value="">— select a manual-mode agent —</option>
+            <option value="">— no agent (use defaults) —</option>
             <option v-for="a in manualAgents" :key="a.id" :value="a.id">{{ a.name }}</option>
           </select>
-          <p v-if="manualAgents.length === 0 && !agentsLoading" class="mt-1 text-xs text-yellow-400">
-            No manual-mode agents found. Enable "Manual Mode" on an agent first.
-          </p>
         </div>
 
         <!-- Branch -->
@@ -84,7 +81,7 @@
           class="text-sm text-gray-400 hover:text-gray-200 px-3 py-1.5 rounded-lg transition-colors">
           Cancel
         </button>
-        <button @click="start" :disabled="!selectedAgentId || !selectedProjectId || starting"
+        <button @click="start" :disabled="!selectedProjectId || starting"
           class="text-sm bg-brand-600 hover:bg-brand-700 text-white px-4 py-1.5 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2">
           <svg v-if="starting" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
@@ -170,12 +167,12 @@ async function loadBranches(projectId: string) {
 }
 
 async function start() {
-  if (!selectedAgentId.value || !selectedProjectId.value) return
+  if (!selectedProjectId.value) return
   starting.value = true
   error.value = null
   try {
     const result = await api.post<{ sessionId: string }>('/api/agent-sessions/start-manual', {
-      agentId: selectedAgentId.value,
+      agentId: selectedAgentId.value || null,
       projectId: selectedProjectId.value,
       branch: branch.value || null,
       description: description.value || null,
