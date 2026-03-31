@@ -50,6 +50,8 @@ public class IssuePitDbContext(DbContextOptions<IssuePitDbContext> options) : Db
     public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
     public DbSet<GitRepository> GitRepositories => Set<GitRepository>();
     public DbSet<TelegramBot> TelegramBots => Set<TelegramBot>();
+    public DbSet<TelegramPairing> TelegramPairings => Set<TelegramPairing>();
+    public DbSet<TelegramChat> TelegramChats => Set<TelegramChat>();
     public DbSet<ProjectMetricSnapshot> ProjectMetricSnapshots => Set<ProjectMetricSnapshot>();
     public DbSet<IssueEvent> IssueEvents => Set<IssueEvent>();
     public DbSet<Skill> Skills => Set<Skill>();
