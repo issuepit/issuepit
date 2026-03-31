@@ -109,7 +109,10 @@ public sealed class DotNetTestRunnerService
             run.Status = TestRunStatus.Running;
 
             var argsBuilder = new StringBuilder();
-            argsBuilder.Append($"test \"{run.ProjectPath}\" --logger \"trx;LogFileName=results.trx\" --results-directory \"{trxDir}\"");
+            // Use LogFilePrefix instead of LogFileName so each test project gets a unique
+            // TRX file. When running against a solution, dotnet test invokes each project
+            // sequentially and a fixed LogFileName would overwrite previous results.
+            argsBuilder.Append($"test \"{run.ProjectPath}\" --logger \"trx;LogFilePrefix=results\" --results-directory \"{trxDir}\"");
 
             if (!string.IsNullOrWhiteSpace(run.Filter))
                 argsBuilder.Append($" --filter \"{run.Filter}\"");
@@ -122,14 +125,30 @@ public sealed class DotNetTestRunnerService
             run.Output = output;
             run.ExitCode = exitCode;
 
-            // Parse TRX results if available.
+            // Parse all TRX results and merge into a single aggregate suite.
             var trxFiles = TrxParser.FindTrxFiles(trxDir).ToList();
-            if (trxFiles.Count > 0)
+            CiCdTestSuite? merged = null;
+            foreach (var trxFile in trxFiles)
             {
-                var suite = TrxParser.Parse(trxFiles[0]);
-                if (suite is not null)
-                    run.Suite = suite;
+                var suite = TrxParser.Parse(trxFile);
+                if (suite is null) continue;
+                if (merged is null)
+                {
+                    merged = suite;
+                }
+                else
+                {
+                    merged.TotalTests += suite.TotalTests;
+                    merged.PassedTests += suite.PassedTests;
+                    merged.FailedTests += suite.FailedTests;
+                    merged.SkippedTests += suite.SkippedTests;
+                    merged.DurationMs += suite.DurationMs;
+                    foreach (var tc in suite.TestCases)
+                        merged.TestCases.Add(tc);
+                }
             }
+            if (merged is not null)
+                run.Suite = merged;
 
             run.Status = exitCode == 0 ? TestRunStatus.Completed : TestRunStatus.Failed;
         }
