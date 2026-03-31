@@ -60,9 +60,10 @@ public class NotesPage(IPage page)
 
     /// <summary>
     /// Creates a new note via the "+ Note" button. Requires at least one notebook to exist.
-    /// Returns the note ID from the URL after navigation.
+    /// Waits for the "New Note" modal to close as a reliable indicator of successful creation
+    /// (avoids flaky SPA-navigation detection with WaitForURLAsync + WaitUntil=Load).
     /// </summary>
-    public async Task<string> CreateNoteAsync(string title, string? notebookName = null)
+    public async Task CreateNoteAsync(string title, string? notebookName = null)
     {
         await page.ClickAsync("button:has-text('+ Note')");
         await page.WaitForSelectorAsync("h2:has-text('New Note')", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
@@ -70,15 +71,23 @@ public class NotesPage(IPage page)
 
         if (notebookName is not null)
         {
-            await page.SelectOptionAsync("select", new SelectOptionValue { Label = notebookName });
+            // Scope to the modal container to avoid targeting the notebook filter <select>
+            // that exists on the main notes list page behind the modal overlay.
+            await page.Locator("div:has(h2:has-text('New Note')) select").SelectOptionAsync(
+                new SelectOptionValue { Label = notebookName });
         }
 
         await page.ClickAsync("button:has-text('Create'):not(:disabled)");
 
-        // Wait for navigation to the note detail page
-        await page.WaitForURLAsync("**/notes/**", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
-        var url = page.Url;
-        return url.Split('/').Last();
+        // Wait for the modal to disappear. Vue's submitCreate() sets showCreate=false then
+        // calls router.push('/notes/{id}'). Waiting for the modal close is more reliable
+        // than WaitForURLAsync("**/notes/**") because Vue Router pushState navigations do
+        // not fire the browser "load" event that WaitForURLAsync defaults to waiting for.
+        await page.WaitForSelectorAsync("h2:has-text('New Note')", new PageWaitForSelectorOptions
+        {
+            Timeout = E2ETimeouts.Navigation,
+            State = WaitForSelectorState.Hidden,
+        });
     }
 
     /// <summary>Returns true if a note with the given title appears in the notes list.</summary>
