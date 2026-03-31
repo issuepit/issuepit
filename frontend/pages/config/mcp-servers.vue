@@ -48,6 +48,15 @@
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2 flex-wrap">
               <h3 class="font-semibold text-white">{{ server.name }}</h3>
+              <!-- Server type badge -->
+              <span class="text-xs px-2 py-0.5 rounded-full font-medium"
+                :class="{
+                  'bg-blue-900/40 text-blue-300': server.serverType === 'Remote',
+                  'bg-emerald-900/40 text-emerald-300': server.serverType === 'Local',
+                  'bg-cyan-900/40 text-cyan-300': server.serverType === 'Docker',
+                }">
+                {{ server.serverType === 'Local' ? '⚙️ Local' : server.serverType === 'Docker' ? '🐳 Docker' : '🌐 Remote' }}
+              </span>
               <span v-if="server.linkedAgents?.length" class="text-xs bg-indigo-900/40 text-indigo-400 px-2 py-0.5 rounded-full">
                 {{ server.linkedAgents.length }} agent{{ server.linkedAgents.length !== 1 ? 's' : '' }}
               </span>
@@ -59,7 +68,8 @@
               </span>
             </div>
             <p v-if="server.description" class="text-sm text-gray-400 mt-0.5">{{ server.description }}</p>
-            <code class="text-xs text-green-300 font-mono mt-1 block">{{ server.url }}</code>
+            <code v-if="server.serverType === 'Remote'" class="text-xs text-green-300 font-mono mt-1 block">{{ server.url }}</code>
+            <code v-else class="text-xs text-gray-400 font-mono mt-1 block truncate">{{ configSummary(server) }}</code>
           </div>
           <div class="flex gap-2 shrink-0">
             <button
@@ -100,9 +110,38 @@
               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-500" />
           </div>
           <div>
+            <label class="block text-sm text-gray-400 mb-1">Server Type <span class="text-red-400">*</span></label>
+            <div class="grid grid-cols-3 gap-2">
+              <button v-for="t in (['Remote', 'Local', 'Docker'] as const)" :key="t" type="button"
+                class="px-3 py-2 rounded-lg text-sm font-medium border transition-colors"
+                :class="form.serverType === t
+                  ? 'bg-brand-600 text-white border-brand-500'
+                  : 'bg-gray-800 text-gray-400 border-gray-700 hover:border-gray-600'"
+                @click="onServerTypeChange(t)">
+                {{ t === 'Remote' ? '🌐 Remote' : t === 'Local' ? '⚙️ Local (stdio)' : '🐳 Docker' }}
+              </button>
+            </div>
+            <p class="text-xs text-gray-500 mt-1.5">
+              <span v-if="form.serverType === 'Remote'">HTTP/SSE transport — connects to a remote URL endpoint.</span>
+              <span v-else-if="form.serverType === 'Local'">Stdio transport — launches a local process (command + args).</span>
+              <span v-else>Docker transport — runs an MCP server inside a Docker container alongside the agent.</span>
+            </p>
+          </div>
+          <!-- URL: only shown for Remote type -->
+          <div v-if="form.serverType === 'Remote'">
             <label class="block text-sm text-gray-400 mb-1">URL <span class="text-red-400">*</span></label>
-            <input v-model="form.url" type="text" required placeholder="https://mcp.example.com or http://localhost:3000"
+            <input v-model="form.url" type="text" :required="form.serverType === 'Remote'" placeholder="https://mcp.example.com/mcp"
               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-500 font-mono" />
+          </div>
+          <!-- Configuration JSON for all types -->
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">
+              Configuration (JSON)
+              <span v-if="form.serverType === 'Local'" class="text-gray-600 font-normal">— <code class="text-xs">{"command":"npx","args":[...],"env":{}}</code></span>
+              <span v-else-if="form.serverType === 'Docker'" class="text-gray-600 font-normal">— <code class="text-xs">{"image":"...","args":[...],"env":{}}</code></span>
+            </label>
+            <textarea v-model="form.configuration" rows="4" :placeholder="configPlaceholder"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-500 font-mono resize-none"></textarea>
           </div>
           <div>
             <label class="block text-sm text-gray-400 mb-1">
@@ -111,11 +150,6 @@
             </label>
             <input v-model="toolsInput" type="text" placeholder="list_issues, create_issue, search_repositories"
               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-500 font-mono" />
-          </div>
-          <div>
-            <label class="block text-sm text-gray-400 mb-1">Configuration (JSON)</label>
-            <textarea v-model="form.configuration" rows="3" placeholder="{}"
-              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-500 font-mono resize-none"></textarea>
           </div>
           <div class="flex gap-3 pt-2">
             <button type="submit" :disabled="saving"
@@ -163,8 +197,21 @@
               <dd class="text-gray-300">{{ detailServer.description }}</dd>
             </div>
             <div class="flex gap-4">
+              <dt class="w-32 text-gray-500 shrink-0">Type</dt>
+              <dd>
+                <span class="text-xs px-2 py-0.5 rounded-full font-medium"
+                  :class="{
+                    'bg-blue-900/40 text-blue-300': detailServer.serverType === 'Remote',
+                    'bg-emerald-900/40 text-emerald-300': detailServer.serverType === 'Local',
+                    'bg-cyan-900/40 text-cyan-300': detailServer.serverType === 'Docker',
+                  }">
+                  {{ detailServer.serverType === 'Local' ? '⚙️ Local (stdio)' : detailServer.serverType === 'Docker' ? '🐳 Docker' : '🌐 Remote' }}
+                </span>
+              </dd>
+            </div>
+            <div v-if="detailServer.serverType === 'Remote'" class="flex gap-4">
               <dt class="w-32 text-gray-500 shrink-0">URL</dt>
-              <dd><code class="text-green-300 font-mono text-xs">{{ detailServer.url }}</code></dd>
+              <dd><code class="text-green-300 font-mono text-xs break-all">{{ detailServer.url }}</code></dd>
             </div>
             <div class="flex gap-4">
               <dt class="w-32 text-gray-500 shrink-0">Allowed Tools</dt>
@@ -178,7 +225,7 @@
             </div>
             <div class="flex gap-4">
               <dt class="w-32 text-gray-500 shrink-0">Configuration</dt>
-              <dd><code class="text-gray-300 font-mono text-xs">{{ detailServer.configuration }}</code></dd>
+              <dd><code class="text-gray-300 font-mono text-xs break-all">{{ detailServer.configuration }}</code></dd>
             </div>
             <div class="flex gap-4">
               <dt class="w-32 text-gray-500 shrink-0">Created</dt>
@@ -396,6 +443,22 @@ function allowedToolsList(server: McpServer): string[] {
   }
 }
 
+function configSummary(server: McpServer): string {
+  try {
+    const cfg = JSON.parse(server.configuration)
+    if (server.serverType === 'Local') {
+      const cmd = [cfg.command, ...(cfg.args ?? [])].filter(Boolean).join(' ')
+      return cmd || server.configuration
+    }
+    if (server.serverType === 'Docker') {
+      return cfg.image ?? server.configuration
+    }
+  } catch {
+    // ignore
+  }
+  return server.configuration
+}
+
 // ── Templates ────────────────────────────────────────────────────────────────
 
 const showTemplates = ref(false)
@@ -405,49 +468,73 @@ const templates = [
     icon: '🐙',
     name: 'GitHub',
     description: 'Manage issues, pull requests, repositories, and more via the GitHub API.',
+    serverType: 'Remote',
     url: 'https://api.githubcopilot.com/mcp/',
     allowedTools: 'list_issues,create_issue,get_issue,create_pull_request,search_repositories,list_branches',
-    configuration: '{}',
+    configuration: '{"type":"remote"}',
+  },
+  {
+    icon: '🌐',
+    name: 'Context7',
+    description: 'Up-to-date library documentation and code examples for popular packages.',
+    serverType: 'Remote',
+    url: 'https://mcp.context7.com/mcp',
+    allowedTools: '',
+    configuration: '{"type":"remote"}',
+  },
+  {
+    icon: '📡',
+    name: 'Fetch',
+    description: 'HTTP fetch tools — retrieve web pages, APIs, or raw URLs as markdown or plain text.',
+    serverType: 'Local',
+    url: '',
+    allowedTools: '',
+    configuration: '{"command":"uvx","args":["mcp-server-fetch"],"env":{}}',
   },
   {
     icon: '🎭',
     name: 'Playwright',
     description: 'Browser automation and web scraping with Playwright.',
-    url: 'http://localhost:3001',
+    serverType: 'Docker',
+    url: '',
     allowedTools: 'navigate,click,fill,screenshot,evaluate',
-    configuration: '{}',
+    configuration: '{"image":"mcr.microsoft.com/playwright/mcp","args":[],"env":{}}',
   },
   {
     icon: '🔍',
     name: 'Brave Search',
     description: 'Web search powered by the Brave Search API.',
+    serverType: 'Remote',
     url: 'https://mcp.bravesearch.com',
     allowedTools: 'web_search,local_search',
-    configuration: '{}',
+    configuration: '{"type":"remote"}',
   },
   {
     icon: '📁',
     name: 'Filesystem',
     description: 'Read and write files on the local filesystem.',
-    url: 'http://localhost:3002',
+    serverType: 'Local',
+    url: '',
     allowedTools: 'read_file,write_file,list_directory,create_directory',
-    configuration: '{}',
+    configuration: '{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","/workspace"],"env":{}}',
   },
   {
     icon: '🗄️',
     name: 'PostgreSQL',
     description: 'Query and manage a PostgreSQL database.',
-    url: 'http://localhost:3003',
+    serverType: 'Local',
+    url: '',
     allowedTools: 'query,list_tables,describe_table',
-    configuration: '{"readOnly": true}',
+    configuration: '{"command":"npx","args":["-y","@modelcontextprotocol/server-postgres","postgresql://localhost/mydb"],"env":{}}',
   },
   {
     icon: '🦊',
     name: 'GitLab',
     description: 'Manage GitLab projects, issues, and merge requests.',
+    serverType: 'Remote',
     url: 'https://gitlab.com/-/mcp',
     allowedTools: 'list_issues,create_issue,list_merge_requests,create_merge_request',
-    configuration: '{}',
+    configuration: '{"type":"remote"}',
   },
 ]
 
@@ -455,6 +542,7 @@ function applyTemplate(tpl: typeof templates[0]) {
   editingId.value = null
   form.name = tpl.name
   form.description = tpl.description
+  form.serverType = tpl.serverType as 'Remote' | 'Local' | 'Docker'
   form.url = tpl.url
   form.configuration = tpl.configuration
   toolsInput.value = tpl.allowedTools
@@ -469,9 +557,31 @@ const editingId = ref<string | null>(null)
 const saving = ref(false)
 const toolsInput = ref('')
 
+const configPlaceholderByType: Record<'Remote' | 'Local' | 'Docker', string> = {
+  Remote: '{"type":"remote"}',
+  Local: '{"command":"npx","args":["-y","some-mcp-package"],"env":{}}',
+  Docker: '{"image":"org/mcp-server:latest","args":[],"env":{}}',
+}
+
+const configPlaceholder = computed(() => configPlaceholderByType[form.serverType] ?? '{}')
+
+function onServerTypeChange(type: 'Remote' | 'Local' | 'Docker') {
+  form.serverType = type
+  // Only reset configuration to default placeholder when switching types
+  // and the current config looks like a default for a different type.
+  const prevDefaults = Object.values(configPlaceholderByType)
+  if (!form.configuration || form.configuration === '{}' || prevDefaults.includes(form.configuration)) {
+    form.configuration = configPlaceholderByType[type]
+  }
+  if (type !== 'Remote') {
+    form.url = ''
+  }
+}
+
 const form = reactive({
   name: '',
   description: '',
+  serverType: 'Remote' as 'Remote' | 'Local' | 'Docker',
   url: '',
   configuration: '{}',
   orgId: '', // resolved from active org
@@ -479,7 +589,7 @@ const form = reactive({
 
 function openCreate() {
   editingId.value = null
-  Object.assign(form, { name: '', description: '', url: '', configuration: '{}', orgId: '' })
+  Object.assign(form, { name: '', description: '', serverType: 'Remote', url: '', configuration: '{}', orgId: '' })
   toolsInput.value = ''
   showModal.value = true
 }
@@ -488,6 +598,7 @@ function openEdit(server: McpServer) {
   editingId.value = server.id
   form.name = server.name
   form.description = server.description ?? ''
+  form.serverType = (server.serverType ?? 'Remote') as 'Remote' | 'Local' | 'Docker'
   form.url = server.url
   form.configuration = server.configuration
   form.orgId = server.orgId
@@ -508,6 +619,7 @@ async function handleSubmit() {
       await store.updateMcpServer(editingId.value, {
         name: form.name,
         description: form.description || undefined,
+        serverType: form.serverType,
         url: form.url,
         configuration: form.configuration,
         allowedTools,
@@ -517,6 +629,7 @@ async function handleSubmit() {
         orgId: form.orgId,
         name: form.name,
         description: form.description || undefined,
+        serverType: form.serverType,
         url: form.url,
         configuration: form.configuration,
         allowedTools,

@@ -11,9 +11,10 @@ public class DemoAgentSeeder(IssuePitDbContext db)
     public async Task<(Agent PlanAgent, Agent CodeAgent, Agent EvalAgent, Agent QualityAgent)> SeedAsync(Guid orgId)
     {
         // --- MCP Servers ---
-        // Note: The GitHub MCP and Filesystem MCP entries use placeholder URLs and are kept for
-        // reference only. They are no longer linked to agents by default — use the IssuePit MCP
-        // server instead (injected automatically via ISSUEPIT_MCP_URL at agent run time).
+        // These are demo/template entries. GitHub MCP and Filesystem MCP use placeholder URLs.
+        // Context7 and Fetch MCP are pre-configured with their known public endpoints.
+        // They are not linked to agents by default — use the IssuePit MCP server instead
+        // (injected automatically via ISSUEPIT_MCP_URL at agent run time).
         await db.McpServers.AddIfNotExistsAsync(
             s => s.OrgId == orgId && s.Name == "GitHub MCP",
             new McpServer
@@ -22,8 +23,9 @@ public class DemoAgentSeeder(IssuePitDbContext db)
                 OrgId = orgId,
                 Name = "GitHub MCP",
                 Description = "GitHub API integration — read/write issues, pull requests, branches, and code search.",
-                Url = "https://mcp.example.com/github",
-                Configuration = "{}",
+                ServerType = McpServerType.Remote,
+                Url = "https://api.githubcopilot.com/mcp/",
+                Configuration = """{"type":"remote"}""",
                 AllowedTools = """["create_issue","update_issue","list_issues","search_issues","get_pull_request","list_pull_requests","create_pull_request","search_code","list_commits","get_commit"]""",
                 CreatedAt = DateTime.UtcNow,
             });
@@ -35,9 +37,38 @@ public class DemoAgentSeeder(IssuePitDbContext db)
                 OrgId = orgId,
                 Name = "Filesystem MCP",
                 Description = "Local filesystem access — read, write, and search files within allowed paths.",
-                Url = "https://mcp.example.com/filesystem",
-                Configuration = "{}",
+                ServerType = McpServerType.Local,
+                Url = "",
+                Configuration = """{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","/workspace"],"env":{}}""",
                 AllowedTools = """["read_file","write_file","list_directory","search_files","create_directory","move_file","get_file_info"]""",
+                CreatedAt = DateTime.UtcNow,
+            });
+        await db.McpServers.AddIfNotExistsAsync(
+            s => s.OrgId == orgId && s.Name == "Fetch MCP",
+            new McpServer
+            {
+                Id = Guid.NewGuid(),
+                OrgId = orgId,
+                Name = "Fetch MCP",
+                Description = "HTTP fetch tools — retrieve web pages, APIs, or raw URLs as markdown or plain text.",
+                ServerType = McpServerType.Local,
+                Url = "",
+                Configuration = """{"command":"uvx","args":["mcp-server-fetch"],"env":{}}""",
+                AllowedTools = "[]",
+                CreatedAt = DateTime.UtcNow,
+            });
+        await db.McpServers.AddIfNotExistsAsync(
+            s => s.OrgId == orgId && s.Name == "Context7",
+            new McpServer
+            {
+                Id = Guid.NewGuid(),
+                OrgId = orgId,
+                Name = "Context7",
+                Description = "Context7 — up-to-date library documentation and code examples for popular packages.",
+                ServerType = McpServerType.Remote,
+                Url = "https://mcp.context7.com/mcp",
+                Configuration = """{"type":"remote"}""",
+                AllowedTools = "[]",
                 CreatedAt = DateTime.UtcNow,
             });
         await db.SaveChangesAsync();

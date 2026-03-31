@@ -373,6 +373,7 @@ export interface McpServer {
   orgId: string
   name: string
   description?: string
+  serverType: 'Remote' | 'Local' | 'Docker'
   url: string
   configuration: string
   allowedTools: string[]
@@ -416,6 +417,7 @@ export interface Agent {
   manualMode?: boolean
   isShellAgent?: boolean
   openCodeAgentName?: string | null
+  skipIssuePitMcpServer?: boolean
   parentAgentId?: string
   childAgents?: AgentChild[]
   createdAt: string

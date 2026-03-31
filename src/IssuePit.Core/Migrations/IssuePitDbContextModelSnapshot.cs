@@ -93,6 +93,9 @@ namespace IssuePit.Core.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<bool>("SkipIssuePitMcpServer")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("UseHttpServer")
                         .HasColumnType("boolean");
 
@@ -2224,6 +2227,9 @@ namespace IssuePit.Core.Migrations
 
                     b.Property<Guid>("OrgId")
                         .HasColumnType("uuid");
+
+                    b.Property<int>("ServerType")
+                        .HasColumnType("integer");
 
                     b.Property<string>("Url")
                         .IsRequired()

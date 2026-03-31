@@ -94,7 +94,8 @@ internal static class AgentEnvironmentBuilder
             env.Add($"{key}={value}");
 
         // Inject the IssuePit MCP server URL so the entrypoint can write the opencode config.
-        if (!string.IsNullOrWhiteSpace(issuePitMcpUrl))
+        // Skipped when the agent has opted out to reduce context size.
+        if (!string.IsNullOrWhiteSpace(issuePitMcpUrl) && !agent.SkipIssuePitMcpServer)
             env.Add($"ISSUEPIT_MCP_URL={issuePitMcpUrl}");
 
         // Inject the IssuePit API base URL so container scripts (e.g. issuepit-trigger-cicd)
