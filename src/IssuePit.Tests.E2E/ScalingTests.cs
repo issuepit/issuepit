@@ -104,7 +104,7 @@ public class ScalingTests(AspireFixture fixture)
     }
 
     private static object BuildTriggerPayload(string projectId, string commitSha, string runtimeMode,
-        string? workflow = null)
+        string? workflow = null, IReadOnlyList<Guid>? forceWithActiveRunIds = null)
     {
         var workspacePath = runtimeMode == NativeRuntime
             ? Environment.GetEnvironmentVariable("CICD_E2E_REPO_PATH")
@@ -119,7 +119,42 @@ public class ScalingTests(AspireFixture fixture)
             workflow,
             workspacePath,
             runtimeOverride = runtimeMode,
+            forceWithActiveRunIds,
         };
+    }
+
+    /// <summary>
+    /// Triggers a CI/CD run, automatically handling 409 Conflict by re-triggering with
+    /// <c>ForceWithActiveRunIds</c> set to the active run IDs from the conflict response.
+    /// This avoids flakiness in concurrent-trigger tests where the second parallel trigger
+    /// may arrive after the first run has already been created as Pending.
+    /// </summary>
+    private static async Task<string> TriggerRunForcingConflictsAsync(
+        HttpClient client,
+        string projectId,
+        string commitSha,
+        string runtimeMode,
+        string? workflow = null)
+    {
+        var payload = BuildTriggerPayload(projectId, commitSha, runtimeMode, workflow);
+        var resp = await client.PostAsJsonAsync("/api/cicd-runs/trigger", payload);
+
+        if (resp.StatusCode == HttpStatusCode.Conflict)
+        {
+            // Read the active run IDs from the conflict response and retry with them acknowledged.
+            var conflict = await resp.Content.ReadFromJsonAsync<JsonElement>();
+            var activeRunIds = conflict.GetProperty("activeRunIds")
+                .EnumerateArray()
+                .Select(e => Guid.Parse(e.GetString()!))
+                .ToList();
+
+            var forcePayload = BuildTriggerPayload(projectId, commitSha, runtimeMode, workflow, activeRunIds);
+            resp = await client.PostAsJsonAsync("/api/cicd-runs/trigger", forcePayload);
+        }
+
+        Assert.Equal(HttpStatusCode.Accepted, resp.StatusCode);
+        var triggerResult = await resp.Content.ReadFromJsonAsync<JsonElement>();
+        return triggerResult.GetProperty("runId").GetString()!;
     }
 
     // --- Scaling Configuration API Test ---
@@ -176,16 +211,13 @@ public class ScalingTests(AspireFixture fixture)
         const int runCount = 2;
         var runIds = new List<string>();
 
-        // Trigger multiple runs concurrently
-        var triggerTasks = Enumerable.Range(0, runCount).Select(async i =>
+        // Trigger multiple runs concurrently; each trigger handles a 409 Conflict
+        // (produced when a previous run for the same project is already Pending) by
+        // re-triggering with ForceWithActiveRunIds so all runs are eventually accepted.
+        var triggerTasks = Enumerable.Range(0, runCount).Select(i =>
         {
             var commitSha = $"concurrent-{i:D3}";
-            var triggerResp = await client.PostAsJsonAsync("/api/cicd-runs/trigger",
-                BuildTriggerPayload(projectId, commitSha, runtimeMode, "ci.yml"));
-            Assert.Equal(HttpStatusCode.Accepted, triggerResp.StatusCode);
-
-            var triggerResult = await triggerResp.Content.ReadFromJsonAsync<JsonElement>();
-            return triggerResult.GetProperty("runId").GetString()!;
+            return TriggerRunForcingConflictsAsync(client, projectId, commitSha, runtimeMode, "ci.yml");
         }).ToList();
 
         var ids = await Task.WhenAll(triggerTasks);
@@ -224,21 +256,13 @@ public class ScalingTests(AspireFixture fixture)
         using var _ = client;
 
         // First run
-        var triggerResp1 = await client.PostAsJsonAsync("/api/cicd-runs/trigger",
-            BuildTriggerPayload(projectId, "seq-run-001", runtimeMode, "ci.yml"));
-        Assert.Equal(HttpStatusCode.Accepted, triggerResp1.StatusCode);
-        var trigger1 = await triggerResp1.Content.ReadFromJsonAsync<JsonElement>();
-        var runId1 = trigger1.GetProperty("runId").GetString()!;
+        var runId1 = await TriggerRunForcingConflictsAsync(client, projectId, "seq-run-001", runtimeMode, "ci.yml");
 
         var run1 = await WaitForRunAsync(client, runId1, TimeSpan.FromMinutes(5));
         await AssertRunSucceededAsync(client, run1, runId1);
 
         // Second run
-        var triggerResp2 = await client.PostAsJsonAsync("/api/cicd-runs/trigger",
-            BuildTriggerPayload(projectId, "seq-run-002", runtimeMode, "ci.yml"));
-        Assert.Equal(HttpStatusCode.Accepted, triggerResp2.StatusCode);
-        var trigger2 = await triggerResp2.Content.ReadFromJsonAsync<JsonElement>();
-        var runId2 = trigger2.GetProperty("runId").GetString()!;
+        var runId2 = await TriggerRunForcingConflictsAsync(client, projectId, "seq-run-002", runtimeMode, "ci.yml");
 
         var run2 = await WaitForRunAsync(client, runId2, TimeSpan.FromMinutes(5));
         await AssertRunSucceededAsync(client, run2, runId2);
