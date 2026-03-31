@@ -23,7 +23,7 @@ RUN set -eux; \
     cd /act && \
     git checkout "${ACT_COMMIT}" && \
     go build -ldflags "-X main.version=${ACT_COMMIT}" -o /usr/local/bin/act main.go && \
-    act --version
+    act --help 2>&1 | head -1
 
 # Stage 2: Final image — extend helper-base with Docker Engine (DinD), the pre-built act, and actionlint.
 FROM ${BASE_IMAGE}
@@ -45,7 +45,7 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
 
 # Copy the pre-built act binary from the builder stage.
 COPY --from=act-builder /usr/local/bin/act /usr/local/bin/act
-RUN act --version
+RUN act --help 2>&1 | head -1
 
 # Install actionlint using the official download script.
 # Download to a temp file first since bash process substitution (<()) is not available in /bin/sh.
