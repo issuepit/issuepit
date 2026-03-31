@@ -44,6 +44,10 @@
                   class="text-xs px-1.5 py-0.5 rounded-full">
                   {{ agent.isActive ? 'Active' : 'Inactive' }}
                 </span>
+                <span v-if="agent.isShellAgent"
+                  class="text-xs px-1.5 py-0.5 rounded-full bg-cyan-900/40 text-cyan-400 ml-1">
+                  Shell
+                </span>
               </div>
               <p v-if="agent.description" class="text-sm text-gray-400 mt-0.5">{{ agent.description }}</p>
             </div>
@@ -69,8 +73,16 @@
         <!-- Details -->
         <div class="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div class="bg-gray-800/40 rounded-lg p-3">
-            <p class="text-xs text-gray-500 uppercase tracking-wide mb-1.5">Docker Image</p>
-            <code class="text-xs text-green-300 font-mono">{{ agent.dockerImage || '—' }}</code>
+            <template v-if="agent.isShellAgent">
+              <p class="text-xs text-gray-500 uppercase tracking-wide mb-1.5">OpenCode Agent</p>
+              <code class="text-xs text-cyan-300 font-mono">{{ agent.openCodeAgentName || '—' }}</code>
+              <a href="https://github.com/sst/opencode/tree/dev/pkg/agent" target="_blank" rel="noopener"
+                class="block text-xs text-indigo-400 hover:text-indigo-300 mt-1 transition-colors">Built-in agent ↗</a>
+            </template>
+            <template v-else>
+              <p class="text-xs text-gray-500 uppercase tracking-wide mb-1.5">Docker Image</p>
+              <code class="text-xs text-green-300 font-mono">{{ agent.dockerImage || '—' }}</code>
+            </template>
           </div>
           <div class="bg-gray-800/40 rounded-lg p-3">
             <p class="text-xs text-gray-500 uppercase tracking-wide mb-2">Allowed Tools</p>

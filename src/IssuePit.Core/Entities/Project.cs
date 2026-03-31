@@ -148,5 +148,13 @@ public class Project
     /// </summary>
     public bool UnwrapSingleFileArtifacts { get; set; } = false;
 
+    /// <summary>
+    /// Optional agent used for git conflict resolution during push/merge recovery.
+    /// When set, this agent is invoked (with <c>--agent</c>) instead of the session's primary
+    /// agent when the execution client needs to resolve git conflicts.
+    /// Null means the session's primary agent handles conflict resolution.
+    /// </summary>
+    public Guid? GitResolutionAgentId { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

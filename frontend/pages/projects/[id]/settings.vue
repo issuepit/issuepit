@@ -391,6 +391,27 @@
           </div>
         </div>
 
+        <!-- Git Resolution Agent -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h2 class="font-semibold text-white mb-1">Git Resolution Agent</h2>
+          <p class="text-sm text-gray-500 mb-4">
+            Agent used to resolve git conflicts during push/merge recovery.
+            When not set, the session's primary agent handles resolution.
+          </p>
+          <div class="flex items-center gap-3">
+            <select
+              :value="gitResolutionAgentId ?? ''"
+              @change="updateGitResolutionAgent(($event.target as HTMLSelectElement).value || null)"
+              class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+            >
+              <option value="">— Use session's primary agent</option>
+              <option v-for="agent in projectAgents.filter(a => !a.isDisabled)" :key="agent.agentId" :value="agent.agentId">
+                {{ agent.name }}
+              </option>
+            </select>
+          </div>
+        </div>
+
         <!-- MCP Servers -->
         <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
           <div class="flex items-center justify-between mb-1">
@@ -1012,6 +1033,7 @@ const projectAgents = ref<AgentProject[]>([])
 const showLinkAgentModal = ref(false)
 const selectedLinkAgentId = ref('')
 const linkingAgent = ref(false)
+const gitResolutionAgentId = ref<string | null>(null)
 
 const availableAgentsToLink = computed(() => {
   const linked = new Set(projectAgents.value.map(a => a.agentId))
@@ -1042,6 +1064,15 @@ async function updateAgentPushPolicy(agentId: string, policy: AgentPushPolicy) {
     await fetchProjectAgents()
   } catch {
     // silently ignore
+  }
+}
+
+async function updateGitResolutionAgent(agentId: string | null) {
+  gitResolutionAgentId.value = agentId
+  try {
+    await projectsStore.updateProject(id, { gitResolutionAgentId: agentId ?? undefined })
+  } catch (e: unknown) {
+    console.warn('Failed to update git resolution agent:', e)
   }
 }
 
@@ -1139,6 +1170,7 @@ onMounted(async () => {
     form.issueKey = projectsStore.currentProject.issueKey || ''
     form.issueNumberOffset = projectsStore.currentProject.issueNumberOffset ?? 0
     form.color = projectsStore.currentProject.color || ''
+    gitResolutionAgentId.value = projectsStore.currentProject.gitResolutionAgentId ?? null
   }
 })
 

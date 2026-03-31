@@ -46,6 +46,8 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
             agent.UseHttpServer,
             !string.IsNullOrEmpty(agent.HttpServerPassword),
             agent.ManualMode,
+            agent.IsShellAgent,
+            agent.OpenCodeAgentName,
             agent.CreatedAt,
             agent.AgentMcpServers.Select(am => new LinkedMcpServerDto(
                 am.McpServer.Id,
@@ -105,6 +107,8 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
         agent.AgentType = updated.AgentType;
         agent.UseHttpServer = updated.UseHttpServer;
         agent.ManualMode = updated.ManualMode;
+        agent.IsShellAgent = updated.IsShellAgent;
+        agent.OpenCodeAgentName = updated.OpenCodeAgentName;
         // Only update password when a non-empty value is provided so a blank PUT does not clear it.
         // To clear the password, use a dedicated PATCH endpoint (not yet implemented) or
         // delete and recreate the agent. This prevents accidental password removal on a full update.
@@ -170,6 +174,8 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
         agent.AgentType,
         agent.UseHttpServer,
         agent.ManualMode,
+        agent.IsShellAgent,
+        agent.OpenCodeAgentName,
         agent.CreatedAt,
         agent.ConfigFieldSources);
 }
@@ -208,6 +214,8 @@ public sealed record AgentResponse(
     OpenCodeAgentType? AgentType,
     bool UseHttpServer,
     bool ManualMode,
+    bool IsShellAgent,
+    string? OpenCodeAgentName,
     DateTime CreatedAt,
     Dictionary<string, string>? ConfigFieldSources);
 
@@ -227,6 +235,8 @@ public sealed record AgentDetailResponse(
     bool UseHttpServer,
     bool HasHttpServerPassword,
     bool ManualMode,
+    bool IsShellAgent,
+    string? OpenCodeAgentName,
     DateTime CreatedAt,
     IReadOnlyList<LinkedMcpServerDto> LinkedMcpServers,
     IReadOnlyList<ChildAgentDto> ChildAgents,

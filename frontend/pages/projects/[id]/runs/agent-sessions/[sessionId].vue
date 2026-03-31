@@ -990,21 +990,6 @@ const followLogs = ref(true)
 /** Template ref for the main logs container div (used for auto-scroll). */
 const logContainer = ref<HTMLElement | null>(null)
 
-watch(filteredLogs, async () => {
-  if (!followLogs.value) return
-  await nextTick()
-  if (logContainer.value) logContainer.value.scrollTop = logContainer.value.scrollHeight
-})
-
-/** When the user scrolls up in the log container, disable auto-follow so logs stop jumping. */
-function onLogContainerScroll() {
-  const el = logContainer.value
-  if (!el) return
-  // Allow a small buffer (32 px) so minor browser sub-pixel differences don't toggle follow off.
-  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 32
-  followLogs.value = atBottom
-}
-
 /** Pattern that identifies noisy DNS-proxy lines emitted by dnsmasq inside the container. */
 const DNSMASQ_RE = /dnsmasq\[/
 
@@ -1023,6 +1008,21 @@ const filteredLogs = computed(() => {
     logs = logs.filter(l => stripAnsiCodes(l.line).toLowerCase().includes(logSearchQuery.value.toLowerCase()))
   return logs
 })
+
+watch(filteredLogs, async () => {
+  if (!followLogs.value) return
+  await nextTick()
+  if (logContainer.value) logContainer.value.scrollTop = logContainer.value.scrollHeight
+})
+
+/** When the user scrolls up in the log container, disable auto-follow so logs stop jumping. */
+function onLogContainerScroll() {
+  const el = logContainer.value
+  if (!el) return
+  // Allow a small buffer (32 px) so minor browser sub-pixel differences don't toggle follow off.
+  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 32
+  followLogs.value = atBottom
+}
 
 // ── Step / section logic ────────────────────────────────────────────────────
 

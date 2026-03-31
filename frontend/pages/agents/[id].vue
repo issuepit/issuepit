@@ -101,6 +101,32 @@
                 </div>
               </div>
             </div>
+            <!-- Shell/Wrapper Agent: maps to a built-in opencode agent without custom config -->
+            <div v-if="form.runnerType === RunnerTypeEnum.OpenCode" class="col-span-2">
+              <div class="flex items-center gap-3">
+                <input id="isShellAgent" v-model="form.isShellAgent" type="checkbox"
+                  class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-brand-500 focus:ring-brand-500 focus:ring-offset-gray-900" />
+                <div>
+                  <label for="isShellAgent" class="text-sm font-medium text-gray-300 cursor-pointer">Shell Agent</label>
+                  <p class="text-xs text-gray-500">
+                    Maps to a built-in opencode agent (e.g. build, explore, plan). No custom system prompt or Docker image needed.
+                    <a href="https://github.com/sst/opencode/tree/dev/pkg/agent" target="_blank" rel="noopener"
+                      class="text-indigo-400 hover:text-indigo-300 transition-colors">View built-in agents ↗</a>
+                  </p>
+                </div>
+              </div>
+            </div>
+            <!-- OpenCode Agent Name: explicit name for the --agent flag -->
+            <div v-if="form.runnerType === RunnerTypeEnum.OpenCode && form.isShellAgent" class="col-span-2">
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">OpenCode Agent Name</label>
+              <select v-model="form.openCodeAgentName"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option v-for="name in builtInOpenCodeAgents" :key="name" :value="name">{{ name }}</option>
+              </select>
+              <p class="text-xs text-gray-500 mt-1">
+                The built-in opencode agent this mode maps to. Passed as <code class="text-gray-400">--agent</code> when running.
+              </p>
+            </div>
             <!-- HTTP Server Password (opencode server mode only) -->
             <div v-if="form.runnerType === RunnerTypeEnum.OpenCode && form.useHttpServer" class="col-span-2">
               <div class="flex items-center justify-between mb-1.5">
@@ -113,7 +139,7 @@
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
               <p class="text-xs text-gray-500 mt-1">Passed to the container as <code class="text-gray-400">OPENCODE_PASSWORD</code>. Leave blank to keep any existing password.</p>
             </div>
-            <div class="col-span-2">
+            <div v-if="!form.isShellAgent" class="col-span-2">
               <label class="block text-sm font-medium text-gray-300 mb-1.5">
                 Docker Image
                 <ImportedBadge v-if="isAgentFieldImported('dockerImage')" :source-file="agentFieldSourceFile('dockerImage')" />
@@ -122,7 +148,7 @@
                 :disabled="isAgentFieldImported('dockerImage')"
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed" />
             </div>
-            <div class="col-span-2">
+            <div v-if="!form.isShellAgent" class="col-span-2">
               <label class="block text-sm font-medium text-gray-300 mb-1.5">
                 System Prompt
                 <ImportedBadge v-if="isAgentFieldImported('systemPrompt')" :source-file="agentFieldSourceFile('systemPrompt')" />
@@ -308,8 +334,14 @@ const form = reactive({
   agentType: null as OpenCodeAgentType | null,
   useHttpServer: false,
   manualMode: false,
+  isShellAgent: false,
+  openCodeAgentName: '' as string | null,
   httpServerPassword: '',
 })
+
+const builtInOpenCodeAgents = ['build', 'compaction', 'explore', 'general', 'plan', 'summary', 'title']
+// NOTE: Keep this list in sync with opencode's built-in agents.
+// See https://github.com/sst/opencode/tree/dev/pkg/agent for the canonical list.
 
 const runnerOptions = [
   { value: null, label: '— None (use container entrypoint)' },
@@ -420,6 +452,8 @@ function loadForm() {
   form.agentType = toAgentType(agent.agentType)
   form.useHttpServer = agent.useHttpServer ?? false
   form.manualMode = agent.manualMode ?? false
+  form.isShellAgent = agent.isShellAgent ?? false
+  form.openCodeAgentName = agent.openCodeAgentName ?? ''
   form.httpServerPassword = ''
   toolsInput.value = parseTools(agent.allowedTools).join(', ')
 }
@@ -435,6 +469,8 @@ function buildPayload(allowedTools: string[]) {
     agentType: form.agentType ?? undefined,
     useHttpServer: form.useHttpServer,
     manualMode: form.manualMode,
+    isShellAgent: form.isShellAgent,
+    openCodeAgentName: form.isShellAgent && form.openCodeAgentName ? form.openCodeAgentName : undefined,
     httpServerPassword: form.httpServerPassword || undefined,
     allowedTools: JSON.stringify(allowedTools),
   }
