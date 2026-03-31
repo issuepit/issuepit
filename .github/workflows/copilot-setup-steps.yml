@@ -154,6 +154,8 @@ jobs:
       # Commit is pinned via ACT_COMMIT env var; takes ~2 min on ubuntu-latest.
       - name: Build act binary (issuepit fork)
         run: |
+          echo "Go toolchain: $(go version)"
+          echo "Building act commit ${ACT_COMMIT}"
           git init /tmp/issuepit-act
           cd /tmp/issuepit-act
           git remote add origin https://github.com/issuepit/act.git
