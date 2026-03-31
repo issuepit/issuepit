@@ -715,13 +715,10 @@ onBeforeUnmount(() => {
   if (pollInterval) clearInterval(pollInterval)
   if (crdtSubmitTimer) clearTimeout(crdtSubmitTimer)
   if (signalrConn) {
-    const { HubConnectionState } = await import('@microsoft/signalr').catch(() => ({ HubConnectionState: null }))
-    if (
-      HubConnectionState
-      && signalrConn.state === HubConnectionState.Connected
-      && props.noteId
-    ) {
-      await signalrConn.invoke('LeaveNote', props.noteId).catch(() => {})
+    // HubConnectionState.Connected === 'Connected' — use the string value to avoid
+    // async import inside a synchronous lifecycle hook
+    if (signalrConn.state === 'Connected' && props.noteId) {
+      signalrConn.invoke('LeaveNote', props.noteId).catch(() => {})
     }
     signalrConn.stop().catch(() => {})
   }
