@@ -52,22 +52,19 @@ public class TelegramBotsPage(IPage page)
     }
 
     /// <summary>
-    /// Deletes the bot with the given name by clicking its Delete button and accepting the confirm dialog.
+    /// Deletes the bot with the given name by clicking its Delete button and confirming the modal.
     /// </summary>
     public async Task DeleteBotAsync(string name)
     {
         var row = page.Locator($"tr:has(td:has-text('{name}'))");
 
-        // Register a one-shot dialog handler that accepts the window.confirm() call.
-        EventHandler<IDialog> handler = null!;
-        handler = async (_, dialog) =>
-        {
-            page.Dialog -= handler;
-            await dialog.AcceptAsync();
-        };
-        page.Dialog += handler;
-
         await row.Locator("button:has-text('Delete')").ClickAsync();
+
+        // Wait for the ConfirmModal to appear and click the confirm button.
+        await page.WaitForSelectorAsync("button:has-text('Delete'):visible", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        // Click the modal's Delete button (not the row's — find the one inside the modal)
+        await page.Locator(".fixed button:has-text('Delete')").ClickAsync();
+
         await page.WaitForSelectorAsync($"td:has-text('{name}')", new PageWaitForSelectorOptions
         {
             State = WaitForSelectorState.Hidden,

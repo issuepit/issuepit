@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { ApiKey, RuntimeConfiguration, ApiKeyProvider, RuntimeType, TelegramBot, DigestInterval, PoolStatus, McpAccessToken } from '~/types'
+import type { ApiKey, RuntimeConfiguration, ApiKeyProvider, RuntimeType, TelegramBot, TelegramPairing, TelegramChat, DigestInterval, TelegramSilentMode, PoolStatus, McpAccessToken } from '~/types'
 
 export const useConfigStore = defineStore('config', () => {
   const { get, post, put, del } = useApi()
@@ -84,13 +84,13 @@ export const useConfigStore = defineStore('config', () => {
     }
   }
 
-  async function createTelegramBot(payload: { name: string; botToken: string; chatId: string; events: number; isSilent: boolean; digestInterval: DigestInterval; orgId?: string; projectId?: string }) {
+  async function createTelegramBot(payload: { name: string; botToken: string; chatId: string; events: number; isSilent: boolean; digestInterval: DigestInterval; orgId?: string; projectId?: string; rateLimitCount?: number; rateLimitWindowMinutes?: number; silentMode?: TelegramSilentMode }) {
     const created = await post<TelegramBot>('/api/config/telegram-bots', payload)
     await fetchTelegramBots()
     return created
   }
 
-  async function updateTelegramBot(id: string, payload: { name: string; botToken: string; chatId: string; events: number; isSilent: boolean; digestInterval: DigestInterval; orgId?: string; projectId?: string }) {
+  async function updateTelegramBot(id: string, payload: { name: string; botToken: string; chatId: string; events: number; isSilent: boolean; digestInterval: DigestInterval; orgId?: string; projectId?: string; rateLimitCount?: number; rateLimitWindowMinutes?: number; silentMode?: TelegramSilentMode }) {
     const updated = await put<TelegramBot>(`/api/config/telegram-bots/${id}`, payload)
     await fetchTelegramBots()
     return updated
@@ -99,6 +99,47 @@ export const useConfigStore = defineStore('config', () => {
   async function deleteTelegramBot(id: string) {
     await del(`/api/config/telegram-bots/${id}`)
     telegramBots.value = telegramBots.value.filter(b => b.id !== id)
+  }
+
+  // --- Telegram Pairing & Chats ---
+  const telegramPairings = ref<TelegramPairing[]>([])
+  const telegramPairingsLoading = ref(false)
+  const telegramChats = ref<TelegramChat[]>([])
+  const telegramChatsLoading = ref(false)
+
+  async function fetchTelegramPairings() {
+    telegramPairingsLoading.value = true
+    try {
+      telegramPairings.value = await get<TelegramPairing[]>('/api/telegram/pairings')
+    } finally {
+      telegramPairingsLoading.value = false
+    }
+  }
+
+  async function redeemPairingCode(payload: { code: string; botToken: string; orgId?: string; projectId?: string; userId?: string }) {
+    const chat = await post<TelegramChat>('/api/telegram/pair', payload)
+    await fetchTelegramChats()
+    return chat
+  }
+
+  async function fetchTelegramChats() {
+    telegramChatsLoading.value = true
+    try {
+      telegramChats.value = await get<TelegramChat[]>('/api/telegram/chats')
+    } finally {
+      telegramChatsLoading.value = false
+    }
+  }
+
+  async function updateTelegramChat(id: string, payload: { events: number; isSilent: boolean; digestInterval: DigestInterval; rateLimitCount: number; rateLimitWindowMinutes: number; silentMode: TelegramSilentMode }) {
+    const updated = await put<TelegramChat>(`/api/telegram/chats/${id}`, payload)
+    await fetchTelegramChats()
+    return updated
+  }
+
+  async function deleteTelegramChat(id: string) {
+    await del(`/api/telegram/chats/${id}`)
+    telegramChats.value = telegramChats.value.filter(c => c.id !== id)
   }
 
   // --- MCP Access Tokens ---
@@ -128,6 +169,8 @@ export const useConfigStore = defineStore('config', () => {
     runtimes, runtimesLoading, fetchRuntimes, createRuntime, updateRuntime, deleteRuntime,
     poolStatus, poolStatusLoading, fetchPoolStatus,
     telegramBots, telegramBotsLoading, fetchTelegramBots, createTelegramBot, updateTelegramBot, deleteTelegramBot,
+    telegramPairings, telegramPairingsLoading, fetchTelegramPairings, redeemPairingCode,
+    telegramChats, telegramChatsLoading, fetchTelegramChats, updateTelegramChat, deleteTelegramChat,
     mcpTokens, mcpTokensLoading, fetchMcpTokens, createMcpToken, revokeMcpToken,
   }
 })
