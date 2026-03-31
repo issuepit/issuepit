@@ -63,6 +63,21 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
             string.Equals(r.Url, repo.RemoteUrl, StringComparison.OrdinalIgnoreCase))
         ?? gitRepo.Network.Remotes.FirstOrDefault();
 
+    /// <summary>
+    /// Renames a diverged local branch by appending a date suffix (e.g. <c>main-pre-force-push-20260331</c>)
+    /// so the old commits are preserved and the branch name becomes available for re-creation from the remote tip.
+    /// </summary>
+    private void RenameDivergedBranch(Repository gitRepo, Branch localBranch, Guid repoId)
+    {
+        var oldName = localBranch.FriendlyName;
+        var suffix = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+        var archiveName = $"{oldName}-pre-force-push-{suffix}";
+        gitRepo.Branches.Rename(localBranch, archiveName);
+        logger.LogWarning(
+            "Renamed diverged branch '{OldName}' → '{NewName}' for repo {Id} (remote was force-pushed)",
+            oldName, archiveName, repoId);
+    }
+
     private CloneOptions BuildCloneOptions(GitRepository repo)
     {
         var opts = new CloneOptions { IsBare = false };
@@ -168,7 +183,14 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
                     }
                     else
                     {
-                        logger.LogDebug("Skipping fast-forward of '{Branch}': {AheadBy} local commit(s) ahead of remote", localBranch.FriendlyName, divergence.AheadBy);
+                        // Remote was force-pushed: rename the diverged local branch to preserve
+                        // the old commits, then recreate it from the remote-tracking tip.
+                        var branchName = localBranch.FriendlyName;
+                        var trackedCanonical = tracked.CanonicalName;
+                        RenameDivergedBranch(gitRepo, localBranch, repo.Id);
+                        var newBranch = gitRepo.CreateBranch(branchName, tracked.Tip);
+                        gitRepo.Branches.Update(newBranch, b => b.TrackedBranch = trackedCanonical);
+                        logger.LogInformation("Reset diverged '{Branch}' to remote tip '{Sha}' for repo {Id} (old branch archived)", branchName, tracked.Tip.Sha, repo.Id);
                     }
                 }
             });
@@ -218,11 +240,17 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
                     // Verify this is a safe fast-forward (local must not be ahead of remote)
                     var divergence = gitRepo.ObjectDatabase.CalculateHistoryDivergence(localBranch.Tip, remoteBranch.Tip);
                     if (divergence.AheadBy > 0)
-                        throw new InvalidOperationException(
-                            $"Branch '{branchName}' has {divergence.AheadBy} local commit(s) that are not on the remote. " +
-                            "Cannot fast-forward — please push or resolve the divergence first.");
-
-                    gitRepo.Refs.UpdateTarget(localBranch.Reference, remoteBranch.Tip.Id);
+                    {
+                        // Remote was force-pushed: rename the diverged local branch to preserve
+                        // the old commits, then recreate the branch from the remote tip.
+                        RenameDivergedBranch(gitRepo, localBranch, repo.Id);
+                        localBranch = gitRepo.CreateBranch(branchName, remoteBranch.Tip);
+                        gitRepo.Branches.Update(localBranch, b => b.TrackedBranch = remoteBranch.CanonicalName);
+                    }
+                    else
+                    {
+                        gitRepo.Refs.UpdateTarget(localBranch.Reference, remoteBranch.Tip.Id);
+                    }
                 }
 
                 logger.LogInformation("Pulled '{Branch}' from remote '{Remote}' for repo {Id}", branchName, remote.Name, repo.Id);
