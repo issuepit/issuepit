@@ -1068,8 +1068,8 @@ public class IssueWorker(
                     if (useExecForFixes)
                     {
                         // Same container — opencode can see the workspace and use --fork when supported.
-                        (fixCommitSha, fixBranchName) = await execRuntime!.ExecFixInContainerAsync(
-                            runtimeId!, capturedOpenCodeSessionId,
+                        (fixCommitSha, fixBranchName, _) = await execRuntime!.ExecFixInContainerAsync(
+                            runtimeId!, capturedOpenCodeSessionId, fork: true,
                             session, agent, fixUncommittedIssue, gitRepository,
                             (line, stream) => AppendLogAsync(session.Id, line, stream, currentSection, currentSectionIndex, db, sessionCts.Token),
                             sessionCts.Token);
@@ -1567,7 +1567,7 @@ public class IssueWorker(
                 var section = AgentLogSection.MessageRun;
                 var msgIdx = messageIndex;
                 await execRuntime.ExecFixInContainerAsync(
-                    containerId, openCodeSessionId, session, effectiveAgent, messageIssue, gitRepository,
+                    containerId, openCodeSessionId, fork: true, session, effectiveAgent, messageIssue, gitRepository,
                     (line, stream) => AppendLogAsync(session.Id, line, stream, section, msgIdx, db, cancellationToken),
                     cancellationToken);
 
@@ -1683,6 +1683,12 @@ public class IssueWorker(
         MessageIndexCounter? msgCtx = null,
         Func<string, LogStream, AgentLogSection, int, Task>? onLogLine = null)
     {
+        // Track the session ID used for CI/CD fix runs. On the first fix we fork from the main
+        // agent session so CI/CD work is isolated in its own branch. On subsequent fixes we
+        // continue in that forked session (no additional fork) so fixes build on each other
+        // without creating repeated forks of the main session.
+        string? currentCiCdSessionId = openCodeSessionId;
+
         for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
             var cicdSectionIndex = attempt + 1;
@@ -1729,7 +1735,7 @@ public class IssueWorker(
             // fix agent — e.g. point at the correct error or prevent a wasteful fix run.
             if (msgCtx is not null)
                 await DrainPendingMessagesAsync(session, agent, issue, gitRepository, db,
-                    execRuntime, execContainerId, openCodeSessionId, msgCtx, cancellationToken);
+                    execRuntime, execContainerId, currentCiCdSessionId, msgCtx, cancellationToken);
 
             // Collect CI/CD failure logs to give opencode the context it needs for fixing.
             var failureLogs = await GetCiCdFailureLogsAsync(cicdRun.Id, db, cancellationToken);
@@ -1749,14 +1755,21 @@ public class IssueWorker(
             if (execRuntime is not null && execContainerId is not null)
             {
                 // Same container — opencode sees the workspace as modified by the previous run.
-                // When opencode supports --fork, openCodeSessionId will be passed for full session continuity.
-                (fixCommitSha, fixBranchName) = await execRuntime.ExecFixInContainerAsync(
-                    execContainerId, openCodeSessionId,
+                // Fork only on the first CI/CD fix so the work is isolated in a single child
+                // branch of the main session. Subsequent fixes continue in that forked session.
+                var forkThisRun = attempt == 0;
+                string? forkedSessionId;
+                (fixCommitSha, fixBranchName, forkedSessionId) = await execRuntime.ExecFixInContainerAsync(
+                    execContainerId, currentCiCdSessionId, fork: forkThisRun,
                     session, agent, fixIssue, gitRepository,
                     (line, stream) =>
                         (onLogLine ?? ((l, s, sec, idx) => AppendLogAsync(session.Id, l, s, sec, idx, db, cancellationToken)))(
                             line, stream, AgentLogSection.CiCdFixRun, fixSectionIndex),
                     cancellationToken);
+
+                // After the first fork, switch to the forked session for all subsequent runs.
+                if (forkThisRun && !string.IsNullOrEmpty(forkedSessionId))
+                    currentCiCdSessionId = forkedSessionId;
             }
             else
             {
@@ -1782,7 +1795,7 @@ public class IssueWorker(
             // and optionally give additional instructions before the next CI/CD attempt.
             if (msgCtx is not null)
                 await DrainPendingMessagesAsync(session, agent, issue, gitRepository, db,
-                    execRuntime, execContainerId, openCodeSessionId, msgCtx, cancellationToken);
+                    execRuntime, execContainerId, currentCiCdSessionId, msgCtx, cancellationToken);
         }
 
         return false;

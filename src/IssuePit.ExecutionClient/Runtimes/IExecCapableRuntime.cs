@@ -20,17 +20,29 @@ public interface IExecCapableRuntime : IAgentRuntime
     /// Runs a fix task inside an already-running container.
     /// Streams output to <paramref name="onLogLine"/> (with a <c>[fix]</c> prefix) and emits
     /// <c>[ISSUEPIT:GIT_COMMIT_SHA]</c> / <c>[ISSUEPIT:GIT_BRANCH]</c> markers after the run.
-    /// Returns the updated (commitSha, branchName), or (null, null) if git info is unavailable.
+    /// Returns the updated (commitSha, branchName, newSessionId), or (null, null, null) if git info or
+    /// session ID is unavailable.
     /// </summary>
     /// <param name="containerId">ID of the running container (returned by <see cref="IAgentRuntime.LaunchAsync"/>).</param>
     /// <param name="openCodeSessionId">
-    /// The opencode session ID captured during the initial run.
-    /// Passed as <c>--session &lt;id&gt; --fork</c> so the fix run continues the same session
-    /// with full conversation context. See https://opencode.ai/docs/cli/#run-1.
+    /// The opencode session ID to pass to <c>opencode run</c>.
+    /// When <paramref name="fork"/> is <c>true</c>, passed as <c>--session &lt;id&gt; --fork</c> to
+    /// create a child branch of the session with full conversation context.
+    /// When <paramref name="fork"/> is <c>false</c>, passed as <c>--session &lt;id&gt;</c> to continue
+    /// an already-forked session without creating a new branch.
+    /// See https://opencode.ai/docs/cli/#run-1.
     /// </param>
-    Task<(string? CommitSha, string? BranchName)> ExecFixInContainerAsync(
+    /// <param name="fork">
+    /// When <c>true</c>, builds the opencode command with <c>--fork</c> so the run starts a child branch
+    /// of <paramref name="openCodeSessionId"/>. When <c>false</c>, continues in the existing session
+    /// without forking. Use <c>true</c> for the first CI/CD fix run and <c>false</c> for subsequent runs
+    /// so that all CI/CD fixes build on the same forked session rather than creating new branches of the
+    /// main agent session each time.
+    /// </param>
+    Task<(string? CommitSha, string? BranchName, string? NewSessionId)> ExecFixInContainerAsync(
         string containerId,
         string? openCodeSessionId,
+        bool fork,
         AgentSession parentSession,
         Agent agent,
         Issue fixIssue,

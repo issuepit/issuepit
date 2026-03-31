@@ -890,9 +890,10 @@ public class DockerAgentRuntime(
     }
 
     /// <inheritdoc/>
-    public async Task<(string? CommitSha, string? BranchName)> ExecFixInContainerAsync(
+    public async Task<(string? CommitSha, string? BranchName, string? NewSessionId)> ExecFixInContainerAsync(
         string containerId,
         string? openCodeSessionId,
+        bool fork,
         AgentSession parentSession,
         Agent agent,
         Issue fixIssue,
@@ -923,12 +924,21 @@ public class DockerAgentRuntime(
             return onLogLine($"[fix] {displayLine}", stream);
         }
 
-        var runnerCmd = RunnerCommandBuilder.BuildCmdList(agent, fixIssue, forkSessionId: openCodeSessionId);
+        // When fork=true, start a child branch of the session so full conversation context is
+        // available. When fork=false, continue in the already-forked session so that subsequent
+        // CI/CD fix runs build on each other without creating additional forks of the main session.
+        var runnerCmd = fork
+            ? RunnerCommandBuilder.BuildCmdList(agent, fixIssue, forkSessionId: openCodeSessionId)
+            : RunnerCommandBuilder.BuildCmdList(agent, fixIssue, continueSessionId: openCodeSessionId);
         if (runnerCmd.Count > 0)
         {
             var shortId = containerId[..Math.Min(12, containerId.Length)];
-            var forkInfo = openCodeSessionId is not null ? $" (--session {openCodeSessionId[..Math.Min(8, openCodeSessionId.Length)]} --fork)" : string.Empty;
-            await onLogLine($"[INFO] Exec fix run in container {shortId}{forkInfo}…", LogStream.Stdout);
+            var sessionInfo = openCodeSessionId is not null
+                ? fork
+                    ? $" (--session {openCodeSessionId[..Math.Min(8, openCodeSessionId.Length)]} --fork)"
+                    : $" (--session {openCodeSessionId[..Math.Min(8, openCodeSessionId.Length)]})"
+                : string.Empty;
+            await onLogLine($"[INFO] Exec fix run in container {shortId}{sessionInfo}…", LogStream.Stdout);
             var exitCode = await ExecCommandAsync(containerId, runnerCmd, onFixLogLine, cancellationToken, logCommand: true);
             if (exitCode != 0)
                 await onLogLine($"[WARN] Fix agent exited with code {exitCode}", LogStream.Stderr);
@@ -964,7 +974,11 @@ public class DockerAgentRuntime(
                     GitBranch = currentBranch,
                 };
 
-                var uncommittedCmd = RunnerCommandBuilder.BuildCmdList(agent, uncommittedIssue, forkSessionId: openCodeSessionId);
+                // Mirror the fork/continue strategy of the main fix run so uncommitted-changes
+                // handling stays within the same logical session branch.
+                var uncommittedCmd = fork
+                    ? RunnerCommandBuilder.BuildCmdList(agent, uncommittedIssue, forkSessionId: openCodeSessionId)
+                    : RunnerCommandBuilder.BuildCmdList(agent, uncommittedIssue, continueSessionId: openCodeSessionId);
                 if (uncommittedCmd.Count > 0)
                 {
                     var exitCode2 = await ExecCommandAsync(containerId, uncommittedCmd, onFixLogLine, cancellationToken);
@@ -986,7 +1000,16 @@ public class DockerAgentRuntime(
         try { await EmitGitMarkersAsync(containerId, gitRepository, onFixLogLine, cancellationToken); }
         catch (Exception ex) { await onFixLogLine($"[WARN] Git marker emission failed: {ex.Message}", LogStream.Stderr); }
 
-        return (fixCommitSha, fixBranchName);
+        // When we forked, capture the most recently created session ID so the caller can reuse it
+        // for subsequent runs (continuing the forked session instead of forking again).
+        string? newSessionId = null;
+        if (fork && agent.RunnerType == RunnerType.OpenCode && openCodeSessionId is not null)
+        {
+            try { newSessionId = await ReadLatestOpenCodeSessionIdAsync(containerId, cancellationToken); }
+            catch (Exception ex) { await onLogLine($"[WARN] Could not capture forked session ID: {ex.Message}", LogStream.Stderr); }
+        }
+
+        return (fixCommitSha, fixBranchName, newSessionId);
     }
 
     /// <inheritdoc/>
@@ -1461,6 +1484,32 @@ public class DockerAgentRuntime(
 
         if (!string.IsNullOrWhiteSpace(lastSessionId))
             await onLogLine($"{OpenCodeSessionIdMarker}{lastSessionId}", LogStream.Stdout);
+    }
+
+    /// <summary>
+    /// Runs <c>opencode session list</c> and returns the most recently started session ID, or
+    /// <c>null</c> when the list is empty or the command fails. Used after a <c>--fork</c> run to
+    /// capture the ID of the newly created child session for subsequent non-fork continuations.
+    /// </summary>
+    private async Task<string?> ReadLatestOpenCodeSessionIdAsync(
+        string containerId,
+        CancellationToken cancellationToken)
+    {
+        string? lastSessionId = null;
+        await ExecCommandAsync(containerId, ["opencode", "session", "list"],
+            (line, _) =>
+            {
+                if (lastSessionId is null)
+                {
+                    var trimmedLine = line.TrimStart();
+                    var tokenEnd = trimmedLine.IndexOfAny([' ', '\t']);
+                    var token = (tokenEnd > 0 ? trimmedLine[..tokenEnd] : trimmedLine).Trim();
+                    if (token.StartsWith("ses_", StringComparison.Ordinal))
+                        lastSessionId = token;
+                }
+                return Task.CompletedTask;
+            }, cancellationToken);
+        return lastSessionId;
     }
 
     /// <summary>
