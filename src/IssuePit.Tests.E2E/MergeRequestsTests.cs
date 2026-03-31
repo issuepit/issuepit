@@ -88,14 +88,18 @@ public class MergeRequestsTests : IAsyncLifetime
         var project = await projResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
         var projectId = project.GetProperty("id").GetString()!;
 
-        // Create MR
+        // Create MR with squash strategy and CI requirement
         var mrResp = await client.PostAsJsonAsync(
             $"/api/projects/{projectId}/merge-requests",
-            new { title = "Test MR", sourceBranch = "feature/x", targetBranch = "main", autoMergeEnabled = false });
+            new { title = "Test MR", sourceBranch = "feature/x", targetBranch = "main", autoMergeEnabled = false,
+                  mergeStrategy = 1, deleteSourceBranchOnMerge = true, requireCiToPass = false });
         Assert.Equal(HttpStatusCode.Created, mrResp.StatusCode);
         var mr = await mrResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
         var mrId = mr.GetProperty("id").GetString()!;
         Assert.Equal("Open", mr.GetProperty("statusName").GetString());
+        Assert.Equal("Squash", mr.GetProperty("mergeStrategyName").GetString());
+        Assert.True(mr.GetProperty("deleteSourceBranchOnMerge").GetBoolean());
+        Assert.False(mr.GetProperty("requireCiToPass").GetBoolean());
 
         // List — should appear
         var listResp = await client.GetAsync($"/api/projects/{projectId}/merge-requests");
@@ -141,6 +145,93 @@ public class MergeRequestsTests : IAsyncLifetime
         var dup = await client.PostAsJsonAsync($"/api/projects/{projectId}/merge-requests",
             new { title = "Duplicate MR", sourceBranch = "feature/y", targetBranch = "main" });
         Assert.Equal(HttpStatusCode.Conflict, dup.StatusCode);
+    }
+
+    /// <summary>
+    /// API: merge with requireCiToPass blocks when no CI run exists.
+    /// </summary>
+    [Fact]
+    public async Task Api_MergeRequest_CiGateBlocksMerge()
+    {
+        using var client = CreateCookieClient();
+        var tenantId = await GetDefaultTenantIdAsync();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = GenerateTestUsername("mrci");
+        const string password = "TestPass1!";
+        await client.PostAsJsonAsync("/api/auth/register", new { username, password });
+
+        var orgSlug = $"mrci-{Guid.NewGuid():N}"[..16];
+        var orgResp = await client.PostAsJsonAsync("/api/orgs", new { name = "MR CI Org", slug = orgSlug });
+        var org = await orgResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var orgId = org.GetProperty("id").GetString()!;
+
+        var projSlug = $"mrci-{Guid.NewGuid():N}"[..16];
+        var projResp = await client.PostAsJsonAsync("/api/projects", new { name = "MR CI Project", slug = projSlug, orgId = Guid.Parse(orgId) });
+        var project = await projResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var projectId = project.GetProperty("id").GetString()!;
+
+        // Create MR with CI gate enabled
+        var mrResp = await client.PostAsJsonAsync(
+            $"/api/projects/{projectId}/merge-requests",
+            new { title = "CI Gated MR", sourceBranch = "feature/ci", targetBranch = "main", requireCiToPass = true });
+        Assert.Equal(HttpStatusCode.Created, mrResp.StatusCode);
+        var mr = await mrResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var mrId = mr.GetProperty("id").GetString()!;
+        Assert.True(mr.GetProperty("requireCiToPass").GetBoolean());
+
+        // Attempt to merge — should be blocked (no CI run)
+        var mergeResp = await client.PostAsJsonAsync($"/api/projects/{projectId}/merge-requests/{mrId}/merge", new { });
+        Assert.Equal(HttpStatusCode.BadRequest, mergeResp.StatusCode);
+        var mergeErr = await mergeResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Contains("CI is required", mergeErr.GetProperty("error").GetString());
+    }
+
+    /// <summary>
+    /// API: update MR with new fields (merge strategy, delete source branch).
+    /// </summary>
+    [Fact]
+    public async Task Api_MergeRequest_UpdateWithNewFields()
+    {
+        using var client = CreateCookieClient();
+        var tenantId = await GetDefaultTenantIdAsync();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId);
+
+        var username = GenerateTestUsername("mrup");
+        const string password = "TestPass1!";
+        await client.PostAsJsonAsync("/api/auth/register", new { username, password });
+
+        var orgSlug = $"mrup-{Guid.NewGuid():N}"[..16];
+        var orgResp = await client.PostAsJsonAsync("/api/orgs", new { name = "MR Upd Org", slug = orgSlug });
+        var org = await orgResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var orgId = org.GetProperty("id").GetString()!;
+
+        var projSlug = $"mrup-{Guid.NewGuid():N}"[..16];
+        var projResp = await client.PostAsJsonAsync("/api/projects", new { name = "MR Upd Project", slug = projSlug, orgId = Guid.Parse(orgId) });
+        var project = await projResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var projectId = project.GetProperty("id").GetString()!;
+
+        // Create MR with defaults
+        var mrResp = await client.PostAsJsonAsync(
+            $"/api/projects/{projectId}/merge-requests",
+            new { title = "Update Me", sourceBranch = "feature/upd", targetBranch = "main" });
+        Assert.Equal(HttpStatusCode.Created, mrResp.StatusCode);
+        var mr = await mrResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        var mrId = mr.GetProperty("id").GetString()!;
+        Assert.Equal("Merge", mr.GetProperty("mergeStrategyName").GetString());
+
+        // Update with rebase strategy and delete-source-branch
+        var updateResp = await client.PutAsJsonAsync(
+            $"/api/projects/{projectId}/merge-requests/{mrId}",
+            new { title = "Updated MR", description = "Desc", mergeStrategy = 2,
+                  autoMergeEnabled = true, deleteSourceBranchOnMerge = true, requireCiToPass = true });
+        Assert.Equal(HttpStatusCode.OK, updateResp.StatusCode);
+        var updated = await updateResp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal("Updated MR", updated.GetProperty("title").GetString());
+        Assert.Equal("Rebase", updated.GetProperty("mergeStrategyName").GetString());
+        Assert.True(updated.GetProperty("autoMergeEnabled").GetBoolean());
+        Assert.True(updated.GetProperty("deleteSourceBranchOnMerge").GetBoolean());
+        Assert.True(updated.GetProperty("requireCiToPass").GetBoolean());
     }
 
     // ─────────────────────────── UI tests ───────────────────────────────
