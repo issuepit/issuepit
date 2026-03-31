@@ -3,6 +3,7 @@ using System;
 using IssuePit.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace IssuePit.Core.Migrations
 {
     [DbContext(typeof(IssuePitDbContext))]
-    partial class IssuePitDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260328053229_AgentSessionNullableAgentId")]
+    partial class AgentSessionNullableAgentId
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -61,9 +64,6 @@ namespace IssuePit.Core.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
-                    b.Property<bool>("IsShellAgent")
-                        .HasColumnType("boolean");
-
                     b.Property<bool>("ManualMode")
                         .HasColumnType("boolean");
 
@@ -73,10 +73,6 @@ namespace IssuePit.Core.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("OpenCodeAgentName")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
@@ -1105,61 +1101,6 @@ namespace IssuePit.Core.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("git_pats");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.GitRepoAutoFetchRun", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("StartedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Summary")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProjectId");
-
-                    b.ToTable("git_repo_auto_fetch_runs");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.GitRepoAutoFetchRunLog", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Level")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Message")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("RunId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("Timestamp")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("RunId");
-
-                    b.ToTable("git_repo_auto_fetch_run_logs");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.GitRepository", b =>
@@ -2568,9 +2509,6 @@ namespace IssuePit.Core.Migrations
                     b.Property<string>("LocalRepositories")
                         .HasColumnType("text");
 
-                    b.Property<int?>("MaxCiCdLoopCount")
-                        .HasColumnType("integer");
-
                     b.Property<int>("MaxConcurrentRunners")
                         .HasColumnType("integer");
 
@@ -2689,9 +2627,6 @@ namespace IssuePit.Core.Migrations
                     b.Property<string>("GitHubRepo")
                         .HasColumnType("text");
 
-                    b.Property<Guid?>("GitResolutionAgentId")
-                        .HasColumnType("uuid");
-
                     b.Property<bool>("IsAgenda")
                         .HasColumnType("boolean");
 
@@ -2704,9 +2639,6 @@ namespace IssuePit.Core.Migrations
 
                     b.Property<string>("LocalRepositories")
                         .HasColumnType("text");
-
-                    b.Property<int?>("MaxCiCdLoopCount")
-                        .HasColumnType("integer");
 
                     b.Property<int>("MaxConcurrentRunners")
                         .HasColumnType("integer");
@@ -3117,15 +3049,6 @@ namespace IssuePit.Core.Migrations
                     b.Property<Guid?>("ProjectId")
                         .HasColumnType("uuid");
 
-                    b.Property<int>("RateLimitCount")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("RateLimitWindowMinutes")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("SilentMode")
-                        .HasColumnType("integer");
-
                     b.HasKey("Id");
 
                     b.HasIndex("OrgId");
@@ -3133,100 +3056,6 @@ namespace IssuePit.Core.Migrations
                     b.HasIndex("ProjectId");
 
                     b.ToTable("telegram_bots");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.TelegramChat", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("DigestInterval")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("EncryptedBotToken")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<int>("Events")
-                        .HasColumnType("integer");
-
-                    b.Property<bool>("IsSilent")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid?>("OrgId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("ProjectId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("RateLimitCount")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("RateLimitWindowMinutes")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("SilentMode")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("TelegramChatId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("TelegramUsername")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<Guid?>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrgId");
-
-                    b.HasIndex("ProjectId");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("telegram_chats");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.TelegramPairing", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsRedeemed")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("TelegramChatId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("TelegramUsername")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("telegram_pairings");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.Tenant", b =>
@@ -3912,28 +3741,6 @@ namespace IssuePit.Core.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.GitRepoAutoFetchRun", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Project");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.GitRepoAutoFetchRunLog", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.GitRepoAutoFetchRun", "Run")
-                        .WithMany("Logs")
-                        .HasForeignKey("RunId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Run");
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.GitRepository", b =>
@@ -4745,27 +4552,6 @@ namespace IssuePit.Core.Migrations
                     b.Navigation("Project");
                 });
 
-            modelBuilder.Entity("IssuePit.Core.Entities.TelegramChat", b =>
-                {
-                    b.HasOne("IssuePit.Core.Entities.Organization", "Organization")
-                        .WithMany()
-                        .HasForeignKey("OrgId");
-
-                    b.HasOne("IssuePit.Core.Entities.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId");
-
-                    b.HasOne("IssuePit.Core.Entities.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId");
-
-                    b.Navigation("Organization");
-
-                    b.Navigation("Project");
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("IssuePit.Core.Entities.Todo", b =>
                 {
                     b.HasOne("IssuePit.Core.Entities.Tenant", "Tenant")
@@ -4911,11 +4697,6 @@ namespace IssuePit.Core.Migrations
                 });
 
             modelBuilder.Entity("IssuePit.Core.Entities.GitHubSyncRun", b =>
-                {
-                    b.Navigation("Logs");
-                });
-
-            modelBuilder.Entity("IssuePit.Core.Entities.GitRepoAutoFetchRun", b =>
                 {
                     b.Navigation("Logs");
                 });

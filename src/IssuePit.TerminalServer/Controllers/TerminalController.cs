@@ -47,7 +47,7 @@ public class TerminalController(
             .Include(s => s.Agent)
             .Include(s => s.Project).ThenInclude(p => p!.Organization)
             .Where(s => s.Id == id && s.Project!.Organization.TenantId == tenant.CurrentTenant!.Id)
-            .Select(s => new { s.Id, s.Status, s.ContainerId, s.Agent.ManualMode })
+            .Select(s => new { s.Id, s.Status, s.ContainerId, ManualMode = s.Agent != null && s.Agent.ManualMode })
             .FirstOrDefaultAsync(cancellationToken);
 
         if (session is null)
@@ -409,7 +409,7 @@ public class TerminalController(
 
         if (session is null) return NotFound();
 
-        if (!session.Agent.ManualMode)
+        if (session.Agent?.ManualMode != true)
             return BadRequest(new { error = "Auth backup is only available for manual-mode sessions." });
 
         if (string.IsNullOrEmpty(session.ContainerId))

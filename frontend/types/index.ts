@@ -1569,7 +1569,7 @@ export interface JiraSyncConfig {
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// <summary>Type discriminator for scheduled task runs.</summary>
-export type ScheduledTaskType = 'GitHubSync' | 'BranchDetection' | 'ConfigRepoSync' | 'SimilarIssues'
+export type ScheduledTaskType = 'GitHubSync' | 'BranchDetection' | 'ConfigRepoSync' | 'SimilarIssues' | 'GitRepoAutoFetch'
 
 export interface ScheduledTaskRun {
   id: string
