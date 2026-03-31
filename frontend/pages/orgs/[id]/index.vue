@@ -834,6 +834,7 @@ function issueStatusClass(status: string) {
     todo: 'bg-blue-900/60 text-blue-300',
     in_progress: 'bg-yellow-900/60 text-yellow-300',
     in_review: 'bg-purple-900/60 text-purple-300',
+    ready_to_merge: 'bg-cyan-900/60 text-cyan-300',
     done: 'bg-green-900/60 text-green-300',
     cancelled: 'bg-red-900/60 text-red-400',
   }

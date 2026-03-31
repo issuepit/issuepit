@@ -836,6 +836,7 @@ const statusOptions = [
   { value: IssueStatus.Todo, label: 'Todo' },
   { value: IssueStatus.InProgress, label: 'In Progress' },
   { value: IssueStatus.InReview, label: 'In Review' },
+  { value: IssueStatus.ReadyToMerge, label: 'Ready to Merge' },
   { value: IssueStatus.Done, label: 'Done' },
   { value: IssueStatus.Cancelled, label: 'Cancelled' },
 ]
@@ -1143,6 +1144,7 @@ function statusDotColor(status: IssueStatus) {
     [IssueStatus.Todo]: 'bg-blue-400',
     [IssueStatus.InProgress]: 'bg-yellow-400',
     [IssueStatus.InReview]: 'bg-purple-400',
+    [IssueStatus.ReadyToMerge]: 'bg-cyan-400',
     [IssueStatus.Done]: 'bg-green-400',
     [IssueStatus.Cancelled]: 'bg-red-500',
   }

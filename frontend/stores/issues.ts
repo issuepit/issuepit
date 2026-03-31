@@ -71,6 +71,7 @@ export const useIssuesStore = defineStore('issues', () => {
       [IssueStatus.Todo]: [],
       [IssueStatus.InProgress]: [],
       [IssueStatus.InReview]: [],
+      [IssueStatus.ReadyToMerge]: [],
       [IssueStatus.Done]: [],
       [IssueStatus.Cancelled]: []
     }
