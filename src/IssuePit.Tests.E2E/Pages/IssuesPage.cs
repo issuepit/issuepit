@@ -60,6 +60,9 @@ public class IssuesPage(IPage page)
     /// Verifies the Voice button is visible and opens the voice recording modal.
     /// Retries once on TimeoutException (Vue hydration race: the click handler may not yet be
     /// attached when the button first becomes visible in SSR output).
+    /// If the modal is already open when the catch fires (the click worked but the modal title
+    /// appeared after the Short timeout), we skip the retry to avoid clicking a button that is
+    /// now obscured by the open modal overlay (which would cause a 30 s hang).
     /// </summary>
     public async Task OpenVoiceModalAsync()
     {
@@ -71,6 +74,10 @@ public class IssuesPage(IPage page)
         }
         catch (TimeoutException)
         {
+            // The modal may have opened after the Short timeout – skip the retry if already visible.
+            if (await page.IsVisibleAsync("text=Create Issue from Voice"))
+                return;
+
             await Task.Delay(E2ETimeouts.RetryDelay);
             await page.ClickAsync("button:has-text('Voice')");
             await page.WaitForSelectorAsync("text=Create Issue from Voice",
