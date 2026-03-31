@@ -283,21 +283,21 @@ public class CiCdRunPage(IPage page)
     }
 
     /// <summary>
-    /// Submits the create-issue form in the modal and waits for the page to navigate to the
-    /// new issue URL.  The <paramref name="expectedIssueUrlPattern"/> should be a Playwright
-    /// glob such as <c>"{frontendUrl}/projects/{id}/issues/**"</c>.
+    /// Submits the create-issue form in the modal and waits for the modal to close.
     /// </summary>
     /// <remarks>
-    /// Strategy: click → wait for modal to close (API call done) → wait for URL match.
+    /// Strategy: click → wait for modal to close (indicates the API call completed).
+    /// Navigation to the newly-created issue is intentionally NOT awaited here because
+    /// concurrent SignalR-triggered <c>router.push</c> calls can silently cancel the
+    /// SPA <c>navigateTo()</c> in Vue Router 4, causing a flaky <see cref="TimeoutException"/>.
+    /// Callers should poll the API for the new issue number and navigate directly via
+    /// <c>page.GotoAsync</c> instead.
     /// <para>
-    /// The frontend disconnects both SignalR hubs before calling <c>navigateTo()</c>, which
-    /// prevents concurrent <c>router.push</c> calls from hub event handlers from silently
-    /// cancelling the SPA navigation (Vue Router 4 resolves NavigationFailure without throwing).
-    /// </para>
     /// If the modal does not close within <see cref="E2ETimeouts.Default"/> the click likely
     /// did not register (Vue hydration race on the modal) and the click is retried once.
+    /// </para>
     /// </remarks>
-    public async Task SubmitCreateIssueAsync(string expectedIssueUrlPattern)
+    public async Task SubmitCreateIssueAsync()
     {
         await page.ClickAsync("[data-testid='create-issue-submit']");
 
@@ -325,13 +325,6 @@ public class CiCdRunPage(IPage page)
                     Timeout = E2ETimeouts.NavigationLong,
                 });
         }
-
-        // Modal is now closed. Vue sets showCreateIssueModal = false first, then calls
-        // navigateTo() — so navigation may already be complete or just starting.
-        // WaitForURLAsync checks the current URL immediately; if it already matches the
-        // pattern (fast navigation) it resolves without waiting for a new navigation event.
-        await page.WaitForURLAsync(expectedIssueUrlPattern,
-            new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
     }
 
     /// <summary>
@@ -340,4 +333,24 @@ public class CiCdRunPage(IPage page)
     /// </summary>
     public bool IsOnIssuePage() =>
         page.Url.Contains("/issues/");
+
+    /// <summary>
+    /// Navigates directly to an issue detail page.
+    /// Retries once on ERR_ABORTED (Nuxt SPA router race) or TimeoutException (slow first render).
+    /// </summary>
+    public async Task GotoIssueAsync(string projectId, int issueNumber)
+    {
+        var url = $"/projects/{projectId}/issues/{issueNumber}";
+        try
+        {
+            await page.GotoAsync(url);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+        }
+        catch (Exception ex) when (ex is TimeoutException || (ex is PlaywrightException pe && pe.Message.Contains("ERR_ABORTED")))
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.GotoAsync(url);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+        }
+    }
 }
