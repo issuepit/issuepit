@@ -89,7 +89,15 @@ public abstract class DockerRuntimeBase
         if (logCommand)
         {
             var cmdLine = string.Join(' ', cmd.Select(a => a.Contains(' ') ? $"\"{a}\"" : a));
-            await onLogLine($"[CMD] $ {cmdLine}", LogStream.Stdout);
+            // Truncate very long command strings (e.g. multi-line shell scripts passed via
+            // CustomCmdOverride) so they do not spam the session log with hundreds of characters
+            // per line. The full script is visible via docker inspect / the session detail UI
+            // for the agent, so truncation here only affects the one-line [CMD] entry.
+            const int MaxCmdLogLength = 200;
+            var cmdDisplay = cmdLine.Length > MaxCmdLogLength
+                ? cmdLine[..MaxCmdLogLength] + "..."
+                : cmdLine;
+            await onLogLine($"[CMD] $ {cmdDisplay}", LogStream.Stdout);
         }
 
         var execCreate = await DockerClient.Exec.CreateContainerExecAsync(

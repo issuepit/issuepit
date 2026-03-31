@@ -60,9 +60,25 @@ public class LoginPage(IPage page)
         await page.FillAsync("input[autocomplete='current-password']", password);
         // Register the URL watcher BEFORE clicking so it cannot miss the redirect.
         // "**/" matches the root URL (e.g. http://localhost:3000/).
-        var postLoginNav = page.WaitForURLAsync("**/", new PageWaitForURLOptions { Timeout = E2ETimeouts.NavigationLong });
+        var postLoginNav = page.WaitForURLAsync("**/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Short });
         await page.ClickAsync("button[type='submit']");
-        await postLoginNav;
+        try
+        {
+            await postLoginNav;
+        }
+        catch (TimeoutException)
+        {
+            // The click may have fired before Vue attached @submit.prevent; navigate fresh and retry.
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await GotoAsync();
+            await page.WaitForSelectorAsync("input[autocomplete='username']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
+            await page.FillAsync("input[autocomplete='username']", username);
+            await page.FillAsync("input[autocomplete='current-password']", password);
+            var retryNav = page.WaitForURLAsync("**/", new PageWaitForURLOptions { Timeout = E2ETimeouts.NavigationLong });
+            await page.ClickAsync("button[type='submit']");
+            await retryNav;
+        }
     }
 
     /// <summary>

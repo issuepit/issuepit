@@ -9,20 +9,47 @@ public class MilestonesPage(IPage page)
 {
     /// <summary>
     /// Navigates to the milestones page for the given project and waits for the heading.
+    /// Retries once on ERR_ABORTED (Nuxt SPA router race) or TimeoutException (slow first render).
     /// </summary>
     public async Task GotoAsync(string projectId)
     {
-        await page.GotoAsync($"/projects/{projectId}/milestones");
-        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        await page.WaitForSelectorAsync("a:has-text('Milestones')", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        var url = $"/projects/{projectId}/milestones";
+        try
+        {
+            await page.GotoAsync(url);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+            await page.WaitForSelectorAsync("a:has-text('Milestones')",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (Exception ex) when (ex is TimeoutException || (ex is PlaywrightException pe && pe.Message.Contains("ERR_ABORTED")))
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.GotoAsync(url);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+            await page.WaitForSelectorAsync("a:has-text('Milestones')",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
+        }
     }
 
     /// <summary>
     /// Creates a milestone via the New Milestone modal and waits for the title to appear in the list.
+    /// Retries the button click once if the modal does not open (Vue SSR hydration race).
     /// </summary>
     public async Task CreateMilestoneAsync(string title)
     {
-        await page.ClickAsync("button:has-text('New Milestone')");
+        try
+        {
+            await page.ClickAsync("button:has-text('New Milestone')");
+            await page.WaitForSelectorAsync("input[placeholder='Milestone title']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (TimeoutException)
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.ClickAsync("button:has-text('New Milestone')");
+            await page.WaitForSelectorAsync("input[placeholder='Milestone title']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        }
         await page.FillAsync("input[placeholder='Milestone title']", title);
         await page.ClickAsync("button:has-text('Create Milestone')");
         await page.WaitForSelectorAsync($"text={title}", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
@@ -30,11 +57,23 @@ public class MilestonesPage(IPage page)
 
     /// <summary>
     /// Switches the milestones page to the Gantt-only view by clicking the "Gantt" toggle button.
+    /// Retries once if the view does not switch (Vue SSR hydration race).
     /// </summary>
     public async Task SwitchToGanttViewAsync()
     {
-        await page.ClickAsync("[data-testid='gantt-view-button']");
-        await page.WaitForSelectorAsync(".bar-area-container", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        try
+        {
+            await page.ClickAsync("[data-testid='gantt-view-button']");
+            await page.WaitForSelectorAsync(".bar-area-container",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (TimeoutException)
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.ClickAsync("[data-testid='gantt-view-button']");
+            await page.WaitForSelectorAsync(".bar-area-container",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        }
     }
 
     /// <summary>

@@ -19,7 +19,7 @@ public class IssuesPage(IPage page)
         try
         {
             await page.GotoAsync($"/projects/{projectId}/issues");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
             await page.WaitForSelectorAsync("a:text-is('Issues')",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
         }
@@ -27,17 +27,30 @@ public class IssuesPage(IPage page)
         {
             await Task.Delay(NavigationRetryDelayMs);
             await page.GotoAsync($"/projects/{projectId}/issues");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
             await page.WaitForSelectorAsync("a:text-is('Issues')");
         }
     }
 
     /// <summary>
     /// Creates an issue via the New Issue modal and waits for the title to appear in the list.
+    /// Retries the button click once if the modal does not open (Vue SSR hydration race).
     /// </summary>
     public async Task CreateIssueAsync(string title)
     {
-        await page.ClickAsync("button:has-text('New Issue')");
+        try
+        {
+            await page.ClickAsync("button:has-text('New Issue')");
+            await page.WaitForSelectorAsync("input[placeholder='Issue title']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (TimeoutException)
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.ClickAsync("button:has-text('New Issue')");
+            await page.WaitForSelectorAsync("input[placeholder='Issue title']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        }
         await page.FillAsync("input[placeholder='Issue title']", title);
         await page.ClickAsync("button:has-text('Create Issue')");
         await page.WaitForSelectorAsync($"text={title}", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });

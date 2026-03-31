@@ -398,8 +398,9 @@ public class TestHistoryTests : IAsyncLifetime
             var runPage = new CiCdRunPage(page);
             await runPage.GotoTestsTabAsync(projectId, runId);
 
-            // Wait for the Tests tab content to load (either test results or empty state).
-            await runPage.WaitForTestsTabContentAsync();
+            // Wait specifically for test results to appear — not the transient empty state
+            // that the tab shows during loading before the API response arrives.
+            await runPage.WaitForNonEmptyTestsTabAsync();
 
             // The Tests tab should show test suites, not the empty state.
             Assert.False(await runPage.IsTestsTabEmptyAsync(),
@@ -624,7 +625,9 @@ public class TestHistoryTests : IAsyncLifetime
 
             // Verify Tests tab shows the parsed TRX results.
             await runPage.GotoTestsTabAsync(projectId, runId);
-            await runPage.WaitForTestsTabContentAsync();
+            // Wait specifically for test results to appear — not the transient empty state
+            // that the tab shows during loading before the API response arrives.
+            await runPage.WaitForNonEmptyTestsTabAsync();
 
             Assert.False(await runPage.IsTestsTabEmptyAsync(),
                 "Tests tab should show test results for a CI/CD run that uploaded a TRX artifact");

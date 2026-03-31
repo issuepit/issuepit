@@ -1677,3 +1677,96 @@ export interface AgentAuth {
 export interface AgentAuthDetail extends AgentAuth {
   authJsonContent: string
 }
+
+// ── Notes ─────────────────────────────────────────────────────────────
+
+export enum NoteStatus {
+  Draft = 'draft',
+  Published = 'published',
+  Archived = 'archived',
+}
+
+export enum NoteLinkType {
+  Note = 'note',
+  Project = 'project',
+  Issue = 'issue',
+  Todo = 'todo',
+}
+
+export enum StorageProvider {
+  Postgres = 'postgres',
+  Sqlite = 'sqlite',
+  Git = 'git',
+}
+
+export interface Notebook {
+  id: string
+  tenantId: string
+  name: string
+  description?: string
+  projectId?: string
+  storageProvider: StorageProvider
+  gitRepoUrl?: string
+  gitBranch?: string
+  createdAt: string
+  updatedAt: string
+  tags: NoteTag[]
+}
+
+export interface Note {
+  id: string
+  tenantId: string
+  notebookId: string
+  title: string
+  content: string
+  status: NoteStatus
+  version: number
+  slug: string
+  createdAt: string
+  updatedAt: string
+  outgoingLinks: NoteLink[]
+  incomingLinks: NoteLink[]
+  tagMappings: NoteTagMapping[]
+}
+
+export interface NoteLink {
+  id: string
+  sourceNoteId: string
+  targetType: NoteLinkType
+  targetNoteId?: string
+  targetEntityId?: string
+  linkText: string
+}
+
+export interface NoteTag {
+  id: string
+  notebookId: string
+  name: string
+  color: string
+}
+
+export interface NoteTagMapping {
+  noteId: string
+  tagId: string
+  tag: NoteTag
+}
+
+export interface NoteGraphNode {
+  id: string
+  title: string
+  slug: string
+  notebookId: string
+}
+
+export interface NoteGraphEdge {
+  sourceNoteId: string
+  targetType: NoteLinkType
+  targetNoteId?: string
+  targetEntityId?: string
+  linkText: string
+}
+
+export interface NoteGraphResponse {
+  nodes: NoteGraphNode[]
+  edges: NoteGraphEdge[]
+}

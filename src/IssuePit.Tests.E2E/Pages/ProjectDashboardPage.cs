@@ -16,7 +16,7 @@ public class ProjectDashboardPage(IPage page)
         try
         {
             await page.GotoAsync($"/projects/{projectId}");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
             await page.WaitForSelectorAsync("button:has-text('Customize')",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
         }
@@ -24,7 +24,7 @@ public class ProjectDashboardPage(IPage page)
         {
             await Task.Delay(E2ETimeouts.RetryDelay);
             await page.GotoAsync($"/projects/{projectId}");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
             await page.WaitForSelectorAsync("button:has-text('Customize')",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
         }

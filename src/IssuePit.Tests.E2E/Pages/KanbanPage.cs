@@ -16,7 +16,7 @@ public class KanbanPage(IPage page)
         try
         {
             await page.GotoAsync($"/projects/{projectId}/kanban");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
             await page.WaitForSelectorAsync("a:text-is('Kanban')",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
         }
@@ -24,15 +24,29 @@ public class KanbanPage(IPage page)
         {
             await Task.Delay(E2ETimeouts.RetryDelay);
             await page.GotoAsync($"/projects/{projectId}/kanban");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
             await page.WaitForSelectorAsync("a:text-is('Kanban')");
         }
     }
 
-    /// <summary>Creates a new board via the "+ Board" button and waits for the board to become active.</summary>
+    /// <summary>Creates a new board via the "+ Board" button and waits for the board to become active.
+    /// Retries the button click once if the modal does not open (Vue SSR hydration race).
+    /// </summary>
     public async Task CreateBoardAsync(string name)
     {
-        await page.ClickAsync("button:has-text('+ Board')");
+        try
+        {
+            await page.ClickAsync("button:has-text('+ Board')");
+            await page.WaitForSelectorAsync("input[placeholder='Board name...']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (TimeoutException)
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.ClickAsync("button:has-text('+ Board')");
+            await page.WaitForSelectorAsync("input[placeholder='Board name...']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        }
         await page.FillAsync("input[placeholder='Board name...']", name);
         await page.ClickAsync("button:has-text('Create')");
         // Wait for the modal to close and the Lanes button to appear (confirms board is active)
@@ -40,10 +54,24 @@ public class KanbanPage(IPage page)
             new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
     }
 
-    /// <summary>Creates a new board with a specific lane property.</summary>
+    /// <summary>Creates a new board with a specific lane property.
+    /// Retries the button click once if the modal does not open (Vue SSR hydration race).
+    /// </summary>
     public async Task CreateBoardWithLanePropertyAsync(string name, string lanePropertyLabel)
     {
-        await page.ClickAsync("button:has-text('+ Board')");
+        try
+        {
+            await page.ClickAsync("button:has-text('+ Board')");
+            await page.WaitForSelectorAsync("input[placeholder='Board name...']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (TimeoutException)
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.ClickAsync("button:has-text('+ Board')");
+            await page.WaitForSelectorAsync("input[placeholder='Board name...']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        }
         await page.FillAsync("input[placeholder='Board name...']", name);
         await page.SelectOptionAsync("select", new SelectOptionValue { Label = lanePropertyLabel });
         await page.ClickAsync("button:has-text('Create')");
@@ -120,7 +148,7 @@ public class KanbanPage(IPage page)
     public async Task GotoManageLanesPageAsync(string projectId)
     {
         await page.GotoAsync($"/projects/{projectId}/kanban/lanes");
-        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
         // Wait for the "Lanes" heading which lives inside <template v-else-if="activeBoardId">.
         // That block only renders once fetchBoards() resolves AND onMounted sets activeBoardId,
         // so its presence guarantees the full content (incl. Orchestrator Schedule) is rendered.

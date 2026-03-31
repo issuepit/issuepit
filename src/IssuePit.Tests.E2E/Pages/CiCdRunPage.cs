@@ -17,7 +17,9 @@ public class CiCdRunPage(IPage page)
         try
         {
             await page.GotoAsync(url);
-            await page.WaitForLoadStateAsync(LoadState.Load);
+
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+
             await page.WaitForSelectorAsync("text=CI/CD Run",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
         }
@@ -25,7 +27,9 @@ public class CiCdRunPage(IPage page)
         {
             await Task.Delay(E2ETimeouts.RetryDelay);
             await page.GotoAsync(url);
-            await page.WaitForLoadStateAsync(LoadState.Load);
+
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+
             await page.WaitForSelectorAsync("text=CI/CD Run",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
         }
@@ -41,7 +45,9 @@ public class CiCdRunPage(IPage page)
         try
         {
             await page.GotoAsync(url);
-            await page.WaitForLoadStateAsync(LoadState.Load);
+
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+
             await page.WaitForSelectorAsync("text=CI/CD Run",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
         }
@@ -49,7 +55,9 @@ public class CiCdRunPage(IPage page)
         {
             await Task.Delay(E2ETimeouts.RetryDelay);
             await page.GotoAsync(url);
-            await page.WaitForLoadStateAsync(LoadState.Load);
+
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+
             await page.WaitForSelectorAsync("text=CI/CD Run",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
         }
@@ -65,7 +73,9 @@ public class CiCdRunPage(IPage page)
         try
         {
             await page.GotoAsync(url);
-            await page.WaitForLoadStateAsync(LoadState.Load);
+
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+
             await page.WaitForSelectorAsync("text=CI/CD Run",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
         }
@@ -73,7 +83,9 @@ public class CiCdRunPage(IPage page)
         {
             await Task.Delay(E2ETimeouts.RetryDelay);
             await page.GotoAsync(url);
-            await page.WaitForLoadStateAsync(LoadState.Load);
+
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+
             await page.WaitForSelectorAsync("text=CI/CD Run",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
         }
@@ -110,6 +122,17 @@ public class CiCdRunPage(IPage page)
     public async Task WaitForTestsTabContentAsync() =>
         await page.WaitForFunctionAsync(
             "document.body?.innerText?.includes('passed') || document.body?.innerText?.includes('No test results available')",
+            null,
+            new PageWaitForFunctionOptions { Timeout = E2ETimeouts.Navigation });
+
+    /// <summary>
+    /// Waits for the Tests tab to show actual test results (at least one "passed" entry).
+    /// Use this instead of <see cref="WaitForTestsTabContentAsync"/> when you know the run
+    /// should have test results, to avoid resolving early on the transient empty-state shown during loading.
+    /// </summary>
+    public async Task WaitForNonEmptyTestsTabAsync() =>
+        await page.WaitForFunctionAsync(
+            "document.body?.innerText?.includes('passed')",
             null,
             new PageWaitForFunctionOptions { Timeout = E2ETimeouts.Navigation });
 
@@ -274,13 +297,46 @@ public class CiCdRunPage(IPage page)
     /// <summary>
     /// Submits the create-issue form in the modal and waits for the modal to close.
     /// </summary>
+    /// <remarks>
+    /// Strategy: click → wait for modal to close (indicates the API call completed).
+    /// Navigation to the newly-created issue is intentionally NOT awaited here because
+    /// concurrent SignalR-triggered <c>router.push</c> calls can silently cancel the
+    /// SPA <c>navigateTo()</c> in Vue Router 4, causing a flaky <see cref="TimeoutException"/>.
+    /// Callers should poll the API for the new issue number and navigate directly via
+    /// <c>page.GotoAsync</c> instead.
+    /// <para>
+    /// If the modal does not close within <see cref="E2ETimeouts.Default"/> the click likely
+    /// did not register (Vue hydration race on the modal) and the click is retried once.
+    /// </para>
+    /// </remarks>
     public async Task SubmitCreateIssueAsync()
     {
         await page.ClickAsync("[data-testid='create-issue-submit']");
-        // Wait for modal to close
-        await page.WaitForSelectorAsync(
-            "text=Create Issue from",
-            new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation, State = WaitForSelectorState.Hidden });
+
+        // Wait for the modal to close — indicates the API call completed (success or silent error).
+        try
+        {
+            await page.WaitForSelectorAsync(
+                "text=Create Issue from",
+                new PageWaitForSelectorOptions
+                {
+                    State = WaitForSelectorState.Hidden,
+                    Timeout = E2ETimeouts.Default,
+                });
+        }
+        catch (TimeoutException)
+        {
+            // Modal still visible after Default ms — click did not register (Vue hydration race).
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.ClickAsync("[data-testid='create-issue-submit']");
+            await page.WaitForSelectorAsync(
+                "text=Create Issue from",
+                new PageWaitForSelectorOptions
+                {
+                    State = WaitForSelectorState.Hidden,
+                    Timeout = E2ETimeouts.NavigationLong,
+                });
+        }
     }
 
     /// <summary>
@@ -289,4 +345,24 @@ public class CiCdRunPage(IPage page)
     /// </summary>
     public bool IsOnIssuePage() =>
         page.Url.Contains("/issues/");
+
+    /// <summary>
+    /// Navigates directly to an issue detail page.
+    /// Retries once on ERR_ABORTED (Nuxt SPA router race) or TimeoutException (slow first render).
+    /// </summary>
+    public async Task GotoIssueAsync(string projectId, int issueNumber)
+    {
+        var url = $"/projects/{projectId}/issues/{issueNumber}";
+        try
+        {
+            await page.GotoAsync(url);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+        }
+        catch (Exception ex) when (ex is TimeoutException || (ex is PlaywrightException pe && pe.Message.Contains("ERR_ABORTED")))
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.GotoAsync(url);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+        }
+    }
 }
