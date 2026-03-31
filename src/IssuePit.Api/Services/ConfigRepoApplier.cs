@@ -577,6 +577,11 @@ public class ConfigRepoApplier(
                 result.AddWarning(filePath, $"Unknown runner type '{model.Runner}'; valid values: {string.Join(", ", Enum.GetNames<IssuePit.Core.Enums.RunnerType>())}.");
             }
         }
+        if (model.AutoSummarize.HasValue)
+        {
+            agent.AutoSummarize = model.AutoSummarize.Value;
+            configSources["autoSummarize"] = sourceFileName;
+        }
 
         if (configSources.Count > 0)
             agent.ConfigFieldSourcesJson = System.Text.Json.JsonSerializer.Serialize(configSources);

@@ -50,6 +50,7 @@ public class AgentSessionsController(
                 s.OpenCodeDbS3Url,
                 s.GitRemoteCheckResultsJson,
                 s.ContainerId,
+                s.SummaryNoteId,
                 CiCdRuns = s.CiCdRuns.Select(r => new
                 {
                     r.Id,

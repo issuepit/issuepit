@@ -226,4 +226,7 @@ public class AgentConfigModel
 
     /// <summary>MCP server names to link to this agent. Must already exist in the MCP servers table.</summary>
     public List<string>? McpServers { get; set; }
+
+    /// <summary>When true, a structured summary is saved as a Note after each agent session for future runs.</summary>
+    public bool? AutoSummarize { get; set; }
 }
