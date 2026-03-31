@@ -1,0 +1,88 @@
+using System.Text.Json.Serialization;
+using IssuePit.Notes.Api.Hubs;
+using IssuePit.Notes.Api.Middleware;
+using IssuePit.Notes.Api.Services;
+using IssuePit.Notes.Core.Data;
+using Microsoft.EntityFrameworkCore;
+using Scalar.AspNetCore;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.AddServiceDefaults();
+
+if (builder.Environment.IsEnvironment("Testing"))
+{
+    builder.Services.AddDbContext<NotesDbContext>(opts =>
+        opts.UseInMemoryDatabase("issuepit-notes-testing"));
+}
+else
+{
+    builder.AddNpgsqlDbContext<NotesDbContext>("notes-db");
+}
+
+builder.Services.AddScoped<NotesTenantContext>();
+
+// Image storage (S3/B2/LocalStack)
+builder.Services.Configure<NotesImageStorageOptions>(
+    builder.Configuration.GetSection(NotesImageStorageOptions.SectionName));
+builder.Services.AddSingleton<NotesImageStorageService>();
+
+// Git sync background service for git-backed notebooks
+builder.Services.AddHostedService<GitSyncBackgroundService>();
+
+// Nightly CRDT event log compaction (merges ops >30 days into daily buckets)
+builder.Services.AddHostedService<NoteCompactionService>();
+
+builder.Services.AddSignalR();
+
+builder.Services.AddControllers()
+    .AddJsonOptions(opts =>
+    {
+        opts.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+        opts.JsonSerializerOptions.Converters.Add(
+            new JsonStringEnumConverter(System.Text.Json.JsonNamingPolicy.SnakeCaseLower));
+    });
+builder.Services.AddOpenApi();
+
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        if (builder.Environment.IsDevelopment())
+        {
+            policy
+                .SetIsOriginAllowed(_ => true)
+                .AllowAnyHeader()
+                .AllowAnyMethod()
+                .AllowCredentials();
+        }
+        else
+        {
+            policy.SetIsOriginAllowed(origin =>
+                {
+                    try { return new Uri(origin).IsLoopback; }
+                    catch { return false; }
+                })
+                .AllowAnyHeader()
+                .AllowAnyMethod()
+                .AllowCredentials();
+        }
+    });
+});
+
+var app = builder.Build();
+
+app.MapDefaultEndpoints();
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+    app.MapScalarApiReference();
+}
+
+app.UseCors();
+app.UseMiddleware<NotesTenantMiddleware>();
+app.MapControllers();
+app.MapHub<NoteOperationsHub>("/hubs/notes");
+
+app.Run();
