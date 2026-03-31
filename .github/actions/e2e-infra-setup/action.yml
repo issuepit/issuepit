@@ -51,6 +51,16 @@ runs:
         path: /tmp/docker-images
         key: docker-v1-${{ inputs.issuepit-run }}-postgres17.6-valkey9.0-kafka3.9.0-node20slim-localstack4.3-helperact-main-dotnet10-node24
 
+    # Pin Go 1.24 explicitly — act's go.mod requires go 1.24.0.
+    # Without this, the runner uses its default Go version which may be older
+    # and trigger GOTOOLCHAIN auto-download, causing intermittent build failures
+    # where cobra never registers --version (resulting in "unknown flag: --version").
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24.x'
+        cache: false
+
     # All docker pull/load commands and the act clone+build are launched as
     # background processes so that network I/O and compilation overlap.
     # On a cache hit the images are loaded from local tar files (fast); on a cache
