@@ -1,0 +1,230 @@
+name: Copilot Setup Steps
+
+# Runs before each GitHub Copilot coding-agent session to pre-install the
+# infrastructure the agent needs for building and running E2E tests.
+# This mirrors the e2e-infra-setup composite action used in backend.yml,
+# but is scoped to what the coding agent actually requires (no Vosk model,
+# no ffmpeg — those are only needed for Voice suites).
+#
+# ============================================================
+# CRITICAL: This file MUST be present on the default branch
+# (main) for Copilot to execute these steps. Changes on PR
+# branches alone are NOT picked up by the agent runtime.
+# If setup steps do not appear in session logs, confirm this
+# file is merged to main before starting an agent session.
+# ============================================================
+#
+# What agent sessions needed to do manually when this file
+# was absent from main (documented so future sessions know
+# what these steps provide and why each one matters):
+#
+#   1. export DOTNET_SYSTEM_NET_DISABLEIPV6=0
+#      The GitHub-hosted runner sets this to 1. Aspire DCP
+#      listens on [::1] and cannot start without IPv6.
+#
+#   2. export CICD_E2E_HELPER_ACT_IMAGE=ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24
+#      Required by Docker-mode CiCd E2E tests; without it
+#      every CiCdPipelineTests Docker variant fails.
+#
+#   3. docker pull postgres:17.6 valkey/valkey:9.0 \
+#        apache/kafka:3.9.0 node:20-slim \
+#        localstack/localstack:4.3 \
+#        ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24
+#      Aspire starts these as containers; without pre-pulled
+#      images every test times out on the first cold pull.
+#
+#   4. cd frontend && npm ci
+#      Installs node_modules so 'npm run dev' (started by
+#      Aspire) doesn't run 'npm install' at test time.
+#
+#   5. cd frontend && npx nuxt build
+#      Warms the .nuxt/ cache. Without this, the first Aspire
+#      start triggers a ~3-minute cold Nuxt build that causes
+#      the first E2E test to exceed the 4-min blame-hang-timeout.
+#
+#   6. Build act from the issuepit/act fork:
+#        git clone + go build → /usr/local/bin/act
+#      Required for ALL CiCd E2E tests (both Docker and Native
+#      runtime modes). The fork adds --container-name-suffix
+#      which NativeCiCdRuntime requires; upstream nektos/act
+#      does not have this flag.
+#      Without act, 39 CiCd tests fail with "act not found".
+#
+#   7. dotnet build src/IssuePit.Tests.E2E/... --configuration Release
+#      Generates playwright.ps1 into the build output directory.
+#
+#   8. pwsh playwright.ps1 install --with-deps chromium
+#      Installs the Playwright-managed Chromium headless shell
+#      (and required system libs) for UI E2E tests.
+
+on:
+  # Allow manual runs from the Actions tab for validation.
+  workflow_dispatch:
+  # Auto-run when this file changes so failures are visible as
+  # PR checks before the file is merged to main.
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+  # Job name MUST be "copilot-setup-steps" — the Copilot agent
+  # runtime identifies the job to execute by this exact name.
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    env:
+      # Pinned commit from the issuepit/act fork.
+      # The fork adds --container-name-suffix which NativeCiCdRuntime requires.
+      # Update this when pulling in new upstream or fork changes.
+      ACT_COMMIT: a471da174034e4d6db6fc89b0ea7bfcd38b9236a
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Set critical environment variables early so they are written
+      # to /etc/environment even if a later step fails. Per GitHub docs,
+      # a failing step causes Copilot to skip the remaining setup steps,
+      # so env vars must be established before any long-running work.
+      #
+      # DOTNET_SYSTEM_NET_DISABLEIPV6: the runner image sets this to 1
+      # which breaks .NET Aspire (DCP gRPC listens on [::1]).
+      # Written to both $GITHUB_ENV (for this workflow's subsequent steps)
+      # and /etc/environment (system-wide; every new agent shell inherits it
+      # without needing to source a profile file).
+      - name: Set E2E environment variables
+        run: |
+          echo "DOTNET_SYSTEM_NET_DISABLEIPV6=0" >> "$GITHUB_ENV"
+          echo "CICD_E2E_HELPER_ACT_IMAGE=ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24" >> "$GITHUB_ENV"
+          echo "DOTNET_SYSTEM_NET_DISABLEIPV6=0" | sudo tee -a /etc/environment
+          echo "CICD_E2E_HELPER_ACT_IMAGE=ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24" | sudo tee -a /etc/environment
+
+      # Authenticate to GHCR so the helper-act image (used by Docker-runtime CI/CD
+      # E2E tests) can be pulled. The default GITHUB_TOKEN has packages:read.
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # Pre-build the frontend to warm the Nuxt cache (.nuxt/).
+      # When Aspire starts the frontend via 'npm run dev', it finds the compiled
+      # cache and starts in seconds instead of the ~3 minutes a cold Nuxt build
+      # takes — preventing the first E2E test from exceeding the 4-min blame-hang-timeout.
+      - name: Pre-build frontend (warm Nuxt cache)
+        working-directory: frontend
+        run: npx nuxt build
+
+      # Build the issuepit/act fork and install it to /usr/local/bin/act.
+      # This is required for ALL CiCd E2E tests (both Docker and Native runtime
+      # modes). The fork adds --container-name-suffix which NativeCiCdRuntime
+      # requires; the upstream nektos/act binary does NOT have this flag.
+      # Commit is pinned via ACT_COMMIT env var; takes ~2 min on ubuntu-latest.
+      - name: Build act binary (issuepit fork)
+        run: |
+          git init /tmp/issuepit-act
+          cd /tmp/issuepit-act
+          git remote add origin https://github.com/issuepit/act.git
+          git fetch --depth 1 origin "$ACT_COMMIT"
+          git checkout FETCH_HEAD
+          go build -ldflags "-X main.version=${ACT_COMMIT}" -o /usr/local/bin/act main.go
+          rm -rf /tmp/issuepit-act
+          act --version
+
+      # Cache Docker images as tar files so agent sessions skip the pull entirely.
+      # Key format mirrors the e2e-infra-setup composite action:
+      #   docker-v{version}-{issuepit-run}-{image-tags}
+      # The "false" segment is issuepit-run=false (GitHub-hosted runner path).
+      # issuepit-run=true uses a separate key to avoid sharing a cache entry that
+      # was saved without the private GHCR image.
+      - name: Cache Docker images
+        id: cache-docker
+        uses: actions/cache@v4
+        with:
+          path: /tmp/docker-images
+          key: docker-v1-false-postgres17.6-valkey9.0-kafka3.9.0-node20slim-localstack4.3-helperact-main-dotnet10-node24
+
+      # Pull (or load from cache) all Docker images the Aspire stack requires:
+      #   postgres          — primary database
+      #   valkey            — Redis-compatible cache
+      #   kafka             — event streaming
+      #   node:20-slim      — Aspire-managed frontend container baseline
+      #   localstack        — AWS S3 emulation (artifact storage for CiCd tests)
+      #   helper-act        — container image that runs GitHub Actions workflows
+      #                       inside Docker-mode CiCd E2E tests
+      - name: Pull or load Docker images
+        env:
+          DOCKER_CACHE_HIT: ${{ steps.cache-docker.outputs.cache-hit }}
+        run: |
+          if [ "$DOCKER_CACHE_HIT" = 'true' ]; then
+            echo "Loading Docker images from cache..."
+            docker load -i /tmp/docker-images/postgres-17.6.tar &
+            docker load -i /tmp/docker-images/valkey-9.0.tar &
+            docker load -i /tmp/docker-images/kafka-3.9.0.tar &
+            docker load -i /tmp/docker-images/node-20-slim.tar &
+            docker load -i /tmp/docker-images/localstack-4.3.tar &
+            if [ -f /tmp/docker-images/helper-act.tar ]; then
+              docker load -i /tmp/docker-images/helper-act.tar &
+            fi
+            wait
+          else
+            echo "Pulling Docker images from registries..."
+            timeout 10m docker pull postgres:17.6 &
+            timeout 10m docker pull valkey/valkey:9.0 &
+            timeout 10m docker pull apache/kafka:3.9.0 &
+            timeout 10m docker pull node:20-slim &
+            timeout 10m docker pull localstack/localstack:4.3 &
+            timeout 10m docker pull ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24 &
+            wait
+
+            echo "Saving Docker images to cache..."
+            mkdir -p /tmp/docker-images
+            docker save postgres:17.6        -o /tmp/docker-images/postgres-17.6.tar &
+            docker save valkey/valkey:9.0    -o /tmp/docker-images/valkey-9.0.tar &
+            docker save apache/kafka:3.9.0   -o /tmp/docker-images/kafka-3.9.0.tar &
+            docker save node:20-slim         -o /tmp/docker-images/node-20-slim.tar &
+            docker save localstack/localstack:4.3 -o /tmp/docker-images/localstack-4.3.tar &
+            docker save ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24 \
+              -o /tmp/docker-images/helper-act.tar &
+            wait
+          fi
+          echo "Available Docker images:"
+          docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"
+
+      # Build must happen before Playwright browser install because the install
+      # script (playwright.ps1) is generated into the build output directory.
+      # continue-on-error: a build failure does not block the agent setup —
+      # the agent will encounter and fix build errors itself.
+      - name: Build E2E tests
+        id: build-e2e
+        continue-on-error: true
+        run: dotnet build src/IssuePit.Tests.E2E/IssuePit.Tests.E2E.csproj --configuration Release
+
+      # Skip Playwright install if the build failed (no playwright.ps1 to run).
+      - name: Install Playwright browsers
+        if: steps.build-e2e.outcome == 'success'
+        run: |
+          PLAYWRIGHT_SCRIPT=$(find src/IssuePit.Tests.E2E/bin/Release -name 'playwright.ps1' | head -1)
+          pwsh "$PLAYWRIGHT_SCRIPT" install --with-deps chromium

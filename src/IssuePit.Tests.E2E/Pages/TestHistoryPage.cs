@@ -8,7 +8,7 @@ namespace IssuePit.Tests.E2E.Pages;
 public class TestHistoryPage(IPage page)
 {
     /// <summary>
-    /// Core helper: navigates to <paramref name="url"/>, waits for NetworkIdle, then waits for
+    /// Core helper: navigates to <paramref name="url"/>, waits for DOMContentLoaded, then waits for
     /// <paramref name="contentLocator"/> to be visible.  Retries once on ERR_ABORTED or
     /// TimeoutException (Nuxt SPA router race).  Pass <c>null</c> for <paramref name="contentLocator"/>
     /// to skip the content check on the first attempt (the retry always waits for the selector
@@ -19,7 +19,7 @@ public class TestHistoryPage(IPage page)
         try
         {
             await page.GotoAsync(url);
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
             if (contentLocator is not null)
                 await contentLocator.WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Short });
             else
@@ -29,7 +29,7 @@ public class TestHistoryPage(IPage page)
         {
             await Task.Delay(E2ETimeouts.RetryDelay);
             await page.GotoAsync(url);
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
             if (contentLocator is not null)
                 await contentLocator.WaitForAsync(new LocatorWaitForOptions { Timeout = E2ETimeouts.Navigation });
             else
@@ -38,7 +38,7 @@ public class TestHistoryPage(IPage page)
     }
 
     /// <summary>
-    /// Navigates to the Test History overview page, waits for NetworkIdle
+    /// Navigates to the Test History overview page, waits for DOMContentLoaded
     /// (all onMounted API calls finished), then confirms the heading.
     /// Retries once on ERR_ABORTED or TimeoutException (Nuxt SPA router race).
     /// </summary>
@@ -46,7 +46,7 @@ public class TestHistoryPage(IPage page)
         NavigateAndWaitAsync($"/projects/{projectId}/runs/test-history", null, "text=Test History");
 
     /// <summary>
-    /// Navigates directly to <c>?tab=Coverage</c>, waits for NetworkIdle
+    /// Navigates directly to <c>?tab=Coverage</c>, waits for DOMContentLoaded
     /// (all onMounted API calls finished), then waits for the coverage content.
     /// Retries once on ERR_ABORTED or TimeoutException.
     /// </summary>
@@ -58,7 +58,7 @@ public class TestHistoryPage(IPage page)
 
     public async Task WaitForLoadAsync()
     {
-        // NetworkIdle is set by GotoAsync above — any remaining spinner means Vue is still
+        // DOMContentLoaded is set by GotoAsync above — any remaining spinner means Vue is still
         // processing; wait for the heading and then for loading to finish.
         await page.WaitForSelectorAsync("text=Test History", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
         await page.Locator("[data-testid='test-history-loading']")
@@ -94,7 +94,7 @@ public class TestHistoryPage(IPage page)
     public ILocator AnalyticsTab => page.Locator("button:has-text('Analytics')");
 
     /// <summary>
-    /// Navigates directly to <c>?tab=Analytics</c>, waits for NetworkIdle
+    /// Navigates directly to <c>?tab=Analytics</c>, waits for DOMContentLoaded
     /// (all onMounted API calls finished), then waits for the analytics content.
     /// Retries once on ERR_ABORTED or TimeoutException.
     /// </summary>

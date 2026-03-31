@@ -10,29 +10,59 @@ public class OrgDetailPage(IPage page)
 {
     /// <summary>
     /// Creates a team via the UI form and waits for it to appear in the list.
+    /// Uses Playwright's Locator API and scopes all interactions to the modal container
+    /// ([data-testid='team-modal']) to eliminate timing races with other page elements.
     /// </summary>
     public async Task CreateTeamAsync(string teamName)
     {
-        await page.ClickAsync("button:has-text('New Team')");
-        // Wait for the modal to fully open before interacting. Retry once if the modal did not open —
-        // this can happen due to a Vue hydration race where the click is swallowed before the
-        // @click handler is attached (same pattern as OrgsPage.CreateOrgAndNavigateAsync).
+        // Click the New Team button (data-testid ensures we hit the right button even if the
+        // page has other text containing "Team").
+        var newTeamButton = page.Locator("[data-testid='new-team-button']");
+        await newTeamButton.ClickAsync(new LocatorClickOptions { Timeout = E2ETimeouts.Navigation });
+
+        // Wait for the modal container to become visible.  Because the input and submit button
+        // live inside the same v-if="showTeamModal" block, confirming the container is visible
+        // guarantees both elements are in the DOM.  Retry the click once to handle Vue SSR
+        // hydration races where the first click is swallowed before the handler is attached.
+        var modal = page.Locator("[data-testid='team-modal']");
         try
         {
-            await page.WaitForSelectorAsync("input[placeholder='Engineering']",
-                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+            await modal.WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = E2ETimeouts.Short
+            });
         }
         catch (TimeoutException)
         {
             await Task.Delay(E2ETimeouts.RetryDelay);
-            await page.ClickAsync("button:has-text('New Team')");
-            await page.WaitForSelectorAsync("input[placeholder='Engineering']",
-                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
+            await newTeamButton.ClickAsync(new LocatorClickOptions { Timeout = E2ETimeouts.Navigation });
+            await modal.WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = E2ETimeouts.Navigation
+            });
         }
-        await page.FillAsync("input[placeholder='Engineering']", teamName);
-        // Use a text-specific selector to avoid matching "Save Runner Options" (another submit button
-        // on the same page that is blocked by the modal backdrop and would cause a click timeout).
-        await page.ClickAsync("button[type='submit']:has-text('Create')");
+
+        // Scope interactions to the modal to avoid matching elements elsewhere on the page.
+        await modal.Locator("input[placeholder='Engineering']").FillAsync(teamName);
+
+        // Wait for the submit button to be visible and enabled before clicking — the :disabled
+        // binding on savingTeam could in theory leave it briefly disabled.
+        var submitButton = modal.Locator("[data-testid='team-modal-submit']");
+        await submitButton.WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Visible,
+            Timeout = E2ETimeouts.Default
+        });
+        await submitButton.ClickAsync();
+
+        // Confirm success: wait for the modal to disappear, then for the team name to appear.
+        await modal.WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Hidden,
+            Timeout = E2ETimeouts.Navigation
+        });
         await page.WaitForSelectorAsync($"text={teamName}", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
     }
 

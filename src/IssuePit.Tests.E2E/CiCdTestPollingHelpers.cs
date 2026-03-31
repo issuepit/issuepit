@@ -64,6 +64,37 @@ internal static class CiCdTestPollingHelpers
     }
 
     /// <summary>
+    /// Polls <c>GET /api/issues?projectId={projectId}&amp;sortBy=createdAt&amp;sortDir=desc</c>
+    /// until at least one issue exists for the project, and returns the <c>number</c> of the
+    /// most-recently created one.
+    /// </summary>
+    /// <remarks>
+    /// Used after submitting the "Create Issue" modal to avoid relying on the Vue SPA navigation
+    /// (which can be cancelled by concurrent SignalR-triggered <c>router.push</c> calls).
+    /// </remarks>
+    public static async Task<int> WaitForNewIssueAsync(
+        HttpClient client,
+        string projectId,
+        TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            var resp = await client.GetAsync($"/api/issues?projectId={projectId}&sortBy=createdAt&sortDir=desc");
+            if (resp.IsSuccessStatusCode)
+            {
+                var issues = await resp.Content.ReadFromJsonAsync<JsonElement>();
+                if (issues.GetArrayLength() > 0)
+                    return issues[0].GetProperty("number").GetInt32();
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+        }
+
+        throw new TimeoutException($"No issue was created for project {projectId} within {timeout}.");
+    }
+
+    /// <summary>
     /// Polls <c>GET /api/cicd-runs/{runId}</c> until the run reaches a terminal state
     /// (Succeeded, Failed, or Cancelled) or the timeout elapses.
     /// </summary>

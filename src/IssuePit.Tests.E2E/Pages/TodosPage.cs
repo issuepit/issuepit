@@ -7,18 +7,47 @@ namespace IssuePit.Tests.E2E.Pages;
 /// </summary>
 public class TodosPage(IPage page)
 {
-    /// <summary>Navigates to the todos page and waits for the heading to appear.</summary>
+    /// <summary>
+    /// Navigates to the todos page and waits for the heading to appear.
+    /// Retries once on ERR_ABORTED (Nuxt SPA router race) or TimeoutException (slow first render).
+    /// </summary>
     public async Task GotoAsync()
     {
-        await page.GotoAsync("/todos");
-        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        await page.WaitForSelectorAsync("a:has-text('Todos')", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        try
+        {
+            await page.GotoAsync("/todos");
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+            await page.WaitForSelectorAsync("a:has-text('Todos')",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (Exception ex) when (ex is TimeoutException || (ex is PlaywrightException pe && pe.Message.Contains("ERR_ABORTED")))
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.GotoAsync("/todos");
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+            await page.WaitForSelectorAsync("a:has-text('Todos')",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
+        }
     }
 
-    /// <summary>Creates a todo via the New Todo modal and waits for it to appear in the list.</summary>
+    /// <summary>Creates a todo via the New Todo modal and waits for it to appear in the list.
+    /// Retries the button click once if the modal does not open (Vue SSR hydration race).
+    /// </summary>
     public async Task CreateTodoAsync(string title)
     {
-        await page.ClickAsync("button:has-text('+ Todo')");
+        try
+        {
+            await page.ClickAsync("button:has-text('+ Todo')");
+            await page.WaitForSelectorAsync("input[placeholder='Todo title']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (TimeoutException)
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.ClickAsync("button:has-text('+ Todo')");
+            await page.WaitForSelectorAsync("input[placeholder='Todo title']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        }
         await page.FillAsync("input[placeholder='Todo title']", title);
         await page.ClickAsync("button:has-text('Create')");
         await page.WaitForSelectorAsync($"text={title}", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });

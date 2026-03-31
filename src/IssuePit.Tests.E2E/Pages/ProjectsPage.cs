@@ -15,11 +15,23 @@ public class ProjectsPage(IPage page)
 
     /// <summary>
     /// Creates a project via the UI form, selecting the given org, and waits for it to appear in the list.
+    /// Retries the button click once if the modal does not open (Vue SSR hydration race).
     /// </summary>
     public async Task CreateProjectAsync(string name, string orgId, string? slug = null)
     {
-        await page.ClickAsync("button:has-text('New Project')");
-        await page.WaitForSelectorAsync("[data-testid='org-select']");
+        try
+        {
+            await page.ClickAsync("button:has-text('New Project')");
+            await page.WaitForSelectorAsync("[data-testid='org-select']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (TimeoutException)
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.ClickAsync("button:has-text('New Project')");
+            await page.WaitForSelectorAsync("[data-testid='org-select']",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        }
         await page.SelectOptionAsync("[data-testid='org-select']", orgId);
         await page.FillAsync("input[placeholder='My Project']", name);
         if (slug is not null)

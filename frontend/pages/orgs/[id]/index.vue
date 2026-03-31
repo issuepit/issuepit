@@ -37,6 +37,7 @@
         <div class="flex items-center justify-between mb-4">
           <p class="text-gray-400 text-sm">{{ teamsStore.teams.length }} team{{ teamsStore.teams.length === 1 ? '' : 's' }}</p>
           <button
+            data-testid="new-team-button"
             class="flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
             @click="openCreateTeam"
           >
@@ -563,7 +564,7 @@
     </div>
 
     <!-- Team Create/Edit Modal -->
-    <div v-if="showTeamModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+    <div v-if="showTeamModal" data-testid="team-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
       <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md p-6 shadow-xl">
         <h2 class="text-lg font-bold text-white mb-5">{{ editingTeamId ? 'Edit Team' : 'New Team' }}</h2>
         <form class="space-y-4" @submit.prevent="handleTeamSubmit">
@@ -590,6 +591,7 @@
           <div class="flex gap-3 pt-1">
             <button
               type="submit"
+              data-testid="team-modal-submit"
               :disabled="savingTeam"
               class="flex-1 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
             >

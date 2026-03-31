@@ -17,7 +17,7 @@ public class MergeRequestsPage(IPage page)
         try
         {
             await page.GotoAsync($"/projects/{projectId}/merge-requests");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
             await page.WaitForSelectorAsync("a:text-is('Merge Requests')",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
         }
@@ -25,18 +25,28 @@ public class MergeRequestsPage(IPage page)
         {
             await Task.Delay(NavigationRetryDelayMs);
             await page.GotoAsync($"/projects/{projectId}/merge-requests");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
             await page.WaitForSelectorAsync("a:text-is('Merge Requests')");
         }
     }
 
     /// <summary>
     /// Opens the "New Merge Request" modal and creates an MR with the given title and source branch.
+    /// Retries the button click once if the modal does not open (Vue SSR hydration race).
     /// </summary>
     public async Task CreateMergeRequestAsync(string title, string sourceBranch)
     {
-        await page.ClickAsync("button:has-text('New Merge Request')");
-        await page.WaitForSelectorAsync("text=New Merge Request", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        try
+        {
+            await page.ClickAsync("button:has-text('New Merge Request')");
+            await page.WaitForSelectorAsync("text=New Merge Request", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (TimeoutException)
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.ClickAsync("button:has-text('New Merge Request')");
+            await page.WaitForSelectorAsync("text=New Merge Request", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        }
 
         await page.FillAsync("input[placeholder='Merge feature branch into main']", title);
 

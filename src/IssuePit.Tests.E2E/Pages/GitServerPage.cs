@@ -13,7 +13,7 @@ public class GitServerPage(IPage page)
     public async Task GotoAsync()
     {
         await page.GotoAsync("/config/git-server");
-        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
 
         // Retry once in case the heading was not yet visible due to a Vue SSR hydration race.
         try
@@ -24,7 +24,7 @@ public class GitServerPage(IPage page)
         catch (TimeoutException)
         {
             await page.GotoAsync("/config/git-server");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
             await page.WaitForSelectorAsync("h2:has-text('Git Server')");
         }
     }
@@ -32,11 +32,23 @@ public class GitServerPage(IPage page)
     /// <summary>
     /// Opens the "New Repository" modal, fills in the slug, and submits the form.
     /// Waits for the repo slug to appear in the list.
+    /// Retries the button click once if the modal does not open (Vue SSR hydration race).
     /// </summary>
     public async Task CreateRepoAsync(string slug)
     {
-        await page.ClickAsync("button:has-text('New Repository')");
-        await page.WaitForSelectorAsync("h3:has-text('New Repository')");
+        try
+        {
+            await page.ClickAsync("button:has-text('New Repository')");
+            await page.WaitForSelectorAsync("h3:has-text('New Repository')",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+        }
+        catch (TimeoutException)
+        {
+            await Task.Delay(E2ETimeouts.RetryDelay);
+            await page.ClickAsync("button:has-text('New Repository')");
+            await page.WaitForSelectorAsync("h3:has-text('New Repository')",
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
+        }
 
         await page.FillAsync("input[placeholder='e.g. my-repo']", slug);
 
