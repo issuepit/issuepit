@@ -235,6 +235,20 @@ public class MergeRequestsController(
                 return BadRequest(new MergeErrorResponse("CI/CD checks are still running. Wait for them to complete or enable auto-merge."));
         }
 
+        // Review gate: block merge when changes are requested
+        var reviews = await db.MergeRequestReviews
+            .Where(r => r.MergeRequestId == id)
+            .ToListAsync();
+        if (reviews.Count > 0)
+        {
+            var latestPerUser = reviews
+                .GroupBy(r => r.UserId)
+                .Select(g => g.OrderByDescending(r => r.CreatedAt).First())
+                .ToList();
+            if (latestPerUser.Any(r => r.Status == MergeRequestReviewStatus.ChangesRequested))
+                return BadRequest(new MergeErrorResponse("Changes have been requested. Address the feedback before merging."));
+        }
+
         var repo = await db.GitRepositories
             .Where(r => r.ProjectId == projectId)
             .OrderByDescending(r => r.Mode == GitOriginMode.Working)
@@ -302,6 +316,103 @@ public class MergeRequestsController(
         m.MergedAt,
         m.MergeCommitSha
     );
+
+    // ─────────────────────── Reviews ─────────────────────────────────
+
+    [HttpGet("{id:guid}/reviews")]
+    public async Task<IActionResult> ListReviews(Guid projectId, Guid id)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+
+        var mrExists = await db.MergeRequests
+            .AnyAsync(m => m.Id == id && m.ProjectId == projectId &&
+                           m.Project.Organization.TenantId == ctx.CurrentTenant.Id);
+        if (!mrExists) return NotFound();
+
+        var reviews = await db.MergeRequestReviews
+            .Include(r => r.User)
+            .Where(r => r.MergeRequestId == id)
+            .OrderByDescending(r => r.CreatedAt)
+            .Select(r => new MergeRequestReviewResponse(
+                r.Id,
+                r.MergeRequestId,
+                r.UserId,
+                r.User.Username,
+                r.Status,
+                r.Status.ToString(),
+                r.Body,
+                r.CreatedAt))
+            .ToListAsync();
+
+        return Ok(reviews);
+    }
+
+    [HttpPost("{id:guid}/reviews")]
+    public async Task<IActionResult> SubmitReview(Guid projectId, Guid id, [FromBody] SubmitReviewRequest req)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+
+        var mr = await db.MergeRequests
+            .Where(m => m.Id == id && m.ProjectId == projectId &&
+                        m.Project.Organization.TenantId == ctx.CurrentTenant.Id)
+            .FirstOrDefaultAsync();
+
+        if (mr is null) return NotFound();
+        if (mr.Status != MergeRequestStatus.Open)
+            return BadRequest(new { error = "Cannot review a closed or merged MR." });
+
+        var review = new MergeRequestReview
+        {
+            Id = Guid.NewGuid(),
+            MergeRequestId = id,
+            UserId = ctx.CurrentUser!.Id,
+            Status = req.Status,
+            Body = req.Body,
+        };
+
+        db.MergeRequestReviews.Add(review);
+        mr.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        // Reload with User for response
+        await db.Entry(review).Reference(r => r.User).LoadAsync();
+
+        return CreatedAtAction(nameof(ListReviews), new { projectId, id }, new MergeRequestReviewResponse(
+            review.Id,
+            review.MergeRequestId,
+            review.UserId,
+            review.User.Username,
+            review.Status,
+            review.Status.ToString(),
+            review.Body,
+            review.CreatedAt));
+    }
+
+    [HttpGet("{id:guid}/review-summary")]
+    public async Task<IActionResult> ReviewSummary(Guid projectId, Guid id)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+
+        var mrExists = await db.MergeRequests
+            .AnyAsync(m => m.Id == id && m.ProjectId == projectId &&
+                           m.Project.Organization.TenantId == ctx.CurrentTenant.Id);
+        if (!mrExists) return NotFound();
+
+        var reviews = await db.MergeRequestReviews
+            .Where(r => r.MergeRequestId == id)
+            .ToListAsync();
+
+        // Latest review per user determines their current verdict
+        var latestPerUser = reviews
+            .GroupBy(r => r.UserId)
+            .Select(g => g.OrderByDescending(r => r.CreatedAt).First())
+            .ToList();
+
+        var approved = latestPerUser.Count(r => r.Status == MergeRequestReviewStatus.Approved);
+        var changesRequested = latestPerUser.Count(r => r.Status == MergeRequestReviewStatus.ChangesRequested);
+
+        return Ok(new ReviewSummaryResponse(approved, changesRequested, latestPerUser.Count));
+    }
 }
 
 // ─────────────────────────── Request / Response Records ─────────────────
@@ -349,3 +460,22 @@ public record MergeRequestResponse(
     string? MergeCommitSha);
 
 public record MergeErrorResponse(string Error);
+
+public record SubmitReviewRequest(
+    MergeRequestReviewStatus Status,
+    string? Body = null);
+
+public record MergeRequestReviewResponse(
+    Guid Id,
+    Guid MergeRequestId,
+    Guid UserId,
+    string Username,
+    MergeRequestReviewStatus Status,
+    string StatusName,
+    string? Body,
+    DateTime CreatedAt);
+
+public record ReviewSummaryResponse(
+    int Approved,
+    int ChangesRequested,
+    int TotalReviewers);
