@@ -170,7 +170,8 @@
         <div class="flex items-center justify-between mb-5">
           <div class="min-w-0">
             <h3 class="text-lg font-semibold text-white">{{ detailServer.name }}</h3>
-            <code class="text-xs text-green-300 font-mono truncate block mt-0.5">{{ detailServer.url }}</code>
+            <code v-if="detailServer.serverType === 'Remote'" class="text-xs text-green-300 font-mono truncate block mt-0.5">{{ detailServer.url }}</code>
+            <code v-else class="text-xs text-gray-400 font-mono truncate block mt-0.5">{{ configSummary(detailServer) }}</code>
           </div>
           <button class="text-gray-500 hover:text-gray-300 ml-4 shrink-0" @click="detailServer = null">✕</button>
         </div>
@@ -398,7 +399,8 @@
               <h4 class="font-medium text-white text-sm">{{ tpl.name }}</h4>
             </div>
             <p class="text-xs text-gray-400 mb-3">{{ tpl.description }}</p>
-            <code class="text-xs text-green-300 font-mono block truncate">{{ tpl.url }}</code>
+            <code v-if="tpl.serverType === 'Remote'" class="text-xs text-green-300 font-mono block truncate">{{ tpl.url }}</code>
+            <code v-else class="text-xs text-gray-400 font-mono block truncate">{{ tplConfigSummary(tpl) }}</code>
             <button
               class="mt-3 text-xs text-brand-400 group-hover:text-brand-300 transition-colors"
             >
@@ -457,6 +459,22 @@ function configSummary(server: McpServer): string {
     // ignore
   }
   return server.configuration
+}
+
+function tplConfigSummary(tpl: { serverType: string; configuration: string }): string {
+  try {
+    const cfg = JSON.parse(tpl.configuration)
+    if (tpl.serverType === 'Local') {
+      const cmd = [cfg.command, ...(cfg.args ?? [])].filter(Boolean).join(' ')
+      return cmd || tpl.configuration
+    }
+    if (tpl.serverType === 'Docker') {
+      return cfg.image ?? tpl.configuration
+    }
+  } catch {
+    // ignore
+  }
+  return tpl.configuration
 }
 
 // ── Templates ────────────────────────────────────────────────────────────────
