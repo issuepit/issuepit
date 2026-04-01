@@ -255,7 +255,7 @@ public class IssueWorker(
             await LaunchAgentAsync(message.AgentId, null, message.ProjectId, message.DockerImageOverride,
                 message.KeepContainer, message.CustomCmdOverride, message.RunnerArgs, message.ModelOverride, message.RunnerTypeOverride,
                 message.UseHttpServerOverride, message.RuntimeTypeOverride, message.MaxCiCdLoopCountOverride,
-                message.SessionId, null, message.Branch, cancellationToken);
+                message.SessionId, null, message.Branch, message.InjectGuidelines, cancellationToken);
             return;
         }
 
@@ -320,6 +320,7 @@ public class IssueWorker(
                 agentIds.Count == 1 ? message.SessionId : null,
                 message.TriggeringCommentId,
                 message.Branch,
+                message.InjectGuidelines,
                 cancellationToken)));
     }
 
@@ -344,6 +345,7 @@ public class IssueWorker(
         Guid? existingSessionId,
         Guid? triggeringCommentId,
         string? branchOverride,
+        bool injectGuidelines,
         CancellationToken cancellationToken)
     {
         using var scope = services.CreateScope();
@@ -517,10 +519,10 @@ public class IssueWorker(
             // We hold it here so it can be passed to the runtime workspace setup.
         }
 
-        // Inject guideline notes from the project's "Agent Guidelines" notebook when the agent
-        // has AutoSummarize enabled. These notes contain summaries from previous sessions and
-        // help the agent avoid repeating past mistakes.
-        if (agent.AutoSummarize && issue is not null && notesApiClient.IsConfigured)
+        // Inject guideline notes from the project's "Agent Guidelines" notebook when the
+        // injectGuidelines flag is set for this run. These notes contain summaries from previous
+        // sessions and help the agent avoid repeating past mistakes.
+        if (injectGuidelines && issue is not null && notesApiClient.IsConfigured)
         {
             try
             {
@@ -2393,7 +2395,7 @@ public class IssueWorker(
         GitBranch = branchName,
     };
 
-    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, Guid? SessionId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? CustomCmdOverride = null, string[]? RunnerArgs = null, string? ModelOverride = null, int? RunnerTypeOverride = null, bool? UseHttpServerOverride = null, int? RuntimeTypeOverride = null, int? MaxCiCdLoopCountOverride = null, bool ForceAgentId = false, Guid? TriggeringCommentId = null, string? Branch = null, bool IsManualDirectStart = false);
+    private record IssueAssignedPayload(Guid Id, Guid ProjectId, string Title, Guid? AgentId = null, Guid? SessionId = null, string? DockerImageOverride = null, bool KeepContainer = false, string[]? CustomCmdOverride = null, string[]? RunnerArgs = null, string? ModelOverride = null, int? RunnerTypeOverride = null, bool? UseHttpServerOverride = null, int? RuntimeTypeOverride = null, int? MaxCiCdLoopCountOverride = null, bool ForceAgentId = false, Guid? TriggeringCommentId = null, string? Branch = null, bool IsManualDirectStart = false, bool InjectGuidelines = false);
 
     /// <summary>
     /// A simple mutable counter shared across all <see cref="DrainPendingMessagesAsync"/> calls

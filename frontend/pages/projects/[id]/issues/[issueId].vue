@@ -1006,6 +1006,17 @@
             <p v-else class="text-xs text-gray-600 mt-1">Agent will start from this branch.</p>
           </div>
         </div>
+        <!-- Inject guidelines option -->
+        <label class="flex items-start gap-2.5 cursor-pointer mb-5">
+          <input
+            v-model="assignAgentModal.injectGuidelines"
+            type="checkbox"
+            class="mt-0.5 w-3.5 h-3.5 rounded accent-brand-500" />
+          <span class="text-sm">
+            <span class="text-gray-300">Inject guideline notes</span>
+            <span class="block text-xs text-gray-500 mt-0.5">Include summaries from previous agent sessions in the prompt to help the agent learn from past runs.</span>
+          </span>
+        </label>
         <div class="flex gap-3">
           <button @click="confirmAssignAgent"
             :disabled="!assignAgentModal.createNewBranch && assignBranchIsDefault"
@@ -1276,12 +1287,13 @@ watch(commentHasAgentMention, (hasMention) => {
 })
 
 // Agent assignment modal state
-const assignAgentModal = reactive<{ agentId: string | null; agentName: string; comment: string; branch: string; createNewBranch: boolean }>({
+const assignAgentModal = reactive<{ agentId: string | null; agentName: string; comment: string; branch: string; createNewBranch: boolean; injectGuidelines: boolean }>({
   agentId: null,
   agentName: '',
   comment: '',
   branch: '',
   createNewBranch: true,
+  injectGuidelines: false,
 })
 const assignAgentModalRef = ref<HTMLTextAreaElement | null>(null)
 function setAssignAgentModalRef(el: unknown) {
@@ -1798,7 +1810,7 @@ async function confirmAssignAgent() {
   }
 
   // Assign the agent to the issue (with optional branch override)
-  await store.addAssignee(resolvedIssueId.value, { agentId: assignAgentModal.agentId, branch })
+  await store.addAssignee(resolvedIssueId.value, { agentId: assignAgentModal.agentId, branch, injectGuidelines: assignAgentModal.injectGuidelines || undefined })
   // If a comment was provided, post it (the backend will detect @mention and trigger the agent)
   if (assignAgentModal.comment.trim()) {
     await store.addComment(resolvedIssueId.value, assignAgentModal.comment.trim(), undefined, branch)
@@ -1808,14 +1820,14 @@ async function confirmAssignAgent() {
   assignAgentModal.comment = ''
   assignAgentModal.branch = ''
   assignAgentModal.createNewBranch = true
-}
-
-function cancelAssignAgent() {
+  assignAgentModal.injectGuidelines = false
+} {
   assignAgentModal.agentId = null
   assignAgentModal.agentName = ''
   assignAgentModal.comment = ''
   assignAgentModal.branch = ''
   assignAgentModal.createNewBranch = true
+  assignAgentModal.injectGuidelines = false
 }
 
 function assigneeName(a: { userId?: string; agentId?: string; user?: { username: string } | null; agent?: { name: string } | null }) {

@@ -292,7 +292,7 @@ export const useIssuesStore = defineStore('issues', () => {
 
   // --- Assignees ---
 
-  async function addAssignee(issueId: string, payload: { userId?: string; agentId?: string; branch?: string }) {
+  async function addAssignee(issueId: string, payload: { userId?: string; agentId?: string; branch?: string; injectGuidelines?: boolean }) {
     try {
       const data = await api.post<IssueAssignee>(`/api/issues/${issueId}/assignees`, payload)
       if (currentIssue.value?.id === issueId) {
