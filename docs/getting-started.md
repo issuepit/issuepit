@@ -93,4 +93,4 @@ You can override any service configuration by editing `docker-compose.yml` or by
 ## Next Steps
 
 - [Create your first project →](projects)
-- [Configure AI agents →](agents)
+- [Configure AI agents →](issupitAgents)

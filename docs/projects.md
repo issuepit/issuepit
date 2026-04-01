@@ -496,6 +496,6 @@ Four MCP tools are available for AI-assisted analysis:
 
 ## Next Steps
 
-- [Configure AI agents →](agents)
+- [Configure AI agents →](issupitAgents)
 - [Set up API keys →](configuration)
 - [CI/CD Integration →](cicd)

@@ -62,7 +62,7 @@ title: Home
 | [Common Agenda](agenda) | Org-wide goal tracker for cross-cutting initiatives |
 | [CI/CD Integration](cicd) | Run GitHub Actions workflows locally with real-time logs |
 | [Todo Tracker](todos) | Personal task board and weekly calendar with iCal subscription |
-| [Agents](agents) | Configure agent modes (system prompt, MCP tools, auth keys) |
+| [Agents](issupitAgents) | Configure agent modes (system prompt, MCP tools, auth keys) |
 | [Configuration](configuration) | API keys, MCP servers, and other settings |
 | [Releases](releases) | Release notes, changelog, and upgrade instructions |
 | [Architecture](architecture) | Project layout, tech stack, and backend services |

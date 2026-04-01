@@ -25,7 +25,7 @@ The `docs/` folder serves as the IssuePit user-facing documentation site (VitePr
 
 ### What Belongs in Each Section
 
-- `docs/agents.md` — user-facing guide: how to create agent modes, queues, MCP servers, container runtimes
+- `docs/issupitAgents.md` — user-facing guide: how to create agent modes, queues, MCP servers, container runtimes
 - `agents.md` (root) — coding agent guidelines: date formats, DateDisplay component, API response objects, testing conventions, E2E timeouts, PR screenshot rules
 - `docs/issuepitAgents.md` (this file) — meta-documentation about how to design the docs
 

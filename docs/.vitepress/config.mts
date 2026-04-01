@@ -29,7 +29,7 @@ export default defineConfig({
           { text: 'Getting Started', link: '/getting-started' },
           { text: 'Projects', link: '/projects' },
           { text: 'Common Agenda', link: '/agenda' },
-          { text: 'Agents', link: '/agents' },
+          { text: 'Agents', link: '/issupitAgents' },
           { text: 'Configuration', link: '/configuration' },
           { text: 'Todo Tracker', link: '/todos' },
           { text: 'CI/CD Integration', link: '/cicd' },
