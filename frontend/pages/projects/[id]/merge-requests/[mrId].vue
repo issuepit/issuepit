@@ -195,6 +195,109 @@
         </div>
       </div>
 
+      <!-- Reviews section -->
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-sm font-semibold text-white flex items-center gap-2">
+            <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Reviews
+            <span v-if="reviewSummary" class="text-xs text-gray-500 font-normal">
+              ({{ reviewSummary.approved }} approved, {{ reviewSummary.changesRequested }} changes requested)
+            </span>
+          </h3>
+          <button v-if="mr.statusName === 'Open'" @click="showReviewModal = true"
+            class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">
+            Add review
+          </button>
+        </div>
+
+        <!-- Review gate warning -->
+        <div v-if="reviewSummary && reviewSummary.changesRequested > 0 && mr.statusName === 'Open'"
+          class="mb-4 p-3 bg-orange-900/30 border border-orange-800/40 rounded-lg text-sm text-orange-300 flex items-center gap-2">
+          <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+          </svg>
+          Changes have been requested. Address the feedback before merging.
+        </div>
+
+        <!-- Review list -->
+        <div v-if="reviews.length === 0" class="text-sm text-gray-500">
+          No reviews yet.
+        </div>
+        <div v-else class="space-y-3">
+          <div v-for="review in reviews" :key="review.id"
+            class="flex items-start gap-3 p-3 rounded-lg bg-gray-800/50">
+            <div class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
+              :class="reviewBadgeClass(review.statusName)">
+              {{ review.statusName === 'Approved' ? '✓' : review.statusName === 'ChangesRequested' ? '✗' : '💬' }}
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 text-sm">
+                <span class="font-medium text-white">{{ review.username }}</span>
+                <span :class="reviewTextClass(review.statusName)" class="text-xs">
+                  {{ reviewStatusLabel(review.statusName) }}
+                </span>
+                <span class="text-xs text-gray-500">
+                  <DateDisplay :date="review.createdAt" mode="auto" />
+                </span>
+              </div>
+              <p v-if="review.body" class="text-sm text-gray-400 mt-1">{{ review.body }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Review Modal -->
+      <div v-if="showReviewModal"
+        class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+        @mousedown.self="showReviewModal = false">
+        <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-md p-6 space-y-4">
+          <h2 class="text-lg font-bold text-white">Submit Review</h2>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Verdict</label>
+            <div class="space-y-1.5">
+              <label v-for="opt in reviewOptions" :key="opt.value"
+                class="flex items-start gap-3 p-2.5 rounded-lg cursor-pointer transition-colors"
+                :class="reviewForm.status === opt.value ? 'bg-gray-800 border border-gray-700' : 'hover:bg-gray-800/50 border border-transparent'">
+                <input type="radio" :value="opt.value" v-model="reviewForm.status"
+                  class="mt-0.5 accent-brand-500" />
+                <div>
+                  <span class="text-sm text-white font-medium">{{ opt.label }}</span>
+                  <p class="text-xs text-gray-500 mt-0.5">{{ opt.description }}</p>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1">Comment</label>
+            <textarea v-model="reviewForm.body" rows="3" placeholder="Optional comment…"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none" />
+          </div>
+
+          <div v-if="reviewError" class="p-3 bg-red-900/30 border border-red-800/40 rounded-lg text-sm text-red-300">
+            {{ reviewError }}
+          </div>
+
+          <div class="flex gap-2 pt-2">
+            <button @click="submitReview" :disabled="reviewSubmitting"
+              class="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-sm py-2 rounded-lg transition-colors disabled:opacity-50">
+              <span v-if="reviewSubmitting">Submitting…</span>
+              <span v-else>Submit Review</span>
+            </button>
+            <button @click="showReviewModal = false"
+              class="flex-1 bg-gray-800 hover:bg-gray-700 text-white text-sm py-2 rounded-lg transition-colors">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Diff section -->
       <div>
         <!-- Diff loading -->
@@ -367,6 +470,99 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 const actionLoading = ref<string | null>(null)
 const actionError = ref<string | null>(null)
+
+// Reviews state
+interface ReviewDto {
+  id: string
+  mergeRequestId: string
+  userId: string
+  username: string
+  status: number
+  statusName: string
+  body: string | null
+  createdAt: string
+}
+
+interface ReviewSummaryDto {
+  approved: number
+  changesRequested: number
+  totalReviewers: number
+}
+
+const reviews = ref<ReviewDto[]>([])
+const reviewSummary = ref<ReviewSummaryDto | null>(null)
+const showReviewModal = ref(false)
+const reviewSubmitting = ref(false)
+const reviewError = ref<string | null>(null)
+const reviewForm = reactive({
+  status: 0 as number, // 0=Approved, 1=ChangesRequested, 2=Commented
+  body: '',
+})
+
+const reviewOptions = [
+  { value: 0, label: 'Approve', description: 'Approve the changes in this merge request.' },
+  { value: 1, label: 'Request changes', description: 'Request changes before this can be merged.' },
+  { value: 2, label: 'Comment', description: 'Leave feedback without approving or requesting changes.' },
+]
+
+function reviewBadgeClass(statusName: string): string {
+  switch (statusName) {
+    case 'Approved': return 'bg-green-900/50 text-green-400'
+    case 'ChangesRequested': return 'bg-red-900/50 text-red-400'
+    default: return 'bg-gray-700 text-gray-400'
+  }
+}
+
+function reviewTextClass(statusName: string): string {
+  switch (statusName) {
+    case 'Approved': return 'text-green-400'
+    case 'ChangesRequested': return 'text-red-400'
+    default: return 'text-gray-400'
+  }
+}
+
+function reviewStatusLabel(statusName: string): string {
+  switch (statusName) {
+    case 'Approved': return 'approved'
+    case 'ChangesRequested': return 'requested changes'
+    default: return 'commented'
+  }
+}
+
+async function fetchReviews() {
+  try {
+    reviews.value = await api.get<ReviewDto[]>(`/api/projects/${id}/merge-requests/${mrId}/reviews`)
+  } catch {
+    reviews.value = []
+  }
+}
+
+async function fetchReviewSummary() {
+  try {
+    reviewSummary.value = await api.get<ReviewSummaryDto>(`/api/projects/${id}/merge-requests/${mrId}/review-summary`)
+  } catch {
+    reviewSummary.value = null
+  }
+}
+
+async function submitReview() {
+  reviewSubmitting.value = true
+  reviewError.value = null
+  try {
+    await api.post(`/api/projects/${id}/merge-requests/${mrId}/reviews`, {
+      status: reviewForm.status,
+      body: reviewForm.body || null,
+    })
+    showReviewModal.value = false
+    reviewForm.status = 0
+    reviewForm.body = ''
+    await Promise.all([fetchReviews(), fetchReviewSummary()])
+  } catch (e: unknown) {
+    reviewError.value = e instanceof Error ? e.message : 'Failed to submit review'
+  } finally {
+    reviewSubmitting.value = false
+  }
+}
 
 // Merge confirm modal state
 const showMergeConfirm = ref(false)
@@ -653,7 +849,7 @@ onMounted(async () => {
   projectsStore.fetchProject(id)
   await fetchMr()
   if (mr.value) {
-    await loadDiff()
+    await Promise.all([loadDiff(), fetchReviews(), fetchReviewSummary()])
   }
 })
 </script>
