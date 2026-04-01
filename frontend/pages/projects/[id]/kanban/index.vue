@@ -125,37 +125,15 @@
               @dragstart="onDragStart($event, issue)"
               @dragend="onIssueDragEnd"
               @click="openPreview(issue)">
-              <div class="flex items-start justify-between gap-2 mb-2">
-                <span class="text-xs text-gray-600">{{ formatIssueId(issue.number, projectsStore.currentProject, issue.externalId, issue.externalSource) }}</span>
-                <div class="flex items-center gap-1.5 shrink-0">
-                  <!-- Agent protection indicators -->
-                  <span v-if="issue.preventAgentMove" title="Protected from agent moves"
-                    aria-label="Protected from agent moves" role="img" class="text-xs text-amber-500">🔒</span>
-                  <span v-if="issue.hideFromAgents" title="Hidden from agents"
-                    aria-label="Hidden from agents" role="img" class="text-xs text-gray-500">👁</span>
-                  <span :class="priorityColor(issue.priority)" class="text-xs">
-                    {{ priorityIcon(issue.priority) }}
-                  </span>
-                </div>
-              </div>
-              <p class="text-sm text-gray-200 leading-snug mb-3 group-hover:text-white transition-colors line-clamp-3">
-                {{ issue.title }}
-              </p>
-              <div class="flex items-center justify-between gap-1 flex-wrap">
-                <span :class="typeBadge(issue.type)"
-                  class="text-xs px-1.5 py-0.5 rounded font-medium capitalize">
-                  {{ issue.type }}
-                </span>
-                <!-- Label chips -->
-                <div v-if="issue.labels?.length" class="flex gap-1 flex-wrap">
-                  <span v-for="label in issue.labels.slice(0,2)" :key="label.id"
-                    class="text-xs px-1.5 py-0.5 rounded-full text-white font-medium"
-                    :style="{ backgroundColor: label.color + '55', color: label.color }">
-                    {{ label.name }}
-                  </span>
-                  <span v-if="issue.labels.length > 2" class="text-xs text-gray-600">+{{ issue.labels.length - 2 }}</span>
-                </div>
-              </div>
+              <KanbanIssueCard
+                :issue="issue"
+                :enrichment="kanban.issueEnrichments[issue.id] ?? null"
+                :format-issue-id="formatIssueId"
+                :project="projectsStore.currentProject"
+                :priority-icon="priorityIcon"
+                :priority-color="priorityColor"
+                :type-badge="typeBadge"
+              />
             </div>
           </template>
 
@@ -850,13 +828,17 @@ onMounted(async () => {
     propsStore.fetchProperties(id),
     labelsStore.fetchLabels(id),
   ])
-  if (kanban.boards.length) activeBoardId.value = kanban.boards[0].id
+  if (kanban.boards.length) {
+    activeBoardId.value = kanban.boards[0].id
+    kanban.fetchEnrichments(kanban.boards[0].id)
+  }
 })
 
 watch(activeBoardId, (bid) => {
   if (bid) {
     kanban.selectBoard(kanban.boards.find(b => b.id === bid)!)
     kanban.fetchTransitions(bid)
+    kanban.fetchEnrichments(bid)
   }
 })
 

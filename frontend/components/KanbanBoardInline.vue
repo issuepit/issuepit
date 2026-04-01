@@ -73,13 +73,15 @@
                 @dragstart="onDragStart($event, issue)"
                 @dragend="onIssueDragEnd"
                 @click="$router.push(`/projects/${projectId}/issues/${issue.number}`)">
-                <div class="flex items-start justify-between gap-1 mb-1">
-                  <span class="text-xs text-gray-600">{{ formatIssueId(issue.number, projectsStore.currentProject, issue.externalId, issue.externalSource) }}</span>
-                  <span :class="priorityColor(issue.priority)" class="text-xs shrink-0">{{ priorityIcon(issue.priority) }}</span>
-                </div>
-                <p class="text-xs text-gray-200 leading-snug group-hover:text-white transition-colors line-clamp-2">
-                  {{ issue.title }}
-                </p>
+                <KanbanIssueCard
+                  :issue="issue"
+                  :enrichment="kanban.issueEnrichments[issue.id] ?? null"
+                  :format-issue-id="formatIssueId"
+                  :project="projectsStore.currentProject"
+                  :priority-icon="priorityIcon"
+                  :priority-color="priorityColor"
+                  :type-badge="typeBadge"
+                />
               </div>
             </template>
 
@@ -388,6 +390,17 @@ function statusDotColor(status: IssueStatus) {
   return map[status] ?? 'bg-gray-500'
 }
 
+function typeBadge(type: string) {
+  const map: Record<string, string> = {
+    bug: 'bg-red-900/40 text-red-300',
+    feature: 'bg-green-900/40 text-green-300',
+    epic: 'bg-purple-900/40 text-purple-300',
+    task: 'bg-blue-900/40 text-blue-300',
+    issue: 'bg-gray-800 text-gray-400',
+  }
+  return map[type] ?? 'bg-gray-800 text-gray-400'
+}
+
 onMounted(async () => {
   await Promise.all([
     issueStore.fetchIssues(props.projectId),
@@ -396,6 +409,7 @@ onMounted(async () => {
   if (kanban.boards.length) {
     activeBoardId.value = props.boardId || kanban.boards[0].id
     await kanban.fetchTransitions(activeBoardId.value)
+    kanban.fetchEnrichments(activeBoardId.value)
   }
 })
 
