@@ -154,6 +154,8 @@ jobs:
       # Commit is pinned via ACT_COMMIT env var; takes ~2 min on ubuntu-latest.
       - name: Build act binary (issuepit fork)
         run: |
+          echo "Go toolchain: $(go version)"
+          echo "Building act commit ${ACT_COMMIT}"
           git init /tmp/issuepit-act
           cd /tmp/issuepit-act
           git remote add origin https://github.com/issuepit/act.git
@@ -161,7 +163,7 @@ jobs:
           git checkout FETCH_HEAD
           go build -ldflags "-X main.version=${ACT_COMMIT}" -o /usr/local/bin/act main.go
           rm -rf /tmp/issuepit-act
-          act --version
+          act --help 2>&1 | head -1
 
       # Cache Docker images as tar files so agent sessions skip the pull entirely.
       # Key format mirrors the e2e-infra-setup composite action:
