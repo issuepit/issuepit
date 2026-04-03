@@ -194,8 +194,13 @@ if [[ -d "${WORKSPACE}" ]]; then
     cd "${WORKSPACE}"
 
     if [[ -f "package.json" ]]; then
-        echo "[entrypoint] Running npm install"
-        npm install --prefer-offline
+        if [[ -f "package-lock.json" ]]; then
+            echo "[entrypoint] Running npm ci"
+            npm ci --prefer-offline
+        else
+            echo "[entrypoint] Running npm install"
+            npm install --prefer-offline
+        fi
     fi
 
     # Restore .NET dependencies

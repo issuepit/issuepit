@@ -44,11 +44,19 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: |
+            frontend/package-lock.json
+            scripts/package-lock.json
 
       - name: Install frontend dependencies
         if: ${{ !inputs.frontend_url }}
         working-directory: frontend
+        run: |
+          npm ci
+          npx allow-scripts
+
+      - name: Install scripts dependencies
+        working-directory: scripts
         run: npm ci
 
       - name: Pre-pull Docker images
@@ -158,9 +166,8 @@ jobs:
           echo "Discovered FRONTEND_URL=$FRONTEND_URL"
 
       - name: Install Playwright and image comparison tools
-        run: |
-          npm install playwright pngjs pixelmatch@5.3.0
-          npx playwright install chromium --with-deps
+        working-directory: scripts
+        run: npx playwright install chromium --with-deps
 
       - name: Take screenshots
         env:
