@@ -161,6 +161,8 @@ All Playwright timeout values in E2E tests and page objects **must** use the nam
 | `E2ETimeouts.Navigation` | 15 s | Full-page navigations (post-login redirect, initial project-page load). |
 | `E2ETimeouts.NavigationLong` | 20 s | Slower cross-page navigations using `WaitUntilState.Commit` (e.g. org or agent detail pages). |
 | `E2ETimeouts.RetryDelay` | 1.5 s | `Task.Delay` between a failed navigation attempt and its retry. Not a Playwright timeout. |
+| `E2ETimeouts.LogPollTimeoutMs` | 30 s | Deadline for polling the session log API until an expected log line appears. Not a Playwright timeout. |
+| `E2ETimeouts.LogPollDelayMs` | 500 ms | `Task.Delay` between successive session-log poll attempts. Not a Playwright timeout. |
 
 **Example:**
 

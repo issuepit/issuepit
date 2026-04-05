@@ -802,9 +802,9 @@ public class AgentSessionTests(AspireFixture fixture)
 
         // Verify the early [DEBUG] log lines (emitted well before container startup).
         // The session status is set to Running before LaunchAsync writes log lines, so poll
-        // until the expected lines appear (or give up after 30 seconds).
+        // until the expected lines appear (or give up after LogPollTimeoutMs).
         List<string> logLines = [];
-        var logDeadline = DateTime.UtcNow.AddSeconds(30);
+        var logDeadline = DateTime.UtcNow.AddMilliseconds(E2ETimeouts.LogPollTimeoutMs);
         while (DateTime.UtcNow < logDeadline)
         {
             var logsResp = await client.GetAsync($"/api/agent-sessions/{sessionId}/logs");
@@ -815,7 +815,7 @@ public class AgentSessionTests(AspireFixture fixture)
                 .ToList();
             if (logLines.Any(l => l.Contains("Manual (live terminal session)")))
                 break;
-            await Task.Delay(500);
+            await Task.Delay(E2ETimeouts.LogPollDelayMs);
         }
 
         Assert.True(

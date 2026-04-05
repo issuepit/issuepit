@@ -227,6 +227,44 @@ Agent modes can use **MCP (Model Context Protocol) servers** to access external 
 
 ---
 
+## Skills
+
+**Skills** are reusable system prompt definitions that can be shared across multiple agent modes and version-tracked via a git repository.
+
+A skill encapsulates a focused piece of AI behavior — for example, "Python expert", "code reviewer", or "documentation writer" — so you don't have to duplicate the same prompt text in every agent that needs it.
+
+### Creating a Skill
+
+1. Go to **Agents → Skills** (or **Skills** in the sidebar).
+2. Click **New Skill**.
+3. Fill in the skill details:
+
+   | Field | Description |
+   |-------|-------------|
+   | **Name** | Display name (e.g. `Python Expert`) |
+   | **Description** | Short summary of what the skill does |
+   | **Content** | The system prompt text for this skill |
+   | **Organization** | Which org this skill belongs to |
+
+4. Click **Create Skill**.
+
+### Version-tracking with Git
+
+A skill can optionally be linked to a git repository so its content is version-controlled and can be synced across environments.
+
+On the skill's settings page, configure the **Git Repository** section:
+
+| Field | Description |
+|-------|-------------|
+| **Repository URL** | HTTPS URL of the git repo (e.g. `https://github.com/org/skills-repo.git`) |
+| **Subdirectory** | Optional path within the repo for sparse-checkout (e.g. `skills/python`) |
+| **Username** | HTTP basic auth username (e.g. `x-access-token` for GitHub PATs) |
+| **Token / PAT** | Personal access token for authentication |
+
+Once a repository is configured, the skill's **Sync Status** shows the latest synchronisation result (`None`, `Synced`, `Error`, etc.).
+
+---
+
 ## Tips for Writing System Prompts
 
 - Be specific about what the work agent should and should not do.
