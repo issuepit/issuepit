@@ -227,44 +227,6 @@ Agent modes can use **MCP (Model Context Protocol) servers** to access external 
 
 ---
 
-## Skills
-
-**Skills** are reusable system prompt definitions that can be shared across multiple agent modes and version-tracked via a git repository.
-
-A skill encapsulates a focused piece of AI behavior — for example, "Python expert", "code reviewer", or "documentation writer" — so you don't have to duplicate the same prompt text in every agent that needs it.
-
-### Creating a Skill
-
-1. Go to **Agents → Skills** (or **Skills** in the sidebar).
-2. Click **New Skill**.
-3. Fill in the skill details:
-
-   | Field | Description |
-   |-------|-------------|
-   | **Name** | Display name (e.g. `Python Expert`) |
-   | **Description** | Short summary of what the skill does |
-   | **Content** | The system prompt text for this skill |
-   | **Organization** | Which org this skill belongs to |
-
-4. Click **Create Skill**.
-
-### Version-tracking with Git
-
-A skill can optionally be linked to a git repository so its content is version-controlled and can be synced across environments.
-
-On the skill's settings page, configure the **Git Repository** section:
-
-| Field | Description |
-|-------|-------------|
-| **Repository URL** | HTTPS URL of the git repo (e.g. `https://github.com/org/skills-repo.git`) |
-| **Subdirectory** | Optional path within the repo for sparse-checkout (e.g. `skills/python`) |
-| **Username** | HTTP basic auth username (e.g. `x-access-token` for GitHub PATs) |
-| **Token / PAT** | Personal access token for authentication |
-
-Once a repository is configured, the skill's **Sync Status** shows the latest synchronisation result (`None`, `Synced`, `Error`, etc.).
-
----
-
 ## Tips for Writing System Prompts
 
 - Be specific about what the work agent should and should not do.
@@ -300,6 +262,52 @@ When an agent mode is assigned to an issue, `IssuePit.ExecutionClient` handles t
 
 1. Consumes the `cicd-trigger` Kafka topic.
 2. Runs GitHub Actions workflows locally via [nektos/act](https://github.com/nektos/act).
+
+---
+
+## Aspire CLI Agent Integration (Aspire 13.2)
+
+Aspire 13.2 ships two new CLI commands that connect AI coding agents (opencode, GitHub Copilot, Claude Code, VS Code) directly to the running Aspire stack via MCP:
+
+| Command | What it does |
+|---------|-------------|
+| `aspire agent mcp` | Starts an MCP server that exposes Aspire resources, logs, traces, and docs to an AI agent |
+| `aspire agent init` | Detects installed AI agents and configures them to use `aspire agent mcp` automatically |
+
+### `aspire agent mcp` — MCP tools exposed
+
+When an AI coding agent has the Aspire MCP server configured, it gains access to:
+
+| Tool | Description |
+|------|-------------|
+| `list_resources` | List all Aspire resources and their status |
+| `list_console_logs` | Fetch console output from any resource |
+| `execute_resource_command` | Start, stop, restart, or rebuild a resource |
+| `list_structured_logs` | Read OTEL structured logs |
+| `list_traces` | View distributed traces |
+| `search_docs` / `get_doc` | Search and read Aspire documentation inline |
+| Resource-specific tools | e.g. SQL query tools when `WithPostgresMcp()` is used |
+
+### `aspire agent init` — detected agents
+
+`aspire agent init` detects and configures:
+- **OpenCode** — updates `opencode.jsonc` and creates `.opencode/skill/aspire/SKILL.md`
+- **VS Code** (GitHub Copilot extension)
+- **Claude Code**
+- **GitHub Copilot CLI**
+
+For this project, `opencode.jsonc` and `.opencode/skill/aspire/SKILL.md` are already committed so all developers get the configuration automatically. Any developer that has run `aspire agent init` before or who adds a new supported agent only needs to run the command once to apply the MCP config to their local agent settings.
+
+### Running `aspire agent init`
+
+```sh
+# From the repository root — detects your installed agent tools and wires them up
+aspire agent init
+```
+
+The command is interactive. It will offer to:
+1. Update your agent's config file (e.g. `~/.config/opencode/config.jsonc`) with the `aspire agent mcp` MCP server entry.
+2. Install the Aspire skill file (already committed in this repo at `.opencode/skill/aspire/SKILL.md`).
 
 ---
 
