@@ -341,7 +341,7 @@ var notesMcpServer = builder.AddProject<Projects.IssuePit_Notes_McpServer>("note
     .WaitFor(notesApi)
     .WithEnvironment("Notes__ApiBaseUrl", notesApi.GetEndpoint("http"));
 
-var frontend = builder.AddNpmApp("frontend", "../../frontend", "dev")
+var frontend = builder.AddJavaScriptApp("frontend", "../../frontend", "dev")
     .WithHttpEndpoint(env: "NUXT_PORT")
     .WithExternalHttpEndpoints();
 
