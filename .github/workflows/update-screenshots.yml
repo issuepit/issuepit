@@ -62,26 +62,45 @@ jobs:
         if: ${{ !inputs.frontend_url }}
         run: dotnet tool install --global aspire.cli
 
+      - name: Restore and build Aspire AppHost
+        if: ${{ !inputs.frontend_url }}
+        run: |
+          dotnet restore src/IssuePit.AppHost/IssuePit.AppHost.csproj
+          dotnet build src/IssuePit.AppHost/IssuePit.AppHost.csproj --no-restore
+
       - name: Start Aspire AppHost
         if: ${{ !inputs.frontend_url }}
-        timeout-minutes: 10
+        timeout-minutes: 5
         env:
           DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
           ASPIRE_ALLOW_UNSECURED_TRANSPORT: "true"
         run: |
-          aspire start --apphost src/IssuePit.AppHost --non-interactive --nologo
+          aspire start --apphost src/IssuePit.AppHost --no-build --non-interactive --nologo
 
       - name: Wait for resources and discover URLs
         if: ${{ !inputs.frontend_url }}
         timeout-minutes: 5
         run: |
-          aspire wait api     --timeout 240 --nologo
+          aspire wait api      --timeout 240 --nologo
           aspire wait frontend --timeout 240 --nologo
 
-          API_URL=$(aspire describe --format Json --nologo | \
-            jq -r '.resources[] | select(.name == "api") | .urls[] | select(.isInternal == false) | .url' | head -1)
-          FRONTEND_URL=$(aspire describe --format Json --nologo | \
-            jq -r '.resources[] | select(.name == "frontend") | .urls[] | select(.isInternal == false) | .url' | head -1)
+          DESCRIBE=$(aspire describe --format Json --nologo)
+
+          API_URL=$(echo "$DESCRIBE" | \
+            jq -r '.resources[] | select(.name == "api") | .urls[0].url')
+          FRONTEND_URL=$(echo "$DESCRIBE" | \
+            jq -r '.resources[] | select(.name == "frontend") | .urls[0].url')
+
+          if [ -z "$API_URL" ] || [ "$API_URL" = "null" ]; then
+            echo "::error::Failed to discover API_URL from aspire describe"
+            echo "$DESCRIBE" | jq .
+            exit 1
+          fi
+          if [ -z "$FRONTEND_URL" ] || [ "$FRONTEND_URL" = "null" ]; then
+            echo "::error::Failed to discover FRONTEND_URL from aspire describe"
+            echo "$DESCRIBE" | jq .
+            exit 1
+          fi
 
           echo "API_URL=$API_URL" >> "$GITHUB_ENV"
           echo "FRONTEND_URL=$FRONTEND_URL" >> "$GITHUB_ENV"
