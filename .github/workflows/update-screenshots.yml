@@ -86,10 +86,13 @@ jobs:
 
           DESCRIBE=$(aspire describe --format Json --nologo)
 
+          # Aspire 13.2 appends a random suffix to resource .name (e.g. "api-qpwzyxbu"),
+          # so we match by .displayName. The api's http URL has "/scalar/v1" appended
+          # via WithUrlForEndpoint, so we strip the path to get the base URL.
           API_URL=$(echo "$DESCRIBE" | \
-            jq -r '.resources[] | select(.name == "api") | .urls[0].url')
+            jq -r '.resources[] | select(.displayName == "api") | .urls[] | select(.name == "http") | .url | split("/")[0:3] | join("/")')
           FRONTEND_URL=$(echo "$DESCRIBE" | \
-            jq -r '.resources[] | select(.name == "frontend") | .urls[0].url')
+            jq -r '.resources[] | select(.displayName == "frontend") | .urls[] | select(.name == "http") | .url')
 
           if [ -z "$API_URL" ] || [ "$API_URL" = "null" ]; then
             echo "::error::Failed to discover API_URL from aspire describe"
