@@ -6,7 +6,9 @@ this file descripes rules on how agenting coding tools work with this repository
 
 - **Agent mode** — a configuration with a system prompt and settings such as MCP tools and authentication keys. This is what you create in the IssuePit UI.
 - **(Work) agent** — the CLI tool or process (e.g. `opencode`, `codex`, GitHub Copilot CLI) that performs the actual work. It is launched with an agent mode configuration.
-- **Agent** — can refer to either concept, but typically means the entity doing work. An agent mode is executed _by_ a work agent.
+- **Agent**
+  - can refer to either concept, but typically means the entity doing work. An agent mode is executed _by_ a work agent.
+  - agent can also be u or a similar tool working on this repo; this should not be confused with issuepit agents
 - Multiple agent modes can be executed by multiple work agents in parallel.
 - Work agents are spawned by `IssuePit.ExecutionClient` with the agent mode configuration on demand whenever work needs to be done.
 
@@ -52,6 +54,8 @@ this file descripes rules on how agenting coding tools work with this repository
 - **Commits MUST be made after each complete task/step in an implementation session** — do not batch all changes into a single commit at the end
 - Commit messages must follow [Conventional Commits](https://www.conventionalcommits.org/) style
 
+---
+
 # Agent Workflow
 
 ## PR Handling
@@ -66,6 +70,8 @@ this file descripes rules on how agenting coding tools work with this repository
 - includes a list of what tasks had to be done and check which are already done
 - branches should contain the PR/issue number like `copilot/123-fix-of-xyz`
 
+
+
 ## Ending a Task / Conversation / Session
 
 **Definition of Done**: A session is only complete when:
@@ -73,6 +79,7 @@ this file descripes rules on how agenting coding tools work with this repository
 - All code changes can be executed without errors
 - All tests run green (no exceptions — all necessary tools are available for running e2e tests or database tests)
 - Build succeeds with no breaking errors
+- Always run the frontend linter before closing a session
 - Code has been validated through testing
 
 At the end, scan similar files and evaluate if there is similar/duplicated code:
@@ -80,18 +87,18 @@ At the end, scan similar files and evaluate if there is similar/duplicated code:
 - Inform the user about it
 - Create a separate commit for each refactor (so review is easy)
 
+---
+
 # Documentation
 
 - Do not add redundant information in documentation (e.g., listing what tests cover when the tests themselves are self-documenting)
 - Keep documentation focused on concepts, formats, and implementation approaches rather than test descriptions
-- **When adding a new user-facing feature, update `docs/` accordingly** — add or extend the relevant page (e.g. `docs/projects.md`, `docs/agents.md`, or create a new page). If applicable, add a screenshot entry to `scripts/take-screenshots.js` so the automated screenshot workflow covers the new page.
-- For docs design conventions, see `docs/issuepitAgents.md`.
+- **When adding a new user-facing feature, update `docs/` accordingly** — add or extend the relevant page (e.g. `docs/projects.md`, or create a new page). If applicable, add a screenshot entry to `scripts/take-screenshots.js` so the automated screenshot workflow covers the new page.
 
-# Coding Agent Guidelines
 
-When working as a coding agent on this repository, follow these conventions:
 
-## Error Handling
+
+# Error Handling
 
 - **Do not hide errors with silent fallbacks.** A fallback that masks a misconfiguration (e.g. cloning a git repo without `--branch` when the configured branch does not exist in the remote) prevents the user from understanding what went wrong. Instead, fail fast with a clear, actionable error message that identifies the misconfiguration and how to fix it.
 
@@ -99,32 +106,7 @@ When working as a coding agent on this repository, follow these conventions:
 
 - **Never silently do things that were not explicitly requested.** Do not invent hidden triggers or surrogate inputs (e.g. stub issues, fallback project IDs) to bypass missing required data — instead, fail with a clear error.
 
-## Date Formats
-
-Always use **ISO 8601 format** (`YYYY-MM-DD`) for dates in custom issue properties, API responses, and any user-visible date fields. Do not rely on browser locale formatting (e.g. `mm/dd/yyyy`) for date values stored or displayed in the application. Date inputs in forms should accept and display dates in `YYYY-MM-DD` format.
-
-For **displaying** dates and times in the Vue frontend, always use the shared `<DateDisplay>` component (`frontend/components/DateDisplay.vue`) instead of inline `toLocaleString`/`toLocaleDateString` calls:
-
-```vue
-<!-- Absolute date, European format: "16. Jan 2025" -->
-<DateDisplay :date="item.createdAt" mode="absolute" resolution="date" />
-
-<!-- Absolute datetime, 24h clock: "16. Jan 2025, 14:30" -->
-<DateDisplay :date="item.startedAt" mode="absolute" resolution="datetime" />
-
-<!-- Relative: "3 minutes ago", "2 hours ago", "yesterday" (tooltip shows full datetime) -->
-<DateDisplay :date="item.updatedAt" mode="relative" />
-
-<!-- Auto: relative for recent dates (<7d), absolute beyond that -->
-<DateDisplay :date="item.startedAt" mode="auto" />
-```
-
-Key formatting rules enforced by `<DateDisplay>`:
-- **24-hour clock** — never use AM/PM
-- **European day-first format** — `16. Jan 2025` not `Jan 16, 2025`
-- Relative labels: `just now`, `X minutes ago`, `X hours ago`, `yesterday`, `X days ago`
-
-## API Response Objects
+# API Response Objects
 
 - **Always use named `record` or `class` types for API responses** — do not use anonymous objects (`new { ... }`) in controller actions.
   Named types improve discoverability, reusability, and compile-time safety.
@@ -137,46 +119,14 @@ Key formatting rules enforced by `<DateDisplay>`:
   return Ok(new { agent.Id, agent.Name, ... });
   ```
 
-## Testing Conventions
+# Testing Conventions
 
 - **Tests must never be silently skipped to hide failures.** A test that returns without asserting (e.g. `if (condition) return;`) counts as a passing test even when the feature under test is completely broken. This masks real failures.
 - If a test genuinely cannot run in a given environment, use `Skip.If` / `Skip.Unless` (or `Assert.Skip`) with an **explicit, human-readable reason** so the skip is visible in test results and CI logs.
 - Prefer fixing the underlying precondition (e.g. downloading a required asset at test start) over skipping.
 
-- **Always run the frontend linter before closing a session:**
-  ```sh
-  cd frontend && node_modules/.bin/eslint .
-  ```
-  Fix all lint **errors** (unused variables, type-only imports, etc.). Pre-existing warnings from unrelated code do not need to be resolved.
 
-## E2E Playwright Timeout Conventions
-
-All Playwright timeout values in E2E tests and page objects **must** use the named constants from
-`src/IssuePit.Tests.E2E/E2ETimeouts.cs`. Never use magic numbers like `10_000` directly.
-
-| Constant | Value | When to use |
-|---|---|---|
-| `E2ETimeouts.Short` | 5 s | First-attempt / hydration-retry check; brief UI-feedback waits (modal opened, voice recording started). A second attempt with `Default` will follow on failure. |
-| `E2ETimeouts.Default` | 10 s | General element presence/interaction wait; value passed to `SetDefaultTimeout`. |
-| `E2ETimeouts.Navigation` | 15 s | Full-page navigations (post-login redirect, initial project-page load). |
-| `E2ETimeouts.NavigationLong` | 20 s | Slower cross-page navigations using `WaitUntilState.Commit` (e.g. org or agent detail pages). |
-| `E2ETimeouts.RetryDelay` | 1.5 s | `Task.Delay` between a failed navigation attempt and its retry. Not a Playwright timeout. |
-| `E2ETimeouts.LogPollTimeoutMs` | 30 s | Deadline for polling the session log API until an expected log line appears. Not a Playwright timeout. |
-| `E2ETimeouts.LogPollDelayMs` | 500 ms | `Task.Delay` between successive session-log poll attempts. Not a Playwright timeout. |
-
-**Example:**
-
-```csharp
-// ✅ correct
-context.SetDefaultTimeout(E2ETimeouts.Default);
-await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
-await page.WaitForSelectorAsync("button:has-text('New Issue')", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
-
-// ❌ wrong – magic number, hard to tune globally
-await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
-```
-
-## PR Screenshots
+# PR Screenshots
 
 Screenshots in PRs and documentation must show the actual UI **after authentication** — the login page is not useful. The `scripts/take-screenshots.js` script handles this by:
 
@@ -195,42 +145,3 @@ node scripts/take-screenshots.js /tmp/screenshots
 ```
 
 Always verify that uploaded screenshots show the intended UI (not a blank page, wrong page, or the login screen).
-
-## UI Conventions
-
-### Delete Operations Must Show a Confirm Modal
-
-**All destructive delete operations in the UI must show a confirmation modal** before executing.
-Never call a delete API directly from a button click without first showing a modal that requires the user to confirm.
-
-This applies to deleting: issues, attachments, agents, runtimes, MCP servers, API keys, labels, milestones, and any other entity.
-
-The confirmation modal must:
-- Clearly state what is being deleted (include the item name where possible).
-- Warn that the action cannot be undone.
-- Provide a prominent red **Delete** button and a neutral **Cancel** button.
-
-### Searchable Multi-Select Inputs
-
-**Use the `<MultiSelect>` component** (`frontend/components/MultiSelect.vue`) for any filter or selection field where:
-- the user may want to select **multiple values**, or
-- the list of options is long enough to benefit from a **search/filter input** (e.g. branches, agents, usernames, labels, statuses).
-
-Never use a plain `<input type="text">` for a filter that maps to a discrete set of options. Examples that must use `<MultiSelect>`:
-- Branch filters (test history, run lists, CI/CD views)
-- Agent assignment filters
-- Username / member filters
-- Label and status filters
-
-```vue
-<MultiSelect
-  v-model="selectedBranches"
-  :options="branchOptions"
-  placeholder="All Branches"
-/>
-```
-
-Where `options` is `MultiSelectOption[]` (`{ value: string, label: string, dotClass?: string }`).
-Populate `options` from the appropriate API endpoint so the user sees real values.
-The component handles search, keyboard navigation, checkbox selection, and outside-click dismissal.
-
