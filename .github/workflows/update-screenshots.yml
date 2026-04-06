@@ -64,6 +64,10 @@ jobs:
           dotnet restore src/IssuePit.AppHost/IssuePit.AppHost.csproj
           dotnet build src/IssuePit.AppHost/IssuePit.AppHost.csproj --no-restore --configuration Release
 
+      - name: Install Aspire CLI
+        if: ${{ !inputs.frontend_url }}
+        run: dotnet tool install --global aspire.cli
+
       - name: Start Aspire AppHost
         if: ${{ !inputs.frontend_url }}
         timeout-minutes: 5
@@ -71,86 +75,19 @@ jobs:
           DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
           ASPIRE_ALLOW_UNSECURED_TRANSPORT: "true"
         run: |
-          # Start AppHost in background, capturing its output for signal detection.
-          # Note: resource logs (api, frontend) are NOT forwarded to AppHost stdout in
-          # dotnet-run mode — only AppHost-level messages appear. We rely on
-          # "Distributed application started" as the readiness signal.
-          dotnet run --project src/IssuePit.AppHost --no-build --configuration Release \
-            --launch-profile http \
-            > /tmp/aspire.log 2>&1 &
+          aspire start --apphost src/IssuePit.AppHost --no-build --non-interactive --nologo
 
-          # ── Step 1: Wait for Aspire to distribute all resources ────────────────
-          echo "Waiting for Aspire to distribute resources..."
-          for i in $(seq 1 36); do
-            if grep -q 'Distributed application started' /tmp/aspire.log 2>/dev/null; then
-              echo "Aspire distributed (iteration $i)"
-              break
-            fi
-            if [ "$i" -eq 36 ]; then
-              echo "::error::Timeout waiting for Aspire to distribute"
-              cat /tmp/aspire.log
-              exit 1
-            fi
-            sleep 5
-          done
+      - name: Wait for resources and discover URLs
+        if: ${{ !inputs.frontend_url }}
+        timeout-minutes: 5
+        run: |
+          aspire wait api     --timeout 240 --nologo
+          aspire wait frontend --timeout 240 --nologo
 
-          # ── Step 2: Wait for the API health endpoint ───────────────────────────
-          # API uses the port from its launchSettings.json http profile (5035).
-          # Aspire passes this port to the project via ASPNETCORE_URLS / ASPNETCORE_HTTP_PORTS.
-          API_URL="http://localhost:5035"
-          echo "Polling API health at $API_URL/health..."
-          API_HEALTHY=false
-          for i in $(seq 1 24); do
-            if curl -sf "$API_URL/health" > /dev/null 2>&1; then
-              echo "API is healthy (iteration $i)"
-              API_HEALTHY=true
-              break
-            fi
-            sleep 5
-          done
-          if [ "$API_HEALTHY" = false ]; then
-            echo "::error::API did not become healthy within timeout"
-            echo "=== Aspire log ==="
-            cat /tmp/aspire.log
-            exit 1
-          fi
-
-          # ── Step 3: Discover the frontend port ─────────────────────────────────
-          # Aspire passes the allocated port to Nuxt via the NUXT_PORT env var.
-          # Read it from the node process environment via /proc.
-          echo "Waiting for frontend (node/nuxt) process with NUXT_PORT..."
-          FRONTEND_URL=""
-          for i in $(seq 1 12); do
-            for pid_dir in /proc/[0-9]*; do
-              port=$(cat "$pid_dir/environ" 2>/dev/null | tr '\0' '\n' | grep '^NUXT_PORT=' | cut -d= -f2)
-              if [ -n "$port" ]; then
-                FRONTEND_URL="http://localhost:$port"
-                break
-              fi
-            done
-            [ -n "$FRONTEND_URL" ] && break
-            sleep 5
-          done
-
-          if [ -z "$FRONTEND_URL" ]; then
-            echo "::error::Could not discover NUXT_PORT from any node process"
-            exit 1
-          fi
-
-          echo "Polling frontend at $FRONTEND_URL..."
-          FRONTEND_READY=false
-          for i in $(seq 1 12); do
-            if curl -sf "$FRONTEND_URL" > /dev/null 2>&1; then
-              echo "Frontend is reachable (iteration $i)"
-              FRONTEND_READY=true
-              break
-            fi
-            sleep 5
-          done
-          if [ "$FRONTEND_READY" = false ]; then
-            echo "::error::Frontend did not become reachable within timeout"
-            exit 1
-          fi
+          API_URL=$(aspire describe --format Json --nologo | \
+            jq -r '.resources[] | select(.name == "api") | .urls[] | select(.isInternal == false) | .url' | head -1)
+          FRONTEND_URL=$(aspire describe --format Json --nologo | \
+            jq -r '.resources[] | select(.name == "frontend") | .urls[] | select(.isInternal == false) | .url' | head -1)
 
           echo "API_URL=$API_URL" >> "$GITHUB_ENV"
           echo "FRONTEND_URL=$FRONTEND_URL" >> "$GITHUB_ENV"
