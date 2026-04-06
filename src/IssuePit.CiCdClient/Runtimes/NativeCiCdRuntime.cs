@@ -377,7 +377,7 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
     }
 
     /// <summary>
-    /// Runs <c>act --version</c> and emits the output as a <c>[DEBUG]</c> log line.
+    /// Verifies the <c>act</c> binary is functional by running <c>act --help</c> and emits the result as a <c>[DEBUG]</c> log line.
     /// Best-effort: silently skipped when act is not found or fails. Never throws.
     /// </summary>
     internal static async Task TryLogActVersionAsync(
@@ -387,7 +387,7 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
     {
         try
         {
-            var psi = new ProcessStartInfo(actBin, "--version")
+            var psi = new ProcessStartInfo(actBin, "--help")
             {
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -398,11 +398,13 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
             if (!process.Start())
                 return;
 
-            var version = (await process.StandardOutput.ReadToEndAsync(cancellationToken)).Trim();
+            // Drain output to avoid blocking; we only care about the exit code.
+            _ = process.StandardOutput.ReadToEndAsync(cancellationToken);
+            _ = process.StandardError.ReadToEndAsync(cancellationToken);
             await process.WaitForExitAsync(cancellationToken);
 
-            if (!string.IsNullOrEmpty(version))
-                await onLogLine($"[DEBUG] Act version    : {version}", LogStream.Stdout);
+            var status = process.ExitCode == 0 ? "act binary OK" : $"act binary check failed (exit {process.ExitCode})";
+            await onLogLine($"[DEBUG] Act binary     : {status}", LogStream.Stdout);
         }
         catch (OperationCanceledException)
         {

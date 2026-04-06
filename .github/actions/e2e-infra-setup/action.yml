@@ -87,7 +87,7 @@ runs:
           git checkout FETCH_HEAD
           go build -ldflags "-X main.version=${ACT_COMMIT}" -o /usr/local/bin/act main.go
           rm -rf /tmp/issuepit-act
-          echo "[act-build] Build complete — verifying: $(act --help 2>&1 | head -1)"
+          act --help > /dev/null && echo "[act-build] Build complete — act binary OK"
         ) &
 
         # Handle Docker images in a subshell (runs concurrently with act build)

@@ -163,7 +163,7 @@ jobs:
           git checkout FETCH_HEAD
           go build -ldflags "-X main.version=${ACT_COMMIT}" -o /usr/local/bin/act main.go
           rm -rf /tmp/issuepit-act
-          act --version
+          act --help > /dev/null
 
       # Cache Docker images as tar files so agent sessions skip the pull entirely.
       # Key format mirrors the e2e-infra-setup composite action:
