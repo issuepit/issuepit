@@ -340,6 +340,7 @@ var notesMcpServer = builder.AddProject<Projects.IssuePit_Notes_McpServer>("note
     .WithReference(notesApi)
     .WaitFor(notesApi)
     .WithEnvironment("Notes__ApiBaseUrl", notesApi.GetEndpoint("http"))
+    .WithHttpEndpoint()  // required: WithMcpServer needs a named http/https endpoint to proxy
     .WithMcpServer();  // MapMcp("/mcp") — exposed to AI agents via `aspire agent mcp`
 
 var frontend = builder.AddJavaScriptApp("frontend", "../../frontend", "dev")
