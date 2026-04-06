@@ -91,8 +91,10 @@ jobs:
           # via WithUrlForEndpoint, so we strip the path to get the base URL.
           API_URL=$(echo "$DESCRIBE" | \
             jq -r '.resources[] | select(.displayName == "api") | .urls[] | select(.name == "http") | .url | split("/")[0:3] | join("/")')
+          # The frontend's http URL also has a path suffix ("/admin-login") via
+          # WithUrlForEndpoint, so strip it to get the bare base URL.
           FRONTEND_URL=$(echo "$DESCRIBE" | \
-            jq -r '.resources[] | select(.displayName == "frontend") | .urls[] | select(.name == "http") | .url')
+            jq -r '.resources[] | select(.displayName == "frontend") | .urls[] | select(.name == "http") | .url | split("/")[0:3] | join("/")')
 
           if [ -z "$API_URL" ] || [ "$API_URL" = "null" ]; then
             echo "::error::Failed to discover API_URL from aspire describe"
