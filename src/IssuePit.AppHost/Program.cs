@@ -340,7 +340,7 @@ var notesMcpServer = builder.AddProject<Projects.IssuePit_Notes_McpServer>("note
     .WithReference(notesApi)
     .WaitFor(notesApi)
     .WithEnvironment("Notes__ApiBaseUrl", notesApi.GetEndpoint("http"))
-    .WithMcpServer("/");  // MapMcp() root — exposed to AI agents via `aspire agent mcp`
+    .WithMcpServer();  // MapMcp("/mcp") — exposed to AI agents via `aspire agent mcp`
 
 var frontend = builder.AddJavaScriptApp("frontend", "../../frontend", "dev")
     .WithHttpEndpoint(env: "NUXT_PORT")

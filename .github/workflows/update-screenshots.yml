@@ -58,24 +58,18 @@ jobs:
           docker pull valkey/valkey:9.0
           docker pull apache/kafka:3.9.0
 
-      - name: Restore and build Aspire AppHost
-        if: ${{ !inputs.frontend_url }}
-        run: |
-          dotnet restore src/IssuePit.AppHost/IssuePit.AppHost.csproj
-          dotnet build src/IssuePit.AppHost/IssuePit.AppHost.csproj --no-restore --configuration Release
-
       - name: Install Aspire CLI
         if: ${{ !inputs.frontend_url }}
         run: dotnet tool install --global aspire.cli
 
       - name: Start Aspire AppHost
         if: ${{ !inputs.frontend_url }}
-        timeout-minutes: 5
+        timeout-minutes: 10
         env:
           DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
           ASPIRE_ALLOW_UNSECURED_TRANSPORT: "true"
         run: |
-          aspire start --apphost src/IssuePit.AppHost --no-build --non-interactive --nologo
+          aspire start --apphost src/IssuePit.AppHost --non-interactive --nologo
 
       - name: Wait for resources and discover URLs
         if: ${{ !inputs.frontend_url }}
