@@ -339,9 +339,11 @@ var notesApi = builder.AddProject<Projects.IssuePit_Notes_Api>("notes-api")
 var notesMcpServer = builder.AddProject<Projects.IssuePit_Notes_McpServer>("notes-mcp-server")
     .WithReference(notesApi)
     .WaitFor(notesApi)
-    .WithEnvironment("Notes__ApiBaseUrl", notesApi.GetEndpoint("http"));
+    .WithEnvironment("Notes__ApiBaseUrl", notesApi.GetEndpoint("http"))
+    .WithHttpEndpoint()  // required: WithMcpServer needs a named http/https endpoint to proxy
+    .WithMcpServer();  // MapMcp("/mcp") — exposed to AI agents via `aspire agent mcp`
 
-var frontend = builder.AddNpmApp("frontend", "../../frontend", "dev")
+var frontend = builder.AddJavaScriptApp("frontend", "../../frontend", "dev")
     .WithHttpEndpoint(env: "NUXT_PORT")
     .WithExternalHttpEndpoints();
 
@@ -379,7 +381,8 @@ var mcpServer = builder.AddProject<Projects.IssuePit_McpServer>("mcp-server")
     .WithReference(api)
     .WaitFor(api)
     .WithEnvironment("IssuePit__ApiBaseUrl", api.GetEndpoint("http"))
-    .WithEndpoint("http", e => e.IsProxied = false);
+    .WithEndpoint("http", e => e.IsProxied = false)
+    .WithMcpServer("/mcp");  // MapMcp("/mcp") — exposed to AI agents via `aspire agent mcp`
 
 // Allow the API to discover and call the MCP server (e.g. for issue enhancement).
 api.WithEnvironment("McpServer__BaseUrl", mcpServer.GetEndpoint("http"));

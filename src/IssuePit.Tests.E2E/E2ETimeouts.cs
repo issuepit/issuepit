@@ -45,4 +45,18 @@ internal static class E2ETimeouts
     /// Passed to <c>Task.Delay</c>, not to a Playwright API.
     /// </summary>
     public const int RetryDelay = 1_500;
+
+    /// <summary>
+    /// Polling deadline (milliseconds) when waiting for a specific log line to appear
+    /// in a backend session log API response. The session status may be set to Running
+    /// before all debug log lines are persisted, so tests must poll rather than fetch once.
+    /// Passed to <c>DateTime.UtcNow.AddMilliseconds</c>, not to a Playwright API.
+    /// </summary>
+    public const int LogPollTimeoutMs = 30_000;
+
+    /// <summary>
+    /// Delay (milliseconds) between successive poll attempts when waiting for a log line.
+    /// Passed to <c>Task.Delay</c>, not to a Playwright API.
+    /// </summary>
+    public const int LogPollDelayMs = 500;
 }
