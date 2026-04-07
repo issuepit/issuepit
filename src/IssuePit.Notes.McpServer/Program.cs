@@ -17,6 +17,6 @@ builder.Services
 var app = builder.Build();
 
 app.MapDefaultEndpoints();
-app.MapMcp();
+app.MapMcp("/mcp");
 
 app.Run();

@@ -5,8 +5,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Aspire.Npgsql.EntityFrameworkCore.PostgreSQL" Version="13.1.2" />
-    <PackageReference Include="Aspire.StackExchange.Redis" Version="13.1.2" />
+    <PackageReference Include="Aspire.Npgsql.EntityFrameworkCore.PostgreSQL" Version="13.2.1" />
+    <PackageReference Include="Aspire.StackExchange.Redis" Version="13.2.1" />
     <PackageReference Include="AWSSDK.S3" Version="4.0.18.7" />
     <PackageReference Include="Confluent.Kafka" Version="2.8.0" />
     <PackageReference Include="Docker.DotNet.Enhanced" Version="3.132.0" />
