@@ -30,7 +30,7 @@ runs:
       working-directory: frontend
       run: |
         npm ci
-        npx allow-scripts
+        npm run allow-scripts
 
     # Authenticate to GHCR so that 'docker pull ghcr.io/issuepit/...' below succeeds.
     # The helper-act image is published to the issuepit org registry, which is not

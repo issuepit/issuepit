@@ -33,7 +33,7 @@ name: Copilot Setup Steps
 #      Aspire starts these as containers; without pre-pulled
 #      images every test times out on the first cold pull.
 #
-#   4. cd frontend && npm ci && npx allow-scripts
+#   4. cd frontend && npm ci && npm run allow-scripts
 #      Installs node_modules so 'npm run dev' (started by
 #      Aspire) doesn't run 'npm install' at test time.
 #      allow-scripts runs only the lifecycle scripts explicitly
@@ -141,7 +141,7 @@ jobs:
         working-directory: frontend
         run: |
           npm ci
-          npx allow-scripts
+          npm run allow-scripts
 
       # Pre-build the frontend to warm the Nuxt cache (.nuxt/).
       # When Aspire starts the frontend via 'npm run dev', it finds the compiled
