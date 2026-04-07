@@ -731,6 +731,8 @@ export interface GitHubDebugResult {
   tokenValid: boolean
   login?: string
   error?: string
+  tokenSource?: string
+  authUsername?: string
   repos: GitHubRepoEntry[]
 }
 
