@@ -167,6 +167,11 @@ jobs:
           git checkout FETCH_HEAD
           go build -ldflags "-X main.version=${ACT_COMMIT}" -o /usr/local/bin/act main.go
           rm -rf /tmp/issuepit-act
+          # Verify the binary works. We redirect to /dev/null rather than piping through
+          # `head -1` because piping caused SIGPIPE (exit 141): `act --help` writes many
+          # lines and `head` closes the read end after the first line, which kills the
+          # upstream process before it finishes. `> /dev/null` discards all output without
+          # closing the pipe prematurely, so the process exits cleanly with code 0.
           act --help > /dev/null
 
       # Cache Docker images as tar files so agent sessions skip the pull entirely.
