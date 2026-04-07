@@ -53,7 +53,7 @@ jobs:
         working-directory: frontend
         run: |
           npm ci
-          npx allow-scripts
+          npx --no-install @lavamoat/allow-scripts
 
       - name: Install scripts dependencies
         working-directory: scripts
