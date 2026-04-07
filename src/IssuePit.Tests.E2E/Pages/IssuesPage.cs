@@ -60,34 +60,29 @@ public class IssuesPage(IPage page)
     /// Verifies the Voice button is visible and opens the voice recording modal.
     /// Retries once on TimeoutException (Vue hydration race: the click handler may not yet be
     /// attached when the button first becomes visible in SSR output).
-    /// If the modal is already open when the catch fires (the click worked but the modal title
-    /// appeared after the Short timeout), we skip the retry to avoid clicking a button that is
-    /// now obscured by the open modal overlay (which would cause a 30 s hang).
-    /// The check is performed both before AND after the retry delay, because the modal can appear
-    /// during the delay window — missing that would make the obscured-button hang inevitable.
+    ///
+    /// Crucially we wait up to <see cref="E2ETimeouts.Navigation"/> (15 s) for the modal to appear
+    /// before concluding the click was missed.  Any "check-then-click" pattern shorter than this is
+    /// racy: the modal can arrive between the IsVisible check and the retry ClickAsync, leaving the
+    /// Voice button obscured by the modal backdrop (causing a 30 s hang).
+    /// Using a long initial wait means we only reach the retry ClickAsync when the modal is
+    /// provably not open, making the retry unconditionally safe.
     /// </summary>
     public async Task OpenVoiceModalAsync()
     {
+        await page.ClickAsync("button:has-text('Voice')");
         try
         {
-            await page.ClickAsync("button:has-text('Voice')");
+            // Wait up to Navigation (15 s) for the modal – handles both fast and slow first renders.
             await page.WaitForSelectorAsync("text=Create Issue from Voice",
-                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
         }
         catch (TimeoutException)
         {
-            // The modal may have opened after the Short timeout – skip the retry if already visible.
-            if (await page.IsVisibleAsync("text=Create Issue from Voice"))
-                return;
-
+            // Modal did not appear in 15 s → the click genuinely did not register (SSR hydration
+            // race: click handler was not yet attached).  At this point the modal is provably not
+            // open so the retry ClickAsync cannot race with a backdrop overlay.
             await Task.Delay(E2ETimeouts.RetryDelay);
-
-            // Re-check after the delay: the modal may have appeared during the wait.
-            // If we skip this check and the modal is now open, the Voice button is obscured by
-            // the modal backdrop and the next ClickAsync would hang for 30 s before timing out.
-            if (await page.IsVisibleAsync("text=Create Issue from Voice"))
-                return;
-
             await page.ClickAsync("button:has-text('Voice')");
             await page.WaitForSelectorAsync("text=Create Issue from Voice",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
