@@ -733,6 +733,7 @@ export interface GitHubDebugResult {
   error?: string
   tokenSource?: string
   authUsername?: string
+  tokenNotes: string[]
   repos: GitHubRepoEntry[]
   specificRepoPath?: string
   specificRepoAccessible?: boolean
