@@ -287,7 +287,9 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         else if (repo.GitHubIdentityId.HasValue && repo.GitHubIdentity is null)
         {
             // Identity link is broken (identity was deleted but FK not cleared)
-            tokenNotes.Add("The GitHub identity link is broken — the linked identity no longer exists. Git operations fall back to the stored auth token. Remove the identity link and re-configure authentication.");
+            tokenNotes.Add("The GitHub identity link is broken — the linked identity no longer exists.");
+            tokenNotes.Add("Git operations fall back to the stored auth token.");
+            tokenNotes.Add("Remove the identity link and re-configure authentication to fix this.");
             tokenSource = "Manual token (fallback — identity link is broken)" + (string.IsNullOrEmpty(repo.AuthUsername) ? "" : $" (username: {repo.AuthUsername})");
         }
         else if (!string.IsNullOrEmpty(repo.AuthToken))
