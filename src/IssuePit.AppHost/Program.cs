@@ -400,6 +400,10 @@ var gitServer = builder.AddProject<Projects.IssuePit_GitServer>("git-server")
     .WaitForCompletion(migrator)
     .WithHttpHealthCheck("/health", endpointName: "http");
 
+// Test runner API: provides live dotnet test discovery and execution against the running instance.
+var testRunner = builder.AddProject<Projects.IssuePit_TestRunner>("test-runner")
+    .WithHttpHealthCheck("/health", endpointName: "http");
+
 var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("execution-client")
     .WithReference(postgresDb)
     .WithReference(postgresServer)
@@ -474,6 +478,7 @@ frontend
     .WithEnvironment("NUXT_PUBLIC_MCP_BASE", mcpServer.GetEndpoint("http"))
     .WithEnvironment("NUXT_PUBLIC_TERMINAL_BASE", terminalServer.GetEndpoint("http"))
     .WithEnvironment("NUXT_PUBLIC_NOTES_API_BASE", notesApi.GetEndpoint("http"))
+    .WithEnvironment("NUXT_PUBLIC_TEST_RUNNER_BASE", testRunner.GetEndpoint("http"))
     .WaitFor(api)
     .WaitFor(notesApi)
     .WithUrlForEndpoint("http", u =>

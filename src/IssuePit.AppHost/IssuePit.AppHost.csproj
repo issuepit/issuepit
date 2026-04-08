@@ -27,5 +27,6 @@
     <ProjectReference Include="..\IssuePit.Notes.Api\IssuePit.Notes.Api.csproj" />
     <ProjectReference Include="..\IssuePit.Notes.Migrator\IssuePit.Notes.Migrator.csproj" />
     <ProjectReference Include="..\IssuePit.Notes.McpServer\IssuePit.Notes.McpServer.csproj" />
+    <ProjectReference Include="..\IssuePit.TestRunner\IssuePit.TestRunner.csproj" />
   </ItemGroup>
 </Project>
