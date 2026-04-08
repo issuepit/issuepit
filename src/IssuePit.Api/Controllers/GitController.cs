@@ -166,15 +166,18 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         if (repo is null) return NotFound();
         try
         {
+            await ApplyFreshTokenAsync(repo);
             await gitService.FetchAsync(repo);
             repo.LastFetchedAt = DateTime.UtcNow;
+            db.Entry(repo).Property(r => r.AuthToken).IsModified = false;
+            db.Entry(repo).Property(r => r.AuthUsername).IsModified = false;
             await db.SaveChangesAsync();
             return Ok(new { message = "Fetched successfully.", lastFetchedAt = repo.LastFetchedAt });
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Git fetch failed for repo {RepoId}", repoId);
-            return StatusCode(500, new { error = ex.Message });
+            return GitErrorResult(ex, repoId);
         }
     }
 
@@ -186,15 +189,18 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         if (repo is null) return NotFound();
         try
         {
+            await ApplyFreshTokenAsync(repo);
             await gitService.PullAsync(repo);
             repo.LastFetchedAt = DateTime.UtcNow;
+            db.Entry(repo).Property(r => r.AuthToken).IsModified = false;
+            db.Entry(repo).Property(r => r.AuthUsername).IsModified = false;
             await db.SaveChangesAsync();
             return Ok(new { message = $"Pulled '{repo.DefaultBranch}' successfully.", lastFetchedAt = repo.LastFetchedAt });
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Git pull failed for repo {RepoId}", repoId);
-            return StatusCode(500, new { error = ex.Message });
+            return GitErrorResult(ex, repoId);
         }
     }
 
@@ -208,13 +214,14 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
             return BadRequest(new { error = "Push is not allowed for read-only origins." });
         try
         {
+            await ApplyFreshTokenAsync(repo);
             await gitService.PushAsync(repo);
             return Ok(new { message = $"Pushed '{repo.DefaultBranch}' successfully." });
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Git push failed for repo {RepoId}", repoId);
-            return StatusCode(500, new { error = ex.Message });
+            return GitErrorResult(ex, repoId);
         }
     }
 
@@ -228,16 +235,19 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
             return BadRequest(new { error = "Sync (push) is not allowed for read-only origins." });
         try
         {
+            await ApplyFreshTokenAsync(repo);
             await gitService.PullAsync(repo);
             repo.LastFetchedAt = DateTime.UtcNow;
             await gitService.PushAsync(repo);
+            db.Entry(repo).Property(r => r.AuthToken).IsModified = false;
+            db.Entry(repo).Property(r => r.AuthUsername).IsModified = false;
             await db.SaveChangesAsync();
             return Ok(new { message = $"Synced '{repo.DefaultBranch}' successfully." });
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Git sync failed for repo {RepoId}", repoId);
-            return StatusCode(500, new { error = ex.Message });
+            return GitErrorResult(ex, repoId);
         }
     }
 
@@ -247,6 +257,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
     /// Lists GitHub repositories accessible to the token configured for this origin.
     /// Useful for debugging 403 authentication errors — shows which repos the token
     /// can actually reach, helping to diagnose wrong token or insufficient scopes.
+    /// Uses the same token resolution as git operations (fresh identity token when applicable).
     /// Only supported for github.com remotes.
     /// </summary>
     [HttpGet("repos/{repoId:guid}/debug/github-repos")]
@@ -254,21 +265,42 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
         var repo = await db.GitRepositories
+            .Include(r => r.GitHubIdentity)
             .FirstOrDefaultAsync(r => r.Id == repoId && r.ProjectId == projectId);
         if (repo is null) return NotFound();
 
-        if (string.IsNullOrEmpty(repo.AuthToken))
+        // Resolve the effective token — same path used by git operations.
+        string? tokenSource = null;
+        string? effectiveToken = repo.AuthToken;
+        string? effectiveUsername = repo.AuthUsername;
+        if (repo.GitHubIdentityId.HasValue && repo.GitHubIdentity is not null)
+        {
+            var protector = dpProvider.CreateProtector(IdentityProtectorPurpose);
+            try { effectiveToken = protector.Unprotect(repo.GitHubIdentity.EncryptedToken); }
+            catch { effectiveToken = repo.AuthToken; }
+            effectiveUsername = repo.GitHubIdentity.GitHubUsername;
+            var identityLabel = repo.GitHubIdentity.Name ?? $"@{repo.GitHubIdentity.GitHubUsername}";
+            tokenSource = $"GitHub identity: {identityLabel} (@{repo.GitHubIdentity.GitHubUsername})";
+        }
+        else if (!string.IsNullOrEmpty(repo.AuthToken))
+        {
+            tokenSource = "Manual token" + (string.IsNullOrEmpty(repo.AuthUsername) ? "" : $" (username: {repo.AuthUsername})");
+        }
+
+        if (string.IsNullOrEmpty(effectiveToken))
             return Ok(new GitHubDebugResponse(TokenValid: false, Login: null,
                 Error: "No authentication token configured for this origin.",
+                TokenSource: tokenSource, AuthUsername: effectiveUsername,
                 Repos: []));
 
         if (!repo.RemoteUrl.Contains("github.com", StringComparison.OrdinalIgnoreCase))
             return Ok(new GitHubDebugResponse(TokenValid: false, Login: null,
                 Error: "Token debugging is only supported for github.com repositories.",
+                TokenSource: tokenSource, AuthUsername: effectiveUsername,
                 Repos: []));
 
         using var client = httpClientFactory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", repo.AuthToken);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", effectiveToken);
         client.DefaultRequestHeaders.UserAgent.ParseAdd("IssuePit/1.0");
         client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
 
@@ -279,6 +311,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
             logger.LogInformation("GitHub token check for repo {RepoId} returned {Status}", repoId, (int)userResp.StatusCode);
             return Ok(new GitHubDebugResponse(TokenValid: false, Login: null,
                 Error: $"GitHub API returned HTTP {(int)userResp.StatusCode} — token may be invalid or expired.",
+                TokenSource: tokenSource, AuthUsername: effectiveUsername,
                 Repos: []));
         }
 
@@ -291,6 +324,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         {
             return Ok(new GitHubDebugResponse(TokenValid: true, Login: login,
                 Error: $"Could not list repositories (HTTP {(int)reposResp.StatusCode}).",
+                TokenSource: tokenSource, AuthUsername: effectiveUsername,
                 Repos: []));
         }
 
@@ -303,7 +337,32 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
                 IsPrivate: r.GetProperty("private").GetBoolean()))
             .ToList();
 
-        return Ok(new GitHubDebugResponse(TokenValid: true, Login: login, Error: null, Repos: repos));
+        // Test access to the specific configured repo via the GitHub API.
+        var repoPath = ParseGitHubRepoPath(repo.RemoteUrl);
+        bool? specificRepoAccessible = null;
+        string? specificRepoError = null;
+        string? specificRepoHtmlUrl = null;
+        if (!string.IsNullOrEmpty(repoPath))
+        {
+            var specificRepoResp = await client.GetAsync($"https://api.github.com/repos/{repoPath}");
+            if (specificRepoResp.IsSuccessStatusCode)
+            {
+                specificRepoAccessible = true;
+                var specificRepoJson = await specificRepoResp.Content.ReadFromJsonAsync<JsonElement>();
+                specificRepoHtmlUrl = specificRepoJson.TryGetProperty("html_url", out var htmlUrlProp) ? htmlUrlProp.GetString() : null;
+            }
+            else
+            {
+                specificRepoAccessible = false;
+                specificRepoError = $"HTTP {(int)specificRepoResp.StatusCode} — {specificRepoResp.ReasonPhrase}";
+                logger.LogInformation("Specific repo access check for repo {RepoId} ({RepoPath}) returned {Status}", repoId, repoPath, (int)specificRepoResp.StatusCode);
+            }
+        }
+
+        return Ok(new GitHubDebugResponse(TokenValid: true, Login: login, Error: null,
+            TokenSource: tokenSource, AuthUsername: effectiveUsername, Repos: repos,
+            SpecificRepoPath: repoPath, SpecificRepoAccessible: specificRepoAccessible,
+            SpecificRepoError: specificRepoError, SpecificRepoHtmlUrl: specificRepoHtmlUrl));
     }
 
     // ──────────────────── legacy single-repo endpoints (kept for backward compat) ────────────────────
@@ -605,10 +664,75 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
             logger.LogWarning(ex, "Initial CI/CD trigger failed for repo {RepoId}", repo.Id);
         }
     }
+
+    /// <summary>
+    /// If the repo has a linked <see cref="GitHubIdentity"/>, resolves the current token from
+    /// that identity (fresh decrypt) and updates <paramref name="repo"/> in-memory so the
+    /// git service uses it.  Does not mark the fields as modified so EF Core won't persist them.
+    /// </summary>
+    private async Task ApplyFreshTokenAsync(GitRepository repo)
+    {
+        if (!repo.GitHubIdentityId.HasValue) return;
+        var identity = await db.GitHubIdentities.FindAsync(repo.GitHubIdentityId.Value);
+        if (identity is null) return;
+        var protector = dpProvider.CreateProtector(IdentityProtectorPurpose);
+        try
+        {
+            repo.AuthToken = protector.Unprotect(identity.EncryptedToken);
+            repo.AuthUsername = identity.GitHubUsername;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to decrypt fresh identity token for repo {RepoId}; using stored token", repo.Id);
+        }
+    }
+
+    /// <summary>
+    /// Returns a 422 response for authentication/authorisation errors (HTTP 401/403 from remote),
+    /// or 500 for all other git failures.
+    /// </summary>
+    private IActionResult GitErrorResult(Exception ex, Guid repoId)
+    {
+        var msg = ex.Message;
+        var isAuthError = msg.Contains("401", StringComparison.Ordinal)
+            || msg.Contains("403", StringComparison.Ordinal)
+            || msg.Contains("unauthorized", StringComparison.OrdinalIgnoreCase)
+            || msg.Contains("authentication", StringComparison.OrdinalIgnoreCase)
+            || msg.Contains("credentials", StringComparison.OrdinalIgnoreCase);
+
+        if (isAuthError)
+        {
+            logger.LogInformation("Git authentication error for repo {RepoId}: {Message}", repoId, msg);
+            return UnprocessableEntity(new GitErrorResponse(msg,
+                Hint: "Authentication failed. Verify the token is correct and has the required scopes (e.g. 'repo' for GitHub). Use the 'Test Auth' button to check which repositories the token can access."));
+        }
+        return StatusCode(500, new GitErrorResponse(msg, Hint: null));
+    }
+
+    /// <summary>
+    /// Parses the GitHub <c>owner/repo</c> path from a remote URL.
+    /// Supports both HTTPS (<c>https://github.com/owner/repo.git</c>) and
+    /// SSH (<c>git@github.com:owner/repo.git</c>) formats.
+    /// Returns null if the URL cannot be parsed.
+    /// </summary>
+    private static string? ParseGitHubRepoPath(string remoteUrl)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(
+            remoteUrl,
+            @"github\.com[/:]([^/\s]+/[^/\s]+?)(?:\.git)?$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return match.Success ? match.Groups[1].Value : null;
+    }
 }
 
 public record GitRepoRequest(string RemoteUrl, string? DefaultBranch, string? AuthUsername, string? AuthToken, GitOriginMode? Mode, Guid? GitHubIdentityId = null);
 
 public record GitHubRepoEntry(string FullName, string CloneUrl, string HtmlUrl, bool IsPrivate);
 
-public record GitHubDebugResponse(bool TokenValid, string? Login, string? Error, List<GitHubRepoEntry> Repos);
+public record GitHubDebugResponse(
+    bool TokenValid, string? Login, string? Error, string? TokenSource, string? AuthUsername,
+    List<GitHubRepoEntry> Repos,
+    string? SpecificRepoPath = null, bool? SpecificRepoAccessible = null,
+    string? SpecificRepoError = null, string? SpecificRepoHtmlUrl = null);
+
+public record GitErrorResponse(string Error, string? Hint);
