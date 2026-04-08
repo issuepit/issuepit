@@ -7,7 +7,7 @@ namespace IssuePit.Core.Enums;
 /// be added in future (e.g. running agent fixes on separate git branches), but today all
 /// phases execute sequentially inside a single session.
 ///
-/// Chain: InitialAgentRun → [UncommittedChangesFix] → CiCdRun(1) → [CiCdFixRun(1)] → CiCdRun(2) → …
+/// Chain: InitialAgentRun → [UncommittedChangesFix] → CiCdRun(1) → [CiCdLogCondensing(1)] → [CiCdFixRun(1)] → CiCdRun(2) → …
 /// </summary>
 public enum AgentLogSection
 {
@@ -46,4 +46,12 @@ public enum AgentLogSection
     /// <see cref="AgentSessionLog.SectionIndex"/> holds the message number (1-based).
     /// </summary>
     MessageRun = 6,
+
+    /// <summary>
+    /// A separate opencode session that analyses raw CI/CD logs and produces a condensed
+    /// failure report. This runs before the actual fix run so the fix agent receives
+    /// focused, actionable context instead of truncated raw output.
+    /// <see cref="AgentSessionLog.SectionIndex"/> holds the CI/CD attempt number (1-based).
+    /// </summary>
+    CiCdLogCondensing = 7,
 }

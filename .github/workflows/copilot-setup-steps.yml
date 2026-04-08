@@ -33,9 +33,11 @@ name: Copilot Setup Steps
 #      Aspire starts these as containers; without pre-pulled
 #      images every test times out on the first cold pull.
 #
-#   4. cd frontend && npm ci
+#   4. cd frontend && npm ci && npx --no-install @lavamoat/allow-scripts
 #      Installs node_modules so 'npm run dev' (started by
 #      Aspire) doesn't run 'npm install' at test time.
+#      allow-scripts runs only the lifecycle scripts explicitly
+#      permitted by the lavamoat policy in package.json.
 #
 #   5. cd frontend && npx nuxt build
 #      Warms the .nuxt/ cache. Without this, the first Aspire
@@ -74,7 +76,7 @@ jobs:
   # runtime identifies the job to execute by this exact name.
   copilot-setup-steps:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 59 # 59 is the max for an agent session duration; its not the timeout for the setup (only)
     permissions:
       contents: read
       packages: read
@@ -82,7 +84,8 @@ jobs:
       # Pinned commit from the issuepit/act fork.
       # The fork adds --container-name-suffix which NativeCiCdRuntime requires.
       # Update this when pulling in new upstream or fork changes.
-      ACT_COMMIT: a471da174034e4d6db6fc89b0ea7bfcd38b9236a
+      # Must match the ACT_COMMIT default in docker/helper-containers/Dockerfile.helper-act.
+      ACT_COMMIT: 873f292b55ae7a68b7d53f7d1f372355517555f3
 
     steps:
       - uses: actions/checkout@v4
@@ -125,9 +128,20 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
+      # Pin Go 1.24 explicitly — act's go.mod requires go 1.24.0.
+      # Without this, the runner uses its default Go version which may be older
+      # and trigger GOTOOLCHAIN auto-download, causing intermittent build failures.
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: false
+
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm ci
+        run: |
+          npm ci
+          npx --no-install @lavamoat/allow-scripts
 
       # Pre-build the frontend to warm the Nuxt cache (.nuxt/).
       # When Aspire starts the frontend via 'npm run dev', it finds the compiled
@@ -144,6 +158,8 @@ jobs:
       # Commit is pinned via ACT_COMMIT env var; takes ~2 min on ubuntu-latest.
       - name: Build act binary (issuepit fork)
         run: |
+          echo "Go toolchain: $(go version)"
+          echo "Building act commit ${ACT_COMMIT}"
           git init /tmp/issuepit-act
           cd /tmp/issuepit-act
           git remote add origin https://github.com/issuepit/act.git
@@ -151,7 +167,12 @@ jobs:
           git checkout FETCH_HEAD
           go build -ldflags "-X main.version=${ACT_COMMIT}" -o /usr/local/bin/act main.go
           rm -rf /tmp/issuepit-act
-          act --version
+          # Verify the binary works. We redirect to /dev/null rather than piping through
+          # `head -1` because piping caused SIGPIPE (exit 141): `act --help` writes many
+          # lines and `head` closes the read end after the first line, which kills the
+          # upstream process before it finishes. `> /dev/null` discards all output without
+          # closing the pipe prematurely, so the process exits cleanly with code 0.
+          act --help > /dev/null
 
       # Cache Docker images as tar files so agent sessions skip the pull entirely.
       # Key format mirrors the e2e-infra-setup composite action:
