@@ -254,6 +254,26 @@
                   @click="syncRepo(r)">
                   {{ repoOpsLoading[r.id] ? '…' : 'Sync' }}
                 </button>
+                <button
+                  :disabled="repoOpsLoading[r.id] || repoDebugLoading[r.id]"
+                  class="text-xs px-2 py-1 rounded border border-gray-700 text-gray-400 hover:text-gray-200 hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                  title="Verify the configured token and list accessible GitHub repositories"
+                  @click="runDebugGitHubRepos(r)">
+                  {{ repoDebugLoading[r.id] ? '…' : 'Test Auth' }}
+                </button>
+              </div>
+              <!-- Debug: accessible GitHub repos -->
+              <div v-if="repoDebugResults[r.id]" class="pt-2 border-t border-gray-700/50">
+                <div v-if="repoDebugResults[r.id]!.tokenValid" class="text-xs space-y-1">
+                  <p class="text-green-400">✓ Token valid · authenticated as <span class="font-mono">@{{ repoDebugResults[r.id]!.login }}</span> · {{ repoDebugResults[r.id]!.repos.length }} accessible repo(s)</p>
+                  <ul class="max-h-36 overflow-y-auto space-y-0.5 pl-1">
+                    <li v-for="gr in repoDebugResults[r.id]!.repos" :key="gr.fullName" class="text-gray-400 font-mono">
+                      {{ gr.isPrivate ? '🔒' : '📦' }}
+                      <a :href="gr.htmlUrl" target="_blank" rel="noopener noreferrer" class="hover:text-gray-200 hover:underline">{{ gr.fullName }}</a>
+                    </li>
+                  </ul>
+                </div>
+                <p v-else class="text-xs text-red-400">✗ {{ repoDebugResults[r.id]!.error || 'Token verification failed' }}</p>
               </div>
             </div>
           </div>
@@ -728,7 +748,7 @@ import { useMcpServersStore } from '~/stores/mcp-servers'
 import { useProjectPropertiesStore } from '~/stores/projectProperties'
 import { useGitHubIdentitiesStore } from '~/stores/github-identities'
 import { ProjectPropertyType, AgentPushPolicyLabels } from '~/types'
-import type { AgentProject, AgentPushPolicy, ProjectMcpServer, GitRepository, GitOriginMode, ProjectProperty } from '~/types'
+import type { AgentProject, AgentPushPolicy, ProjectMcpServer, GitRepository, GitOriginMode, ProjectProperty, GitHubDebugResult } from '~/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -1027,7 +1047,26 @@ async function syncRepo(r: GitRepository) {
   await runRepoOp(r.id, () => gitStore.syncRemote(id, r.id))
 }
 
-// ── Agents ───────────────────────────────────────────────────
+// ── Per-repo debug ────────────────────────────────────────────
+const repoDebugLoading = ref<Record<string, boolean>>({})
+const repoDebugResults = ref<Record<string, GitHubDebugResult | null>>({})
+
+async function runDebugGitHubRepos(r: GitRepository) {
+  repoDebugLoading.value[r.id] = true
+  repoDebugResults.value[r.id] = null
+  try {
+    repoDebugResults.value[r.id] = await gitStore.debugGitHubRepos(id, r.id)
+  } catch (e: unknown) {
+    const msg = (e && typeof e === 'object' && 'data' in e && e.data && typeof e.data === 'object' && 'error' in (e.data as object))
+      ? (e.data as { error: string }).error
+      : (e instanceof Error ? e.message : 'Request failed')
+    repoDebugResults.value[r.id] = { tokenValid: false, error: msg, repos: [] }
+  } finally {
+    repoDebugLoading.value[r.id] = false
+  }
+}
+
+
 const loadingAgents = ref(false)
 const projectAgents = ref<AgentProject[]>([])
 const showLinkAgentModal = ref(false)

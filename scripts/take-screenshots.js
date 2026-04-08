@@ -7,8 +7,8 @@
  *   FRONTEND_URL=http://localhost:3000 node scripts/take-screenshots.js [output-dir]
  *
  * Options (environment variables):
- *   FRONTEND_URL          Frontend base URL (default: http://localhost:3000)
- *   API_URL               API base URL (default: http://localhost:5000)
+ *   FRONTEND_URL          Frontend base URL (required; use Aspire-discovered URL or set explicitly)
+ *   API_URL               API base URL (required; use Aspire-discovered URL or set explicitly)
  *   SCREENSHOT_USERNAME   Pre-seeded username (Aspire: alice)
  *   SCREENSHOT_PASSWORD   Pre-seeded password (Aspire: alice)
  *   GITHUB_TOKEN          GitHub token — required for --create-pr
@@ -35,8 +35,11 @@ const { chromium } = require('playwright');
 const path = require('path');
 const fs = require('fs');
 
-const FRONTEND_URL = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
-const API_URL = (process.env.API_URL || 'http://localhost:5000').replace(/\/$/, '');
+if (!process.env.FRONTEND_URL) throw new Error('FRONTEND_URL environment variable is required');
+if (!process.env.API_URL) throw new Error('API_URL environment variable is required');
+
+const FRONTEND_URL = process.env.FRONTEND_URL.replace(/\/$/, '');
+const API_URL = process.env.API_URL.replace(/\/$/, '');
 const OUTPUT_DIR = process.argv[2] || path.join(__dirname, '..', 'docs', 'assets', 'screenshots');
 
 // When SCREENSHOT_USERNAME is set the script logs in with those credentials and

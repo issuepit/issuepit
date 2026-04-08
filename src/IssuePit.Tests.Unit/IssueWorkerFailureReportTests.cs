@@ -1,3 +1,4 @@
+using IssuePit.Core.Entities;
 using IssuePit.ExecutionClient.Workers;
 
 namespace IssuePit.Tests.Unit;
@@ -212,5 +213,71 @@ public class IssueWorkerFailureReportTests
         Assert.Contains("failures=\"1\"", xml);
         Assert.Equal(2, xml.Split("<testsuite ").Length - 1);
         Assert.Equal(3, xml.Split("<testcase ").Length - 1);
+    }
+
+    [Fact]
+    public void BuildFixIssue_NoTestFailures_OmitsPhasedGuidance()
+    {
+        var original = new Issue { Id = Guid.NewGuid(), ProjectId = Guid.NewGuid(), Number = 42, Title = "Test Issue" };
+        var fixIssue = IssueWorker.BuildFixIssue(original, "some failure logs", "main", failedTestCount: 0);
+
+        Assert.DoesNotContain("Focus on fixing the first", fixIssue.Body);
+        Assert.DoesNotContain("subsequent iterations", fixIssue.Body);
+        Assert.Contains("some failure logs", fixIssue.Body);
+    }
+
+    [Fact]
+    public void BuildFixIssue_FewTestFailures_OmitsPhasedGuidance()
+    {
+        var original = new Issue { Id = Guid.NewGuid(), ProjectId = Guid.NewGuid(), Number = 42, Title = "Test Issue" };
+        var fixIssue = IssueWorker.BuildFixIssue(original, "some failure logs", "main", failedTestCount: 3);
+
+        Assert.DoesNotContain("Focus on fixing the first", fixIssue.Body);
+    }
+
+    [Fact]
+    public void BuildFixIssue_ManyTestFailures_IncludesPhasedGuidance()
+    {
+        var original = new Issue { Id = Guid.NewGuid(), ProjectId = Guid.NewGuid(), Number = 42, Title = "Test Issue" };
+        var fixIssue = IssueWorker.BuildFixIssue(original, "test failure xml", "main", failedTestCount: 10);
+
+        Assert.Contains($"Focus on fixing the first {IssueWorker.MaxTestsPerFixPhase} failures", fixIssue.Body);
+        Assert.Contains("subsequent iterations", fixIssue.Body);
+        Assert.Contains("test failure xml", fixIssue.Body);
+    }
+
+    [Fact]
+    public void BuildFixIssue_PreservesOriginalFields()
+    {
+        var id = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        var original = new Issue { Id = id, ProjectId = projectId, Number = 7, Title = "Original Title" };
+
+        var fixIssue = IssueWorker.BuildFixIssue(original, "logs", "feature-branch");
+
+        Assert.Equal(id, fixIssue.Id);
+        Assert.Equal(projectId, fixIssue.ProjectId);
+        Assert.Equal(7, fixIssue.Number);
+        Assert.Equal("Fix CI/CD failures for: Original Title", fixIssue.Title);
+        Assert.Equal("feature-branch", fixIssue.GitBranch);
+        Assert.Contains("Do NOT run `git push`", fixIssue.Body);
+    }
+
+    [Fact]
+    public void CiCdFailureReport_NeedsCondensing_FalseForTestResults()
+    {
+        var report = new CiCdFailureReport("<testsuites>...</testsuites>", NeedsCondensing: false, FailedTestCount: 2);
+
+        Assert.False(report.NeedsCondensing);
+        Assert.Equal(2, report.FailedTestCount);
+    }
+
+    [Fact]
+    public void CiCdFailureReport_NeedsCondensing_TrueForRawLogs()
+    {
+        var report = new CiCdFailureReport("raw log output...", NeedsCondensing: true, FailedTestCount: 0);
+
+        Assert.True(report.NeedsCondensing);
+        Assert.Equal(0, report.FailedTestCount);
     }
 }

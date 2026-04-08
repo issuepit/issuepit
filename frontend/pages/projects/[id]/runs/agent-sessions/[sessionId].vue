@@ -1177,6 +1177,7 @@ function sectionLabel(section: string, index: number): string {
     case 'UncommittedChangesFix': return 'Uncommitted Changes Fix'
     case 'CiCdRun': return `CI/CD Run ${index}`
     case 'CiCdFixRun': return `CI/CD Fix Run ${index}`
+    case 'CiCdLogCondensing': return `Log Analysis ${index}`
     case 'MessageRun': return `Message ${index}`
     default: return section
   }
