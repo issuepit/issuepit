@@ -1585,8 +1585,8 @@ onMounted(async () => {
     await connection.value.invoke('JoinProject', id).catch(() => {})
     connection.value.on('RunsUpdated', async () => {
       await Promise.all([
-        runsStore.fetchRuns(id),
-        runsStore.fetchAgentSessions(id),
+        runsStore.fetchRuns(id, true),
+        runsStore.fetchAgentSessions(id, true),
       ])
     })
   }

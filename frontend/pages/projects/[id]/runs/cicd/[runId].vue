@@ -20,7 +20,7 @@
     </div>
 
     <!-- Loading -->
-    <div v-if="store.loading" class="flex items-center justify-center py-16">
+    <div v-if="pageLoading" class="flex items-center justify-center py-16">
       <div class="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
     </div>
 
@@ -1007,7 +1007,7 @@
       </div>
     </template>
 
-    <div v-else-if="!store.loading" class="flex flex-col items-center justify-center py-16 text-center">
+    <div v-else-if="!pageLoading" class="flex flex-col items-center justify-center py-16 text-center">
       <p class="text-gray-400 font-medium">{{ store.error || 'Run not found' }}</p>
     </div>
 
@@ -1228,6 +1228,9 @@ const projectsStore = useProjectsStore()
 const { prefs } = useUserPreferences()
 const config = useRuntimeConfig()
 const api = useApi()
+
+// pageLoading is used for the initial load indicator to avoid flicker from shared store.loading
+const pageLoading = ref(true)
 
 /**
  * Pre-compiled regex cache for log color rules. Rebuilt whenever the rules list changes.
@@ -2514,6 +2517,7 @@ onMounted(async () => {
   })
 
   await store.fetchRun(runId)
+  pageLoading.value = false
   await store.fetchTestResults(runId)
   await store.fetchArtifacts(runId)
   store.fetchLinkedRuns(runId)
