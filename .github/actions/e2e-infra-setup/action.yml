@@ -183,15 +183,15 @@ runs:
         # update+install if cached versions have drifted (e.g. after a security patch).
         (
           if [ "$FFMPEG_CACHE_HIT" = "true" ]; then
-            sudo cp /tmp/apt-ffmpeg/*.deb /var/cache/apt/archives/
-            sudo apt-get install -y --no-download ffmpeg && exit 0 || true
+            cp /tmp/apt-ffmpeg/*.deb /var/cache/apt/archives/
+            apt-get install -y --no-download ffmpeg && exit 0 || true
             # Cached packages are stale -- fall through to full update+install below
           fi
-          sudo apt-get -y update
-          sudo apt-get install -y --download-only ffmpeg
+          apt-get -y update
+          apt-get install -y --download-only ffmpeg
           mkdir -p /tmp/apt-ffmpeg
-          sudo cp /var/cache/apt/archives/*.deb /tmp/apt-ffmpeg/
-          sudo apt-get install -y ffmpeg
+          cp /var/cache/apt/archives/*.deb /tmp/apt-ffmpeg/
+          apt-get install -y ffmpeg
         ) &
 
         wait
