@@ -269,8 +269,6 @@
         </div>
       </div>
     </div>
-    <!-- Rendered only client-side after Vue hydrates and fetchIssues completes; used by E2E tests as a reliable page-ready signal. -->
-    <span v-if="isMounted" data-testid="issues-page-loaded" class="sr-only" aria-hidden="true"></span>
   </div>
 </template>
 
@@ -409,13 +407,9 @@ watch([search, filterStatus, filterPriority, filterType, filterMilestone], () =>
   })
 })
 
-const isMounted = ref(false)
+usePageReady(() => store.fetchIssues(id))
 
 onMounted(() => {
-  // Set isMounted after the first fetchIssues completes (success or failure) so that tests
-  // can wait for [data-testid='issues-page-loaded'] to guarantee Vue has hydrated and the
-  // initial data load is done before interacting with the page.
-  store.fetchIssues(id).finally(() => { isMounted.value = true })
   milestonesStore.fetchMilestones(id)
   projectsStore.fetchProject(id)
 })

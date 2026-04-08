@@ -10,34 +10,30 @@ public class IssuesPage(IPage page)
     private const int NavigationRetryDelayMs = E2ETimeouts.RetryDelay;
 
     /// <summary>
-    /// Navigates to the issues page for the given project and waits for the heading.
+    /// Navigates to the issues page for the given project and waits until the page is ready.
     /// Retries once on ERR_ABORTED (Nuxt SPA router race) or TimeoutException (slow first render).
     /// </summary>
     public async Task GotoAsync(string projectId)
     {
         // Retry once on ERR_ABORTED (Nuxt SPA router race) or TimeoutException (slow first render).
-        // Wait for [data-testid='issues-page-loaded'] — a <span> that is only rendered CLIENT-SIDE
-        // (inside v-if="isMounted") after Vue has hydrated the component AND the first fetchIssues()
-        // call has completed (success or failure).  This is more reliable than waiting for the
-        // voice button, which appears in the SSR HTML before Vue hydrates.  Waiting for the SSR
-        // version of the voice button returns too early — the @click handler is not yet attached,
-        // causing the subsequent OpenVoiceModalAsync to click on an un-hydrated element.
+        // Waits for body[data-page-ready='true'] — set by the usePageReady() composable only
+        // CLIENT-SIDE after Vue has hydrated the component AND the first fetchIssues() call has
+        // completed (success or failure).  This prevents clicking on SSR-rendered buttons whose
+        // @click handlers are not yet attached (un-hydrated element → no-op click → flaky test).
         // NavigationLong (20 s) is used because on cold CI starts Nuxt dev-server must compile the
         // page on first request (can take ~10-15 s) before serving the HTML.
         try
         {
             await page.GotoAsync($"/projects/{projectId}/issues");
             await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
-            await page.WaitForSelectorAsync("[data-testid='issues-page-loaded']",
-                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.NavigationLong });
+            await page.WaitForPageReadyAsync();
         }
         catch (Exception ex) when (ex is TimeoutException || (ex is PlaywrightException pe && pe.Message.Contains("ERR_ABORTED")))
         {
             await Task.Delay(NavigationRetryDelayMs);
             await page.GotoAsync($"/projects/{projectId}/issues");
             await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
-            await page.WaitForSelectorAsync("[data-testid='issues-page-loaded']",
-                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.NavigationLong });
+            await page.WaitForPageReadyAsync();
         }
     }
 
