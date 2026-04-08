@@ -262,10 +262,28 @@
                   {{ repoDebugLoading[r.id] ? '…' : 'Test Auth' }}
                 </button>
               </div>
+              <!-- Per-repo operation error -->
+              <div v-if="repoOpsErrors[r.id]" class="pt-2 border-t border-gray-700/50">
+                <p class="text-xs text-red-400 break-words">✗ {{ repoOpsErrors[r.id] }}</p>
+              </div>
               <!-- Debug: accessible GitHub repos -->
               <div v-if="repoDebugResults[r.id]" class="pt-2 border-t border-gray-700/50">
                 <div v-if="repoDebugResults[r.id]!.tokenValid" class="text-xs space-y-1">
                   <p class="text-green-400">✓ Token valid · authenticated as <span class="font-mono">@{{ repoDebugResults[r.id]!.login }}</span> · {{ repoDebugResults[r.id]!.repos.length }} accessible repo(s)</p>
+                  <p v-if="repoDebugResults[r.id]!.tokenSource" class="text-gray-500">Token source: {{ repoDebugResults[r.id]!.tokenSource }}<template v-if="repoDebugResults[r.id]!.authUsername"> · git username: <span class="font-mono">{{ repoDebugResults[r.id]!.authUsername }}</span></template></p>
+                  <!-- Token notes (config conflict hints) -->
+                  <p v-for="note in repoDebugResults[r.id]!.tokenNotes" :key="note" class="text-yellow-400/80">ℹ {{ note }}</p>
+                  <!-- Specific repo access result -->
+                  <div v-if="repoDebugResults[r.id]!.specificRepoPath" :class="repoDebugResults[r.id]!.specificRepoAccessible ? 'text-green-400' : 'text-red-400'">
+                    <template v-if="repoDebugResults[r.id]!.specificRepoAccessible">
+                      ✓ Can access this repo:
+                      <a :href="repoDebugResults[r.id]!.specificRepoHtmlUrl || '#'" target="_blank" rel="noopener noreferrer" class="font-mono hover:underline">{{ repoDebugResults[r.id]!.specificRepoPath }}</a>
+                    </template>
+                    <template v-else>
+                      ✗ Cannot access this repo: <span class="font-mono">{{ repoDebugResults[r.id]!.specificRepoPath }}</span>
+                      <span v-if="repoDebugResults[r.id]!.specificRepoError"> — {{ repoDebugResults[r.id]!.specificRepoError }}</span>
+                    </template>
+                  </div>
                   <ul class="max-h-36 overflow-y-auto space-y-0.5 pl-1">
                     <li v-for="gr in repoDebugResults[r.id]!.repos" :key="gr.fullName" class="text-gray-400 font-mono">
                       {{ gr.isPrivate ? '🔒' : '📦' }}
@@ -273,7 +291,12 @@
                     </li>
                   </ul>
                 </div>
-                <p v-else class="text-xs text-red-400">✗ {{ repoDebugResults[r.id]!.error || 'Token verification failed' }}</p>
+                <div v-else class="text-xs space-y-0.5">
+                  <p class="text-red-400">✗ {{ repoDebugResults[r.id]!.error || 'Token verification failed' }}</p>
+                  <p v-if="repoDebugResults[r.id]!.tokenSource" class="text-gray-500">Token source: {{ repoDebugResults[r.id]!.tokenSource }}<template v-if="repoDebugResults[r.id]!.authUsername"> · git username: <span class="font-mono">{{ repoDebugResults[r.id]!.authUsername }}</span></template></p>
+                  <!-- Token notes (config conflict hints) -->
+                  <p v-for="note in repoDebugResults[r.id]!.tokenNotes" :key="note" class="text-yellow-400/80">ℹ {{ note }}</p>
+                </div>
               </div>
             </div>
           </div>
@@ -1020,12 +1043,31 @@ async function disableRepoById(r: GitRepository) {
 
 // ── Per-repo git operations ───────────────────────────────────
 const repoOpsLoading = ref<Record<string, boolean>>({})
+const repoOpsErrors = ref<Record<string, string | null>>({})
+
+/** Extracts a human-readable error message from an ofetch FetchError or a generic Error. */
+function extractErrorMessage(e: unknown, fallback: string): string {
+  if (e && typeof e === 'object') {
+    const data = (e as { data?: unknown }).data
+    if (data && typeof data === 'object') {
+      const d = data as Record<string, unknown>
+      if (typeof d.error === 'string') return d.error
+      if (typeof d.message === 'string') return d.message
+    }
+  }
+  return e instanceof Error ? e.message : fallback
+}
 
 async function runRepoOp(repoId: string, op: () => Promise<void>) {
   repoOpsLoading.value[repoId] = true
+  repoOpsErrors.value[repoId] = null
   gitStore.error = null
   try {
     await op()
+  } catch (e: unknown) {
+    // Error message is also set in gitStore.error by the store function;
+    // capture it per-repo for inline display.
+    repoOpsErrors.value[repoId] = gitStore.error ?? extractErrorMessage(e, 'Operation failed')
   } finally {
     repoOpsLoading.value[repoId] = false
   }
@@ -1065,7 +1107,6 @@ async function runDebugGitHubRepos(r: GitRepository) {
     repoDebugLoading.value[r.id] = false
   }
 }
-
 
 const loadingAgents = ref(false)
 const projectAgents = ref<AgentProject[]>([])

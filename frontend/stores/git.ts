@@ -1,14 +1,18 @@
 import { defineStore } from 'pinia'
 import type { GitRepository, GitOriginMode, GitBranch, GitCommit, GitTreeEntry, GitBlob, GitDiffFile, GitHubDebugResult } from '~/types'
 
-/** Extracts a human-readable error message from an ofetch FetchError or a generic Error. */
+/** Extracts a human-readable error message from an ofetch FetchError or a generic Error.
+ *  Appends the hint from a GitErrorResponse when present. */
 function getErrorMessage(e: unknown, fallback: string): string {
   if (e && typeof e === 'object') {
     const data = (e as { data?: unknown }).data
     if (data && typeof data === 'object') {
       const d = data as Record<string, unknown>
-      if (typeof d.error === 'string') return d.error
-      if (typeof d.message === 'string') return d.message
+      const msg = typeof d.error === 'string' ? d.error : (typeof d.message === 'string' ? d.message : null)
+      if (msg) {
+        const hint = typeof d.hint === 'string' ? d.hint : null
+        return hint ? `${msg} — ${hint}` : msg
+      }
     }
   }
   return e instanceof Error ? e.message : fallback

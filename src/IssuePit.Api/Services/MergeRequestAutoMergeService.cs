@@ -51,12 +51,22 @@ public class MergeRequestAutoMergeService(
             try
             {
                 logger.LogInformation(
-                    "Auto-merging MR {MrId} ({Source} → {Target}) — CI succeeded",
-                    mr.Id, mr.SourceBranch, mr.TargetBranch);
+                    "Auto-merging MR {MrId} ({Source} → {Target}) — CI succeeded, strategy={Strategy}",
+                    mr.Id, mr.SourceBranch, mr.TargetBranch, mr.MergeStrategy);
 
-                var mergeCommitSha = await Task.Run(() =>
-                    gitService.MergeBranch(repo, mr.SourceBranch, mr.TargetBranch),
-                    cancellationToken);
+                var mergeCommitSha = mr.MergeStrategy switch
+                {
+                    MergeStrategy.Squash => await Task.Run(() =>
+                        gitService.SquashMergeBranch(repo, mr.SourceBranch, mr.TargetBranch,
+                            commitMessage: $"Squashed merge of '{mr.SourceBranch}' into '{mr.TargetBranch}'\n\n{mr.Title}"),
+                        cancellationToken),
+                    MergeStrategy.Rebase => await Task.Run(() =>
+                        gitService.RebaseMergeBranch(repo, mr.SourceBranch, mr.TargetBranch),
+                        cancellationToken),
+                    _ => await Task.Run(() =>
+                        gitService.MergeBranch(repo, mr.SourceBranch, mr.TargetBranch),
+                        cancellationToken),
+                };
 
                 mr.Status = MergeRequestStatus.Merged;
                 mr.MergedAt = DateTime.UtcNow;

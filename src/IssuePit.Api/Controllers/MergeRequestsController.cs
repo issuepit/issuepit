@@ -106,6 +106,8 @@ public class MergeRequestsController(
             SourceBranch = req.SourceBranch,
             TargetBranch = targetBranch,
             AutoMergeEnabled = req.AutoMergeEnabled,
+            MergeStrategy = req.MergeStrategy,
+            DeleteSourceBranch = req.DeleteSourceBranch,
             LastKnownSourceSha = sourceSha,
         };
 
@@ -157,6 +159,8 @@ public class MergeRequestsController(
         mr.Title = req.Title;
         mr.Description = req.Description;
         mr.AutoMergeEnabled = req.AutoMergeEnabled;
+        mr.MergeStrategy = req.MergeStrategy;
+        mr.DeleteSourceBranch = req.DeleteSourceBranch;
         mr.UpdatedAt = DateTime.UtcNow;
 
         await db.SaveChangesAsync();
@@ -208,7 +212,7 @@ public class MergeRequestsController(
     // ─────────────────────────────── Merge ──────────────────────────────
 
     [HttpPost("{id:guid}/merge")]
-    public async Task<IActionResult> Merge(Guid projectId, Guid id)
+    public async Task<IActionResult> Merge(Guid projectId, Guid id, [FromBody] MergeActionRequest? req)
     {
         if (ctx.CurrentTenant is null) return Unauthorized();
 
@@ -221,20 +225,57 @@ public class MergeRequestsController(
         if (mr is null) return NotFound();
         if (mr.Status != MergeRequestStatus.Open) return BadRequest(new { error = "MR is not open." });
 
+        // CI/CD gate: block merge when CI has not passed
+        if (mr.LastCiCdRun is not null)
+        {
+            var ciStatus = mr.LastCiCdRun.Status;
+            if (ciStatus is CiCdRunStatus.Failed or CiCdRunStatus.Cancelled)
+                return BadRequest(new MergeErrorResponse("CI/CD checks have failed. Fix the issues before merging."));
+            if (ciStatus is CiCdRunStatus.Pending or CiCdRunStatus.Running or CiCdRunStatus.WaitingForApproval)
+                return BadRequest(new MergeErrorResponse("CI/CD checks are still running. Wait for them to complete or enable auto-merge."));
+        }
+
+        // Review gate: block merge when changes are requested
+        var reviews = await db.MergeRequestReviews
+            .Where(r => r.MergeRequestId == id)
+            .ToListAsync();
+        if (reviews.Count > 0)
+        {
+            var latestPerUser = reviews
+                .GroupBy(r => r.UserId)
+                .Select(g => g.OrderByDescending(r => r.CreatedAt).First())
+                .ToList();
+            if (latestPerUser.Any(r => r.Status == MergeRequestReviewStatus.ChangesRequested))
+                return BadRequest(new MergeErrorResponse("Changes have been requested. Address the feedback before merging."));
+        }
+
         var repo = await db.GitRepositories
             .Where(r => r.ProjectId == projectId)
             .OrderByDescending(r => r.Mode == GitOriginMode.Working)
             .FirstOrDefaultAsync();
-        if (repo is null) return BadRequest(new { error = "No git repository linked to this project." });
+        if (repo is null) return BadRequest(new MergeErrorResponse("No git repository linked to this project."));
+
+        // Use the strategy from the request body, or fall back to the MR's preferred strategy
+        var strategy = req?.Strategy ?? mr.MergeStrategy;
+        var deleteSourceBranch = req?.DeleteSourceBranch ?? mr.DeleteSourceBranch;
 
         try
         {
-            var mergeCommitSha = await Task.Run(() =>
-                gitService.MergeBranch(repo, mr.SourceBranch, mr.TargetBranch));
+            var mergeCommitSha = strategy switch
+            {
+                MergeStrategy.Squash => await Task.Run(() =>
+                    gitService.SquashMergeBranch(repo, mr.SourceBranch, mr.TargetBranch,
+                        commitMessage: $"Squashed merge of '{mr.SourceBranch}' into '{mr.TargetBranch}'\n\n{mr.Title}")),
+                MergeStrategy.Rebase => await Task.Run(() =>
+                    gitService.RebaseMergeBranch(repo, mr.SourceBranch, mr.TargetBranch)),
+                _ => await Task.Run(() =>
+                    gitService.MergeBranch(repo, mr.SourceBranch, mr.TargetBranch)),
+            };
 
             mr.Status = MergeRequestStatus.Merged;
             mr.MergedAt = DateTime.UtcNow;
             mr.MergeCommitSha = mergeCommitSha;
+            mr.MergeStrategy = strategy;
             mr.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
 
@@ -242,19 +283,18 @@ public class MergeRequestsController(
         }
         catch (InvalidOperationException ex)
         {
-            return BadRequest(new { error = ex.Message });
+            return BadRequest(new MergeErrorResponse(ex.Message));
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Merge failed for MR {MrId}", mr.Id);
-            return StatusCode(500, new { error = "Merge failed: " + ex.Message });
+            return StatusCode(500, new MergeErrorResponse("Merge failed: " + ex.Message));
         }
     }
 
     // ─────────────────────────── Helper ─────────────────────────────────
 
-    private static object MapToDto(MergeRequest m) => new
-    {
+    private static MergeRequestResponse MapToDto(MergeRequest m) => new(
         m.Id,
         m.ProjectId,
         m.Title,
@@ -262,27 +302,180 @@ public class MergeRequestsController(
         m.SourceBranch,
         m.TargetBranch,
         m.Status,
-        StatusName = m.Status.ToString(),
+        m.Status.ToString(),
         m.AutoMergeEnabled,
+        m.MergeStrategy,
+        m.MergeStrategy.ToString(),
+        m.DeleteSourceBranch,
         m.LastKnownSourceSha,
         m.LastCiCdRunId,
-        LastCiCdRunStatus = m.LastCiCdRun?.Status,
-        LastCiCdRunStatusName = m.LastCiCdRun?.Status.ToString(),
+        m.LastCiCdRun?.Status,
+        m.LastCiCdRun?.Status.ToString(),
         m.CreatedAt,
         m.UpdatedAt,
         m.MergedAt,
-        m.MergeCommitSha,
-    };
+        m.MergeCommitSha
+    );
+
+    // ─────────────────────── Reviews ─────────────────────────────────
+
+    [HttpGet("{id:guid}/reviews")]
+    public async Task<IActionResult> ListReviews(Guid projectId, Guid id)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+
+        var mrExists = await db.MergeRequests
+            .AnyAsync(m => m.Id == id && m.ProjectId == projectId &&
+                           m.Project.Organization.TenantId == ctx.CurrentTenant.Id);
+        if (!mrExists) return NotFound();
+
+        var reviews = await db.MergeRequestReviews
+            .Include(r => r.User)
+            .Where(r => r.MergeRequestId == id)
+            .OrderByDescending(r => r.CreatedAt)
+            .Select(r => new MergeRequestReviewResponse(
+                r.Id,
+                r.MergeRequestId,
+                r.UserId,
+                r.User.Username,
+                r.Status,
+                r.Status.ToString(),
+                r.Body,
+                r.CreatedAt))
+            .ToListAsync();
+
+        return Ok(reviews);
+    }
+
+    [HttpPost("{id:guid}/reviews")]
+    public async Task<IActionResult> SubmitReview(Guid projectId, Guid id, [FromBody] SubmitReviewRequest req)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+
+        var mr = await db.MergeRequests
+            .Where(m => m.Id == id && m.ProjectId == projectId &&
+                        m.Project.Organization.TenantId == ctx.CurrentTenant.Id)
+            .FirstOrDefaultAsync();
+
+        if (mr is null) return NotFound();
+        if (mr.Status != MergeRequestStatus.Open)
+            return BadRequest(new { error = "Cannot review a closed or merged MR." });
+
+        var review = new MergeRequestReview
+        {
+            Id = Guid.NewGuid(),
+            MergeRequestId = id,
+            UserId = ctx.CurrentUser!.Id,
+            Status = req.Status,
+            Body = req.Body,
+        };
+
+        db.MergeRequestReviews.Add(review);
+        mr.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        // Reload with User for response
+        await db.Entry(review).Reference(r => r.User).LoadAsync();
+
+        return CreatedAtAction(nameof(ListReviews), new { projectId, id }, new MergeRequestReviewResponse(
+            review.Id,
+            review.MergeRequestId,
+            review.UserId,
+            review.User.Username,
+            review.Status,
+            review.Status.ToString(),
+            review.Body,
+            review.CreatedAt));
+    }
+
+    [HttpGet("{id:guid}/review-summary")]
+    public async Task<IActionResult> ReviewSummary(Guid projectId, Guid id)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+
+        var mrExists = await db.MergeRequests
+            .AnyAsync(m => m.Id == id && m.ProjectId == projectId &&
+                           m.Project.Organization.TenantId == ctx.CurrentTenant.Id);
+        if (!mrExists) return NotFound();
+
+        var reviews = await db.MergeRequestReviews
+            .Where(r => r.MergeRequestId == id)
+            .ToListAsync();
+
+        // Latest review per user determines their current verdict
+        var latestPerUser = reviews
+            .GroupBy(r => r.UserId)
+            .Select(g => g.OrderByDescending(r => r.CreatedAt).First())
+            .ToList();
+
+        var approved = latestPerUser.Count(r => r.Status == MergeRequestReviewStatus.Approved);
+        var changesRequested = latestPerUser.Count(r => r.Status == MergeRequestReviewStatus.ChangesRequested);
+
+        return Ok(new ReviewSummaryResponse(approved, changesRequested, latestPerUser.Count));
+    }
 }
+
+// ─────────────────────────── Request / Response Records ─────────────────
 
 public record CreateMergeRequestRequest(
     string Title,
     string? Description,
     string SourceBranch,
     string? TargetBranch,
-    bool AutoMergeEnabled = false);
+    bool AutoMergeEnabled = false,
+    MergeStrategy MergeStrategy = MergeStrategy.Merge,
+    bool DeleteSourceBranch = false);
 
 public record UpdateMergeRequestRequest(
     string Title,
     string? Description,
-    bool AutoMergeEnabled);
+    bool AutoMergeEnabled,
+    MergeStrategy MergeStrategy = MergeStrategy.Merge,
+    bool DeleteSourceBranch = false);
+
+public record MergeActionRequest(
+    MergeStrategy? Strategy = null,
+    bool? DeleteSourceBranch = null);
+
+public record MergeRequestResponse(
+    Guid Id,
+    Guid ProjectId,
+    string Title,
+    string? Description,
+    string SourceBranch,
+    string TargetBranch,
+    MergeRequestStatus Status,
+    string StatusName,
+    bool AutoMergeEnabled,
+    MergeStrategy MergeStrategy,
+    string MergeStrategyName,
+    bool DeleteSourceBranch,
+    string? LastKnownSourceSha,
+    Guid? LastCiCdRunId,
+    CiCdRunStatus? LastCiCdRunStatus,
+    string? LastCiCdRunStatusName,
+    DateTime CreatedAt,
+    DateTime UpdatedAt,
+    DateTime? MergedAt,
+    string? MergeCommitSha);
+
+public record MergeErrorResponse(string Error);
+
+public record SubmitReviewRequest(
+    MergeRequestReviewStatus Status,
+    string? Body = null);
+
+public record MergeRequestReviewResponse(
+    Guid Id,
+    Guid MergeRequestId,
+    Guid UserId,
+    string Username,
+    MergeRequestReviewStatus Status,
+    string StatusName,
+    string? Body,
+    DateTime CreatedAt);
+
+public record ReviewSummaryResponse(
+    int Approved,
+    int ChangesRequested,
+    int TotalReviewers);

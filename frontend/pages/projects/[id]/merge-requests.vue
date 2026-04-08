@@ -92,6 +92,11 @@
               <span class="font-medium text-white text-sm">{{ mr.title }}</span>
               <span v-if="mr.autoMergeEnabled"
                 class="text-xs bg-blue-900/30 text-blue-400 px-1.5 py-0.5 rounded-full">Auto-merge</span>
+              <!-- Merge strategy badge (for merged MRs) -->
+              <span v-if="mr.statusName === 'Merged' && mr.mergeStrategyName !== 'Merge'"
+                class="text-xs bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded-full">
+                {{ mr.mergeStrategyName === 'Squash' ? 'Squash merged' : 'Rebased' }}
+              </span>
               <!-- CI status badge -->
               <span v-if="mr.lastCiCdRunStatusName"
                 :class="ciStatusClass(mr.lastCiCdRunStatusName)"
@@ -175,6 +180,32 @@
                 class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" />
             </button>
           </div>
+
+          <!-- Merge strategy -->
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1">Merge strategy</label>
+            <select v-model.number="form.mergeStrategy"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+              <option :value="0">Merge commit</option>
+              <option :value="1">Squash and merge</option>
+              <option :value="2">Rebase and merge</option>
+            </select>
+          </div>
+
+          <!-- Delete source branch -->
+          <div class="flex items-center justify-between py-1">
+            <div>
+              <label class="block text-sm font-medium text-gray-300">Delete source branch after merge</label>
+              <p class="text-xs text-gray-500 mt-0.5">Remove the source branch once merged.</p>
+            </div>
+            <button type="button"
+              :class="form.deleteSourceBranch ? 'bg-brand-600' : 'bg-gray-700'"
+              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
+              @click="form.deleteSourceBranch = !form.deleteSourceBranch">
+              <span :class="form.deleteSourceBranch ? 'translate-x-6' : 'translate-x-1'"
+                class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" />
+            </button>
+          </div>
         </div>
 
         <div v-if="createError" class="p-3 bg-red-900/30 border border-red-800/40 rounded-lg text-sm text-red-300">
@@ -217,6 +248,9 @@ interface MergeRequestDto {
   status: number
   statusName: string
   autoMergeEnabled: boolean
+  mergeStrategy: number
+  mergeStrategyName: string
+  deleteSourceBranch: boolean
   lastKnownSourceSha: string | null
   lastCiCdRunId: string | null
   lastCiCdRunStatus: number | null
@@ -258,6 +292,8 @@ const form = reactive({
   sourceBranch: '',
   targetBranch: '',
   autoMergeEnabled: false,
+  mergeStrategy: 0,
+  deleteSourceBranch: false,
 })
 
 function resetForm() {
@@ -266,6 +302,8 @@ function resetForm() {
   form.sourceBranch = ''
   form.targetBranch = defaultBranch.value
   form.autoMergeEnabled = false
+  form.mergeStrategy = 0
+  form.deleteSourceBranch = false
   createError.value = null
 }
 
@@ -320,6 +358,8 @@ async function createMr() {
       sourceBranch: form.sourceBranch,
       targetBranch: form.targetBranch || null,
       autoMergeEnabled: form.autoMergeEnabled,
+      mergeStrategy: form.mergeStrategy,
+      deleteSourceBranch: form.deleteSourceBranch,
     })
     mergeRequests.value.unshift(mr)
     showCreateModal.value = false
