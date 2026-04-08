@@ -1,5 +1,18 @@
 import { defineStore } from 'pinia'
-import type { GitRepository, GitOriginMode, GitBranch, GitCommit, GitTreeEntry, GitBlob, GitDiffFile } from '~/types'
+import type { GitRepository, GitOriginMode, GitBranch, GitCommit, GitTreeEntry, GitBlob, GitDiffFile, GitHubDebugResult } from '~/types'
+
+/** Extracts a human-readable error message from an ofetch FetchError or a generic Error. */
+function getErrorMessage(e: unknown, fallback: string): string {
+  if (e && typeof e === 'object') {
+    const data = (e as { data?: unknown }).data
+    if (data && typeof data === 'object') {
+      const d = data as Record<string, unknown>
+      if (typeof d.error === 'string') return d.error
+      if (typeof d.message === 'string') return d.message
+    }
+  }
+  return e instanceof Error ? e.message : fallback
+}
 
 export const useGitStore = defineStore('git', () => {
   const repos = ref<GitRepository[]>([])
@@ -201,7 +214,7 @@ export const useGitStore = defineStore('git', () => {
       await api.post(`/api/projects/${projectId}/git/repos/${repoId}/fetch`, {})
       await fetchRepos(projectId)
     } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : 'Fetch failed'
+      error.value = getErrorMessage(e, 'Fetch failed')
       throw e
     }
   }
@@ -212,7 +225,7 @@ export const useGitStore = defineStore('git', () => {
       await api.post(`/api/projects/${projectId}/git/repos/${repoId}/pull`, {})
       await fetchRepos(projectId)
     } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : 'Pull failed'
+      error.value = getErrorMessage(e, 'Pull failed')
       throw e
     }
   }
@@ -222,7 +235,7 @@ export const useGitStore = defineStore('git', () => {
     try {
       await api.post(`/api/projects/${projectId}/git/repos/${repoId}/push`, {})
     } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : 'Push failed'
+      error.value = getErrorMessage(e, 'Push failed')
       throw e
     }
   }
@@ -233,9 +246,13 @@ export const useGitStore = defineStore('git', () => {
       await api.post(`/api/projects/${projectId}/git/repos/${repoId}/sync`, {})
       await fetchRepos(projectId)
     } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : 'Sync failed'
+      error.value = getErrorMessage(e, 'Sync failed')
       throw e
     }
+  }
+
+  async function debugGitHubRepos(projectId: string, repoId: string) {
+    return api.get<GitHubDebugResult>(`/api/projects/${projectId}/git/repos/${repoId}/debug/github-repos`)
   }
 
   function reset() {
@@ -279,6 +296,7 @@ export const useGitStore = defineStore('git', () => {
     pullRemote,
     pushRemote,
     syncRemote,
+    debugGitHubRepos,
     reset
   }
 })

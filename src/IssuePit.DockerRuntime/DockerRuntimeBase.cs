@@ -572,16 +572,29 @@ public abstract class DockerRuntimeBase
     {
         try
         {
-            // npm install
+            // npm install (use npm ci when package-lock.json exists, otherwise npm install)
             var hasPackageJson = await ExecReadOutputAsync(
                 containerId,
                 ["/bin/sh", "-c", "test -f /workspace/package.json && echo yes || echo no"],
                 cancellationToken);
             if (hasPackageJson.Trim() == "yes")
             {
-                await onLogLine("[INFO] Running npm install", LogStream.Stdout);
-                await ExecCommandAsync(containerId, ["npm", "install", "--prefer-offline"],
-                    async (line, stream) => await onLogLine(line, stream), cancellationToken);
+                var hasLockFile = await ExecReadOutputAsync(
+                    containerId,
+                    ["/bin/sh", "-c", "test -f /workspace/package-lock.json && echo yes || echo no"],
+                    cancellationToken);
+                if (hasLockFile.Trim() == "yes")
+                {
+                    await onLogLine("[INFO] Running npm ci", LogStream.Stdout);
+                    await ExecCommandAsync(containerId, ["npm", "ci", "--prefer-offline"],
+                        async (line, stream) => await onLogLine(line, stream), cancellationToken);
+                }
+                else
+                {
+                    await onLogLine("[INFO] Running npm install", LogStream.Stdout);
+                    await ExecCommandAsync(containerId, ["npm", "install", "--prefer-offline"],
+                        async (line, stream) => await onLogLine(line, stream), cancellationToken);
+                }
             }
         }
         catch (Exception ex)

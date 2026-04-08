@@ -801,13 +801,22 @@ public class AgentSessionTests(AspireFixture fixture)
             "Session detail must report isManualMode=true for a manual-mode agent");
 
         // Verify the early [DEBUG] log lines (emitted well before container startup).
-        var logsResp = await client.GetAsync($"/api/agent-sessions/{sessionId}/logs");
-        Assert.Equal(HttpStatusCode.OK, logsResp.StatusCode);
-        var logs = await logsResp.Content.ReadFromJsonAsync<JsonElement>();
-
-        var logLines = logs.EnumerateArray()
-            .Select(l => l.GetProperty("line").GetString() ?? string.Empty)
-            .ToList();
+        // The session status is set to Running before LaunchAsync writes log lines, so poll
+        // until the expected lines appear (or give up after LogPollTimeoutMs).
+        List<string> logLines = [];
+        var logDeadline = DateTime.UtcNow.AddMilliseconds(E2ETimeouts.LogPollTimeoutMs);
+        while (DateTime.UtcNow < logDeadline)
+        {
+            var logsResp = await client.GetAsync($"/api/agent-sessions/{sessionId}/logs");
+            Assert.Equal(HttpStatusCode.OK, logsResp.StatusCode);
+            var logs = await logsResp.Content.ReadFromJsonAsync<JsonElement>();
+            logLines = logs.EnumerateArray()
+                .Select(l => l.GetProperty("line").GetString() ?? string.Empty)
+                .ToList();
+            if (logLines.Any(l => l.Contains("Manual (live terminal session)")))
+                break;
+            await Task.Delay(E2ETimeouts.LogPollDelayMs);
+        }
 
         Assert.True(
             logLines.Any(l => l.Contains("Manual (live terminal session)")),

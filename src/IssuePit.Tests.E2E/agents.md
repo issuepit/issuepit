@@ -198,3 +198,30 @@ This applies to all transition requirements. Any new requirement added in the fu
 2. Return a specific error message identifying the missing configuration when it cannot be evaluated.
 3. Never silently pass or fall back to an approximation.
 
+
+## E2E Playwright Timeout Conventions
+
+All Playwright timeout values in E2E tests and page objects **must** use the named constants from
+`src/IssuePit.Tests.E2E/E2ETimeouts.cs`. Never use magic numbers like `10_000` directly.
+
+| Constant | Value | When to use |
+|---|---|---|
+| `E2ETimeouts.Short` | 5 s | First-attempt / hydration-retry check; brief UI-feedback waits (modal opened, voice recording started). A second attempt with `Default` will follow on failure. |
+| `E2ETimeouts.Default` | 10 s | General element presence/interaction wait; value passed to `SetDefaultTimeout`. |
+| `E2ETimeouts.Navigation` | 15 s | Full-page navigations (post-login redirect, initial project-page load). |
+| `E2ETimeouts.NavigationLong` | 20 s | Slower cross-page navigations using `WaitUntilState.Commit` (e.g. org or agent detail pages). |
+| `E2ETimeouts.RetryDelay` | 1.5 s | `Task.Delay` between a failed navigation attempt and its retry. Not a Playwright timeout. |
+| `E2ETimeouts.LogPollTimeoutMs` | 30 s | Deadline for polling the session log API until an expected log line appears. Not a Playwright timeout. |
+| `E2ETimeouts.LogPollDelayMs` | 500 ms | `Task.Delay` between successive session-log poll attempts. Not a Playwright timeout. |
+
+**Example:**
+
+```csharp
+// ✅ correct
+context.SetDefaultTimeout(E2ETimeouts.Default);
+await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = E2ETimeouts.Navigation });
+await page.WaitForSelectorAsync("button:has-text('New Issue')", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+
+// ❌ wrong – magic number, hard to tune globally
+await page.WaitForURLAsync($"{FrontendUrl}/", new PageWaitForURLOptions { Timeout = 15_000 });
+```
