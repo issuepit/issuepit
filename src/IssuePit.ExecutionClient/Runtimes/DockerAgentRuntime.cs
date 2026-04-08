@@ -1075,7 +1075,7 @@ public class DockerAgentRuntime(
                 containerId,
                 [realGit, "fetch", remoteUrl, branch],
                 safeLog, cancellationToken,
-                env: ["GIT_TERMINAL_PROMPT=0"]);
+                env: ["GIT_TERMINAL_PROMPT=0"], logCommand: true);
 
             if (fetchExit != 0)
             {
@@ -1118,7 +1118,7 @@ public class DockerAgentRuntime(
             containerId,
             [realGit, "push", pushTarget, branch],
             safeLog, cancellationToken,
-            env: ["GIT_TERMINAL_PROMPT=0"]);
+            env: ["GIT_TERMINAL_PROMPT=0"], logCommand: true);
 
         if (retryPushExit == 0)
         {
@@ -1795,7 +1795,7 @@ public class DockerAgentRuntime(
                 var pushExit = await ExecCommandAsync(containerId, [realGit, "push", pushTarget, branch],
                     safeLogLine,
                     cancellationToken,
-                    env: ["GIT_TERMINAL_PROMPT=0"]);
+                    env: ["GIT_TERMINAL_PROMPT=0"], logCommand: true);
                 if (pushExit != 0)
                 {
                     await onLogLine(
