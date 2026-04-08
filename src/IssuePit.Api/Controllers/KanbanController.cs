@@ -964,6 +964,83 @@ public class KanbanController(IssuePitDbContext db, TenantContext ctx, IProducer
             BoardStateHash: currentHash,
             SessionId: session.Id));
     }
+
+    // ── Issue CI/CD Summaries ────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns lightweight CI/CD run summaries for issues that have a git branch.
+    /// Used by the kanban board to display CI status on cards in Review / Ready to Merge lanes.
+    /// </summary>
+    [HttpGet("boards/{boardId:guid}/issue-ci-summaries")]
+    public async Task<IActionResult> GetIssueCiSummaries(Guid boardId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var tenantId = ctx.CurrentTenant.Id;
+
+        var board = await db.KanbanBoards
+            .Where(b => b.Id == boardId && b.Project.Organization.TenantId == tenantId)
+            .Select(b => new { b.ProjectId })
+            .FirstOrDefaultAsync();
+        if (board is null) return NotFound();
+
+        // Get issues with git branches in this project
+        var issuesWithBranches = await db.Issues
+            .Where(i => i.ProjectId == board.ProjectId && i.GitBranch != null && i.GitBranch != "")
+            .Select(i => new { i.Id, i.GitBranch })
+            .ToListAsync();
+
+        if (issuesWithBranches.Count == 0) return Ok(Array.Empty<IssueCiSummaryResponse>());
+
+        var branches = issuesWithBranches.Select(i => i.GitBranch!).Distinct().ToList();
+
+        // Get the latest CI/CD run per branch
+        var latestRuns = await db.CiCdRuns
+            .Where(r => r.ProjectId == board.ProjectId && r.Branch != null && branches.Contains(r.Branch))
+            .GroupBy(r => r.Branch!)
+            .Select(g => g.OrderByDescending(r => r.StartedAt).First())
+            .ToListAsync();
+
+        var runsByBranch = latestRuns.ToDictionary(r => r.Branch!, r => r);
+
+        // Get job-level statuses for all latest runs
+        var runIds = latestRuns.Select(r => r.Id).ToList();
+        var jobStatuses = await db.CiCdRunLogs
+            .Where(l => runIds.Contains(l.CiCdRunId) && l.JobId != null)
+            .GroupBy(l => new { l.CiCdRunId, l.JobId })
+            .Select(g => new
+            {
+                g.Key.CiCdRunId,
+                g.Key.JobId,
+                HasSucceeded = g.Any(l => l.Line.EndsWith("Job succeeded")),
+                HasFailed = g.Any(l => l.Line.EndsWith("Job failed")),
+            })
+            .ToListAsync();
+
+        var jobsByRun = jobStatuses.GroupBy(j => j.CiCdRunId).ToDictionary(g => g.Key, g => g.ToList());
+
+        var result = issuesWithBranches.Select(issue =>
+        {
+            if (!runsByBranch.TryGetValue(issue.GitBranch!, out var run))
+                return new IssueCiSummaryResponse(issue.Id, null, null, 0, 0, 0, issue.GitBranch);
+
+            var isTerminal = run.Status is not (CiCdRunStatus.Running or CiCdRunStatus.Pending or CiCdRunStatus.WaitingForApproval);
+            var jobs = jobsByRun.GetValueOrDefault(run.Id) ?? [];
+            var passing = jobs.Count(j => j.HasSucceeded);
+            var failing = jobs.Count(j => j.HasFailed || (isTerminal && !j.HasSucceeded));
+            var total = jobs.Count;
+
+            return new IssueCiSummaryResponse(
+                issue.Id,
+                run.Id,
+                run.Status,
+                passing,
+                failing,
+                total,
+                issue.GitBranch);
+        }).ToList();
+
+        return Ok(result);
+    }
 }
 
 public record CreateBoardRequest(Guid ProjectId, string Name, KanbanLaneProperty? LaneProperty = null);
@@ -1038,3 +1115,13 @@ public record OrchestratorTriggerResponse(
     DateTime? LastRunAt = null,
     string? BoardStateHash = null,
     Guid? SessionId = null);
+
+/// <summary>Lightweight CI/CD summary for a single issue on the kanban board.</summary>
+public record IssueCiSummaryResponse(
+    Guid IssueId,
+    Guid? LatestRunId,
+    CiCdRunStatus? LatestRunStatus,
+    int PassingChecks,
+    int FailingChecks,
+    int TotalChecks,
+    string? Branch);

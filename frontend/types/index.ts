@@ -5,6 +5,7 @@ export enum IssueStatus {
   Todo = 'todo',
   InProgress = 'in_progress',
   InReview = 'in_review',
+  ReadyToMerge = 'ready_to_merge',
   Done = 'done',
   Cancelled = 'cancelled'
 }
@@ -536,6 +537,17 @@ export interface KanbanBoard {
   laneProperty: KanbanLaneProperty
   columns: KanbanColumn[]
   createdAt: string
+}
+
+/** Lightweight CI/CD summary for a single issue on the kanban board. */
+export interface IssueCiSummary {
+  issueId: string
+  latestRunId?: string | null
+  latestRunStatus?: CiCdRunStatus | null
+  passingChecks: number
+  failingChecks: number
+  totalChecks: number
+  branch?: string | null
 }
 
 export enum ProjectPropertyType {

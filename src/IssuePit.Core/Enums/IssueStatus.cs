@@ -6,15 +6,17 @@ namespace IssuePit.Core.Enums;
 public enum IssueStatus
 {
     [JsonStringEnumMemberName("backlog")]
-    Backlog,
+    Backlog = 0,
     [JsonStringEnumMemberName("todo")]
-    Todo,
+    Todo = 1,
     [JsonStringEnumMemberName("in_progress")]
-    InProgress,
+    InProgress = 2,
     [JsonStringEnumMemberName("in_review")]
-    InReview,
+    InReview = 3,
     [JsonStringEnumMemberName("done")]
-    Done,
+    Done = 4,
     [JsonStringEnumMemberName("cancelled")]
-    Cancelled
+    Cancelled = 5,
+    [JsonStringEnumMemberName("ready_to_merge")]
+    ReadyToMerge = 6
 }
