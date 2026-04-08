@@ -55,6 +55,12 @@ public class MergeRequest
     [MaxLength(200)]
     public string? MergeCommitSha { get; set; }
 
+    /// <summary>Number of lines added in this merge request (diff stat).</summary>
+    public int? LinesAdded { get; set; }
+
+    /// <summary>Number of lines removed in this merge request (diff stat).</summary>
+    public int? LinesRemoved { get; set; }
+
     /// <summary>The GitHub pull request number, set when imported from GitHub.</summary>
     public int? GitHubPrNumber { get; set; }
 

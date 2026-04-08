@@ -5,6 +5,7 @@ export enum IssueStatus {
   Todo = 'todo',
   InProgress = 'in_progress',
   InReview = 'in_review',
+  ReadyToMerge = 'ready_to_merge',
   Done = 'done',
   Cancelled = 'cancelled'
 }
@@ -536,6 +537,32 @@ export interface KanbanBoard {
   laneProperty: KanbanLaneProperty
   columns: KanbanColumn[]
   createdAt: string
+}
+
+/** CI check/job status from workflow graph. */
+export interface CiCheck {
+  name: string
+  status: string
+}
+
+/** Enrichment data for a kanban issue card (merge request + CI/CD info). */
+export interface IssueEnrichment {
+  issueId: string
+  mergeRequestId: string
+  mergeRequestTitle: string
+  sourceBranch: string
+  targetBranch: string
+  mergeRequestStatus: string
+  gitHubPrNumber?: number | null
+  gitHubPrUrl?: string | null
+  linesAdded?: number | null
+  linesRemoved?: number | null
+  ciCdRunId?: string | null
+  ciCdRunStatus?: string | null
+  totalTests: number
+  passedTests: number
+  failedTests: number
+  ciChecks: CiCheck[]
 }
 
 export enum ProjectPropertyType {

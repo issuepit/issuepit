@@ -379,6 +379,7 @@ const statuses = [
   { value: IssueStatus.Todo, label: 'Todo' },
   { value: IssueStatus.InProgress, label: 'In Progress' },
   { value: IssueStatus.InReview, label: 'In Review' },
+  { value: IssueStatus.ReadyToMerge, label: 'Ready to Merge' },
   { value: IssueStatus.Done, label: 'Done' },
   { value: IssueStatus.Cancelled, label: 'Cancelled' }
 ]
@@ -436,6 +437,7 @@ function statusIcon(status: IssueStatus) {
     [IssueStatus.Todo]: { color: 'bg-blue-400' },
     [IssueStatus.InProgress]: { color: 'bg-yellow-400' },
     [IssueStatus.InReview]: { color: 'bg-purple-400' },
+    [IssueStatus.ReadyToMerge]: { color: 'bg-cyan-400' },
     [IssueStatus.Done]: { color: 'bg-green-400' },
     [IssueStatus.Cancelled]: { color: 'bg-red-400' }
   }
@@ -451,12 +453,13 @@ const StatusBadge = defineComponent({
       todo: 'bg-blue-900/40 text-blue-300',
       in_progress: 'bg-yellow-900/40 text-yellow-300',
       in_review: 'bg-purple-900/40 text-purple-300',
+      ready_to_merge: 'bg-cyan-900/40 text-cyan-300',
       done: 'bg-green-900/40 text-green-300',
       cancelled: 'bg-red-900/40 text-red-400'
     }
     const labels: Record<string, string> = {
       backlog: 'Backlog', todo: 'Todo', in_progress: 'In Progress',
-      in_review: 'In Review', done: 'Done', cancelled: 'Cancelled'
+      in_review: 'In Review', ready_to_merge: 'Ready to Merge', done: 'Done', cancelled: 'Cancelled'
     }
     return () => h('span', {
       class: `text-xs px-2 py-0.5 rounded-full font-medium ${map[props.status!] ?? 'bg-gray-800 text-gray-400'}`

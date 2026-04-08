@@ -44,7 +44,7 @@ public class MilestonesController(IssuePitDbContext db, TenantContext ctx) : Con
 
         var total = issues.Count;
         var done = issues.Count(i => i.Status == IssueStatus.Done || i.Status == IssueStatus.Cancelled);
-        var inProgress = issues.Count(i => i.Status == IssueStatus.InProgress || i.Status == IssueStatus.InReview);
+        var inProgress = issues.Count(i => i.Status == IssueStatus.InProgress || i.Status == IssueStatus.InReview || i.Status == IssueStatus.ReadyToMerge);
         var open = total - done - inProgress;
         var percent = total > 0 ? (int)Math.Round((double)done / total * 100) : 0;
 

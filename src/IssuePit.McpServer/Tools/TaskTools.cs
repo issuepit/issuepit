@@ -23,7 +23,7 @@ public class TaskTools(IssuePitApiClient api, IOptions<McpServerOptions> options
         [Description("The issue ID (GUID) to add the task to.")] Guid issueId,
         [Description("Task title.")] string title,
         [Description("Task body / description (Markdown).")] string? body = null,
-        [Description("Status: backlog, todo, in_progress, in_review, done, cancelled.")] string status = "todo",
+        [Description("Status: backlog, todo, in_progress, in_review, done, cancelled, ready_to_merge.")] string status = "todo",
         [Description("Optional assignee user ID (GUID).")] Guid? assigneeId = null,
         CancellationToken ct = default)
     {
@@ -39,7 +39,7 @@ public class TaskTools(IssuePitApiClient api, IOptions<McpServerOptions> options
         [Description("The task ID (GUID).")] Guid id,
         [Description("New title.")] string title,
         [Description("New body.")] string? body = null,
-        [Description("New status: backlog, todo, in_progress, in_review, done, cancelled.")] string status = "todo",
+        [Description("New status: backlog, todo, in_progress, in_review, done, cancelled, ready_to_merge.")] string status = "todo",
         [Description("New assignee user ID (GUID).")] Guid? assigneeId = null,
         CancellationToken ct = default)
     {

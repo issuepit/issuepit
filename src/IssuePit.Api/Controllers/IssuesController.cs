@@ -45,6 +45,7 @@ public partial class IssuesController(IssuePitDbContext db, TenantContext ctx, I
                 "todo" => IssueStatus.Todo,
                 "in_progress" => IssueStatus.InProgress,
                 "in_review" => IssueStatus.InReview,
+                "ready_to_merge" => IssueStatus.ReadyToMerge,
                 "done" => IssueStatus.Done,
                 "cancelled" => IssueStatus.Cancelled,
                 _ => null

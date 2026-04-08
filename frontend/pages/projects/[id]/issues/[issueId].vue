@@ -619,6 +619,7 @@
                 <option value="todo">Todo</option>
                 <option value="in_progress">In Progress</option>
                 <option value="in_review">In Review</option>
+                <option value="ready_to_merge">Ready to Merge</option>
                 <option value="done">Done</option>
                 <option value="cancelled">Cancelled</option>
               </select>
@@ -1833,6 +1834,7 @@ function statusColor(status: IssueStatus) {
     [IssueStatus.Todo]: 'bg-blue-400',
     [IssueStatus.InProgress]: 'bg-yellow-400',
     [IssueStatus.InReview]: 'bg-purple-400',
+    [IssueStatus.ReadyToMerge]: 'bg-cyan-400',
     [IssueStatus.Done]: 'bg-green-400',
     [IssueStatus.Cancelled]: 'bg-red-400'
   }

@@ -268,10 +268,14 @@ public class MergeRequestsController(
         m.LastCiCdRunId,
         LastCiCdRunStatus = m.LastCiCdRun?.Status,
         LastCiCdRunStatusName = m.LastCiCdRun?.Status.ToString(),
+        m.LinesAdded,
+        m.LinesRemoved,
         m.CreatedAt,
         m.UpdatedAt,
         m.MergedAt,
         m.MergeCommitSha,
+        m.GitHubPrNumber,
+        m.GitHubPrUrl,
     };
 }
 

@@ -42,7 +42,7 @@ public class IssueTools(IssuePitApiClient api, IOptions<McpServerOptions> option
         [Description("The project ID (GUID).")] Guid projectId,
         [Description("Issue title.")] string title,
         [Description("Issue body / description (Markdown).")] string? body = null,
-        [Description("Status: backlog, todo, in_progress, in_review, done, cancelled.")] string status = "backlog",
+        [Description("Status: backlog, todo, in_progress, in_review, done, cancelled, ready_to_merge.")] string status = "backlog",
         [Description("Priority: no_priority, urgent, high, medium, low.")] string priority = "no_priority",
         [Description("Type: issue, bug, feature, task, epic.")] string type = "issue",
         [Description("Optional parent issue ID (GUID) to create a sub-issue.")] Guid? parentIssueId = null,
@@ -60,7 +60,7 @@ public class IssueTools(IssuePitApiClient api, IOptions<McpServerOptions> option
         [Description("The issue ID (GUID).")] Guid id,
         [Description("New title.")] string title,
         [Description("New body.")] string? body = null,
-        [Description("New status: backlog, todo, in_progress, in_review, done, cancelled.")] string status = "backlog",
+        [Description("New status: backlog, todo, in_progress, in_review, done, cancelled, ready_to_merge.")] string status = "backlog",
         [Description("New priority: no_priority, urgent, high, medium, low.")] string priority = "no_priority",
         [Description("New type: issue, bug, feature, task, epic.")] string type = "issue",
         CancellationToken ct = default)

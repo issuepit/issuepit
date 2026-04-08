@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { KanbanBoard, KanbanColumn, KanbanTransition, TransitionCheckResult, IssueStatus } from '~/types'
+import type { KanbanBoard, KanbanColumn, KanbanTransition, TransitionCheckResult, IssueStatus, IssueEnrichment } from '~/types'
 
 export const useKanbanStore = defineStore('kanban', () => {
   const boards = ref<KanbanBoard[]>([])
@@ -7,6 +7,9 @@ export const useKanbanStore = defineStore('kanban', () => {
   const transitions = ref<KanbanTransition[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+
+  /** Enrichment data keyed by issue ID — populated for issues in InReview/ReadyToMerge lanes. */
+  const issueEnrichments = ref<Record<string, IssueEnrichment>>({})
 
   const api = useApi()
 
@@ -237,12 +240,29 @@ export const useKanbanStore = defineStore('kanban', () => {
     }
   }
 
+  // ── Issue Enrichments ─────────────────────────────────────────────────────
+
+  async function fetchEnrichments(boardId: string) {
+    try {
+      const items = await api.get<IssueEnrichment[]>(`/api/kanban/boards/${boardId}/issue-enrichments`)
+      const map: Record<string, IssueEnrichment> = {}
+      for (const item of items) {
+        map[item.issueId] = item
+      }
+      issueEnrichments.value = map
+    } catch {
+      // Non-critical — cards simply won't show enrichment data
+      issueEnrichments.value = {}
+    }
+  }
+
   return {
     boards,
     currentBoard,
     transitions,
     loading,
     error,
+    issueEnrichments,
     fetchBoards,
     createBoard,
     updateBoard,
@@ -259,5 +279,6 @@ export const useKanbanStore = defineStore('kanban', () => {
     triggerTransition,
     checkTransitions,
     moveIssue,
+    fetchEnrichments,
   }
 })

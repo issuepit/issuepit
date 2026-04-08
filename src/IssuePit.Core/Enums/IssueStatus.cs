@@ -16,5 +16,7 @@ public enum IssueStatus
     [JsonStringEnumMemberName("done")]
     Done,
     [JsonStringEnumMemberName("cancelled")]
-    Cancelled
+    Cancelled,
+    [JsonStringEnumMemberName("ready_to_merge")]
+    ReadyToMerge
 }
