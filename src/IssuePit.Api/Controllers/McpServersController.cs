@@ -1,6 +1,7 @@
 using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
+using IssuePit.Core.Enums;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -22,6 +23,7 @@ public class McpServersController(IssuePitDbContext db, TenantContext ctx) : Con
                 m.OrgId,
                 m.Name,
                 m.Description,
+                ServerType = m.ServerType.ToString(),
                 m.Url,
                 m.Configuration,
                 m.AllowedTools,
@@ -46,6 +48,7 @@ public class McpServersController(IssuePitDbContext db, TenantContext ctx) : Con
                 m.OrgId,
                 m.Name,
                 m.Description,
+                ServerType = m.ServerType.ToString(),
                 m.Url,
                 m.Configuration,
                 m.AllowedTools,
@@ -78,6 +81,7 @@ public class McpServersController(IssuePitDbContext db, TenantContext ctx) : Con
         if (server is null) return NotFound();
         server.Name = updated.Name;
         server.Description = updated.Description;
+        server.ServerType = updated.ServerType;
         server.Url = updated.Url;
         server.Configuration = updated.Configuration;
         server.AllowedTools = updated.AllowedTools;

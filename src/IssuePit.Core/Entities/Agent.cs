@@ -129,6 +129,13 @@ public class Agent
     [MaxLength(200)]
     public string? OpenCodeAgentName { get; set; }
 
+    /// <summary>
+    /// When true, the built-in IssuePit MCP server is NOT injected into the agent's container
+    /// environment (<c>ISSUEPIT_MCP_URL</c> is omitted). This reduces context size for agents
+    /// that do not need access to the IssuePit issue/project API.
+    /// </summary>
+    public bool SkipIssuePitMcpServer { get; set; }
+
     public ICollection<Agent> ChildAgents { get; set; } = [];
 
     public ICollection<AgentMcpServer> AgentMcpServers { get; set; } = [];

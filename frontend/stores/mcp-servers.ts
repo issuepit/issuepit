@@ -16,7 +16,7 @@ export const useMcpServersStore = defineStore('mcp-servers', () => {
     }
   }
 
-  async function createMcpServer(payload: { orgId: string; name: string; description?: string; url: string; configuration: string; allowedTools?: string[] }) {
+  async function createMcpServer(payload: { orgId: string; name: string; description?: string; serverType?: string; url: string; configuration: string; allowedTools?: string[] }) {
     const created = await post<McpServer>('/api/mcp-servers', {
       ...payload,
       allowedTools: JSON.stringify(payload.allowedTools ?? []),
@@ -25,7 +25,7 @@ export const useMcpServersStore = defineStore('mcp-servers', () => {
     return created
   }
 
-  async function updateMcpServer(id: string, payload: { name: string; description?: string; url: string; configuration: string; allowedTools?: string[] }) {
+  async function updateMcpServer(id: string, payload: { name: string; description?: string; serverType?: string; url: string; configuration: string; allowedTools?: string[] }) {
     const updated = await put<McpServer>(`/api/mcp-servers/${id}`, {
       ...payload,
       allowedTools: JSON.stringify(payload.allowedTools ?? []),

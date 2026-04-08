@@ -48,6 +48,7 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
             agent.ManualMode,
             agent.IsShellAgent,
             agent.OpenCodeAgentName,
+            agent.SkipIssuePitMcpServer,
             agent.CreatedAt,
             agent.AgentMcpServers.Select(am => new LinkedMcpServerDto(
                 am.McpServer.Id,
@@ -109,6 +110,7 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
         agent.ManualMode = updated.ManualMode;
         agent.IsShellAgent = updated.IsShellAgent;
         agent.OpenCodeAgentName = updated.OpenCodeAgentName;
+        agent.SkipIssuePitMcpServer = updated.SkipIssuePitMcpServer;
         // Only update password when a non-empty value is provided so a blank PUT does not clear it.
         // To clear the password, use a dedicated PATCH endpoint (not yet implemented) or
         // delete and recreate the agent. This prevents accidental password removal on a full update.
@@ -176,6 +178,7 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
         agent.ManualMode,
         agent.IsShellAgent,
         agent.OpenCodeAgentName,
+        agent.SkipIssuePitMcpServer,
         agent.CreatedAt,
         agent.ConfigFieldSources);
 }
@@ -216,6 +219,7 @@ public sealed record AgentResponse(
     bool ManualMode,
     bool IsShellAgent,
     string? OpenCodeAgentName,
+    bool SkipIssuePitMcpServer,
     DateTime CreatedAt,
     Dictionary<string, string>? ConfigFieldSources);
 
@@ -237,6 +241,7 @@ public sealed record AgentDetailResponse(
     bool ManualMode,
     bool IsShellAgent,
     string? OpenCodeAgentName,
+    bool SkipIssuePitMcpServer,
     DateTime CreatedAt,
     IReadOnlyList<LinkedMcpServerDto> LinkedMcpServers,
     IReadOnlyList<ChildAgentDto> ChildAgents,
