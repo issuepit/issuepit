@@ -747,6 +747,20 @@ export interface GitRepository {
   gitHubIdentityName?: string
 }
 
+export interface GitHubRepoEntry {
+  fullName: string
+  cloneUrl: string
+  htmlUrl: string
+  isPrivate: boolean
+}
+
+export interface GitHubDebugResult {
+  tokenValid: boolean
+  login?: string
+  error?: string
+  repos: GitHubRepoEntry[]
+}
+
 export interface GitBranch {
   name: string
   isRemote: boolean

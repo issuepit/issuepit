@@ -58,28 +58,37 @@ public class IssuesPage(IPage page)
 
     /// <summary>
     /// Verifies the Voice button is visible and opens the voice recording modal.
-    /// Retries once on TimeoutException (Vue hydration race: the click handler may not yet be
+    /// Retries once on TimeoutException (Vue SSR hydration race: the click handler may not yet be
     /// attached when the button first becomes visible in SSR output).
-    /// If the modal is already open when the catch fires (the click worked but the modal title
-    /// appeared after the Short timeout), we skip the retry to avoid clicking a button that is
-    /// now obscured by the open modal overlay (which would cause a 30 s hang).
+    ///
+    /// The retry uses <c>Force = true</c> to dispatch the click event directly to the element,
+    /// bypassing Playwright's "element is covered" actionability check.  This prevents a 30 s hang
+    /// that would otherwise occur if the modal backdrop is already covering the Voice button at the
+    /// time of the retry (e.g. because the first click was applied after Vue hydrated but
+    /// WaitForSelectorAsync had already timed out).  The Voice button handler is
+    /// <c>@click="showVoiceCreate = true"</c> (not a toggle), so force-clicking it when the modal
+    /// is already open is a no-op — the modal stays open and the subsequent WaitForSelectorAsync
+    /// succeeds on the existing modal content.
     /// </summary>
     public async Task OpenVoiceModalAsync()
     {
+        await page.ClickAsync("button:has-text('Voice')");
         try
         {
-            await page.ClickAsync("button:has-text('Voice')");
+            // Wait up to Navigation (15 s) for the modal – handles both fast and slow first renders.
             await page.WaitForSelectorAsync("text=Create Issue from Voice",
-                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Navigation });
         }
         catch (TimeoutException)
         {
-            // The modal may have opened after the Short timeout – skip the retry if already visible.
-            if (await page.IsVisibleAsync("text=Create Issue from Voice"))
-                return;
-
+            // First click did not open the modal within 15 s (SSR hydration race: click handler
+            // was not yet attached, or the modal appeared after the timeout).
+            // Force = true dispatches the click event directly to the element without waiting for
+            // actionability — this prevents a 30 s hang if the modal backdrop is already covering
+            // the Voice button.  If the modal is already open, showVoiceCreate stays true and the
+            // subsequent WaitForSelectorAsync finds the existing modal immediately.
             await Task.Delay(E2ETimeouts.RetryDelay);
-            await page.ClickAsync("button:has-text('Voice')");
+            await page.ClickAsync("button:has-text('Voice')", new PageClickOptions { Force = true });
             await page.WaitForSelectorAsync("text=Create Issue from Voice",
                 new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
         }
