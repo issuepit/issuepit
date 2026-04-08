@@ -54,3 +54,21 @@ runs:
       with:
         name: ${{ inputs.artifact-name }}-test-results
         path: '**/*.trx'
+
+    - name: Collect hang dumps
+      if: always()
+      shell: bash
+      run: |
+        # Collect hang dumps into a workspace subdirectory to avoid scanning
+        # restricted paths like /tmp/snap-private-tmp (causes EACCES).
+        DEST="${GITHUB_WORKSPACE}/_hang-dumps"
+        mkdir -p "$DEST"
+        find /tmp -maxdepth 2 -name '*_hangdump.dmp' -exec cp {} "$DEST/" \; 2>/dev/null || true
+
+    - name: Upload hang dumps
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}-hang-dumps
+        path: '${{ github.workspace }}/_hang-dumps/*_hangdump.dmp'
+        if-no-files-found: ignore

@@ -47,7 +47,16 @@ public sealed class AspireFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Building Aspire AppHost...");
+        // Ensure IPv6 is enabled for the DCP gRPC control channel.
+        // Some runner environments (GitHub-hosted and IssuePit act runner) set
+        // DOTNET_SYSTEM_NET_DISABLEIPV6=1. Aspire DCP (a native binary) always listens on
+        // [::1]; if .NET project processes have IPv6 disabled they cannot connect back to DCP
+        // and crash after the gRPC retry timeout (~18 s), causing App.StartAsync() to hang.
+        // Setting the env var here ensures every child process Aspire spawns inherits 0.
+        Environment.SetEnvironmentVariable("DOTNET_SYSTEM_NET_DISABLEIPV6", "0");
+
+        Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Building Aspire AppHost... " +
+            $"(DOTNET_SYSTEM_NET_DISABLEIPV6={Environment.GetEnvironmentVariable("DOTNET_SYSTEM_NET_DISABLEIPV6") ?? "(unset)"})");
 
         // Create a temporary git repository from the dummy-cicd-repo so that act can run the
         // workflow in a real git context. AppHost reads CICD_E2E_REPO_PATH and configures the
@@ -70,9 +79,17 @@ public sealed class AspireFixture : IAsyncLifetime
         // Suppress log noise produced during E2E test runs:
         // MinLevel = Warning: silences INFO-level messages from Aspire orchestration and
         // application startup across all categories.
+        // Health-check service is silenced entirely: during teardown postgres/kafka containers
+        // stop while health checks are still running, producing Error-level stacktraces that
+        // flood the test output even though the tests have already passed.
         appHost.Services.Configure<LoggerFilterOptions>(opts =>
         {
             opts.MinLevel = LogLevel.Warning;
+            opts.Rules.Add(new LoggerFilterRule(
+                providerName: null,
+                categoryName: "Microsoft.Extensions.Diagnostics.HealthChecks",
+                logLevel: LogLevel.None,
+                filter: null));
         });
 
         // Aspire.Hosting.Kafka registers a "kafka_check" health check whose ProducerConfig
@@ -109,48 +126,96 @@ public sealed class AspireFixture : IAsyncLifetime
         // Also acts as a heartbeat to prevent --blame-hang-timeout from firing during startup.
         var notifications = App.Services.GetRequiredService<ResourceNotificationService>();
         using var startCts = new CancellationTokenSource();
+
+        // Shared state updated by the resource-logger task and read by the heartbeat task.
+        var lastSeen = new Dictionary<string, (string State, HealthStatus? Health)>();
+        var lastSeenLock = new object();
+
         var resourceLogger = Task.Run(async () =>
         {
             try
             {
-                var lastSeen = new Dictionary<string, (string State, HealthStatus? Health)>();
                 await foreach (var evt in notifications.WatchAsync(startCts.Token))
                 {
                     var name = evt.Resource.Name;
                     var state = evt.Snapshot.State?.Text ?? "unknown";
                     var health = evt.Snapshot.HealthStatus;
 
-                    if (!lastSeen.TryGetValue(name, out var prev) || prev.State != state || prev.Health != health)
+                    string? line = null;
+                    lock (lastSeenLock)
                     {
-                        string details = string.Empty;
-                        if (health == HealthStatus.Unhealthy)
+                        if (!lastSeen.TryGetValue(name, out var prev) || prev.State != state || prev.Health != health)
                         {
-                            try
+                            string details = string.Empty;
+                            if (health == HealthStatus.Unhealthy)
                             {
-                                var reports = evt.Snapshot.HealthReports;
-                                if (reports.Length > 0)
+                                try
                                 {
-                                    var failing = reports.Select(r => $"{r.Name}={r.Status};{r.Description};{r.ExceptionText}");
-                                    details = " -> FailingChecks: " + string.Join(", ", failing);
+                                    var reports = evt.Snapshot.HealthReports;
+                                    if (reports.Length > 0)
+                                    {
+                                        var failing = reports.Select(r => $"{r.Name}={r.Status};{r.Description};{r.ExceptionText}");
+                                        details = " -> FailingChecks: " + string.Join(", ", failing);
+                                    }
                                 }
+                                catch { /* best-effort; don't crash logging */ }
                             }
-                            catch { /* best-effort; don't crash logging */ }
+
+                            if (state != "unknown" && state != "NotStarted" /*&& state != ""*/)
+                                line = $"[{DateTime.UtcNow:HH:mm:ss}] [{name}] -> {state}; {health}{details}";
+                            lastSeen[name] = (state, health);
                         }
-                        
-                        if(state != "unknown" && state != "NotStarted" /*&& state != ""*/)
-                        {
-                            Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] [{name}] -> {state}; {health}{details}");
-                        }
-                        lastSeen[name] = (state, health);
                     }
+                    if (line is not null) Console.WriteLine(line);
                 }
             }
             catch (OperationCanceledException) { }
         });
 
-        await App.StartAsync();
-        await startCts.CancelAsync();
-        await resourceLogger;
+        // Periodic heartbeat every 30 s: logs which resources are still not Running+Healthy.
+        // Keeps blame-hang-timeout from firing silently and shows exactly what is stuck.
+        var heartbeat = Task.Run(async () =>
+        {
+            try
+            {
+                while (true)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(30), startCts.Token);
+                    List<string> notReady;
+                    lock (lastSeenLock)
+                    {
+                        notReady = lastSeen
+                            .Where(kv => kv.Value.State != "Running" || kv.Value.Health != HealthStatus.Healthy)
+                            .Select(kv => $"{kv.Key}({kv.Value.State}/{kv.Value.Health})")
+                            .ToList();
+                    }
+                    if (notReady.Count > 0)
+                        Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] [startup] Still waiting for: {string.Join(", ", notReady)}");
+                }
+            }
+            catch (OperationCanceledException) { }
+        });
+
+        try
+        {
+            await App.StartAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] App.StartAsync() failed: {ex.GetType().Name}: {ex.Message}");
+            lock (lastSeenLock)
+            {
+                foreach (var (name, (state, health)) in lastSeen.OrderBy(kv => kv.Key))
+                    Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}]   [{name}] state={state} health={health}");
+            }
+            throw;
+        }
+        finally
+        {
+            await startCts.CancelAsync();
+        }
+
+        await Task.WhenAll(resourceLogger, heartbeat);
 
         Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Aspire AppHost started.");
 

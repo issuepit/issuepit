@@ -183,15 +183,15 @@ runs:
         # update+install if cached versions have drifted (e.g. after a security patch).
         (
           if [ "$FFMPEG_CACHE_HIT" = "true" ]; then
-            sudo cp /tmp/apt-ffmpeg/*.deb /var/cache/apt/archives/
-            sudo apt-get install -y --no-download ffmpeg && exit 0 || true
+            cp /tmp/apt-ffmpeg/*.deb /var/cache/apt/archives/
+            apt-get install -y --no-download ffmpeg && exit 0 || true
             # Cached packages are stale -- fall through to full update+install below
           fi
-          sudo apt-get -y update
-          sudo apt-get install -y --download-only ffmpeg
+          apt-get -y update
+          apt-get install -y --download-only ffmpeg
           mkdir -p /tmp/apt-ffmpeg
-          sudo cp /var/cache/apt/archives/*.deb /tmp/apt-ffmpeg/
-          sudo apt-get install -y ffmpeg
+          cp /var/cache/apt/archives/*.deb /tmp/apt-ffmpeg/
+          apt-get install -y ffmpeg
         ) &
 
         wait
@@ -199,6 +199,12 @@ runs:
     - name: Set E2E environment variables
       shell: bash
       run: |
+        # Re-enable IPv6: the runner image (including the IssuePit act runner) sets
+        # DOTNET_SYSTEM_NET_DISABLEIPV6=1 which breaks .NET Aspire because the DCP
+        # orchestrator listens on [::1] and project processes connect back to it via
+        # that IPv6 loopback address. Without this, .NET services crash on startup
+        # (go to "Finished" state) because they cannot reach the DCP gRPC endpoint.
+        echo "DOTNET_SYSTEM_NET_DISABLEIPV6=0" >> "$GITHUB_ENV"
         echo "VoiceTranscription__ModelPath=$HOME/.vosk/vosk-model-small-en-us-0.15" >> "$GITHUB_ENV"
         echo "VoiceTranscription__DownloadFfmpeg=false" >> "$GITHUB_ENV"
         echo "CICD_E2E_HELPER_ACT_IMAGE=ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24" >> "$GITHUB_ENV"
