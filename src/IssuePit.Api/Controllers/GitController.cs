@@ -5,13 +5,14 @@ using IssuePit.Core.Enums;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Net.Http.Headers;
 using System.Text.Json;
 
 namespace IssuePit.Api.Controllers;
 
 [ApiController]
 [Route("api/projects/{projectId:guid}/git")]
-public class GitController(IssuePitDbContext db, TenantContext ctx, GitService gitService, ILogger<GitController> logger, IServiceScopeFactory scopeFactory, IDataProtectionProvider dpProvider) : ControllerBase
+public class GitController(IssuePitDbContext db, TenantContext ctx, GitService gitService, ILogger<GitController> logger, IServiceScopeFactory scopeFactory, IDataProtectionProvider dpProvider, IHttpClientFactory httpClientFactory) : ControllerBase
 {
     private static readonly string IdentityProtectorPurpose = "GitHubOAuthToken";
     // ──────────────────────── repository config (multi-origin) ──────────────────────
@@ -238,6 +239,71 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
             logger.LogError(ex, "Git sync failed for repo {RepoId}", repoId);
             return StatusCode(500, new { error = ex.Message });
         }
+    }
+
+    // ──────────────────────────── debug / diagnostics ──────────────────────────
+
+    /// <summary>
+    /// Lists GitHub repositories accessible to the token configured for this origin.
+    /// Useful for debugging 403 authentication errors — shows which repos the token
+    /// can actually reach, helping to diagnose wrong token or insufficient scopes.
+    /// Only supported for github.com remotes.
+    /// </summary>
+    [HttpGet("repos/{repoId:guid}/debug/github-repos")]
+    public async Task<IActionResult> DebugListGitHubRepos(Guid projectId, Guid repoId)
+    {
+        if (ctx.CurrentTenant is null) return Unauthorized();
+        var repo = await db.GitRepositories
+            .FirstOrDefaultAsync(r => r.Id == repoId && r.ProjectId == projectId);
+        if (repo is null) return NotFound();
+
+        if (string.IsNullOrEmpty(repo.AuthToken))
+            return Ok(new GitHubDebugResponse(TokenValid: false, Login: null,
+                Error: "No authentication token configured for this origin.",
+                Repos: []));
+
+        if (!repo.RemoteUrl.Contains("github.com", StringComparison.OrdinalIgnoreCase))
+            return Ok(new GitHubDebugResponse(TokenValid: false, Login: null,
+                Error: "Token debugging is only supported for github.com repositories.",
+                Repos: []));
+
+        using var client = httpClientFactory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", repo.AuthToken);
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("IssuePit/1.0");
+        client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+
+        // Verify the token is valid and retrieve the authenticated user.
+        var userResp = await client.GetAsync("https://api.github.com/user");
+        if (!userResp.IsSuccessStatusCode)
+        {
+            logger.LogInformation("GitHub token check for repo {RepoId} returned {Status}", repoId, (int)userResp.StatusCode);
+            return Ok(new GitHubDebugResponse(TokenValid: false, Login: null,
+                Error: $"GitHub API returned HTTP {(int)userResp.StatusCode} — token may be invalid or expired.",
+                Repos: []));
+        }
+
+        var userJson = await userResp.Content.ReadFromJsonAsync<JsonElement>();
+        var login = userJson.TryGetProperty("login", out var loginProp) ? loginProp.GetString() : null;
+
+        // Fetch up to 100 recently-updated repos accessible to this token.
+        var reposResp = await client.GetAsync("https://api.github.com/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member");
+        if (!reposResp.IsSuccessStatusCode)
+        {
+            return Ok(new GitHubDebugResponse(TokenValid: true, Login: login,
+                Error: $"Could not list repositories (HTTP {(int)reposResp.StatusCode}).",
+                Repos: []));
+        }
+
+        var reposJson = await reposResp.Content.ReadFromJsonAsync<JsonElement>();
+        var repos = reposJson.EnumerateArray()
+            .Select(r => new GitHubRepoEntry(
+                FullName: r.GetProperty("full_name").GetString() ?? string.Empty,
+                CloneUrl: r.GetProperty("clone_url").GetString() ?? string.Empty,
+                HtmlUrl: r.GetProperty("html_url").GetString() ?? string.Empty,
+                IsPrivate: r.GetProperty("private").GetBoolean()))
+            .ToList();
+
+        return Ok(new GitHubDebugResponse(TokenValid: true, Login: login, Error: null, Repos: repos));
     }
 
     // ──────────────────── legacy single-repo endpoints (kept for backward compat) ────────────────────
@@ -542,3 +608,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
 }
 
 public record GitRepoRequest(string RemoteUrl, string? DefaultBranch, string? AuthUsername, string? AuthToken, GitOriginMode? Mode, Guid? GitHubIdentityId = null);
+
+public record GitHubRepoEntry(string FullName, string CloneUrl, string HtmlUrl, bool IsPrivate);
+
+public record GitHubDebugResponse(bool TokenValid, string? Login, string? Error, List<GitHubRepoEntry> Repos);

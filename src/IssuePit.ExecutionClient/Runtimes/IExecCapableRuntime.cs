@@ -58,6 +58,19 @@ public interface IExecCapableRuntime : IAgentRuntime
     Task StopContainerAsync(string containerId, bool remove, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Runs a dedicated opencode session to analyse raw CI/CD logs and produce a condensed
+    /// failure report. The full log text is written to a file inside the container; a new
+    /// (non-forked) opencode session analyses it and writes a summary to a second file.
+    /// Returns the condensed report text, or <c>null</c> if the condensing session failed.
+    /// </summary>
+    Task<string?> CondenseLogsInContainerAsync(
+        string containerId,
+        string rawLogs,
+        Agent agent,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// After a failed push, loops through <paramref name="allGitRepositories"/> in order, fetching
     /// and rebasing the local branch on top of each remote's version of the branch. Once all remotes
     /// are integrated, retries the push to <paramref name="gitRepository"/> (the Working push target).

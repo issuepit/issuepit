@@ -1039,6 +1039,120 @@ public class DockerAgentRuntime(
         }
     }
 
+    /// <inheritdoc/>
+    public async Task<string?> CondenseLogsInContainerAsync(
+        string containerId,
+        string rawLogs,
+        Agent agent,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        const string rawLogPath = "/tmp/cicd-raw-log.txt";
+        const string condensedPath = "/tmp/cicd-condensed.txt";
+
+        // 1. Write the full raw log to a file in the container.
+        await InjectFileAsync(containerId, rawLogPath, rawLogs, cancellationToken);
+        await onLogLine($"[INFO] Wrote {rawLogs.Length:N0} chars of CI/CD log to {rawLogPath}", LogStream.Stdout);
+
+        // 2. Build a condensing prompt — the new opencode session reads the file, analyses it,
+        //    and writes a focused failure report to a second file.
+        var prompt =
+            $"Analyse the CI/CD log file at {rawLogPath} and write a condensed failure report to {condensedPath}.\n\n" +
+            "Your report MUST:\n" +
+            "- Identify the root cause(s) of the CI/CD failure\n" +
+            "- Include exact error messages, failed commands, and relevant file paths\n" +
+            "- Preserve compiler errors, test failures, and stack traces verbatim\n" +
+            "- Omit all passing steps, download progress, and boilerplate output\n" +
+            "- Be concise but complete enough for another agent to fix the issues without seeing the full log\n\n" +
+            $"Write ONLY the report content to {condensedPath}. Do not include any other commentary.";
+
+        // 3. Run a new opencode session (not forked) to condense the logs.
+        var cmd = new List<string> { "opencode", "run" };
+        var agentName = RunnerCommandBuilder.ResolveOpenCodeAgentName(agent);
+        if (!string.IsNullOrWhiteSpace(agentName))
+        {
+            cmd.Add("--agent");
+            cmd.Add(agentName);
+        }
+        if (!string.IsNullOrWhiteSpace(agent.Model))
+        {
+            cmd.Add("--model");
+            cmd.Add(agent.Model);
+        }
+        cmd.Add("--format");
+        cmd.Add("json");
+        cmd.Add(prompt);
+
+        await onLogLine("[INFO] Running opencode log condensing session…", LogStream.Stdout);
+
+        var exitCode = await ExecCommandAsync(containerId, cmd, async (line, stream) =>
+        {
+            var displayLine = OpenCodeJsonLogParser.ParseLine(line);
+            if (displayLine.Length > 0)
+                await onLogLine(displayLine, stream);
+        }, cancellationToken, logCommand: true);
+
+        if (exitCode != 0)
+        {
+            await onLogLine($"[WARN] Log condensing session exited with code {exitCode}", LogStream.Stderr);
+            return null;
+        }
+
+        // 4. Read the condensed file back from the container.
+        try
+        {
+            var condensed = await ExecReadOutputAsync(
+                containerId, ["cat", condensedPath], cancellationToken, workingDir: "/tmp");
+            if (string.IsNullOrWhiteSpace(condensed))
+            {
+                await onLogLine("[WARN] Condensed log file was empty", LogStream.Stderr);
+                return null;
+            }
+            await onLogLine($"[INFO] Condensed {rawLogs.Length:N0} chars → {condensed.Length:N0} chars", LogStream.Stdout);
+            return condensed;
+        }
+        catch (Exception ex)
+        {
+            await onLogLine($"[WARN] Failed to read condensed log: {ex.Message}", LogStream.Stderr);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Writes a text file into the container at the specified absolute path via a tar archive.
+    /// The parent directory must already exist inside the container.
+    /// </summary>
+    private async Task InjectFileAsync(
+        string containerId,
+        string path,
+        string content,
+        CancellationToken cancellationToken)
+    {
+        var bytes = Encoding.UTF8.GetBytes(content.Replace("\r\n", "\n").Replace("\r", "\n"));
+        var fileName = Path.GetFileName(path);
+        var directory = Path.GetDirectoryName(path)!.Replace('\\', '/');
+
+        using var tarBuffer = new MemoryStream();
+        await using (var tarWriter = new TarWriter(tarBuffer, TarEntryFormat.Ustar, leaveOpen: true))
+        {
+            var entry = new UstarTarEntry(TarEntryType.RegularFile, fileName)
+            {
+                Mode = UnixFileMode.UserRead | UnixFileMode.UserWrite
+                       | UnixFileMode.GroupRead
+                       | UnixFileMode.OtherRead,
+                DataStream = new MemoryStream(bytes),
+            };
+            await tarWriter.WriteEntryAsync(entry, cancellationToken);
+        }
+
+        tarBuffer.Seek(0, SeekOrigin.Begin);
+        await dockerClient.Containers.ExtractArchiveToContainerAsync(
+            containerId,
+            new CopyToContainerParameters { Path = directory },
+            tarBuffer,
+            cancellationToken);
+    }
+
     /// <summary>
     /// After a failed push, loops through <paramref name="allGitRepositories"/> in order, fetching
     /// the current branch from each remote and rebasing local commits on top. Once all reachable

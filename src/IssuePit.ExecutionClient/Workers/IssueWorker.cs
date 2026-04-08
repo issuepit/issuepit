@@ -42,6 +42,13 @@ public class IssueWorker(
     /// <summary>Timeout in minutes to wait for a CI/CD run to complete before giving up.</summary>
     private const int CiCdWaitTimeoutMinutes = 30;
 
+    /// <summary>
+    /// When the number of failing tests exceeds this threshold the fix agent is instructed to
+    /// focus on a subset per iteration. Remaining failures will be fixed in subsequent CI/CD
+    /// fix loop iterations after the next rerun confirms which tests still fail.
+    /// </summary>
+    internal const int MaxTestsPerFixPhase = 5;
+
     /// <summary>Timeout in seconds for the pre-flight <c>git ls-remote</c> branch check per remote.</summary>
     private const int GitRemoteCheckTimeoutSeconds = 30;
 
@@ -1762,18 +1769,55 @@ public class IssueWorker(
                     execRuntime, execContainerId, currentCiCdSessionId, msgCtx, cancellationToken);
 
             // Collect CI/CD failure logs to give opencode the context it needs for fixing.
-            var failureLogs = await GetCiCdFailureLogsAsync(cicdRun.Id, db, cancellationToken);
+            var failureReport = await GetCiCdFailureLogsAsync(cicdRun.Id, db, cancellationToken);
+            var failureLogs = failureReport.Report;
+
+            // ── Log condensing step ─────────────────────────────────────────────────
+            // When the report contains raw logs (not structured test XML) and we have
+            // an exec runtime, run a dedicated opencode session to distil the verbose
+            // output into a focused failure report before handing it to the fix agent.
+            if (failureReport.NeedsCondensing && execRuntime is not null && execContainerId is not null)
+            {
+                var condenseSectionIndex = attempt + 1;
+                var appendCondenseLog = (string line, LogStream stream) =>
+                    (onLogLine ?? ((l, s, sec, idx) => AppendLogAsync(session.Id, l, s, sec, idx, db, cancellationToken)))(
+                        line, stream, AgentLogSection.CiCdLogCondensing, condenseSectionIndex);
+
+                await appendCondenseLog("[INFO] Condensing CI/CD failure logs via opencode…", LogStream.Stdout);
+
+                var condensed = await execRuntime.CondenseLogsInContainerAsync(
+                    execContainerId, failureLogs, agent, appendCondenseLog, cancellationToken);
+
+                if (!string.IsNullOrWhiteSpace(condensed))
+                {
+                    failureLogs = condensed;
+                    await appendCondenseLog("[INFO] Using condensed log for fix agent.", LogStream.Stdout);
+                }
+                else
+                {
+                    await appendCondenseLog("[WARN] Condensing failed, using original logs.", LogStream.Stderr);
+                }
+            }
 
             var fixSectionIndex = attempt + 1;
             var appendFixLog = (string line, LogStream stream) =>
                 (onLogLine ?? ((l, s, sec, idx) => AppendLogAsync(session.Id, l, s, sec, idx, db, cancellationToken)))(
                     line, stream, AgentLogSection.CiCdFixRun, fixSectionIndex);
 
+            // When there are many failing tests, instruct the fix agent to focus on a subset per
+            // iteration — remaining failures will be addressed in subsequent CI/CD fix attempts.
+            if (failureReport.FailedTestCount > MaxTestsPerFixPhase)
+            {
+                await appendFixLog(
+                    $"[INFO] {failureReport.FailedTestCount} tests failed — fix agent will focus on the first {MaxTestsPerFixPhase} failures.",
+                    LogStream.Stdout);
+            }
+
             await appendFixLog(
                 $"[INFO] Launching opencode fix agent (attempt {fixSectionIndex}/{maxAttempts - 1}) to address CI/CD failures…",
                 LogStream.Stdout);
 
-            var fixIssue = BuildFixIssue(issue, failureLogs, branchName);
+            var fixIssue = BuildFixIssue(issue, failureLogs, branchName, failureReport.FailedTestCount);
             string? fixCommitSha, fixBranchName;
 
             if (execRuntime is not null && execContainerId is not null)
@@ -1941,7 +1985,7 @@ public class IssueWorker(
     /// when some jobs produce test artifacts and others do not. Falls back to recent logs when
     /// no named jobs are detected and no test results exist.
     /// </summary>
-    private static async Task<string> GetCiCdFailureLogsAsync(
+    private static async Task<CiCdFailureReport> GetCiCdFailureLogsAsync(
         Guid runId,
         IssuePitDbContext db,
         CancellationToken cancellationToken)
@@ -1971,6 +2015,8 @@ public class IssueWorker(
         var passedJobIds = jobStats.Where(j => !j.HasErrors).Select(j => j.JobId).ToHashSet();
 
         var sb = new StringBuilder();
+        var needsCondensing = false;
+        var failedTestCount = 0;
 
         // ── Header ──────────────────────────────────────────────────────────────
         sb.AppendLine("=== CI/CD Run Failure Report ===");
@@ -2063,6 +2109,7 @@ public class IssueWorker(
                             .ToList()))
                     .ToList();
                 sb.AppendLine(BuildFailedTestsXml(suiteInfos));
+                failedTestCount += suiteInfos.Sum(s => s.FailedCases.Count);
                 sb.AppendLine();
                 jobsEmittedAsXml.Add(jobId);
             }
@@ -2075,6 +2122,8 @@ public class IssueWorker(
                 .OrderBy(j => j);
 
             await AppendFailedJobLogsAsync(sb, runId, failedJobsNeedingLogs, db, cancellationToken);
+            if (failedJobsNeedingLogs.Any())
+                needsCondensing = true;
         }
         else if (suitesWithoutJob.Count > 0)
         {
@@ -2094,56 +2143,47 @@ public class IssueWorker(
                             .ToList()))
                     .ToList();
                 sb.AppendLine(BuildFailedTestsXml(suiteInfos));
+                failedTestCount += suiteInfos.Sum(s => s.FailedCases.Count);
             }
             else
             {
                 // All suites pass but the run still failed → emit raw logs.
                 await AppendFailedJobLogsAsync(sb, runId, failedJobIds, db, cancellationToken);
+                needsCondensing = true;
             }
         }
         else if (failedJobIds.Count > 0)
         {
             // ── No test results at all — emit raw job logs ─────────────────────────
             await AppendFailedJobLogsAsync(sb, runId, failedJobIds, db, cancellationToken);
+            needsCondensing = true;
         }
         else
         {
-            // No jobs had a "Job failed" terminal line and no test results — fall back to the last
-            // 200 total lines plus extra stderr lines to ensure errors are always represented.
+            // No jobs had a "Job failed" terminal line and no test results — emit all
+            // available log lines. When an exec runtime is available the condensing step
+            // will use a dedicated opencode session to distil these into a focused report;
+            // otherwise the fix agent receives the full output.
             sb.AppendLine("--- Recent Logs ---");
+            needsCondensing = true;
 
-            var recent = await db.CiCdRunLogs
+            var allLogs = await db.CiCdRunLogs
                 .Where(l => l.CiCdRunId == runId)
-                .OrderByDescending(l => l.Timestamp)
-                .Take(200)
                 .OrderBy(l => l.Timestamp)
-                .Select(l => new { l.Id, l.Line, l.Stream, l.Timestamp })
+                .Select(l => new { l.Line, l.Stream })
                 .ToListAsync(cancellationToken);
 
-            var recentIds = recent.Select(l => l.Id).ToHashSet();
-            var extraStderr = await db.CiCdRunLogs
-                .Where(l => l.CiCdRunId == runId && l.Stream == LogStream.Stderr)
-                .OrderByDescending(l => l.Timestamp)
-                .Take(20)
-                .OrderBy(l => l.Timestamp)
-                .Select(l => new { l.Id, l.Line, l.Stream, l.Timestamp })
-                .ToListAsync(cancellationToken);
-
-            var lines = recent
-                .Concat(extraStderr.Where(l => !recentIds.Contains(l.Id)))
-                .OrderBy(l => l.Timestamp)
-                .Select(l => l.Stream == LogStream.Stderr ? $"[stderr] {l.Line}" : l.Line);
-
-            foreach (var line in lines)
-                sb.AppendLine(line);
+            foreach (var log in allLogs)
+                sb.AppendLine(log.Stream == LogStream.Stderr ? $"[stderr] {log.Line}" : log.Line);
         }
 
-        return sb.ToString().Trim();
+        return new CiCdFailureReport(sb.ToString().Trim(), needsCondensing, failedTestCount);
     }
 
     /// <summary>
-    /// Appends the last 100 log lines for each failed job to <paramref name="sb"/>.
+    /// Appends all log lines for each failed job to <paramref name="sb"/>.
     /// Used when raw CI/CD logs are the appropriate diagnostic output (no test failures).
+    /// The condensing step (when available) will distil these into a focused report.
     /// </summary>
     private static async Task AppendFailedJobLogsAsync(
         StringBuilder sb,
@@ -2158,8 +2198,6 @@ public class IssueWorker(
 
             var jobLogs = await db.CiCdRunLogs
                 .Where(l => l.CiCdRunId == runId && l.JobId == jobId)
-                .OrderByDescending(l => l.Timestamp)
-                .Take(100)
                 .OrderBy(l => l.Timestamp)
                 .Select(l => new { l.Line, l.Stream })
                 .ToListAsync(cancellationToken);
@@ -2281,21 +2319,38 @@ public class IssueWorker(
     /// Creates an in-memory <see cref="Issue"/> whose task prompt is the CI/CD failure context.
     /// The failure logs are passed directly as the task — the original issue body is NOT included
     /// so that opencode focuses solely on fixing the CI/CD failures.
+    /// When <paramref name="failedTestCount"/> exceeds <see cref="MaxTestsPerFixPhase"/> the prompt
+    /// instructs the agent to focus on the first few failures; remaining failures will be addressed
+    /// in subsequent CI/CD fix iterations after a rerun.
     /// <see cref="Issue.GitBranch"/> is set so the entrypoint checks out the correct branch.
     /// </summary>
-    private static Issue BuildFixIssue(Issue original, string failureLogs, string branchName) => new()
+    internal static Issue BuildFixIssue(Issue original, string failureLogs, string branchName, int failedTestCount = 0)
     {
-        Id = original.Id,
-        ProjectId = original.ProjectId,
-        Number = original.Number,
-        Title = $"Fix CI/CD failures for: {original.Title}",
-        Body =
-            "The previous CI/CD run failed. Fix the issues described in the report below,\n" +
-            "then commit the changes.\n" +
-            "IMPORTANT: Do NOT run `git push` — you do not have remote write access. Only commit changes locally.\n\n" +
-            $"{failureLogs}",
-        GitBranch = branchName,
-    };
+        var body = new StringBuilder();
+        body.AppendLine("The previous CI/CD run failed. Fix the issues described in the report below,");
+        body.AppendLine("then commit the changes.");
+        body.AppendLine("IMPORTANT: Do NOT run `git push` — you do not have remote write access. Only commit changes locally.");
+
+        if (failedTestCount > MaxTestsPerFixPhase)
+        {
+            body.AppendLine();
+            body.AppendLine($"There are {failedTestCount} failing tests. Focus on fixing the first {MaxTestsPerFixPhase} failures listed below.");
+            body.AppendLine("The remaining failures will be addressed in subsequent iterations after a CI/CD rerun confirms which tests still fail.");
+        }
+
+        body.AppendLine();
+        body.Append(failureLogs);
+
+        return new Issue
+        {
+            Id = original.Id,
+            ProjectId = original.ProjectId,
+            Number = original.Number,
+            Title = $"Fix CI/CD failures for: {original.Title}",
+            Body = body.ToString(),
+            GitBranch = branchName,
+        };
+    }
 
     /// <summary>
     /// Creates an in-memory <see cref="Issue"/> whose task prompt asks opencode to handle
@@ -2700,4 +2755,20 @@ internal sealed record FailedTestCaseInfo(
     double DurationMs,
     string? ErrorMessage,
     string? StackTrace);
+
+/// <summary>
+/// Structured result from <see cref="IssueWorker.GetCiCdFailureLogsAsync"/> indicating
+/// whether the failure report contains raw logs that would benefit from AI-powered condensing,
+/// and how many individual test failures were found.
+/// </summary>
+internal sealed record CiCdFailureReport(
+    /// <summary>The formatted failure report text (may include JUnit XML or raw log lines).</summary>
+    string Report,
+    /// <summary>
+    /// <c>true</c> when the report contains raw log lines (not structured test XML) that could
+    /// benefit from condensing via a dedicated opencode session.
+    /// </summary>
+    bool NeedsCondensing,
+    /// <summary>Number of individual failed tests across all suites. 0 when no test results are available.</summary>
+    int FailedTestCount);
 
