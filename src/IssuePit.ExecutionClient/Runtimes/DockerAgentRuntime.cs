@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Formats.Tar;
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
 using Docker.DotNet;
 using Docker.DotNet.Models;
 using IssuePit.Core.Entities;
@@ -326,12 +327,11 @@ public class DockerAgentRuntime(
         // In manual mode the user drives the agent interactively, so skip building/logging it.
         var taskPrompt = useManualMode ? string.Empty : RunnerCommandBuilder.BuildTaskPrompt(issue, comments, agent.Name);
 
-        // Log the task prompt that will be passed to the agent so it is always visible in the logs.
+        // Log the task prompt as a single collapsible block visible in the UI.
         if (!useManualMode)
         {
-            await onLogLine($"[DEBUG] Task prompt    :", LogStream.Stdout);
-            foreach (var promptLine in taskPrompt.Split('\n'))
-                await onLogLine($"[DEBUG]   {promptLine}", LogStream.Stdout);
+            var promptJson = JsonSerializer.Serialize(new { text = taskPrompt });
+            await onLogLine($"{OpenCodeJsonLogParser.PromptPrefix}{promptJson}", LogStream.Stdout);
         }
 
         // Step 4: Configure DNS-based firewall when internet access should be restricted.
@@ -967,7 +967,7 @@ public class DockerAgentRuntime(
                 var uncommittedCmd = RunnerCommandBuilder.BuildCmdList(agent, uncommittedIssue, forkSessionId: openCodeSessionId);
                 if (uncommittedCmd.Count > 0)
                 {
-                    var exitCode2 = await ExecCommandAsync(containerId, uncommittedCmd, onFixLogLine, cancellationToken);
+                    var exitCode2 = await ExecCommandAsync(containerId, uncommittedCmd, onFixLogLine, cancellationToken, logCommand: true);
                     if (exitCode2 != 0)
                         await onLogLine($"[WARN] Uncommitted-changes fix agent exited with code {exitCode2}", LogStream.Stderr);
                 }
@@ -1189,7 +1189,7 @@ public class DockerAgentRuntime(
                 containerId,
                 [realGit, "fetch", remoteUrl, branch],
                 safeLog, cancellationToken,
-                env: ["GIT_TERMINAL_PROMPT=0"]);
+                env: ["GIT_TERMINAL_PROMPT=0"], logCommand: true);
 
             if (fetchExit != 0)
             {
@@ -1203,13 +1203,13 @@ public class DockerAgentRuntime(
             var rebaseExit = await ExecCommandAsync(
                 containerId,
                 [realGit, "rebase", "FETCH_HEAD"],
-                safeLog, cancellationToken);
+                safeLog, cancellationToken, logCommand: true);
 
             if (rebaseExit != 0)
             {
                 // Rebase conflict — abort and surface as a failure so the user is aware.
                 var abortExit = await ExecCommandAsync(containerId, [realGit, "rebase", "--abort"],
-                    safeLog, cancellationToken);
+                    safeLog, cancellationToken, logCommand: true);
                 if (abortExit != 0)
                     await onLogLine(
                         $"[WARN] Rebase --abort returned exit code {abortExit} — workspace may be in an inconsistent state.",
@@ -1232,7 +1232,7 @@ public class DockerAgentRuntime(
             containerId,
             [realGit, "push", pushTarget, branch],
             safeLog, cancellationToken,
-            env: ["GIT_TERMINAL_PROMPT=0"]);
+            env: ["GIT_TERMINAL_PROMPT=0"], logCommand: true);
 
         if (retryPushExit == 0)
         {
@@ -1909,7 +1909,7 @@ public class DockerAgentRuntime(
                 var pushExit = await ExecCommandAsync(containerId, [realGit, "push", pushTarget, branch],
                     safeLogLine,
                     cancellationToken,
-                    env: ["GIT_TERMINAL_PROMPT=0"]);
+                    env: ["GIT_TERMINAL_PROMPT=0"], logCommand: true);
                 if (pushExit != 0)
                 {
                     await onLogLine(
