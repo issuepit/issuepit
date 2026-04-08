@@ -102,5 +102,14 @@ public class Organization
     /// </summary>
     public int? MaxCiCdLoopCount { get; set; }
 
+    /// <summary>
+    /// When <c>true</c> (the default), the execution client appends IssuePit metadata
+    /// as <a href="https://git-scm.com/docs/git-interpret-trailers">git trailers</a> to all
+    /// agent-created commits before pushing (agent name, LLM model, issue link).
+    /// Set to <c>false</c> to disable trailer injection for all projects in this organization.
+    /// Per-project overrides are available via <see cref="IssuePit.Core.Entities.Project.AddGitTrailers"/>.
+    /// </summary>
+    public bool AddGitTrailers { get; set; } = true;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

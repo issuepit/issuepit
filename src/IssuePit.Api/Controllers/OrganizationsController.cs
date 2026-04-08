@@ -62,6 +62,7 @@ public class OrganizationsController(IssuePitDbContext db, TenantContext ctx) : 
         org.LocalRepositories = updated.LocalRepositories;
         org.SkipSteps = updated.SkipSteps;
         org.MaxCiCdLoopCount = updated.MaxCiCdLoopCount;
+        org.AddGitTrailers = updated.AddGitTrailers;
         await db.SaveChangesAsync();
         return Ok(org);
     }

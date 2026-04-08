@@ -163,6 +163,15 @@ public class AgentSession
     public AgentPushPolicy PushPolicy { get; set; } = AgentPushPolicy.Forbidden;
 
     /// <summary>
+    /// Not persisted. Set by <c>IssueWorker</c> before calling <see cref="IAgentRuntime.LaunchAsync"/>
+    /// from the effective <c>AddGitTrailers</c> setting resolved from the project → org hierarchy.
+    /// When <c>true</c>, <see cref="DockerAgentRuntime"/> appends IssuePit metadata as git trailers
+    /// to all new commits before pushing. Defaults to <c>true</c>.
+    /// </summary>
+    [NotMapped]
+    public bool AddGitTrailers { get; set; } = true;
+
+    /// <summary>
     /// The ID of the running Docker container for this session.
     /// Set when the session is in manual mode (<see cref="Agent.ManualMode"/>) so the API
     /// terminal endpoint can attach to the container and relay PTY I/O to the browser.

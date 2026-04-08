@@ -160,6 +160,21 @@
             </div>
             <div class="flex items-center justify-between">
               <div>
+                <label class="block text-sm font-medium text-gray-300">Add git trailers to agent commits</label>
+                <p class="text-xs text-gray-500 mt-0.5">Append <code class="bg-gray-800 px-1 rounded">IssuePit-Agent</code>, <code class="bg-gray-800 px-1 rounded">IssuePit-Model</code>, and <code class="bg-gray-800 px-1 rounded">IssuePit-Issue</code> metadata trailers to all agent-created commits before push. <span class="italic">null = inherit from org (default on)</span>.</p>
+              </div>
+              <button
+                type="button"
+                :class="ciCdForm.addGitTrailers === null ? 'bg-gray-600' : ciCdForm.addGitTrailers ? 'bg-brand-600' : 'bg-gray-700'"
+                class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-gray-900"
+                @click="cycleAddGitTrailers">
+                <span
+                  :class="(ciCdForm.addGitTrailers === null || ciCdForm.addGitTrailers) ? 'translate-x-6' : 'translate-x-1'"
+                  class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" />
+              </button>
+            </div>
+            <div class="flex items-center justify-between">
+              <div>
                 <label class="block text-sm font-medium text-gray-300">Unwrap single-file artifacts</label>
                 <p class="text-xs text-gray-500 mt-0.5">When an artifact contains exactly one supported file (PDF, PNG), download it directly instead of as a ZIP archive.</p>
               </div>
@@ -362,6 +377,7 @@ const ciCdForm = reactive({
   skipSteps: '' as string,
   requiresRunApproval: false,
   unwrapSingleFileArtifacts: false,
+  addGitTrailers: null as boolean | null,
 })
 
 const saving = ref(false)
@@ -406,6 +422,7 @@ onMounted(async () => {
     ciCdForm.skipSteps = p.skipSteps || ''
     ciCdForm.requiresRunApproval = p.requiresRunApproval ?? false
     ciCdForm.unwrapSingleFileArtifacts = p.unwrapSingleFileArtifacts ?? false
+    ciCdForm.addGitTrailers = p.addGitTrailers ?? null
   }
 })
 
@@ -432,6 +449,7 @@ async function save() {
       skipSteps: ciCdForm.skipSteps || null,
       requiresRunApproval: ciCdForm.requiresRunApproval,
       unwrapSingleFileArtifacts: ciCdForm.unwrapSingleFileArtifacts,
+      addGitTrailers: ciCdForm.addGitTrailers,
     })
     savedOk.value = true
     setTimeout(() => { savedOk.value = false }, 3000)
@@ -440,5 +458,12 @@ async function save() {
   } finally {
     saving.value = false
   }
+}
+
+function cycleAddGitTrailers() {
+  // Cycle: null (inherit) → true (enabled) → false (disabled) → null (inherit)
+  if (ciCdForm.addGitTrailers === null) ciCdForm.addGitTrailers = true
+  else if (ciCdForm.addGitTrailers === true) ciCdForm.addGitTrailers = false
+  else ciCdForm.addGitTrailers = null
 }
 </script>

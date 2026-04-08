@@ -156,5 +156,14 @@ public class Project
     /// </summary>
     public Guid? GitResolutionAgentId { get; set; }
 
+    /// <summary>
+    /// When <c>true</c>, the execution client appends IssuePit metadata as
+    /// <a href="https://git-scm.com/docs/git-interpret-trailers">git trailers</a> to all
+    /// agent-created commits before pushing (agent name, LLM model, issue link).
+    /// <c>null</c> means inherit the organization setting (which defaults to <c>true</c>).
+    /// Set to <c>false</c> to disable trailer injection for this project only.
+    /// </summary>
+    public bool? AddGitTrailers { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

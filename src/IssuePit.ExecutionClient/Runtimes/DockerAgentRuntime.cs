@@ -761,7 +761,10 @@ public class DockerAgentRuntime(
                     try
                     {
                         await CheckAndEmitUncommittedChangesAsync(container.ID, onLogLine, cancellationToken);
-                        await EmitGitMarkersAsync(container.ID, gitRepository, onLogLine, cancellationToken);
+                        await EmitGitMarkersAsync(container.ID, gitRepository,
+                            session.AddGitTrailers ? agent : null,
+                            session.AddGitTrailers ? issue : null,
+                            onLogLine, cancellationToken);
                     }
                     catch (Exception ex)
                     {
@@ -865,7 +868,10 @@ public class DockerAgentRuntime(
                 try
                 {
                     await CheckAndEmitUncommittedChangesAsync(container.ID, onLogLine, cancellationToken);
-                    await EmitGitMarkersAsync(container.ID, gitRepository, onLogLine, cancellationToken);
+                    await EmitGitMarkersAsync(container.ID, gitRepository,
+                        session.AddGitTrailers ? agent : null,
+                        session.AddGitTrailers ? issue : null,
+                        onLogLine, cancellationToken);
                 }
                 catch (Exception ex)
                 {
@@ -997,7 +1003,10 @@ public class DockerAgentRuntime(
         }
 
         // Emit git markers so the caller can capture the updated commit SHA and branch.
-        try { await EmitGitMarkersAsync(containerId, gitRepository, onFixLogLine, cancellationToken); }
+        try { await EmitGitMarkersAsync(containerId, gitRepository,
+            parentSession.AddGitTrailers ? agent : null,
+            parentSession.AddGitTrailers ? fixIssue : null,
+            onFixLogLine, cancellationToken); }
         catch (Exception ex) { await onFixLogLine($"[WARN] Git marker emission failed: {ex.Message}", LogStream.Stderr); }
 
         // When we forked, capture the most recently created session ID so the caller can reuse it
@@ -1860,9 +1869,129 @@ public class DockerAgentRuntime(
     }
 
     /// <summary>
+    /// Appends IssuePit metadata as <a href="https://git-scm.com/docs/git-interpret-trailers">git trailers</a>
+    /// to all new commits on the current branch (commits ahead of the remote tracking branch or
+    /// the repository's default branch). This runs after the agent has finished committing but
+    /// before the push, so the trailers are included in the pushed history.
+    ///
+    /// Trailers added:
+    /// <list type="bullet">
+    ///   <item><c>IssuePit-Agent</c> — the agent mode name that produced the commits.</item>
+    ///   <item><c>IssuePit-Model</c> — the LLM provider and model (e.g. <c>anthropic/claude-opus-4-5</c>).</item>
+    ///   <item><c>IssuePit-Issue</c> — link to the issue (GitHub URL when available, otherwise <c>#&lt;number&gt;</c>).</item>
+    /// </list>
+    ///
+    /// Uses <c>git filter-branch --msg-filter</c> with <c>git interpret-trailers --if-exists doNothing</c>
+    /// to add trailers idempotently (safe to run multiple times).
+    /// Failures are logged as warnings and never abort the push.
+    /// </summary>
+    private async Task AppendGitTrailersAsync(
+        string containerId,
+        string branch,
+        string? defaultBranch,
+        Agent? agent,
+        Issue? issue,
+        Func<string, LogStream, Task> onLogLine,
+        CancellationToken cancellationToken)
+    {
+        // Build the list of --trailer arguments for git interpret-trailers.
+        var trailerArgs = new List<string>();
+        if (agent is not null && !string.IsNullOrWhiteSpace(agent.Name))
+            trailerArgs.Add($"--trailer \"IssuePit-Agent: {SanitizeTrailerValue(agent.Name)}\"");
+        if (agent is not null && !string.IsNullOrWhiteSpace(agent.Model))
+            trailerArgs.Add($"--trailer \"IssuePit-Model: {SanitizeTrailerValue(agent.Model)}\"");
+        if (issue is not null)
+        {
+            var issueRef = !string.IsNullOrWhiteSpace(issue.GitHubIssueUrl)
+                ? issue.GitHubIssueUrl
+                : $"#{issue.Number}";
+            trailerArgs.Add($"--trailer \"IssuePit-Issue: {SanitizeTrailerValue(issueRef)}\"");
+        }
+
+        if (trailerArgs.Count == 0) return;
+
+        // Determine the merge-base to find commits added by the agent.
+        // Try upstream tracking first, then origin/<branch>, then origin/<default>.
+        var safeBranch = SanitizeTrailerValue(branch.Trim());
+        var safeDefault = SanitizeTrailerValue(defaultBranch?.Trim() ?? "main");
+
+        var baseScript =
+            $"git merge-base HEAD \"@{{u}}\" 2>/dev/null || " +
+            $"git merge-base HEAD \"origin/{safeBranch}\" 2>/dev/null || " +
+            $"git merge-base HEAD \"origin/{safeDefault}\" 2>/dev/null || " +
+            "echo \"\"";
+        var baseSha = (await ExecReadOutputAsync(
+            containerId, ["/bin/sh", "-c", baseScript], cancellationToken)).Trim();
+
+        if (string.IsNullOrWhiteSpace(baseSha))
+        {
+            await onLogLine("[entrypoint] No base commit found for trailer injection — skipping", LogStream.Stdout);
+            return;
+        }
+
+        var headSha = (await ExecReadOutputAsync(
+            containerId, ["git", "rev-parse", "HEAD"], cancellationToken)).Trim();
+        if (baseSha.Equals(headSha, StringComparison.OrdinalIgnoreCase))
+        {
+            await onLogLine("[entrypoint] No new commits — trailer injection skipped", LogStream.Stdout);
+            return;
+        }
+
+        var countStr = (await ExecReadOutputAsync(
+            containerId, ["/bin/sh", "-c", $"git rev-list --count {baseSha}..HEAD"], cancellationToken)).Trim();
+        if (!int.TryParse(countStr, out var count) || count == 0)
+        {
+            await onLogLine("[entrypoint] No new commits for trailer injection", LogStream.Stdout);
+            return;
+        }
+
+        await onLogLine($"[entrypoint] Adding git trailers to {count} commit(s)…", LogStream.Stdout);
+
+        // Build and inject the trailer script to the container to avoid shell escaping issues.
+        var trailerArgsJoined = string.Join(" ", trailerArgs);
+        var script =
+            "#!/bin/sh\n" +
+            "export FILTER_BRANCH_SQUELCH_WARNING=1\n" +
+            $"git filter-branch -f --msg-filter " +
+            $"'git interpret-trailers --if-exists doNothing {trailerArgsJoined}' " +
+            $"{baseSha}..HEAD\n";
+
+        await InjectFileAsync(
+            containerId, "/tmp", ".issuepit-trailers.sh",
+            Encoding.UTF8.GetBytes(script),
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+            | UnixFileMode.GroupRead | UnixFileMode.OtherRead,
+            cancellationToken);
+
+        var exitCode = await ExecCommandAsync(
+            containerId,
+            ["/bin/sh", "/tmp/.issuepit-trailers.sh"],
+            (line, stream) => onLogLine($"[entrypoint] {line}", stream),
+            cancellationToken);
+
+        if (exitCode != 0)
+            await onLogLine("[entrypoint] Git trailer injection failed (non-fatal — push will proceed)", LogStream.Stdout);
+        else
+            await onLogLine($"[entrypoint] Trailers added to {count} commit(s)", LogStream.Stdout);
+    }
+
+    /// <summary>
+    /// Sanitizes a value for safe embedding in a shell script used by
+    /// <see cref="AppendGitTrailersAsync"/>. Removes characters that could break
+    /// shell parsing or enable injection (quotes, backticks, dollar signs, backslashes, newlines).
+    /// </summary>
+    internal static string SanitizeTrailerValue(string value) =>
+        new(value.Where(c => c != '"' && c != '\'' && c != '`' && c != '$'
+                           && c != '\\' && c != '\n' && c != '\r').ToArray());
+
+    /// <summary>
     /// Pushes the current branch to origin (allowed to fail), then emits
     /// <c>[ISSUEPIT:GIT_COMMIT_SHA]</c> and <c>[ISSUEPIT:GIT_BRANCH]</c> markers.
     /// Returns <c>true</c> when the push succeeded, <c>false</c> otherwise.
+    ///
+    /// Before pushing, appends IssuePit metadata as git trailers to all new commits
+    /// via <see cref="AppendGitTrailersAsync"/> when <paramref name="agent"/> and/or
+    /// <paramref name="issue"/> are provided.
     ///
     /// The IssuePit execution client always pushes Working-mode repos so that CI/CD can
     /// load the branch. Push restrictions for agent tools (opencode, CLI commands) are
@@ -1875,6 +2004,8 @@ public class DockerAgentRuntime(
     private async Task<bool> EmitGitMarkersAsync(
         string containerId,
         GitRepository? gitRepository,
+        Agent? agent,
+        Issue? issue,
         Func<string, LogStream, Task> onLogLine,
         CancellationToken cancellationToken)
     {
@@ -1882,6 +2013,25 @@ public class DockerAgentRuntime(
             containerId, ["git", "branch", "--show-current"], cancellationToken);
         var commitSha = await ExecReadOutputAsync(
             containerId, ["git", "rev-parse", "HEAD"], cancellationToken);
+
+        // Append git trailers to new commits before pushing.
+        if (!string.IsNullOrWhiteSpace(branch) && (agent is not null || issue is not null))
+        {
+            try
+            {
+                await AppendGitTrailersAsync(
+                    containerId, branch, gitRepository?.DefaultBranch,
+                    agent, issue, onLogLine, cancellationToken);
+
+                // Re-read HEAD after filter-branch may have rewritten commits.
+                commitSha = await ExecReadOutputAsync(
+                    containerId, ["git", "rev-parse", "HEAD"], cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                await onLogLine($"[WARN] Git trailer injection failed: {ex.Message}", LogStream.Stderr);
+            }
+        }
 
         var pushSucceeded = false;
 

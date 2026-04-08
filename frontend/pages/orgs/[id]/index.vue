@@ -547,6 +547,21 @@
                 class="w-40 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
               <p class="text-xs text-gray-500 mt-1">Max number of CI/CD → agent-fix loop iterations after the initial agent run. Can be overridden per project.</p>
             </div>
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="block text-sm font-medium text-gray-300">Add git trailers to agent commits</label>
+                <p class="text-xs text-gray-500 mt-0.5">Append <code class="bg-gray-800 px-1 rounded">IssuePit-Agent</code>, <code class="bg-gray-800 px-1 rounded">IssuePit-Model</code>, and <code class="bg-gray-800 px-1 rounded">IssuePit-Issue</code> metadata trailers to all agent-created commits before push. Can be overridden per project.</p>
+              </div>
+              <button
+                type="button"
+                :class="runnerSettingsForm.addGitTrailers ? 'bg-brand-600' : 'bg-gray-700'"
+                class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-gray-900 ml-4 flex-shrink-0"
+                @click="runnerSettingsForm.addGitTrailers = !runnerSettingsForm.addGitTrailers">
+                <span
+                  :class="runnerSettingsForm.addGitTrailers ? 'translate-x-6' : 'translate-x-1'"
+                  class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" />
+              </button>
+            </div>
             <p v-if="saveRunnerSettingsError" class="text-red-400 text-sm">{{ saveRunnerSettingsError }}</p>
             <button type="submit" :disabled="savingRunnerSettings"
               class="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
@@ -743,7 +758,7 @@ function setTab(id: string) {
 }
 
 // --- Runner Settings ---
-const runnerSettingsForm = reactive({ maxConcurrentRunners: 0, concurrentJobs: null as number | null, maxCiCdLoopCount: null as number | null })
+const runnerSettingsForm = reactive({ maxConcurrentRunners: 0, concurrentJobs: null as number | null, maxCiCdLoopCount: null as number | null, addGitTrailers: true })
 const savingRunnerSettings = ref(false)
 const saveRunnerSettingsError = ref<string | null>(null)
 
@@ -875,6 +890,7 @@ onMounted(async () => {
     runnerSettingsForm.maxConcurrentRunners = orgsStore.currentOrg.maxConcurrentRunners ?? 0
     runnerSettingsForm.concurrentJobs = orgsStore.currentOrg.concurrentJobs ?? null
     runnerSettingsForm.maxCiCdLoopCount = orgsStore.currentOrg.maxCiCdLoopCount ?? null
+    runnerSettingsForm.addGitTrailers = orgsStore.currentOrg.addGitTrailers ?? true
     ciCdForm.actRunnerImage = orgsStore.currentOrg.actRunnerImage ?? null
     ciCdForm.actEnv = orgsStore.currentOrg.actEnv || ''
     ciCdForm.actSecrets = orgsStore.currentOrg.actSecrets || ''
@@ -897,6 +913,7 @@ async function saveRunnerSettings() {
       maxConcurrentRunners: runnerSettingsForm.maxConcurrentRunners,
       concurrentJobs: runnerSettingsForm.concurrentJobs,
       maxCiCdLoopCount: runnerSettingsForm.maxCiCdLoopCount ?? null,
+      addGitTrailers: runnerSettingsForm.addGitTrailers,
       // Preserve all CI/CD fields so saving runner settings doesn't clear them.
       actRunnerImage: ciCdForm.actRunnerImage,
       actEnv: ciCdForm.actEnv || null,
@@ -926,6 +943,7 @@ async function saveCiCdSettings() {
       maxConcurrentRunners: orgsStore.currentOrg.maxConcurrentRunners,
       concurrentJobs: runnerSettingsForm.concurrentJobs,
       maxCiCdLoopCount: runnerSettingsForm.maxCiCdLoopCount ?? null,
+      addGitTrailers: runnerSettingsForm.addGitTrailers,
       actRunnerImage: ciCdForm.actRunnerImage,
       actEnv: ciCdForm.actEnv || null,
       actSecrets: ciCdForm.actSecrets || null,
