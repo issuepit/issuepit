@@ -104,8 +104,8 @@ jobs:
         run: |
           echo "DOTNET_SYSTEM_NET_DISABLEIPV6=0" >> "$GITHUB_ENV"
           echo "CICD_E2E_HELPER_ACT_IMAGE=ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24" >> "$GITHUB_ENV"
-          echo "DOTNET_SYSTEM_NET_DISABLEIPV6=0" | sudo tee -a /etc/environment
-          echo "CICD_E2E_HELPER_ACT_IMAGE=ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24" | sudo tee -a /etc/environment
+          echo "DOTNET_SYSTEM_NET_DISABLEIPV6=0" | tee -a /etc/environment
+          echo "CICD_E2E_HELPER_ACT_IMAGE=ghcr.io/issuepit/issuepit-helper-act:main-dotnet10-node24" | tee -a /etc/environment
 
       # Authenticate to GHCR so the helper-act image (used by Docker-runtime CI/CD
       # E2E tests) can be pulled. The default GITHUB_TOKEN has packages:read.
