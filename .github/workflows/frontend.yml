@@ -25,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: |
           npm ci
-          npx allow-scripts
+          npx --no-install @lavamoat/allow-scripts
 
       - name: Lint
         run: npm run lint

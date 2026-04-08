@@ -549,11 +549,11 @@ public partial class DockerCiCdRuntime(
                 var stepNum = 0;
 
                 // Step: Print act version for diagnostics.
-                await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: act --version", LogStream.Stdout);
+                await onLogLine($"[DEBUG] Step {++stepNum}/{totalSteps}: act binary check", LogStream.Stdout);
                 var capturedVersion = "";
                 await ExecShellAsync(
                     container.ID,
-                    "act --version 2>&1 || true",
+                    "act --help > /dev/null 2>&1 && echo 'act binary OK' || echo 'act binary check failed'",
                     (line, _) => { if (!string.IsNullOrWhiteSpace(line)) capturedVersion = line.Trim(); return Task.CompletedTask; },
                     cancellationToken);
                 await onLogLine($"[DEBUG] Act version    : {(string.IsNullOrEmpty(capturedVersion) ? "unknown" : capturedVersion)}", LogStream.Stdout);
