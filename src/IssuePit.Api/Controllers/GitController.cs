@@ -337,8 +337,32 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
                 IsPrivate: r.GetProperty("private").GetBoolean()))
             .ToList();
 
+        // Test access to the specific configured repo via the GitHub API.
+        var repoPath = ParseGitHubRepoPath(repo.RemoteUrl);
+        bool? specificRepoAccessible = null;
+        string? specificRepoError = null;
+        string? specificRepoHtmlUrl = null;
+        if (!string.IsNullOrEmpty(repoPath))
+        {
+            var specificRepoResp = await client.GetAsync($"https://api.github.com/repos/{repoPath}");
+            if (specificRepoResp.IsSuccessStatusCode)
+            {
+                specificRepoAccessible = true;
+                var specificRepoJson = await specificRepoResp.Content.ReadFromJsonAsync<JsonElement>();
+                specificRepoHtmlUrl = specificRepoJson.TryGetProperty("html_url", out var htmlUrlProp) ? htmlUrlProp.GetString() : null;
+            }
+            else
+            {
+                specificRepoAccessible = false;
+                specificRepoError = $"HTTP {(int)specificRepoResp.StatusCode} — {specificRepoResp.ReasonPhrase}";
+                logger.LogInformation("Specific repo access check for repo {RepoId} ({RepoPath}) returned {Status}", repoId, repoPath, (int)specificRepoResp.StatusCode);
+            }
+        }
+
         return Ok(new GitHubDebugResponse(TokenValid: true, Login: login, Error: null,
-            TokenSource: tokenSource, AuthUsername: effectiveUsername, Repos: repos));
+            TokenSource: tokenSource, AuthUsername: effectiveUsername, Repos: repos,
+            SpecificRepoPath: repoPath, SpecificRepoAccessible: specificRepoAccessible,
+            SpecificRepoError: specificRepoError, SpecificRepoHtmlUrl: specificRepoHtmlUrl));
     }
 
     // ──────────────────── legacy single-repo endpoints (kept for backward compat) ────────────────────
@@ -684,12 +708,31 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         }
         return StatusCode(500, new GitErrorResponse(msg, Hint: null));
     }
+
+    /// <summary>
+    /// Parses the GitHub <c>owner/repo</c> path from a remote URL.
+    /// Supports both HTTPS (<c>https://github.com/owner/repo.git</c>) and
+    /// SSH (<c>git@github.com:owner/repo.git</c>) formats.
+    /// Returns null if the URL cannot be parsed.
+    /// </summary>
+    private static string? ParseGitHubRepoPath(string remoteUrl)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(
+            remoteUrl,
+            @"github\.com[/:]([^/\s]+/[^/\s]+?)(?:\.git)?$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return match.Success ? match.Groups[1].Value : null;
+    }
 }
 
 public record GitRepoRequest(string RemoteUrl, string? DefaultBranch, string? AuthUsername, string? AuthToken, GitOriginMode? Mode, Guid? GitHubIdentityId = null);
 
 public record GitHubRepoEntry(string FullName, string CloneUrl, string HtmlUrl, bool IsPrivate);
 
-public record GitHubDebugResponse(bool TokenValid, string? Login, string? Error, string? TokenSource, string? AuthUsername, List<GitHubRepoEntry> Repos);
+public record GitHubDebugResponse(
+    bool TokenValid, string? Login, string? Error, string? TokenSource, string? AuthUsername,
+    List<GitHubRepoEntry> Repos,
+    string? SpecificRepoPath = null, bool? SpecificRepoAccessible = null,
+    string? SpecificRepoError = null, string? SpecificRepoHtmlUrl = null);
 
 public record GitErrorResponse(string Error, string? Hint);

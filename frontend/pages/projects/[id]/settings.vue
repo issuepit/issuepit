@@ -271,6 +271,17 @@
                 <div v-if="repoDebugResults[r.id]!.tokenValid" class="text-xs space-y-1">
                   <p class="text-green-400">✓ Token valid · authenticated as <span class="font-mono">@{{ repoDebugResults[r.id]!.login }}</span> · {{ repoDebugResults[r.id]!.repos.length }} accessible repo(s)</p>
                   <p v-if="repoDebugResults[r.id]!.tokenSource" class="text-gray-500">Token source: {{ repoDebugResults[r.id]!.tokenSource }}<template v-if="repoDebugResults[r.id]!.authUsername"> · git username: <span class="font-mono">{{ repoDebugResults[r.id]!.authUsername }}</span></template></p>
+                  <!-- Specific repo access result -->
+                  <div v-if="repoDebugResults[r.id]!.specificRepoPath" :class="repoDebugResults[r.id]!.specificRepoAccessible ? 'text-green-400' : 'text-red-400'">
+                    <template v-if="repoDebugResults[r.id]!.specificRepoAccessible">
+                      ✓ Can access this repo:
+                      <a :href="repoDebugResults[r.id]!.specificRepoHtmlUrl || '#'" target="_blank" rel="noopener noreferrer" class="font-mono hover:underline">{{ repoDebugResults[r.id]!.specificRepoPath }}</a>
+                    </template>
+                    <template v-else>
+                      ✗ Cannot access this repo: <span class="font-mono">{{ repoDebugResults[r.id]!.specificRepoPath }}</span>
+                      <span v-if="repoDebugResults[r.id]!.specificRepoError"> — {{ repoDebugResults[r.id]!.specificRepoError }}</span>
+                    </template>
+                  </div>
                   <ul class="max-h-36 overflow-y-auto space-y-0.5 pl-1">
                     <li v-for="gr in repoDebugResults[r.id]!.repos" :key="gr.fullName" class="text-gray-400 font-mono">
                       {{ gr.isPrivate ? '🔒' : '📦' }}

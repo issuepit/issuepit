@@ -734,6 +734,10 @@ export interface GitHubDebugResult {
   tokenSource?: string
   authUsername?: string
   repos: GitHubRepoEntry[]
+  specificRepoPath?: string
+  specificRepoAccessible?: boolean
+  specificRepoError?: string
+  specificRepoHtmlUrl?: string
 }
 
 export interface GitBranch {
