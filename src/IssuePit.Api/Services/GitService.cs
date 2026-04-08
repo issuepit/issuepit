@@ -58,6 +58,11 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
         return opts;
     }
 
+    // Matches one or more trailing -pre-force-push-YYYYMMDDHHMMSS suffixes so they can be stripped
+    // from a branch name before creating a new archive name (prevents unbounded name growth).
+    private static readonly Regex PreForcePushSuffixRegex =
+        new(@"(-pre-force-push-\d{14})+$", RegexOptions.Compiled);
+
     /// <summary>Finds the remote in the local git repo whose URL matches <paramref name="repo"/>.RemoteUrl, or returns the first remote.</summary>
     private static Remote? FindMatchingRemote(Repository gitRepo, GitRepository repo) =>
         gitRepo.Network.Remotes.FirstOrDefault(r =>
@@ -73,7 +78,7 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
         var oldName = localBranch.FriendlyName;
         // Strip any accumulated pre-force-push suffixes so archive names don't compound across
         // multiple force pushes (e.g. "main-pre-force-push-T1-pre-force-push-T2" → "main").
-        var baseName = Regex.Replace(oldName, @"(-pre-force-push-\d{14})+$", "");
+        var baseName = PreForcePushSuffixRegex.Replace(oldName, "");
         var suffix = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
         var archiveName = $"{baseName}-pre-force-push-{suffix}";
         var renamedBranch = gitRepo.Branches.Rename(localBranch, archiveName);
