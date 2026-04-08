@@ -482,6 +482,76 @@
           </div>
         </div>
 
+        <!-- Action Remote Replacements -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h2 class="font-semibold text-white mb-1">Action Remote Replacements</h2>
+          <p class="text-sm text-gray-500 mb-4">
+            Redirect remote action fetches to alternative remotes using
+            <code class="text-gray-300 bg-gray-800 px-1 rounded">--action-remote-replacements</code>.
+            Supports four matching tiers: exact URL with ref, path-only with ref, exact URL (any ref), and path-only (any ref).
+            One mapping per line in the format
+            <code class="text-gray-300 bg-gray-800 px-1 rounded">source=destination</code>.
+          </p>
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">
+              Action replacements
+              <span class="text-gray-500 font-normal">(--action-remote-replacements source=destination)</span>
+              <ImportedBadge v-if="isOrgFieldImported('actionReplacements')" :source-file="orgFieldSourceFile('actionReplacements')" />
+            </label>
+            <textarea
+              v-model="ciCdForm.actionReplacements"
+              rows="4"
+              :placeholder="`org/repo@v1=https://internal.example.com/mirror/repo@v1\norg/other=https://internal.example.com/other`"
+              :disabled="isOrgFieldImported('actionReplacements')"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y disabled:opacity-50 disabled:cursor-not-allowed"
+            />
+            <p class="text-xs text-gray-500 mt-1">
+              Each line is passed as a separate
+              <code class="bg-gray-800 px-1 rounded">--action-remote-replacements</code> argument to act.
+            </p>
+          </div>
+        </div>
+
+        <!-- Action Remote Token -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h2 class="font-semibold text-white mb-1">Action Remote Token</h2>
+          <p class="text-sm text-gray-500 mb-4">
+            Configure the token act uses to fetch remote actions
+            (<code class="text-gray-300 bg-gray-800 px-1 rounded">--action-remote-token</code>).
+            Set an explicit token or use the <code class="text-gray-300 bg-gray-800 px-1 rounded">GITHUB_TOKEN</code> secret.
+          </p>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">
+                Explicit token
+                <span class="text-gray-500 font-normal">(--action-remote-token)</span>
+                <ImportedBadge v-if="isOrgFieldImported('actionRemoteToken')" :source-file="orgFieldSourceFile('actionRemoteToken')" />
+              </label>
+              <input
+                v-model="ciCdForm.actionRemoteToken"
+                type="text"
+                placeholder="ghp_xxxxx or leave blank"
+                :disabled="isOrgFieldImported('actionRemoteToken')"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              <p class="text-xs text-gray-500 mt-1">Token is stored as plain text. Leave blank to use the act default.</p>
+            </div>
+            <div class="flex items-center gap-3">
+              <input
+                id="useGitHubTokenForActions"
+                v-model="ciCdForm.useGitHubTokenForActions"
+                type="checkbox"
+                :disabled="isOrgFieldImported('useGitHubTokenForActions') || !!ciCdForm.actionRemoteToken"
+                class="w-4 h-4 rounded bg-gray-800 border-gray-600 text-brand-500 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              <label for="useGitHubTokenForActions" class="text-sm text-gray-300">
+                Use <code class="bg-gray-800 px-1 rounded">GITHUB_TOKEN</code> secret as the action remote token
+                <ImportedBadge v-if="isOrgFieldImported('useGitHubTokenForActions')" :source-file="orgFieldSourceFile('useGitHubTokenForActions')" />
+              </label>
+            </div>
+          </div>
+        </div>
+
         <!-- Skip Steps -->
         <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
           <h2 class="font-semibold text-white mb-1">
@@ -764,6 +834,9 @@ const ciCdForm = reactive({
   useNewActionCache: false,
   actionOfflineMode: false,
   localRepositories: '' as string,
+  actionReplacements: '' as string,
+  actionRemoteToken: '' as string,
+  useGitHubTokenForActions: false,
   skipSteps: '' as string,
 })
 const savingCiCd = ref(false)
@@ -882,6 +955,9 @@ onMounted(async () => {
     ciCdForm.useNewActionCache = orgsStore.currentOrg.useNewActionCache ?? false
     ciCdForm.actionOfflineMode = orgsStore.currentOrg.actionOfflineMode ?? false
     ciCdForm.localRepositories = orgsStore.currentOrg.localRepositories || ''
+    ciCdForm.actionReplacements = orgsStore.currentOrg.actionReplacements || ''
+    ciCdForm.actionRemoteToken = orgsStore.currentOrg.actionRemoteToken || ''
+    ciCdForm.useGitHubTokenForActions = orgsStore.currentOrg.useGitHubTokenForActions ?? false
     ciCdForm.skipSteps = orgsStore.currentOrg.skipSteps || ''
   }
 })
@@ -905,6 +981,9 @@ async function saveRunnerSettings() {
       useNewActionCache: ciCdForm.useNewActionCache,
       actionOfflineMode: ciCdForm.actionOfflineMode,
       localRepositories: ciCdForm.localRepositories || null,
+      actionReplacements: ciCdForm.actionReplacements || null,
+      actionRemoteToken: ciCdForm.actionRemoteToken || null,
+      useGitHubTokenForActions: ciCdForm.useGitHubTokenForActions,
       skipSteps: ciCdForm.skipSteps || null,
     })
   } catch (e: unknown) {
@@ -933,6 +1012,9 @@ async function saveCiCdSettings() {
       useNewActionCache: ciCdForm.useNewActionCache,
       actionOfflineMode: ciCdForm.actionOfflineMode,
       localRepositories: ciCdForm.localRepositories || null,
+      actionReplacements: ciCdForm.actionReplacements || null,
+      actionRemoteToken: ciCdForm.actionRemoteToken || null,
+      useGitHubTokenForActions: ciCdForm.useGitHubTokenForActions,
       skipSteps: ciCdForm.skipSteps || null,
     })
     savedCiCdOk.value = true

@@ -91,6 +91,34 @@ Configure via environment variables in your `docker-compose.yml`:
 
 ---
 
+## Action Remote Replacements
+
+IssuePit supports redirecting remote action fetches to alternative remotes via `--action-remote-replacements`. This is useful for air-gapped environments or when you want to mirror GitHub Actions internally.
+
+Matching supports four tiers (in priority order):
+
+| Pattern | Example | Effect |
+|---------|---------|--------|
+| Exact URL + ref | `https://github.com/org/repo@v1` | Redirects only that specific URL and ref |
+| Path-only + ref | `org/repo@v1` | Matches any host/protocol with that path and ref |
+| Exact URL (any ref) | `https://github.com/org/repo` | Matches any ref for that full URL |
+| Path-only (any ref) | `org/repo` | Matches any host and any ref for that path |
+
+Configure action replacements in the org or project CI/CD settings under **Action Remote Replacements**. One mapping per line: `source=destination`.
+
+---
+
+## Action Remote Token
+
+By default, act uses the `GITHUB_TOKEN` from your secrets to fetch remote actions. You can override this behaviour at the org or project level:
+
+- **Explicit token** — set a PAT or other token in the **Explicit token** field. This passes `--action-remote-token <value>` to act.
+- **Use GITHUB_TOKEN** — enable the **Use GITHUB_TOKEN secret as the action remote token** checkbox. This extracts the `GITHUB_TOKEN` value from your configured secrets and passes it as `--action-remote-token`.
+
+The explicit token takes precedence over the GITHUB_TOKEN option when both are set.
+
+---
+
 ## Skipping Steps
 
 IssuePit passes `--skip-step` flags to `act` so you can disable specific workflow steps without modifying the workflow files themselves. This removes the need for `if: github.event_name != 'act'` guards on every push or deploy step.

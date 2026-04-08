@@ -99,6 +99,25 @@ public class Project
     public string? LocalRepositories { get; set; }
 
     /// <summary>
+    /// Newline-separated list of <c>source=destination</c> mappings passed as
+    /// <c>--action-remote-replacements</c> arguments to <c>act</c>. Redirects remote action
+    /// fetches to alternative remotes. Null means inherit from the org.
+    /// </summary>
+    public string? ActionReplacements { get; set; }
+
+    /// <summary>
+    /// Token used for fetching remote actions (passed as <c>--action-remote-token</c>).
+    /// Null means inherit from the org.
+    /// </summary>
+    public string? ActionRemoteToken { get; set; }
+
+    /// <summary>
+    /// When <c>true</c>, uses the <c>GITHUB_TOKEN</c> value from <see cref="ActSecrets"/> as
+    /// the <c>--action-remote-token</c>. Null means inherit from the org.
+    /// </summary>
+    public bool? UseGitHubTokenForActions { get; set; }
+
+    /// <summary>
     /// Newline-separated list of step names or <c>job:step</c> pairs passed as
     /// <c>--skip-step</c> arguments to <c>act</c>. Steps matching these entries are skipped
     /// on every run. Null means inherit from the organization setting.

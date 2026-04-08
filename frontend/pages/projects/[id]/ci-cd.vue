@@ -302,6 +302,79 @@
           </div>
         </div>
 
+        <!-- Action Remote Replacements -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h2 class="font-semibold text-white mb-1">Action Remote Replacements</h2>
+          <p class="text-sm text-gray-500 mb-4">
+            Redirect remote action fetches to alternative remotes using
+            <code class="text-gray-300 bg-gray-800 px-1 rounded">--action-remote-replacements</code>.
+            Supports four matching tiers: exact URL with ref, path-only with ref, exact URL (any ref), and path-only (any ref).
+            One mapping per line:
+            <code class="text-gray-300 bg-gray-800 px-1 rounded">source=destination</code>.
+            Overrides the organization setting.
+          </p>
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">
+              Action replacements
+              <span class="text-gray-500 font-normal">(--action-remote-replacements source=destination)</span>
+              <ImportedBadge v-if="isProjectFieldImported('actionReplacements')" :source-file="projectFieldSourceFile('actionReplacements')" />
+            </label>
+            <textarea
+              v-model="ciCdForm.actionReplacements"
+              rows="4"
+              :placeholder="`org/repo@v1=https://internal.example.com/mirror/repo@v1\norg/other=https://internal.example.com/other`"
+              :disabled="isProjectFieldImported('actionReplacements')"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y disabled:opacity-50 disabled:cursor-not-allowed"
+            />
+            <p class="text-xs text-gray-500 mt-1">
+              Each line is passed as a separate
+              <code class="bg-gray-800 px-1 rounded">--action-remote-replacements</code> argument to act.
+              Leave blank to inherit from the organization.
+            </p>
+          </div>
+        </div>
+
+        <!-- Action Remote Token -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h2 class="font-semibold text-white mb-1">Action Remote Token</h2>
+          <p class="text-sm text-gray-500 mb-4">
+            Configure the token act uses to fetch remote actions
+            (<code class="text-gray-300 bg-gray-800 px-1 rounded">--action-remote-token</code>).
+            Set an explicit token or use the <code class="text-gray-300 bg-gray-800 px-1 rounded">GITHUB_TOKEN</code> secret.
+            Overrides the organization setting.
+          </p>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-300 mb-1.5">
+                Explicit token
+                <span class="text-gray-500 font-normal">(--action-remote-token)</span>
+                <ImportedBadge v-if="isProjectFieldImported('actionRemoteToken')" :source-file="projectFieldSourceFile('actionRemoteToken')" />
+              </label>
+              <input
+                v-model="ciCdForm.actionRemoteToken"
+                type="text"
+                placeholder="ghp_xxxxx or leave blank to inherit from org"
+                :disabled="isProjectFieldImported('actionRemoteToken')"
+                class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              <p class="text-xs text-gray-500 mt-1">Token is stored as plain text. Leave blank to inherit from the organization.</p>
+            </div>
+            <div class="flex items-center gap-3">
+              <input
+                id="projectUseGitHubTokenForActions"
+                v-model="ciCdForm.useGitHubTokenForActions"
+                type="checkbox"
+                :disabled="isProjectFieldImported('useGitHubTokenForActions') || !!ciCdForm.actionRemoteToken"
+                class="w-4 h-4 rounded bg-gray-800 border-gray-600 text-brand-500 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              <label for="projectUseGitHubTokenForActions" class="text-sm text-gray-300">
+                Use <code class="bg-gray-800 px-1 rounded">GITHUB_TOKEN</code> secret as the action remote token
+                <ImportedBadge v-if="isProjectFieldImported('useGitHubTokenForActions')" :source-file="projectFieldSourceFile('useGitHubTokenForActions')" />
+              </label>
+            </div>
+          </div>
+        </div>
+
         <!-- Skip Steps -->
         <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
           <h2 class="font-semibold text-white mb-1">
@@ -359,6 +432,9 @@ const ciCdForm = reactive({
   useNewActionCache: false as boolean | null,
   actionOfflineMode: false as boolean | null,
   localRepositories: '' as string,
+  actionReplacements: '' as string,
+  actionRemoteToken: '' as string,
+  useGitHubTokenForActions: false as boolean | null,
   skipSteps: '' as string,
   requiresRunApproval: false,
   unwrapSingleFileArtifacts: false,
@@ -403,6 +479,9 @@ onMounted(async () => {
     ciCdForm.useNewActionCache = p.useNewActionCache ?? null
     ciCdForm.actionOfflineMode = p.actionOfflineMode ?? null
     ciCdForm.localRepositories = p.localRepositories || ''
+    ciCdForm.actionReplacements = p.actionReplacements || ''
+    ciCdForm.actionRemoteToken = p.actionRemoteToken || ''
+    ciCdForm.useGitHubTokenForActions = p.useGitHubTokenForActions ?? null
     ciCdForm.skipSteps = p.skipSteps || ''
     ciCdForm.requiresRunApproval = p.requiresRunApproval ?? false
     ciCdForm.unwrapSingleFileArtifacts = p.unwrapSingleFileArtifacts ?? false
@@ -429,6 +508,9 @@ async function save() {
       useNewActionCache: ciCdForm.useNewActionCache,
       actionOfflineMode: ciCdForm.actionOfflineMode,
       localRepositories: ciCdForm.localRepositories || null,
+      actionReplacements: ciCdForm.actionReplacements || null,
+      actionRemoteToken: ciCdForm.actionRemoteToken || null,
+      useGitHubTokenForActions: ciCdForm.useGitHubTokenForActions,
       skipSteps: ciCdForm.skipSteps || null,
       requiresRunApproval: ciCdForm.requiresRunApproval,
       unwrapSingleFileArtifacts: ciCdForm.unwrapSingleFileArtifacts,

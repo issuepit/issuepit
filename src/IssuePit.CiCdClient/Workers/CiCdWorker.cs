@@ -262,6 +262,9 @@ public class CiCdWorker(
                 UseNewActionCache = trigger.UseNewActionCache ?? (project.UseNewActionCache ?? orgSettings?.UseNewActionCache),
                 ActionOfflineMode = trigger.ActionOfflineMode ?? (project.ActionOfflineMode ?? orgSettings?.ActionOfflineMode),
                 LocalRepositories = trigger.LocalRepositories ?? project.LocalRepositories ?? orgSettings?.LocalRepositories,
+                ActionReplacements = trigger.ActionReplacements ?? project.ActionReplacements ?? orgSettings?.ActionReplacements,
+                ActionRemoteToken = trigger.ActionRemoteToken ?? project.ActionRemoteToken ?? orgSettings?.ActionRemoteToken,
+                UseGitHubTokenForActions = trigger.UseGitHubTokenForActions ?? project.UseGitHubTokenForActions ?? orgSettings?.UseGitHubTokenForActions,
                 SkipSteps = trigger.SkipSteps ?? project.SkipSteps ?? orgSettings?.SkipSteps,
             };
         }

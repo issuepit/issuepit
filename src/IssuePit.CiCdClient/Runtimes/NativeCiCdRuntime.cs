@@ -518,6 +518,33 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
             list.Add(mapping);
         }
 
+        // Action remote replacements: redirect remote action fetches to alternative remotes.
+        foreach (var mapping in ParseKeyValuePairs(trigger.ActionReplacements))
+        {
+            list.Add("--action-remote-replacements");
+            list.Add(mapping);
+        }
+
+        // Action remote token: token used by act to fetch remote actions.
+        if (!string.IsNullOrWhiteSpace(trigger.ActionRemoteToken))
+        {
+            list.Add("--action-remote-token");
+            list.Add(trigger.ActionRemoteToken);
+        }
+        else if (trigger.UseGitHubTokenForActions == true)
+        {
+            // Resolve GITHUB_TOKEN from the secrets list and pass it as the remote-fetch token.
+            var githubToken = ParseKeyValuePairs(trigger.ActSecrets)
+                .Where(kv => kv.StartsWith("GITHUB_TOKEN=", StringComparison.Ordinal))
+                .Select(kv => kv["GITHUB_TOKEN=".Length..])
+                .FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(githubToken))
+            {
+                list.Add("--action-remote-token");
+                list.Add(githubToken);
+            }
+        }
+
         // Skip steps: skip specific steps by name or job:step pair.
         foreach (var step in ParseLines(trigger.SkipSteps))
         {

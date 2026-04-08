@@ -193,6 +193,9 @@ public class ProjectsController(IssuePitDbContext db, TenantContext ctx) : Contr
         project.UseNewActionCache = updated.UseNewActionCache;
         project.ActionOfflineMode = updated.ActionOfflineMode;
         project.LocalRepositories = updated.LocalRepositories;
+        project.ActionReplacements = updated.ActionReplacements;
+        project.ActionRemoteToken = updated.ActionRemoteToken;
+        project.UseGitHubTokenForActions = updated.UseGitHubTokenForActions;
         project.SkipSteps = updated.SkipSteps;
         project.MaxCiCdLoopCount = updated.MaxCiCdLoopCount;
         project.RequiresRunApproval = updated.RequiresRunApproval;
@@ -559,6 +562,9 @@ public record ProjectDto(
     string? ActEnv, string? ActSecrets, string? ActRunnerImage,
     string? ActionCachePath, bool? UseNewActionCache, bool? ActionOfflineMode,
     string? LocalRepositories,
+    string? ActionReplacements,
+    string? ActionRemoteToken,
+    bool? UseGitHubTokenForActions,
     string? SkipSteps,
     bool RequiresRunApproval,
     int OpenMergeRequestCount,
@@ -586,6 +592,9 @@ public record ProjectDto(
             p.ActEnv, p.ActSecrets, p.ActRunnerImage,
             p.ActionCachePath, p.UseNewActionCache, p.ActionOfflineMode,
             p.LocalRepositories,
+            p.ActionReplacements,
+            p.ActionRemoteToken,
+            p.UseGitHubTokenForActions,
             p.SkipSteps,
             p.RequiresRunApproval,
             db.MergeRequests.Count(mr => mr.ProjectId == p.Id && mr.Status == MergeRequestStatus.Open),
