@@ -79,9 +79,17 @@ public sealed class AspireFixture : IAsyncLifetime
         // Suppress log noise produced during E2E test runs:
         // MinLevel = Warning: silences INFO-level messages from Aspire orchestration and
         // application startup across all categories.
+        // Health-check service is silenced entirely: during teardown postgres/kafka containers
+        // stop while health checks are still running, producing Error-level stacktraces that
+        // flood the test output even though the tests have already passed.
         appHost.Services.Configure<LoggerFilterOptions>(opts =>
         {
             opts.MinLevel = LogLevel.Warning;
+            opts.Rules.Add(new LoggerFilterRule(
+                providerName: null,
+                categoryName: "Microsoft.Extensions.Diagnostics.HealthChecks",
+                logLevel: LogLevel.None,
+                filter: null));
         });
 
         // Aspire.Hosting.Kafka registers a "kafka_check" health check whose ProducerConfig
