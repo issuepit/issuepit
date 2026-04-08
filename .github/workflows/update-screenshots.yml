@@ -68,7 +68,14 @@ jobs:
 
       - name: Install Aspire CLI
         if: ${{ !inputs.frontend_url }}
-        run: dotnet tool install --global aspire.cli
+        run: |
+          dotnet tool install --global aspire.cli
+          # Add dotnet global tools to PATH for subsequent steps.
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+          # Re-enable IPv6: some runner images set DOTNET_SYSTEM_NET_DISABLEIPV6=1,
+          # which breaks Aspire DCP (gRPC listens on [::1]) and causes all project
+          # services to crash ~18 s after start.
+          echo "DOTNET_SYSTEM_NET_DISABLEIPV6=0" >> "$GITHUB_ENV"
 
       - name: Restore and build Aspire AppHost
         if: ${{ !inputs.frontend_url }}

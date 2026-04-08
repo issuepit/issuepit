@@ -54,3 +54,11 @@ runs:
       with:
         name: ${{ inputs.artifact-name }}-test-results
         path: '**/*.trx'
+
+    - name: Upload hang dumps
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}-hang-dumps
+        path: '/tmp/**/*_hangdump.dmp'
+        if-no-files-found: ignore
