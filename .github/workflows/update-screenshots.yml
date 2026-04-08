@@ -82,8 +82,9 @@ jobs:
         env:
           DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
           ASPIRE_ALLOW_UNSECURED_TRANSPORT: "true"
+        # we use `--isolated` because issuepit likely runs this in parallel with e2e tests
         run: |
-          aspire start --apphost src/IssuePit.AppHost --no-build --non-interactive --nologo
+          aspire start --apphost src/IssuePit.AppHost --no-build --non-interactive --nologo --isolated
 
       - name: Wait for resources and discover URLs
         if: ${{ !inputs.frontend_url }}
