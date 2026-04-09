@@ -1,8 +1,5 @@
 ---
 title: Agents
-layout: default
-nav_order: 4
-permalink: /agents/
 ---
 
 # Agents
@@ -40,7 +37,7 @@ When an issue is assigned to an agent mode, `IssuePit.ExecutionClient` spawns a 
 
 ## Creating an Agent Mode
 
-![Agents page]({{ '/assets/screenshots/agents.png' | relative_url }})
+![Agents page](./assets/screenshots/agents.png)
 
 1. Go to **Configuration → Agents** (or **Agents** in the sidebar).
 2. Click **New Agent**.
@@ -83,7 +80,7 @@ There are two ways to trigger an agent on an issue:
 2. In the **Assignees** section on the right sidebar, choose an agent from the **Assign agent** dropdown.
 3. A modal opens where you can optionally provide a task comment and configure the **branch**.
 
-   ![Assign Agent modal with branch selector]({{ '/assets/screenshots/assign-agent-branch-select.png' | relative_url }})
+   ![Assign Agent modal with branch selector](./assets/screenshots/assign-agent-branch-select.png)
 
 4. The **Create new branch** checkbox (enabled by default) automatically generates a unique feature branch (e.g. `agent/issue-42-a1b2c3d4`) so multiple agent runs never collide with each other.  Uncheck it only if you want the agent to work directly on an existing branch.
 5. Click **Assign** (or **Assign & Comment** if you filled the comment field).
@@ -92,11 +89,11 @@ There are two ways to trigger an agent on an issue:
 
 Type `@` anywhere in the comment textarea to open the **autocomplete dropdown**. Select an agent (or user) from the list — the dropdown shows all agents linked to the project.
 
-![@ mention autocomplete dropdown in the comment textarea]({{ '/assets/screenshots/issue-comment-mention-dropdown.png' | relative_url }})
+![@ mention autocomplete dropdown in the comment textarea](./assets/screenshots/issue-comment-mention-dropdown.png)
 
 Once your comment contains an `@agent-name` mention, a **branch selector** appears in the comment footer so you can specify which branch the agent should start from.
 
-![Branch selector visible in comment footer after typing an @mention]({{ '/assets/screenshots/issue-comment-branch-selector.png' | relative_url }})
+![Branch selector visible in comment footer after typing an @mention](./assets/screenshots/issue-comment-branch-selector.png)
 
 > **Tip:** Leave the branch field empty to use the project's default branch.
 

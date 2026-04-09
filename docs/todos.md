@@ -1,7 +1,5 @@
 ---
 title: Todo Tracker
-layout: default
-nav_order: 6
 ---
 
 # Todo Tracker
@@ -68,4 +66,4 @@ The Todo Tracker exposes tools via the built-in **IssuePit MCP server**, so AI a
 ## Next Steps
 
 - [Projects overview →](projects)
-- [Agents →](agents)
+- [Agents →](issupitAgents)

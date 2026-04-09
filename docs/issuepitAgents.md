@@ -1,8 +1,6 @@
 ---
 title: Documentation Guidelines (Agent Reference)
-layout: default
-nav_exclude: true
-search_exclude: true
+search: false
 ---
 
 # IssuePit Documentation Guidelines
@@ -13,13 +11,13 @@ search_exclude: true
 
 ## Documentation Structure
 
-The `docs/` folder serves as the IssuePit user-facing documentation site (Jekyll / just-the-docs). Keep it focused on what **end users** need to know.
+The `docs/` folder serves as the IssuePit user-facing documentation site (VitePress). Keep it focused on what **end users** need to know.
 
 ### User Docs vs. Developer Docs
 
 | Type | Location | Audience |
 |------|----------|----------|
-| User docs | `docs/*.md` (with `nav_order`) | End users — feature descriptions, how-tos, configuration |
+| User docs | `docs/*.md` (listed in `.vitepress/config.mts` sidebar) | End users — feature descriptions, how-tos, configuration |
 | Developer / agent docs | Root `agents.md` | Coding agents — conventions, coding guidelines, testing rules |
 | Architecture / internals | `docs/architecture.md`, `docs/developer.md` | Developers who contribute to IssuePit itself |
 
@@ -35,12 +33,12 @@ The `docs/` folder serves as the IssuePit user-facing documentation site (Jekyll
 
 ## Adding or Updating Pages
 
-1. **User feature page** — add a new `docs/<feature>.md` with Jekyll front matter (title, layout, nav_order).
+1. **User feature page** — add a new `docs/<feature>.md` with VitePress front matter (`title`) and add it to the sidebar in `.vitepress/config.mts`.
 2. **Developer convention** — add it to the root `agents.md` under an appropriate `##` heading.
 3. **Architecture detail** — add to `docs/architecture.md`.
 
 When adding a new page:
-- Give it a sensible `nav_order` so it appears in the right place in the sidebar.
+- Give it a sensible position in the sidebar config (`.vitepress/config.mts`) so it appears in the right place.
 - Add a screenshot entry to `scripts/take-screenshots.js` if the page has a matching UI screen.
 - Cross-link from related pages where helpful.
 
@@ -66,7 +64,7 @@ Find the `pages` array in `scripts/take-screenshots.js` and add an entry:
 
 Before merging a PR that modifies `scripts/take-screenshots.js`:
 - Run the script locally and verify that each screenshot shows the **actual UI after login** (not a blank page, login screen, or wrong page).
-- Check that screenshot filenames match what is referenced in the docs markdown (`{{ '/assets/screenshots/<name>.png' | relative_url }}`).
+- Check that screenshot filenames match what is referenced in the docs markdown (`./assets/screenshots/<name>.png`).
 
 ### Running Locally
 

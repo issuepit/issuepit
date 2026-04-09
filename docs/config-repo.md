@@ -1,7 +1,5 @@
 ---
 title: Config Repo (Infrastructure as Code)
-layout: default
-nav_order: 8
 ---
 
 # Config Repo — Infrastructure as Code

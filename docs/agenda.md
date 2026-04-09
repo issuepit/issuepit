@@ -1,7 +1,5 @@
 ---
 title: Common Agenda
-layout: default
-nav_order: 4
 ---
 
 # Common Agenda
@@ -96,6 +94,6 @@ Issues 1 and 2 have cross-project links to implementation issues in the **IssueP
 
 ## Next Steps
 
-- [Configure AI agents →](agents)
+- [Configure AI agents →](issupitAgents)
 - [Projects overview →](projects)
 - [Architecture →](architecture)

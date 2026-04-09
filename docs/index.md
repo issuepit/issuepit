@@ -1,7 +1,5 @@
 ---
 title: Home
-layout: home
-nav_order: 1
 ---
 
 # IssuePit Documentation
@@ -33,23 +31,23 @@ nav_order: 1
 
 ## Screenshots
 
-![IssuePit Dashboard]({{ '/assets/screenshots/dashboard.png' | relative_url }})
+![IssuePit Dashboard](./assets/screenshots/dashboard.png)
 
 *Dashboard — overview of projects, open issues, and agent count.*
 
-![Projects list]({{ '/assets/screenshots/projects.png' | relative_url }})
+![Projects list](./assets/screenshots/projects.png)
 
 *Projects page — each project card shows its slug and description.*
 
-![Issue list]({{ '/assets/screenshots/issues.png' | relative_url }})
+![Issue list](./assets/screenshots/issues.png)
 
 *Issue list — filterable by status, priority, and type.*
 
-![Kanban board]({{ '/assets/screenshots/kanban.png' | relative_url }})
+![Kanban board](./assets/screenshots/kanban.png)
 
 *Kanban board — issues organised across Backlog → To Do → In Progress → In Review → Done.*
 
-![Agents page]({{ '/assets/screenshots/agents.png' | relative_url }})
+![Agents page](./assets/screenshots/agents.png)
 
 *Agents — Plan, Code, and Evaluate agent modes ready to be activated.*
 
@@ -64,7 +62,7 @@ nav_order: 1
 | [Common Agenda](agenda) | Org-wide goal tracker for cross-cutting initiatives |
 | [CI/CD Integration](cicd) | Run GitHub Actions workflows locally with real-time logs |
 | [Todo Tracker](todos) | Personal task board and weekly calendar with iCal subscription |
-| [Agents](agents) | Configure agent modes (system prompt, MCP tools, auth keys) |
+| [Agents](issupitAgents) | Configure agent modes (system prompt, MCP tools, auth keys) |
 | [Configuration](configuration) | API keys, MCP servers, and other settings |
 | [Releases](releases) | Release notes, changelog, and upgrade instructions |
 | [Architecture](architecture) | Project layout, tech stack, and backend services |

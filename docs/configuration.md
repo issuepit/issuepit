@@ -1,7 +1,5 @@
 ---
 title: Configuration
-layout: default
-nav_order: 5
 ---
 
 # Configuration
@@ -10,10 +8,9 @@ This page covers the settings available under **Configuration** in the IssuePit 
 
 ---
 
-## API Keys
-{: #api-keys }
+## API Keys {#api-keys}
 
-![API Keys configuration page]({{ '/assets/screenshots/api-keys.png' | relative_url }})
+![API Keys configuration page](./assets/screenshots/api-keys.png)
 
 API keys let IssuePit authenticate with external services such as GitHub, AI providers, and cloud platforms.
 
@@ -71,8 +68,7 @@ After adding a server, you can link it to specific agents in the agent settings.
 
 ---
 
-## Telegram Bots
-{: #telegram-bots }
+## Telegram Bots {#telegram-bots}
 
 IssuePit can send notifications about issue events and agent run results to Telegram.
 
@@ -89,8 +85,7 @@ Once configured, IssuePit dispatches notifications whenever the selected events 
 
 ---
 
-## Telegram Setup (Pairing)
-{: #telegram-pairing }
+## Telegram Setup (Pairing) {#telegram-pairing}
 
 The **Telegram Setup** wizard lets you link a Telegram chat or group directly to an IssuePit org or project. Paired chats support interactive bot commands (`/newissue`, `/newtodo`, voice messages) in addition to notifications.
 
