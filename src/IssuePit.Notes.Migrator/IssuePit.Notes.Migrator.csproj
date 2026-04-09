@@ -10,6 +10,7 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\IssuePit.Core\IssuePit.Core.csproj" />
     <ProjectReference Include="..\IssuePit.Notes.Core\IssuePit.Notes.Core.csproj" />
     <ProjectReference Include="..\IssuePit.ServiceDefaults\IssuePit.ServiceDefaults.csproj" />
   </ItemGroup>

@@ -2,18 +2,28 @@
 export const useNotesApi = () => {
   const config = useRuntimeConfig()
   const baseURL = config.public.notesApiBase as string
+  const auth = useAuthStore()
+
+  // Build headers including the X-Tenant-Id required by the Notes API for tenant resolution.
+  const notesHeaders = () => {
+    const headers: Record<string, string> = {}
+    if (auth.user?.tenantId) {
+      headers['X-Tenant-Id'] = auth.user.tenantId
+    }
+    return headers
+  }
 
   const get = <T>(path: string, opts?: object) =>
-    $fetch<T>(path, { baseURL, method: 'GET', credentials: 'include', ...opts })
+    $fetch<T>(path, { baseURL, method: 'GET', credentials: 'include', headers: notesHeaders(), ...opts })
 
   const post = <T>(path: string, body: unknown, opts?: object) =>
-    $fetch<T>(path, { baseURL, method: 'POST', body, credentials: 'include', ...opts })
+    $fetch<T>(path, { baseURL, method: 'POST', body, credentials: 'include', headers: notesHeaders(), ...opts })
 
   const put = <T>(path: string, body: unknown, opts?: object) =>
-    $fetch<T>(path, { baseURL, method: 'PUT', body, credentials: 'include', ...opts })
+    $fetch<T>(path, { baseURL, method: 'PUT', body, credentials: 'include', headers: notesHeaders(), ...opts })
 
   const del = <T>(path: string, opts?: object) =>
-    $fetch<T>(path, { baseURL, method: 'DELETE', credentials: 'include', ...opts })
+    $fetch<T>(path, { baseURL, method: 'DELETE', credentials: 'include', headers: notesHeaders(), ...opts })
 
   /**
    * Submit an OT delta for a note (CRDT collaborative editing).

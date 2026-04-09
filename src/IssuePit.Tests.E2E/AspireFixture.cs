@@ -20,6 +20,9 @@ public sealed class AspireFixture : IAsyncLifetime
     public DistributedApplication? App { get; private set; }
     public HttpClient? ApiClient { get; private set; }
 
+    /// <summary>HTTP client pre-pointed at the <c>notes-api</c> Aspire resource.</summary>
+    public HttpClient? NotesApiClient { get; private set; }
+
     /// <summary>HTTP client pre-pointed at the <c>mcp-server</c> Aspire resource.</summary>
     public HttpClient? McpClient { get; private set; }
 
@@ -156,6 +159,16 @@ public sealed class AspireFixture : IAsyncLifetime
 
         ApiClient = App.CreateHttpClient("api");
         McpClient = App.CreateHttpClient("mcp-server");
+
+        try
+        {
+            NotesApiClient = App.CreateHttpClient("notes-api");
+        }
+        catch
+        {
+            NotesApiClient = null;
+        }
+
         KafkaBootstrapServers = await App.GetConnectionStringAsync("kafka");
 
         // Resolve the git server URL for real git CLI operations in E2E tests.
@@ -194,6 +207,7 @@ public sealed class AspireFixture : IAsyncLifetime
     public async Task DisposeAsync()
     {
         ApiClient?.Dispose();
+        NotesApiClient?.Dispose();
         McpClient?.Dispose();
         GitServerClient?.Dispose();
         if (App is not null)
