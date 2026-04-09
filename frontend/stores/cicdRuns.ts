@@ -142,6 +142,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     customCmdOverride?: string[]
     runnerArgs?: string[]
     maxCiCdLoopCountOverride?: number | null
+    injectGuidelines?: boolean
   }) {
     return await api.post<{ retriedSessionId: string }>(`/api/agent-sessions/${sessionId}/retry`, options ?? {})
   }

@@ -171,4 +171,11 @@ public class AgentSession
     /// </summary>
     [MaxLength(200)]
     public string? ContainerId { get; set; }
+
+    /// <summary>
+    /// The ID of the Note created by auto-summarization after this session completed.
+    /// Null when <see cref="Agent.AutoSummarize"/> is disabled or summarization was skipped.
+    /// References a Note in the Notes subsystem (separate database).
+    /// </summary>
+    public Guid? SummaryNoteId { get; set; }
 }

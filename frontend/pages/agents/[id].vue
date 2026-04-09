@@ -139,6 +139,24 @@
                 class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500" />
               <p class="text-xs text-gray-500 mt-1">Passed to the container as <code class="text-gray-400">OPENCODE_PASSWORD</code>. Leave blank to keep any existing password.</p>
             </div>
+            <!-- Auto-summarize: create guideline notes after each session -->
+            <div class="col-span-2">
+              <div class="flex items-center gap-3">
+                <input id="autoSummarize" v-model="form.autoSummarize" type="checkbox"
+                  :disabled="isAgentFieldImported('autoSummarize')"
+                  class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-brand-500 focus:ring-brand-500 focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed" />
+                <div>
+                  <label for="autoSummarize" class="text-sm font-medium text-gray-300 cursor-pointer">
+                    Auto-Summarize Sessions
+                    <ImportedBadge v-if="isAgentFieldImported('autoSummarize')" :source-file="agentFieldSourceFile('autoSummarize')" />
+                  </label>
+                  <p class="text-xs text-gray-500">
+                    After each session, automatically create a Note summarizing errors, changes, and resolutions.
+                    These notes are injected into future agent runs as guidelines.
+                  </p>
+                </div>
+              </div>
+            </div>
             <div v-if="!form.isShellAgent" class="col-span-2">
               <label class="block text-sm font-medium text-gray-300 mb-1.5">
                 Docker Image
@@ -337,6 +355,7 @@ const form = reactive({
   isShellAgent: false,
   openCodeAgentName: '' as string | null,
   httpServerPassword: '',
+  autoSummarize: false,
 })
 
 const builtInOpenCodeAgents = ['build', 'compaction', 'explore', 'general', 'plan', 'summary', 'title']
@@ -455,6 +474,7 @@ function loadForm() {
   form.isShellAgent = agent.isShellAgent ?? false
   form.openCodeAgentName = agent.openCodeAgentName ?? ''
   form.httpServerPassword = ''
+  form.autoSummarize = agent.autoSummarize ?? false
   toolsInput.value = parseTools(agent.allowedTools).join(', ')
 }
 
@@ -472,6 +492,7 @@ function buildPayload(allowedTools: string[]) {
     isShellAgent: form.isShellAgent,
     openCodeAgentName: form.isShellAgent && form.openCodeAgentName ? form.openCodeAgentName : undefined,
     httpServerPassword: form.httpServerPassword || undefined,
+    autoSummarize: form.autoSummarize,
     allowedTools: JSON.stringify(allowedTools),
   }
 }

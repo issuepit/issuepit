@@ -50,6 +50,7 @@ public class AgentSessionsController(
                 s.OpenCodeDbS3Url,
                 s.GitRemoteCheckResultsJson,
                 s.ContainerId,
+                s.SummaryNoteId,
                 CiCdRuns = s.CiCdRuns.Select(r => new
                 {
                     r.Id,
@@ -242,6 +243,7 @@ public class AgentSessionsController(
                 runtimeTypeOverride = body?.RuntimeTypeOverride != null ? (int?)body.RuntimeTypeOverride.Value : null,
                 maxCiCdLoopCountOverride = body?.MaxCiCdLoopCountOverride,
                 forceAgentId = body?.AgentIdOverride.HasValue ?? false,
+                injectGuidelines = body?.InjectGuidelines ?? false,
             };
         }
         else
@@ -266,6 +268,7 @@ public class AgentSessionsController(
                 maxCiCdLoopCountOverride = body?.MaxCiCdLoopCountOverride,
                 forceAgentId = true,
                 branch = session.GitBranch,
+                injectGuidelines = body?.InjectGuidelines ?? false,
             };
         }
 
@@ -610,7 +613,9 @@ public record RetrySessionRequest(
     /// <summary>Override the runtime type (Docker, Native, SSH…) for this retry. Null = use the org default.</summary>
     RuntimeType? RuntimeTypeOverride = null,
     /// <summary>Override the maximum number of CI/CD → agent-fix loop iterations for this retry. Null = use the project/org/system default.</summary>
-    int? MaxCiCdLoopCountOverride = null);
+    int? MaxCiCdLoopCountOverride = null,
+    /// <summary>When true, guideline notes from previous agent sessions are injected into the agent prompt. Defaults to false.</summary>
+    bool InjectGuidelines = false);
 
 public record StartManualSessionRequest(
     Guid? AgentId,

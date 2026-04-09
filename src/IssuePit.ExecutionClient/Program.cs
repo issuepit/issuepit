@@ -31,6 +31,7 @@ builder.Services.AddSingleton<HetznerSshAgentRuntime>();
 builder.Services.AddSingleton<OpenSandboxAgentRuntime>();
 builder.Services.AddSingleton<AgentRuntimeFactory>();
 builder.Services.AddSingleton<GitArtifactUploadService>();
+builder.Services.AddSingleton<NotesApiClient>();
 
 builder.Services.AddHostedService<IssueWorker>();
 

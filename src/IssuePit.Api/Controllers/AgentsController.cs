@@ -48,6 +48,7 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
             agent.ManualMode,
             agent.IsShellAgent,
             agent.OpenCodeAgentName,
+            agent.AutoSummarize,
             agent.CreatedAt,
             agent.AgentMcpServers.Select(am => new LinkedMcpServerDto(
                 am.McpServer.Id,
@@ -83,6 +84,7 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
             HttpServerPassword = string.IsNullOrEmpty(request.HttpServerPassword) ? null : request.HttpServerPassword,
             ManualMode = request.ManualMode,
             DisableInternet = request.DisableInternet,
+            AutoSummarize = request.AutoSummarize,
             CreatedAt = DateTime.UtcNow,
         };
         db.Agents.Add(agent);
@@ -109,6 +111,7 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
         agent.ManualMode = updated.ManualMode;
         agent.IsShellAgent = updated.IsShellAgent;
         agent.OpenCodeAgentName = updated.OpenCodeAgentName;
+        agent.AutoSummarize = updated.AutoSummarize;
         // Only update password when a non-empty value is provided so a blank PUT does not clear it.
         // To clear the password, use a dedicated PATCH endpoint (not yet implemented) or
         // delete and recreate the agent. This prevents accidental password removal on a full update.
@@ -176,6 +179,7 @@ public class AgentsController(IssuePitDbContext db, TenantContext ctx) : Control
         agent.ManualMode,
         agent.IsShellAgent,
         agent.OpenCodeAgentName,
+        agent.AutoSummarize,
         agent.CreatedAt,
         agent.ConfigFieldSources);
 }
@@ -197,7 +201,8 @@ public sealed record CreateAgentRequest(
     bool UseHttpServer,
     string? HttpServerPassword,
     bool ManualMode,
-    bool DisableInternet);
+    bool DisableInternet,
+    bool AutoSummarize);
 
 /// <summary>Agent summary returned by POST (create) and PUT (update) endpoints.</summary>
 public sealed record AgentResponse(
@@ -216,6 +221,7 @@ public sealed record AgentResponse(
     bool ManualMode,
     bool IsShellAgent,
     string? OpenCodeAgentName,
+    bool AutoSummarize,
     DateTime CreatedAt,
     Dictionary<string, string>? ConfigFieldSources);
 
@@ -237,6 +243,7 @@ public sealed record AgentDetailResponse(
     bool ManualMode,
     bool IsShellAgent,
     string? OpenCodeAgentName,
+    bool AutoSummarize,
     DateTime CreatedAt,
     IReadOnlyList<LinkedMcpServerDto> LinkedMcpServers,
     IReadOnlyList<ChildAgentDto> ChildAgents,

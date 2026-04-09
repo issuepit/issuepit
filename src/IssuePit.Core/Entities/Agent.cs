@@ -129,6 +129,14 @@ public class Agent
     [MaxLength(200)]
     public string? OpenCodeAgentName { get; set; }
 
+    /// <summary>
+    /// When true, a structured summary of errors, features and their resolution is automatically
+    /// created as a Note in the project's "Guidelines" notebook after the agent session finishes.
+    /// These notes are injected into future agent sessions for the same project so agents can
+    /// learn from past runs.
+    /// </summary>
+    public bool AutoSummarize { get; set; }
+
     public ICollection<Agent> ChildAgents { get; set; } = [];
 
     public ICollection<AgentMcpServer> AgentMcpServers { get; set; } = [];

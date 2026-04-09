@@ -84,6 +84,15 @@
                 </svg>
                 Session preserved
               </span>
+              <NuxtLink v-if="store.currentSession.summaryNoteId"
+                :to="`/notes/${store.currentSession.summaryNoteId}`"
+                class="flex items-center gap-1 text-xs text-brand-400 hover:text-brand-300 transition-colors">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                View Summary Note
+              </NuxtLink>
             </div>
           </div>
         </div>
@@ -241,7 +250,7 @@
             </div>
 
             <!-- Keep container option -->
-            <label class="flex items-start gap-2.5 cursor-pointer mb-5">
+            <label class="flex items-start gap-2.5 cursor-pointer mb-4">
               <input
                 v-model="retryKeepContainer"
                 type="checkbox"
@@ -249,6 +258,18 @@
               <span class="text-sm">
                 <span class="text-gray-300">Keep container after exit</span>
                 <span class="block text-xs text-gray-500 mt-0.5">Container will not be removed on exit — useful for debugging (docker exec, logs, inspect).</span>
+              </span>
+            </label>
+
+            <!-- Inject guidelines option -->
+            <label class="flex items-start gap-2.5 cursor-pointer mb-5">
+              <input
+                v-model="retryInjectGuidelines"
+                type="checkbox"
+                class="mt-0.5 text-brand-500 focus:ring-brand-500 bg-gray-800 border-gray-600 rounded" />
+              <span class="text-sm">
+                <span class="text-gray-300">Inject guideline notes</span>
+                <span class="block text-xs text-gray-500 mt-0.5">Include summaries from previous agent sessions in the prompt to help the agent learn from past runs.</span>
               </span>
             </label>
 
@@ -1789,6 +1810,7 @@ const retryDockerImage = ref(DEFAULT_AGENT_IMAGE)
 const retryCustomDockerImage = ref('')
 const retryKeepContainer = ref(false)
 const retryCmdOverride = ref('')
+const retryInjectGuidelines = ref(false)
 
 // Retry override state — all default to "use original / agent default"
 const retryAgentId = ref<string>('')
@@ -1828,6 +1850,7 @@ async function openRetryModal() {
   retryKeepContainer.value = false
   retryCmdOverride.value = ''
   retryMaxCiCdLoopCount.value = null
+  retryInjectGuidelines.value = false
   showRetryModal.value = true
 }
 
@@ -1884,6 +1907,7 @@ async function retrySession() {
       runtimeTypeOverride: retryRuntimeType.value !== '' ? retryRuntimeType.value as number : undefined,
       customCmdOverride: parseCmdOverride(retryCmdOverride.value),
       maxCiCdLoopCountOverride: retryMaxCiCdLoopCount.value ?? undefined,
+      injectGuidelines: retryInjectGuidelines.value || undefined,
     })
     if (result?.retriedSessionId) {
       navigateTo(`/projects/${projectId}/runs/agent-sessions/${result.retriedSessionId}`)

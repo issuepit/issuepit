@@ -418,6 +418,8 @@ export interface Agent {
   openCodeAgentName?: string | null
   parentAgentId?: string
   childAgents?: AgentChild[]
+  /** When true, a session summary note is auto-created after each run. */
+  autoSummarize?: boolean
   createdAt: string
   updatedAt: string
   /** Per-field config source mapping. Keys are camelCase field names; values are source file names. */
@@ -1011,6 +1013,8 @@ export interface AgentSession {
   isManualMode?: boolean
   /** Running Docker container ID (set for active manual-mode sessions). */
   containerId?: string | null
+  /** ID of the auto-generated summary note (from the Notes subsystem). */
+  summaryNoteId?: string | null
 }
 
 export interface DashboardAgentSession extends AgentSession {
