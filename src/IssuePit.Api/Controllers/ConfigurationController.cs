@@ -264,6 +264,24 @@ public class ConfigurationController(IssuePitDbContext db, TenantContext tenant)
         return Ok(new { agentPools, cicdPools });
     }
 
+    // --- Scaling Configuration ---
+
+    /// <summary>
+    /// Returns the current scaling configuration for CI/CD and agent runners.
+    /// These values are read from the deployment configuration (environment variables / appsettings)
+    /// and reflect the actual capacity of the running infrastructure.
+    /// </summary>
+    [HttpGet("scaling")]
+    public IActionResult GetScalingConfig([FromServices] IConfiguration config)
+    {
+        return Ok(new ScalingConfigResponse(
+            CiCdReplicaCount: int.TryParse(Environment.GetEnvironmentVariable("CICD_CLIENT_WORKERS"), out var cw) && cw > 0 ? cw : 1,
+            AgentReplicaCount: int.TryParse(Environment.GetEnvironmentVariable("EXECUTION_CLIENT_WORKERS"), out var ew) && ew > 0 ? ew : 1,
+            CiCdMaxParallelRuns: config.GetValue("CiCd:MaxParallelRuns", 1),
+            AgentMaxParallelRuns: config.GetValue("Agent:MaxParallelRuns", 1)
+        ));
+    }
+
     // --- Telegram Bots ---
 
     [HttpGet("telegram-bots")]
@@ -351,3 +369,4 @@ public record ApiKeyRequest(Guid? OrgId, string Name, ApiKeyProvider Provider, s
 public record RuntimeConfigRequest(Guid? OrgId, string Name, RuntimeType Type, string Configuration, bool IsDefault, int MaxConcurrentAgents = 0);
 public record TelegramBotRequest(string Name, string BotToken, string ChatId, int Events, bool IsSilent, DigestInterval DigestInterval, Guid? OrgId, Guid? ProjectId, int RateLimitCount = 0, int RateLimitWindowMinutes = 0, TelegramSilentMode SilentMode = TelegramSilentMode.None);
 public record TelegramBotResponse(Guid Id, string Name, Guid? OrgId, Guid? ProjectId, string ChatId, int Events, bool IsSilent, DigestInterval DigestInterval, int RateLimitCount, int RateLimitWindowMinutes, TelegramSilentMode SilentMode, DateTime CreatedAt);
+public record ScalingConfigResponse(int CiCdReplicaCount, int AgentReplicaCount, int CiCdMaxParallelRuns, int AgentMaxParallelRuns);

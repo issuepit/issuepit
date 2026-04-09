@@ -86,6 +86,29 @@ public class IssueWorker(
         // Run the cancel-signal consumer in parallel with the trigger consumer.
         var cancelConsumerTask = RunCancelConsumerAsync(stoppingToken);
 
+        // Start N parallel consumer loops, each with its own Kafka consumer in the same
+        // "execution-client" consumer group. Kafka distributes topic partitions across consumers
+        // so each loop processes different messages independently, enabling true parallelism.
+        var maxParallelRuns = configuration.GetValue("Agent:MaxParallelRuns", 1);
+        maxParallelRuns = Math.Max(1, maxParallelRuns);
+
+        logger.LogInformation("IssueWorker starting {Count} parallel consumer loop(s)", maxParallelRuns);
+
+        var consumerTasks = Enumerable.Range(0, maxParallelRuns)
+            .Select(i => RunConsumerLoopAsync(i, stoppingToken))
+            .ToList();
+
+        await Task.WhenAll(consumerTasks);
+        await cancelConsumerTask;
+    }
+
+    /// <summary>
+    /// Runs a single Kafka consumer loop for the 'issue-assigned' topic.
+    /// Multiple loops can run in parallel within the same process, each getting
+    /// different partitions from the "execution-client" consumer group.
+    /// </summary>
+    private async Task RunConsumerLoopAsync(int consumerIndex, CancellationToken stoppingToken)
+    {
         var config = new ConsumerConfig
         {
             BootstrapServers = KafkaBootstrapServers,
@@ -96,14 +119,14 @@ public class IssueWorker(
         using var consumer = new ConsumerBuilder<string, string>(config).Build();
         consumer.Subscribe("issue-assigned");
 
-        logger.LogInformation("IssueWorker started, listening on 'issue-assigned' topic");
+        logger.LogInformation("IssueWorker consumer #{Index} started, listening on 'issue-assigned' topic", consumerIndex);
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
                 var result = consumer.Consume(stoppingToken);
-                logger.LogInformation("Received issue-assigned event: key={Key} value={Value}", result.Message.Key, result.Message.Value);
+                logger.LogInformation("Consumer #{Index} received issue-assigned event: key={Key} value={Value}", consumerIndex, result.Message.Key, result.Message.Value);
                 await ProcessIssueAsync(result.Message.Key, result.Message.Value, stoppingToken);
             }
             catch (OperationCanceledException)
@@ -112,13 +135,12 @@ public class IssueWorker(
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error processing issue-assigned message");
+                logger.LogError(ex, "Error in consumer #{Index} processing issue-assigned message", consumerIndex);
                 await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
             }
         }
 
         consumer.Close();
-        await cancelConsumerTask;
     }
 
     /// <summary>

@@ -56,16 +56,28 @@ public class IssueKafkaNotificationTests(AspireFixture fixture)
             .SetLogHandler((_, _) => { }) // suppress librdkafka noise in test output
             .Build();
 
-        // Query the current high-watermark offset and assign the consumer to that exact
-        // position BEFORE creating the issue. This eliminates the race condition inherent
-        // in Subscribe + AutoOffsetReset.Latest: with Subscribe, the "latest" offset is
-        // resolved during the first internal fetch *after* partition assignment, so a
-        // message published between rebalance completion and that first fetch would be
-        // silently skipped. Using QueryWatermarkOffsets + Assign pins the start offset
-        // synchronously, guaranteeing any subsequently published message is received.
-        var topicPartition = new TopicPartition("issue-assigned", new Partition(0));
-        var watermarks = consumer.QueryWatermarkOffsets(topicPartition, TimeSpan.FromSeconds(15));
-        consumer.Assign(new TopicPartitionOffset(topicPartition, watermarks.High));
+        // Query the current high-watermark offset for every partition and assign the
+        // consumer to those exact positions BEFORE creating the issue. This eliminates the
+        // race condition inherent in Subscribe + AutoOffsetReset.Latest: with Subscribe,
+        // the "latest" offset is resolved during the first internal fetch *after* partition
+        // assignment, so a message published between rebalance completion and that first
+        // fetch would be silently skipped. Using QueryWatermarkOffsets + Assign pins the
+        // start offset synchronously, guaranteeing any subsequently published message is
+        // received — regardless of which partition the producer routes it to.
+        using var adminClient = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = bootstrapServers })
+            .SetLogHandler((_, _) => { })
+            .Build();
+        var topicMeta = adminClient.GetMetadata("issue-assigned", TimeSpan.FromSeconds(15));
+        var partitionCount = topicMeta.Topics[0].Partitions.Count;
+
+        var assignments = new List<TopicPartitionOffset>();
+        for (var p = 0; p < partitionCount; p++)
+        {
+            var tp = new TopicPartition("issue-assigned", new Partition(p));
+            var watermarks = consumer.QueryWatermarkOffsets(tp, TimeSpan.FromSeconds(15));
+            assignments.Add(new TopicPartitionOffset(tp, watermarks.High));
+        }
+        consumer.Assign(assignments);
 
         // Create the issue
         const string issueTitle = "E2E Kafka Notification Issue";

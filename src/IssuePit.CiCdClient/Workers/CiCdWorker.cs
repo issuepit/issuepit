@@ -53,6 +53,29 @@ public class CiCdWorker(
         // Run the cancel-signal consumer in parallel with the trigger consumer.
         var cancelConsumerTask = RunCancelConsumerAsync(stoppingToken);
 
+        // Start N parallel consumer loops, each with its own Kafka consumer in the same
+        // "cicd-client" consumer group. Kafka distributes topic partitions across consumers
+        // so each loop processes different messages independently, enabling true parallelism.
+        var maxParallelRuns = configuration.GetValue("CiCd:MaxParallelRuns", 1);
+        maxParallelRuns = Math.Max(1, maxParallelRuns);
+
+        logger.LogInformation("CiCdWorker starting {Count} parallel consumer loop(s)", maxParallelRuns);
+
+        var consumerTasks = Enumerable.Range(0, maxParallelRuns)
+            .Select(i => RunConsumerLoopAsync(i, stoppingToken))
+            .ToList();
+
+        await Task.WhenAll(consumerTasks);
+        await cancelConsumerTask;
+    }
+
+    /// <summary>
+    /// Runs a single Kafka consumer loop for the 'cicd-trigger' topic.
+    /// Multiple loops can run in parallel within the same process, each getting
+    /// different partitions from the "cicd-client" consumer group.
+    /// </summary>
+    private async Task RunConsumerLoopAsync(int consumerIndex, CancellationToken stoppingToken)
+    {
         var bootstrapServers = configuration.GetConnectionString("kafka")
             ?? throw new InvalidOperationException("Kafka connection string 'kafka' is not configured.");
 
@@ -66,14 +89,14 @@ public class CiCdWorker(
         using var consumer = new ConsumerBuilder<string, string>(config).Build();
         consumer.Subscribe("cicd-trigger");
 
-        logger.LogInformation("CiCdWorker started, listening on 'cicd-trigger' topic");
+        logger.LogInformation("CiCdWorker consumer #{Index} started, listening on 'cicd-trigger' topic", consumerIndex);
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
                 var result = consumer.Consume(stoppingToken);
-                logger.LogInformation("Received cicd-trigger: key={Key}", result.Message.Key);
+                logger.LogInformation("Consumer #{Index} received cicd-trigger: key={Key}", consumerIndex, result.Message.Key);
                 await ProcessTriggerAsync(result.Message.Key, result.Message.Value, stoppingToken);
             }
             catch (OperationCanceledException)
@@ -82,13 +105,12 @@ public class CiCdWorker(
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error processing cicd-trigger message");
+                logger.LogError(ex, "Error in consumer #{Index} processing cicd-trigger message", consumerIndex);
                 await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
             }
         }
 
         consumer.Close();
-        await cancelConsumerTask;
     }
 
     /// <summary>Subscribes to 'cicd-cancel' and cancels any in-flight run matching the message key (runId).</summary>

@@ -18,12 +18,14 @@ var bootstrapServers = configuration.GetConnectionString("kafka")
 // All topics that must exist before the application services start.
 // cicd-trigger uses 4 partitions so that up to 4 cicd-client replicas (CICD_CLIENT_WORKERS)
 // can consume in parallel — one partition per consumer instance.
+// issue-assigned and agent-cancel also use 4 partitions to support scaling the execution-client
+// with EXECUTION_CLIENT_WORKERS and internal parallel consumer loops (Agent:MaxParallelRuns).
 var topics = new[]
 {
-    ("issue-assigned", 1),
+    ("issue-assigned", 4),
     ("cicd-trigger", 4),
     ("cicd-cancel", 4),
-    ("agent-cancel", 1),
+    ("agent-cancel", 4),
 };
 
 using var adminClient = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = bootstrapServers })

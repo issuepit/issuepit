@@ -13,6 +13,71 @@
       </button>
     </div>
 
+    <!-- Scaling Configuration -->
+    <div class="rounded-xl border border-gray-800 bg-gray-900/40 p-5 mb-6">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <h3 class="font-medium text-white">Scaling Configuration</h3>
+          <p class="text-xs text-gray-500 mt-0.5">Current infrastructure-level scaling. Controlled via environment variables; changes require a restart.</p>
+        </div>
+        <button
+          class="text-xs text-gray-400 hover:text-gray-200 transition-colors"
+          :disabled="store.scalingConfigLoading"
+          @click="store.fetchScalingConfig()"
+        >
+          {{ store.scalingConfigLoading ? 'Refreshing…' : '↺ Refresh' }}
+        </button>
+      </div>
+
+      <div v-if="store.scalingConfig" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <!-- CI/CD Runner Scaling -->
+        <div class="rounded-lg bg-gray-900 border border-gray-800 p-4">
+          <p class="text-xs text-gray-500 uppercase tracking-wide mb-3">CI/CD Runners</p>
+          <div class="space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-gray-400">Replicas</span>
+              <span class="text-sm text-white font-mono">{{ store.scalingConfig.ciCdReplicaCount }}</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-gray-400">Parallel consumers / replica</span>
+              <span class="text-sm text-white font-mono">{{ store.scalingConfig.ciCdMaxParallelRuns }}</span>
+            </div>
+            <div class="flex items-center justify-between border-t border-gray-800 pt-2">
+              <span class="text-sm text-gray-300">Total capacity</span>
+              <span class="text-sm text-white font-semibold font-mono">{{ store.scalingConfig.ciCdReplicaCount * store.scalingConfig.ciCdMaxParallelRuns }}</span>
+            </div>
+          </div>
+          <p class="text-xs text-gray-600 mt-3">
+            <code class="bg-gray-800 px-1 py-0.5 rounded">CICD_CLIENT_WORKERS</code> · <code class="bg-gray-800 px-1 py-0.5 rounded">CiCd__MaxParallelRuns</code>
+          </p>
+        </div>
+
+        <!-- Agent Runner Scaling -->
+        <div class="rounded-lg bg-gray-900 border border-gray-800 p-4">
+          <p class="text-xs text-gray-500 uppercase tracking-wide mb-3">Agent Runners</p>
+          <div class="space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-gray-400">Replicas</span>
+              <span class="text-sm text-white font-mono">{{ store.scalingConfig.agentReplicaCount }}</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-gray-400">Parallel consumers / replica</span>
+              <span class="text-sm text-white font-mono">{{ store.scalingConfig.agentMaxParallelRuns }}</span>
+            </div>
+            <div class="flex items-center justify-between border-t border-gray-800 pt-2">
+              <span class="text-sm text-gray-300">Total capacity</span>
+              <span class="text-sm text-white font-semibold font-mono">{{ store.scalingConfig.agentReplicaCount * store.scalingConfig.agentMaxParallelRuns }}</span>
+            </div>
+          </div>
+          <p class="text-xs text-gray-600 mt-3">
+            <code class="bg-gray-800 px-1 py-0.5 rounded">EXECUTION_CLIENT_WORKERS</code> · <code class="bg-gray-800 px-1 py-0.5 rounded">Agent__MaxParallelRuns</code>
+          </p>
+        </div>
+      </div>
+      <p v-else-if="!store.scalingConfigLoading" class="text-xs text-gray-600">Click Refresh to load scaling configuration.</p>
+      <p v-else class="text-xs text-gray-500">Loading…</p>
+    </div>
+
     <!-- Pool Status -->
     <div class="rounded-xl border border-gray-800 bg-gray-900/40 p-5 mb-6">
       <div class="flex items-center justify-between mb-3">
@@ -229,6 +294,7 @@ const store = useConfigStore()
 onMounted(() => {
   store.fetchRuntimes()
   store.fetchPoolStatus()
+  store.fetchScalingConfig()
 })
 
 const showForm = ref(false)
