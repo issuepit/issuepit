@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.8.0](https://github.com/issuepit/issuepit/compare/helper-containers-v1.7.2...helper-containers-v1.8.0) (2026-04-30)
+
+
+### Features
+
+* skip steps by `uses` value + update act to 873f292 ([#921](https://github.com/issuepit/issuepit/issues/921)) ([800547a](https://github.com/issuepit/issuepit/commit/800547a82fe1e62fea7af005ad4441d96712a0d4))
+
+
+### Bug Fixes
+
+* act binary verification and frontend lavamoat setup ([#977](https://github.com/issuepit/issuepit/issues/977)) ([e1fe64c](https://github.com/issuepit/issuepit/commit/e1fe64c84ae0ee2e6f7377d730a86ab07cbdcca3))
+* append /mcp path to ISSUEPIT_MCP_URL when configuring opencode MCP server ([#906](https://github.com/issuepit/issuepit/issues/906)) ([378f336](https://github.com/issuepit/issuepit/commit/378f336b51dccc4fd5133a566fae6517262f7687))
+* replace `act --version` with `act --help` to resolve unknown flag error ([#954](https://github.com/issuepit/issuepit/issues/954)) ([f6d6f95](https://github.com/issuepit/issuepit/commit/f6d6f95a280d8a6d95ad287d0f928f68ee1d3a88))
+
 ## [1.7.2](https://github.com/issuepit/issuepit/compare/helper-containers-v1.7.1...helper-containers-v1.7.2) (2026-03-28)
 
 
