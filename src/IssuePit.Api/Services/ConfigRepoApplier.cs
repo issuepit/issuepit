@@ -173,6 +173,21 @@ public class ConfigRepoApplier(
             org.LocalRepositories = model.LocalRepositories;
             configSources["localRepositories"] = sourceFileName;
         }
+        if (model.ActionReplacements is not null)
+        {
+            org.ActionReplacements = model.ActionReplacements;
+            configSources["actionReplacements"] = sourceFileName;
+        }
+        if (model.ActionRemoteToken is not null)
+        {
+            org.ActionRemoteToken = model.ActionRemoteToken;
+            configSources["actionRemoteToken"] = sourceFileName;
+        }
+        if (model.UseGitHubTokenForActions.HasValue)
+        {
+            org.UseGitHubTokenForActions = model.UseGitHubTokenForActions.Value;
+            configSources["useGitHubTokenForActions"] = sourceFileName;
+        }
         if (model.SkipSteps is not null)
         {
             org.SkipSteps = model.SkipSteps;
@@ -358,6 +373,21 @@ public class ConfigRepoApplier(
         {
             project.LocalRepositories = model.LocalRepositories;
             configSources["localRepositories"] = sourceFileName;
+        }
+        if (model.ActionReplacements is not null)
+        {
+            project.ActionReplacements = model.ActionReplacements;
+            configSources["actionReplacements"] = sourceFileName;
+        }
+        if (model.ActionRemoteToken is not null)
+        {
+            project.ActionRemoteToken = model.ActionRemoteToken;
+            configSources["actionRemoteToken"] = sourceFileName;
+        }
+        if (model.UseGitHubTokenForActions.HasValue)
+        {
+            project.UseGitHubTokenForActions = model.UseGitHubTokenForActions;
+            configSources["useGitHubTokenForActions"] = sourceFileName;
         }
         if (model.SkipSteps is not null)
         {

@@ -410,4 +410,98 @@ public class NativeCiCdRuntimeTests
         Assert.Contains("--action-offline-mode", args);
         Assert.Contains("--local-repository", args);
     }
+
+    [Fact]
+    public void BuildActArgumentsList_WithActionReplacements_EmitsFlags()
+    {
+        var trigger = new TriggerPayload(
+            ProjectId: Guid.NewGuid(),
+            CommitSha: null, Branch: null, Workflow: null,
+            AgentSessionId: null, WorkspacePath: null, EventName: null,
+            ActionReplacements: "org/repo@v1=https://internal.example.com/mirror/repo@v1\norg/other=https://internal.example.com/other");
+        var args = NativeCiCdRuntime.BuildActArgumentsList(trigger).ToList();
+
+        Assert.Contains("--action-remote-replacements", args);
+        var firstIdx = args.IndexOf("--action-remote-replacements");
+        Assert.Equal("org/repo@v1=https://internal.example.com/mirror/repo@v1", args[firstIdx + 1]);
+        Assert.Equal("--action-remote-replacements", args[firstIdx + 2]);
+        Assert.Equal("org/other=https://internal.example.com/other", args[firstIdx + 3]);
+    }
+
+    [Fact]
+    public void BuildActArgumentsList_NoActionReplacements_NoFlag()
+    {
+        var args = NativeCiCdRuntime.BuildActArgumentsList(Trigger());
+        Assert.DoesNotContain("--action-remote-replacements", args);
+    }
+
+    [Fact]
+    public void BuildActArgumentsList_WithActionRemoteToken_EmitsFlag()
+    {
+        var trigger = new TriggerPayload(
+            ProjectId: Guid.NewGuid(),
+            CommitSha: null, Branch: null, Workflow: null,
+            AgentSessionId: null, WorkspacePath: null, EventName: null,
+            ActionRemoteToken: "ghp_testtoken123");
+        var args = NativeCiCdRuntime.BuildActArgumentsList(trigger).ToList();
+
+        var idx = args.IndexOf("--action-remote-token");
+        Assert.True(idx >= 0, "--action-remote-token flag should be present");
+        Assert.Equal("ghp_testtoken123", args[idx + 1]);
+    }
+
+    [Fact]
+    public void BuildActArgumentsList_NoActionRemoteToken_NoFlag()
+    {
+        var args = NativeCiCdRuntime.BuildActArgumentsList(Trigger());
+        Assert.DoesNotContain("--action-remote-token", args);
+    }
+
+    [Fact]
+    public void BuildActArgumentsList_UseGitHubTokenForActions_UsesGitHubTokenFromSecrets()
+    {
+        var trigger = new TriggerPayload(
+            ProjectId: Guid.NewGuid(),
+            CommitSha: null, Branch: null, Workflow: null,
+            AgentSessionId: null, WorkspacePath: null, EventName: null,
+            ActSecrets: "GITHUB_TOKEN=ghp_secretvalue\nNPM_TOKEN=npmtoken",
+            UseGitHubTokenForActions: true);
+        var args = NativeCiCdRuntime.BuildActArgumentsList(trigger).ToList();
+
+        var idx = args.IndexOf("--action-remote-token");
+        Assert.True(idx >= 0, "--action-remote-token flag should be present");
+        Assert.Equal("ghp_secretvalue", args[idx + 1]);
+    }
+
+    [Fact]
+    public void BuildActArgumentsList_UseGitHubTokenForActions_NoGitHubTokenInSecrets_NoFlag()
+    {
+        var trigger = new TriggerPayload(
+            ProjectId: Guid.NewGuid(),
+            CommitSha: null, Branch: null, Workflow: null,
+            AgentSessionId: null, WorkspacePath: null, EventName: null,
+            ActSecrets: "NPM_TOKEN=npmtoken",
+            UseGitHubTokenForActions: true);
+        var args = NativeCiCdRuntime.BuildActArgumentsList(trigger).ToList();
+        Assert.DoesNotContain("--action-remote-token", args);
+    }
+
+    [Fact]
+    public void BuildActArgumentsList_ActionRemoteTokenTakesPrecedenceOverUseGitHubToken()
+    {
+        var trigger = new TriggerPayload(
+            ProjectId: Guid.NewGuid(),
+            CommitSha: null, Branch: null, Workflow: null,
+            AgentSessionId: null, WorkspacePath: null, EventName: null,
+            ActSecrets: "GITHUB_TOKEN=ghp_secretvalue",
+            ActionRemoteToken: "explicit_token",
+            UseGitHubTokenForActions: true);
+        var args = NativeCiCdRuntime.BuildActArgumentsList(trigger).ToList();
+
+        var idx = args.IndexOf("--action-remote-token");
+        Assert.True(idx >= 0, "--action-remote-token flag should be present");
+        Assert.Equal("explicit_token", args[idx + 1]);
+        // Should appear only once
+        Assert.Equal(1, args.Count(a => a == "--action-remote-token"));
+    }
 }

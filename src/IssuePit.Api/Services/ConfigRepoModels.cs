@@ -65,6 +65,19 @@ public class OrgConfigModel
     public bool? UseNewActionCache { get; set; }
     public bool? ActionOfflineMode { get; set; }
     public string? LocalRepositories { get; set; }
+
+    /// <summary>
+    /// Newline-separated <c>source=destination</c> mappings passed as
+    /// <c>--action-remote-replacements</c> to <c>act</c>.
+    /// </summary>
+    public string? ActionReplacements { get; set; }
+
+    /// <summary>Token for fetching remote actions (<c>--action-remote-token</c>).</summary>
+    public string? ActionRemoteToken { get; set; }
+
+    /// <summary>When <c>true</c>, uses <c>GITHUB_TOKEN</c> from secrets as the action remote token.</summary>
+    public bool? UseGitHubTokenForActions { get; set; }
+
     public string? SkipSteps { get; set; }
 
     public List<OrgMemberConfigModel>? Members { get; set; }
@@ -149,6 +162,18 @@ public class ProjectConfigModel
     /// calls to local clones. Passed to <c>act</c> via <c>--local-repository</c> flags.
     /// </summary>
     public string? LocalRepositories { get; set; }
+
+    /// <summary>
+    /// Newline-separated <c>source=destination</c> mappings passed as
+    /// <c>--action-remote-replacements</c> to <c>act</c>.
+    /// </summary>
+    public string? ActionReplacements { get; set; }
+
+    /// <summary>Token for fetching remote actions (<c>--action-remote-token</c>).</summary>
+    public string? ActionRemoteToken { get; set; }
+
+    /// <summary>When <c>true</c>, uses <c>GITHUB_TOKEN</c> from secrets as the action remote token.</summary>
+    public bool? UseGitHubTokenForActions { get; set; }
 
     /// <summary>
     /// Newline-separated list of step names or <c>job:step</c> pairs passed as

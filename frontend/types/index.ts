@@ -50,6 +50,9 @@ export interface Organization {
   useNewActionCache?: boolean
   actionOfflineMode?: boolean
   localRepositories?: string | null
+  actionReplacements?: string | null
+  actionRemoteToken?: string | null
+  useGitHubTokenForActions?: boolean
   skipSteps?: string | null
   /** Maximum number of CI/CD → agent-fix loop iterations. Null means use the system default (3). */
   maxCiCdLoopCount?: number | null
@@ -200,6 +203,9 @@ export interface Project {
   useNewActionCache?: boolean | null
   actionOfflineMode?: boolean | null
   localRepositories?: string | null
+  actionReplacements?: string | null
+  actionRemoteToken?: string | null
+  useGitHubTokenForActions?: boolean | null
   skipSteps?: string | null
   /** Maximum number of CI/CD → agent-fix loop iterations. Null means inherit from org (system default: 3). */
   maxCiCdLoopCount?: number | null

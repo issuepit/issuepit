@@ -82,6 +82,17 @@ Only the fields you set are applied — omitted fields are left unchanged in the
   "useNewActionCache": true,
   "actionOfflineMode": false,
 
+  // Redirect remote action fetches to alternative remotes (one mapping per line).
+  // Supports four tiers: exact URL+ref, path-only+ref, exact URL (any ref), path-only (any ref).
+  "actionReplacements": "org/repo@v1=https://internal.example.com/mirror/repo@v1\norg/other=https://internal.example.com/other",
+
+  // Token used by act to fetch remote actions (--action-remote-token).
+  // Leave unset to use the act default, or enable useGitHubTokenForActions instead.
+  "actionRemoteToken": "ghp_optional_token",
+
+  // When true, uses GITHUB_TOKEN from actSecrets as --action-remote-token.
+  "useGitHubTokenForActions": false,
+
   // Skip specific steps on every run without editing the workflow file.
   // One entry per line: bare step name OR job-id:step-name
   "skipSteps": "deploy\nbuild:upload-to-s3",
@@ -160,6 +171,16 @@ Only the fields you set are applied — omitted fields are left unchanged in the
   // Redirect reusable workflow calls to local clones.
   // Format: owner/repo=localPath  (multiple entries separated by \n in the JSON string)
   "localRepositories": "my-org/reusable-workflows=/home/runner/local/reusable-workflows\nmy-org/shared-actions=/home/runner/local/shared-actions",
+
+  // Redirect remote action fetches to alternative remotes (--action-remote-replacements).
+  // Supports four tiers: exact URL+ref, path-only+ref, exact URL (any ref), path-only (any ref).
+  "actionReplacements": "actions/checkout@v4=https://internal.example.com/mirror/checkout@v4",
+
+  // Token for fetching remote actions (--action-remote-token). Leave unset to use the act default.
+  "actionRemoteToken": "ghp_optional_token",
+
+  // When true, uses GITHUB_TOKEN from actSecrets as --action-remote-token.
+  "useGitHubTokenForActions": false,
 
   // Skip steps on every run (project value overrides org default, does not merge).
   "skipSteps": "deploy\nbuild:upload-to-s3",

@@ -93,6 +93,24 @@ public record TriggerPayload(
     /// </summary>
     string? LocalRepositories = null,
     /// <summary>
+    /// Newline-separated list of <c>source=destination</c> mappings passed as
+    /// <c>--action-remote-replacements</c> arguments to <c>act</c>. Redirects remote action
+    /// fetches to alternative remotes. Supports four matching tiers: exact full URL with ref,
+    /// path-only with ref, exact full URL (any ref), and path-only (any ref).
+    /// </summary>
+    string? ActionReplacements = null,
+    /// <summary>
+    /// Token passed as <c>--action-remote-token</c> to <c>act</c> for fetching remote actions.
+    /// When set, overrides the default token. Null means use the act default.
+    /// </summary>
+    string? ActionRemoteToken = null,
+    /// <summary>
+    /// When <c>true</c>, uses the <c>GITHUB_TOKEN</c> value from <see cref="ActSecrets"/> as
+    /// the <c>--action-remote-token</c>. Takes effect only when <see cref="ActionRemoteToken"/>
+    /// is not set. Null means inherit from project/org settings.
+    /// </summary>
+    bool? UseGitHubTokenForActions = null,
+    /// <summary>
     /// Newline-separated list of step names or <c>job:step</c> pairs passed as
     /// <c>--skip-step</c> arguments to <c>act</c>. Steps matching these entries are skipped.
     /// </summary>

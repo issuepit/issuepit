@@ -90,6 +90,27 @@ public class Organization
     public string? LocalRepositories { get; set; }
 
     /// <summary>
+    /// Newline-separated list of <c>source=destination</c> mappings passed as
+    /// <c>--action-remote-replacements</c> arguments to <c>act</c>. Redirects remote action
+    /// fetches to alternative remotes. Supports four matching tiers: exact full URL with ref,
+    /// path-only with ref, exact full URL (any ref), and path-only (any ref).
+    /// </summary>
+    public string? ActionReplacements { get; set; }
+
+    /// <summary>
+    /// Token used for fetching remote actions (passed as <c>--action-remote-token</c>).
+    /// When set, overrides the default token resolution. Null means use the act default.
+    /// </summary>
+    public string? ActionRemoteToken { get; set; }
+
+    /// <summary>
+    /// When <c>true</c>, uses the <c>GITHUB_TOKEN</c> value from <see cref="ActSecrets"/> as
+    /// the <c>--action-remote-token</c> for fetching remote actions. Takes effect only when
+    /// <see cref="ActionRemoteToken"/> is not explicitly set.
+    /// </summary>
+    public bool UseGitHubTokenForActions { get; set; } = false;
+
+    /// <summary>
     /// Newline-separated list of step names or <c>job:step</c> pairs passed as
     /// <c>--skip-step</c> arguments to <c>act</c>. Steps matching these entries are skipped
     /// on every run. Useful to disable push/deploy steps in non-production environments.

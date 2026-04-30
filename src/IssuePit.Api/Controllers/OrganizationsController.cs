@@ -60,6 +60,9 @@ public class OrganizationsController(IssuePitDbContext db, TenantContext ctx) : 
         org.UseNewActionCache = updated.UseNewActionCache;
         org.ActionOfflineMode = updated.ActionOfflineMode;
         org.LocalRepositories = updated.LocalRepositories;
+        org.ActionReplacements = updated.ActionReplacements;
+        org.ActionRemoteToken = updated.ActionRemoteToken;
+        org.UseGitHubTokenForActions = updated.UseGitHubTokenForActions;
         org.SkipSteps = updated.SkipSteps;
         org.MaxCiCdLoopCount = updated.MaxCiCdLoopCount;
         await db.SaveChangesAsync();
