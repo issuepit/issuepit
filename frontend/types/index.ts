@@ -739,6 +739,10 @@ export interface GitHubDebugResult {
   specificRepoAccessible?: boolean
   specificRepoError?: string
   specificRepoHtmlUrl?: string
+  /** Result of the `git ls-remote` CLI check against the configured remote with the same credentials. */
+  gitProtocolAccessible?: boolean
+  gitProtocolError?: string
+  gitProtocolRefCount?: number
 }
 
 export interface GitBranch {

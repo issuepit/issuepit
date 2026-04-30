@@ -5,7 +5,9 @@ using IssuePit.Core.Enums;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Diagnostics;
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 
 namespace IssuePit.Api.Controllers;
@@ -304,11 +306,19 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
                 TokenSource: tokenSource, AuthUsername: effectiveUsername,
                 TokenNotes: tokenNotes, Repos: []));
 
+        // Run a `git ls-remote` against the configured remote with the same credentials that
+        // FetchAsync would use. This is the most direct equivalent of what the failing fetch does
+        // and answers "does git itself authenticate, with this token, against this URL?" — independent
+        // of the GitHub REST API path below.
+        var (gitOk, gitRefCount, gitError) = await RunGitLsRemoteAsync(repo.RemoteUrl, effectiveUsername, effectiveToken, HttpContext.RequestAborted);
+        logger.LogInformation("Git ls-remote check for repo {RepoId} → ok={Ok}, refs={Refs}, err={Err}", repoId, gitOk, gitRefCount, gitError);
+
         if (!repo.RemoteUrl.Contains("github.com", StringComparison.OrdinalIgnoreCase))
             return Ok(new GitHubDebugResponse(TokenValid: false, Login: null,
-                Error: "Token debugging is only supported for github.com repositories.",
+                Error: "GitHub API debugging is only supported for github.com repositories.",
                 TokenSource: tokenSource, AuthUsername: effectiveUsername,
-                TokenNotes: tokenNotes, Repos: []));
+                TokenNotes: tokenNotes, Repos: [],
+                GitProtocolAccessible: gitOk, GitProtocolError: gitError, GitProtocolRefCount: gitRefCount));
 
         using var client = httpClientFactory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", effectiveToken);
@@ -317,13 +327,27 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
 
         // Verify the token is valid and retrieve the authenticated user.
         var userResp = await client.GetAsync("https://api.github.com/user");
+
+        // Capture the OAuth scopes header — for classic PATs this lists the granted scopes
+        // (e.g. "repo, read:org") and is the most direct way to diagnose insufficient permissions.
+        // Fine-grained PATs return an empty value here; surface that too so the user understands why.
+        if (userResp.Headers.TryGetValues("X-OAuth-Scopes", out var scopeValues))
+        {
+            var scopes = string.Join(", ", scopeValues).Trim();
+            if (string.IsNullOrEmpty(scopes))
+                tokenNotes.Add("Token has no classic OAuth scopes reported by GitHub — this is normal for fine-grained PATs. Verify the fine-grained PAT has 'Contents: Read' (and 'Read and Write' for push) on the target repository.");
+            else
+                tokenNotes.Add($"Token scopes (X-OAuth-Scopes): {scopes}");
+        }
+
         if (!userResp.IsSuccessStatusCode)
         {
             logger.LogInformation("GitHub token check for repo {RepoId} returned {Status}", repoId, (int)userResp.StatusCode);
             return Ok(new GitHubDebugResponse(TokenValid: false, Login: null,
                 Error: $"GitHub API returned HTTP {(int)userResp.StatusCode} — token may be invalid or expired.",
                 TokenSource: tokenSource, AuthUsername: effectiveUsername,
-                TokenNotes: tokenNotes, Repos: []));
+                TokenNotes: tokenNotes, Repos: [],
+                GitProtocolAccessible: gitOk, GitProtocolError: gitError, GitProtocolRefCount: gitRefCount));
         }
 
         var userJson = await userResp.Content.ReadFromJsonAsync<JsonElement>();
@@ -336,7 +360,8 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
             return Ok(new GitHubDebugResponse(TokenValid: true, Login: login,
                 Error: $"Could not list repositories (HTTP {(int)reposResp.StatusCode}).",
                 TokenSource: tokenSource, AuthUsername: effectiveUsername,
-                TokenNotes: tokenNotes, Repos: []));
+                TokenNotes: tokenNotes, Repos: [],
+                GitProtocolAccessible: gitOk, GitProtocolError: gitError, GitProtocolRefCount: gitRefCount));
         }
 
         var reposJson = await reposResp.Content.ReadFromJsonAsync<JsonElement>();
@@ -373,7 +398,8 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         return Ok(new GitHubDebugResponse(TokenValid: true, Login: login, Error: null,
             TokenSource: tokenSource, AuthUsername: effectiveUsername, TokenNotes: tokenNotes, Repos: repos,
             SpecificRepoPath: repoPath, SpecificRepoAccessible: specificRepoAccessible,
-            SpecificRepoError: specificRepoError, SpecificRepoHtmlUrl: specificRepoHtmlUrl));
+            SpecificRepoError: specificRepoError, SpecificRepoHtmlUrl: specificRepoHtmlUrl,
+            GitProtocolAccessible: gitOk, GitProtocolError: gitError, GitProtocolRefCount: gitRefCount));
     }
 
     // ──────────────────── legacy single-repo endpoints (kept for backward compat) ────────────────────
@@ -734,6 +760,107 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         return match.Success ? match.Groups[1].Value : null;
     }
+
+    /// <summary>
+    /// Runs <c>git ls-remote --heads &lt;url&gt;</c> as a subprocess against the configured remote
+    /// using the same credentials git operations would use. This is the most direct equivalent of
+    /// the failing <c>fetch</c>: if it succeeds the token works for the git protocol; if it fails
+    /// the captured stderr usually contains the underlying server message (e.g. "Repository not found",
+    /// "Permission to … denied", "remote: HTTP Basic: Access denied").
+    /// </summary>
+    private static async Task<(bool? Ok, int? RefCount, string? Error)> RunGitLsRemoteAsync(
+        string remoteUrl, string? authUsername, string? authToken, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var url = BuildAuthenticatedUrl(remoteUrl, authUsername, authToken);
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(15));
+
+            using var process = new Process();
+            process.StartInfo = new ProcessStartInfo
+            {
+                FileName = "git",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            // Disable any credential helpers and interactive prompts so the check uses ONLY the
+            // credentials embedded in the URL (i.e. exactly what we resolved for this origin).
+            process.StartInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
+            process.StartInfo.Environment["GCM_INTERACTIVE"] = "Never";
+            process.StartInfo.ArgumentList.Add("-c");
+            process.StartInfo.ArgumentList.Add("credential.helper=");
+            process.StartInfo.ArgumentList.Add("ls-remote");
+            process.StartInfo.ArgumentList.Add("--heads");
+            process.StartInfo.ArgumentList.Add(url);
+
+            process.Start();
+            var stdoutTask = process.StandardOutput.ReadToEndAsync(timeoutCts.Token);
+            var stderrTask = process.StandardError.ReadToEndAsync(timeoutCts.Token);
+            await process.WaitForExitAsync(timeoutCts.Token);
+            var stdout = await stdoutTask;
+            var stderr = await stderrTask;
+
+            // Strip any embedded credentials from the error message before surfacing it to the UI.
+            stderr = RedactCredentials(stderr, authToken);
+
+            if (process.ExitCode == 0)
+            {
+                var refCount = stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length;
+                return (true, refCount, null);
+            }
+            var msg = string.IsNullOrWhiteSpace(stderr)
+                ? $"git ls-remote exited with code {process.ExitCode}"
+                : stderr.Trim();
+            return (false, null, msg);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return (null, null, "Cancelled.");
+        }
+        catch (OperationCanceledException)
+        {
+            return (false, null, "git ls-remote timed out after 15s.");
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            // git binary not installed / not on PATH
+            return (null, null, "git CLI not available on the server — skipped git protocol check.");
+        }
+        catch (Exception ex)
+        {
+            return (null, null, $"git ls-remote could not be executed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Injects HTTP Basic credentials into an HTTPS URL so <c>git ls-remote</c> can authenticate
+    /// without a credential helper. Non-HTTPS URLs (SSH, git://) are returned unchanged.
+    /// </summary>
+    private static string BuildAuthenticatedUrl(string remoteUrl, string? authUsername, string? authToken)
+    {
+        if (string.IsNullOrEmpty(authToken)) return remoteUrl;
+        if (!remoteUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) return remoteUrl;
+        var user = string.IsNullOrEmpty(authUsername) ? "git" : authUsername;
+        var builder = new UriBuilder(remoteUrl)
+        {
+            UserName = Uri.EscapeDataString(user),
+            Password = Uri.EscapeDataString(authToken),
+        };
+        return builder.Uri.AbsoluteUri;
+    }
+
+    /// <summary>Removes occurrences of the secret token (and its URL-encoded form) from the output.</summary>
+    private static string RedactCredentials(string text, string? token)
+    {
+        if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(token)) return text;
+        var sb = new StringBuilder(text);
+        sb.Replace(token, "***");
+        sb.Replace(Uri.EscapeDataString(token), "***");
+        return sb.ToString();
+    }
 }
 
 public record GitRepoRequest(string RemoteUrl, string? DefaultBranch, string? AuthUsername, string? AuthToken, GitOriginMode? Mode, Guid? GitHubIdentityId = null);
@@ -745,6 +872,7 @@ public record GitHubDebugResponse(
     List<string> TokenNotes,
     List<GitHubRepoEntry> Repos,
     string? SpecificRepoPath = null, bool? SpecificRepoAccessible = null,
-    string? SpecificRepoError = null, string? SpecificRepoHtmlUrl = null);
+    string? SpecificRepoError = null, string? SpecificRepoHtmlUrl = null,
+    bool? GitProtocolAccessible = null, string? GitProtocolError = null, int? GitProtocolRefCount = null);
 
 public record GitErrorResponse(string Error, string? Hint);

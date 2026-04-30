@@ -284,6 +284,18 @@
                       <span v-if="repoDebugResults[r.id]!.specificRepoError"> — {{ repoDebugResults[r.id]!.specificRepoError }}</span>
                     </template>
                   </div>
+                  <!-- Git CLI (`git ls-remote`) check — equivalent to what fetch does -->
+                  <div v-if="repoDebugResults[r.id]!.gitProtocolAccessible !== undefined && repoDebugResults[r.id]!.gitProtocolAccessible !== null"
+                    :class="repoDebugResults[r.id]!.gitProtocolAccessible ? 'text-green-400' : 'text-red-400'">
+                    <template v-if="repoDebugResults[r.id]!.gitProtocolAccessible">
+                      ✓ <span class="font-mono">git ls-remote</span> succeeded ({{ repoDebugResults[r.id]!.gitProtocolRefCount ?? 0 }} branch ref(s)) — fetch should work with this token.
+                    </template>
+                    <template v-else>
+                      ✗ <span class="font-mono">git ls-remote</span> failed
+                      <span v-if="repoDebugResults[r.id]!.gitProtocolError">— <span class="font-mono whitespace-pre-wrap break-all">{{ repoDebugResults[r.id]!.gitProtocolError }}</span></span>
+                    </template>
+                  </div>
+                  <p v-else-if="repoDebugResults[r.id]!.gitProtocolError" class="text-yellow-400/80">ℹ git protocol check skipped — {{ repoDebugResults[r.id]!.gitProtocolError }}</p>
                   <ul class="max-h-36 overflow-y-auto space-y-0.5 pl-1">
                     <li v-for="gr in repoDebugResults[r.id]!.repos" :key="gr.fullName" class="text-gray-400 font-mono">
                       {{ gr.isPrivate ? '🔒' : '📦' }}
@@ -295,7 +307,19 @@
                   <p class="text-red-400">✗ {{ repoDebugResults[r.id]!.error || 'Token verification failed' }}</p>
                   <p v-if="repoDebugResults[r.id]!.tokenSource" class="text-gray-500">Token source: {{ repoDebugResults[r.id]!.tokenSource }}<template v-if="repoDebugResults[r.id]!.authUsername"> · git username: <span class="font-mono">{{ repoDebugResults[r.id]!.authUsername }}</span></template></p>
                   <!-- Token notes (config conflict hints) -->
-                  <p v-for="note in repoDebugResults[r.id]!.tokenNotes" :key="note" class="text-yellow-400/80">ℹ {{ note }}</p>
+                  <p v-for="(note, i) in repoDebugResults[r.id]!.tokenNotes" :key="i" class="text-yellow-400/80">ℹ {{ note }}</p>
+                  <!-- Git CLI (`git ls-remote`) check — equivalent to what fetch does -->
+                  <div v-if="repoDebugResults[r.id]!.gitProtocolAccessible !== undefined && repoDebugResults[r.id]!.gitProtocolAccessible !== null"
+                    :class="repoDebugResults[r.id]!.gitProtocolAccessible ? 'text-green-400' : 'text-red-400'">
+                    <template v-if="repoDebugResults[r.id]!.gitProtocolAccessible">
+                      ✓ <span class="font-mono">git ls-remote</span> succeeded ({{ repoDebugResults[r.id]!.gitProtocolRefCount ?? 0 }} branch ref(s)) — token works for the git protocol despite the API check failure.
+                    </template>
+                    <template v-else>
+                      ✗ <span class="font-mono">git ls-remote</span> failed
+                      <span v-if="repoDebugResults[r.id]!.gitProtocolError">— <span class="font-mono whitespace-pre-wrap break-all">{{ repoDebugResults[r.id]!.gitProtocolError }}</span></span>
+                    </template>
+                  </div>
+                  <p v-else-if="repoDebugResults[r.id]!.gitProtocolError" class="text-yellow-400/80">ℹ git protocol check skipped — {{ repoDebugResults[r.id]!.gitProtocolError }}</p>
                 </div>
               </div>
             </div>
