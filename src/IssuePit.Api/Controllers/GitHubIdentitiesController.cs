@@ -15,7 +15,8 @@ public class GitHubIdentitiesController(
     IssuePitDbContext db,
     TenantContext ctx,
     IDataProtectionProvider dpProvider,
-    IHttpClientFactory httpClientFactory) : ControllerBase
+    IHttpClientFactory httpClientFactory,
+    IConfiguration config) : ControllerBase
 {
     private static readonly string ProtectorPurpose = "GitHubOAuthToken";
 
@@ -254,6 +255,137 @@ public class GitHubIdentitiesController(
     }
 
     // -------------------------------------------------------------------------
+    // OAuth flow — mints a fresh PAT-equivalent token via GitHub's web OAuth flow
+    // and stores it as a new GitHubIdentity for the currently signed-in user.
+    // Reuses the existing GitHub:OAuth:* configuration that powers /api/auth/github,
+    // but requests the `repo` scope so the token also works for git push/pull.
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Reports whether the GitHub OAuth flow for creating identities is configured.
+    /// The frontend uses this to show or hide the "Sign in with GitHub" button.
+    /// </summary>
+    [HttpGet("oauth/config")]
+    public IActionResult GetOAuthConfig()
+    {
+        var clientId = config["GitHub:OAuth:ClientId"];
+        var clientSecret = config["GitHub:OAuth:ClientSecret"];
+        var enabled = !string.IsNullOrEmpty(clientId) && !string.IsNullOrEmpty(clientSecret);
+        return Ok(new GitHubOAuthConfigResponse(enabled));
+    }
+
+    /// <summary>
+    /// Initiates the OAuth flow for creating a new <see cref="GitHubIdentity"/>.
+    /// Redirects the browser to GitHub's authorisation URL with the <c>repo</c> scope
+    /// so the resulting token is usable for both API calls and git push/pull.
+    /// </summary>
+    [HttpGet("oauth/start")]
+    public IActionResult StartOAuth([FromQuery] string? returnUrl = null)
+    {
+        if (ctx.CurrentUser is null) return Unauthorized();
+
+        var clientId = config["GitHub:OAuth:ClientId"];
+        if (string.IsNullOrEmpty(clientId))
+            return StatusCode(503, new { error = "GitHub OAuth is not configured. Set GitHub:OAuth:ClientId and GitHub:OAuth:ClientSecret in app configuration." });
+
+        var callbackUrl = $"{Request.Scheme}://{Request.Host}/api/github-identities/oauth/callback";
+
+        // Encode returnUrl into the state parameter so we can redirect after success.
+        // The "id:" prefix distinguishes this flow from the login OAuth handled by AuthController.
+        var safeReturn = string.IsNullOrEmpty(returnUrl) || !Uri.IsWellFormedUriString(returnUrl, UriKind.Relative)
+            ? "/config/github-identities"
+            : returnUrl;
+        var state = "id:" + safeReturn;
+
+        // `repo` is required for git push/pull; `read:user` and `user:email` are required to
+        // populate the identity profile. Request them all in one consent screen.
+        var scopes = "read:user user:email repo";
+
+        var url = "https://github.com/login/oauth/authorize" +
+                  $"?client_id={Uri.EscapeDataString(clientId)}" +
+                  $"&redirect_uri={Uri.EscapeDataString(callbackUrl)}" +
+                  $"&scope={Uri.EscapeDataString(scopes)}" +
+                  $"&state={Uri.EscapeDataString(state)}";
+
+        return Redirect(url);
+    }
+
+    /// <summary>
+    /// Callback endpoint for the GitHub OAuth identity-creation flow. Exchanges the authorisation
+    /// code for an access token, upserts a <see cref="GitHubIdentity"/> for the currently signed-in
+    /// user, then redirects back to the frontend page encoded in <paramref name="state"/>.
+    /// </summary>
+    [HttpGet("oauth/callback")]
+    public async Task<IActionResult> OAuthCallback([FromQuery] string code, [FromQuery] string state = "id:/config/github-identities")
+    {
+        if (ctx.CurrentTenant is null || ctx.CurrentUser is null) return Unauthorized();
+        if (string.IsNullOrEmpty(code)) return BadRequest("Missing authorisation code.");
+
+        var clientId = config["GitHub:OAuth:ClientId"];
+        var clientSecret = config["GitHub:OAuth:ClientSecret"];
+        if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
+            return StatusCode(503, "GitHub OAuth is not configured.");
+
+        var frontendBase = config["GitHub:OAuth:FrontendUrl"] ?? "http://localhost:3000";
+        // Strip the "id:" prefix added in StartOAuth and validate.
+        var rawReturn = state.StartsWith("id:", StringComparison.Ordinal) ? state[3..] : state;
+        var returnPath = Uri.IsWellFormedUriString(rawReturn, UriKind.Relative) ? rawReturn : "/config/github-identities";
+
+        var token = await ExchangeOAuthCodeForTokenAsync(code, clientId, clientSecret);
+        if (string.IsNullOrEmpty(token))
+            return Redirect($"{frontendBase}{returnPath}{(returnPath.Contains('?') ? "&" : "?")}oauth=error&reason=token_exchange_failed");
+
+        var githubUser = await GetGitHubUserAsync(token);
+        if (githubUser is null)
+            return Redirect($"{frontendBase}{returnPath}{(returnPath.Contains('?') ? "&" : "?")}oauth=error&reason=profile_fetch_failed");
+
+        var protector = dpProvider.CreateProtector(ProtectorPurpose);
+        var encryptedToken = protector.Protect(token);
+
+        // Upsert: if an identity with this GitHub user id already exists for the current tenant,
+        // refresh its token in place rather than creating a duplicate.
+        var existing = await db.GitHubIdentities
+            .Include(g => g.User)
+            .FirstOrDefaultAsync(g => g.GitHubId == githubUser.Id && g.User.TenantId == ctx.CurrentTenant.Id);
+
+        if (existing is not null)
+        {
+            existing.EncryptedToken = encryptedToken;
+            existing.GitHubUsername = githubUser.Login;
+            existing.GitHubEmail = githubUser.Email;
+            existing.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+            return Redirect($"{frontendBase}{returnPath}{(returnPath.Contains('?') ? "&" : "?")}oauth=refreshed&id={existing.Id}");
+        }
+
+        var identity = new GitHubIdentity
+        {
+            Id = Guid.NewGuid(),
+            UserId = ctx.CurrentUser.Id,
+            GitHubId = githubUser.Id,
+            GitHubUsername = githubUser.Login,
+            GitHubEmail = githubUser.Email,
+            EncryptedToken = encryptedToken,
+        };
+        db.GitHubIdentities.Add(identity);
+        await db.SaveChangesAsync();
+
+        return Redirect($"{frontendBase}{returnPath}{(returnPath.Contains('?') ? "&" : "?")}oauth=success&id={identity.Id}");
+    }
+
+    private async Task<string?> ExchangeOAuthCodeForTokenAsync(string code, string clientId, string clientSecret)
+    {
+        var client = httpClientFactory.CreateClient();
+        client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        var response = await client.PostAsJsonAsync(
+            "https://github.com/login/oauth/access_token",
+            new { client_id = clientId, client_secret = clientSecret, code });
+        if (!response.IsSuccessStatusCode) return null;
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        return json.TryGetProperty("access_token", out var tokenEl) ? tokenEl.GetString() : null;
+    }
+
+    // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
 
@@ -304,3 +436,4 @@ public class GitHubIdentitiesController(
 
 public record CreateGitHubIdentityRequest(string Token, string? Name);
 public record UpdateGitHubIdentityRequest(string? Name);
+public record GitHubOAuthConfigResponse(bool Enabled);

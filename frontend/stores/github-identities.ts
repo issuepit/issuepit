@@ -139,11 +139,44 @@ export const useGitHubIdentitiesStore = defineStore('githubIdentities', () => {
     }
   }
 
+  /** Whether the GitHub OAuth flow for creating identities is configured server-side. */
+  const oauthEnabled = ref(false)
+  const oauthChecked = ref(false)
+
+  async function fetchOAuthConfig() {
+    try {
+      const data = await api.get<{ enabled: boolean }>('/api/github-identities/oauth/config')
+      oauthEnabled.value = !!data?.enabled
+    } catch {
+      oauthEnabled.value = false
+    } finally {
+      oauthChecked.value = true
+    }
+  }
+
+  /**
+   * Redirects the browser to the backend OAuth start endpoint, which itself redirects
+   * to GitHub. After the user authorises, GitHub calls back to the backend which
+   * upserts the identity and redirects back to `returnUrl` with `?oauth=success|error|refreshed`.
+   */
+  function startOAuth(returnUrl?: string) {
+    if (!import.meta.client) return
+    const config = useRuntimeConfig()
+    const apiBase = (config.public.apiBase as string) || ''
+    const fallback = window.location.pathname + window.location.search
+    const target = returnUrl || fallback
+    window.location.href = `${apiBase}/api/github-identities/oauth/start?returnUrl=${encodeURIComponent(target)}`
+  }
+
   return {
     identities,
     loading,
     error,
+    oauthEnabled,
+    oauthChecked,
     fetchIdentities,
+    fetchOAuthConfig,
+    startOAuth,
     createIdentity,
     updateIdentity,
     deleteIdentity,

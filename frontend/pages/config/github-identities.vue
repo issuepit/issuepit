@@ -15,6 +15,17 @@
 
     <ErrorBox :error="store.error" />
 
+    <!-- OAuth callback toast -->
+    <div v-if="oauthStatus === 'success'" class="mb-4 px-4 py-2 bg-green-900/30 border border-green-700 text-green-300 text-sm rounded-lg">
+      ✓ GitHub identity added via OAuth.
+    </div>
+    <div v-else-if="oauthStatus === 'refreshed'" class="mb-4 px-4 py-2 bg-green-900/30 border border-green-700 text-green-300 text-sm rounded-lg">
+      ✓ GitHub identity refreshed via OAuth (existing identity for this GitHub user updated).
+    </div>
+    <div v-else-if="oauthStatus === 'error'" class="mb-4 px-4 py-2 bg-red-900/30 border border-red-700 text-red-300 text-sm rounded-lg">
+      ✗ GitHub OAuth failed{{ oauthReason ? `: ${oauthReason}` : '' }}.
+    </div>
+
     <!-- Loading -->
     <div v-if="store.loading" class="flex items-center justify-center py-16">
       <div class="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
@@ -101,6 +112,20 @@
     <div v-if="showCreate" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div class="bg-gray-900 rounded-xl border border-gray-700 w-full max-w-md p-6 shadow-xl">
         <h3 class="text-lg font-semibold text-white mb-5">Add GitHub Identity</h3>
+        <!-- OAuth: only shown when configured server-side -->
+        <div v-if="store.oauthEnabled" class="mb-5 space-y-2">
+          <button
+            type="button"
+            class="w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-white text-sm font-medium rounded-lg transition-colors"
+            @click="store.startOAuth('/config/github-identities')">
+            <svg viewBox="0 0 16 16" class="w-4 h-4 fill-current" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+            Sign in with GitHub
+          </button>
+          <p class="text-xs text-gray-500">Mint a fresh token via OAuth (granted scopes: <code class="text-gray-400">read:user user:email repo</code>).</p>
+          <div class="flex items-center gap-2 my-2 text-xs text-gray-500">
+            <span class="flex-1 h-px bg-gray-700"></span>or paste a token<span class="flex-1 h-px bg-gray-700"></span>
+          </div>
+        </div>
         <form class="space-y-4" @submit.prevent="handleCreate">
           <div>
             <label class="block text-sm text-gray-400 mb-1">Display Name <span class="text-gray-600">(optional)</span></label>
@@ -228,11 +253,38 @@ const orgsStore = useOrgsStore()
 onMounted(async () => {
   await Promise.all([
     store.fetchIdentities(),
+    store.fetchOAuthConfig(),
     agentsStore.fetchAgents(),
     projectsStore.fetchProjects(),
     orgsStore.fetchOrgs(),
   ])
 })
+
+// --- OAuth callback handling ---
+const route = useRoute()
+const router = useRouter()
+const oauthStatus = computed(() => {
+  const v = route.query.oauth
+  return typeof v === 'string' ? v : null
+})
+const oauthReason = computed(() => {
+  const v = route.query.reason
+  return typeof v === 'string' ? v : null
+})
+
+watch(oauthStatus, async (s) => {
+  if (s === 'success' || s === 'refreshed') {
+    await store.fetchIdentities()
+  }
+  if (s) {
+    // Strip oauth=*/reason=* from the URL after we've consumed them so a refresh doesn't re-show the toast.
+    const cleaned = { ...route.query }
+    delete cleaned.oauth
+    delete cleaned.reason
+    delete cleaned.id
+    router.replace({ query: cleaned })
+  }
+}, { immediate: true })
 
 // --- Create ---
 const showCreate = ref(false)
