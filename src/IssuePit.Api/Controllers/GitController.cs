@@ -307,11 +307,18 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
                 TokenNotes: tokenNotes, Repos: []));
 
         // Run a `git ls-remote` against the configured remote with the same credentials that
-        // FetchAsync would use. This is the most direct equivalent of what the failing fetch does
+        // FetchAsync would use (including the same x-access-token username override for fine-grained
+        // PATs / GitHub App tokens). This is the most direct equivalent of what the failing fetch does
         // and answers "does git itself authenticate, with this token, against this URL?" — independent
         // of the GitHub REST API path below.
-        var (gitOk, gitRefCount, gitError) = await RunGitLsRemoteAsync(repo.RemoteUrl, effectiveUsername, effectiveToken, HttpContext.RequestAborted);
-        logger.LogInformation("Git ls-remote check for repo {RepoId} → ok={Ok}, refs={Refs}, err={Err}", repoId, gitOk, gitRefCount, gitError);
+        var gitUsername = Services.GitService.ResolveGitUsername(repo.RemoteUrl, effectiveUsername, effectiveToken);
+        if (!string.Equals(gitUsername, effectiveUsername, StringComparison.Ordinal) &&
+            !(string.IsNullOrEmpty(effectiveUsername) && gitUsername == "git"))
+        {
+            tokenNotes.Add($"Git protocol username override: configured username '{effectiveUsername ?? "(none)"}' is replaced with '{gitUsername}' for github.com because the token looks like a fine-grained PAT or GitHub App installation token (these require the literal 'x-access-token' username — using any other username returns HTTP 403).");
+        }
+        var (gitOk, gitRefCount, gitError) = await RunGitLsRemoteAsync(repo.RemoteUrl, gitUsername, effectiveToken, HttpContext.RequestAborted);
+        logger.LogInformation("Git ls-remote check for repo {RepoId} → ok={Ok}, refs={Refs}, err={Err}, gitUser={User}", repoId, gitOk, gitRefCount, gitError, gitUsername);
 
         if (!repo.RemoteUrl.Contains("github.com", StringComparison.OrdinalIgnoreCase))
             return Ok(new GitHubDebugResponse(TokenValid: false, Login: null,

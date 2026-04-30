@@ -23,12 +23,43 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
         return Path.Combine(_reposBasePath, repo.ProjectId.ToString());
     }
 
+    /// <summary>
+    /// Resolves the HTTP Basic <c>username</c> that should be paired with <paramref name="authToken"/>
+    /// when calling <paramref name="remoteUrl"/> over the git smart-HTTP protocol.
+    /// <para>
+    /// For github.com remotes, fine-grained PATs (<c>github_pat_…</c>) and GitHub App installation
+    /// tokens (<c>ghs_…</c>) <b>require</b> the username <c>x-access-token</c> — using any other
+    /// username (including the GitHub login configured on the identity) returns HTTP 403.
+    /// Classic PATs (<c>ghp_…</c>, <c>gho_…</c>) accept any username, so the configured one is kept.
+    /// </para>
+    /// <para>
+    /// This is the documented GitHub behaviour and is the most common reason that a token passes the
+    /// Bearer-auth REST API check (which ignores the username) yet fails the git fetch with 403.
+    /// </para>
+    /// </summary>
+    public static string ResolveGitUsername(string? remoteUrl, string? authUsername, string? authToken)
+    {
+        var fallback = string.IsNullOrEmpty(authUsername) ? "git" : authUsername;
+        if (string.IsNullOrEmpty(authToken)) return fallback;
+        if (string.IsNullOrEmpty(remoteUrl) ||
+            !remoteUrl.Contains("github.com", StringComparison.OrdinalIgnoreCase))
+            return fallback;
+
+        // github_pat_ → fine-grained PAT, ghs_ → GitHub App installation token.
+        // Both require the literal "x-access-token" username for the git smart-HTTP endpoint.
+        if (authToken.StartsWith("github_pat_", StringComparison.Ordinal) ||
+            authToken.StartsWith("ghs_", StringComparison.Ordinal))
+            return "x-access-token";
+
+        return fallback;
+    }
+
     private FetchOptions BuildFetchOptions(GitRepository repo)
     {
         var opts = new FetchOptions();
         if (!string.IsNullOrEmpty(repo.AuthToken))
         {
-            var user = string.IsNullOrEmpty(repo.AuthUsername) ? "git" : repo.AuthUsername;
+            var user = ResolveGitUsername(repo.RemoteUrl, repo.AuthUsername, repo.AuthToken);
             opts.CredentialsProvider = (_, _, _) =>
                 new UsernamePasswordCredentials { Username = user, Password = repo.AuthToken };
         }
@@ -45,7 +76,7 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
         var opts = new PushOptions();
         if (!string.IsNullOrEmpty(repo.AuthToken))
         {
-            var user = string.IsNullOrEmpty(repo.AuthUsername) ? "git" : repo.AuthUsername;
+            var user = ResolveGitUsername(repo.RemoteUrl, repo.AuthUsername, repo.AuthToken);
             opts.CredentialsProvider = (_, _, _) =>
                 new UsernamePasswordCredentials { Username = user, Password = repo.AuthToken };
         }
@@ -83,7 +114,7 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
         var opts = new CloneOptions { IsBare = false };
         if (!string.IsNullOrEmpty(repo.AuthToken))
         {
-            var user = string.IsNullOrEmpty(repo.AuthUsername) ? "git" : repo.AuthUsername;
+            var user = ResolveGitUsername(repo.RemoteUrl, repo.AuthUsername, repo.AuthToken);
             opts.FetchOptions.CredentialsProvider = (_, _, _) =>
                 new UsernamePasswordCredentials { Username = user, Password = repo.AuthToken };
         }
