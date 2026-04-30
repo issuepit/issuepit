@@ -41,6 +41,19 @@ public static class GitAuthHelper
     }
 
     /// <summary>
+    /// Like <see cref="ResolveGitUsername"/> but also reports whether the resolved username
+    /// differs from the natural default (configured username, or <c>"git"</c> when none is set).
+    /// Use to decide whether to surface a "GitHub overrode your username" diagnostic to the user.
+    /// </summary>
+    public static (string Username, bool Overridden) ResolveGitUsernameWithOverrideFlag(
+        string? remoteUrl, string? authUsername, string? authToken)
+    {
+        var resolved = ResolveGitUsername(remoteUrl, authUsername, authToken);
+        var natural = string.IsNullOrEmpty(authUsername) ? "git" : authUsername;
+        return (resolved, !string.Equals(resolved, natural, StringComparison.Ordinal));
+    }
+
+    /// <summary>
     /// Returns true iff <paramref name="remoteUrl"/> is an HTTPS or SSH URL whose host is
     /// <c>github.com</c> (or <c>www.github.com</c>). Avoids substring matches that would
     /// incorrectly classify URLs like <c>https://mygithub.company.com/…</c> as GitHub.

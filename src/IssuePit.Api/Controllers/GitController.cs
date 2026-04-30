@@ -311,13 +311,11 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         // PATs / GitHub App tokens). This is the most direct equivalent of what the failing fetch does
         // and answers "does git itself authenticate, with this token, against this URL?" — independent
         // of the GitHub REST API path below.
-        var gitUsername = GitAuthHelper.ResolveGitUsername(repo.RemoteUrl, effectiveUsername, effectiveToken);
-        // Only surface the note when ResolveGitUsername actually overrode the configured username
-        // (i.e. the token is a fine-grained PAT or App installation token on github.com).
-        var defaultUsername = string.IsNullOrEmpty(effectiveUsername) ? "git" : effectiveUsername;
-        if (!string.Equals(gitUsername, defaultUsername, StringComparison.Ordinal))
+        var (gitUsername, usernameOverridden) = GitAuthHelper.ResolveGitUsernameWithOverrideFlag(
+            repo.RemoteUrl, effectiveUsername, effectiveToken);
+        if (usernameOverridden)
         {
-            tokenNotes.Add($"Using username '{gitUsername}' for git operations (required by GitHub for fine-grained PATs and App installation tokens — your configured username '{defaultUsername}' is ignored on github.com for these token types).");
+            tokenNotes.Add($"Using username '{gitUsername}' for git operations (required by GitHub for fine-grained PATs and App installation tokens — your configured username '{(string.IsNullOrEmpty(effectiveUsername) ? "git" : effectiveUsername)}' is ignored on github.com for these token types).");
         }
         var (gitOk, gitRefCount, gitError) = await RunGitLsRemoteAsync(repo.RemoteUrl, gitUsername, effectiveToken, HttpContext.RequestAborted);
         logger.LogInformation("Git ls-remote check for repo {RepoId} → ok={Ok}, refs={Refs}, err={Err}, gitUser={User}", repoId, gitOk, gitRefCount, gitError, gitUsername);

@@ -333,11 +333,11 @@ public class GitHubIdentitiesController(
 
         var token = await ExchangeOAuthCodeForTokenAsync(code, clientId, clientSecret);
         if (string.IsNullOrEmpty(token))
-            return Redirect($"{frontendBase}{returnPath}{(returnPath.Contains('?') ? "&" : "?")}oauth=error&reason=token_exchange_failed");
+            return Redirect(BuildOAuthRedirect(frontendBase, returnPath, "oauth=error&reason=token_exchange_failed"));
 
         var githubUser = await GetGitHubUserAsync(token);
         if (githubUser is null)
-            return Redirect($"{frontendBase}{returnPath}{(returnPath.Contains('?') ? "&" : "?")}oauth=error&reason=profile_fetch_failed");
+            return Redirect(BuildOAuthRedirect(frontendBase, returnPath, "oauth=error&reason=profile_fetch_failed"));
 
         var protector = dpProvider.CreateProtector(ProtectorPurpose);
         var encryptedToken = protector.Protect(token);
@@ -355,7 +355,7 @@ public class GitHubIdentitiesController(
             existing.GitHubEmail = githubUser.Email;
             existing.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
-            return Redirect($"{frontendBase}{returnPath}{(returnPath.Contains('?') ? "&" : "?")}oauth=refreshed&id={existing.Id}");
+            return Redirect(BuildOAuthRedirect(frontendBase, returnPath, $"oauth=refreshed&id={existing.Id}"));
         }
 
         var identity = new GitHubIdentity
@@ -370,8 +370,12 @@ public class GitHubIdentitiesController(
         db.GitHubIdentities.Add(identity);
         await db.SaveChangesAsync();
 
-        return Redirect($"{frontendBase}{returnPath}{(returnPath.Contains('?') ? "&" : "?")}oauth=success&id={identity.Id}");
+        return Redirect(BuildOAuthRedirect(frontendBase, returnPath, $"oauth=success&id={identity.Id}"));
     }
+
+    /// <summary>Builds <c>{frontendBase}{returnPath}?{query}</c>, using <c>&amp;</c> if the path already has a query string.</summary>
+    private static string BuildOAuthRedirect(string frontendBase, string returnPath, string query)
+        => $"{frontendBase}{returnPath}{(returnPath.Contains('?') ? "&" : "?")}{query}";
 
     private async Task<string?> ExchangeOAuthCodeForTokenAsync(string code, string clientId, string clientSecret)
     {
