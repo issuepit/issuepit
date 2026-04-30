@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using IssuePit.Core.Entities;
+using IssuePit.Core.Services;
 using LibGit2Sharp;
 
 namespace IssuePit.Api.Services;
@@ -23,12 +24,21 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
         return Path.Combine(_reposBasePath, repo.ProjectId.ToString());
     }
 
+    /// <summary>
+    /// Resolves the HTTP Basic <c>username</c> that should be paired with <paramref name="authToken"/>
+    /// when calling <paramref name="remoteUrl"/> over the git smart-HTTP protocol.
+    /// Delegates to <see cref="GitAuthHelper.ResolveGitUsername"/> so the API and the
+    /// ExecutionClient apply the exact same rule.
+    /// </summary>
+    public static string ResolveGitUsername(string? remoteUrl, string? authUsername, string? authToken)
+        => GitAuthHelper.ResolveGitUsername(remoteUrl, authUsername, authToken);
+
     private FetchOptions BuildFetchOptions(GitRepository repo)
     {
         var opts = new FetchOptions();
         if (!string.IsNullOrEmpty(repo.AuthToken))
         {
-            var user = string.IsNullOrEmpty(repo.AuthUsername) ? "git" : repo.AuthUsername;
+            var user = ResolveGitUsername(repo.RemoteUrl, repo.AuthUsername, repo.AuthToken);
             opts.CredentialsProvider = (_, _, _) =>
                 new UsernamePasswordCredentials { Username = user, Password = repo.AuthToken };
         }
@@ -45,7 +55,7 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
         var opts = new PushOptions();
         if (!string.IsNullOrEmpty(repo.AuthToken))
         {
-            var user = string.IsNullOrEmpty(repo.AuthUsername) ? "git" : repo.AuthUsername;
+            var user = ResolveGitUsername(repo.RemoteUrl, repo.AuthUsername, repo.AuthToken);
             opts.CredentialsProvider = (_, _, _) =>
                 new UsernamePasswordCredentials { Username = user, Password = repo.AuthToken };
         }
@@ -83,7 +93,7 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
         var opts = new CloneOptions { IsBare = false };
         if (!string.IsNullOrEmpty(repo.AuthToken))
         {
-            var user = string.IsNullOrEmpty(repo.AuthUsername) ? "git" : repo.AuthUsername;
+            var user = ResolveGitUsername(repo.RemoteUrl, repo.AuthUsername, repo.AuthToken);
             opts.FetchOptions.CredentialsProvider = (_, _, _) =>
                 new UsernamePasswordCredentials { Username = user, Password = repo.AuthToken };
         }

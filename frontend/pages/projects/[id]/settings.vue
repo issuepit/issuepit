@@ -165,6 +165,17 @@
           </div>
           <p class="text-sm text-gray-500 mb-4">Link one or more Git remotes to this project</p>
 
+          <!-- OAuth callback toast (returned from /api/github-identities/oauth/callback) -->
+          <div v-if="oauthIdentityStatus === 'success'" class="bg-green-900/30 border border-green-700 text-green-300 text-sm rounded-lg px-3 py-2 mb-3">
+            ✓ GitHub identity added via OAuth — select it in the GitHub Identity dropdown when adding/editing an origin.
+          </div>
+          <div v-else-if="oauthIdentityStatus === 'refreshed'" class="bg-green-900/30 border border-green-700 text-green-300 text-sm rounded-lg px-3 py-2 mb-3">
+            ✓ GitHub identity refreshed via OAuth (existing identity for this GitHub user updated).
+          </div>
+          <div v-else-if="oauthIdentityStatus === 'error'" class="bg-red-900/30 border border-red-700 text-red-300 text-sm rounded-lg px-3 py-2 mb-3">
+            ✗ GitHub OAuth failed{{ oauthIdentityReason ? `: ${oauthIdentityReason}` : '' }}.
+          </div>
+
           <!-- Warning: no remote has a DefaultBranch configured -->
           <div v-if="!gitStore.loading && noRemoteHasDefaultBranch"
             class="bg-yellow-900/30 border border-yellow-700/50 rounded-lg px-3 py-2 text-sm text-yellow-300 mb-3">
@@ -284,6 +295,18 @@
                       <span v-if="repoDebugResults[r.id]!.specificRepoError"> — {{ repoDebugResults[r.id]!.specificRepoError }}</span>
                     </template>
                   </div>
+                  <!-- Git CLI (`git ls-remote`) check — equivalent to what fetch does -->
+                  <div v-if="repoDebugResults[r.id]!.gitProtocolAccessible !== undefined && repoDebugResults[r.id]!.gitProtocolAccessible !== null"
+                    :class="repoDebugResults[r.id]!.gitProtocolAccessible ? 'text-green-400' : 'text-red-400'">
+                    <template v-if="repoDebugResults[r.id]!.gitProtocolAccessible">
+                      ✓ <span class="font-mono">git ls-remote</span> succeeded ({{ repoDebugResults[r.id]!.gitProtocolRefCount ?? 0 }} branch ref(s)) — fetch should work with this token.
+                    </template>
+                    <template v-else>
+                      ✗ <span class="font-mono">git ls-remote</span> failed
+                      <span v-if="repoDebugResults[r.id]!.gitProtocolError">— <span class="font-mono whitespace-pre-wrap break-all">{{ repoDebugResults[r.id]!.gitProtocolError }}</span></span>
+                    </template>
+                  </div>
+                  <p v-else-if="repoDebugResults[r.id]!.gitProtocolError" class="text-yellow-400/80">ℹ git protocol check skipped — {{ repoDebugResults[r.id]!.gitProtocolError }}</p>
                   <ul class="max-h-36 overflow-y-auto space-y-0.5 pl-1">
                     <li v-for="gr in repoDebugResults[r.id]!.repos" :key="gr.fullName" class="text-gray-400 font-mono">
                       {{ gr.isPrivate ? '🔒' : '📦' }}
@@ -295,7 +318,19 @@
                   <p class="text-red-400">✗ {{ repoDebugResults[r.id]!.error || 'Token verification failed' }}</p>
                   <p v-if="repoDebugResults[r.id]!.tokenSource" class="text-gray-500">Token source: {{ repoDebugResults[r.id]!.tokenSource }}<template v-if="repoDebugResults[r.id]!.authUsername"> · git username: <span class="font-mono">{{ repoDebugResults[r.id]!.authUsername }}</span></template></p>
                   <!-- Token notes (config conflict hints) -->
-                  <p v-for="note in repoDebugResults[r.id]!.tokenNotes" :key="note" class="text-yellow-400/80">ℹ {{ note }}</p>
+                  <p v-for="(note, i) in repoDebugResults[r.id]!.tokenNotes" :key="i" class="text-yellow-400/80">ℹ {{ note }}</p>
+                  <!-- Git CLI (`git ls-remote`) check — equivalent to what fetch does -->
+                  <div v-if="repoDebugResults[r.id]!.gitProtocolAccessible !== undefined && repoDebugResults[r.id]!.gitProtocolAccessible !== null"
+                    :class="repoDebugResults[r.id]!.gitProtocolAccessible ? 'text-green-400' : 'text-red-400'">
+                    <template v-if="repoDebugResults[r.id]!.gitProtocolAccessible">
+                      ✓ <span class="font-mono">git ls-remote</span> succeeded ({{ repoDebugResults[r.id]!.gitProtocolRefCount ?? 0 }} branch ref(s)) — token works for the git protocol despite the API check failure.
+                    </template>
+                    <template v-else>
+                      ✗ <span class="font-mono">git ls-remote</span> failed
+                      <span v-if="repoDebugResults[r.id]!.gitProtocolError">— <span class="font-mono whitespace-pre-wrap break-all">{{ repoDebugResults[r.id]!.gitProtocolError }}</span></span>
+                    </template>
+                  </div>
+                  <p v-else-if="repoDebugResults[r.id]!.gitProtocolError" class="text-yellow-400/80">ℹ git protocol check skipped — {{ repoDebugResults[r.id]!.gitProtocolError }}</p>
                 </div>
               </div>
             </div>
@@ -342,6 +377,15 @@
                   </option>
                 </select>
                 <p class="text-xs text-gray-500 mt-1">Select a GitHub identity to use its PAT for authentication.</p>
+                <button
+                  v-if="identitiesStore.oauthEnabled"
+                  type="button"
+                  class="mt-2 inline-flex items-center gap-1.5 text-xs text-brand-400 hover:text-brand-300"
+                  title="Mint a new GitHub identity via OAuth and return to this page"
+                  @click="identitiesStore.startOAuth(`/projects/${id}/settings`)">
+                  <svg viewBox="0 0 16 16" class="w-3.5 h-3.5 fill-current" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+                  + Sign in with GitHub to add identity
+                </button>
               </div>
               <template v-if="!repoForm.gitHubIdentityId">
                 <div>
@@ -1239,6 +1283,7 @@ onMounted(async () => {
     fetchProjectMcpServers(),
     propsStore.fetchProperties(id),
     identitiesStore.fetchIdentities(),
+    identitiesStore.fetchOAuthConfig(),
   ])
 
   if (projectsStore.currentProject) {
@@ -1253,6 +1298,27 @@ onMounted(async () => {
     gitResolutionAgentId.value = projectsStore.currentProject.gitResolutionAgentId ?? null
   }
 })
+
+// ── GitHub OAuth identity callback ────────────────────────────
+// When the user returns from the GitHub OAuth flow started in the Add Origin modal,
+// the URL has ?oauth=success|refreshed|error. Refresh identities, surface a toast,
+// then strip the query so a refresh doesn't re-show it.
+const oauthIdentityStatus = ref<string | null>(null)
+const oauthIdentityReason = ref<string | null>(null)
+
+watch(() => route.query.oauth, async (v) => {
+  if (typeof v !== 'string') return
+  oauthIdentityStatus.value = v
+  oauthIdentityReason.value = typeof route.query.reason === 'string' ? route.query.reason : null
+  if (v === 'success' || v === 'refreshed') {
+    await identitiesStore.fetchIdentities()
+  }
+  const cleaned = { ...route.query }
+  delete cleaned.oauth
+  delete cleaned.reason
+  delete cleaned.id
+  await router.replace({ query: cleaned })
+}, { immediate: true })
 
 async function saveGeneral() {
   savingGeneral.value = true

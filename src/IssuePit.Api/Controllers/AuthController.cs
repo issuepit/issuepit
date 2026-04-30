@@ -96,7 +96,8 @@ public class AuthController(
 
         // Redirect to frontend (use state as returnUrl, default to /).
         var frontendBase = config["GitHub:OAuth:FrontendUrl"] ?? "http://localhost:3000";
-        var redirectTo = Uri.IsWellFormedUriString(state, UriKind.Relative) ? state : "/";
+        // Sanitise to prevent open-redirect attacks via protocol-relative paths in `state` (e.g. //evil.com).
+        var redirectTo = SafeRedirect.SanitisePath(state, "/");
         return Redirect($"{frontendBase}{redirectTo}");
     }
 
