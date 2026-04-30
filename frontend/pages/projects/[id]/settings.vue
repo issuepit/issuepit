@@ -271,6 +271,8 @@
                 <div v-if="repoDebugResults[r.id]!.tokenValid" class="text-xs space-y-1">
                   <p class="text-green-400">✓ Token valid · authenticated as <span class="font-mono">@{{ repoDebugResults[r.id]!.login }}</span> · {{ repoDebugResults[r.id]!.repos.length }} accessible repo(s)</p>
                   <p v-if="repoDebugResults[r.id]!.tokenSource" class="text-gray-500">Token source: {{ repoDebugResults[r.id]!.tokenSource }}<template v-if="repoDebugResults[r.id]!.authUsername"> · git username: <span class="font-mono">{{ repoDebugResults[r.id]!.authUsername }}</span></template></p>
+                  <!-- Token notes (config conflict hints) -->
+                  <p v-for="note in repoDebugResults[r.id]!.tokenNotes" :key="note" class="text-yellow-400/80">ℹ {{ note }}</p>
                   <!-- Specific repo access result -->
                   <div v-if="repoDebugResults[r.id]!.specificRepoPath" :class="repoDebugResults[r.id]!.specificRepoAccessible ? 'text-green-400' : 'text-red-400'">
                     <template v-if="repoDebugResults[r.id]!.specificRepoAccessible">
@@ -292,6 +294,8 @@
                 <div v-else class="text-xs space-y-0.5">
                   <p class="text-red-400">✗ {{ repoDebugResults[r.id]!.error || 'Token verification failed' }}</p>
                   <p v-if="repoDebugResults[r.id]!.tokenSource" class="text-gray-500">Token source: {{ repoDebugResults[r.id]!.tokenSource }}<template v-if="repoDebugResults[r.id]!.authUsername"> · git username: <span class="font-mono">{{ repoDebugResults[r.id]!.authUsername }}</span></template></p>
+                  <!-- Token notes (config conflict hints) -->
+                  <p v-for="note in repoDebugResults[r.id]!.tokenNotes" :key="note" class="text-yellow-400/80">ℹ {{ note }}</p>
                 </div>
               </div>
             </div>
