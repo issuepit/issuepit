@@ -10,6 +10,7 @@ using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
 using IssuePit.Core.Runners;
+using IssuePit.Core.Services;
 using IssuePit.ExecutionClient.Runtimes;
 using IssuePit.ExecutionClient.Services;
 using Microsoft.EntityFrameworkCore;
@@ -2549,7 +2550,7 @@ public class IssueWorker(
     {
         try
         {
-            var url = BuildAuthenticatedCloneUrl(remoteUrl, authUsername, authToken);
+            var url = GitAuthHelper.BuildAuthenticatedUrl(remoteUrl, authUsername, authToken);
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(GitRemoteCheckTimeoutSeconds));
 
@@ -2609,7 +2610,7 @@ public class IssueWorker(
         var tmpDir = Path.Combine(Path.GetTempPath(), $"issuepit-branchcount-{Guid.NewGuid():N}");
         try
         {
-            var url = BuildAuthenticatedCloneUrl(remoteUrl, authUsername, authToken);
+            var url = GitAuthHelper.BuildAuthenticatedUrl(remoteUrl, authUsername, authToken);
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             // Blobless clones can be slow for large repos; 120 s is a reasonable upper bound.
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(120));
@@ -2684,24 +2685,6 @@ public class IssueWorker(
         {
             try { Directory.Delete(tmpDir, recursive: true); } catch { /* best-effort cleanup */ }
         }
-    }
-
-    /// <summary>
-    /// Injects HTTP Basic credentials into a clone URL so <c>git ls-remote</c> can
-    /// authenticate without a credential helper. SSH URLs are returned unchanged.
-    /// </summary>
-    private static string BuildAuthenticatedCloneUrl(string remoteUrl, string? authUsername, string? authToken)
-    {
-        if (string.IsNullOrEmpty(authUsername) || string.IsNullOrEmpty(authToken))
-            return remoteUrl;
-        if (!remoteUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            return remoteUrl; // SSH URLs use key-based auth; credentials are not injected into the URL.
-        var builder = new UriBuilder(remoteUrl)
-        {
-            UserName = Uri.EscapeDataString(authUsername),
-            Password = Uri.EscapeDataString(authToken),
-        };
-        return builder.Uri.AbsoluteUri;
     }
 
     /// <summary>

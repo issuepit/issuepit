@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using IssuePit.Core.Entities;
+using IssuePit.Core.Services;
 using LibGit2Sharp;
 
 namespace IssuePit.Api.Services;
@@ -26,33 +27,11 @@ public class GitService(ILogger<GitService> logger, IConfiguration configuration
     /// <summary>
     /// Resolves the HTTP Basic <c>username</c> that should be paired with <paramref name="authToken"/>
     /// when calling <paramref name="remoteUrl"/> over the git smart-HTTP protocol.
-    /// <para>
-    /// For github.com remotes, fine-grained PATs (<c>github_pat_…</c>) and GitHub App installation
-    /// tokens (<c>ghs_…</c>) <b>require</b> the username <c>x-access-token</c> — using any other
-    /// username (including the GitHub login configured on the identity) returns HTTP 403.
-    /// Classic PATs (<c>ghp_…</c>, <c>gho_…</c>) accept any username, so the configured one is kept.
-    /// </para>
-    /// <para>
-    /// This is the documented GitHub behaviour and is the most common reason that a token passes the
-    /// Bearer-auth REST API check (which ignores the username) yet fails the git fetch with 403.
-    /// </para>
+    /// Delegates to <see cref="GitAuthHelper.ResolveGitUsername"/> so the API and the
+    /// ExecutionClient apply the exact same rule.
     /// </summary>
     public static string ResolveGitUsername(string? remoteUrl, string? authUsername, string? authToken)
-    {
-        var fallback = string.IsNullOrEmpty(authUsername) ? "git" : authUsername;
-        if (string.IsNullOrEmpty(authToken)) return fallback;
-        if (string.IsNullOrEmpty(remoteUrl) ||
-            !remoteUrl.Contains("github.com", StringComparison.OrdinalIgnoreCase))
-            return fallback;
-
-        // github_pat_ → fine-grained PAT, ghs_ → GitHub App installation token.
-        // Both require the literal "x-access-token" username for the git smart-HTTP endpoint.
-        if (authToken.StartsWith("github_pat_", StringComparison.Ordinal) ||
-            authToken.StartsWith("ghs_", StringComparison.Ordinal))
-            return "x-access-token";
-
-        return fallback;
-    }
+        => GitAuthHelper.ResolveGitUsername(remoteUrl, authUsername, authToken);
 
     private FetchOptions BuildFetchOptions(GitRepository repo)
     {

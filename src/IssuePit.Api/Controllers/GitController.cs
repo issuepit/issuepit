@@ -2,12 +2,12 @@ using IssuePit.Api.Services;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
+using IssuePit.Core.Services;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Diagnostics;
 using System.Net.Http.Headers;
-using System.Text;
 using System.Text.Json;
 
 namespace IssuePit.Api.Controllers;
@@ -311,11 +311,13 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         // PATs / GitHub App tokens). This is the most direct equivalent of what the failing fetch does
         // and answers "does git itself authenticate, with this token, against this URL?" — independent
         // of the GitHub REST API path below.
-        var gitUsername = Services.GitService.ResolveGitUsername(repo.RemoteUrl, effectiveUsername, effectiveToken);
-        if (!string.Equals(gitUsername, effectiveUsername, StringComparison.Ordinal) &&
-            !(string.IsNullOrEmpty(effectiveUsername) && gitUsername == "git"))
+        var gitUsername = GitAuthHelper.ResolveGitUsername(repo.RemoteUrl, effectiveUsername, effectiveToken);
+        // Only surface the note when ResolveGitUsername actually overrode the configured username
+        // (i.e. the token is a fine-grained PAT or App installation token on github.com).
+        var defaultUsername = string.IsNullOrEmpty(effectiveUsername) ? "git" : effectiveUsername;
+        if (!string.Equals(gitUsername, defaultUsername, StringComparison.Ordinal))
         {
-            tokenNotes.Add($"Git protocol username override: configured username '{effectiveUsername ?? "(none)"}' is replaced with '{gitUsername}' for github.com because the token looks like a fine-grained PAT or GitHub App installation token (these require the literal 'x-access-token' username — using any other username returns HTTP 403).");
+            tokenNotes.Add($"Using username '{gitUsername}' for git operations (required by GitHub for fine-grained PATs and App installation tokens — your configured username '{defaultUsername}' is ignored on github.com for these token types).");
         }
         var (gitOk, gitRefCount, gitError) = await RunGitLsRemoteAsync(repo.RemoteUrl, gitUsername, effectiveToken, HttpContext.RequestAborted);
         logger.LogInformation("Git ls-remote check for repo {RepoId} → ok={Ok}, refs={Refs}, err={Err}, gitUser={User}", repoId, gitOk, gitRefCount, gitError, gitUsername);
@@ -780,7 +782,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
     {
         try
         {
-            var url = BuildAuthenticatedUrl(remoteUrl, authUsername, authToken);
+            var url = GitAuthHelper.BuildAuthenticatedUrl(remoteUrl, authUsername, authToken);
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(15));
 
@@ -811,7 +813,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
             var stderr = await stderrTask;
 
             // Strip any embedded credentials from the error message before surfacing it to the UI.
-            stderr = RedactCredentials(stderr, authToken);
+            stderr = GitAuthHelper.RedactCredentials(stderr, authToken);
 
             if (process.ExitCode == 0)
             {
@@ -840,33 +842,6 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         {
             return (null, null, $"git ls-remote could not be executed: {ex.Message}");
         }
-    }
-
-    /// <summary>
-    /// Injects HTTP Basic credentials into an HTTPS URL so <c>git ls-remote</c> can authenticate
-    /// without a credential helper. Non-HTTPS URLs (SSH, git://) are returned unchanged.
-    /// </summary>
-    private static string BuildAuthenticatedUrl(string remoteUrl, string? authUsername, string? authToken)
-    {
-        if (string.IsNullOrEmpty(authToken)) return remoteUrl;
-        if (!remoteUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) return remoteUrl;
-        var user = string.IsNullOrEmpty(authUsername) ? "git" : authUsername;
-        var builder = new UriBuilder(remoteUrl)
-        {
-            UserName = Uri.EscapeDataString(user),
-            Password = Uri.EscapeDataString(authToken),
-        };
-        return builder.Uri.AbsoluteUri;
-    }
-
-    /// <summary>Removes occurrences of the secret token (and its URL-encoded form) from the output.</summary>
-    private static string RedactCredentials(string text, string? token)
-    {
-        if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(token)) return text;
-        var sb = new StringBuilder(text);
-        sb.Replace(token, "***");
-        sb.Replace(Uri.EscapeDataString(token), "***");
-        return sb.ToString();
     }
 }
 

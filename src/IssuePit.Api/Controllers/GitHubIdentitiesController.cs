@@ -292,9 +292,7 @@ public class GitHubIdentitiesController(
 
         // Encode returnUrl into the state parameter so we can redirect after success.
         // The "id:" prefix distinguishes this flow from the login OAuth handled by AuthController.
-        var safeReturn = string.IsNullOrEmpty(returnUrl) || !Uri.IsWellFormedUriString(returnUrl, UriKind.Relative)
-            ? "/config/github-identities"
-            : returnUrl;
+        var safeReturn = SanitiseReturnPath(returnUrl);
         var state = "id:" + safeReturn;
 
         // `repo` is required for git push/pull; `read:user` and `user:email` are required to
@@ -327,9 +325,11 @@ public class GitHubIdentitiesController(
             return StatusCode(503, "GitHub OAuth is not configured.");
 
         var frontendBase = config["GitHub:OAuth:FrontendUrl"] ?? "http://localhost:3000";
-        // Strip the "id:" prefix added in StartOAuth and validate.
+        // Strip the "id:" prefix added in StartOAuth and validate that the path is a same-origin
+        // path (must start with a single "/" — protocol-relative paths like "//evil.com" are rejected
+        // to prevent open-redirect to attacker-controlled domains).
         var rawReturn = state.StartsWith("id:", StringComparison.Ordinal) ? state[3..] : state;
-        var returnPath = Uri.IsWellFormedUriString(rawReturn, UriKind.Relative) ? rawReturn : "/config/github-identities";
+        var returnPath = SanitiseReturnPath(rawReturn);
 
         var token = await ExchangeOAuthCodeForTokenAsync(code, clientId, clientSecret);
         if (string.IsNullOrEmpty(token))
@@ -384,6 +384,9 @@ public class GitHubIdentitiesController(
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
         return json.TryGetProperty("access_token", out var tokenEl) ? tokenEl.GetString() : null;
     }
+
+    private const string DefaultReturnPath = "/config/github-identities";
+    private static string SanitiseReturnPath(string? candidate) => SafeRedirect.SanitisePath(candidate, DefaultReturnPath);
 
     // -------------------------------------------------------------------------
     // Private helpers

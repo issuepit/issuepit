@@ -44,6 +44,33 @@ public class GitServiceUsernameResolutionTests
             GitService.ResolveGitUsername("https://gitlab.example.com/o/r.git", "alice", "github_pat_xyz"));
     }
 
+    // Hostnames that merely contain "github.com" as a substring (e.g. enterprise mirrors named
+    // mygithub.company.com, or notgithub.com) must NOT be classified as github.com.
+    [Theory]
+    [InlineData("https://mygithub.company.com/o/r.git")]
+    [InlineData("https://notgithub.com/o/r.git")]
+    [InlineData("https://github.com.evil.example/o/r.git")]
+    public void GitHubLookalikeHosts_DoNotTriggerOverride(string url)
+    {
+        Assert.Equal("alice", GitService.ResolveGitUsername(url, "alice", "github_pat_xyz"));
+    }
+
+    // SSH-style remotes on github.com also get the override.
+    [Fact]
+    public void SshRemote_OnGitHub_FineGrainedPat_OverridesUsername()
+    {
+        Assert.Equal("x-access-token",
+            GitService.ResolveGitUsername("git@github.com:owner/repo.git", "alice", "github_pat_xyz"));
+    }
+
+    // www.github.com is also accepted as an alias.
+    [Fact]
+    public void WwwGitHubCom_AlsoTriggersOverride()
+    {
+        Assert.Equal("x-access-token",
+            GitService.ResolveGitUsername("https://www.github.com/o/r.git", "alice", "github_pat_xyz"));
+    }
+
     // No token → username defaults to "git" so libgit2 still has something to send for SSH-style URLs.
     [Fact]
     public void EmptyToken_ReturnsConfiguredUsernameOrGitDefault()
