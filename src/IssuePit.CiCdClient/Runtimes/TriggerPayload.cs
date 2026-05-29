@@ -58,6 +58,8 @@ public record TriggerPayload(
     /// The worker reads parsed test results from this directory after the run.
     /// </summary>
     string? ArtifactServerPath = null,
+    /// <summary>Optional list of workflow job IDs passed as <c>-j</c> arguments to <c>act</c>.</summary>
+    IReadOnlyList<string>? JobIds = null,
     /// <summary>Key-value input pairs passed as <c>--input</c> arguments to <c>act</c> (for workflow_dispatch events).</summary>
     IReadOnlyDictionary<string, string>? Inputs = null,
     /// <summary>Maximum number of concurrent jobs within a single act run (--concurrent-jobs). null means use the system default (4). 0 means unlimited.</summary>

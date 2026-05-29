@@ -181,6 +181,7 @@ export const useCiCdRunsStore = defineStore('cicdRuns', () => {
     eventName?: string
     branch?: string
     commitSha?: string
+    jobIds?: string[]
     skipSteps?: string
     overrideSkipSteps?: boolean
   }) {

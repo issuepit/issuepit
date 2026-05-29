@@ -126,7 +126,23 @@
             </button>
           </div>
           <div v-else-if="store.currentRun.status === CiCdRunStatus.Failed || store.currentRun.status === CiCdRunStatus.Cancelled || store.currentRun.status === CiCdRunStatus.SucceededWithWarnings || store.currentRun.status === CiCdRunStatus.Succeeded"
-            class="mt-4 pt-4 border-t border-gray-800 flex justify-end">
+            class="mt-4 pt-4 border-t border-gray-800 flex justify-end gap-2">
+            <button
+              v-if="uniqueFailedJobActIds.length"
+              :disabled="retrying"
+              class="flex items-center gap-1.5 text-sm text-orange-400 hover:text-orange-300 disabled:opacity-50 transition-colors"
+              title="Retry failed jobs only"
+              @click="retryFailedJobs()">
+              Retry Failed Jobs
+            </button>
+            <button
+              v-if="selectedFailedActJobId"
+              :disabled="retrying"
+              class="flex items-center gap-1.5 text-sm text-emerald-400 hover:text-emerald-300 disabled:opacity-50 transition-colors"
+              :title="`Retry selected failed job: ${selectedFailedActJobId}`"
+              @click="retrySelectedJob()">
+              Retry Selected Job
+            </button>
             <button
               :disabled="retrying"
               class="flex items-center gap-1.5 text-sm text-brand-400 hover:text-brand-300 disabled:opacity-50 transition-colors"
@@ -178,7 +194,7 @@
                 <button
                   :disabled="retrying"
                   class="px-4 py-1.5 text-sm bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white rounded-md transition-colors flex items-center gap-2"
-                  @click="retryConflict && retryRunWithOptions(retryConflict.activeRunIds)">
+                  @click="retryConflict && retryRunWithOptions(retryConflict.activeRunIds, { jobIds: retryConflict.jobIds })">
                   <svg v-if="retrying" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -489,6 +505,11 @@
 
         <!-- Jobs tab -->
         <template v-if="activeSection === 'jobs'">
+          <div
+            v-if="uniqueFailedJobActIds.length > 1"
+            class="mb-3 rounded-lg border border-yellow-700/60 bg-yellow-950/30 px-3 py-2 text-xs text-yellow-200">
+            Retrying failed jobs passes one <code class="text-yellow-100">-j</code> flag per failed workflow job to <code class="text-yellow-100">act</code>. Automatically rerunning newly unblocked downstream jobs is currently limited by act behavior.
+          </div>
           <!-- Graph not available — show as yellow warning box (always shown when graph fails, even if log-based jobs exist) -->
           <div v-if="store.currentRunGraphError" class="m-4 rounded-lg bg-yellow-900/40 border border-yellow-700/50 p-4 flex items-start gap-3">
             <svg class="w-5 h-5 text-yellow-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1291,7 +1312,7 @@ const retryOptions = reactive({
   skipSteps: '',
   overrideSkipSteps: false,
 })
-const retryConflict = ref<{ message: string; activeRunIds: string[] } | null>(null)
+const retryConflict = ref<{ message: string; activeRunIds: string[]; jobIds?: string[] } | null>(null)
 
 // True when the run succeeded (green run) — action is "Retrigger" rather than "Retry".
 const isRetrigger = computed(() =>
@@ -1446,6 +1467,12 @@ function clearTriggerFilters() {
 const selectedJob = ref<string | null>(null)
 /** When a specific matrix instance is selected (rawId from act), only show that instance's logs. */
 const selectedMatrixRawId = ref<string | null>(null)
+
+/** Converts graph IDs like "workflow/job" to act job keys ("job") for `act -j`. */
+function toActJobId(jobId: string): string {
+  const slash = jobId.lastIndexOf('/')
+  return slash >= 0 ? jobId.slice(slash + 1) : jobId
+}
 
 function deselectJob() {
   selectedJob.value = null
@@ -2039,6 +2066,21 @@ const blockedJobIds = computed<Set<string>>(() => {
   return blocked
 })
 
+const uniqueFailedJobActIds = computed<string[]>(() =>
+  [...new Set(
+    enrichedJobs.value
+      .filter(j => j.hasError && j.isComplete)
+      .map(j => toActJobId(j.id)),
+  )]
+)
+
+const selectedFailedActJobId = computed<string | null>(() => {
+  if (!selectedJob.value) return null
+  const job = visibleJobs.value.find(j => j.id === selectedJob.value)
+  if (!job || !job.hasError || !job.isComplete) return null
+  return toActJobId(job.id)
+})
+
 // ── SVG graph layout ───────────────────────────────────────────────────────────
 
 interface SvgEdge { path: string; highlighted: boolean; isFailure: boolean }
@@ -2593,6 +2635,16 @@ async function retryRun() {
   await retryRunWithOptions()
 }
 
+async function retrySelectedJob() {
+  if (!selectedFailedActJobId.value) return
+  await retryRunWithOptions(undefined, { jobIds: [selectedFailedActJobId.value] })
+}
+
+async function retryFailedJobs() {
+  if (!uniqueFailedJobActIds.value.length) return
+  await retryRunWithOptions(undefined, { jobIds: uniqueFailedJobActIds.value })
+}
+
 async function approveRunAction() {
   approving.value = true
   try {
@@ -2616,10 +2668,11 @@ function cancelRetry() {
   retryConflict.value = null
 }
 
-async function retryRunWithOptions(forceRetryWithActiveRunIds?: string[]) {
+async function retryRunWithOptions(forceRetryWithActiveRunIds?: string[], overrides?: { jobIds?: string[] }) {
   retrying.value = true
   retryConflict.value = null
   showRetryModal.value = false
+  const jobIds = overrides?.jobIds
   try {
     await store.retryRun(runId, {
       keepContainerOnFailure: retryOptions.keepContainerOnFailure,
@@ -2633,6 +2686,7 @@ async function retryRunWithOptions(forceRetryWithActiveRunIds?: string[]) {
       eventName: retryOptions.eventName.trim() || undefined,
       branch: retryOptions.branch.trim() || undefined,
       commitSha: retryOptions.commitSha.trim() || undefined,
+      jobIds,
       skipSteps: retryOptions.skipSteps.trim() || undefined,
       overrideSkipSteps: retryOptions.overrideSkipSteps,
     })
@@ -2645,6 +2699,7 @@ async function retryRunWithOptions(forceRetryWithActiveRunIds?: string[]) {
       retryConflict.value = {
         message: data.error ?? 'Another run is already in progress for this project.',
         activeRunIds: data.activeRunIds ?? [],
+        jobIds,
       }
       showRetryModal.value = true
     } else {
