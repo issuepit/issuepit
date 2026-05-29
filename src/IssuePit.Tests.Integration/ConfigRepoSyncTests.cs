@@ -83,6 +83,11 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
     private async Task<HttpResponseMessage> TriggerSyncAsync(Guid tenantId)
         => await _client.PostAsync($"/api/admin/tenants/{tenantId}/config-repo/sync", null);
 
+    private async Task AuthenticateAsAdminAsync()
+    {
+        await SeedAsync($"auth-org-{Guid.NewGuid():N}"[..20], $"auth-proj-{Guid.NewGuid():N}"[..20], "auth-admin");
+    }
+
     // -----------------------------------------------------------------------
     // Org config tests
     // -----------------------------------------------------------------------
@@ -454,7 +459,7 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
     [Fact]
     public async Task Sync_NoConfigRepoConfigured_ReturnsBadRequest()
     {
-        _ = await SeedAsync($"auth-org-{Guid.NewGuid():N}"[..20], $"auth-proj-{Guid.NewGuid():N}"[..20], "auth-admin");
+        await AuthenticateAsAdminAsync();
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
         var tenant = new Tenant { Id = Guid.NewGuid(), Name = "NoCfg", Hostname = $"nocfg-{Guid.NewGuid()}.test" };
@@ -468,7 +473,7 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
     [Fact]
     public async Task Sync_NonExistentTenant_ReturnsNotFound()
     {
-        _ = await SeedAsync($"auth2-org-{Guid.NewGuid():N}"[..20], $"auth2-proj-{Guid.NewGuid():N}"[..20], "auth-admin2");
+        await AuthenticateAsAdminAsync();
         var resp = await TriggerSyncAsync(Guid.NewGuid());
         Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
     }

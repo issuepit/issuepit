@@ -33,7 +33,7 @@ public class AuthorizationEndpointReflectionTests(ApiFactory factory) : IClassFi
                 failures.Add($"{endpoint.Method} /{endpoint.Path} -> {(int)response.StatusCode}");
         }
 
-        Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+        Assert.True(failures.Count == 0, $"Expected all admin endpoints to return 403.{Environment.NewLine}{string.Join(Environment.NewLine, failures)}");
     }
 
     [Fact]
@@ -61,7 +61,7 @@ public class AuthorizationEndpointReflectionTests(ApiFactory factory) : IClassFi
                 failures.Add($"{endpoint.Method} /{endpoint.Path} -> {(int)response.StatusCode}");
         }
 
-        Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+        Assert.True(failures.Count == 0, $"Expected all out-of-scope project endpoints to return 403.{Environment.NewLine}{string.Join(Environment.NewLine, failures)}");
     }
 
     [Fact]
@@ -89,7 +89,7 @@ public class AuthorizationEndpointReflectionTests(ApiFactory factory) : IClassFi
                 failures.Add($"{endpoint.Method} /{endpoint.Path} -> {(int)response.StatusCode}");
         }
 
-        Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+        Assert.True(failures.Count == 0, $"Expected all out-of-scope org endpoints to return 403.{Environment.NewLine}{string.Join(Environment.NewLine, failures)}");
     }
 
     private async Task<HttpClient> CreateTokenClientAsync(bool isAdmin = false, Guid? projectScopeId = null, Guid? orgScopeId = null)
