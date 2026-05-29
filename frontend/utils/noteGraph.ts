@@ -62,7 +62,7 @@ function getOrCreateExternalNode(
   const existing = nodeMap.get(id)
   if (existing) return existing
 
-  const title = linkText.trim() || kind
+  const title = linkText.trim() || `Unknown ${kind}`
   const node: NoteGraphVisualNode = {
     id,
     title,

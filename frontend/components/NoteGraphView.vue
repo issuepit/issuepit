@@ -4,7 +4,7 @@
       Loading graph...
     </div>
     <div v-else-if="!graphData || graphData.nodes.length === 0" class="absolute inset-0 flex items-center justify-center text-gray-500">
-      No notes to visualize. Create notes with [[wiki links]] to see note, issue, todo and project links.
+      No notes to visualize. Create notes with [[wiki links]] to visualize connections between notes, issues, todos, and projects.
     </div>
     <svg v-else ref="svgEl" class="w-full h-full" @mousedown="onMouseDown" @mousemove="onMouseMove" @mouseup="onMouseUp">
       <!-- Edges -->
@@ -122,6 +122,7 @@ function navigateToNote(id: string) {
     return
   }
 
+  // Backward-compat fallback for existing links without entity IDs.
   router.push(node.kind === 'todo' ? '/todos' : '/issues')
 }
 

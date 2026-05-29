@@ -328,7 +328,6 @@ public partial class NotesController(
             var linkText = match.Groups[1].Value.Trim();
             if (string.IsNullOrEmpty(linkText)) continue;
 
-            var isEntityLink = false;
             var link = new NoteLink
             {
                 Id = Guid.NewGuid(),
@@ -341,10 +340,8 @@ public partial class NotesController(
             {
                 link.TargetType = targetType;
                 link.TargetEntityId = targetEntityId;
-                isEntityLink = true;
             }
-
-            if (!isEntityLink)
+            else
             {
                 // Try to resolve to an existing note in the same notebook by slug
                 var targetSlug = GenerateSlug(linkText);
@@ -377,9 +374,10 @@ public partial class NotesController(
 
         if (targetType == NoteLinkType.Note) return false;
 
-        if (Guid.TryParse(parts[1], out var id))
-            targetEntityId = id;
+        if (!Guid.TryParse(parts[1], out var id))
+            return false;
 
+        targetEntityId = id;
         return true;
     }
 
