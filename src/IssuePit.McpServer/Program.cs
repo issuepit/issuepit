@@ -1,5 +1,6 @@
 using System.Text;
 using IssuePit.McpServer;
+using IssuePit.McpServer.Tools;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -50,6 +51,7 @@ builder.Services.AddTransient<McpTokenForwardingHandler>();
 
 // Per-request context populated by the auth middleware (IsReadOnly flag from token validation).
 builder.Services.AddScoped<McpRequestContext>();
+builder.Services.AddSingleton<McpIssueChangeReviewQueue>();
 
 builder.Services.AddHttpClient<IssuePitApiClient>(client =>
 {
