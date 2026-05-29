@@ -328,6 +328,7 @@ public partial class NotesController(
             var linkText = match.Groups[1].Value.Trim();
             if (string.IsNullOrEmpty(linkText)) continue;
 
+            var isEntityLink = false;
             var link = new NoteLink
             {
                 Id = Guid.NewGuid(),
@@ -336,16 +337,50 @@ public partial class NotesController(
                 LinkText = linkText,
             };
 
-            // Try to resolve to an existing note in the same notebook by slug
-            var targetSlug = GenerateSlug(linkText);
-            var targetNote = await db.Notes.FirstOrDefaultAsync(n =>
-                n.NotebookId == notebookId && n.Slug == targetSlug && n.Id != sourceNoteId);
-            if (targetNote is not null)
-                link.TargetNoteId = targetNote.Id;
+            if (TryParseEntityLink(linkText, out var targetType, out var targetEntityId))
+            {
+                link.TargetType = targetType;
+                link.TargetEntityId = targetEntityId;
+                isEntityLink = true;
+            }
+
+            if (!isEntityLink)
+            {
+                // Try to resolve to an existing note in the same notebook by slug
+                var targetSlug = GenerateSlug(linkText);
+                var targetNote = await db.Notes.FirstOrDefaultAsync(n =>
+                    n.NotebookId == notebookId && n.Slug == targetSlug && n.Id != sourceNoteId);
+                if (targetNote is not null)
+                    link.TargetNoteId = targetNote.Id;
+            }
 
             links.Add(link);
         }
         return links;
+    }
+
+    private static bool TryParseEntityLink(string linkText, out NoteLinkType targetType, out Guid? targetEntityId)
+    {
+        targetType = NoteLinkType.Note;
+        targetEntityId = null;
+
+        var parts = linkText.Split(':', 2, StringSplitOptions.TrimEntries);
+        if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[1])) return false;
+
+        targetType = parts[0].ToLowerInvariant() switch
+        {
+            "issue" => NoteLinkType.Issue,
+            "todo" => NoteLinkType.Todo,
+            "project" => NoteLinkType.Project,
+            _ => NoteLinkType.Note
+        };
+
+        if (targetType == NoteLinkType.Note) return false;
+
+        if (Guid.TryParse(parts[1], out var id))
+            targetEntityId = id;
+
+        return true;
     }
 
     [GeneratedRegex(@"\[\[([^\]]+)\]\]")]

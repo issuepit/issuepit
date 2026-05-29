@@ -4,7 +4,7 @@
       Loading graph...
     </div>
     <div v-else-if="!graphData || graphData.nodes.length === 0" class="absolute inset-0 flex items-center justify-center text-gray-500">
-      No notes to visualize. Create some notes with [[wiki links]] to see the graph.
+      No notes to visualize. Create notes with [[wiki links]] to see note, issue, todo and project links.
     </div>
     <svg v-else ref="svgEl" class="w-full h-full" @mousedown="onMouseDown" @mousemove="onMouseMove" @mouseup="onMouseUp">
       <!-- Edges -->
@@ -26,7 +26,8 @@
 </template>
 
 <script setup lang="ts">
-import type { NoteGraphNode, NoteGraphResponse } from '~/types'
+import type { NoteGraphResponse } from '~/types'
+import { buildNoteGraphVisualData, type NoteGraphVisualNode } from '~/utils/noteGraph'
 
 const props = defineProps<{
   notebookId?: string
@@ -40,7 +41,7 @@ const svgEl = ref<SVGElement | null>(null)
 const loading = ref(true)
 const graphData = ref<NoteGraphResponse | null>(null)
 
-interface PositionedNode extends NoteGraphNode {
+interface PositionedNode extends NoteGraphVisualNode {
   x: number
   y: number
 }
@@ -56,7 +57,8 @@ const positionedNodes = ref<PositionedNode[]>([])
 const positionedEdges = ref<PositionedEdge[]>([])
 
 function layoutGraph(data: NoteGraphResponse) {
-  if (!data.nodes.length) return
+  const visual = buildNoteGraphVisualData(data)
+  if (!visual.nodes.length) return
 
   const width = graphContainer.value?.clientWidth ?? 800
   const height = graphContainer.value?.clientHeight ?? 600
@@ -65,8 +67,8 @@ function layoutGraph(data: NoteGraphResponse) {
   const radius = Math.min(width, height) * 0.35
 
   // Simple circular layout
-  const nodes: PositionedNode[] = data.nodes.map((node, i) => {
-    const angle = (2 * Math.PI * i) / data.nodes.length - Math.PI / 2
+  const nodes: PositionedNode[] = visual.nodes.map((node, i) => {
+    const angle = (2 * Math.PI * i) / visual.nodes.length - Math.PI / 2
     return {
       ...node,
       x: centerX + radius * Math.cos(angle),
@@ -77,9 +79,9 @@ function layoutGraph(data: NoteGraphResponse) {
   const nodeMap = new Map(nodes.map(n => [n.id, n]))
   const edges: PositionedEdge[] = []
 
-  for (const edge of data.edges) {
-    const source = nodeMap.get(edge.sourceNoteId)
-    const target = edge.targetNoteId ? nodeMap.get(edge.targetNoteId) : null
+  for (const edge of visual.edges) {
+    const source = nodeMap.get(edge.sourceId)
+    const target = nodeMap.get(edge.targetId)
     if (source && target) {
       edges.push({ x1: source.x, y1: source.y, x2: target.x, y2: target.y })
     }
@@ -89,11 +91,17 @@ function layoutGraph(data: NoteGraphResponse) {
   positionedEdges.value = edges
 }
 
-function nodeColor(node: NoteGraphNode) {
-  // Generate a deterministic color from the notebook ID
-  const hash = node.notebookId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
-  const hue = hash % 360
-  return `hsl(${hue}, 60%, 30%)`
+function nodeColor(node: NoteGraphVisualNode) {
+  switch (node.kind) {
+    case 'issue': return '#7f1d1d'
+    case 'todo': return '#1e3a8a'
+    case 'project': return '#4c1d95'
+    default: {
+      const hash = (node.notebookId ?? '').split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
+      const hue = hash % 360
+      return `hsl(${hue}, 60%, 30%)`
+    }
+  }
 }
 
 function truncate(text: string, maxLen: number) {
@@ -101,7 +109,20 @@ function truncate(text: string, maxLen: number) {
 }
 
 function navigateToNote(id: string) {
-  router.push(`/notes/${id}`)
+  const node = positionedNodes.value.find(n => n.id === id)
+  if (!node) return
+
+  if (node.kind === 'note' && node.noteId) {
+    router.push(`/notes/${node.noteId}`)
+    return
+  }
+
+  if (node.kind === 'project') {
+    router.push(node.targetEntityId ? `/projects/${node.targetEntityId}` : '/projects')
+    return
+  }
+
+  router.push(node.kind === 'todo' ? '/todos' : '/issues')
 }
 
 // Basic pan support
