@@ -1469,6 +1469,7 @@ const selectedJob = ref<string | null>(null)
 const selectedMatrixRawId = ref<string | null>(null)
 const retryRunOverrides = ref<{ jobIds?: string[] } | null>(null)
 
+/** Converts graph IDs like "workflow/job" to act job keys ("job") for `act -j`. */
 function toActJobId(jobId: string): string {
   const slash = jobId.lastIndexOf('/')
   return slash >= 0 ? jobId.slice(slash + 1) : jobId
@@ -2067,11 +2068,11 @@ const blockedJobIds = computed<Set<string>>(() => {
 })
 
 const failedJobActIds = computed<string[]>(() =>
-  Array.from(new Set(
+  [...new Set(
     enrichedJobs.value
       .filter(j => j.hasError && j.isComplete)
       .map(j => toActJobId(j.id)),
-  ))
+  )]
 )
 
 const selectedFailedActJobId = computed<string | null>(() => {
