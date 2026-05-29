@@ -35,7 +35,6 @@ public class McpIssueReviewQueueToolsTests
     [Fact]
     public async Task ApproveIssueChange_AllowsPartialFieldApproval()
     {
-        string? putBody = null;
         var issueId = Guid.NewGuid();
         var handler = new RecordingHandler(req =>
         {
@@ -44,7 +43,6 @@ public class McpIssueReviewQueueToolsTests
 
             if (req.Method == HttpMethod.Put && req.RequestUri?.AbsolutePath == $"/api/issues/{issueId}")
             {
-                putBody = req.Content is null ? null : req.Content.ReadAsStringAsync().GetAwaiter().GetResult();
                 return Json(new { id = issueId, title = "Approved title" });
             }
 
@@ -57,6 +55,8 @@ public class McpIssueReviewQueueToolsTests
 
         await tools.ApproveIssueChange(queued.Id, applyTitle: true, applyBody: false, applyStatus: false, applyPriority: false, applyType: false);
 
+        var putCall = Assert.Single(handler.Calls, c => c.Method == HttpMethod.Put);
+        var putBody = putCall.Body;
         Assert.NotNull(putBody);
         var body = JsonDocument.Parse(putBody!).RootElement;
         Assert.True(body.TryGetProperty("title", out _));
@@ -105,11 +105,16 @@ public class McpIssueReviewQueueToolsTests
     private sealed class RecordingHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) : HttpMessageHandler
     {
         public List<HttpRequestMessage> Requests { get; } = [];
+        public List<RecordedCall> Calls { get; } = [];
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Requests.Add(request);
-            return Task.FromResult(responder(request));
+            var body = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
+            Calls.Add(new RecordedCall(request.Method, request.RequestUri?.AbsolutePath ?? string.Empty, body));
+            return responder(request);
         }
     }
+
+    private sealed record RecordedCall(HttpMethod Method, string Path, string? Body);
 }

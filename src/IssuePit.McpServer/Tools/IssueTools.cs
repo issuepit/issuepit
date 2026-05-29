@@ -103,22 +103,15 @@ public class IssueTools(IssuePitApiClient api, IOptions<McpServerOptions> option
     }
 
     [McpServerTool, Description("List pending issue changes queued from MCP that require human approval.")]
-    public Task<string> ListIssueChangeQueue(CancellationToken ct = default)
-    {
-        _ = ct;
-        return Task.FromResult(Serialize(reviewQueue.List()));
-    }
+    public Task<string> ListIssueChangeQueue() =>
+        Task.FromResult(Serialize(reviewQueue.List()));
 
     [McpServerTool, Description("Reject and remove a queued issue change without applying it.")]
     public Task<string> RejectIssueChange(
-        [Description("The review/change ID (GUID).")] Guid reviewId,
-        CancellationToken ct = default)
-    {
-        _ = ct;
-        return Task.FromResult(reviewQueue.TryRemove(reviewId, out _)
+        [Description("The review/change ID (GUID).")] Guid reviewId) =>
+        Task.FromResult(reviewQueue.TryRemove(reviewId, out _)
             ? "Issue change rejected."
             : "Issue change not found.");
-    }
 
     [McpServerTool, Description("Approve and apply a queued issue change. For UpdateIssue, you can approve only selected fields.")]
     public async Task<string> ApproveIssueChange(
@@ -173,16 +166,16 @@ public class IssueTools(IssuePitApiClient api, IOptions<McpServerOptions> option
         bool applyPriority,
         bool applyType)
     {
-        var values = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, System.Text.Json.JsonElement>>(
-            System.Text.Json.JsonSerializer.Serialize(payload))
-            ?? [];
+        var values = System.Text.Json.JsonSerializer.SerializeToElement(payload);
+        if (values.ValueKind != System.Text.Json.JsonValueKind.Object)
+            return new Dictionary<string, object?>();
 
         var result = new Dictionary<string, object?>();
-        if (applyTitle && values.TryGetValue("title", out var title)) result["title"] = title.GetString();
-        if (applyBody && values.TryGetValue("body", out var body)) result["body"] = body.ValueKind == System.Text.Json.JsonValueKind.Null ? null : body.GetString();
-        if (applyStatus && values.TryGetValue("status", out var status)) result["status"] = status.GetString();
-        if (applyPriority && values.TryGetValue("priority", out var priority)) result["priority"] = priority.GetString();
-        if (applyType && values.TryGetValue("type", out var type)) result["type"] = type.GetString();
+        if (applyTitle && values.TryGetProperty("title", out var title)) result["title"] = title.GetString();
+        if (applyBody && values.TryGetProperty("body", out var body)) result["body"] = body.ValueKind == System.Text.Json.JsonValueKind.Null ? null : body.GetString();
+        if (applyStatus && values.TryGetProperty("status", out var status)) result["status"] = status.GetString();
+        if (applyPriority && values.TryGetProperty("priority", out var priority)) result["priority"] = priority.GetString();
+        if (applyType && values.TryGetProperty("type", out var type)) result["type"] = type.GetString();
         return result;
     }
 
