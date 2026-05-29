@@ -103,7 +103,8 @@ public sealed class AspireFixture : IAsyncLifetime
 
         App = await appHost.BuildAsync();
 
-        Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Starting Aspire AppHost (postgres, kafka, redis, api, frontend)...");
+        var dbProvider = Environment.GetEnvironmentVariable("ISSUEPIT_DB_PROVIDER") ?? "postgres";
+        Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Starting Aspire AppHost ({dbProvider}, kafka, redis, api, frontend)...");
 
         // Log every resource state change so we can see which container is blocking or stuck.
         // Also acts as a heartbeat to prevent --blame-hang-timeout from firing during startup.

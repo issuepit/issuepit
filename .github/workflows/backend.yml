@@ -185,6 +185,7 @@ jobs:
               filter: 'Category=E2E',
               artifact: 'e2e',
               needs_infra: true,
+              db_provider: 'postgres',
               skip_build: true,
               extra_args: '--blame-hang-timeout 4min',
               upload_coverage: false,
@@ -195,6 +196,7 @@ jobs:
               filter: 'Category=CiCd',
               artifact: 'e2e-cicd',
               needs_infra: true,
+              db_provider: 'postgres',
               skip_build: true,
               extra_args: '--blame-hang-timeout 4min',
               upload_coverage: false,
@@ -205,6 +207,7 @@ jobs:
               filter: 'Category=Smoke',
               artifact: 'e2e-smoke',
               needs_infra: true,
+              db_provider: 'postgres',
               skip_build: true,
               extra_args: '--blame-hang-timeout 4min',
               upload_coverage: false,
@@ -215,6 +218,7 @@ jobs:
               filter: 'Category=Voice|Category=PoC',
               artifact: 'e2e-voice-poc',
               needs_infra: true,
+              db_provider: 'postgres',
               skip_build: true,
               extra_args: '--blame-hang-timeout 4min',
               upload_coverage: false,
@@ -225,6 +229,7 @@ jobs:
               filter: 'Category=Agent',
               artifact: 'e2e-agent',
               needs_infra: true,
+              db_provider: 'postgres',
               skip_build: true,
               extra_args: '--blame-hang-timeout 4min',
               upload_coverage: false,
@@ -243,6 +248,7 @@ jobs:
                   filter: infra_parallel.map(e => e.filter).join('|'),
                   artifact: 'e2e-all',
                   needs_infra: true,
+                  db_provider: 'postgres',
                   skip_build: true,
                   extra_args: '--blame-hang-timeout 4min',
                   upload_coverage: false,
@@ -250,7 +256,17 @@ jobs:
               ]
             : infra_parallel;
 
-          const matrix = { suite: [...non_infra, ...infra] };
+          const infraWithDbProviders = infra.flatMap((suite) => [
+            suite,
+            {
+              ...suite,
+              name: `${suite.name} (CockroachDB)`,
+              artifact: `${suite.artifact}-cockroachdb`,
+              db_provider: 'cockroachdb',
+            },
+          ]);
+
+          const matrix = { suite: [...non_infra, ...infraWithDbProviders] };
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `matrix=${JSON.stringify(matrix)}\n`);
           JSEOF
 
@@ -287,6 +303,8 @@ jobs:
 
       - name: Run ${{ matrix.suite.name }}
         uses: ./.github/actions/run-dotnet-tests
+        env:
+          ISSUEPIT_DB_PROVIDER: ${{ matrix.suite.db_provider || 'postgres' }}
         with:
           project: ${{ matrix.suite.project }}
           filter: ${{ matrix.suite.filter }}
