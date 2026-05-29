@@ -466,7 +466,6 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
         {
             foreach (var jobId in trigger.JobIds)
             {
-                if (string.IsNullOrWhiteSpace(jobId)) continue;
                 list.Add("-j");
                 list.Add(jobId);
             }

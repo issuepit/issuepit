@@ -194,7 +194,7 @@
                 <button
                   :disabled="retrying"
                   class="px-4 py-1.5 text-sm bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white rounded-md transition-colors flex items-center gap-2"
-                  @click="retryConflict && retryRunWithOptions(retryConflict.activeRunIds)">
+                  @click="retryConflict && retryRunWithOptions(retryConflict.activeRunIds, { jobIds: retryConflict.jobIds })">
                   <svg v-if="retrying" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -508,7 +508,7 @@
           <div
             v-if="uniqueFailedJobActIds.length > 1"
             class="mb-3 rounded-lg border border-yellow-700/60 bg-yellow-950/30 px-3 py-2 text-xs text-yellow-200">
-            Retrying failed jobs passes one <code class="text-yellow-100">-j</code> flag per failed workflow job to <code class="text-yellow-100">act</code>. Automatically rerunning newly unblocked downstream jobs is still limited by act behavior.
+            Retrying failed jobs passes one <code class="text-yellow-100">-j</code> flag per failed workflow job to <code class="text-yellow-100">act</code>. Automatically rerunning newly unblocked downstream jobs is currently limited by act behavior.
           </div>
           <!-- Graph not available — show as yellow warning box (always shown when graph fails, even if log-based jobs exist) -->
           <div v-if="store.currentRunGraphError" class="m-4 rounded-lg bg-yellow-900/40 border border-yellow-700/50 p-4 flex items-start gap-3">
@@ -1312,7 +1312,7 @@ const retryOptions = reactive({
   skipSteps: '',
   overrideSkipSteps: false,
 })
-const retryConflict = ref<{ message: string; activeRunIds: string[] } | null>(null)
+const retryConflict = ref<{ message: string; activeRunIds: string[]; jobIds?: string[] } | null>(null)
 
 // True when the run succeeded (green run) — action is "Retrigger" rather than "Retry".
 const isRetrigger = computed(() =>
@@ -1467,7 +1467,6 @@ function clearTriggerFilters() {
 const selectedJob = ref<string | null>(null)
 /** When a specific matrix instance is selected (rawId from act), only show that instance's logs. */
 const selectedMatrixRawId = ref<string | null>(null)
-const retryRunOverrides = ref<{ jobIds?: string[] } | null>(null)
 
 /** Converts graph IDs like "workflow/job" to act job keys ("job") for `act -j`. */
 function toActJobId(jobId: string): string {
@@ -2633,20 +2632,17 @@ onUnmounted(() => {
 })
 
 async function retryRun() {
-  retryRunOverrides.value = null
   await retryRunWithOptions()
 }
 
 async function retrySelectedJob() {
   if (!selectedFailedActJobId.value) return
-  retryRunOverrides.value = { jobIds: [selectedFailedActJobId.value] }
-  await retryRunWithOptions()
+  await retryRunWithOptions(undefined, { jobIds: [selectedFailedActJobId.value] })
 }
 
 async function retryFailedJobs() {
   if (!uniqueFailedJobActIds.value.length) return
-  retryRunOverrides.value = { jobIds: uniqueFailedJobActIds.value }
-  await retryRunWithOptions()
+  await retryRunWithOptions(undefined, { jobIds: uniqueFailedJobActIds.value })
 }
 
 async function approveRunAction() {
@@ -2659,7 +2655,6 @@ async function approveRunAction() {
 }
 
 function openRetryModal() {
-  retryRunOverrides.value = null
   retryOptions.eventName = store.currentRun?.eventName ?? 'push'
   retryOptions.branch = store.currentRun?.branch ?? ''
   retryOptions.commitSha = store.currentRun?.commitSha ?? ''
@@ -2671,13 +2666,13 @@ function openRetryModal() {
 function cancelRetry() {
   showRetryModal.value = false
   retryConflict.value = null
-  retryRunOverrides.value = null
 }
 
-async function retryRunWithOptions(forceRetryWithActiveRunIds?: string[]) {
+async function retryRunWithOptions(forceRetryWithActiveRunIds?: string[], overrides?: { jobIds?: string[] }) {
   retrying.value = true
   retryConflict.value = null
   showRetryModal.value = false
+  const jobIds = overrides?.jobIds
   try {
     await store.retryRun(runId, {
       keepContainerOnFailure: retryOptions.keepContainerOnFailure,
@@ -2691,11 +2686,10 @@ async function retryRunWithOptions(forceRetryWithActiveRunIds?: string[]) {
       eventName: retryOptions.eventName.trim() || undefined,
       branch: retryOptions.branch.trim() || undefined,
       commitSha: retryOptions.commitSha.trim() || undefined,
-      jobIds: retryRunOverrides.value?.jobIds,
+      jobIds,
       skipSteps: retryOptions.skipSteps.trim() || undefined,
       overrideSkipSteps: retryOptions.overrideSkipSteps,
     })
-    retryRunOverrides.value = null
     navigateTo(`/projects/${projectId}/runs`)
   } catch (e: unknown) {
     // Handle 409 "already running" conflict — surface it in the options modal
@@ -2705,6 +2699,7 @@ async function retryRunWithOptions(forceRetryWithActiveRunIds?: string[]) {
       retryConflict.value = {
         message: data.error ?? 'Another run is already in progress for this project.',
         activeRunIds: data.activeRunIds ?? [],
+        jobIds,
       }
       showRetryModal.value = true
     } else {
