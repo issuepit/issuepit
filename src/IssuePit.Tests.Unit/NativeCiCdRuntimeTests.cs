@@ -10,12 +10,14 @@ public class NativeCiCdRuntimeTests
         string? workflow = null,
         string? actEnv = null,
         string? actVars = null,
-        string? actSecrets = null) =>
+        string? actSecrets = null,
+        IReadOnlyList<string>? jobIds = null) =>
         new(
             ProjectId: Guid.NewGuid(),
             CommitSha: null,
             Branch: null,
             Workflow: workflow,
+            JobIds: jobIds,
             AgentSessionId: null,
             WorkspacePath: null,
             EventName: eventName,
@@ -53,6 +55,17 @@ public class NativeCiCdRuntimeTests
         Assert.Contains("-W", args);
         var idx = args.ToList().IndexOf("-W");
         Assert.Equal(Path.Combine(".github", "workflows", "ci.yml"), args[idx + 1]);
+    }
+
+    [Fact]
+    public void BuildActArgumentsList_WithJobIds_EmitsJFlags()
+    {
+        var args = NativeCiCdRuntime.BuildActArgumentsList(Trigger(jobIds: ["build", "test"])).ToList();
+        var idx = args.IndexOf("-j");
+        Assert.True(idx >= 0);
+        Assert.Equal("build", args[idx + 1]);
+        Assert.Equal("-j", args[idx + 2]);
+        Assert.Equal("test", args[idx + 3]);
     }
 
     [Fact]

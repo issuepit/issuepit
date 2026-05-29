@@ -7,6 +7,7 @@ using IssuePit.Core.Enums;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using System.Text.RegularExpressions;
 
 namespace IssuePit.Api.Controllers;
 
@@ -21,6 +22,8 @@ public class CiCdRunsController(
     ImageStorageService imageStorage,
     GitService gitService) : ControllerBase
 {
+    private static readonly Regex ActJobIdRegex = new("^[A-Za-z0-9_.-]+$", RegexOptions.Compiled);
+
     [HttpGet]
     public async Task<IActionResult> GetRuns([FromQuery] Guid? projectId)
     {
@@ -743,6 +746,15 @@ public class CiCdRunsController(
                     CanForce: true));
         }
 
+        var retryJobIds = (options?.JobIds ?? [])
+            .Where(j => !string.IsNullOrWhiteSpace(j))
+            .Select(j => j.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (retryJobIds.Any(j => !ActJobIdRegex.IsMatch(j)))
+            return BadRequest(new { error = "jobIds can only contain letters, numbers, dot, underscore, and dash." });
+
         // Re-resolve the remote URL so the container can clone the latest state of the repo.
         var retryRepo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == run.ProjectId);
 
@@ -790,6 +802,7 @@ public class CiCdRunsController(
                 customArgs = options?.CustomArgs,
                 actRunnerImage = options?.ActRunnerImage,
                 skipSteps = retrySkipSteps,
+                jobIds = retryJobIds.Count > 0 ? retryJobIds : null,
             },
             userTriggered: true);
 
@@ -992,6 +1005,11 @@ public record RetryRunOptions(
     string? Branch = null,
     /// <summary>Override the commit SHA to run against. Null or empty = use the original run's commit SHA (or the branch tip when Branch is overridden).</summary>
     string? CommitSha = null,
+    /// <summary>
+    /// Optional workflow job IDs to rerun (passed as <c>-j</c> flags to <c>act</c>).
+    /// IDs must match the workflow YAML job keys.
+    /// </summary>
+    IReadOnlyList<string>? JobIds = null,
     /// <summary>
     /// Override the skip-step configuration for this retry. Newline-separated step names or <c>job:step</c> pairs.
     /// When null the original run's skip steps are inherited. Pass an empty string to explicitly clear skip steps.

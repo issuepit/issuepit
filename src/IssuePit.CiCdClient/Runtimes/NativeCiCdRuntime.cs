@@ -462,6 +462,16 @@ public class NativeCiCdRuntime(ILogger<NativeCiCdRuntime> logger, IConfiguration
             list.Add(workflow);
         }
 
+        if (trigger.JobIds is { Count: > 0 })
+        {
+            foreach (var jobId in trigger.JobIds)
+            {
+                if (string.IsNullOrWhiteSpace(jobId)) continue;
+                list.Add("-j");
+                list.Add(jobId);
+            }
+        }
+
         foreach (var pair in ParseKeyValuePairs(trigger.ActEnv))
         {
             list.Add("--env");

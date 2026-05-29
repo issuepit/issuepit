@@ -176,6 +176,70 @@ public class CiCdEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task Retry_FailedRun_WithJobIds_Returns_Accepted()
+    {
+        var (tenantId, _, projectId) = await SeedProjectAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var syncResponse = await _client.PostAsJsonAsync("/api/cicd-runs/external-sync", new
+        {
+            projectId,
+            externalSource = "github",
+            externalRunId = $"retry-job-test-{Guid.NewGuid()}",
+            commitSha = "abc123",
+            branch = "main",
+            workflow = "ci.yml",
+            status = "completed",
+            conclusion = "failure",
+        });
+        Assert.Equal(HttpStatusCode.OK, syncResponse.StatusCode);
+        var syncBody = await syncResponse.Content.ReadFromJsonAsync<SyncResult>();
+        Assert.NotNull(syncBody);
+
+        var retryResponse = await _client.PostAsJsonAsync($"/api/cicd-runs/{syncBody.id}/retry", new
+        {
+            jobIds = new[] { "build", "test" },
+        });
+        Assert.Equal(HttpStatusCode.Accepted, retryResponse.StatusCode);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
+    public async Task Retry_FailedRun_WithInvalidJobId_Returns_BadRequest()
+    {
+        var (tenantId, _, projectId) = await SeedProjectAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+        _client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var syncResponse = await _client.PostAsJsonAsync("/api/cicd-runs/external-sync", new
+        {
+            projectId,
+            externalSource = "github",
+            externalRunId = $"retry-job-invalid-{Guid.NewGuid()}",
+            commitSha = "abc123",
+            branch = "main",
+            workflow = "ci.yml",
+            status = "completed",
+            conclusion = "failure",
+        });
+        Assert.Equal(HttpStatusCode.OK, syncResponse.StatusCode);
+        var syncBody = await syncResponse.Content.ReadFromJsonAsync<SyncResult>();
+        Assert.NotNull(syncBody);
+
+        var retryResponse = await _client.PostAsJsonAsync($"/api/cicd-runs/{syncBody.id}/retry", new
+        {
+            jobIds = new[] { "build; rm -rf /" },
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, retryResponse.StatusCode);
+
+        _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
+    }
+
+    [Fact]
     public async Task Retry_RunningRun_Returns_Conflict()
     {
         var (tenantId, _, projectId) = await SeedProjectAsync();

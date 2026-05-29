@@ -54,6 +54,13 @@ Navigate to **Project → Runs** (or the global **Runs** page in the sidebar) to
 
 > **Tip:** Use the **Slim mode** toggle (top-right of the run page) to collapse the job graph and focus on the log output.
 
+When a run fails, the run detail page also supports:
+
+- **Retry Selected Job** — reruns only the currently selected failed workflow job (`act -j <job>`).
+- **Retry Failed Jobs** — passes one `-j` flag per failed job.
+
+> **Current act limitation:** automatically rerunning newly-unblocked downstream jobs (GitHub's “failed jobs + dependent follow-up jobs” behavior) depends on act runtime behavior and is not guaranteed yet.
+
 ---
 
 ## Concurrent Job Limits
