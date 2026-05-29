@@ -22,7 +22,7 @@ public class CiCdRunsController(
     ImageStorageService imageStorage,
     GitService gitService) : ControllerBase
 {
-    private static readonly Regex ActJobIdRegex = new("^[A-Za-z0-9_.-]+$", RegexOptions.Compiled);
+    private static readonly Regex ActJobIdRegex = new("^[A-Za-z0-9_-]+$", RegexOptions.Compiled);
 
     [HttpGet]
     public async Task<IActionResult> GetRuns([FromQuery] Guid? projectId)
@@ -753,7 +753,7 @@ public class CiCdRunsController(
             .ToList();
 
         if (retryJobIds.Any(j => !ActJobIdRegex.IsMatch(j)))
-            return BadRequest(new { error = "jobIds can only contain letters, numbers, dot, underscore, and dash." });
+            return BadRequest(new { error = "jobIds can only contain letters, numbers, underscore, and dash." });
 
         // Re-resolve the remote URL so the container can clone the latest state of the repo.
         var retryRepo = await db.GitRepositories.FirstOrDefaultAsync(r => r.ProjectId == run.ProjectId);

@@ -128,7 +128,7 @@
           <div v-else-if="store.currentRun.status === CiCdRunStatus.Failed || store.currentRun.status === CiCdRunStatus.Cancelled || store.currentRun.status === CiCdRunStatus.SucceededWithWarnings || store.currentRun.status === CiCdRunStatus.Succeeded"
             class="mt-4 pt-4 border-t border-gray-800 flex justify-end gap-2">
             <button
-              v-if="failedJobActIds.length"
+              v-if="uniqueFailedJobActIds.length"
               :disabled="retrying"
               class="flex items-center gap-1.5 text-sm text-orange-400 hover:text-orange-300 disabled:opacity-50 transition-colors"
               title="Retry failed jobs only"
@@ -506,9 +506,9 @@
         <!-- Jobs tab -->
         <template v-if="activeSection === 'jobs'">
           <div
-            v-if="failedJobActIds.length > 1"
+            v-if="uniqueFailedJobActIds.length > 1"
             class="mb-3 rounded-lg border border-yellow-700/60 bg-yellow-950/30 px-3 py-2 text-xs text-yellow-200">
-            Retry failed jobs passes one <code class="text-yellow-100">-j</code> flag per failed workflow job to <code class="text-yellow-100">act</code>. Automatically rerunning newly unblocked downstream jobs is still limited by act behavior.
+            Retrying failed jobs passes one <code class="text-yellow-100">-j</code> flag per failed workflow job to <code class="text-yellow-100">act</code>. Automatically rerunning newly unblocked downstream jobs is still limited by act behavior.
           </div>
           <!-- Graph not available — show as yellow warning box (always shown when graph fails, even if log-based jobs exist) -->
           <div v-if="store.currentRunGraphError" class="m-4 rounded-lg bg-yellow-900/40 border border-yellow-700/50 p-4 flex items-start gap-3">
@@ -2067,7 +2067,7 @@ const blockedJobIds = computed<Set<string>>(() => {
   return blocked
 })
 
-const failedJobActIds = computed<string[]>(() =>
+const uniqueFailedJobActIds = computed<string[]>(() =>
   [...new Set(
     enrichedJobs.value
       .filter(j => j.hasError && j.isComplete)
@@ -2644,8 +2644,8 @@ async function retrySelectedJob() {
 }
 
 async function retryFailedJobs() {
-  if (!failedJobActIds.value.length) return
-  retryRunOverrides.value = { jobIds: failedJobActIds.value }
+  if (!uniqueFailedJobActIds.value.length) return
+  retryRunOverrides.value = { jobIds: uniqueFailedJobActIds.value }
   await retryRunWithOptions()
 }
 

@@ -237,7 +237,7 @@ public class CiCdEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal(HttpStatusCode.BadRequest, retryResponse.StatusCode);
         var body = await retryResponse.Content.ReadFromJsonAsync<Dictionary<string, string>>();
         Assert.NotNull(body);
-        Assert.Equal("jobIds can only contain letters, numbers, dot, underscore, and dash.", body["error"]);
+        Assert.Equal("jobIds can only contain letters, numbers, underscore, and dash.", body["error"]);
 
         _client.DefaultRequestHeaders.Remove("X-Tenant-Id");
     }
