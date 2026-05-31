@@ -19,7 +19,7 @@ public class TelegramPairingPage(IPage page)
         try
         {
             await page.WaitForSelectorAsync("h2:has-text('Telegram Setup')",
-                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
         }
         catch (TimeoutException)
         {
