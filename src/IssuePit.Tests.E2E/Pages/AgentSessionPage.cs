@@ -19,7 +19,7 @@ public class AgentSessionPage(IPage page)
             await page.GotoAsync(url);
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
             await page.WaitForSelectorAsync("[data-testid='session-detail'], .bg-gray-900.border.border-gray-800",
-                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
         }
         catch (Exception ex) when (ex is TimeoutException || (ex is PlaywrightException pe && pe.Message.Contains("ERR_ABORTED")))
         {

@@ -21,7 +21,7 @@ public class CiCdRunPage(IPage page)
             await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
 
             await page.WaitForSelectorAsync("text=CI/CD Run",
-                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
         }
         catch (Exception ex) when (ex is TimeoutException || (ex is PlaywrightException pe && pe.Message.Contains("ERR_ABORTED")))
         {

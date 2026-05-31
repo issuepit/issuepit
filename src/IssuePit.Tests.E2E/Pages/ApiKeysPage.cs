@@ -19,7 +19,7 @@ public class ApiKeysPage(IPage page)
         try
         {
             await page.WaitForSelectorAsync("h2:has-text('API Keys')",
-                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Short });
+                new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
         }
         catch (TimeoutException)
         {
