@@ -610,7 +610,7 @@
     </div>
 
     <!-- Add Org Member Modal -->
-    <div v-if="showAddMember" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+    <div v-if="showAddMember" data-testid="add-member-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
       <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md p-6 shadow-xl">
         <h2 class="text-lg font-bold text-white mb-5">Add Member</h2>
         <form class="space-y-4" @submit.prevent="handleAddMember">
@@ -656,6 +656,7 @@
           <div class="flex gap-3 pt-1">
             <button
               type="submit"
+              data-testid="add-member-submit"
               :disabled="savingMember || !addMemberForm.userId"
               class="flex-1 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition-colors"
             >

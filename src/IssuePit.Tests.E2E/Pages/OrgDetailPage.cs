@@ -77,18 +77,53 @@ public class OrgDetailPage(IPage page)
 
     /// <summary>
     /// Adds a member to the org via the Add Member modal, selecting the given role value.
+    /// Uses Playwright's Locator API scoped to the modal container ([data-testid='add-member-modal'])
+    /// to avoid timing races with other page elements and overlapping dropdowns.
     /// Waits for the member to appear in the table after submission.
     /// </summary>
     public async Task AddMemberAsync(string memberUsername, string role = "1")
     {
+        // Click the "Add Member" button to open the modal.
         await page.ClickAsync("button:has-text('Add Member')");
-        await page.FillAsync("input[placeholder='Search by username…']", memberUsername);
-        await page.WaitForSelectorAsync($"text={memberUsername}", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
-        await page.ClickAsync($"button:has-text('{memberUsername}')");
-        await page.SelectOptionAsync("select", new[] { role });
-        // Use button[type='submit'] to target only the form submit button, not the "Add Member"
-        // button that opens the modal (which has no type and is blocked by the modal backdrop).
-        await page.ClickAsync("button[type='submit']:has-text('Add Member')");
+
+        // Wait for the modal container to become visible.
+        var modal = page.Locator("[data-testid='add-member-modal']");
+        await modal.WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Visible,
+            Timeout = E2ETimeouts.Default
+        });
+
+        // Fill search input and select the user from the dropdown.
+        await modal.Locator("input[placeholder='Search by username…']").FillAsync(memberUsername);
+        var userButton = modal.Locator($"button:has-text('{memberUsername}')");
+        await userButton.WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Visible,
+            Timeout = E2ETimeouts.Default
+        });
+        await userButton.ClickAsync();
+
+        // Select role.
+        await modal.Locator("select").SelectOptionAsync(new[] { role });
+
+        // Click submit — scoped to [data-testid] to avoid matching the outer "Add Member" button.
+        var submitButton = modal.Locator("[data-testid='add-member-submit']");
+        await submitButton.WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Visible,
+            Timeout = E2ETimeouts.Default
+        });
+        await submitButton.ClickAsync();
+
+        // Wait for the modal to close (indicates submission succeeded).
+        await modal.WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Hidden,
+            Timeout = E2ETimeouts.Navigation
+        });
+
+        // Verify the member name appears in the members table.
         await page.WaitForSelectorAsync($"text={memberUsername}", new PageWaitForSelectorOptions { Timeout = E2ETimeouts.Default });
     }
 }
