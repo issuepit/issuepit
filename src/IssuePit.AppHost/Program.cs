@@ -303,6 +303,12 @@ var migrator = builder.AddProject<Projects.IssuePit_Migrator>("migrator")
 if (configRepoPath is not null)
     migrator.WithEnvironment("ConfigRepo__Url", configRepoPath);
 
+// Forward an optional bootstrap admin MCP token so the seeder can register it for the default
+// admin user. AspireFixture sets this in E2E test runs to authenticate against /api/admin/**.
+var bootstrapAdminMcpToken = Environment.GetEnvironmentVariable("IssuePit__Bootstrap__AdminMcpToken");
+if (!string.IsNullOrWhiteSpace(bootstrapAdminMcpToken))
+    migrator.WithEnvironment("IssuePit__Bootstrap__AdminMcpToken", bootstrapAdminMcpToken);
+
 var kafkaInitializer = builder.AddProject<Projects.IssuePit_KafkaInitializer>("kafka-initializer")
     .WithReference(kafka)
     .WaitFor(kafka);
