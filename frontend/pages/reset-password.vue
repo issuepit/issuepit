@@ -107,8 +107,9 @@ async function handleSubmit() {
       newPassword: newPassword.value,
     })
     success.value = true
-    // Auto-redirect to /login after a short delay.
-    setTimeout(() => { router.push('/login') }, 2000)
+    // Auto-redirect to /login after a short delay so the user can read the success message.
+    const redirectDelayMs = 2000
+    setTimeout(() => { router.push('/login') }, redirectDelayMs)
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : 'Failed to reset password. The link may be invalid or expired.'
   } finally {

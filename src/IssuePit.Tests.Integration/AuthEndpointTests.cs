@@ -248,7 +248,7 @@ public class AuthEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var token = Guid.NewGuid().ToString("N");
         using (var scope = factory.Services.CreateScope())
         {
-            var cache = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>();
+            var cache = scope.ServiceProvider.GetRequiredService<IMemoryCache>();
             cache.Set($"pwreset-token:{token}", user.Id, TimeSpan.FromHours(1));
         }
 
