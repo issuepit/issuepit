@@ -273,6 +273,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         string? tokenSource = null;
         string? effectiveToken = repo.AuthToken;
         string? effectiveUsername = repo.AuthUsername;
+        var tokenNotes = new List<string>();
         if (repo.GitHubIdentityId.HasValue && repo.GitHubIdentity is not null)
         {
             var protector = dpProvider.CreateProtector(IdentityProtectorPurpose);
@@ -281,23 +282,33 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
             effectiveUsername = repo.GitHubIdentity.GitHubUsername;
             var identityLabel = repo.GitHubIdentity.Name ?? $"@{repo.GitHubIdentity.GitHubUsername}";
             tokenSource = $"GitHub identity: {identityLabel} (@{repo.GitHubIdentity.GitHubUsername})";
+            tokenNotes.Add("Git operations and this check both use the GitHub identity token. Any gitToken set in a JSON5 config file is overridden by the identity.");
+        }
+        else if (repo.GitHubIdentityId.HasValue && repo.GitHubIdentity is null)
+        {
+            // Identity link is broken (identity was deleted but FK not cleared)
+            tokenNotes.Add("The GitHub identity link is broken — the linked identity no longer exists.");
+            tokenNotes.Add("Git operations fall back to the stored auth token.");
+            tokenNotes.Add("Remove the identity link and re-configure authentication to fix this.");
+            tokenSource = "Manual token (fallback — identity link is broken)" + (string.IsNullOrEmpty(repo.AuthUsername) ? "" : $" (username: {repo.AuthUsername})");
         }
         else if (!string.IsNullOrEmpty(repo.AuthToken))
         {
             tokenSource = "Manual token" + (string.IsNullOrEmpty(repo.AuthUsername) ? "" : $" (username: {repo.AuthUsername})");
+            tokenNotes.Add("Git operations use the stored auth token. If your JSON5 config file sets gitToken for this origin, it was applied during the last config sync.");
         }
 
         if (string.IsNullOrEmpty(effectiveToken))
             return Ok(new GitHubDebugResponse(TokenValid: false, Login: null,
                 Error: "No authentication token configured for this origin.",
                 TokenSource: tokenSource, AuthUsername: effectiveUsername,
-                Repos: []));
+                TokenNotes: tokenNotes, Repos: []));
 
         if (!repo.RemoteUrl.Contains("github.com", StringComparison.OrdinalIgnoreCase))
             return Ok(new GitHubDebugResponse(TokenValid: false, Login: null,
                 Error: "Token debugging is only supported for github.com repositories.",
                 TokenSource: tokenSource, AuthUsername: effectiveUsername,
-                Repos: []));
+                TokenNotes: tokenNotes, Repos: []));
 
         using var client = httpClientFactory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", effectiveToken);
@@ -312,7 +323,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
             return Ok(new GitHubDebugResponse(TokenValid: false, Login: null,
                 Error: $"GitHub API returned HTTP {(int)userResp.StatusCode} — token may be invalid or expired.",
                 TokenSource: tokenSource, AuthUsername: effectiveUsername,
-                Repos: []));
+                TokenNotes: tokenNotes, Repos: []));
         }
 
         var userJson = await userResp.Content.ReadFromJsonAsync<JsonElement>();
@@ -325,7 +336,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
             return Ok(new GitHubDebugResponse(TokenValid: true, Login: login,
                 Error: $"Could not list repositories (HTTP {(int)reposResp.StatusCode}).",
                 TokenSource: tokenSource, AuthUsername: effectiveUsername,
-                Repos: []));
+                TokenNotes: tokenNotes, Repos: []));
         }
 
         var reposJson = await reposResp.Content.ReadFromJsonAsync<JsonElement>();
@@ -360,7 +371,7 @@ public class GitController(IssuePitDbContext db, TenantContext ctx, GitService g
         }
 
         return Ok(new GitHubDebugResponse(TokenValid: true, Login: login, Error: null,
-            TokenSource: tokenSource, AuthUsername: effectiveUsername, Repos: repos,
+            TokenSource: tokenSource, AuthUsername: effectiveUsername, TokenNotes: tokenNotes, Repos: repos,
             SpecificRepoPath: repoPath, SpecificRepoAccessible: specificRepoAccessible,
             SpecificRepoError: specificRepoError, SpecificRepoHtmlUrl: specificRepoHtmlUrl));
     }
@@ -731,6 +742,7 @@ public record GitHubRepoEntry(string FullName, string CloneUrl, string HtmlUrl, 
 
 public record GitHubDebugResponse(
     bool TokenValid, string? Login, string? Error, string? TokenSource, string? AuthUsername,
+    List<string> TokenNotes,
     List<GitHubRepoEntry> Repos,
     string? SpecificRepoPath = null, bool? SpecificRepoAccessible = null,
     string? SpecificRepoError = null, string? SpecificRepoHtmlUrl = null);
