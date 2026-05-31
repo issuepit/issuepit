@@ -21,6 +21,7 @@
             'flex items-center gap-2 text-gray-300 text-sm font-medium px-4 py-2 rounded-lg transition-colors',
             voiceDragOver ? 'bg-brand-700 ring-2 ring-brand-400' : 'bg-gray-800 hover:bg-gray-700'
           ]"
+          data-testid="voice-button"
           title="Create issue from voice (or drop an audio file here)">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -190,6 +191,7 @@
     </div>
     <!-- Voice Create Modal -->
     <div v-if="showVoiceCreate"
+      data-testid="voice-modal"
       class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
       <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-lg p-6 shadow-xl">
         <h2 class="text-lg font-bold text-white mb-5">Create Issue from Voice</h2>
@@ -405,8 +407,9 @@ watch([search, filterStatus, filterPriority, filterType, filterMilestone], () =>
   })
 })
 
+usePageReady(() => store.fetchIssues(id))
+
 onMounted(() => {
-  store.fetchIssues(id)
   milestonesStore.fetchMilestones(id)
   projectsStore.fetchProject(id)
 })

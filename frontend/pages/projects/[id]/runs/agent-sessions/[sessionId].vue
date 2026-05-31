@@ -477,12 +477,35 @@
                 </div>
               </div>
               <div class="bg-gray-950 rounded-lg p-4 font-mono text-xs overflow-auto max-h-[500px]">
-                <div v-if="selectedStepLogs.length">
-                  <div v-for="log in selectedStepLogs" :key="log.id" class="flex gap-3 leading-5">
-                    <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
-                    <!-- eslint-disable-next-line vue/no-v-html -->
-                    <span :class="[isOpenCodeStats(log.line) || isOpenCodeStepFinish(log.line) ? 'text-gray-300' : (log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'), wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
-                  </div>
+                <div v-if="selectedStepItems.length">
+                  <template v-for="item in selectedStepItems" :key="item.id">
+                    <div v-if="item.type === 'prompt'" class="my-0.5">
+                      <div class="flex items-center gap-1 cursor-pointer select-none py-0.5" @click="togglePrompt(item.id)">
+                        <span class="text-gray-700 text-[10px] transition-transform" :class="collapsedPrompts.has(item.id) ? '' : 'rotate-90'">▶</span>
+                        <span class="text-[10px] font-medium text-yellow-600 hover:text-yellow-400 transition-colors">Task Prompt</span>
+                        <span class="text-[10px] text-gray-600 ml-1 truncate">{{ item.text.split('\n')[0].slice(0, 80) }}</span>
+                      </div>
+                      <div v-if="!collapsedPrompts.has(item.id)" class="ml-4 mt-0.5 mb-1 text-[11px] text-gray-400 whitespace-pre-wrap border-l border-gray-800 pl-2 leading-5">{{ item.text }}</div>
+                    </div>
+                    <div v-else-if="item.type === 'cmd'" class="my-0.5">
+                      <div class="flex items-center gap-1 cursor-pointer select-none py-0.5" @click="toggleCmdBlock(item.id)">
+                        <span class="text-gray-700 text-[10px] transition-transform" :class="collapsedCmdBlocks.has(item.id) ? '' : 'rotate-90'">▶</span>
+                        <span class="text-[10px] text-gray-500 font-mono">{{ item.cmd }}</span>
+                      </div>
+                      <template v-if="!collapsedCmdBlocks.has(item.id)">
+                        <div v-for="l in item.lines" :key="l.id" class="flex gap-3 leading-5 ml-4">
+                          <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(l.timestamp) }}</span>
+                          <!-- eslint-disable-next-line vue/no-v-html -->
+                          <span :class="[l.stream === 'stderr' ? 'text-red-400' : 'text-gray-300', wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(l.line, logSearchQuery)" />
+                        </div>
+                      </template>
+                    </div>
+                    <div v-else class="flex gap-3 leading-5">
+                      <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(item.log.timestamp) }}</span>
+                      <!-- eslint-disable-next-line vue/no-v-html -->
+                      <span :class="[isOpenCodeStats(item.log.line) || isOpenCodeStepFinish(item.log.line) ? 'text-gray-300' : (item.log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'), wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(item.log.line, logSearchQuery)" />
+                    </div>
+                  </template>
                 </div>
                 <div v-else class="text-gray-500 text-center py-4">{{ logSearchQuery ? 'No matching log lines' : 'No logs for this step' }}</div>
               </div>
@@ -493,7 +516,7 @@
 
         <!-- Logs tab -->
         <template v-else-if="activeSection === 'logs'">
-          <div v-if="filteredLogs.length" ref="logContainer" class="bg-gray-950 p-4 font-mono text-xs overflow-auto max-h-[600px]" @scroll.passive="onLogContainerScroll">
+          <div v-if="filteredItems.length" ref="logContainer" class="bg-gray-950 p-4 font-mono text-xs overflow-auto max-h-[600px]" @scroll.passive="onLogContainerScroll">
             <!-- When section data exists, group logs into collapsible sections -->
             <template v-if="hasSections && logsBySection.length">
               <template v-for="(group, gi) in logsBySection" :key="gi">
@@ -510,14 +533,34 @@
                   <!-- Sub-group by opencode steps when step markers are present -->
                   <template v-if="buildOpenCodeSteps(group.key, group.logs).steps.length">
                     <!-- Preamble lines before first opencode step -->
-                    <div
-                      v-for="log in buildOpenCodeSteps(group.key, group.logs).preamble.filter(l => !logSearchQuery.trim() || stripAnsiCodes(l.line).toLowerCase().includes(logSearchQuery.toLowerCase()))"
-                      :key="log.id"
-                      class="flex gap-3 leading-5">
-                      <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
-                      <!-- eslint-disable-next-line vue/no-v-html -->
-                      <span :class="[isOpenCodeStats(log.line) || isOpenCodeStepFinish(log.line) ? 'text-gray-300' : (log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'), wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
-                    </div>
+                    <template v-for="item in groupLogsIntoItems(buildOpenCodeSteps(group.key, group.logs).preamble).filter(i => matchesSearch(i, logSearchQuery))" :key="item.id">
+                      <div v-if="item.type === 'prompt'" class="my-0.5">
+                        <div class="flex items-center gap-1 cursor-pointer select-none py-0.5" @click="togglePrompt(item.id)">
+                          <span class="text-gray-700 text-[10px] transition-transform" :class="collapsedPrompts.has(item.id) ? '' : 'rotate-90'">▶</span>
+                          <span class="text-[10px] font-medium text-yellow-600 hover:text-yellow-400 transition-colors">Task Prompt</span>
+                          <span class="text-[10px] text-gray-600 ml-1 truncate">{{ item.text.split('\n')[0].slice(0, 80) }}</span>
+                        </div>
+                        <div v-if="!collapsedPrompts.has(item.id)" class="ml-4 mt-0.5 mb-1 text-[11px] text-gray-400 whitespace-pre-wrap border-l border-gray-800 pl-2 leading-5">{{ item.text }}</div>
+                      </div>
+                      <div v-else-if="item.type === 'cmd'" class="my-0.5">
+                        <div class="flex items-center gap-1 cursor-pointer select-none py-0.5" @click="toggleCmdBlock(item.id)">
+                          <span class="text-gray-700 text-[10px] transition-transform" :class="collapsedCmdBlocks.has(item.id) ? '' : 'rotate-90'">▶</span>
+                          <span class="text-[10px] text-gray-500 font-mono">{{ item.cmd }}</span>
+                        </div>
+                        <template v-if="!collapsedCmdBlocks.has(item.id)">
+                          <div v-for="l in item.lines" :key="l.id" class="flex gap-3 leading-5 ml-4">
+                            <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(l.timestamp) }}</span>
+                            <!-- eslint-disable-next-line vue/no-v-html -->
+                            <span :class="[l.stream === 'stderr' ? 'text-red-400' : 'text-gray-300', wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(l.line, logSearchQuery)" />
+                          </div>
+                        </template>
+                      </div>
+                      <div v-else class="flex gap-3 leading-5">
+                        <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(item.log.timestamp) }}</span>
+                        <!-- eslint-disable-next-line vue/no-v-html -->
+                        <span :class="[isOpenCodeStats(item.log.line) || isOpenCodeStepFinish(item.log.line) ? 'text-gray-300' : (item.log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'), wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(item.log.line, logSearchQuery)" />
+                      </div>
+                    </template>
                     <!-- Collapsible opencode step sub-groups -->
                     <template v-for="step in buildOpenCodeSteps(group.key, group.logs).steps" :key="step.key">
                       <div
@@ -531,44 +574,130 @@
                         </span>
                       </div>
                       <template v-if="!collapsedOpenCodeSteps.has(step.key)">
-                        <div
-                          v-for="log in step.lines.filter(l => !logSearchQuery.trim() || stripAnsiCodes(l.line).toLowerCase().includes(logSearchQuery.toLowerCase()))"
-                          :key="log.id"
-                          class="flex gap-3 leading-5 ml-4">
-                          <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
-                          <!-- eslint-disable-next-line vue/no-v-html -->
-                          <span :class="[log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300', wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
-                        </div>
+                        <template v-for="item in groupLogsIntoItems(step.lines).filter(i => matchesSearch(i, logSearchQuery))" :key="item.id">
+                          <div v-if="item.type === 'prompt'" class="ml-4 my-0.5">
+                            <div class="flex items-center gap-1 cursor-pointer select-none py-0.5" @click="togglePrompt(item.id)">
+                              <span class="text-gray-700 text-[10px] transition-transform" :class="collapsedPrompts.has(item.id) ? '' : 'rotate-90'">▶</span>
+                              <span class="text-[10px] font-medium text-yellow-600 hover:text-yellow-400 transition-colors">Task Prompt</span>
+                              <span class="text-[10px] text-gray-600 ml-1 truncate">{{ item.text.split('\n')[0].slice(0, 80) }}</span>
+                            </div>
+                            <div v-if="!collapsedPrompts.has(item.id)" class="ml-4 mt-0.5 mb-1 text-[11px] text-gray-400 whitespace-pre-wrap border-l border-gray-800 pl-2 leading-5">{{ item.text }}</div>
+                          </div>
+                          <div v-else-if="item.type === 'cmd'" class="ml-4 my-0.5">
+                            <div class="flex items-center gap-1 cursor-pointer select-none py-0.5" @click="toggleCmdBlock(item.id)">
+                              <span class="text-gray-700 text-[10px] transition-transform" :class="collapsedCmdBlocks.has(item.id) ? '' : 'rotate-90'">▶</span>
+                              <span class="text-[10px] text-gray-500 font-mono">{{ item.cmd }}</span>
+                            </div>
+                            <template v-if="!collapsedCmdBlocks.has(item.id)">
+                              <div v-for="l in item.lines" :key="l.id" class="flex gap-3 leading-5 ml-4">
+                                <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(l.timestamp) }}</span>
+                                <!-- eslint-disable-next-line vue/no-v-html -->
+                                <span :class="[l.stream === 'stderr' ? 'text-red-400' : 'text-gray-300', wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(l.line, logSearchQuery)" />
+                              </div>
+                            </template>
+                          </div>
+                          <div v-else class="flex gap-3 leading-5 ml-4">
+                            <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(item.log.timestamp) }}</span>
+                            <!-- eslint-disable-next-line vue/no-v-html -->
+                            <span :class="[item.log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300', wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(item.log.line, logSearchQuery)" />
+                          </div>
+                        </template>
                       </template>
                     </template>
                     <!-- Postamble lines after last opencode step (e.g. session stats summary) -->
-                    <div
-                      v-for="log in buildOpenCodeSteps(group.key, group.logs).postamble.filter(l => !logSearchQuery.trim() || stripAnsiCodes(l.line).toLowerCase().includes(logSearchQuery.toLowerCase()))"
-                      :key="log.id"
-                      class="flex gap-3 leading-5">
-                      <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
-                      <!-- eslint-disable-next-line vue/no-v-html -->
-                      <span :class="[isOpenCodeStats(log.line) || isOpenCodeStepFinish(log.line) ? 'text-gray-300' : (log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'), wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
-                    </div>
+                    <template v-for="item in groupLogsIntoItems(buildOpenCodeSteps(group.key, group.logs).postamble).filter(i => matchesSearch(i, logSearchQuery))" :key="item.id">
+                      <div v-if="item.type === 'prompt'" class="my-0.5">
+                        <div class="flex items-center gap-1 cursor-pointer select-none py-0.5" @click="togglePrompt(item.id)">
+                          <span class="text-gray-700 text-[10px] transition-transform" :class="collapsedPrompts.has(item.id) ? '' : 'rotate-90'">▶</span>
+                          <span class="text-[10px] font-medium text-yellow-600 hover:text-yellow-400 transition-colors">Task Prompt</span>
+                          <span class="text-[10px] text-gray-600 ml-1 truncate">{{ item.text.split('\n')[0].slice(0, 80) }}</span>
+                        </div>
+                        <div v-if="!collapsedPrompts.has(item.id)" class="ml-4 mt-0.5 mb-1 text-[11px] text-gray-400 whitespace-pre-wrap border-l border-gray-800 pl-2 leading-5">{{ item.text }}</div>
+                      </div>
+                      <div v-else-if="item.type === 'cmd'" class="my-0.5">
+                        <div class="flex items-center gap-1 cursor-pointer select-none py-0.5" @click="toggleCmdBlock(item.id)">
+                          <span class="text-gray-700 text-[10px] transition-transform" :class="collapsedCmdBlocks.has(item.id) ? '' : 'rotate-90'">▶</span>
+                          <span class="text-[10px] text-gray-500 font-mono">{{ item.cmd }}</span>
+                        </div>
+                        <template v-if="!collapsedCmdBlocks.has(item.id)">
+                          <div v-for="l in item.lines" :key="l.id" class="flex gap-3 leading-5 ml-4">
+                            <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(l.timestamp) }}</span>
+                            <!-- eslint-disable-next-line vue/no-v-html -->
+                            <span :class="[l.stream === 'stderr' ? 'text-red-400' : 'text-gray-300', wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(l.line, logSearchQuery)" />
+                          </div>
+                        </template>
+                      </div>
+                      <div v-else class="flex gap-3 leading-5">
+                        <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(item.log.timestamp) }}</span>
+                        <!-- eslint-disable-next-line vue/no-v-html -->
+                        <span :class="[isOpenCodeStats(item.log.line) || isOpenCodeStepFinish(item.log.line) ? 'text-gray-300' : (item.log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'), wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(item.log.line, logSearchQuery)" />
+                      </div>
+                    </template>
                   </template>
                   <!-- Flat lines within the section when no opencode step markers are present -->
                   <template v-else>
-                    <div v-for="log in group.logs.filter(l => !logSearchQuery.trim() || stripAnsiCodes(l.line).toLowerCase().includes(logSearchQuery.toLowerCase()))" :key="log.id" class="flex gap-3 leading-5">
-                      <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
-                      <!-- eslint-disable-next-line vue/no-v-html -->
-                      <span :class="[isOpenCodeStats(log.line) || isOpenCodeStepFinish(log.line) ? 'text-gray-300' : (log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'), wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
-                    </div>
+                    <template v-for="item in groupLogsIntoItems(group.logs).filter(i => matchesSearch(i, logSearchQuery))" :key="item.id">
+                      <div v-if="item.type === 'prompt'" class="my-0.5">
+                        <div class="flex items-center gap-1 cursor-pointer select-none py-0.5" @click="togglePrompt(item.id)">
+                          <span class="text-gray-700 text-[10px] transition-transform" :class="collapsedPrompts.has(item.id) ? '' : 'rotate-90'">▶</span>
+                          <span class="text-[10px] font-medium text-yellow-600 hover:text-yellow-400 transition-colors">Task Prompt</span>
+                          <span class="text-[10px] text-gray-600 ml-1 truncate">{{ item.text.split('\n')[0].slice(0, 80) }}</span>
+                        </div>
+                        <div v-if="!collapsedPrompts.has(item.id)" class="ml-4 mt-0.5 mb-1 text-[11px] text-gray-400 whitespace-pre-wrap border-l border-gray-800 pl-2 leading-5">{{ item.text }}</div>
+                      </div>
+                      <div v-else-if="item.type === 'cmd'" class="my-0.5">
+                        <div class="flex items-center gap-1 cursor-pointer select-none py-0.5" @click="toggleCmdBlock(item.id)">
+                          <span class="text-gray-700 text-[10px] transition-transform" :class="collapsedCmdBlocks.has(item.id) ? '' : 'rotate-90'">▶</span>
+                          <span class="text-[10px] text-gray-500 font-mono">{{ item.cmd }}</span>
+                        </div>
+                        <template v-if="!collapsedCmdBlocks.has(item.id)">
+                          <div v-for="l in item.lines" :key="l.id" class="flex gap-3 leading-5 ml-4">
+                            <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(l.timestamp) }}</span>
+                            <!-- eslint-disable-next-line vue/no-v-html -->
+                            <span :class="[l.stream === 'stderr' ? 'text-red-400' : 'text-gray-300', wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(l.line, logSearchQuery)" />
+                          </div>
+                        </template>
+                      </div>
+                      <div v-else class="flex gap-3 leading-5">
+                        <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(item.log.timestamp) }}</span>
+                        <!-- eslint-disable-next-line vue/no-v-html -->
+                        <span :class="[isOpenCodeStats(item.log.line) || isOpenCodeStepFinish(item.log.line) ? 'text-gray-300' : (item.log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'), wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(item.log.line, logSearchQuery)" />
+                      </div>
+                    </template>
                   </template>
                 </template>
               </template>
             </template>
             <!-- Flat log list for sessions without section data -->
             <template v-else>
-              <div v-for="log in filteredLogs" :key="log.id" class="flex gap-3 leading-5">
-                <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(log.timestamp) }}</span>
-                <!-- eslint-disable-next-line vue/no-v-html -->
-                <span :class="[isOpenCodeStats(log.line) || isOpenCodeStepFinish(log.line) ? 'text-gray-300' : (log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'), wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(log.line, logSearchQuery)" />
-              </div>
+              <template v-for="item in filteredItems" :key="item.id">
+                <div v-if="item.type === 'prompt'" class="my-0.5">
+                  <div class="flex items-center gap-1 cursor-pointer select-none py-0.5" @click="togglePrompt(item.id)">
+                    <span class="text-gray-700 text-[10px] transition-transform" :class="collapsedPrompts.has(item.id) ? '' : 'rotate-90'">▶</span>
+                    <span class="text-[10px] font-medium text-yellow-600 hover:text-yellow-400 transition-colors">Task Prompt</span>
+                    <span class="text-[10px] text-gray-600 ml-1 truncate">{{ item.text.split('\n')[0].slice(0, 80) }}</span>
+                  </div>
+                  <div v-if="!collapsedPrompts.has(item.id)" class="ml-4 mt-0.5 mb-1 text-[11px] text-gray-400 whitespace-pre-wrap border-l border-gray-800 pl-2 leading-5">{{ item.text }}</div>
+                </div>
+                <div v-else-if="item.type === 'cmd'" class="my-0.5">
+                  <div class="flex items-center gap-1 cursor-pointer select-none py-0.5" @click="toggleCmdBlock(item.id)">
+                    <span class="text-gray-700 text-[10px] transition-transform" :class="collapsedCmdBlocks.has(item.id) ? '' : 'rotate-90'">▶</span>
+                    <span class="text-[10px] text-gray-500 font-mono">{{ item.cmd }}</span>
+                  </div>
+                  <template v-if="!collapsedCmdBlocks.has(item.id)">
+                    <div v-for="l in item.lines" :key="l.id" class="flex gap-3 leading-5 ml-4">
+                      <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(l.timestamp) }}</span>
+                      <!-- eslint-disable-next-line vue/no-v-html -->
+                      <span :class="[l.stream === 'stderr' ? 'text-red-400' : 'text-gray-300', wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(l.line, logSearchQuery)" />
+                    </div>
+                  </template>
+                </div>
+                <div v-else class="flex gap-3 leading-5">
+                  <span class="text-gray-600 shrink-0 select-none">{{ formatLogTime(item.log.timestamp) }}</span>
+                  <!-- eslint-disable-next-line vue/no-v-html -->
+                  <span :class="[isOpenCodeStats(item.log.line) || isOpenCodeStepFinish(item.log.line) ? 'text-gray-300' : (item.log.stream === 'stderr' ? 'text-red-400' : 'text-gray-300'), wordWrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']" v-html="renderLogLine(item.log.line, logSearchQuery)" />
+                </div>
+              </template>
             </template>
           </div>
           <div v-else class="py-10 text-center text-sm text-gray-500">{{ logSearchQuery ? 'No matching log lines' : 'No logs available' }}</div>
@@ -829,6 +958,15 @@ const OPENCODE_STEP_START_MARKER = '[opencode:step-start]'
 /** Prefix used by the backend to mark opencode step-finish stats lines. */
 const OPENCODE_STEP_FINISH_PREFIX = '[opencode:step-finish] '
 
+/** Prefix used by the backend to log the full task prompt as a collapsible block. */
+const OPENCODE_PROMPT_PREFIX = '[opencode:prompt] '
+
+/** Prefix that begins a C# command-execution block (emitted by ExecCommandAsync with logCommand=true). */
+const CMD_BEGIN_PREFIX = '[opencode:cmd-begin] '
+
+/** Marker that closes a C# command-execution block started by CMD_BEGIN_PREFIX. */
+const CMD_END_MARKER = '[opencode:cmd-end]'
+
 /** Section prefix prepended to log lines from CI/CD fix runs. */
 const FIX_PREFIX = '[fix] '
 
@@ -993,7 +1131,7 @@ const logContainer = ref<HTMLElement | null>(null)
 /** Pattern that identifies noisy DNS-proxy lines emitted by dnsmasq inside the container. */
 const DNSMASQ_RE = /dnsmasq\[/
 
-/** Pattern that identifies exec command lines logged by the execution client (visible only in verbose mode). */
+/** Pattern that identifies old-format exec command lines (visible only in verbose mode). */
 const CMD_RE = /^\[CMD\] \$/
 
 const filteredLogs = computed(() => {
@@ -1004,9 +1142,14 @@ const filteredLogs = computed(() => {
     logs = logs.filter(l => !DNSMASQ_RE.test(l.line) && !CMD_RE.test(l.line))
   // Hide opencode step-start markers from the flat log view; they are used only for sub-grouping.
   logs = logs.filter(l => !isOpenCodeStepStart(l.line))
-  if (logSearchQuery.value.trim())
-    logs = logs.filter(l => stripAnsiCodes(l.line).toLowerCase().includes(logSearchQuery.value.toLowerCase()))
   return logs
+})
+
+/** Flat log list with grouping applied (prompt/cmd blocks) and search filter. */
+const filteredItems = computed<LogDisplayItem[]>(() => {
+  const items = groupLogsIntoItems(filteredLogs.value)
+  if (!logSearchQuery.value.trim()) return items
+  return items.filter(item => matchesSearch(item, logSearchQuery.value))
 })
 
 watch(filteredLogs, async () => {
@@ -1166,6 +1309,81 @@ function toggleOpenCodeStep(key: string) {
   else collapsedOpenCodeSteps.value.add(key)
 }
 
+/** Tracks which task-prompt blocks are expanded. Collapsed by default (id not in set = collapsed). */
+const collapsedPrompts = ref(new Set<string>())
+
+function togglePrompt(id: string) {
+  if (collapsedPrompts.value.has(id)) collapsedPrompts.value.delete(id)
+  else collapsedPrompts.value.add(id)
+}
+
+/** Tracks which C# command-execution blocks are expanded. Collapsed by default. */
+const collapsedCmdBlocks = ref(new Set<string>())
+
+function toggleCmdBlock(id: string) {
+  if (collapsedCmdBlocks.value.has(id)) collapsedCmdBlocks.value.delete(id)
+  else collapsedCmdBlocks.value.add(id)
+}
+
+/** A renderable log item — either a plain line, a collapsible task-prompt block, or a collapsible cmd block. */
+type LogDisplayItem =
+  | { type: 'line'; id: string; log: AgentSessionLog }
+  | { type: 'prompt'; id: string; text: string; log: AgentSessionLog }
+  | { type: 'cmd'; id: string; cmd: string; lines: AgentSessionLog[]; headerLog: AgentSessionLog }
+
+/**
+ * Groups a flat list of agent log lines into renderable display items.
+ * - `[opencode:prompt]` lines become collapsible prompt blocks.
+ * - `[opencode:cmd-begin]`…`[opencode:cmd-end]` spans become collapsible cmd blocks.
+ * - All other lines pass through as plain line items.
+ */
+function groupLogsIntoItems(logs: AgentSessionLog[]): LogDisplayItem[] {
+  const items: LogDisplayItem[] = []
+  let currentCmd: Extract<LogDisplayItem, { type: 'cmd' }> | null = null
+
+  for (const log of logs) {
+    const rawLine = stripSectionPrefix(log.line)
+
+    if (rawLine.startsWith(CMD_BEGIN_PREFIX)) {
+      currentCmd = { type: 'cmd', id: log.id, cmd: rawLine.slice(CMD_BEGIN_PREFIX.length), lines: [], headerLog: log }
+      items.push(currentCmd)
+    }
+    else if (rawLine === CMD_END_MARKER) {
+      currentCmd = null
+    }
+    else if (currentCmd) {
+      currentCmd.lines.push(log)
+    }
+    else if (rawLine.startsWith(OPENCODE_PROMPT_PREFIX)) {
+      try {
+        const data = JSON.parse(rawLine.slice(OPENCODE_PROMPT_PREFIX.length)) as { text?: string }
+        items.push({ type: 'prompt', id: log.id, text: data.text ?? rawLine, log })
+      }
+      catch {
+        items.push({ type: 'line', id: log.id, log })
+      }
+    }
+    else {
+      items.push({ type: 'line', id: log.id, log })
+    }
+  }
+
+  return items
+}
+
+/** Returns true when the given display item matches the search query. */
+function matchesSearch(item: LogDisplayItem, query: string): boolean {
+  if (!query.trim()) return true
+  const q = query.toLowerCase()
+  switch (item.type) {
+    case 'line': return stripAnsiCodes(item.log.line).toLowerCase().includes(q)
+    case 'prompt': return item.text.toLowerCase().includes(q)
+    case 'cmd':
+      return item.cmd.toLowerCase().includes(q)
+        || item.lines.some(l => stripAnsiCodes(l.line).toLowerCase().includes(q))
+  }
+}
+
 /** A group of log lines belonging to a single opencode step (between step-start and step-finish). */
 interface OpenCodeStepSubGroup {
   key: string
@@ -1256,9 +1474,14 @@ const selectedStepLogs = computed<AgentSessionLog[]>(() => {
   let logs = group.logs
   if (activeStream.value !== null) logs = logs.filter(l => l.stream === activeStream.value)
   if (!verboseLogs.value) logs = logs.filter(l => !DNSMASQ_RE.test(l.line))
-  if (logSearchQuery.value.trim())
-    logs = logs.filter(l => stripAnsiCodes(l.line).toLowerCase().includes(logSearchQuery.value.toLowerCase()))
   return logs
+})
+
+/** Renderable items for the selected step (grouped + search filtered). */
+const selectedStepItems = computed<LogDisplayItem[]>(() => {
+  const items = groupLogsIntoItems(selectedStepLogs.value)
+  if (!logSearchQuery.value.trim()) return items
+  return items.filter(item => matchesSearch(item, logSearchQuery.value))
 })
 
 /** Returns the matching CI/CD run for a CiCdRun step, based on order (1st CiCdRun → 1st ciCdRun). */

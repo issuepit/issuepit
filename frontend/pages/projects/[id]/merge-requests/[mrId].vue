@@ -73,10 +73,16 @@
             Auto-merge
           </span>
 
+          <!-- Merge strategy badge (for merged MRs) -->
+          <span v-if="mr.statusName === 'Merged' && mr.mergeStrategyName !== 'Merge'"
+            class="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">
+            {{ strategyLabel(mr.mergeStrategyName) }}
+          </span>
+
           <!-- Action buttons -->
           <div v-if="mr.statusName === 'Open'" class="ml-auto flex items-center gap-2">
-            <button @click="mergeMr"
-              :disabled="actionLoading"
+            <button @click="showMergeConfirm = true"
+              :disabled="!!actionLoading"
               class="bg-purple-700 hover:bg-purple-600 text-white text-sm px-4 py-1.5 rounded-lg transition-colors disabled:opacity-50">
               <span v-if="actionLoading === 'merge'">Merging…</span>
               <span v-else>Merge</span>
@@ -107,11 +113,188 @@
             Merge commit:
             <code class="bg-gray-800 px-1 rounded text-gray-400">{{ mr.mergeCommitSha.slice(0, 8) }}</code>
           </span>
+          <span v-if="mr.deleteSourceBranch" class="text-yellow-500/70">Delete source branch after merge</span>
+        </div>
+
+        <!-- CI gate warning for open MRs -->
+        <div v-if="mr.statusName === 'Open' && ciGateMessage" class="mt-3 p-3 rounded-lg text-sm" :class="ciGateClass">
+          <div class="flex items-center gap-2">
+            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+            {{ ciGateMessage }}
+          </div>
         </div>
 
         <!-- Action error -->
         <div v-if="actionError" class="mt-3 p-3 bg-red-900/30 border border-red-800/40 rounded-lg text-sm text-red-300">
           {{ actionError }}
+        </div>
+      </div>
+
+      <!-- Merge Confirm Modal -->
+      <div v-if="showMergeConfirm"
+        class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+        @mousedown.self="showMergeConfirm = false">
+        <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-md p-6 space-y-4">
+          <h2 class="text-lg font-bold text-white">Confirm Merge</h2>
+          <p class="text-sm text-gray-400">
+            Merge <code class="bg-gray-800 px-1 rounded text-gray-300">{{ mr.sourceBranch }}</code>
+            into <code class="bg-gray-800 px-1 rounded text-gray-300">{{ mr.targetBranch }}</code>
+          </p>
+
+          <!-- Strategy selector -->
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Merge strategy</label>
+            <div class="space-y-1.5">
+              <label v-for="opt in mergeStrategyOptions" :key="opt.value"
+                class="flex items-start gap-3 p-2.5 rounded-lg cursor-pointer transition-colors"
+                :class="mergeStrategy === opt.value ? 'bg-gray-800 border border-gray-700' : 'hover:bg-gray-800/50 border border-transparent'">
+                <input type="radio" :value="opt.value" v-model="mergeStrategy"
+                  class="mt-0.5 accent-brand-500" />
+                <div>
+                  <span class="text-sm text-white font-medium">{{ opt.label }}</span>
+                  <p class="text-xs text-gray-500 mt-0.5">{{ opt.description }}</p>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- Delete source branch toggle -->
+          <div class="flex items-center justify-between py-1">
+            <div>
+              <label class="block text-sm font-medium text-gray-300">Delete source branch</label>
+              <p class="text-xs text-gray-500 mt-0.5">Remove <code class="text-gray-400">{{ mr.sourceBranch }}</code> after merging.</p>
+            </div>
+            <button type="button"
+              :class="deleteSourceBranch ? 'bg-brand-600' : 'bg-gray-700'"
+              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none"
+              @click="deleteSourceBranch = !deleteSourceBranch">
+              <span :class="deleteSourceBranch ? 'translate-x-6' : 'translate-x-1'"
+                class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" />
+            </button>
+          </div>
+
+          <!-- CI gate warning in modal -->
+          <div v-if="ciGateMessage" class="p-3 rounded-lg text-sm" :class="ciGateClass">
+            {{ ciGateMessage }}
+          </div>
+
+          <div class="flex gap-2 pt-2">
+            <button @click="executeMerge" :disabled="actionLoading === 'merge'"
+              class="flex-1 bg-purple-700 hover:bg-purple-600 text-white text-sm py-2 rounded-lg transition-colors disabled:opacity-50">
+              <span v-if="actionLoading === 'merge'">Merging…</span>
+              <span v-else>{{ mergeStrategyOptions.find(o => o.value === mergeStrategy)?.label || 'Merge' }}</span>
+            </button>
+            <button @click="showMergeConfirm = false"
+              class="flex-1 bg-gray-800 hover:bg-gray-700 text-white text-sm py-2 rounded-lg transition-colors">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reviews section -->
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-sm font-semibold text-white flex items-center gap-2">
+            <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Reviews
+            <span v-if="reviewSummary" class="text-xs text-gray-500 font-normal">
+              ({{ reviewSummary.approved }} approved, {{ reviewSummary.changesRequested }} changes requested)
+            </span>
+          </h3>
+          <button v-if="mr.statusName === 'Open'" @click="showReviewModal = true"
+            class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">
+            Add review
+          </button>
+        </div>
+
+        <!-- Review gate warning -->
+        <div v-if="reviewSummary && reviewSummary.changesRequested > 0 && mr.statusName === 'Open'"
+          class="mb-4 p-3 bg-orange-900/30 border border-orange-800/40 rounded-lg text-sm text-orange-300 flex items-center gap-2">
+          <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+          </svg>
+          Changes have been requested. Address the feedback before merging.
+        </div>
+
+        <!-- Review list -->
+        <div v-if="reviews.length === 0" class="text-sm text-gray-500">
+          No reviews yet.
+        </div>
+        <div v-else class="space-y-3">
+          <div v-for="review in reviews" :key="review.id"
+            class="flex items-start gap-3 p-3 rounded-lg bg-gray-800/50">
+            <div class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
+              :class="reviewBadgeClass(review.statusName)">
+              {{ review.statusName === 'Approved' ? '✓' : review.statusName === 'ChangesRequested' ? '✗' : '💬' }}
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 text-sm">
+                <span class="font-medium text-white">{{ review.username }}</span>
+                <span :class="reviewTextClass(review.statusName)" class="text-xs">
+                  {{ reviewStatusLabel(review.statusName) }}
+                </span>
+                <span class="text-xs text-gray-500">
+                  <DateDisplay :date="review.createdAt" mode="auto" />
+                </span>
+              </div>
+              <p v-if="review.body" class="text-sm text-gray-400 mt-1">{{ review.body }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Review Modal -->
+      <div v-if="showReviewModal"
+        class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+        @mousedown.self="showReviewModal = false">
+        <div class="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-md p-6 space-y-4">
+          <h2 class="text-lg font-bold text-white">Submit Review</h2>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1.5">Verdict</label>
+            <div class="space-y-1.5">
+              <label v-for="opt in reviewOptions" :key="opt.value"
+                class="flex items-start gap-3 p-2.5 rounded-lg cursor-pointer transition-colors"
+                :class="reviewForm.status === opt.value ? 'bg-gray-800 border border-gray-700' : 'hover:bg-gray-800/50 border border-transparent'">
+                <input type="radio" :value="opt.value" v-model="reviewForm.status"
+                  class="mt-0.5 accent-brand-500" />
+                <div>
+                  <span class="text-sm text-white font-medium">{{ opt.label }}</span>
+                  <p class="text-xs text-gray-500 mt-0.5">{{ opt.description }}</p>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-1">Comment</label>
+            <textarea v-model="reviewForm.body" rows="3" placeholder="Optional comment…"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none" />
+          </div>
+
+          <div v-if="reviewError" class="p-3 bg-red-900/30 border border-red-800/40 rounded-lg text-sm text-red-300">
+            {{ reviewError }}
+          </div>
+
+          <div class="flex gap-2 pt-2">
+            <button @click="submitReview" :disabled="reviewSubmitting"
+              class="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-sm py-2 rounded-lg transition-colors disabled:opacity-50">
+              <span v-if="reviewSubmitting">Submitting…</span>
+              <span v-else>Submit Review</span>
+            </button>
+            <button @click="showReviewModal = false"
+              class="flex-1 bg-gray-800 hover:bg-gray-700 text-white text-sm py-2 rounded-lg transition-colors">
+              Cancel
+            </button>
+          </div>
         </div>
       </div>
 
@@ -269,6 +452,9 @@ interface MergeRequestDto {
   status: number
   statusName: string
   autoMergeEnabled: boolean
+  mergeStrategy: number
+  mergeStrategyName: string
+  deleteSourceBranch: boolean
   lastKnownSourceSha: string | null
   lastCiCdRunId: string | null
   lastCiCdRunStatus: number | null
@@ -284,6 +470,157 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 const actionLoading = ref<string | null>(null)
 const actionError = ref<string | null>(null)
+
+// Reviews state
+interface ReviewDto {
+  id: string
+  mergeRequestId: string
+  userId: string
+  username: string
+  status: number
+  statusName: string
+  body: string | null
+  createdAt: string
+}
+
+interface ReviewSummaryDto {
+  approved: number
+  changesRequested: number
+  totalReviewers: number
+}
+
+const reviews = ref<ReviewDto[]>([])
+const reviewSummary = ref<ReviewSummaryDto | null>(null)
+const showReviewModal = ref(false)
+const reviewSubmitting = ref(false)
+const reviewError = ref<string | null>(null)
+const reviewForm = reactive({
+  status: 0 as number, // 0=Approved, 1=ChangesRequested, 2=Commented
+  body: '',
+})
+
+const reviewOptions = [
+  { value: 0, label: 'Approve', description: 'Approve the changes in this merge request.' },
+  { value: 1, label: 'Request changes', description: 'Request changes before this can be merged.' },
+  { value: 2, label: 'Comment', description: 'Leave feedback without approving or requesting changes.' },
+]
+
+function reviewBadgeClass(statusName: string): string {
+  switch (statusName) {
+    case 'Approved': return 'bg-green-900/50 text-green-400'
+    case 'ChangesRequested': return 'bg-red-900/50 text-red-400'
+    default: return 'bg-gray-700 text-gray-400'
+  }
+}
+
+function reviewTextClass(statusName: string): string {
+  switch (statusName) {
+    case 'Approved': return 'text-green-400'
+    case 'ChangesRequested': return 'text-red-400'
+    default: return 'text-gray-400'
+  }
+}
+
+function reviewStatusLabel(statusName: string): string {
+  switch (statusName) {
+    case 'Approved': return 'approved'
+    case 'ChangesRequested': return 'requested changes'
+    default: return 'commented'
+  }
+}
+
+async function fetchReviews() {
+  try {
+    reviews.value = await api.get<ReviewDto[]>(`/api/projects/${id}/merge-requests/${mrId}/reviews`)
+  } catch {
+    reviews.value = []
+  }
+}
+
+async function fetchReviewSummary() {
+  try {
+    reviewSummary.value = await api.get<ReviewSummaryDto>(`/api/projects/${id}/merge-requests/${mrId}/review-summary`)
+  } catch {
+    reviewSummary.value = null
+  }
+}
+
+async function submitReview() {
+  reviewSubmitting.value = true
+  reviewError.value = null
+  try {
+    await api.post(`/api/projects/${id}/merge-requests/${mrId}/reviews`, {
+      status: reviewForm.status,
+      body: reviewForm.body || null,
+    })
+    showReviewModal.value = false
+    reviewForm.status = 0
+    reviewForm.body = ''
+    await Promise.all([fetchReviews(), fetchReviewSummary()])
+  } catch (e: unknown) {
+    reviewError.value = e instanceof Error ? e.message : 'Failed to submit review'
+  } finally {
+    reviewSubmitting.value = false
+  }
+}
+
+// Merge confirm modal state
+const showMergeConfirm = ref(false)
+const mergeStrategy = ref(0) // 0=Merge, 1=Squash, 2=Rebase
+const deleteSourceBranch = ref(false)
+
+const mergeStrategyOptions = [
+  { value: 0, label: 'Merge commit', description: 'All commits will be added to the target branch via a merge commit.' },
+  { value: 1, label: 'Squash and merge', description: 'All commits will be combined into a single commit on the target branch.' },
+  { value: 2, label: 'Rebase and merge', description: 'All commits will be rebased and fast-forwarded onto the target branch.' },
+]
+
+function strategyLabel(name: string): string {
+  switch (name) {
+    case 'Squash': return 'Squash merged'
+    case 'Rebase': return 'Rebased'
+    default: return 'Merged'
+  }
+}
+
+const ciGateMessage = computed(() => {
+  if (!mr.value || mr.value.statusName !== 'Open') return null
+  if (!mr.value.lastCiCdRunStatusName) return null
+  switch (mr.value.lastCiCdRunStatusName) {
+    case 'Failed':
+    case 'Cancelled':
+      return 'CI/CD checks have failed. Fix the issues before merging.'
+    case 'Pending':
+    case 'Running':
+    case 'WaitingForApproval':
+      return 'CI/CD checks are still running. Wait for them to complete or enable auto-merge.'
+    default:
+      return null
+  }
+})
+
+const ciGateClass = computed(() => {
+  if (!mr.value?.lastCiCdRunStatusName) return ''
+  switch (mr.value.lastCiCdRunStatusName) {
+    case 'Failed':
+    case 'Cancelled':
+      return 'bg-red-900/30 border border-red-800/40 text-red-300'
+    case 'Pending':
+    case 'Running':
+    case 'WaitingForApproval':
+      return 'bg-yellow-900/30 border border-yellow-800/40 text-yellow-300'
+    default:
+      return ''
+  }
+})
+
+// Initialize merge modal defaults from the MR's saved preferences
+watch(showMergeConfirm, (val) => {
+  if (val && mr.value) {
+    mergeStrategy.value = mr.value.mergeStrategy
+    deleteSourceBranch.value = mr.value.deleteSourceBranch
+  }
+})
 
 // Diff state
 const diff = ref<GitDiffFile[]>([])
@@ -371,11 +708,15 @@ function toggleFileCollapse(filePath: string) {
   collapsedFiles.value = next
 }
 
-async function mergeMr() {
+async function executeMerge() {
   actionLoading.value = 'merge'
   actionError.value = null
   try {
-    mr.value = await api.post<MergeRequestDto>(`/api/projects/${id}/merge-requests/${mrId}/merge`, {})
+    mr.value = await api.post<MergeRequestDto>(`/api/projects/${id}/merge-requests/${mrId}/merge`, {
+      strategy: mergeStrategy.value,
+      deleteSourceBranch: deleteSourceBranch.value,
+    })
+    showMergeConfirm.value = false
   } catch (e: unknown) {
     actionError.value = e instanceof Error ? e.message : 'Merge failed'
   } finally {
@@ -508,7 +849,7 @@ onMounted(async () => {
   projectsStore.fetchProject(id)
   await fetchMr()
   if (mr.value) {
-    await loadDiff()
+    await Promise.all([loadDiff(), fetchReviews(), fetchReviewSummary()])
   }
 })
 </script>

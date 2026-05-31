@@ -26,7 +26,7 @@ this file descripes rules on how agenting coding tools work with this repository
     --verbosity normal --blame-hang-timeout 4min
   ```
   Run the command **twice** and report both total runtimes to confirm stability.
-  > **Note:** The GitHub-hosted runner sets `DOTNET_SYSTEM_NET_DISABLEIPV6=1`, which prevents the .NET Aspire client from reaching the DCP gRPC endpoint on `[::1]`. The `copilot-setup-steps.yml` re-enables IPv6 and sets `CICD_E2E_HELPER_ACT_IMAGE` via both `GITHUB_ENV` (for workflow steps) and `/etc/environment` (system-wide, so every new agent shell session picks it up). If you ever see `Polly.Timeout.TimeoutRejectedException` when starting the Aspire fixture, verify that `DOTNET_SYSTEM_NET_DISABLEIPV6` is `0` or unset.
+  > **Note:** If you ever see `Polly.Timeout.TimeoutRejectedException` when starting the Aspire fixture, verify that `DOTNET_SYSTEM_NET_DISABLEIPV6` is `0`; best is to run tests only via `DOTNET_SYSTEM_NET_DISABLEIPV6=0 dotnet test ...` or export the env var before starting aspire
 - Keep changes minimal; create commits after each task/work piece; don't do refactors
 - Check that helpers and other methods were not created twice
 - Do not remove comments

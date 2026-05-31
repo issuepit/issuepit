@@ -1,9 +1,11 @@
 using System.Formats.Tar;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Docker.DotNet;
 using Docker.DotNet.Models;
 using IssuePit.Core.Enums;
+using IssuePit.Core.Runners;
 using Microsoft.Extensions.Logging;
 
 namespace IssuePit.DockerRuntime;
@@ -32,7 +34,7 @@ namespace IssuePit.DockerRuntime;
 /// possible, so failures (e.g. wrong credentials, branch mismatch) silently killed the
 /// container and appeared only in <c>docker logs</c>.
 /// </summary>
-public abstract class DockerRuntimeBase
+public abstract partial class DockerRuntimeBase
 {
     /// <summary>Read buffer size for multiplexed stream I/O. 80 KiB matches Docker SDK convention.</summary>
     private const int LogBufferSize = 81920;
@@ -72,10 +74,12 @@ public abstract class DockerRuntimeBase
     /// <param name="env">Optional environment variables for this exec, in <c>KEY=VALUE</c> form.</param>
     /// <param name="workingDir">Working directory inside the container (default: <c>/workspace</c>).</param>
     /// <param name="logCommand">
-    /// When <c>true</c>, emits a <c>[CMD] $ &lt;command&gt;</c> line via <paramref name="onLogLine"/> before
-    /// executing, so the full command (including arguments) is visible in the session logs in verbose mode.
-    /// Defaults to <c>false</c>. Pass <c>true</c> for any exec that does not contain sensitive values
-    /// (e.g. auth tokens in URLs) and whose command line is useful for diagnostics.
+    /// When <c>true</c>, wraps command output in <c>[opencode:cmd-begin]</c>/<c>[opencode:cmd-end]</c>
+    /// markers via <paramref name="onLogLine"/>, so the command and its output are rendered as a
+    /// collapsible block in the session logs UI. Any <c>https://user:token@host</c> credentials
+    /// embedded in command arguments are automatically redacted before the command string is logged.
+    /// Defaults to <c>false</c>. Pass <c>true</c> for any exec whose command and output are
+    /// useful for diagnostics (e.g. git clone, git push, npm install, dotnet restore).
     /// </param>
     protected async Task<long> ExecCommandAsync(
         string containerId,
@@ -89,15 +93,18 @@ public abstract class DockerRuntimeBase
         if (logCommand)
         {
             var cmdLine = string.Join(' ', cmd.Select(a => a.Contains(' ') ? $"\"{a}\"" : a));
+            // Redact any embedded URL credentials (https://user:token@host) so auth tokens are
+            // never surfaced in the cmd-begin log line, even for git clone/fetch/push commands.
+            var sanitized = RedactUrlCredentials(cmdLine);
             // Truncate very long command strings (e.g. multi-line shell scripts passed via
             // CustomCmdOverride) so they do not spam the session log with hundreds of characters
             // per line. The full script is visible via docker inspect / the session detail UI
-            // for the agent, so truncation here only affects the one-line [CMD] entry.
+            // for the agent, so truncation here only affects the one-line cmd-begin entry.
             const int MaxCmdLogLength = 200;
-            var cmdDisplay = cmdLine.Length > MaxCmdLogLength
-                ? cmdLine[..MaxCmdLogLength] + "..."
-                : cmdLine;
-            await onLogLine($"[CMD] $ {cmdDisplay}", LogStream.Stdout);
+            var cmdDisplay = sanitized.Length > MaxCmdLogLength
+                ? sanitized[..MaxCmdLogLength] + "..."
+                : sanitized;
+            await onLogLine($"{OpenCodeJsonLogParser.CmdBeginPrefix}$ {cmdDisplay}", LogStream.Stdout);
         }
 
         var execCreate = await DockerClient.Exec.CreateContainerExecAsync(
@@ -118,7 +125,12 @@ public abstract class DockerRuntimeBase
         await ReadMultiplexedStreamAsync(stream, onLogLine, cancellationToken);
 
         var inspect = await DockerClient.Exec.InspectContainerExecAsync(execCreate.ID, cancellationToken);
-        return inspect.ExitCode ?? 0;
+        var exitCode = inspect.ExitCode ?? 0;
+
+        if (logCommand)
+            await onLogLine(OpenCodeJsonLogParser.CmdEndMarker, LogStream.Stdout);
+
+        return exitCode;
     }
 
     /// <summary>
@@ -274,6 +286,17 @@ public abstract class DockerRuntimeBase
             : branch;
 
     /// <summary>
+    /// Replaces any <c>https://user:password@</c> or <c>https://token@</c> credentials
+    /// embedded in a URL with <c>https://***@</c>, so auth tokens are never surfaced in
+    /// log lines (e.g. the <c>[opencode:cmd-begin]</c> line for git clone/fetch/push).
+    /// </summary>
+    protected static string RedactUrlCredentials(string text) =>
+        CredentialsRegex().Replace(text, "$1***@");
+
+    [GeneratedRegex(@"(https?://)[^@\s]+@", RegexOptions.IgnoreCase)]
+    private static partial Regex CredentialsRegex();
+
+    /// <summary>
     /// Returns the IssuePit Git Server base URL from configuration, or <c>null</c> when not configured.
     /// Agents can use this to add the IssuePit git server as a remote inside containers.
     /// Configured via <c>GitServer__BaseUrl</c> (injected by AppHost into execution-client and cicd-client).
@@ -411,7 +434,7 @@ public abstract class DockerRuntimeBase
         var baseExitCode = await ExecCommandAsync(
             containerId, baseCloneArgs,
             async (line, stream) => await onLogLine(line, stream),
-            cancellationToken, env: gitEnv, workingDir: "/");
+            cancellationToken, env: gitEnv, workingDir: "/", logCommand: true);
 
         if (baseExitCode != 0)
             throw new InvalidOperationException(
@@ -587,13 +610,13 @@ public abstract class DockerRuntimeBase
                 {
                     await onLogLine("[INFO] Running npm ci", LogStream.Stdout);
                     await ExecCommandAsync(containerId, ["npm", "ci", "--prefer-offline"],
-                        async (line, stream) => await onLogLine(line, stream), cancellationToken);
+                        async (line, stream) => await onLogLine(line, stream), cancellationToken, logCommand: true);
                 }
                 else
                 {
                     await onLogLine("[INFO] Running npm install", LogStream.Stdout);
                     await ExecCommandAsync(containerId, ["npm", "install", "--prefer-offline"],
-                        async (line, stream) => await onLogLine(line, stream), cancellationToken);
+                        async (line, stream) => await onLogLine(line, stream), cancellationToken, logCommand: true);
                 }
             }
         }
@@ -613,7 +636,7 @@ public abstract class DockerRuntimeBase
             {
                 await onLogLine("[INFO] Running dotnet restore", LogStream.Stdout);
                 await ExecCommandAsync(containerId, ["dotnet", "restore"],
-                    async (line, stream) => await onLogLine(line, stream), cancellationToken);
+                    async (line, stream) => await onLogLine(line, stream), cancellationToken, logCommand: true);
             }
         }
         catch (Exception ex)
