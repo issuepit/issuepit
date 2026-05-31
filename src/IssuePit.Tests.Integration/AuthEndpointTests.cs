@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using BCrypt.Net;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace IssuePit.Tests.Integration;
@@ -189,5 +190,101 @@ public class AuthEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
         var changeResponse = await client.PatchAsJsonAsync("/api/auth/me/password", new { currentPassword = "wrongpass", newPassword = "newpass123" });
         Assert.Equal(HttpStatusCode.Unauthorized, changeResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task ForgotPassword_WithKnownUser_Returns204()
+    {
+        var (tenantId, _) = await SeedTenantWithUserAsync("forgot_user", "oldpass");
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var response = await client.PostAsJsonAsync("/api/auth/forgot-password", new { username = "forgot_user" });
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ForgotPassword_WithUnknownUser_AlsoReturns204()
+    {
+        // The endpoint must not leak which usernames are registered.
+        var tenantId = await SeedTenantAsync();
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var response = await client.PostAsJsonAsync("/api/auth/forgot-password", new { username = "nobody" });
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ResetPassword_WithInvalidToken_Returns401()
+    {
+        var tenantId = await SeedTenantAsync();
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var response = await client.PostAsJsonAsync("/api/auth/reset-password",
+            new { token = "not-a-real-token", newPassword = "newpass123" });
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ResetPassword_WithValidTokenFromForgotPassword_ResetsPasswordAndIsOneTimeUse()
+    {
+        var (tenantId, user) = await SeedTenantWithUserAsync("reset_user", "oldpass");
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        // Trigger the forgot-password flow (verifies the endpoint runs end-to-end).
+        var fpResp = await client.PostAsJsonAsync("/api/auth/forgot-password", new { username = "reset_user" });
+        Assert.Equal(HttpStatusCode.NoContent, fpResp.StatusCode);
+
+        // Since SMTP is not wired up, the reset URL is logged.  In the test, we directly
+        // seed a known token into the shared IMemoryCache (the same one the controller
+        // writes to via ForgotPassword) and verify reset-password consumes it.
+        var token = Guid.NewGuid().ToString("N");
+        using (var scope = factory.Services.CreateScope())
+        {
+            var cache = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>();
+            cache.Set($"pwreset-token:{token}", user.Id, TimeSpan.FromHours(1));
+        }
+
+        // Use the token to set a new password.
+        var resetResp = await client.PostAsJsonAsync("/api/auth/reset-password",
+            new { token, newPassword = "brandnewpass" });
+        Assert.Equal(HttpStatusCode.NoContent, resetResp.StatusCode);
+
+        // The new password works.
+        var loginNew = await client.PostAsJsonAsync("/api/auth/login",
+            new { username = "reset_user", password = "brandnewpass" });
+        Assert.Equal(HttpStatusCode.OK, loginNew.StatusCode);
+
+        // The old password no longer works.
+        using var client2 = factory.CreateClient();
+        client2.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+        var loginOld = await client2.PostAsJsonAsync("/api/auth/login",
+            new { username = "reset_user", password = "oldpass" });
+        Assert.Equal(HttpStatusCode.Unauthorized, loginOld.StatusCode);
+
+        // The token cannot be reused.
+        var resetReplay = await client.PostAsJsonAsync("/api/auth/reset-password",
+            new { token, newPassword = "anotherpass" });
+        Assert.Equal(HttpStatusCode.Unauthorized, resetReplay.StatusCode);
+    }
+
+    [Fact]
+    public async Task ResetPassword_WithTooShortPassword_Returns400()
+    {
+        var tenantId = await SeedTenantAsync();
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", tenantId.ToString());
+
+        var response = await client.PostAsJsonAsync("/api/auth/reset-password",
+            new { token = "anything", newPassword = "abc" });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 }

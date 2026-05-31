@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 
 namespace IssuePit.Api.Controllers;
 
@@ -22,7 +23,8 @@ public class AuthController(
     IConfiguration config,
     IDataProtectionProvider dpProvider,
     IHttpClientFactory httpClientFactory,
-    IMemoryCache cache) : ControllerBase
+    IMemoryCache cache,
+    ILogger<AuthController> logger) : ControllerBase
 {
     private static readonly string ProtectorPurpose = "GitHubOAuthToken";
 
@@ -178,6 +180,90 @@ public class AuthController(
             if (string.IsNullOrEmpty(req.CurrentPassword) || !BCrypt.Net.BCrypt.Verify(req.CurrentPassword, user.PasswordHash))
                 return Unauthorized("Current password is incorrect.");
         }
+
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.NewPassword);
+        await db.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Initiates a password reset for a local user.  Generates a one-time reset token,
+    /// stores it in the in-memory cache (TTL: 1 hour), and logs the reset URL.
+    /// Always returns 204 — even when the user does not exist — to avoid leaking
+    /// which usernames are registered.  Because the platform does not currently ship
+    /// with email integration, operators retrieve the reset URL from the application
+    /// logs (similar to <see cref="GetAdminLoginLink"/>).
+    /// </summary>
+    [HttpPost("forgot-password")]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest req)
+    {
+        if (ctx.CurrentTenant is null)
+            return Unauthorized("No tenant found for this request.");
+
+        if (string.IsNullOrWhiteSpace(req.Username))
+            return BadRequest("Username is required.");
+
+        // Look up by username OR email within the tenant.
+        var user = await db.Users.FirstOrDefaultAsync(
+            u => u.TenantId == ctx.CurrentTenant.Id &&
+                 (u.Username == req.Username || u.Email == req.Username));
+
+        if (user is not null)
+        {
+            var token = Guid.NewGuid().ToString("N");
+            cache.Set($"pwreset-token:{token}", user.Id, TimeSpan.FromHours(1));
+
+            var frontendBase = config["GitHub:OAuth:FrontendUrl"] ?? "http://localhost:3000";
+            var resetUrl = $"{frontendBase}/reset-password?token={token}";
+
+            // Log the reset URL so operators can deliver it to the user.  We deliberately
+            // log username (not email) and the full URL to keep this useful for self-hosted
+            // setups without SMTP configured.
+            logger.LogInformation(
+                "Password reset requested for user {Username} (tenant {TenantId}); reset URL: {ResetUrl}",
+                user.Username, user.TenantId, resetUrl);
+        }
+        else
+        {
+            // Log misses too to help operators debug typos, but without exposing the lookup.
+            logger.LogInformation(
+                "Password reset requested for unknown user '{Username}' (tenant {TenantId})",
+                req.Username, ctx.CurrentTenant.Id);
+        }
+
+        // Always return 204 to avoid user enumeration.
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Completes a password reset using a one-time token issued by
+    /// <see cref="ForgotPassword"/>.  On success, sets the user's password,
+    /// invalidates the token, and returns 204.
+    /// </summary>
+    [HttpPost("reset-password")]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest req)
+    {
+        if (string.IsNullOrEmpty(req.Token))
+            return BadRequest("Missing token.");
+
+        if (string.IsNullOrWhiteSpace(req.NewPassword) || req.NewPassword.Length < 6)
+            return BadRequest("New password must be at least 6 characters.");
+
+        var cacheKey = $"pwreset-token:{req.Token}";
+        if (!cache.TryGetValue(cacheKey, out Guid userId))
+            return Unauthorized("Invalid or expired reset token.");
+
+        var user = await db.Users.FindAsync(userId);
+        if (user is null)
+        {
+            cache.Remove(cacheKey);
+            return Unauthorized("Invalid or expired reset token.");
+        }
+
+        // One-time use: remove the token before hashing to ensure it can't be replayed
+        // even if the password update fails.
+        cache.Remove(cacheKey);
 
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.NewPassword);
         await db.SaveChangesAsync();
@@ -460,5 +546,7 @@ public class AuthController(
 public record LocalLoginRequest(string Username, string Password);
 public record RegisterRequest(string Username, string Password, string? Email = null);
 public record ChangePasswordRequest(string? CurrentPassword, string NewPassword);
+public record ForgotPasswordRequest(string Username);
+public record ResetPasswordRequest(string Token, string NewPassword);
 public record UpdateThemeRequest(string? Theme);
 public record MeResponse(Guid Id, string Username, string Email, bool IsAdmin, DateTime CreatedAt, string? Theme);
