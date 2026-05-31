@@ -73,7 +73,9 @@ if (useCockroachDb)
     postgresServer = postgresServer
         .WithImage("cockroachdb/cockroach", "v25.2.2")
         .WithEntrypoint("cockroach")
-        .WithArgs("start-single-node", "--insecure", "--listen-addr=0.0.0.0", "--http-addr=0.0.0.0:8080");
+        // Aspire's AddPostgres exposes container port 5432, so CockroachDB must listen on 5432
+        // (CockroachDB's default SQL port is 26257). --insecure disables TLS so Npgsql can connect with sslmode=disable.
+        .WithArgs("start-single-node", "--insecure", "--listen-addr=0.0.0.0:5432", "--http-addr=0.0.0.0:8080");
 }
 else
 {
