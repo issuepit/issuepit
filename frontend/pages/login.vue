@@ -66,6 +66,11 @@
           >
             {{ loading ? 'Signing in…' : 'Sign in' }}
           </button>
+          <div class="text-right">
+            <NuxtLink to="/forgot-password" class="text-xs text-brand-400 hover:text-brand-300">
+              Forgot password?
+            </NuxtLink>
+          </div>
         </form>
 
         <!-- Register -->
