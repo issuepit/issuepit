@@ -71,7 +71,63 @@ public class TenantMiddleware(RequestDelegate next, ILogger<TenantMiddleware> lo
             }
         }
 
+        var path = context.Request.Path.Value ?? string.Empty;
+        if (path.StartsWith("/api/admin", StringComparison.OrdinalIgnoreCase)
+            && tenantContext.CurrentUser?.IsAdmin != true)
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+
+        if (tenantContext.CurrentMcpToken is { } token)
+        {
+            if (token.ProjectId is Guid scopedProjectId
+                && TryGetRouteGuid(context, "projectId", "projects", out var requestProjectId)
+                && requestProjectId != scopedProjectId)
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+
+            if (token.OrgId is Guid scopedOrgId
+                && TryGetRouteGuid(context, "orgId", "orgs", out var requestOrgId)
+                && requestOrgId != scopedOrgId)
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+        }
+
         await next(context);
+    }
+
+    private static bool TryGetRouteGuid(HttpContext context, string routeKey, string segmentName, out Guid id)
+    {
+        id = Guid.Empty;
+        if (context.Request.RouteValues.TryGetValue(routeKey, out var routeValue)
+            && routeValue is not null
+            && Guid.TryParse(routeValue.ToString(), out id))
+        {
+            return true;
+        }
+
+        return TryGetRouteGuidFromPath(context.Request.Path.Value ?? string.Empty, segmentName, out id);
+    }
+
+    private static bool TryGetRouteGuidFromPath(string path, string segmentName, out Guid id)
+    {
+        id = Guid.Empty;
+        var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        for (var i = 0; i < parts.Length - 1; i++)
+        {
+            if (string.Equals(parts[i], segmentName, StringComparison.OrdinalIgnoreCase)
+                && Guid.TryParse(parts[i + 1], out id))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     internal static string ComputeSha256Hash(string value) => HashHelper.ComputeSha256Hex(value);

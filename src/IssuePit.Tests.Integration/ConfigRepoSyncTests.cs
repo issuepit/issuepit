@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using IssuePit.Api.Controllers;
 using IssuePit.Api.Services;
+using IssuePit.Core;
 using IssuePit.Core.Data;
 using IssuePit.Core.Entities;
 using IssuePit.Core.Enums;
@@ -42,12 +43,24 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var orgId = Guid.NewGuid();
         var projectId = Guid.NewGuid();
         var userId = Guid.NewGuid();
+        var rawToken = $"cfg-admin-{Guid.NewGuid():N}";
 
         db.Tenants.Add(new Tenant { Id = tenantId, Name = "CfgTest", Hostname = $"cfg-{tenantId}.test" });
         db.Organizations.Add(new Organization { Id = orgId, TenantId = tenantId, Name = "Cfg Org", Slug = orgSlug });
         db.Projects.Add(new Project { Id = projectId, OrgId = orgId, Name = "Cfg Project", Slug = projectSlug });
-        db.Users.Add(new User { Id = userId, TenantId = tenantId, Username = username, Email = $"{username}@test.com" });
+        db.Users.Add(new User { Id = userId, TenantId = tenantId, Username = username, Email = $"{username}@test.com", IsAdmin = true });
+        db.McpTokens.Add(new McpToken
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            UserId = userId,
+            Name = "cfg-sync-admin",
+            KeyHash = HashHelper.ComputeSha256Hex(rawToken)
+        });
         await db.SaveChangesAsync();
+
+        _client.DefaultRequestHeaders.Remove("X-Mcp-Token");
+        _client.DefaultRequestHeaders.Add("X-Mcp-Token", rawToken);
 
         return (tenantId, orgId, projectId, userId);
     }
@@ -69,6 +82,11 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
     private async Task<HttpResponseMessage> TriggerSyncAsync(Guid tenantId)
         => await _client.PostAsync($"/api/admin/tenants/{tenantId}/config-repo/sync", null);
+
+    private async Task AuthenticateAsAdminAsync()
+    {
+        await SeedAsync($"auth-org-{Guid.NewGuid():N}"[..20], $"auth-proj-{Guid.NewGuid():N}"[..20], "auth-admin");
+    }
 
     // -----------------------------------------------------------------------
     // Org config tests
@@ -441,6 +459,7 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
     [Fact]
     public async Task Sync_NoConfigRepoConfigured_ReturnsBadRequest()
     {
+        await AuthenticateAsAdminAsync();
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<IssuePitDbContext>();
         var tenant = new Tenant { Id = Guid.NewGuid(), Name = "NoCfg", Hostname = $"nocfg-{Guid.NewGuid()}.test" };
@@ -454,6 +473,7 @@ public class ConfigRepoSyncTests(ApiFactory factory) : IClassFixture<ApiFactory>
     [Fact]
     public async Task Sync_NonExistentTenant_ReturnsNotFound()
     {
+        await AuthenticateAsAdminAsync();
         var resp = await TriggerSyncAsync(Guid.NewGuid());
         Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
     }

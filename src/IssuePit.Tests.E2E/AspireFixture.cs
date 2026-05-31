@@ -29,6 +29,12 @@ public sealed class AspireFixture : IAsyncLifetime
     /// <summary>Base URL of the git server (e.g. "http://localhost:5038"), used for git CLI operations.</summary>
     public string? GitServerUrl { get; private set; }
 
+    /// <summary>
+    /// Raw value of the seeded bootstrap admin MCP token. The migrator persists its hash for
+    /// the default admin user so E2E tests can authenticate against <c>/api/admin/**</c>.
+    /// </summary>
+    public string? AdminMcpToken { get; private set; }
+
     /// <summary>Kafka bootstrap servers resolved from the Aspire-started Kafka container.</summary>
     public string? KafkaBootstrapServers { get; private set; }
 
@@ -56,6 +62,12 @@ public sealed class AspireFixture : IAsyncLifetime
         _e2eRepoPath = TryCreateDummyGitRepo();
         if (_e2eRepoPath is not null)
             Environment.SetEnvironmentVariable("CICD_E2E_REPO_PATH", _e2eRepoPath);
+
+        // Generate a fresh bootstrap admin MCP token for this test run. The AppHost forwards
+        // this env var to the migrator, which seeds it as an MCP token for the default admin
+        // user. Tests use it via X-Mcp-Token to call /api/admin/** endpoints.
+        AdminMcpToken = $"e2e-admin-{Guid.NewGuid():N}";
+        Environment.SetEnvironmentVariable("IssuePit__Bootstrap__AdminMcpToken", AdminMcpToken);
 
         // Disable resource logging so Aspire does not relay child-process stdout/stderr through
         // ILogger — the librdkafka C library can emit verbose connection-error lines to stderr
@@ -155,6 +167,8 @@ public sealed class AspireFixture : IAsyncLifetime
         Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Aspire AppHost started.");
 
         ApiClient = App.CreateHttpClient("api");
+        if (!string.IsNullOrEmpty(AdminMcpToken))
+            ApiClient.DefaultRequestHeaders.Add("X-Mcp-Token", AdminMcpToken);
         McpClient = App.CreateHttpClient("mcp-server");
         KafkaBootstrapServers = await App.GetConnectionStringAsync("kafka");
 
