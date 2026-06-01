@@ -67,6 +67,12 @@ dotnet run --project IssuePit.AppHost
 
 The Aspire dashboard will start at `https://localhost:15888`. The API, PostgreSQL, Kafka, and frontend are provisioned automatically.
 
+To run CockroachDB instead of PostgreSQL with Aspire, set:
+
+```bash
+ISSUEPIT_DB_PROVIDER=cockroachdb
+```
+
 ### Run with Podman Compose
 
 ```bash

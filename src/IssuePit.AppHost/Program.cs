@@ -58,21 +58,36 @@ var gitBranch = isCI ? null : TryGetGitBranch();
 var configRepoPath = TryFindConfigRepo();
 
 
+var dbProvider = Environment.GetEnvironmentVariable("ISSUEPIT_DB_PROVIDER")?.Trim();
+var useCockroachDb = string.Equals(dbProvider, "cockroachdb", StringComparison.OrdinalIgnoreCase);
+
 // https://aspire.dev/integrations/databases/postgres/postgres-host/#add-postgresql-server-resource-with-parameters
-var postgresUsername = builder.AddParameter("username", "ShityUsername", secret: true);
-var postgresPassword = builder.AddParameter("password", "Shity password since when adding a volume we get an auth error like in aspire 8.0", secret: true);
+var postgresUsername = builder.AddParameter("username", useCockroachDb ? "root" : "ShityUsername", secret: true);
+var postgresPassword = builder.AddParameter("password", useCockroachDb ? string.Empty : "Shity password since when adding a volume we get an auth error like in aspire 8.0", secret: true);
 var postgresServer = builder.AddPostgres("postgres")
-    //.WithDbGate() // https://aspire.dev/integrations/databases/postgres/postgresql-extensions/
-    .WithImage("postgres", "17.6")
-    //.WithUserName("ShityUsername")
-    //.WithPassword("Shity password since when adding a volume we get an auth error like in aspire 8.0") // https://github.com/dotnet/aspire/issues/1151
     .WithUserName(postgresUsername)
-    .WithPassword(postgresPassword)
-    ;
+    .WithPassword(postgresPassword);
+
+if (useCockroachDb)
+{
+    postgresServer = postgresServer
+        .WithImage("cockroachdb/cockroach", "v25.2.2")
+        .WithEntrypoint("cockroach")
+        // Aspire's AddPostgres exposes container port 5432, so CockroachDB must listen on 5432
+        // (CockroachDB's default SQL port is 26257). --insecure disables TLS so Npgsql can connect with sslmode=disable.
+        .WithArgs("start-single-node", "--insecure", "--listen-addr=0.0.0.0:5432", "--http-addr=0.0.0.0:8080");
+}
+else
+{
+    postgresServer = postgresServer
+        .WithImage("postgres", "17.6");
+}
+
 if (gitBranch is not null)
     postgresServer = postgresServer
-        .WithDataVolume($"issuepit-postgres-{SanitizeForVolumeName(gitBranch)}", false); // https://aspire.dev/integrations/databases/postgres/postgres-host/#add-postgresql-server-resource-with-data-volume
+        .WithDataVolume($"issuepit-{(useCockroachDb ? "cockroach" : "postgres")}-{SanitizeForVolumeName(gitBranch)}", false); // https://aspire.dev/integrations/databases/postgres/postgres-host/#add-postgresql-server-resource-with-data-volume
 
+var dbServer = postgresServer;
 var postgresDb = postgresServer.AddDatabase("issuepit-db");
 var notesDb = postgresServer.AddDatabase("notes-db");
 
@@ -285,7 +300,8 @@ var registryMirror = builder.AddContainer("registry-mirror", "registry", "2")
     //.WithExplicitStart(); // not started in CI; configure real S3/B2 via ImageStorage settings; we need it in ci/cd for e2e tests which could upload data
 
 // Management UI tools - set to explicit start so they are not auto-started in CI and require manual start from the Aspire dashboard
-postgresServer.WithPgAdmin(admin => admin.WithExplicitStart());
+if (!useCockroachDb)
+    postgresServer.WithPgAdmin(admin => admin.WithExplicitStart());
 kafka.WithKafkaUI(ui => ui.WithExplicitStart());
 builder.AddContainer("redis-insight", "redis/redisinsight")
     .WithHttpEndpoint(targetPort: 5540, name: "http")
@@ -349,7 +365,7 @@ var frontend = builder.AddJavaScriptApp("frontend", "../../frontend", "dev")
 
 var api = builder.AddProject<Projects.IssuePit_Api>("api")
     .WithReference(postgresDb)
-    .WithReference(postgresServer)
+    .WithReference(dbServer)
     .WithReference(kafka)
     .WithReference(redis)
     .WaitForCompletion(migrator)
@@ -402,7 +418,7 @@ var gitServer = builder.AddProject<Projects.IssuePit_GitServer>("git-server")
 
 var executionClient = builder.AddProject<Projects.IssuePit_ExecutionClient>("execution-client")
     .WithReference(postgresDb)
-    .WithReference(postgresServer)
+    .WithReference(dbServer)
     .WithReference(kafka)
     .WithReference(redis)
     .WaitForCompletion(migrator)
@@ -423,7 +439,7 @@ var cicdClientWorkers = int.TryParse(
 
 var cicdClient = builder.AddProject<Projects.IssuePit_CiCdClient>("cicd-client")
     .WithReference(postgresDb)
-    .WithReference(postgresServer)
+    .WithReference(dbServer)
     .WithReference(kafka)
     .WithReference(redis)
     .WaitForCompletion(migrator)
